@@ -163,6 +163,18 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
+
       - name: Install Python client
         run: $CI_PYTHON -m pip install -e clients/python
 

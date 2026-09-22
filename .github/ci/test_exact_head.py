@@ -11,6 +11,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
+PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -162,6 +163,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / ".githooks").mkdir(parents=True)
                 (repo / ".github" / "ci").mkdir(parents=True)
                 (repo / "reference" / "vespa").mkdir(parents=True)
+                (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
                 (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
@@ -181,8 +183,15 @@ class ExactHeadTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 native_gate.chmod(0o755)
+                python_e2e = repo / "tools" / "run-python-native-e2e.sh"
+                python_e2e.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'python-native-e2e\\n' >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                python_e2e.chmod(0o755)
 
-                git(repo, "add", ".githooks", ".github", "reference", "fakebin")
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin")
                 git(repo, "commit", "-q", "-m", "fixture")
 
                 staged = repo / staged_path
@@ -215,6 +224,79 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 self.assertEqual("native i" in logged, expect_native)
 
+    def test_precommit_runs_python_native_e2e_only_for_native_sensitive_changes(self) -> None:
+        cases = (
+            ("core/native/vespa/abi.cc", True),
+            ("core/crates/searchkernel-ir-adapter/src/backend.rs", True),
+            ("clients/python/searchkernel/client.py", False),
+            ("searchkerneld/src/main.rs", False),
+            ("core/crates/searchkernel-ir/src/model.rs", False),
+            ("docs/architecture.md", False),
+        )
+        for staged_path, expect_e2e in cases:
+            with self.subTest(staged_path=staged_path):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                repo = Path(temp.name)
+                git(repo, "init", "-q")
+                git(repo, "config", "user.name", "CI Test")
+                git(repo, "config", "user.email", "ci@example.invalid")
+
+                (repo / ".githooks").mkdir(parents=True)
+                (repo / ".github" / "ci").mkdir(parents=True)
+                (repo / "reference" / "vespa").mkdir(parents=True)
+                (repo / "tools").mkdir(parents=True)
+                (repo / "fakebin").mkdir(parents=True)
+                (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+
+                log = repo / "hook.log"
+                cargo = repo / "fakebin" / "cargo"
+                cargo.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                cargo.chmod(0o755)
+                native_gate = repo / "reference" / "vespa" / "verify-through.sh"
+                native_gate.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'native %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                native_gate.chmod(0o755)
+                python_e2e = repo / "tools" / "run-python-native-e2e.sh"
+                python_e2e.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'python-native-e2e\\n' >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                python_e2e.chmod(0o755)
+
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin")
+                git(repo, "commit", "-q", "-m", "fixture")
+
+                staged = repo / staged_path
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                staged.write_text("changed\n", encoding="utf-8")
+                git(repo, "add", staged_path)
+
+                env = os.environ.copy()
+                env["HOOK_LOG"] = str(log)
+                env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+                result = subprocess.run(
+                    ["bash", str(repo / ".githooks" / "pre-commit")],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout)
+                logged = log.read_text(encoding="utf-8")
+                self.assertEqual("python-native-e2e" in logged, expect_e2e)
+
     def test_precommit_treats_native_rename_as_native_sensitive(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -226,6 +308,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / ".githooks").mkdir(parents=True)
         (repo / ".github" / "ci").mkdir(parents=True)
         (repo / "reference" / "vespa").mkdir(parents=True)
+        (repo / "tools").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
         (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
@@ -245,6 +328,13 @@ class ExactHeadTests(unittest.TestCase):
             encoding="utf-8",
         )
         native_gate.chmod(0o755)
+        python_e2e = repo / "tools" / "run-python-native-e2e.sh"
+        python_e2e.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'python-native-e2e\\n' >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        python_e2e.chmod(0o755)
 
         source = repo / "core" / "native" / "vespa" / "moved.cc"
         source.parent.mkdir(parents=True)
@@ -332,6 +422,54 @@ class ExactHeadTests(unittest.TestCase):
         self.assertNotIn("cargo ", logged)
         self.assertNotIn("native i", logged)
 
+    def test_python_native_e2e_runner_bootstraps_and_opts_in(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+
+        (repo / "tools").mkdir(parents=True)
+        (repo / "fakebin").mkdir(parents=True)
+        (repo / "tools" / "run-python-native-e2e.sh").write_bytes(
+            PYTHON_NATIVE_E2E_RUNNER.read_bytes()
+        )
+
+        log = repo / "runner.log"
+        dev = repo / "dev"
+        dev.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'dev %s\\n' \"$*\" >> \"$RUNNER_LOG\"\n",
+            encoding="utf-8",
+        )
+        dev.chmod(0o755)
+        fake_python = repo / "fakebin" / "python"
+        fake_python.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'opt_in=%s args=%s\\n' \"${SEARCHKERNEL_RUN_NATIVE_E2E:-}\" \"$*\" >> \"$RUNNER_LOG\"\n",
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+
+        env = os.environ.copy()
+        env["CI_PYTHON"] = str(fake_python)
+        env["RUNNER_LOG"] = str(log)
+        result = subprocess.run(
+            ["bash", str(repo / "tools" / "run-python-native-e2e.sh")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        logged = log.read_text(encoding="utf-8")
+        self.assertIn("dev native-sdk ensure", logged)
+        self.assertIn("opt_in=1 args=-m unittest discover", logged)
+        self.assertIn("-p test_grpc_e2e.py", logged)
+
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
             b"core/crates/searchkernel-ir/src/model.rs\0": {
@@ -369,6 +507,12 @@ class ExactHeadTests(unittest.TestCase):
                 "python=false",
                 "typescript=false",
                 "native=false",
+            },
+            b".githooks/pre-commit\0": {
+                "rust=false",
+                "python=false",
+                "typescript=false",
+                "native=true",
             },
         }
         for changed, expected in cases.items():
