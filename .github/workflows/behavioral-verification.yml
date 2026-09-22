@@ -49,22 +49,27 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          trusted_dir="$RUNNER_TEMP/searchkernel-trusted-exact-head-ci"
+          rm -rf "$trusted_dir"
+          mkdir -p "$trusted_dir"
+          git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"
+          echo "TRUSTED_EXACT_HEAD_HELPER=$trusted_dir/exact_head.py" >> "$GITHUB_ENV"
+
           if [[ -f .github/ci/exact_head.py && -f .github/ci/test_exact_head.py ]]; then
-            helper_dir="$PWD/.github/ci"
+            regression_dir="$PWD/.github/ci"
           else
-            helper_dir="$RUNNER_TEMP/searchkernel-exact-head-ci"
-            rm -rf "$helper_dir"
-            mkdir -p "$helper_dir"
+            regression_dir="$RUNNER_TEMP/searchkernel-exact-head-ci"
+            rm -rf "$regression_dir"
+            mkdir -p "$regression_dir"
             for name in exact_head.py test_exact_head.py; do
               if [[ -f ".github/ci/$name" ]]; then
-                cp ".github/ci/$name" "$helper_dir/$name"
+                cp ".github/ci/$name" "$regression_dir/$name"
               else
-                git show "$BASE_SHA:.github/ci/$name" > "$helper_dir/$name"
+                git show "$BASE_SHA:.github/ci/$name" > "$regression_dir/$name"
               fi
             done
           fi
-          echo "EXACT_HEAD_HELPER=$helper_dir/exact_head.py" >> "$GITHUB_ENV"
-          echo "EXACT_HEAD_TEST=$helper_dir/test_exact_head.py" >> "$GITHUB_ENV"
+          echo "EXACT_HEAD_TEST=$regression_dir/test_exact_head.py" >> "$GITHUB_ENV"
 
       - name: Verify exact-head CI regressions
         run: python3 "$EXACT_HEAD_TEST"
@@ -76,7 +81,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" -- \
-            | python3 "$EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
+            | python3 "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
 
   rust:
     name: Rust behavior
