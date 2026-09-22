@@ -597,6 +597,13 @@ impl IndexDefinitionIr {
         self.schema_fields = fields;
     }
 
+    /// Replace top-level fieldset definitions while retaining every other
+    /// canonical schema member.
+    #[doc(hidden)]
+    pub fn set_fieldsets(&mut self, fieldsets: Vec<FieldSetDefinitionIr>) {
+        self.fieldsets = fieldsets;
+    }
+
     /// Replace top-level struct definitions while retaining every other
     /// canonical schema member.
     #[doc(hidden)]
