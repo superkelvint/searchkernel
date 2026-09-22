@@ -21,7 +21,7 @@ fn main() {
             kind: RustFieldKind::Int64,
             multi: false,
             analyzer: None,
-            stored: false,
+            stored: true,
             searchable: false,
             filterable: true,
             sortable: true,
@@ -73,7 +73,7 @@ fn main() {
                         "stored": true,
                         "searchable": false,
                         "filterable": true,
-                        "sortable": false,
+                        "sortable": true,
                         "facetable": false
                     }]
                 }
