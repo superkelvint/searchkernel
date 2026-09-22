@@ -593,20 +593,37 @@ async fn cancelled_execution_waiter_releases_admission_capacity() {
         Code::DeadlineExceeded | Code::Cancelled
     ));
 
-    let third = tokio::spawn(async move {
-        third_client
-            .execute(Request::new(rpc::FlatBufferFrame {
-                payload: large_search_request(),
-            }))
-            .await
+    // Keep the first request blocked while probing the admission slot released
+    // by the cancelled second waiter. If cancellation stranded its admission
+    // permit, this request would be rejected immediately with ResourceExhausted.
+    // If the permit was released, it is admitted and waits behind the occupied
+    // execution slot until its own deadline expires.
+    let mut third_request = Request::new(rpc::FlatBufferFrame {
+        payload: large_search_request(),
     });
+    third_request.set_timeout(Duration::from_millis(100));
+    let third_result = tokio::time::timeout(
+        Duration::from_secs(2),
+        third_client.execute(third_request),
+    )
+    .await
+    .expect("third admission probe must finish");
+    let third_error = third_result.expect_err("third request must wait for execution");
+    assert!(
+        matches!(
+            third_error.code(),
+            Code::DeadlineExceeded | Code::Cancelled
+        ),
+        "cancelled waiter must release admission capacity; got {third_error:?}"
+    );
+
     backend.release.store(true, Ordering::Release);
     first.await.expect("first task").expect("first request");
-    third
-        .await
-        .expect("third task")
-        .expect("third request must use the released admission slot");
-    assert!(backend.searches.load(Ordering::SeqCst) >= 2);
+    assert_eq!(
+        backend.searches.load(Ordering::SeqCst),
+        1,
+        "deadline probes must not reach the blocked backend"
+    );
 
     server.shutdown().await.expect("shutdown server");
     index.close().expect("close test index");
