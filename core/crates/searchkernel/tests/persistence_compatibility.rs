@@ -1,6 +1,6 @@
 #![cfg(feature = "native")]
 
-use searchkernel::{field, Index, Patch};
+use searchkernel::{field, ErrorCode, Index, Patch};
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -36,6 +36,28 @@ fn copy_tree(source: &Path, destination: &Path) {
             fs::copy(source, destination).unwrap();
         }
     }
+}
+
+fn snapshot_tree(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    fn visit(
+        root: &Path,
+        path: &Path,
+        output: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    ) {
+        for entry in fs::read_dir(path).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if entry.file_type().unwrap().is_dir() {
+                visit(root, &path, output);
+            } else {
+                output.insert(path.strip_prefix(root).unwrap().to_path_buf(), fs::read(path).unwrap());
+            }
+        }
+    }
+
+    let mut output = std::collections::BTreeMap::new();
+    visit(root, root, &mut output);
+    output
 }
 
 fn materialize_fixture(version: u32) -> PathBuf {
@@ -104,4 +126,36 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
         reopened.close().unwrap();
         fs::remove_dir_all(root).unwrap();
     }
+}
+
+
+#[test]
+fn repeated_failed_real_opens_do_not_mutate_or_destroy_a_valid_fixture() {
+    let root = materialize_fixture(4);
+    let manifest = root.join("manifest/index.json");
+    let valid_manifest = fs::read(&manifest).unwrap();
+    fs::write(&manifest, b"{").unwrap();
+    let corrupt_snapshot = snapshot_tree(&root);
+
+    for attempt in 0..3 {
+        let error = match Index::open(&root) {
+            Ok(index) => {
+                index.close().unwrap();
+                panic!("corrupt fixture unexpectedly opened on attempt {attempt}");
+            }
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), ErrorCode::CorruptIndex);
+        assert_eq!(
+            snapshot_tree(&root),
+            corrupt_snapshot,
+            "failed open attempt {attempt} mutated persisted fixture bytes"
+        );
+    }
+
+    fs::write(&manifest, valid_manifest).unwrap();
+    let index = Index::open(&root).expect("restored fixture must reopen after repeated failures");
+    assert_expected_searches(&index);
+    index.close().unwrap();
+    fs::remove_dir_all(root).unwrap();
 }
