@@ -257,6 +257,11 @@ impl FieldIr {
     }
 
     #[doc(hidden)]
+    pub fn set_indexing_script(&mut self, script: Option<String>) { self.indexing_script = script; }
+    #[doc(hidden)]
+    pub fn set_properties(&mut self, properties: SchemaPropertiesIr) { self.properties = properties; }
+
+    #[doc(hidden)]
     pub fn set_matching_config(&mut self, config: Option<MatchingConfigIr>) {
         self.matching = config;
     }

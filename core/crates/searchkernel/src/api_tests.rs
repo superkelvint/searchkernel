@@ -3329,6 +3329,26 @@ fn public_rank_profile_model_state_round_trips_without_sidecar() {
 }
 
 #[test]
+fn described_field_exposes_summary_script_and_properties() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let expected = &canonical.fields()[0];
+    let actual = &described.fields()[0];
+    assert_eq!(actual.summary_config.as_ref(), expected.summary());
+    assert_eq!(actual.indexing_script.as_deref(), expected.indexing_script());
+    assert_eq!(&actual.properties, expected.properties());
+}
+
+#[test]
+fn public_field_rich_state_round_trips_without_sidecar() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let mut field = described.fields()[0].clone(); field.canonical = None;
+    let resolved = definition_to_ir(&IndexDefinition::new().field(field)).expect("field");
+    assert_eq!(resolved.fields()[0].summary(), canonical.fields()[0].summary());
+    assert_eq!(resolved.fields()[0].indexing_script(), canonical.fields()[0].indexing_script());
+    assert_eq!(resolved.fields()[0].properties(), canonical.fields()[0].properties());
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();
