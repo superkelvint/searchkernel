@@ -75,6 +75,7 @@ jobs:
           cache: npm
           cache-dependency-path: clients/typescript/package-lock.json
       - run: python -m pip install -e clients/python
+      - run: python tools/check-python-dependencies.py
       - run: npm ci --prefix clients/typescript
       - run: python tools/check-client-contracts.py --run-e2e
 
