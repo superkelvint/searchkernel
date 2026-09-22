@@ -3349,6 +3349,18 @@ fn public_field_rich_state_round_trips_without_sidecar() {
 }
 
 #[test]
+fn described_index_definition_exposes_document_metadata() {
+    let (canonical, described) = public_described_canonical_fixture();
+    assert_eq!(described.document_type, canonical.document_type().map(str::to_owned));
+    assert_eq!(described.schema_inherits, canonical.schema_inherits());
+    assert_eq!(described.document_inherits, canonical.document_inherits());
+    let resolved = definition_to_ir(&described).expect("described schema should resolve");
+    assert_eq!(resolved.document_type(), canonical.document_type());
+    assert_eq!(resolved.schema_inherits(), canonical.schema_inherits());
+    assert_eq!(resolved.document_inherits(), canonical.document_inherits());
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();
