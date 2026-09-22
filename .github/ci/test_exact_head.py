@@ -136,6 +136,16 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
 
+    def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        typescript = workflow.split("\n  typescript:\n", 1)[1].split(
+            "\n  exact-head-gate:\n", 1
+        )[0]
+        self.assertIn("uses: dtolnay/rust-toolchain@stable", typescript)
+        self.assertIn("./tools/test-typescript-generation.sh", typescript)
+        self.assertIn("npm run check:generated --prefix clients/typescript", typescript)
+        self.assertIn("npm run test:package --prefix clients/typescript", typescript)
+
     def test_precommit_runs_native_gate_only_for_native_sensitive_staged_paths(self) -> None:
         for staged_path, expect_native in (
             ("core/native/vespa/abi.cc", True),

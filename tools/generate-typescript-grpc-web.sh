@@ -6,7 +6,8 @@ protoc_bin=${PROTOC_PATH:-"$client/node_modules/grpc-tools/bin/protoc"}
 plugin=${GRPC_WEB_PLUGIN_PATH:-"$client/node_modules/protoc-gen-grpc-web/bin/protoc-gen-grpc-web"}
 node_plugin=${GRPC_NODE_PLUGIN_PATH:-"$client/node_modules/grpc-tools/bin/grpc_node_plugin"}
 [[ -x "$protoc_bin" && -x "$plugin" && -x "$node_plugin" ]] || { echo 'error: install TypeScript package generation dependencies' >&2; exit 1; }
-out="$client/src/generated/grpc"
+generated_root=${TYPESCRIPT_GENERATED_DIR:-"$client/src/generated"}
+out="$generated_root/grpc"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 # The protobuf message module is shared by the browser and Node stubs. Generate
