@@ -604,6 +604,13 @@ impl IndexDefinitionIr {
         self.fieldsets = fieldsets;
     }
 
+    /// Replace top-level ONNX model definitions while retaining every other
+    /// canonical schema member.
+    #[doc(hidden)]
+    pub fn set_onnx_models(&mut self, models: Vec<OnnxModelDefinitionIr>) {
+        self.onnx_models = models;
+    }
+
     /// Replace top-level struct definitions while retaining every other
     /// canonical schema member.
     #[doc(hidden)]

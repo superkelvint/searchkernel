@@ -769,6 +769,7 @@ pub struct IndexDefinition {
     pub(crate) rank_profiles: Vec<RankProfile>,
     pub(crate) constants: Vec<ConstantDefinition>,
     pub(crate) fieldsets: Vec<searchkernel_ir::FieldSetDefinitionIr>,
+    pub(crate) onnx_models: Vec<searchkernel_ir::OnnxModelDefinitionIr>,
     pub(crate) structs: Vec<searchkernel_ir::NamedStructDefinitionIr>,
     pub(crate) schema_fields: Vec<Field>,
     pub(crate) properties: searchkernel_ir::SchemaPropertiesIr,
@@ -789,6 +790,7 @@ impl fmt::Debug for IndexDefinition {
             .field("rank_profiles", &self.rank_profiles)
             .field("constants", &self.constants)
             .field("fieldsets", &self.fieldsets)
+            .field("onnx_models", &self.onnx_models)
             .field("structs", &self.structs)
             .field("schema_fields", &self.schema_fields)
             .field("properties", &self.properties)
@@ -988,6 +990,11 @@ impl IndexDefinition {
     /// Return the top-level fieldset definitions declared by the schema.
     pub fn fieldsets(&self) -> &[searchkernel_ir::FieldSetDefinitionIr] {
         &self.fieldsets
+    }
+
+    /// Return the top-level ONNX model definitions declared by the schema.
+    pub fn onnx_models(&self) -> &[searchkernel_ir::OnnxModelDefinitionIr] {
+        &self.onnx_models
     }
 
     /// Return the top-level named struct definitions declared by the schema.
