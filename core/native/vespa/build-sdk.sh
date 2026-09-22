@@ -192,6 +192,18 @@ if [ "$ENABLE_FAILPOINTS" = 1 ]; then
 fi
 LINK_ARGS="$LINK_ARGS -Wl,--exclude-libs,ALL -Wl,--version-script=$MAP_FILE"
 LINK_ARGS="$LINK_ARGS $EXTRA_LINK_FLAGS $COVERAGE_LINK_FLAGS"
+if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+    # Hardening entry points are intentionally referenced only by the M11
+    # driver and coverage probes. Keep them alive when the Vespa link command
+    # enables section garbage collection, and explicitly place them in the
+    # dynamic symbol table instead of relying on linker heuristics.
+    TEST_SYMBOLS=$(sed -nE \
+        's/^SK_API (int32_t|uint32_t) (sk_test_[a-zA-Z0-9_]+)\(.*/\2/p' \
+        "$ROOT/core/native/vespa/searchkernel_vespa_test.h")
+    for symbol in $TEST_SYMBOLS; do
+        LINK_ARGS="$LINK_ARGS -Wl,--undefined=$symbol -Wl,--export-dynamic-symbol=$symbol"
+    done
+fi
 # The source link command belongs to a Vespa unit-test executable.  The
 # adapter-owned replacements below do not need its test-only libraries.
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed -E \
@@ -328,6 +340,9 @@ fi
 if find "$SDK/lib" -type f \( -name '*.h' -o -name '*.hh' -o -name '*.hpp' \) -print -quit | grep -q .; then
     echo "refusing to publish native headers under SDK/lib" >&2
     exit 1
+fi
+if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+    "$ROOT/tools/check-native-sdk-hardening.sh" "$SDK"
 fi
 
 # Publish only after every build, ABI, binding, and package check succeeded.
