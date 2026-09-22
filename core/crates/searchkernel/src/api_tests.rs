@@ -1,5 +1,5 @@
 use super::*;
-use crate::schema::ConstantSource;
+use crate::schema::{ConstantSource, FieldKind};
 use crate::{
     field, Analyzer, Filter, GroupingPlan, Query, QueryAlternative, Ranking, SearchBuilder, Sort,
     Tensor, WandOptions,
@@ -1576,6 +1576,17 @@ fn rich_public_field_state_is_validated_by_shared_resolver() {
     assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
 }
 
+#[test]
+fn public_field_data_type_cannot_override_its_declared_kind() {
+    let mut field = Field::int64("price");
+    assert!(matches!(field.kind, FieldKind::Int64));
+    field.data_type =
+        searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Float64);
+
+    let error = definition_to_ir(&IndexDefinition::new().field(field))
+        .expect_err("a public data-type mutation must be canonically validated");
+    assert_eq!(error.details()[0].code, "invalid_type_combination");
+}
 
 fn assert_rust_and_portable_schema_error_match(
     definition: searchkernel_ir::IndexDefinitionIr,

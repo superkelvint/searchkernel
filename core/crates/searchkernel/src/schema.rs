@@ -1202,7 +1202,9 @@ pub(crate) fn field_to_rust_input(field: &Field) -> Result<searchkernel_ir::Rust
 
 pub(crate) fn field_to_unresolved_input(
     field: &Field,
+    path: &str,
 ) -> Result<searchkernel_ir::UnresolvedFieldInput> {
+    validate_public_field_data_type(field, path)?;
     let name = searchkernel_ir::FieldName::parse(field.name.clone()).map_err(|_| {
         Error::from_ir(searchkernel_ir::PortableError::invalid(
             "invalid_field_name",
@@ -1263,23 +1265,135 @@ pub(crate) fn field_to_unresolved_input(
                 options: BTreeMap::new(),
             })
     });
+    // Described indexing-script fields expose resolved capability defaults as
+    // public state. Omit only those defaults before shared validation; any
+    // caller mutation away from the script semantics remains visible and is
+    // rejected by the resolver.
+    let indexing_script = field.indexing_script.clone();
+    let script_defaults = indexing_script.is_some();
+    let stored = omit_script_default(field.stored, script_defaults, true);
+    let searchable = omit_script_default(field.searchable, script_defaults, false);
+    let filterable = omit_script_default(field.filterable, script_defaults, false);
+    let sortable = omit_script_default(field.sortable, script_defaults, false);
+    let groupable = omit_script_default(field.facetable, script_defaults, false);
     Ok(searchkernel_ir::UnresolvedFieldInput {
         name,
         data_type: field.data_type.clone(),
-        stored: field.stored,
-        searchable: field.searchable,
-        filterable: field.filterable,
-        sortable: field.sortable,
-        groupable: field.facetable,
+        stored,
+        searchable,
+        filterable,
+        sortable,
+        groupable,
         analyzer,
         matching,
         index,
         attribute,
         summary: field.summary_config.clone(),
-        indexing_script: field.indexing_script.clone(),
+        indexing_script,
         properties: field.properties.clone(),
         struct_fields: field.struct_fields.clone(),
     })
+}
+
+fn omit_script_default(value: Option<bool>, script_defaults: bool, default: bool) -> Option<bool> {
+    if script_defaults && value == Some(default) {
+        None
+    } else {
+        value
+    }
+}
+
+// FieldKind is the declaration retained by the ergonomic Rust facade, while
+// data_type is public rich state. The shared IR resolver only receives the
+// latter, so validate their consistency before the facade declaration is
+// intentionally lowered into the common unresolved input.
+fn validate_public_field_data_type(field: &Field, path: &str) -> Result<()> {
+    let data_type = match &field.data_type {
+        searchkernel_ir::DataTypeIr::Array(value)
+        | searchkernel_ir::DataTypeIr::WeightedSet(value) => value.as_ref(),
+        value => value,
+    };
+    let matches_kind = match (&field.kind, data_type) {
+        (
+            FieldKind::Text | FieldKind::Keyword,
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::String),
+        )
+        | (
+            FieldKind::Int64,
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Int64),
+        )
+        | (
+            FieldKind::Float64,
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Float64),
+        )
+        | (
+            FieldKind::Bool,
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Bool),
+        )
+        | (FieldKind::Position, searchkernel_ir::DataTypeIr::Position) => true,
+        (FieldKind::Tensor(expected_type), searchkernel_ir::DataTypeIr::Tensor { type_spec }) => {
+            expected_type == type_spec
+        }
+        // Index::describe() can expose document types that the ergonomic
+        // FieldKind enum does not model. Preserve those opaque described
+        // types, but never let a supported scalar mismatch through.
+        (FieldKind::Keyword, _) if field.capabilities.is_some() => {
+            is_opaque_public_data_type(data_type)
+        }
+        _ => false,
+    };
+    if !matches_kind {
+        return Err(Error::from_ir(searchkernel_ir::PortableError::invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.data_type")),
+            "the public field data type must match its declared field kind",
+        )));
+    }
+    let is_multi = matches!(
+        field.data_type,
+        searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
+    );
+    if is_multi != field.multi {
+        return Err(Error::from_ir(searchkernel_ir::PortableError::invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.data_type")),
+            "the public field collection shape must match its declared cardinality",
+        )));
+    }
+    if let Some(matching) = &field.matching_config {
+        let matches_kind = match &field.kind {
+            FieldKind::Text => !matches!(
+                matching.mode,
+                searchkernel_ir::MatchingModeIr::Exact | searchkernel_ir::MatchingModeIr::Word
+            ),
+            FieldKind::Keyword => matches!(
+                matching.mode,
+                searchkernel_ir::MatchingModeIr::Exact | searchkernel_ir::MatchingModeIr::Word
+            ),
+            _ => false,
+        };
+        if !matches_kind {
+            return Err(Error::from_ir(searchkernel_ir::PortableError::invalid(
+                "invalid_type_combination",
+                Some(format!("{path}.matching")),
+                "the public field matching mode must match its declared field kind",
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn is_opaque_public_data_type(data_type: &searchkernel_ir::DataTypeIr) -> bool {
+    !matches!(
+        data_type,
+        searchkernel_ir::DataTypeIr::Primitive(
+            searchkernel_ir::PrimitiveDataTypeIr::String
+                | searchkernel_ir::PrimitiveDataTypeIr::Bool
+                | searchkernel_ir::PrimitiveDataTypeIr::Int64
+                | searchkernel_ir::PrimitiveDataTypeIr::Float64,
+        ) | searchkernel_ir::DataTypeIr::Tensor { .. }
+            | searchkernel_ir::DataTypeIr::Position
+    )
 }
 
 pub(crate) fn index_definition_to_input(
@@ -1290,12 +1404,16 @@ pub(crate) fn index_definition_to_input(
         fields: definition
             .fields
             .iter()
-            .map(field_to_unresolved_input)
+            .enumerate()
+            .map(|(index, field)| field_to_unresolved_input(field, &format!("fields[{index}]")))
             .collect::<Result<Vec<_>>>()?,
         schema_fields: definition
             .schema_fields
             .iter()
-            .map(field_to_unresolved_input)
+            .enumerate()
+            .map(|(index, field)| {
+                field_to_unresolved_input(field, &format!("schema_fields[{index}]"))
+            })
             .collect::<Result<Vec<_>>>()?,
         default_search_fields: definition.default_search_fields.as_ref().map(|fields| {
             fields
