@@ -32,6 +32,11 @@ fn main() {
     let mut resolved =
         resolve_rust_index_definition(&input).expect("resolve persistence fixture schema");
     resolved.set_document_type("typea");
+    let mut fields = resolved.fields().to_vec();
+    fields[0].set_data_type(searchkernel_ir::DataTypeIr::Primitive(
+        searchkernel_ir::PrimitiveDataTypeIr::Int32,
+    ));
+    resolved.set_fields(fields);
     let canonical = index_definition_ir_to_api(&resolved);
     let schema_snapshot = snapshot::index_definition(&resolved);
 
@@ -130,7 +135,7 @@ fn main() {
             "schema": {
                 "fields": [{
                     "name": "attr1",
-                    "type": "int64",
+                    "type": "int32",
                     "stored": true,
                     "searchable": false,
                     "filterable": true,
