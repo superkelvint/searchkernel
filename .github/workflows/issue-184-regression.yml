@@ -1,0 +1,14 @@
+name: Issue 184 regression
+
+on:
+  push:
+    branches:
+      - codex/issue-184
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run filter error-domain regression
+        run: cargo test -p searchkernel-ir filter_comparison_invalid_operator_uses_filter_error_domain_across_ingress

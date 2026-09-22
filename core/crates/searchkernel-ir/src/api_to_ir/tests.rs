@@ -1637,6 +1637,95 @@ fn component_filter_resolution_matches_nested_search_error_path() {
 }
 
 #[test]
+fn filter_comparison_invalid_operator_uses_filter_error_domain_across_ingress() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let value = int_value(&mut builder, 10);
+    let field = builder.create_string("price");
+    let field = api::QueryFieldRef::create(
+        &mut builder,
+        &api::QueryFieldRefArgs {
+            path: Some(field),
+            element_index: None,
+        },
+    );
+    let comparison = api::FilterComparison::create(
+        &mut builder,
+        &api::FilterComparisonArgs {
+            field: Some(field),
+            op: api::ComparisonOp(255),
+            value: Some(value),
+        },
+    );
+    let filter = api::FilterExpr::create(
+        &mut builder,
+        &api::FilterExprArgs {
+            expr_type: api::FilterExprKind::FilterComparison,
+            expr: Some(comparison.as_union_value()),
+        },
+    );
+    let structured = builder.create_vector(&[filter]);
+    let filters = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            structured: Some(structured),
+            ..Default::default()
+        },
+    );
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            filters: Some(filters),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
+        .expect("valid malformed-comparison search request");
+    let filter = request
+        .filters()
+        .and_then(|filters| filters.structured())
+        .expect("structured filter is present")
+        .get(0);
+    let comparison = filter
+        .expr_as_filter_comparison()
+        .expect("comparison payload is present");
+    let context = context();
+
+    let component_error = context
+        .filter_to_ir(filter)
+        .expect_err("whole filter conversion must reject an unknown comparison operator");
+    let leaf_error = context
+        .comparison_to_ir(comparison)
+        .expect_err("leaf comparison conversion must reject an unknown comparison operator");
+    let search_error = context
+        .search_to_ir(request)
+        .expect_err("full search conversion must reject an unknown comparison operator");
+
+    assert_eq!(component_error.details[0].code, "invalid_filter");
+    assert_eq!(leaf_error.details[0].code, "invalid_filter");
+    assert_eq!(search_error.details[0].code, "invalid_filter");
+    assert_eq!(
+        component_error.details[0].path.as_deref(),
+        Some("filter.comparison.op")
+    );
+    assert_eq!(leaf_error.details[0].path.as_deref(), Some("comparison.op"));
+    assert_eq!(
+        search_error.details[0].path.as_deref(),
+        Some("filters.structured[0].comparison.op")
+    );
+}
+
+#[test]
 fn component_filter_resolution_matches_full_search_ir() {
     let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
     let lower = int_value(&mut builder, 10);
