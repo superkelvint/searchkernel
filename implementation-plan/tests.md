@@ -225,7 +225,7 @@ Create immutable result fixtures covering:
 
 **Sensitivity verification**
 
-- [x] Deliberately loosening facet projection heuristics is detected by the shared result-fidelity tests (PR #230 regression-first evidence).
+- [ ] Deliberately loosening facet projection heuristics is detected by the shared result-fidelity tests.
 - [ ] Deliberately breaking another canonical projection invariant (ordering/root preservation/metadata) makes the shared result-fidelity gate fail.
 
 **Exit criterion:** changing result projection heuristics incorrectly causes shared result-fidelity tests to fail.

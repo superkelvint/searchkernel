@@ -4,8 +4,9 @@ use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
 use crate::result;
 use crate::schema::{
-    Analyzer, ConstantDefinition, Field, FieldCapabilities, IndexDefinition, RankProfile,
-    SearchField,
+    Analyzer, ConstantDefinition, DocumentSummary, Field, FieldCapabilities, FieldSet,
+    ImportedField, IndexDefinition, NamedStruct, OnnxModel, RankFunction, RankPhase, RankProfile,
+    RankProfileInput, SearchField, StructFieldConfig,
 };
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
