@@ -667,6 +667,12 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
     if let Some(canonical) = &definition.canonical {
         resolved = canonical.clone();
     }
+
+    resolved.set_document_metadata(
+        definition.document_type.clone(),
+        definition.schema_inherits.clone(),
+        definition.document_inherits.clone(),
+    );
     resolved.set_structs(definition.structs.clone());
     resolved.set_properties(definition.properties.clone());
 
@@ -956,6 +962,9 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
     result.onnx_models = definition.onnx_models().to_vec();
     result.imported_fields = definition.imported_fields().to_vec();
     result.document_summaries = definition.document_summaries().to_vec();
+    result.document_type = definition.document_type().map(str::to_owned);
+    result.schema_inherits = definition.schema_inherits().to_vec();
+    result.document_inherits = definition.document_inherits().to_vec();
     result.structs = definition.structs().to_vec();
     result.canonical = Some(definition.clone());
     result
