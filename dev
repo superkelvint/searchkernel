@@ -354,8 +354,10 @@ doctor_native_sdk() {
 doctor_native_abi() {
     # Keep ABI authority checking in the existing acceptance helper so doctor
     # and milestone verification cannot silently grow different rules.
-    source "$ROOT/reference/vespa/common/verify-common.sh"
-    require_sdk_manifest "$(native_sdk_path)/manifest.json"
+    (
+        source "$ROOT/reference/vespa/common/verify-common.sh"
+        require_sdk_manifest "$(native_sdk_path)/manifest.json"
+    )
 }
 
 doctor_vespa() {
@@ -411,6 +413,18 @@ doctor() {
         fi
     }
 
+    doctor_optional() {
+        local label=$1
+        local remediation=$2
+        shift 2
+        if "$@" >"$diagnostics" 2>&1; then
+            printf 'PASS  %s\n' "$label"
+        else
+            printf 'INFO  %s\n' "$label"
+            printf '      %s\n' "$remediation"
+        fi
+    }
+
     echo "Search Kernel doctor"
     doctor_check 'cargo present' doctor_cargo
     doctor_check 'flatc correct version' doctor_flatc
@@ -420,7 +434,9 @@ doctor() {
     doctor_check 'native ABI versions agree' doctor_native_abi
     doctor_check 'pinned Vespa checkout present' doctor_vespa
     doctor_check 'Python dependencies present' doctor_python
-    doctor_check 'searchkerneld built' doctor_searchkerneld
+    doctor_optional 'searchkerneld built' \
+        'Build it with: cargo build -p searchkerneld' \
+        doctor_searchkerneld
 
     if ((status == 0)); then
         echo 'Doctor: all prerequisites passed'
