@@ -14,6 +14,9 @@ build_m11_driver
 cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m11
 LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   cargo test --quiet -p searchkernel-vespa-engine --all-targets --all-features
+LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  cargo test --quiet -p searchkernel-ir-adapter --features hardening \
+    malformed_native_result_maps_to_portable_internal_with_detail
 
 TARGET="$ROOT/target/vespa-verifier/m11/core"
 rm -rf "$TARGET"
