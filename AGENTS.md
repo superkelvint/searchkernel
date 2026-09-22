@@ -681,6 +681,25 @@ If a required check cannot run, record the exact command, failure, and reason.
 For an environment-related failure, follow `BUILDING.md` before classifying
 the failure as a product defect. Do not claim a check passed when it did not run.
 
+### Native verification is agent-local for now
+
+Ordinary GitHub CI intentionally does **not** bootstrap `upstream/vespa`, run
+`./dev native-sdk ensure`, or execute the real-engine Vespa acceptance gate.
+CI covers the non-native Rust/FlatBuffers/client/transport surface.
+
+For any change that can affect native execution, including changes under
+`core/native/**`, `searchkernel-vespa-bindings`,
+`searchkernel-vespa-engine`, `searchkernel-ir-adapter`, native build tooling,
+or `reference/vespa/**`, the implementation agent MUST run the applicable
+native/real-engine verification locally before handing the pull request to the
+CTO. The pull request must include the exact native commands run and their
+results.
+
+A green CI run is therefore not evidence that native behavior was exercised.
+When the task's contract requires real Vespa, local native verification remains
+required even though GitHub CI does not run it. An independent native CI gate may
+be added later; do not assume one exists today.
+
 ## Commit discipline
 
 Completed implementation work must be committed and pushed to its task branch
