@@ -43,7 +43,12 @@ EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
 SANITIZER=${SK_NATIVE_SANITIZER:-none}
 REGENERATE_BINDINGS=${SK_NATIVE_REGENERATE_BINDINGS:-1}
 ADAPTER_ONLY=${SK_NATIVE_ADAPTER_ONLY:-0}
+BASE_ONLY=${SK_NATIVE_BASE_ONLY:-0}
 BASE_SDK=${SK_NATIVE_BASE_SDK:-}
+if [ "$ADAPTER_ONLY" = 1 ] && [ "$BASE_ONLY" = 1 ]; then
+    echo "SK_NATIVE_ADAPTER_ONLY and SK_NATIVE_BASE_ONLY are mutually exclusive" >&2
+    exit 1
+fi
 if [ "$ADAPTER_ONLY" = 1 ]; then
     if [ -z "$BASE_SDK" ] || [ ! -d "$BASE_SDK/lib" ]; then
         echo "SK_NATIVE_ADAPTER_ONLY=1 requires SK_NATIVE_BASE_SDK with a lib directory" >&2
@@ -197,6 +202,7 @@ CXX_FLAGS=$(sed -n 's/^CXX_FLAGS = //p' "$FLAGS_FILE")
 # libabigail to compare the types reachable from the exported C functions.
 # These explicit final flags make that property independent of the harvested
 # test target's optimization/debug configuration.
+if [ "$BASE_ONLY" != 1 ]; then
 $CXX $DEFINES $INCLUDES $CXX_FLAGS $EXTRA_CXX_FLAGS $FAILPOINT_DEFINES $COVERAGE_FLAGS \
     -Wno-inline -std=gnu++23 -fPIC \
     $OPTIMIZATION_FLAGS -g \
@@ -264,6 +270,7 @@ if [ -n "$UNEXPECTED_SYMBOLS" ]; then
     printf '%s\n' "$UNEXPECTED_SYMBOLS" >&2
     exit 1
 fi
+fi
 
 # Development builds treat the pinned Vespa/runtime closure as an immutable
 # prerequisite. Rebuild only Search Kernel's adapter into Cargo OUT_DIR and
@@ -295,11 +302,15 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
     exit 0
 fi
 
-cp "$ROOT/core/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
-if [ "$ENABLE_FAILPOINTS" = 1 ]; then
-    cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
+if [ "$BASE_ONLY" != 1 ]; then
+    cp "$ROOT/core/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
+    if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+        cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
+    fi
+    cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
+else
+    printf '{"kind":"vespa-base"}\n' >"$SDK/manifest.json"
 fi
-cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
 NATIVE_TARGET=${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}
 if [ -z "$NATIVE_TARGET" ]; then
     echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
@@ -316,18 +327,19 @@ import re
 import sys
 
 path, source_header, failpoints, sanitizer = sys.argv[1:]
-with open(source_header, encoding="utf-8") as stream:
-    header = stream.read()
-matches = re.findall(r"^#define SK_NATIVE_ABI_VERSION ([0-9]+)U$", header, re.MULTILINE)
-if len(matches) != 1:
-    raise SystemExit(
-        f"expected exactly one SK_NATIVE_ABI_VERSION in {source_header}, found {len(matches)}"
-    )
 with open(path, encoding="utf-8") as stream:
     manifest = json.load(stream)
-manifest["native_abi_version"] = int(matches[0])
-manifest["hardening_failpoints"] = failpoints == "1"
-manifest["sanitizer"] = sanitizer
+if manifest.get("kind") != "vespa-base":
+    with open(source_header, encoding="utf-8") as stream:
+        header = stream.read()
+    matches = re.findall(r"^#define SK_NATIVE_ABI_VERSION ([0-9]+)U$", header, re.MULTILINE)
+    if len(matches) != 1:
+        raise SystemExit(
+            f"expected exactly one SK_NATIVE_ABI_VERSION in {source_header}, found {len(matches)}"
+        )
+    manifest["native_abi_version"] = int(matches[0])
+    manifest["hardening_failpoints"] = failpoints == "1"
+    manifest["sanitizer"] = sanitizer
 with open(path.replace("manifest.json", "native-build-fingerprint-v2.txt"), encoding="utf-8") as stream:
     manifest["native_build_fingerprint"] = next(
         line.split("=", 1)[1].strip()
@@ -395,12 +407,12 @@ fi
 # header whenever the SDK is rebuilt. This is intentionally a hard failure:
 # the header is the ABI source of truth, while ordinary consumers use the
 # checked-in bindings and do not need libclang.
-if [ "$REGENERATE_BINDINGS" = 1 ]; then
+if [ "$BASE_ONLY" != 1 ] && [ "$REGENERATE_BINDINGS" = 1 ]; then
     if [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; then
         SK_NATIVE_SDK="$SDK" SK_NATIVE_BINDINGS_REGENERATE=1 \
             "$ROOT/tools/check-vespa-bindings.sh"
     fi
-elif [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; then
+elif [ "$BASE_ONLY" != 1 ] && [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; then
     SK_NATIVE_SDK="$SDK" "$ROOT/tools/check-vespa-bindings.sh"
 fi
 
@@ -421,7 +433,7 @@ if find "$SDK/lib" -type f \( -name '*.h' -o -name '*.hh' -o -name '*.hpp' \) -p
     echo "refusing to publish native headers under SDK/lib" >&2
     exit 1
 fi
-if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+if [ "$BASE_ONLY" != 1 ] && [ "$ENABLE_FAILPOINTS" = 1 ]; then
     "$ROOT/tools/check-native-sdk-hardening.sh" "$SDK"
 fi
 
