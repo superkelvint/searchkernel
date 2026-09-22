@@ -36,7 +36,7 @@ fn main() {
         default_search_fields: None,
     };
     let resolved =
-        resolve_rust_index_definition(&input).expect("resolve persistence fixture schema");
+        resolve_rust_index_definition(input).expect("resolve persistence fixture schema");
     let definition_bytes = index_definition_ir_to_api(&resolved);
     let schema_snapshot = snapshot::index_definition(&resolved);
     let config_identity = embedded_config_identity();
