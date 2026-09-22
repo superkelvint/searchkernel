@@ -319,7 +319,6 @@ def fingerprint(root: Path, vespa_root: Path, target: str, scope: str) -> tuple[
         "fingerprint.scope": scope,
         "build.environment": os.environ.get("SEARCHKERNEL_BUILD_ENV", "host"),
         "cargo.target": target,
-        "flatbuffers.version": os.environ.get("FLATBUFFERS_VERSION", "25.12.19"),
         "vespa.commit": git_tree_identity(vespa_root),
         "vespa.config": vespa_config_digest(vespa_root),
         "vespa.library_bundle": vespa_library_identity(vespa_root),
@@ -328,6 +327,7 @@ def fingerprint(root: Path, vespa_root: Path, target: str, scope: str) -> tuple[
     }
 
     if scope == "full":
+        fields["flatbuffers.version"] = os.environ.get("FLATBUFFERS_VERSION", "25.12.19")
         fields.update({
             "rustc": rust_identity(),
             "c.compiler": tool_identity("CC", "cc", dumpmachine=True),
