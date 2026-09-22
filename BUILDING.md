@@ -116,9 +116,10 @@ native verifier locally and include the exact command and result in the pull
 request. Do not interpret a green non-native CI run as native verification.
 
 The repository-managed pre-commit hook enforces this split. Staged native-sensitive
-changes run the real-Vespa gate. Staged Rust, Python, or native code changes also
-run the real Python gRPC E2E through `tools/run-python-native-e2e.sh`. That runner
-opts the native E2E test in explicitly and bootstraps the native SDK first.
+changes run both the real-Vespa gate and the real Python gRPC E2E through
+`tools/run-python-native-e2e.sh`. That runner opts the native E2E test in explicitly
+and bootstraps the native SDK first. Non-native-only Rust or Python changes do not
+trigger native verification solely because their language lane is selected.
 Ordinary Python unittest discovery leaves the real gRPC E2E skipped, so GitHub CI
 does not acquire or build Vespa merely because Python behavioral tests are selected.
 
