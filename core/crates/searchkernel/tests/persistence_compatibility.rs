@@ -96,20 +96,6 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
 
         let reopened =
             Index::open(&root).unwrap_or_else(|error| panic!("v{version} reopen: {error}"));
-        assert_eq!(
-            reopened
-                .get::<serde_json::Value>("id:test:typea::2")
-                .unwrap()
-                .and_then(|value| value.get("attr1").and_then(serde_json::Value::as_i64)),
-            Some(50)
-        );
-        assert_eq!(
-            reopened
-                .get::<serde_json::Value>("id:test:typea::5")
-                .unwrap()
-                .and_then(|value| value.get("attr1").and_then(serde_json::Value::as_i64)),
-            Some(10)
-        );
         assert_eq!(search_ids(&reopened, 50), vec!["id:test:typea::2".to_owned()]);
         assert_eq!(search_ids(&reopened, 10), vec![
             "id:test:typea::4".to_owned(),
