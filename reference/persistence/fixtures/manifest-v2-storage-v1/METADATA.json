@@ -1,0 +1,45 @@
+{
+  "assembly": "one-time compatibility fixture assembled from preserved M5 storage and the historical manifest contract; runtime tests never reconstruct it",
+  "expected_queries": {
+    "10": [
+      "id:test:typea::2",
+      "id:test:typea::4"
+    ],
+    "20": [],
+    "30": [],
+    "40": [
+      "id:test:typea::1"
+    ]
+  },
+  "fixture_format": 1,
+  "manifest_format_revision": "a7abfe6213dea5e7fc1132d52c1fef163b42f729",
+  "manifest_native_abi_version": 5,
+  "manifest_version": 2,
+  "mutations": [
+    "put id:test:typea::1 attr1=10",
+    "put id:test:typea::2 attr1=20",
+    "put id:test:typea::3 attr1=30",
+    "update id:test:typea::2 attr1=10",
+    "delete id:test:typea::3",
+    "update id:test:typea::1 attr1=40",
+    "put id:test:typea::4 attr1=10"
+  ],
+  "schema": {
+    "fields": [
+      {
+        "facetable": false,
+        "filterable": true,
+        "name": "attr1",
+        "physical_vespa_type": "INT32",
+        "portable_type": "int64",
+        "searchable": false,
+        "sortable": true,
+        "stored": true
+      }
+    ]
+  },
+  "storage_compatibility_generation": 1,
+  "storage_native_abi_version": 4,
+  "storage_searchkernel_revision": "7ec21655f2c5a311aa2fe4fe65861f9a8f2e3487",
+  "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
+}
