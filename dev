@@ -61,6 +61,16 @@ shared_flatbuffers_prefix() {
         "$(git_common_dir)" "$EXPECTED_FLATBUFFERS_VERSION"
 }
 
+flatbuffers_archive_is_compatible() {
+    local archive=$1
+
+    command -v nm >/dev/null 2>&1 || return 1
+    if nm -u "$archive" | grep -F '__isoc23_' >/dev/null; then
+        return 1
+    fi
+    return 0
+}
+
 native_target_root() {
     local target_root=${CARGO_TARGET_DIR:-$ROOT/target/${SEARCHKERNEL_BUILD_ENV:-host}}
     case "$target_root" in
@@ -170,10 +180,15 @@ install_flatbuffers() (
     header="$prefix/include/flatbuffers/base.h"
     library="$prefix/lib/libflatbuffers.a"
     if [[ -x "$flatc" && -f "$header" && -f "$library" ]] &&
-       [[ "$("$flatc" --version 2>/dev/null || true)" == "flatc version $EXPECTED_FLATBUFFERS_VERSION" ]]; then
+       [[ "$("$flatc" --version 2>/dev/null || true)" == "flatc version $EXPECTED_FLATBUFFERS_VERSION" ]] &&
+       flatbuffers_archive_is_compatible "$library"; then
         echo "FlatBuffers $EXPECTED_FLATBUFFERS_VERSION already available under $prefix"
         echo "This install is shared by every worktree in this clone."
         return 0
+    fi
+
+    if [[ -f "$library" ]] && ! flatbuffers_archive_is_compatible "$library"; then
+        echo "Existing FlatBuffers archive is not portable across supported glibc versions; rebuilding $prefix"
     fi
 
     workdir=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-flatbuffers.XXXXXX")
@@ -221,11 +236,15 @@ install_flatbuffers() (
     # Cargo links this static C++ library into a position-independent Rust
     # executable. AlmaLinux defaults to lib64, while the build script expects
     # lib, so keep both properties explicit here.
+    CXXFLAGS="${CXXFLAGS:-} -U_GNU_SOURCE -D_DEFAULT_SOURCE" \
     cmake -S "$source_dir" -B "$build_dir" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$prefix" \
         -DCMAKE_INSTALL_LIBDIR=lib \
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DCMAKE_CXX_STANDARD=17 \
+        -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+        -DCMAKE_CXX_EXTENSIONS=OFF \
         -DFLATBUFFERS_BUILD_TESTS=OFF
     cmake --build "$build_dir" --parallel "$jobs"
     cmake --install "$build_dir"
@@ -243,6 +262,10 @@ install_flatbuffers() (
     }
     [[ -f "$library" ]] || {
         echo "error: FlatBuffers static library was not installed at '$library'" >&2
+        return 1
+    }
+    flatbuffers_archive_is_compatible "$library" || {
+        echo "error: FlatBuffers archive still contains glibc C23-only symbols: '$library'" >&2
         return 1
     }
     actual_version=$("$flatc" --version)
@@ -336,19 +359,28 @@ doctor_flatc() {
 }
 
 doctor_flatbuffers_cpp() {
-    local flatc cpp_root header major minor revision actual
+    local flatc cpp_root header archive major minor revision actual
     flatc=${DOCTOR_FLATC:-$(find_flatc)}
     [[ -x "${flatc:-}" ]] || return 1
 
-    cpp_root=${FLATBUFFERS_CPP_ROOT:-$(cd -- "$(dirname -- "$flatc")/.." && pwd)}
+    if [[ -n "${FLATBUFFERS_CPP_ROOT:-}" ]]; then
+        cpp_root=$FLATBUFFERS_CPP_ROOT
+    elif [[ -n "${FLATC_PATH:-}" ]]; then
+        cpp_root=$(cd -- "$(dirname -- "$FLATC_PATH")/.." && pwd)
+    else
+        cpp_root=$(shared_flatbuffers_prefix)
+    fi
     header="$cpp_root/include/flatbuffers/base.h"
+    archive="$cpp_root/lib/libflatbuffers.a"
     [[ -f "$header" ]] || return 1
+    [[ -f "$archive" ]] || return 1
+    flatbuffers_archive_is_compatible "$archive" || return 1
     major=$(sed -n 's/^#define FLATBUFFERS_VERSION_MAJOR //p' "$header")
     minor=$(sed -n 's/^#define FLATBUFFERS_VERSION_MINOR //p' "$header")
     revision=$(sed -n 's/^#define FLATBUFFERS_VERSION_REVISION //p' "$header")
     actual="$major.$minor.$revision"
     [[ "$actual" == "$EXPECTED_FLATBUFFERS_VERSION" ]] || return 1
-    find "$cpp_root" -maxdepth 3 -type f -name 'libflatbuffers.*' -print -quit 2>/dev/null | grep -q .
+    return 0
 }
 
 doctor_generated_protocol() {

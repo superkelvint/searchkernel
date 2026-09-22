@@ -25,6 +25,7 @@ grep -Fq 's#[^ ]*/$LIB_NAME#$BASE_LIBRARY#g' "$root/core/native/vespa/build-sdk.
 grep -q "refusing to overwrite Vespa base" "$root/core/native/vespa/build-sdk.sh"
 grep -q -- '--scope base' "$root/tools/resolve-native-sdk.sh"
 bash "$root/tools/test-native-sdk-packaging.sh"
+bash "$root/tools/test-flatbuffers-native-compatibility.sh"
 echo 'native build hardening: host, devcontainer, and CI target directories are distinct'
 
 flatc=$(bash "$root/tools/resolve-flatc.sh")

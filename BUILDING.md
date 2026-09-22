@@ -156,8 +156,13 @@ overrides remain supported.
 
 Cargo's protocol build uses this same installed FlatBuffers C++ prerequisite.
 It verifies the exact pinned header version and static library, then compiles
-only Search Kernel's small JSON bridge against them. Cargo never downloads,
-configures, compiles, invalidates, or repairs FlatBuffers itself.
+only Search Kernel's small JSON bridge against them. The installer builds the
+archive as C++17 with the C23 glibc feature set disabled; otherwise some
+distribution compilers inject `_GNU_SOURCE`, causing `strtol` calls to bind to
+`__isoc23_*` symbols that are absent on older supported glibc runtimes. The
+installer detects and replaces an existing archive with those references.
+Cargo never downloads, configures, compiles, invalidates, or repairs
+FlatBuffers itself.
 
 A fresh Cargo target directory or Git worktree therefore does not rebuild
 FlatBuffers. If the prerequisite is missing or the wrong version, the build
@@ -333,6 +338,7 @@ Run the focused native provenance checks and the normal workspace checks:
 ```bash
 bash tools/test-native-environment-fingerprint.sh
 bash tools/test-native-build-hardening.sh
+bash tools/test-flatbuffers-native-compatibility.sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 cargo test --workspace --all-targets --no-default-features

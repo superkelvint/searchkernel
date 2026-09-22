@@ -70,6 +70,18 @@ fn main() {
             static_library.display()
         );
     }
+    println!(
+        "cargo:rerun-if-changed={}",
+        include.join("flatbuffers/base.h").display()
+    );
+    println!("cargo:rerun-if-changed={}", static_library.display());
+    verify_flatbuffers_archive(&static_library).unwrap_or_else(|error| {
+        panic!(
+            "FlatBuffers prerequisite at '{}' is not link-compatible: {error}\n\
+             Repair it with './dev install flatbuffers'.",
+            static_library.display()
+        )
+    });
 
     cc::Build::new()
         .cpp(true)
@@ -198,5 +210,26 @@ fn verify_flatbuffers_version(include: &Path) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("expected {FLATBUFFERS_VERSION}, got {actual}"))
+    }
+}
+
+fn verify_flatbuffers_archive(archive: &Path) -> Result<(), String> {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+
+    let output = Command::new("nm")
+        .args(["-u"])
+        .arg(archive)
+        .output()
+        .map_err(|error| format!("inspect archive with nm: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("nm exited with {}", output.status));
+    }
+
+    if String::from_utf8_lossy(&output.stdout).contains("__isoc23_") {
+        Err("archive contains glibc C23-only __isoc23_* references".to_owned())
+    } else {
+        Ok(())
     }
 }
