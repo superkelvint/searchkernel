@@ -75,8 +75,18 @@ def query_control_scenario() -> tuple[dict, dict]:
         "id": "hnsw-query-controls",
         "steps": [
             {"id": "exact", "approximate": False, "explore_additional_hits": 0},
-            {"id": "ann", "approximate": True, "explore_additional_hits": 2},
-            {"id": "ann-extra-explore", "approximate": True, "explore_additional_hits": 5},
+            {
+                "id": "ann",
+                "approximate": True,
+                "explore_additional_hits": 2,
+                "distance_threshold": 0.75,
+            },
+            {
+                "id": "ann-extra-explore",
+                "approximate": True,
+                "explore_additional_hits": 5,
+                "distance_threshold": 0.75,
+            },
         ],
     }
     raw = {
@@ -122,6 +132,12 @@ class ExecutionEvidenceTest(unittest.TestCase):
         evidence["queries"][0]["approximate_nns_searches_performed"] = 0
         with self.assertRaises(EvidenceError):
             validate_execution_evidence(evidence)
+
+    def test_changed_distance_threshold_is_rejected_for_its_stage(self) -> None:
+        scenario, raw = query_control_scenario()
+        raw["evidence"][1]["trace"]["blueprint"]["distance_threshold"] = 0.5
+        with self.assertRaisesRegex(EvidenceError, "ann"):
+            validate_scenario(scenario, raw)
 
     def test_changed_explore_control_is_rejected_for_its_stage(self) -> None:
         scenario, raw = query_control_scenario()
