@@ -22,11 +22,23 @@ pub enum ErrorKind {
 }
 
 impl Error {
-    pub(crate) fn message(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid(message: impl Into<String>) -> Self {
         Self {
             kind: ErrorKind::InvalidArgument,
             code: 0,
             detail_code: None,
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn internal(
+        detail_code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind: ErrorKind::Internal,
+            code: 0,
+            detail_code: Some(detail_code.into()),
             message: message.into(),
         }
     }
@@ -56,7 +68,7 @@ impl Error {
     }
 
     pub(crate) fn from_nul(error: NulError) -> Self {
-        Self::message(format!("string contains an interior NUL: {error}"))
+        Self::invalid(format!("string contains an interior NUL: {error}"))
     }
 
     /// Returns the native Search Kernel error code, or zero for an adapter-side error.
