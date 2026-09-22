@@ -2664,6 +2664,7 @@ fn search_validation_supports_facet_shaped_grouping_and_lowers_highlighting_prec
         searchkernel_ir::ProjectionIr::new(Vec::new()),
         HighlightingIr::Requested {
             fields: vec![title],
+            multi_valued_fields: Vec::new(),
         },
         None,
         PrefixPolicy::Disabled,
@@ -2678,6 +2679,37 @@ fn search_validation_supports_facet_shaped_grouping_and_lowers_highlighting_prec
         searchkernel_vespa_engine::SummaryRequest::None
     );
     assert_eq!(lowered.highlight_fields, vec!["title"]);
+}
+
+#[test]
+fn highlighting_rejects_multi_valued_fields_at_the_vespa_boundary() {
+    let tags = field("tags");
+    let request = SearchRequestIr::new(
+        QueryIr::Text("brown".to_owned()),
+        vec![SearchFieldIr::new(
+            tags.clone(),
+            SearchFieldWeight::new(1.0).unwrap(),
+        )],
+        None,
+        Vec::new(),
+        10,
+        0,
+        searchkernel_ir::ProjectionIr::new(Vec::new()),
+        HighlightingIr::Requested {
+            fields: vec![tags.clone()],
+            multi_valued_fields: vec![tags],
+        },
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    );
+    let error = validate_search_request(&request)
+        .expect_err("the current Vespa dynamic-teaser path is scalar-only");
+    assert_eq!(error.code, ErrorCode::Unsupported);
+    assert_eq!(
+        error.details[0].code,
+        "highlighting_multi_valued_field_not_supported"
+    );
 }
 
 #[test]
@@ -4337,6 +4369,7 @@ fn named_summary_and_highlighting_lower_together() {
         ProjectionIr::new(vec![title.clone()]),
         HighlightingIr::Requested {
             fields: vec![title.clone()],
+            multi_valued_fields: Vec::new(),
         },
         None,
         PrefixPolicy::Disabled,
