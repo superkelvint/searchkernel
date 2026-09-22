@@ -775,6 +775,77 @@ fn rust_rank_profile_validation_matches_portable_errors() {
     );
 }
 
+#[test]
+fn rust_and_portable_field_defaults_match_for_position_and_tensor() {
+    for (name, kind, data_type) in [
+        ("position", RustFieldKind::Position, api::DataTypeKind::PositionDataType),
+        (
+            "embedding",
+            RustFieldKind::Tensor("tensor<float>(x[3])".to_owned()),
+            api::DataTypeKind::TensorDataType,
+        ),
+    ] {
+        let rust_definition = resolve_rust_index_definition(RustIndexDefinitionInput {
+            name: Some("defaults".to_owned()),
+            fields: vec![RustFieldInput {
+                name: name.to_owned(),
+                kind,
+                multi: false,
+                stored: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                facetable: None,
+                analyzer: None,
+                distance_metric: None,
+                hnsw: None,
+            }],
+            default_search_fields: None,
+        })
+        .expect("Rust field defaults should resolve");
+
+        let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+        let field_name = builder.create_string(name);
+        let kind = match data_type {
+            api::DataTypeKind::PositionDataType => {
+                api::PositionDataType::create(&mut builder, &api::PositionDataTypeArgs {})
+                    .as_union_value()
+            }
+            api::DataTypeKind::TensorDataType => {
+                let type_spec = builder.create_string("tensor<float>(x[3])");
+                api::TensorDataType::create(
+                    &mut builder,
+                    &api::TensorDataTypeArgs { type_spec: Some(type_spec) },
+                )
+                .as_union_value()
+            }
+            _ => unreachable!(),
+        };
+        let data_type = api::DataType::create(
+            &mut builder,
+            &api::DataTypeArgs {
+                kind_type: data_type,
+                kind: Some(kind),
+            },
+        );
+        let field = api::FieldDefinition::create(
+            &mut builder,
+            &api::FieldDefinitionArgs {
+                name: Some(field_name),
+                data_type: Some(data_type),
+                ..Default::default()
+            },
+        );
+        builder.finish(field, None);
+        let portable_field =
+            crate::__flatbuffers::root::<api::FieldDefinition>(builder.finished_data())
+                .expect("portable field should decode");
+        let portable = field_to_ir(portable_field).expect("portable field should resolve");
+
+        assert_eq!(rust_definition.fields()[0], portable, "{name} ingress drift");
+    }
+}
+
 fn parity_document_input() -> DocumentInput {
     DocumentInput {
         id: "doc-7".to_owned(),
