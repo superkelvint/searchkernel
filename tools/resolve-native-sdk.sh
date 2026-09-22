@@ -164,6 +164,8 @@ valid_object() {
        -f "$OBJECT/native-build-fingerprint-v2.txt" ]] || return 1
     [[ ! -e "$OBJECT/lib/libsearchkernel_vespa.so" &&
        ! -e "$OBJECT/include/searchkernel_vespa.h" ]] || return 1
+    grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$OBJECT/manifest.json" || return 1
+    grep -q "^fingerprint-version=3$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
     grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
     validate_link_closure "$OBJECT"
 }
