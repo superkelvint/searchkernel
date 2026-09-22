@@ -246,7 +246,7 @@ fn document_input_from_optional(
     let id = document.id().unwrap_or_default().to_owned();
     let mut fields = BTreeMap::new();
     if let Some(entries) = document.fields() {
-        for entry in entries.iter() {
+        for (index, entry) in entries.iter().enumerate() {
             let name = entry.key();
             let value = entry.value().ok_or_else(|| {
                 invalid(
@@ -255,10 +255,19 @@ fn document_input_from_optional(
                     "value must select a scalar kind",
                 )
             })?;
-            fields.insert(
-                name.to_owned(),
-                RequestValueIr::from_api(value, format!("document.fields.{name}"))?,
-            );
+            if fields
+                .insert(
+                    name.to_owned(),
+                    RequestValueIr::from_api(value, format!("document.fields.{name}"))?,
+                )
+                .is_some()
+            {
+                return Err(invalid(
+                    "duplicate_document_field",
+                    Some(format!("document.fields[{index}].key")),
+                    format!("document field `{name}` occurs more than once"),
+                ));
+            }
         }
     }
     Ok(DocumentInput { id, fields })
