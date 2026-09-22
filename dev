@@ -28,6 +28,7 @@ Search Kernel development commands
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client
+  ./dev test typescript       Test the TypeScript client and generated contract
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify m13            Run a frozen Vespa milestone verifier
@@ -81,6 +82,18 @@ run_python_tests() {
     "$PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
 }
 
+run_typescript_generation_check() {
+    bash "$ROOT/tools/check-typescript-generated.sh"
+}
+
+run_typescript_tests() {
+    bash "$ROOT/tools/test-typescript-generation.sh"
+    run_typescript_generation_check
+    npm run typecheck --prefix "$ROOT/clients/typescript"
+    npm test --prefix "$ROOT/clients/typescript"
+    npm run test:package --prefix "$ROOT/clients/typescript"
+}
+
 check_fast() {
     cargo fmt --all --check
     cargo check --workspace --all-targets --no-default-features
@@ -93,6 +106,7 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/check-python-flatbuffers-boundary.py"
     "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+    run_typescript_generation_check
     cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
 }
 
@@ -107,6 +121,7 @@ check_all() {
     cargo clippy --workspace --all-targets --all-features -- -D warnings
     cargo test --workspace --all-targets --all-features
     run_python_tests
+    run_typescript_tests
 }
 
 regen_protocol() {
@@ -115,6 +130,7 @@ regen_protocol() {
     bash "$ROOT/tools/generate-searchkernel-rpc.sh"
     bash "$ROOT/tools/generate-python-flatbuffers.sh"
     bash "$ROOT/tools/generate-python-grpc.sh"
+    npm run generate --prefix "$ROOT/clients/typescript"
 }
 
 regen_result_fixtures() {
@@ -132,8 +148,11 @@ test_target() {
         python)
             run_python_tests
             ;;
+        typescript)
+            run_typescript_tests
+            ;;
         *)
-            echo "usage: ./dev test ir|rust-api|python" >&2
+            echo "usage: ./dev test ir|rust-api|python|typescript" >&2
             return 2
             ;;
     esac
@@ -360,6 +379,14 @@ doctor_generated_protocol() {
     bash "$ROOT/tools/check-searchkernel-rpc.sh"
 }
 
+doctor_typescript() {
+    [[ -x "$ROOT/clients/typescript/node_modules/.bin/tsc" ]] || {
+        echo 'TypeScript dependencies are missing; run npm ci --prefix clients/typescript' >&2
+        return 1
+    }
+    run_typescript_generation_check
+}
+
 doctor_native_sdk() {
     local sdk
     sdk=$(native_sdk_path)
@@ -432,6 +459,7 @@ doctor() {
     doctor_check 'flatc correct version' doctor_flatc
     doctor_check 'FlatBuffers C++ correct version' doctor_flatbuffers_cpp
     doctor_check 'generated protocol present/current' doctor_generated_protocol
+    doctor_check 'TypeScript generated protocol present/current' doctor_typescript
     doctor_optional 'native SDK present' \
         'Only required for native/all-features verification; populate with: ./dev native-sdk ensure' \
         doctor_native_sdk

@@ -86,6 +86,7 @@ From `clients/typescript`:
 
 ```text
 npm run generate
+npm run check:generated
 npm run typecheck
 npm run build
 npm test
@@ -93,8 +94,11 @@ npm run test:package
 ```
 
 Generation is reproducible from the canonical `.fbs` and `.proto` files. The
-SDK does not parse filter expressions or reimplement Search Kernel defaults,
-validation, ranking, grouping, or query semantics.
+build bootstraps generated output when it is absent. `check:generated` creates
+an independent fresh tree and compares it with the output consumed by the
+package, rather than relying on Git to observe ignored files. The SDK does not
+parse filter expressions or reimplement Search Kernel defaults, validation,
+ranking, grouping, or query semantics.
 
 ## Managed local Node.js usage
 
