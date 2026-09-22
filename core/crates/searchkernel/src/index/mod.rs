@@ -541,32 +541,27 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         .fields
         .iter()
         .map(|field| {
-            let analyzer = if field.canonical.is_some() {
-                None
-            } else {
-                match (&field.analyzer_config, &field.analyzer) {
-                    // Described fields may expose Vespa analyzer metadata that
-                    // the Rust execution resolver cannot run. The public
-                    // projection is restored below after resolution, so use
-                    // the resolver's standard default while validating the
-                    // rest of the field shape.
-                    (Some(analyzer), _)
-                        if analyzer.name == "standard"
-                            && analyzer.version == 1
-                            && analyzer.options.is_empty() =>
-                    {
-                        Some(analyzer.clone())
-                    }
-                    (Some(_), _) => None,
-                    (None, Some(analyzer)) => Some(analyzer_to_ir(analyzer)?),
-                    (None, None) => None,
+            let analyzer = match (&field.analyzer_config, &field.analyzer) {
+                // Rich described analyzers may not be executable by the Rust
+                // resolver. Feed the resolver only the standard portable
+                // analyzer, then restore the complete public analyzer state
+                // after semantic resolution.
+                (Some(analyzer), _)
+                    if analyzer.name == "standard"
+                        && analyzer.version == 1
+                        && analyzer.options.is_empty() =>
+                {
+                    Some(analyzer.clone())
                 }
-                .map(|analyzer| searchkernel_ir::RustAnalyzerInput {
-                    name: analyzer.name,
-                    version: analyzer.version,
-                    options: analyzer.options,
-                })
-            };
+                (Some(_), _) => None,
+                (None, Some(analyzer)) => Some(analyzer_to_ir(analyzer)?),
+                (None, None) => None,
+            }
+            .map(|analyzer| searchkernel_ir::RustAnalyzerInput {
+                name: analyzer.name,
+                version: analyzer.version,
+                options: analyzer.options,
+            });
             Ok(searchkernel_ir::RustFieldInput {
                 name: field.name.clone(),
                 kind: match &field.kind {
@@ -679,10 +674,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
     let canonical_fields = definition
         .fields
         .iter()
-        .enumerate()
-        .map(|(index, field)| {
-            field_to_ir_with_fallback(field, resolved.fields().get(index).cloned())
-        })
+        .map(field_to_ir_from_public)
         .collect::<Result<Vec<_>>>()?;
     if !canonical_fields.is_empty() {
         resolved.set_fields(canonical_fields);
@@ -690,7 +682,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
     let schema_fields = definition
         .schema_fields
         .iter()
-        .map(|field| field_to_ir_with_fallback(field, None))
+        .map(field_to_ir_from_public)
         .collect::<Result<Vec<_>>>()?;
     resolved.set_schema_fields(schema_fields);
 
@@ -746,35 +738,31 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
     Ok(resolved)
 }
 
-fn field_to_ir_with_fallback(
-    field: &Field,
-    fallback: Option<searchkernel_ir::FieldIr>,
-) -> Result<searchkernel_ir::FieldIr> {
-    let mut resolved = if let Some(canonical) = field.canonical.clone() {
-        canonical
-    } else if let Some(fallback) = fallback {
-        fallback
-    } else {
-        let input = field_to_rust_input(field)?;
-        let definition = searchkernel_ir::resolve_rust_index_definition(
-            searchkernel_ir::RustIndexDefinitionInput {
-                name: None,
-                fields: vec![input],
-                default_search_fields: None,
-            },
-        )
-        .map_err(Error::from_ir)?;
-        definition
-            .fields()
-            .first()
-            .cloned()
-            .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))?
-    };
+fn field_to_ir_from_public(field: &Field) -> Result<searchkernel_ir::FieldIr> {
+    let input = field_to_rust_input(field)?;
+    let definition = searchkernel_ir::resolve_rust_index_definition(
+        searchkernel_ir::RustIndexDefinitionInput {
+            name: None,
+            fields: vec![input],
+            default_search_fields: None,
+        },
+    )
+    .map_err(Error::from_ir)?;
+    let mut resolved = definition
+        .fields()
+        .first()
+        .cloned()
+        .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))?;
+
     if resolved.name().as_str() != field.name {
         return Err(Error::infrastructure(
             "resolved definition lost a public field",
         ));
     }
+
+    // The public Field representation is authoritative for all rich state.
+    // The resolver owns defaults/legality for ergonomic fields; described
+    // fields then overlay their complete, already-resolved public members.
     resolved.set_index_config(field.index_config.clone());
     resolved.set_attribute_config(field.attribute_config.clone());
     resolved.set_data_type(field.data_type.clone());
@@ -790,8 +778,9 @@ fn field_to_ir_with_fallback(
             capabilities.sortable(),
             capabilities.groupable(),
         );
-    }
-    if field.canonical.is_none() {
+        resolved.set_analyzer(field.analyzer_config.clone());
+        resolved.set_matching_config(field.matching_config.clone());
+    } else {
         if let Some(analyzer) = &field.analyzer_config {
             resolved.set_analyzer(Some(analyzer.clone()));
         }

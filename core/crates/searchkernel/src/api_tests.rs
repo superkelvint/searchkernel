@@ -3356,6 +3356,26 @@ fn cloning_described_rich_field_preserves_its_public_schema_state() {
 }
 
 #[test]
+fn described_fields_round_trip_from_public_state_without_field_sidecars() {
+    let (canonical, described) = public_described_canonical_fixture();
+
+    for (index, expected) in canonical.fields().iter().enumerate() {
+        let mut public = described.fields()[index].clone();
+        public.canonical = None;
+
+        let resolved = definition_to_ir(&IndexDefinition::new().field(public))
+            .expect("public field state should resolve without a canonical sidecar");
+
+        assert_eq!(
+            expected,
+            &resolved.fields()[0],
+            "field {} must round-trip solely from public Field state",
+            expected.name().as_str()
+        );
+    }
+}
+
+#[test]
 fn mutating_a_described_field_preserves_untouched_canonical_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let modified = described.fields()[0].clone().stored(false);
