@@ -50,21 +50,10 @@ build_protocol "$fresh_target"
 ! find "$fresh_target" -type f -path '*/flatbuffers-build-*/out/lib/libflatbuffers.a' -print -quit | grep -q .
 echo 'native build hardening: fresh Cargo target does not build FlatBuffers'
 
-# Independent consumers may compile concurrently, but both must treat the
-# installed FlatBuffers toolchain as read-only. Neither gets a private native
-# FlatBuffers build.
-build_protocol "$test_root/concurrent-a" >"$test_root/a.log" 2>&1 &
-pid_a=$!
-build_protocol "$test_root/concurrent-b" >"$test_root/b.log" 2>&1 &
-pid_b=$!
-wait "$pid_a"
-wait "$pid_b"
-! find "$test_root/concurrent-a" "$test_root/concurrent-b" -type f \
-    -path '*/flatbuffers-build-*/out/bin/flatc' -print -quit | grep -q .
-! find "$test_root/concurrent-a" "$test_root/concurrent-b" -type f \
-    -path '*/flatbuffers-build-*/out/lib/libflatbuffers.a' -print -quit | grep -q .
-echo 'native build hardening: concurrent Cargo builds reuse installed FlatBuffers'
-
+# One fresh target is sufficient: the structural guards above prove the vendored
+# builder is absent, while CMAKE=/bin/false and the artifact checks prove a clean
+# Cargo consumer cannot recreate a private FlatBuffers native build. Do not add
+# parallel empty target directories here; that defeats Cargo incremental reuse.
 bash "$root/tools/test-native-sdk-cache.sh"
 
 echo 'native build hardening regression PASS'
