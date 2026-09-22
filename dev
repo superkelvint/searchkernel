@@ -7,6 +7,18 @@ PYTHON=${PYTHON:-python3}
 
 cd "$ROOT"
 
+ensure_hooks() {
+    local configured
+    configured=$(git config --local --get core.hooksPath 2>/dev/null || true)
+    if [[ "$configured" != ".githooks" ]]; then
+        git config --local core.hooksPath .githooks
+        echo 'Configured repository-managed Git hooks at .githooks'
+    fi
+}
+
+# Any normal use of ./dev should leave the clone correctly configured.
+ensure_hooks
+
 usage() {
     cat <<'EOF'
 Search Kernel development commands
@@ -396,6 +408,11 @@ doctor_searchkerneld() {
     [[ -x "$binary" ]]
 }
 
+doctor_hooks() {
+    ensure_hooks
+    [[ "$(git config --local --get core.hooksPath 2>/dev/null || true)" == ".githooks" ]]
+}
+
 doctor() {
     local status=0
     local diagnostics
@@ -426,6 +443,7 @@ doctor() {
     }
 
     echo "Search Kernel doctor"
+    doctor_check 'repository Git hooks configured' doctor_hooks
     doctor_check 'cargo present' doctor_cargo
     doctor_check 'flatc correct version' doctor_flatc
     doctor_check 'FlatBuffers C++ correct version' doctor_flatbuffers_cpp
@@ -448,8 +466,8 @@ doctor() {
 }
 
 hooks_install() {
-    git config core.hooksPath .githooks
-    echo 'Installed repository-managed Git hooks at .githooks'
+    ensure_hooks
+    echo 'Repository-managed Git hooks are configured at .githooks'
 }
 
 case "${1:-help}" in
