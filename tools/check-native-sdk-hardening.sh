@@ -30,7 +30,7 @@ if manifest.get("hardening_failpoints") is not True:
 PY
 
 mapfile -t required_symbols < <(
-    sed -nE 's/^SK_API (int32_t|uint32_t) (sk_test_[a-zA-Z0-9_]+)\(.*/\2/p' \
+    sed -nE 's/^SK_API ([A-Za-z0-9_]+) (sk_test_[a-zA-Z0-9_]+)\(.*/\2/p' \
         "$TEST_HEADER"
 )
 [[ "${#required_symbols[@]}" -gt 0 ]] || {
