@@ -247,6 +247,11 @@ def dependency_bundle_identity(root: Path, vespa_root: Path) -> str:
     return shared_library_tree_identity(lib_dir)
 
 
+def vespa_library_identity(vespa_root: Path) -> str:
+    """Content identity of the already-built Vespa shared libraries we publish."""
+    return shared_library_tree_identity(vespa_root)
+
+
 def vespa_config_digest(vespa_root: Path) -> str:
     digest = hashlib.sha256()
     for relative in (
@@ -314,42 +319,42 @@ def fingerprint(root: Path, vespa_root: Path, target: str, scope: str) -> tuple[
         "fingerprint.scope": scope,
         "build.environment": os.environ.get("SEARCHKERNEL_BUILD_ENV", "host"),
         "cargo.target": target,
-        "rustc": rust_identity(),
-        "c.compiler": tool_identity("CC", "cc", dumpmachine=True),
-        "cxx.compiler": tool_identity("CXX", "c++", dumpmachine=True),
-        "ar": tool_identity("AR", "ar"),
-        "ranlib": tool_identity("RANLIB", "ranlib"),
-        "ld": tool_identity("LD", "ld"),
-        "cxx.runtime": (
-            command_output(str(cxx), "-print-file-name=libstdc++.so")
-            + "\n"
-            + command_output(str(cxx), "-print-file-name=libc++.dylib")
-        ),
-        "libc": (
-            command_output("ldd", "--version")
-            + "\n"
-            + command_output("getconf", "GNU_LIBC_VERSION")
-        ),
         "flatbuffers.version": os.environ.get("FLATBUFFERS_VERSION", "25.12.19"),
         "vespa.commit": git_tree_identity(vespa_root),
         "vespa.config": vespa_config_digest(vespa_root),
-        # Search Kernel adapter sources deliberately do not participate in the
-        # immutable Vespa base identity. abi.cc is a normal project artifact.
+        "vespa.library_bundle": vespa_library_identity(vespa_root),
         "native.dependency_bundle": dependency_bundle_identity(root, vespa_root),
         "native.runtime_bundle": runtime_bundle_identity(root, vespa_root),
     }
 
     if scope == "full":
-        fields["native.source"] = source_digest(root)
+        fields.update({
+            "rustc": rust_identity(),
+            "c.compiler": tool_identity("CC", "cc", dumpmachine=True),
+            "cxx.compiler": tool_identity("CXX", "c++", dumpmachine=True),
+            "ar": tool_identity("AR", "ar"),
+            "ranlib": tool_identity("RANLIB", "ranlib"),
+            "ld": tool_identity("LD", "ld"),
+            "cxx.runtime": (
+                command_output(str(cxx), "-print-file-name=libstdc++.so")
+                + "\n"
+                + command_output(str(cxx), "-print-file-name=libc++.dylib")
+            ),
+            "libc": (
+                command_output("ldd", "--version")
+                + "\n"
+                + command_output("getconf", "GNU_LIBC_VERSION")
+            ),
+            "native.source": source_digest(root),
+        })
+        tracked = (
+            "CC", "CXX", "AR", "RANLIB", "LD", "CFLAGS", "CXXFLAGS", "CPPFLAGS",
+            "LDFLAGS", "CMAKE", "CMAKE_ARGS", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH",
+            "CMAKE_TOOLCHAIN_FILE", "CXXSTDLIB", "CRATE_CC_NO_DEFAULTS",
+        )
+        for name in tracked:
+            fields[f"env.{name}"] = os.environ.get(name, "")
 
-    tracked = (
-        "CC", "CXX", "AR", "RANLIB", "LD", "CFLAGS", "CXXFLAGS", "CPPFLAGS",
-        "LDFLAGS", "CMAKE", "CMAKE_ARGS", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH",
-        "CMAKE_TOOLCHAIN_FILE", "CXXSTDLIB",
-        "CRATE_CC_NO_DEFAULTS",
-    )
-    for name in tracked:
-        fields[f"env.{name}"] = os.environ.get(name, "")
     if scope == "full":
         defaults = {
             "SK_NATIVE_ENABLE_FAILPOINTS": "0",
@@ -364,13 +369,14 @@ def fingerprint(root: Path, vespa_root: Path, target: str, scope: str) -> tuple[
             "SK_NATIVE_EXTRA_LINK_FLAGS",
         ):
             fields[f"env.{name}"] = os.environ.get(name, defaults.get(name, ""))
-    target_underscore = target.replace("-", "_")
-    for base in ("CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS"):
-        fields[f"env.{base}_{target}"] = os.environ.get(f"{base}_{target}", "")
-        fields[f"env.{base}_{target_underscore}"] = os.environ.get(
-            f"{base}_{target_underscore}", ""
-        )
-        fields[f"env.HOST_{base}"] = os.environ.get(f"HOST_{base}", "")
+    if scope == "full":
+        target_underscore = target.replace("-", "_")
+        for base in ("CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS"):
+            fields[f"env.{base}_{target}"] = os.environ.get(f"{base}_{target}", "")
+            fields[f"env.{base}_{target_underscore}"] = os.environ.get(
+                f"{base}_{target_underscore}", ""
+            )
+            fields[f"env.HOST_{base}"] = os.environ.get(f"HOST_{base}", "")
 
     text = canonical(fields)
     digest = hashlib.sha256(text.encode()).hexdigest()
