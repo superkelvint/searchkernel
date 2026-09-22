@@ -10,7 +10,7 @@ M5_DATA="$ROOT/reference/vespa/m5/fixtures/persisted-v1/index"
 [[ -f "$FIXTURES/README.md" ]] || { echo "missing persistence fixture README" >&2; exit 1; }
 [[ -d "$M5_DATA" ]] || { echo "missing preserved M5 storage fixture" >&2; exit 1; }
 
-python3 - "$FIXTURES" "$MANIFEST_RS" "$M5_DATA" <<'PY'
+"${CI_PYTHON:-python3}" - "$FIXTURES" "$MANIFEST_RS" "$M5_DATA" <<'PY'
 import hashlib
 import json
 import pathlib
