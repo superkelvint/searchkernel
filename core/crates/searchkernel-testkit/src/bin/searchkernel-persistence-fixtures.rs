@@ -29,7 +29,9 @@ fn main() {
         }],
         default_search_fields: None,
     };
-    let resolved = resolve_rust_index_definition(&input).expect("resolve persistence fixture schema");
+    let mut resolved =
+        resolve_rust_index_definition(&input).expect("resolve persistence fixture schema");
+    resolved.set_document_type("typea");
     let canonical = index_definition_ir_to_api(&resolved);
     let schema_snapshot = snapshot::index_definition(&resolved);
 
