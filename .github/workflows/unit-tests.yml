@@ -3,18 +3,37 @@ name: Rust unit tests
 on:
   push:
     branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - "rust-toolchain*"
+      - "api/**"
+      - "core/**"
+      - "searchkerneld/**"
+      - "dev"
   pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - "rust-toolchain*"
+      - "api/**"
+      - "core/**"
+      - "searchkerneld/**"
+      - "dev"
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   unit-tests:
     name: Workspace unit tests
     runs-on: [self-hosted, linux, x64]
     env:
-      CARGO_TARGET_DIR: target/ci
+      CARGO_TARGET_DIR: target/ci-non-native
       SEARCHKERNEL_BUILD_ENV: ci
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
@@ -27,7 +46,8 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ". -> target/ci"
+          workspaces: ". -> target/ci-non-native"
+          shared-key: non-native
 
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4

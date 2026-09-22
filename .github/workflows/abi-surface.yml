@@ -2,6 +2,7 @@ name: ABI surface
 
 on:
   push:
+    branches: [main]
     paths:
       - "core/native/**"
       - "core/crates/searchkernel-vespa-bindings/**"
@@ -10,9 +11,7 @@ on:
       - "tools/check-layout.sh"
       - "tools/native-build-fingerprint.py"
       - "tools/*native-sdk*.sh"
-      - "BUILDING.md"
       - "dev"
-      - ".github/workflows/abi-surface.yml"
   pull_request:
     paths:
       - "core/native/**"
@@ -22,13 +21,12 @@ on:
       - "tools/check-layout.sh"
       - "tools/native-build-fingerprint.py"
       - "tools/*native-sdk*.sh"
-      - "BUILDING.md"
       - "dev"
-      - ".github/workflows/abi-surface.yml"
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   abi-surface:
@@ -37,17 +35,20 @@ jobs:
     env:
       CARGO_TARGET_DIR: target/ci
       SEARCHKERNEL_BUILD_ENV: ci
+      ABI_PYTHON: /usr/bin/python3
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install libclang Python bindings
+      - name: Verify self-hosted ABI dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libclang-dev python3-clang
+          if ! "$ABI_PYTHON" -c 'import clang.cindex'; then
+            echo "::error::The self-hosted runner must provide python3-clang and libclang-dev for /usr/bin/python3."
+            exit 1
+          fi
 
       - name: Run ABI surface regression tests
-        run: python3 tools/test_check_abi_surface.py
+        run: "$ABI_PYTHON" tools/test_check_abi_surface.py
 
       - name: Check repository layout
         run: bash tools/check-layout.sh
@@ -56,4 +57,4 @@ jobs:
         run: bash tools/test-native-sdk-cache.sh
 
       - name: Check public Vespa ABI header
-        run: python3 tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
+        run: "$ABI_PYTHON" tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h

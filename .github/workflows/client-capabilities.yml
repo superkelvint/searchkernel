@@ -19,7 +19,6 @@ on:
       - "tools/test_check_client_contracts.py"
       - "tools/check-python-dependencies.py"
       - "tools/test_python_dependency_contract.py"
-      - ".github/workflows/client-capabilities.yml"
   push:
     branches: [main]
     paths:
@@ -39,7 +38,11 @@ on:
       - "tools/test_check_client_contracts.py"
       - "tools/check-python-dependencies.py"
       - "tools/test_python_dependency_contract.py"
-      - ".github/workflows/client-capabilities.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -78,4 +81,3 @@ jobs:
       - run: python tools/check-python-dependencies.py
       - run: npm ci --prefix clients/typescript
       - run: python tools/check-client-contracts.py --run-e2e
-
