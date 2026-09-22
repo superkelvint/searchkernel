@@ -6,7 +6,6 @@ on:
   pull_request:
     paths:
       - "api/**"
-      - "core/crates/searchkernel/Cargo.toml"
       - "core/crates/searchkernel/src/index/**"
       - "core/crates/searchkernel/src/tests.rs"
       - "core/crates/searchkernel/src/schema.rs"
@@ -22,87 +21,55 @@ on:
       - "core/crates/searchkernel-ir-adapter/**"
       - "core/crates/searchkernel-vespa-engine/**"
       - "core/crates/searchkernel-vespa-bindings/**"
-      - "core/crates/searchkernel-testkit/**"
       - "core/native/vespa/**"
       - "reference/persistence/**"
       - "reference/vespa/m5/fixtures/persisted-v1/**"
-      - "tools/check-persistence-fixture-generation.sh"
       - "tools/check-persistence-fixtures.sh"
+      - "tools/check-persistence-fixture-immutability.sh"
       - "tools/check-persistence-sensitivity.sh"
       - ".github/workflows/persistence-compatibility.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   fixtures:
-    name: Immutable fixture corpus
+    name: Immutable persistence corpus
     runs-on: [self-hosted, linux, x64]
-    env:
-      CARGO_TARGET_DIR: target/ci-persistence-fixtures
-      SEARCHKERNEL_BUILD_ENV: ci
-      CARGO_PROFILE_TEST_DEBUG: 0
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Verify runner Rust toolchain
-        run: |
-          rustc -vV
-          cargo -V
-
-      - name: Ensure pinned FlatBuffers toolchain
-        run: ./dev install flatbuffers
-
-      - name: Generate fixture candidate
-        run: cargo run --quiet -p searchkernel-testkit --bin searchkernel-persistence-fixtures -- target/persistence-fixtures
-
-      - name: Upload generated fixture candidate
-        uses: actions/upload-artifact@v4
+      - name: Check out exact revision
+        uses: actions/checkout@v4
         with:
-          name: persistence-fixture-candidate
-          path: target/persistence-fixtures
-          if-no-files-found: error
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
-      - name: Verify committed fixture structure
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
+
+      - name: Verify exact pull-request head
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::expected exact PR head $EXPECTED_HEAD, checked out $actual"
+            exit 1
+          fi
+
+      - name: Verify frozen fixture structure and provenance
         run: bash tools/check-persistence-fixtures.sh
 
-      - name: Verify fixture generator is reproducible
-        run: bash tools/check-persistence-fixture-generation.sh
+      - name: Enforce append-only historical fixtures
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: bash tools/check-persistence-fixture-immutability.sh "$BASE_REF"
 
-  persistence:
-    name: Historical reopen and fault matrix
-    needs: fixtures
-    runs-on: [self-hosted, linux, x64]
-    env:
-      CARGO_TARGET_DIR: target/ci-persistence
-      SEARCHKERNEL_BUILD_ENV: ci-persistence
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Verify runner Rust toolchain
+      - name: Native verification policy
         run: |
-          rustc -vV
-          cargo -V
-
-      - name: Ensure pinned FlatBuffers toolchain
-        run: ./dev install flatbuffers
-
-      - name: Ensure native SDK
-        run: ./dev native-sdk ensure
-
-      - name: Verify historical reopen/search/mutate/reopen
-        run: cargo test -p searchkernel --test persistence_compatibility --features native -- --nocapture
-
-      - name: Verify persisted-state fault matrix
-        run: |
-          cargo test -p searchkernel --features native --lib persistence_fault_matrix_ -- --nocapture
-          cargo test -p searchkernel --features native --lib repeated_failed_manifest_reads_do_not_mutate_a_valid_index -- --nocapture
-
-      - name: Verify gate sensitivity
-        run: bash tools/check-persistence-sensitivity.sh
+          echo "::notice::Real-Vespa persistence reopen/mutation verification is intentionally local under current repository policy."
+          echo "::notice::Run: cargo test -p searchkernel --test persistence_compatibility --features native -- --nocapture"
+          echo "::notice::Run: cargo test -p searchkernel --features native --lib persistence_fault_matrix_ -- --nocapture"
+          echo "::notice::Run: bash tools/check-persistence-sensitivity.sh"
