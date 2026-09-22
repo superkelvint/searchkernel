@@ -73,6 +73,30 @@ struct sk_local_grouping_result : LocalGroupingResultState {
 struct sk_generic_search_request : sk_local_search_request {};
 struct sk_generic_grouping_request : sk_local_grouping_request {};
 
+template <typename Function>
+void run_open_stage(const char *stage, Function &&function) {
+    try {
+        function();
+    } catch (const std::bad_alloc &) {
+        // Preserve the allocation-failure domain. Constructing contextual
+        // diagnostics here could itself allocate and would obscure OOM.
+        throw;
+    } catch (const UnsupportedNativeError &exception) {
+        throw UnsupportedNativeError(
+            exception.detail_code(), std::string(stage) + ": " + exception.what());
+    } catch (const DeadlineExceededNativeError &exception) {
+        throw DeadlineExceededNativeError(std::string(stage) + ": " + exception.what());
+    } catch (const TypeErrorNativeError &exception) {
+        throw TypeErrorNativeError(std::string(stage) + ": " + exception.what());
+    } catch (const TensorValidationError &exception) {
+        throw TensorValidationError(
+            exception.detail_code(), std::string(stage) + ": " + exception.what());
+    } catch (const std::invalid_argument &exception) {
+        throw std::invalid_argument(std::string(stage) + ": " + exception.what());
+    } catch (const std::exception &exception) {
+        throw std::runtime_error(std::string(stage) + ": " + exception.what());
+    }
+}
 
 namespace {
 #include "document.cc"
@@ -123,20 +147,22 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
         {
             TimingProbe::Scope constructor_timing("constructor");
 #endif
-        try {
+        run_open_stage("engine construction", [&] {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+            OPEN_FAILPOINTS.hit("open_constructor");
+#endif
             engine->impl = std::make_unique<EmbeddedEngine>(data_dir,
                                                             config_path.string());
-        } catch (const std::exception &exception) {
-            throw std::runtime_error(std::string("engine construction: ") + exception.what());
-        }
+        });
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         }
 #endif
-        try {
+        run_open_stage("engine initialization", [&] {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+            OPEN_FAILPOINTS.hit("open_initialize");
+#endif
             engine->impl->initialize(data_dir, config_path.string());
-        } catch (const std::exception &exception) {
-            throw std::runtime_error(std::string("engine initialization: ") + exception.what());
-        }
+        });
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         OPEN_FAILPOINTS.hit("open_after_native_create");
 #endif
