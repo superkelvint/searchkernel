@@ -57,8 +57,8 @@ git_common_dir() {
 }
 
 shared_flatbuffers_prefix() {
-    printf '%s/searchkernel/toolchains/flatbuffers/%s\n' \
-        "$(git_common_dir)" "$EXPECTED_FLATBUFFERS_VERSION"
+    printf '%s/searchkernel/toolchains/flatbuffers/%s/%s\n' \
+        "$(git_common_dir)" "$EXPECTED_FLATBUFFERS_VERSION" "${SEARCHKERNEL_BUILD_ENV:-host}"
 }
 
 native_target_root() {
@@ -173,7 +173,7 @@ install_flatbuffers() (
     if [[ -x "$flatc" && -f "$header" && -f "$library" ]] &&
        bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$prefix" "$EXPECTED_FLATBUFFERS_VERSION" >/dev/null 2>&1; then
         echo "FlatBuffers $EXPECTED_FLATBUFFERS_VERSION already available and link-compatible under $prefix"
-        echo "This install is shared by every worktree in this clone."
+        echo "This install is shared by every worktree in this clone for build environment '${SEARCHKERNEL_BUILD_ENV:-host}'."
         return 0
     fi
 
@@ -257,7 +257,7 @@ install_flatbuffers() (
     fi
 
     echo "Installed FlatBuffers ${EXPECTED_FLATBUFFERS_VERSION} under $prefix"
-    echo "This install is shared by every worktree in this clone."
+    echo "This install is shared by every worktree in this clone for build environment '${SEARCHKERNEL_BUILD_ENV:-host}'."
     echo "export FLATBUFFERS_CPP_ROOT=$prefix"
     echo "export FLATC_PATH=$flatc"
 )
