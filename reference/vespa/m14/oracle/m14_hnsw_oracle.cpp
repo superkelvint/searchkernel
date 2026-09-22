@@ -207,9 +207,7 @@ std::string json_escape(std::string_view value) {
         switch (c) {
         case '"': out << "\\\""; break;
         case '\\': out << "\\\\"; break;
-        case '
-': out << "\
-"; break;
+        case '\n': out << "\\n"; break;
         case '\r': out << "\\r"; break;
         case '\t': out << "\\t"; break;
         default:
@@ -298,76 +296,41 @@ void write_fixture_config(const std::filesystem::path& config_dir, const Fixture
     std::filesystem::create_directories(config_dir);
 
     std::ostringstream attributes;
-    attributes << "attribute[2]
-"
-               << "attribute[0].name " << quote_cfg(spec.tensor_field) << "
-"
-               << "attribute[0].datatype TENSOR
-"
-               << "attribute[0].collectiontype SINGLE
-"
-               << "attribute[0].tensortype " << quote_cfg(spec.tensor_type) << "
-"
-               << "attribute[0].distancemetric EUCLIDEAN
-"
-               << "attribute[0].index.hnsw.enabled true
-"
-               << "attribute[0].index.hnsw.maxlinkspernode " << spec.max_links_per_node << "
-"
-               << "attribute[0].index.hnsw.neighborstoexploreatinsert " << spec.neighbors_to_explore_at_insert << "
-"
-               << "attribute[1].name " << quote_cfg(ORDINAL_FIELD) << "
-"
-               << "attribute[1].datatype INT32
-"
-               << "attribute[1].collectiontype SINGLE
-";
+    attributes << "attribute[2]\n"
+               << "attribute[0].name " << quote_cfg(spec.tensor_field) << "\n"
+               << "attribute[0].datatype TENSOR\n"
+               << "attribute[0].collectiontype SINGLE\n"
+               << "attribute[0].tensortype " << quote_cfg(spec.tensor_type) << "\n"
+               << "attribute[0].distancemetric EUCLIDEAN\n"
+               << "attribute[0].index.hnsw.enabled true\n"
+               << "attribute[0].index.hnsw.maxlinkspernode " << spec.max_links_per_node << "\n"
+               << "attribute[0].index.hnsw.neighborstoexploreatinsert " << spec.neighbors_to_explore_at_insert << "\n"
+               << "attribute[1].name " << quote_cfg(ORDINAL_FIELD) << "\n"
+               << "attribute[1].datatype INT32\n"
+               << "attribute[1].collectiontype SINGLE\n";
     write_text(config_dir / "attributes.cfg", attributes.str());
-    write_text(config_dir / "indexschema.cfg", "indexfield[0]
-");
+    write_text(config_dir / "indexschema.cfg", "indexfield[0]\n");
     write_text(config_dir / "juniperrc.cfg", "");
 
     std::ostringstream ranking;
-    ranking << "rankprofile[2]
-"
-            << "rankprofile[0].name \"default\"
-
-"
-            << "rankprofile[1].name " << quote_cfg(RANK_PROFILE) << "
-"
-            << "rankprofile[1].fef.property[2]
-"
-            << "rankprofile[1].fef.property[0].name \"vespa.rank.firstphase\"
-"
-            << "rankprofile[1].fef.property[0].value " << quote_cfg("closeness(field," + spec.tensor_field + ")") << "
-"
-            << "rankprofile[1].fef.property[1].name \"vespa.type.query.query_embedding\"
-"
-            << "rankprofile[1].fef.property[1].value " << quote_cfg(spec.tensor_type) << "
-";
+    ranking << "rankprofile[2]\n"
+            << "rankprofile[0].name \"default\"\n\n"
+            << "rankprofile[1].name " << quote_cfg(RANK_PROFILE) << "\n"
+            << "rankprofile[1].fef.property[2]\n"
+            << "rankprofile[1].fef.property[0].name \"vespa.rank.firstphase\"\n"
+            << "rankprofile[1].fef.property[0].value " << quote_cfg("closeness(field," + spec.tensor_field + ")") << "\n"
+            << "rankprofile[1].fef.property[1].name \"vespa.type.query.query_embedding\"\n"
+            << "rankprofile[1].fef.property[1].value " << quote_cfg(spec.tensor_type) << "\n";
     write_text(config_dir / "rank-profiles.cfg", ranking.str());
 
     std::ostringstream summary;
-    summary << "defaultsummaryid 1
-classes[1]
-classes[0].id 1
-classes[0].name \"default\"
-"
-            << "classes[0].fields[2]
-"
-            << "classes[0].fields[0].name \"documentid\"
-classes[0].fields[0].type \"longstring\"
-"
-            << "classes[0].fields[0].command \"documentid\"
-classes[0].fields[0].source \"\"
-"
-            << "classes[0].fields[1].name " << quote_cfg(ORDINAL_FIELD) << "
-"
-            << "classes[0].fields[1].type \"integer\"
-classes[0].fields[1].command \"attribute\"
-"
-            << "classes[0].fields[1].source " << quote_cfg(ORDINAL_FIELD) << "
-";
+    summary << "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\n"
+            << "classes[0].fields[2]\n"
+            << "classes[0].fields[0].name \"documentid\"\nclasses[0].fields[0].type \"longstring\"\n"
+            << "classes[0].fields[0].command \"documentid\"\nclasses[0].fields[0].source \"\"\n"
+            << "classes[0].fields[1].name " << quote_cfg(ORDINAL_FIELD) << "\n"
+            << "classes[0].fields[1].type \"integer\"\nclasses[0].fields[1].command \"attribute\"\n"
+            << "classes[0].fields[1].source " << quote_cfg(ORDINAL_FIELD) << "\n";
     write_text(config_dir / "summary.cfg", summary.str());
 
     std::ostringstream schema;
@@ -375,8 +338,7 @@ classes[0].fields[1].command \"attribute\"
            << "{\"name\":" << json_escape(spec.tensor_field)
            << ",\"type\":\"tensor\",\"tensor_type\":" << json_escape(spec.tensor_type)
            << ",\"index\":false,\"attribute\":true,\"summary\":false},"
-           << "{\"name\":\"ordinal\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":true}]}
-";
+           << "{\"name\":\"ordinal\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":true}]}\n";
     write_text(config_dir / "searchkernel-schema.json", schema.str());
 }
 
@@ -539,22 +501,19 @@ public:
     }
 
     ~Fixture() {
-        std::cerr << "M14_ORACLE shutdown removeHandler begin
-" << std::flush;
+        std::cerr << "M14_ORACLE shutdown removeHandler begin\n" << std::flush;
         {
             auto removed = _persistence.removeHandler(_persistence.getWLock(), makeBucketSpace(), DocTypeName(DOC_TYPE));
             require(static_cast<bool>(removed), "persistence handler removal failed");
         }
         _handler.reset();
         if (_db) {
-            std::cerr << "M14_ORACLE shutdown DocumentDB close begin
-" << std::flush;
+            std::cerr << "M14_ORACLE shutdown DocumentDB close begin\n" << std::flush;
             _db->close();
             _db.reset();
         }
         _shared.transport().ShutDown(true);
-        std::cerr << "M14_ORACLE shutdown complete
-" << std::flush;
+        std::cerr << "M14_ORACLE shutdown complete\n" << std::flush;
     }
 
     void prepare_bucket(const Bucket& bucket) {
@@ -687,8 +646,7 @@ void execute_query_controls(const Inspector& root, Fixture& fixture) {
         auto reply=fixture.search(query,approximate,target,explore,threshold,limit);
         std::cout << "{\"id\":" << json_escape(id) << ",\"hits\":"; emit_hits(hit_ids(*reply,fixture)); std::cout << '}';
     }
-    std::cout << "]}
-";
+    std::cout << "]}\n";
 }
 
 std::vector<float> mutation_values(const Inspector& root) {
@@ -732,8 +690,7 @@ int run_mode(const std::filesystem::path& scenario_path) {
             { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); feed_documents(fixture,root); before=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); fixture.update_tensor(update_id,mutation_values(root)); after=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
             { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); after_reopen=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); fixture.remove_document(delete_id); after_delete=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
             { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); after_delete_reopen=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
-            std::cout << "{\"id\":\"hnsw-mutation-reopen\",\"before_update\":"; emit_hits(before); std::cout << ",\"after_update\":"; emit_hits(after); std::cout << ",\"after_reopen\":"; emit_hits(after_reopen); std::cout << ",\"after_delete\":"; emit_hits(after_delete); std::cout << ",\"after_delete_reopen\":"; emit_hits(after_delete_reopen); std::cout << "}
-";
+            std::cout << "{\"id\":\"hnsw-mutation-reopen\",\"before_update\":"; emit_hits(before); std::cout << ",\"after_update\":"; emit_hits(after); std::cout << ",\"after_reopen\":"; emit_hits(after_reopen); std::cout << ",\"after_delete\":"; emit_hits(after_delete); std::cout << ",\"after_delete_reopen\":"; emit_hits(after_delete_reopen); std::cout << "}\n";
         } else { fail("unknown M14 scenario id"); }
         std::filesystem::remove_all(work);
     } catch (...) { std::error_code ignored; std::filesystem::remove_all(work,ignored); throw; }
@@ -779,8 +736,7 @@ int main(int argc, char** argv) {
         }
         fail("unknown mode; expected run or prepare");
     } catch (const std::exception& error) {
-        std::cerr << "m14_tensor_oracle: " << error.what() << '
-';
+        std::cerr << "m14_tensor_oracle: " << error.what() << '\n';
         return 2;
     }
 }
