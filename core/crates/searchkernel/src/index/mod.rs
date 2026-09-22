@@ -730,6 +730,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
     resolved.set_fieldsets(definition.fieldsets.clone());
     resolved.set_onnx_models(definition.onnx_models.clone());
     resolved.set_imported_fields(definition.imported_fields.clone());
+    resolved.set_document_summaries(definition.document_summaries.clone());
 
     Ok(resolved)
 }
@@ -936,6 +937,7 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
     result.fieldsets = definition.fieldsets().to_vec();
     result.onnx_models = definition.onnx_models().to_vec();
     result.imported_fields = definition.imported_fields().to_vec();
+    result.document_summaries = definition.document_summaries().to_vec();
     result.structs = definition.structs().to_vec();
     result.canonical = Some(definition.clone());
     result
