@@ -1666,8 +1666,8 @@ fn rich_schema_negative_semantics_match_portable_ingress() {
 
     let mut invalid_analyzer = text_field();
     invalid_analyzer.set_analyzer(Some(AnalyzerIr {
-        name: "unknown".to_owned(),
-        version: 99,
+        name: String::new(),
+        version: 1,
         options: SchemaPropertiesIr::new(),
     }));
     assert_rust_and_portable_schema_error_match(
