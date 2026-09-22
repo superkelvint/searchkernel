@@ -228,7 +228,7 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed 's#-rdynamic##g')
 if [ "$ADAPTER_ONLY" = 1 ]; then
     ADAPTER_RPATH=$BASE_SDK/lib
 else
-    ADAPTER_RPATH='\$ORIGIN'
+    ADAPTER_RPATH='$ORIGIN'
 fi
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed \
     "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'$ADAPTER_RPATH'|g")
