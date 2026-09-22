@@ -185,7 +185,7 @@ fn manifest_field_objects(manifest: &str) -> Result<Vec<&str>, Error> {
     let fields_start = manifest
         .find("\"fields\"")
         .and_then(|offset| manifest[offset..].find('[').map(|index| offset + index + 1))
-        .ok_or_else(|| Error::message("generated schema manifest has no fields"))?;
+        .ok_or_else(|| Error::invalid("generated schema manifest has no fields"))?;
     let bytes = manifest.as_bytes();
     let mut objects = Vec::new();
     let mut object_start = None;
@@ -213,11 +213,11 @@ fn manifest_field_objects(manifest: &str) -> Result<Vec<&str>, Error> {
             }
             b'}' => {
                 depth = depth.checked_sub(1).ok_or_else(|| {
-                    Error::message("generated schema manifest has unbalanced fields")
+                    Error::invalid("generated schema manifest has unbalanced fields")
                 })?;
                 if depth == 0 {
                     let start = object_start.take().ok_or_else(|| {
-                        Error::message("generated schema manifest has unbalanced fields")
+                        Error::invalid("generated schema manifest has unbalanced fields")
                     })?;
                     objects.push(&manifest[start..=offset]);
                 }
@@ -226,7 +226,7 @@ fn manifest_field_objects(manifest: &str) -> Result<Vec<&str>, Error> {
             _ => {}
         }
     }
-    Err(Error::message(
+    Err(Error::invalid(
         "generated schema manifest has an unterminated fields array",
     ))
 }
@@ -234,20 +234,20 @@ fn manifest_field_objects(manifest: &str) -> Result<Vec<&str>, Error> {
 fn configured_schema(config_dir: &Path) -> Result<SchemaManifest, Error> {
     let manifest_path = config_dir.join("searchkernel-schema.json");
     let manifest = fs::read_to_string(&manifest_path).map_err(|error| {
-        Error::message(format!(
+        Error::invalid(format!(
             "could not read generated schema manifest '{}': {error}",
             manifest_path.display()
         ))
     })?;
     let document_type = json_string_field(&manifest, "document_type")
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| Error::message("generated schema manifest has no document type"))?;
+        .ok_or_else(|| Error::invalid("generated schema manifest has no document type"))?;
     let fields = manifest_field_objects(&manifest)?
         .iter()
         .map(|field| {
             let name = json_string_field(field, "name")
                 .filter(|value| !value.is_empty())
-                .ok_or_else(|| Error::message("generated schema manifest has an unnamed field"))?;
+                .ok_or_else(|| Error::invalid("generated schema manifest has an unnamed field"))?;
             let field_type = match json_string_field(field, "type").as_deref() {
                 Some("text") => ManifestFieldType::Text,
                 Some("string") => ManifestFieldType::String,
@@ -287,7 +287,7 @@ fn add_grouping_level_configuration(
             -1
         } else {
             i64::try_from(max_groups)
-                .map_err(|_| Error::message("grouping max groups is too large"))?
+                .map_err(|_| Error::invalid("grouping max groups is too large"))?
         };
         let mut error = NativeError::new();
         check(
@@ -425,7 +425,7 @@ impl Engine {
     pub fn open(data_dir: impl AsRef<Path>, config_dir: impl AsRef<Path>) -> Result<Self, Error> {
         let actual_abi = unsafe { sys::sk_native_abi_version() };
         if actual_abi != EXPECTED_ABI {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "unsupported native ABI version {actual_abi}; expected {EXPECTED_ABI}"
             )));
         }
@@ -471,7 +471,7 @@ impl Engine {
     /// calls.
     pub fn put(&self, document: Document) -> Result<(), Error> {
         if document.fields().is_empty() {
-            return Err(Error::message("document must contain at least one field"));
+            return Err(Error::invalid("document must contain at least one field"));
         }
         let id = cstring(document.id())?;
         let mut native = ptr::null_mut();
@@ -524,7 +524,7 @@ impl Engine {
     /// Put a document through Vespa's attribute-only mutation path.
     pub fn put_attributes(&self, document: &AttributeDocument) -> Result<(), Error> {
         if document.fields().is_empty() {
-            return Err(Error::message("document must contain at least one field"));
+            return Err(Error::invalid("document must contain at least one field"));
         }
         let native = attribute_document_create(document.document_id())?;
         for (field, value) in document.fields() {
@@ -545,7 +545,7 @@ impl Engine {
     /// Apply field-level mutations to an existing document.
     pub fn update(&self, update: DocumentUpdate) -> Result<(), Error> {
         if update.fields().is_empty() {
-            return Err(Error::message(
+            return Err(Error::invalid(
                 "document update must contain at least one field",
             ));
         }
@@ -620,7 +620,7 @@ impl Engine {
     /// Apply assignments through Vespa's attribute-only mutation path.
     pub fn update_attributes(&self, update: &AttributeUpdate) -> Result<(), Error> {
         if update.assignments().is_empty() {
-            return Err(Error::message(
+            return Err(Error::invalid(
                 "update must contain at least one assignment",
             ));
         }
@@ -706,13 +706,13 @@ impl Engine {
             check(status, &error)?;
             let name = native_bytes(&native, name, name_length, "document field name")?;
             let name = std::str::from_utf8(name)
-                .map_err(|_| Error::message("native document field name is invalid UTF-8"))?;
+                .map_err(|_| Error::internal("native_result_invariant", "native document field name is invalid UTF-8"))?;
             let value = match kind {
                 sys::SK_VALUE_STRING => {
                     let value =
                         native_bytes(&native, string, string_length, "document field value")?;
                     let value = std::str::from_utf8(value).map_err(|_| {
-                        Error::message("native document string value is invalid UTF-8")
+                        Error::internal("native_result_invariant", "native document string value is invalid UTF-8")
                     })?;
                     FieldValue::Scalar(ScalarValue::String(value.to_owned()))
                 }
@@ -745,18 +745,18 @@ impl Engine {
                         "document tensor type spec",
                     )?;
                     let type_spec = std::str::from_utf8(type_spec).map_err(|_| {
-                        Error::message("native document tensor type spec is invalid UTF-8")
+                        Error::internal("native_result_invariant", "native document tensor type spec is invalid UTF-8")
                     })?;
                     let cells = native_f64s(&native, cells, cell_count, "document tensor cells")?;
                     if cells.iter().any(|value| !value.is_finite()) {
-                        return Err(Error::message(
+                        return Err(Error::internal("native_result_invariant", 
                             "native document tensor contains a non-finite cell",
                         ));
                     }
                     FieldValue::Tensor(TensorValue::dense(type_spec, cells.to_vec()))
                 }
                 _ => {
-                    return Err(Error::message(
+                    return Err(Error::internal("native_result_invariant", 
                         "native document returned an unknown value kind",
                     ))
                 }
@@ -824,7 +824,7 @@ impl Engine {
             check(status, &error)?;
         }
         let timeout_millis = u64::try_from(request.timeout.as_millis())
-            .map_err(|_| Error::message("search timeout is too large to encode"))?;
+            .map_err(|_| Error::invalid("search timeout is too large to encode"))?;
         let mut error = NativeError::new();
         let status = unsafe {
             sys::sk_generic_search_request_set_timeout(
@@ -915,14 +915,14 @@ impl Engine {
         }
         for (name, input) in &request.query_inputs {
             let QueryInput::Literal(crate::TensorValue::Dense { type_spec, values }) = input else {
-                return Err(Error::message(
+                return Err(Error::invalid(
                     "sparse, mixed, and expression query inputs are not supported by the current native path",
                 ));
             };
             let name = cstring(name)?;
             let type_spec = cstring(type_spec)?;
             let value_count = u32::try_from(values.len())
-                .map_err(|_| Error::message("tensor value count exceeds native capacity"))?;
+                .map_err(|_| Error::invalid("tensor value count exceeds native capacity"))?;
             let mut error = NativeError::new();
             let status = unsafe {
                 sys::sk_generic_search_request_add_query_tensor_dense(
@@ -982,7 +982,7 @@ impl Engine {
         self.validate_search_fields(request)?;
         if let Source::Named(source) = &request.source {
             if source != &self.document_type {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "unsupported query source: {source}"
                 )));
             }
@@ -1044,7 +1044,7 @@ impl Engine {
         self.validate_grouping_plan(plan)?;
         if let Source::Named(source) = &request.source {
             if source != &self.document_type {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "unsupported query source: {source}"
                 )));
             }
@@ -1071,13 +1071,13 @@ impl Engine {
         self.fields
             .get(name)
             .copied()
-            .ok_or_else(|| Error::message(format!("unknown field: {name}")))
+            .ok_or_else(|| Error::invalid(format!("unknown field: {name}")))
     }
 
     fn attribute_field(&self, name: &str) -> Result<ManifestField, Error> {
         let field = self.manifest_field(name)?;
         if !field.attribute {
-            return Err(Error::message(format!("field is not an attribute: {name}")));
+            return Err(Error::invalid(format!("field is not an attribute: {name}")));
         }
         Ok(field)
     }
@@ -1092,7 +1092,7 @@ impl Engine {
                     | ManifestFieldType::Float
                     | ManifestFieldType::Boolean
             ) {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "unsupported sort field type: {}",
                     sort.field
                 )));
@@ -1166,7 +1166,7 @@ impl Engine {
                     )
                 };
                 if !supported {
-                    return Err(Error::message(format!(
+                    return Err(Error::invalid(format!(
                         "unsupported grouping field type: {field}"
                     )));
                 }
