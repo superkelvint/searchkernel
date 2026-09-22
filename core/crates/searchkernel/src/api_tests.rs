@@ -3221,6 +3221,21 @@ fn public_field_configurations_round_trip_without_canonical_sidecar() {
 }
 
 #[test]
+fn described_public_values_expose_fieldset_definitions() {
+    let (canonical, described) = public_described_canonical_fixture();
+    assert_eq!(described.fieldsets(), canonical.fieldsets());
+}
+
+#[test]
+fn public_fieldsets_round_trip_without_canonical_sidecar() {
+    let (canonical, mut described) = public_described_canonical_fixture();
+    described.canonical = None;
+    described.fieldsets = canonical.fieldsets().to_vec();
+    let resolved = definition_to_ir(&described).expect("public fieldsets should resolve");
+    assert_eq!(resolved.fieldsets(), canonical.fieldsets());
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();

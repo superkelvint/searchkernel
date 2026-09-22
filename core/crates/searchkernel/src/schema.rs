@@ -768,6 +768,7 @@ pub struct IndexDefinition {
     pub(crate) default_search_fields: Option<Vec<SearchField>>,
     pub(crate) rank_profiles: Vec<RankProfile>,
     pub(crate) constants: Vec<ConstantDefinition>,
+    pub(crate) fieldsets: Vec<searchkernel_ir::FieldSetDefinitionIr>,
     pub(crate) structs: Vec<searchkernel_ir::NamedStructDefinitionIr>,
     pub(crate) schema_fields: Vec<Field>,
     pub(crate) properties: searchkernel_ir::SchemaPropertiesIr,
@@ -787,6 +788,7 @@ impl fmt::Debug for IndexDefinition {
             .field("default_search_fields", &self.default_search_fields)
             .field("rank_profiles", &self.rank_profiles)
             .field("constants", &self.constants)
+            .field("fieldsets", &self.fieldsets)
             .field("structs", &self.structs)
             .field("schema_fields", &self.schema_fields)
             .field("properties", &self.properties)
@@ -981,6 +983,11 @@ impl IndexDefinition {
     /// Return schema constants represented by this definition.
     pub fn constants(&self) -> &[ConstantDefinition] {
         &self.constants
+    }
+
+    /// Return the top-level fieldset definitions declared by the schema.
+    pub fn fieldsets(&self) -> &[searchkernel_ir::FieldSetDefinitionIr] {
+        &self.fieldsets
     }
 
     /// Return the top-level named struct definitions declared by the schema.
