@@ -172,6 +172,54 @@ it("projects named facets only when explicitly requested", () => {
 });
 
 
+
+it("decodes timing and result issues into facade values", () => {
+  const root = new ResultGroupT();
+  const timingWire = {
+    queryTimeSeconds: new OptionalDoubleT(0.1),
+    searchTimeSeconds: new OptionalDoubleT(0.2),
+    summaryFetchTimeSeconds: new OptionalDoubleT(0.3),
+    metadata: [new ValueEntryT("phase", value("query"))],
+  };
+  const issueWire = {
+    code: 7n,
+    summary: "degraded",
+    message: "partial",
+    source: "backend",
+    stackTrace: "trace",
+    transient: new OptionalBoolT(true),
+    metadata: [new ValueEntryT("retry", value(false))],
+  };
+  const raw = new SearchResultT(node(root));
+  (raw as any).timing = timingWire;
+  (raw as any).errors = [issueWire];
+
+  const result = new SearchResults(raw);
+
+  expect(result.timing).not.toBe(timingWire);
+  expect(result.timing?.queryTimeSeconds).toBe(0.1);
+  expect(result.timing?.metadata).toEqual({ phase: "query" });
+  expect(result.issues[0]).not.toBe(issueWire);
+  expect(result.issues[0]?.code).toBe(7n);
+  expect(result.issues[0]?.transient).toBe(true);
+  expect(result.issues[0]?.metadata).toEqual({ retry: false });
+  expect(result.errors).toBe(result.issues);
+});
+
+it("fails closed for malformed grouping continuation entries", () => {
+  const malformed = new ResultGroupT(
+    null,
+    null,
+    null,
+    [],
+    [],
+    [new StringEntryT(null, "token")],
+  );
+  expect(() => new SearchResults(new SearchResultT(node(malformed)))).toThrow(
+    /result continuation has a missing key or value/,
+  );
+});
+
 it("decodes finite and infinite relevance kinds consistently", () => {
   const relevance = [
     [new RelevanceT(RelevanceKind.FiniteRelevance, new FiniteRelevanceT(2.5)), 2.5],

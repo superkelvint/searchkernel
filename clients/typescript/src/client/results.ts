@@ -107,6 +107,40 @@ export class Coverage {
   }
 }
 
+export class SearchTiming {
+  readonly queryTimeSeconds: number | null;
+  readonly searchTimeSeconds: number | null;
+  readonly summaryFetchTimeSeconds: number | null;
+  readonly metadata: Record<string, unknown>;
+
+  constructor(node: SearchTimingT) {
+    this.queryTimeSeconds = optionalValue(node.queryTimeSeconds);
+    this.searchTimeSeconds = optionalValue(node.searchTimeSeconds);
+    this.summaryFetchTimeSeconds = optionalValue(node.summaryFetchTimeSeconds);
+    this.metadata = entries(node.metadata);
+  }
+}
+
+export class ResultIssue {
+  readonly code: bigint;
+  readonly summary: string | null;
+  readonly message: string | null;
+  readonly source: string | null;
+  readonly stackTrace: string | null;
+  readonly transient: boolean | null;
+  readonly metadata: Record<string, unknown>;
+
+  constructor(node: SearchResultErrorT) {
+    this.code = node.code;
+    this.summary = text(node.summary);
+    this.message = text(node.message);
+    this.source = text(node.source);
+    this.stackTrace = text(node.stackTrace);
+    this.transient = optionalValue(node.transient);
+    this.metadata = entries(node.metadata);
+  }
+}
+
 export class Hit {
   readonly id: string;
   readonly relevance: number | null;
@@ -178,10 +212,14 @@ export class ResultGroup {
     this.children = (node.children ?? []).map(wrapNode);
     this.groups = this.children.filter((child): child is ResultGroup => child instanceof ResultGroup);
     this.hits = this.children.filter((child): child is Hit => child instanceof Hit);
-    this.continuations = (node.continuations ?? []).map((entry) => ({
-      key: text(entry.key) ?? "",
-      value: text(entry.value) ?? "",
-    }));
+    this.continuations = (node.continuations ?? []).map((entry) => {
+      const key = text(entry.key);
+      const value = text(entry.value);
+      if (key === null || value === null) {
+        throw new ResultDecodeError("result continuation has a missing key or value");
+      }
+      return { key, value };
+    });
     this.source = text(node.source);
     this.types = (node.types ?? []).map((item) => text(item) ?? "");
     this.relevance = relevanceValue(node.relevance);
@@ -237,9 +275,9 @@ export class SearchResults {
   readonly totalHits: bigint;
   readonly totalHitsRelation: TotalHitsRelationName;
   readonly coverage: Coverage | null;
-  readonly timing: SearchTimingT | null;
-  readonly issues: readonly SearchResultErrorT[];
-  readonly errors: readonly SearchResultErrorT[];
+  readonly timing: SearchTiming | null;
+  readonly issues: readonly ResultIssue[];
+  readonly errors: readonly ResultIssue[];
   readonly aggregations: Record<string, unknown>;
   readonly continuations: readonly ResultContinuation[];
   readonly metadata: Record<string, unknown>;
@@ -262,8 +300,8 @@ export class SearchResults {
     this.totalHits = result.totalHits?.value ?? 0n;
     this.totalHitsRelation = totalHitsRelationName(result.totalHits?.relation);
     this.coverage = result.coverage ? new Coverage(result.coverage) : null;
-    this.timing = result.timing ?? null;
-    this.issues = result.errors ?? [];
+    this.timing = result.timing ? new SearchTiming(result.timing) : null;
+    this.issues = (result.errors ?? []).map((issue) => new ResultIssue(issue));
     this.errors = this.issues;
     this.aggregations = this.root instanceof ResultGroup ? { ...this.root.fields } : {};
     this.continuations = this.root instanceof ResultGroup ? [...this.root.continuations] : [];
