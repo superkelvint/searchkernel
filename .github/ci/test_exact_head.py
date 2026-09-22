@@ -120,6 +120,20 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
 
+    def test_workflow_keeps_native_signal_without_running_native_ci(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("\n  native:\n", workflow)
+        self.assertNotIn("./dev native-sdk ensure", workflow)
+        self.assertNotIn("./reference/vespa/verify-through.sh i", workflow)
+        self.assertIn(
+            'NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}',
+            workflow,
+        )
+        self.assertIn(
+            "Native-sensitive paths changed. CI intentionally does not bootstrap Vespa",
+            workflow,
+        )
+
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
             b"core/crates/searchkernel-ir/src/model.rs\0": {
