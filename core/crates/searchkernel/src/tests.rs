@@ -725,6 +725,64 @@ fn failed_post_publication_open_reports_recoverable_published_index() {
 }
 
 #[test]
+fn failed_create_after_publication_cleans_up_the_partial_runtime() {
+    let root = temporary_path("failed-create-backend-open-cleanup");
+    FAIL_NEXT_BACKEND_OPEN.with(|flag| flag.set(true));
+
+    let error = match Index::create(&root, IndexDefinition::new().field(Field::text("title"))) {
+        Ok(index) => {
+            index.close().unwrap();
+            panic!("injected backend open failure unexpectedly succeeded")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), crate::ErrorCode::Unavailable);
+    assert!(!root.exists(), "failed create must not leave a usable root");
+
+    let index = Index::create(&root, IndexDefinition::new().field(Field::text("title")))
+        .expect("a later valid create must be possible");
+    index.close().expect("close later valid create");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn failed_open_releases_lifecycle_lock_without_exposing_a_partial_runtime() {
+    let root = temporary_path("failed-open-partial-runtime");
+    let config = root.join("config");
+    std::fs::create_dir_all(root.join("data")).unwrap();
+    write_config(&config);
+    let definition = manifest_definition();
+    let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved_context(&resolved),
+        &config,
+    )
+    .unwrap();
+    manifest.write(&root).unwrap();
+    std::fs::remove_file(config.join("indexschema.cfg")).unwrap();
+
+    let error = match Index::open(&root) {
+        Ok(index) => {
+            index.close().unwrap();
+            panic!("corrupt config unexpectedly opened")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), crate::ErrorCode::CorruptIndex);
+    assert!(root.join("data").is_dir());
+    assert!(!root.join("config/indexschema.cfg").exists());
+
+    // The failed opener did not publish a handle or retain the lifecycle lock;
+    // a fresh create can claim the path after the corrupt tree is removed.
+    std::fs::remove_dir_all(&root).unwrap();
+    let recreated = Index::create(&root, IndexDefinition::new().field(Field::text("title")))
+        .expect("failed open must not poison future initialization");
+    recreated.close().expect("close recreated index");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn interrupted_staging_does_not_block_a_retry() {
     let root = temporary_path("interrupted-staging");
     let staging = create_staging_directory(&root).unwrap();
