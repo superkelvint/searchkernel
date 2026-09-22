@@ -56,6 +56,21 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
     fi
     BASE_SDK=$(CDPATH= cd -- "$BASE_SDK" && pwd)
 fi
+
+# Never let a full/custom SDK rebuild overwrite an immutable published Vespa
+# base (or vice versa). Explicit SK_NATIVE_SDK is an override, not permission
+# to cross package-kind boundaries.
+if [ -f "$SDK_PACKAGE/manifest.json" ]; then
+    if grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$SDK_PACKAGE/manifest.json"; then
+        if [ "$BASE_ONLY" != 1 ]; then
+            echo "refusing to overwrite Vespa base '$SDK_PACKAGE' with a Search Kernel adapter/full SDK" >&2
+            exit 1
+        fi
+    elif [ "$BASE_ONLY" = 1 ]; then
+        echo "refusing to overwrite full native SDK '$SDK_PACKAGE' with a Vespa base" >&2
+        exit 1
+    fi
+fi
 FAILPOINT_DEFINES=
 COVERAGE_FLAGS=
 COVERAGE_LINK_FLAGS=
