@@ -6,8 +6,8 @@ mod typed_query;
 
 use crate::analysis_options;
 use searchkernel_ir::{
-    PortableError, QueryInputIr, QueryIr, RequestTensorPayloadIr, RequestValueIr, Result,
-    SearchRequestIr,
+    PortableError, PrefixPolicy, QueryInputIr, QueryIr, RequestTensorPayloadIr, RequestValueIr,
+    Result, SearchRequestIr, TypoPolicy,
 };
 use searchkernel_vespa_engine::{
     Query, SearchRequest, SortField, SortOrder, SummaryRequest, TensorValue,
@@ -15,6 +15,37 @@ use searchkernel_vespa_engine::{
 use std::collections::{BTreeMap, BTreeSet};
 
 use typed_query::lower_query_with_context;
+
+/// The complete executable subset produced before the native engine is called.
+///
+/// Keeping the lowered request and grouping plans together makes the boundary
+/// auditable: backend execution consumes this result instead of revalidating
+/// selected fields while other fields can be silently ignored.
+#[derive(Debug)]
+pub(crate) struct SearchPreflight {
+    pub(crate) request: SearchRequest,
+    pub(crate) groupings: Vec<GroupingLowering>,
+}
+
+pub(crate) fn preflight_search_request(request: &SearchRequestIr) -> Result<SearchPreflight> {
+    validate_request_controls(request)?;
+    let language = analysis_options(request.language())?;
+    let query = lower_search_query(request, language)?;
+    let groupings = lower_groupings(request.grouping())?;
+    let facets = groupings
+        .iter()
+        .filter_map(|grouping| match grouping {
+            GroupingLowering::Facet(facet) => Some(facet.clone()),
+            GroupingLowering::Native(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let native_request =
+        lower_facets_into_request(lower_search_options(request, query, language)?, &facets);
+    Ok(SearchPreflight {
+        request: native_request,
+        groupings,
+    })
+}
 
 pub(crate) fn lower_search_query(
     request: &SearchRequestIr,
@@ -323,8 +354,7 @@ pub(crate) fn lower_sort(sort: &searchkernel_ir::SortIr) -> Result<SortField> {
     })
 }
 
-pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
-    grouping::lower_groupings(request.grouping())?;
+fn validate_request_controls(request: &SearchRequestIr) -> Result<()> {
     validate_ranking_inputs(request)?;
     validate_highlighting_execution_boundary(request)?;
     validate_highlighting_query_compatibility(request)?;
@@ -385,6 +415,26 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
             Some("search_fields"),
             "non-default search-field weights require the M10/I7 ranking integration surface",
         ));
+    }
+    // `lower_sort` only has a native representation for the target, direction,
+    // and missing policy. Reject annotations here rather than allowing a
+    // field-target sort to lose them on the way to the native request.
+    if request
+        .sort()
+        .iter()
+        .any(|sort| !sort.annotations().is_empty())
+    {
+        return Err(PortableError::unsupported(
+            "sort_annotations_not_supported",
+            Some("sort.annotations"),
+            "the current native adapter cannot execute annotated sort expressions",
+        ));
+    }
+    match request.prefix_policy() {
+        PrefixPolicy::Disabled => {}
+    }
+    match request.typo_policy() {
+        TypoPolicy::Disabled => {}
     }
     analysis_options(request.language())?;
     Ok(())
@@ -687,9 +737,318 @@ pub(crate) fn query_feature_value(name: &str, input: &QueryInputIr) -> Result<f6
 }
 
 #[cfg(test)]
+pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
+    preflight_search_request(request).map(|_| ())
+}
+
+#[cfg(test)]
 pub(crate) use grouping::lower_facet_groupings;
 pub(crate) use grouping::{
     lower_facets_into_request, lower_groupings, FacetLowering, GroupingLowering,
 };
 #[cfg(test)]
 pub(crate) use typed_query::lower_query;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use searchkernel_ir::{
+        FieldName, FilterIr, GroupingAggregationIr, GroupingAllIr, GroupingExpressionIr,
+        GroupingOperationIr, GroupingOutputIr, GroupingRequestIr, HighlightingIr, LanguageHint,
+        MissingPlacement, PrefixPolicy, PresentationIr, QueryExprIr, QueryExprKindIr, QueryInputIr,
+        QueryIr, QueryModelIr, RequestValueIr, SearchFieldIr, SearchFieldWeight, SortDirection,
+        SortIr, TypoPolicy,
+    };
+
+    fn base_request(query: QueryIr) -> SearchRequestIr {
+        SearchRequestIr::new(
+            query,
+            vec![SearchFieldIr::new(
+                FieldName::parse("title").unwrap(),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+            None,
+            Vec::new(),
+            10,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+    }
+
+    fn count_grouping() -> GroupingRequestIr {
+        GroupingRequestIr {
+            root: GroupingAllIr {
+                operations: vec![
+                    GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                    GroupingOperationIr::Each(GroupingAllIr {
+                        operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                            label: None,
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        }])],
+                        label: None,
+                    }),
+                ],
+                label: None,
+            },
+            continuations: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn field_sort_annotations_are_not_silently_dropped() {
+        let mut annotations = BTreeMap::new();
+        annotations.insert(
+            "locale".to_owned(),
+            RequestValueIr::String("en-US".to_owned()),
+        );
+        let request = SearchRequestIr::new(
+            QueryIr::MatchAll,
+            vec![SearchFieldIr::new(
+                FieldName::parse("title").unwrap(),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+            None,
+            vec![SortIr::with_target(
+                searchkernel_ir::SortTargetIr::Field(FieldName::parse("price").unwrap()),
+                SortDirection::Asc,
+                MissingPlacement::First,
+                annotations,
+            )],
+            10,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        );
+
+        let error = validate_search_request(&request)
+            .expect_err("field sort annotations must be rejected before lowering");
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "sort_annotations_not_supported");
+    }
+
+    #[test]
+    fn preflight_matrix_covers_request_controls_without_silent_drops() {
+        let typed = QueryIr::Typed(Box::new(QueryExprIr {
+            kind: QueryExprKindIr::True,
+            annotations: BTreeMap::new(),
+        }));
+        let cases = vec![
+            ("match_all", base_request(QueryIr::MatchAll)),
+            ("text", base_request(QueryIr::Text("headphones".to_owned()))),
+            ("typed", base_request(typed)),
+            (
+                "yql",
+                base_request(QueryIr::Yql {
+                    source: "select * from products where title contains \"fox\"".to_owned(),
+                    parameters: BTreeMap::new(),
+                }),
+            ),
+            (
+                "yql_properties",
+                base_request(QueryIr::Yql {
+                    source: "select * from products where title contains \"fox\"".to_owned(),
+                    parameters: BTreeMap::new(),
+                })
+                .with_properties(BTreeMap::from([(
+                    "tracelevel".to_owned(),
+                    RequestValueIr::Int64(1),
+                )])),
+            ),
+            (
+                "filter",
+                SearchRequestIr::new(
+                    QueryIr::MatchAll,
+                    Vec::new(),
+                    Some(FilterIr::Exists {
+                        field: FieldName::parse("brand").unwrap(),
+                    }),
+                    Vec::new(),
+                    10,
+                    0,
+                    searchkernel_ir::ProjectionIr::new(Vec::new()),
+                    HighlightingIr::Disabled,
+                    None,
+                    PrefixPolicy::Disabled,
+                    TypoPolicy::Disabled,
+                ),
+            ),
+        ];
+        for (label, request) in cases {
+            let plan = preflight_search_request(&request)
+                .unwrap_or_else(|error| panic!("{label} must be lowered: {error:?}"));
+            assert!(plan.request.limit == 10, "{label} lost pagination");
+        }
+
+        let mut request = base_request(QueryIr::MatchAll)
+            .with_grouping(vec![count_grouping()])
+            .with_inputs(BTreeMap::from([(
+                "rank_input".to_owned(),
+                QueryInputIr::Literal(RequestValueIr::Float64(1.5)),
+            )]))
+            .with_ranking_request(
+                "default",
+                BTreeMap::from([("rank_property".to_owned(), "value".to_owned())]),
+            )
+            .with_timeout(Some(std::time::Duration::from_millis(250)))
+            .with_query_model(QueryModelIr {
+                query_string: Some("headphones".to_owned()),
+                default_index: Some("title".to_owned()),
+                ..QueryModelIr::default()
+            })
+            .with_presentation(PresentationIr {
+                summary: Some("summary".to_owned()),
+                ..PresentationIr::default()
+            });
+        request = SearchRequestIr::new(
+            request.query().clone(),
+            request.search_fields().to_vec(),
+            request.filter().cloned(),
+            vec![SortIr::new(
+                FieldName::parse("price").unwrap(),
+                SortDirection::Desc,
+                MissingPlacement::Last,
+            )],
+            request.limit(),
+            request.offset(),
+            searchkernel_ir::ProjectionIr::new(vec![FieldName::parse("title").unwrap()]),
+            HighlightingIr::Requested {
+                fields: vec![FieldName::parse("title").unwrap()],
+                multi_valued_fields: Vec::new(),
+            },
+            Some(LanguageHint::parse("en").unwrap()),
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .with_grouping(request.grouping().to_vec())
+        .with_inputs(request.inputs().clone())
+        .with_ranking_request(
+            request.ranking_request().profile.clone(),
+            request.ranking_request().properties.clone(),
+        )
+        .with_timeout(request.timeout())
+        .with_query_model(request.query_model().clone())
+        .with_presentation(request.presentation().clone());
+        let plan = preflight_search_request(&request).expect("complete request must be lowered");
+        assert_eq!(plan.request.limit, 10);
+        assert_eq!(plan.request.sort.len(), 1);
+        assert_eq!(
+            plan.request.query_features,
+            vec![("rank_input".to_owned(), 1.5)]
+        );
+        assert_eq!(plan.request.rank_properties.len(), 1);
+        assert_eq!(plan.request.summary_class.as_deref(), Some("summary"));
+        assert_eq!(plan.request.highlight_fields, vec!["title"]);
+        assert_eq!(plan.request.timeout, std::time::Duration::from_millis(250));
+        assert_eq!(plan.groupings.len(), 1);
+    }
+
+    #[test]
+    fn preflight_matrix_rejects_unexecutable_controls() {
+        let cases = vec![
+            (
+                "query_model",
+                base_request(QueryIr::MatchAll).with_query_model(QueryModelIr {
+                    encoding: Some("utf-8".to_owned()),
+                    ..QueryModelIr::default()
+                }),
+                "query_model_not_supported",
+            ),
+            (
+                "presentation",
+                base_request(QueryIr::MatchAll).with_presentation(PresentationIr {
+                    format: Some("json".to_owned()),
+                    ..PresentationIr::default()
+                }),
+                "presentation_not_supported",
+            ),
+            (
+                "expression_input",
+                base_request(QueryIr::MatchAll).with_inputs(BTreeMap::from([(
+                    "rank_input".to_owned(),
+                    QueryInputIr::Expression("rankingExpression".to_owned()),
+                )])),
+                "query_input_expression_not_supported",
+            ),
+            (
+                "grouping",
+                base_request(QueryIr::MatchAll).with_grouping(vec![GroupingRequestIr {
+                    root: GroupingAllIr {
+                        operations: Vec::new(),
+                        label: None,
+                    },
+                    continuations: Vec::new(),
+                }]),
+                "grouping_level_missing_classifier",
+            ),
+            (
+                "properties",
+                base_request(QueryIr::MatchAll).with_properties(BTreeMap::from([(
+                    "tracelevel".to_owned(),
+                    RequestValueIr::Int64(1),
+                )])),
+                "query_properties_not_supported",
+            ),
+            (
+                "query_profile",
+                base_request(QueryIr::MatchAll).with_query_profile("default"),
+                "query_profile_not_supported",
+            ),
+            (
+                "search_chain",
+                base_request(QueryIr::MatchAll).with_search_chain("default"),
+                "search_chain_not_supported",
+            ),
+        ];
+        for (label, request, code) in cases {
+            let error = preflight_search_request(&request)
+                .expect_err("unsupported controls must not be silently dropped");
+            assert_eq!(error.details[0].code, code, "{label} error code");
+        }
+    }
+
+    #[test]
+    fn preflight_disposition_matrix_covers_entire_search_request_surface() {
+        let request = base_request(QueryIr::MatchAll);
+        let dispositions = [
+            ("query", "lowered"),
+            ("search_fields", "lowered_or_rejected"),
+            ("filter", "lowered"),
+            ("sort", "lowered_or_rejected"),
+            ("grouping", "lowered_or_rejected"),
+            ("ranking_request", "lowered"),
+            ("inputs", "lowered_or_rejected"),
+            ("limit", "lowered"),
+            ("offset", "lowered"),
+            ("projection", "lowered"),
+            ("highlighting", "lowered_or_rejected"),
+            ("language", "lowered_or_rejected"),
+            ("query_model", "lowered_or_rejected"),
+            ("presentation", "lowered_or_rejected"),
+            ("properties", "lowered_for_yql_or_rejected"),
+            ("query_profile", "rejected"),
+            ("search_chain", "rejected"),
+            ("timeout", "lowered"),
+            ("prefix_policy", "lowered_or_rejected"),
+            ("typo_policy", "lowered_or_rejected"),
+        ];
+        let classified = dispositions
+            .iter()
+            .map(|(field, _)| *field)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            request.semantic_field_names(),
+            classified.as_slice(),
+            "every canonical SearchRequestIr field needs an explicit adapter disposition"
+        );
+    }
+}
