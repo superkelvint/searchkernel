@@ -42,6 +42,7 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
         "tools/generate-typescript-*.sh",
     ),
     "native": (
+        ".githooks/pre-commit",
         "core/native/**",
         "core/crates/searchkernel-vespa-bindings/**",
         "core/crates/searchkernel-vespa-engine/**",
