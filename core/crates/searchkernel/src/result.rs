@@ -356,7 +356,11 @@ fn convert_result_hit(hit: core::Hit) -> Result<ResultHit> {
         match_features: json_map(hit.match_features)?,
         summary_features: json_map(hit.summary_features)?,
         rank_features: json_map(hit.rank_features)?,
-        sort_values: hit.sort_values.into_iter().map(json_value).collect::<Result<Vec<_>>>()?,
+        sort_values: hit
+            .sort_values
+            .into_iter()
+            .map(json_value)
+            .collect::<Result<Vec<_>>>()?,
     })
 }
 
@@ -366,17 +370,24 @@ fn convert_result_group(group: core::ResultGroup) -> Result<ResultGroup> {
         label: group.label,
         value: group.value.map(json_value).transpose()?,
         fields: json_map(group.fields)?,
-        children: group.children.into_iter().map(convert_result_node).collect::<Result<Vec<_>>>()?,
+        children: group
+            .children
+            .into_iter()
+            .map(convert_result_node)
+            .collect::<Result<Vec<_>>>()?,
         continuations: group.continuations,
         source: group.source,
         types: group.types,
         relevance: group.score,
-        limits: group.limits.map(|limits| {
-            Ok(ResultLimits {
-                from: limits.from.map(json_value).transpose()?,
-                to: limits.to.map(json_value).transpose()?,
+        limits: group
+            .limits
+            .map(|limits| {
+                Ok(ResultLimits {
+                    from: limits.from.map(json_value).transpose()?,
+                    to: limits.to.map(json_value).transpose()?,
+                })
             })
-        }).transpose()?,
+            .transpose()?,
         metadata: json_map(group.metadata)?,
     })
 }
@@ -461,7 +472,6 @@ fn search_timing(value: core::SearchTiming) -> Result<SearchTiming> {
     })
 }
 
-
 fn total_hits(total_hits: core::TotalHits) -> TotalHits {
     TotalHits {
         value: total_hits.value,
@@ -511,8 +521,8 @@ fn convert_facet_group(
             return Ok(None);
         };
         let optimized_child = child.id.is_none() && child.label.is_none();
-        let generic_child = child.id.as_deref() == Some("grouping-0")
-            && child.label.as_deref() == Some(name);
+        let generic_child =
+            child.id.as_deref() == Some("grouping-0") && child.label.as_deref() == Some(name);
         if (!optimized_child && !generic_child)
             || !child.children.is_empty()
             || !child.continuations.is_empty()
@@ -527,6 +537,9 @@ fn convert_facet_group(
         let Some(value) = child.value.clone() else {
             return Ok(None);
         };
+        if child.fields.len() != 1 {
+            return Ok(None);
+        }
         let Some(core::Value::UInt64(count)) = child.fields.get("count") else {
             return Ok(None);
         };
@@ -683,7 +696,8 @@ mod tests {
             metadata: BTreeMap::new(),
         };
 
-        let converted: SearchResult<serde_json::Value> = search_result(result, &[("brand", "brand")]).unwrap();
+        let converted: SearchResult<serde_json::Value> =
+            search_result(result, &[("brand", "brand")]).unwrap();
         assert_eq!(converted.total_hits.value, 7);
         assert_eq!(converted.total_hits.relation, TotalHitsRelation::LowerBound);
         assert_eq!(converted.hits.len(), 1);
@@ -734,7 +748,10 @@ mod tests {
         assert_eq!(converted.facets.len(), 1);
         assert_eq!(converted.facets[0].field, "brand");
         assert_eq!(converted.facets[0].name, "brands");
-        assert_eq!(converted.facets[0].values[0].value, serde_json::json!("acme"));
+        assert_eq!(
+            converted.facets[0].values[0].value,
+            serde_json::json!("acme")
+        );
         assert_eq!(converted.facets[0].values[0].count, 4);
     }
 
@@ -788,10 +805,7 @@ mod tests {
                     Value::String("match-phase".into()),
                 )]),
             }),
-            metadata: BTreeMap::from([(
-                "coverage_source".into(),
-                Value::String("native".into()),
-            )]),
+            metadata: BTreeMap::from([("coverage_source".into(), Value::String("native".into()))]),
         })
         .unwrap();
         assert_eq!(converted.metadata["coverage_source"], "native");
@@ -996,18 +1010,27 @@ mod tests {
         assert_eq!(root.fields["count"], serde_json::json!(2));
         assert_eq!(root.metadata["trace_id"], serde_json::json!("r-1"));
         assert_eq!(root.children.len(), 2);
-        let ResultNode::Hit(root_hit) = &root.children[0] else { panic!("first root child must remain a hit"); };
+        let ResultNode::Hit(root_hit) = &root.children[0] else {
+            panic!("first root child must remain a hit");
+        };
         assert_eq!(root_hit.id.as_str(), "root-hit");
         assert_eq!(root_hit.source.as_deref(), Some("catalog"));
-        let ResultNode::Group(nested) = &root.children[1] else { panic!("second root child must remain a group"); };
+        let ResultNode::Group(nested) = &root.children[1] else {
+            panic!("second root child must remain a group");
+        };
         assert_eq!(nested.continuations["next"], "token");
         assert_eq!(nested.source.as_deref(), Some("group-source"));
         assert_eq!(nested.types, ["bucket"]);
         assert_eq!(nested.relevance, Some(2.5));
         assert_eq!(nested.metadata["owner"], serde_json::json!(true));
-        assert_eq!(nested.limits.as_ref().unwrap().to, Some(serde_json::json!(10)));
+        assert_eq!(
+            nested.limits.as_ref().unwrap().to,
+            Some(serde_json::json!(10))
+        );
         assert_eq!(nested.children.len(), 1);
-        let ResultNode::Hit(nested_hit) = &nested.children[0] else { panic!("nested hit must remain in the canonical tree"); };
+        let ResultNode::Hit(nested_hit) = &nested.children[0] else {
+            panic!("nested hit must remain in the canonical tree");
+        };
         assert_eq!(nested_hit.id.as_str(), "nested-hit");
     }
 
@@ -1053,5 +1076,23 @@ mod tests {
             document::<i64>(bad_document),
             Err(Error::Deserialization(_))
         ));
+    }
+
+    #[test]
+    fn result_fixture_corpus_freezes_strict_facet_shape() {
+        for fixture in searchkernel_testkit::result_fixtures() {
+            let converted: SearchResult<serde_json::Value> =
+                search_result(fixture.result, &[("brand", "brand")]).unwrap();
+            if fixture.name == "facet-valid" {
+                assert_eq!(converted.facets.len(), 1);
+                assert_eq!(converted.facets[0].values[0].count, 3);
+            } else if fixture.name.starts_with("facet-") {
+                assert!(
+                    converted.facets.is_empty(),
+                    "malformed facet fixture was projected: {}",
+                    fixture.name
+                );
+            }
+        }
     }
 }
