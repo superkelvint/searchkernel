@@ -13,7 +13,7 @@ Git common directory
   │      immutable installed FlatBuffers C++ toolchain
   └── searchkernel/native-sdk-cache/
          └── <environment>/<target>/objects/<fingerprint>/
-                                               immutable Vespa adapter SDK
+                                               immutable Vespa/runtime base
 ```
 
 Ordinary Cargo targets contain Search Kernel build artifacts only. FlatBuffers
@@ -36,17 +36,21 @@ the Rust target partition incompatible environments before fingerprinting.
 
 ## What is recorded
 
-The Vespa native SDK records a deterministic provenance fingerprint containing
-the inputs that can affect binary compatibility, including:
+Native provenance has two explicit scopes. The shared Vespa base records only
+inputs that can change the pinned third-party prerequisite. Full/package
+provenance additionally records Search Kernel adapter source and adapter-only
+flags.
 
 - Rust host/toolchain and Cargo target;
 - canonical C/C++ compiler paths, versions, and target/dumpmachine output;
 - archiver, ranlib, linker, libc, and C++ runtime identities;
-- relevant compiler, linker, CMake, standard-library, sanitizer, coverage, and
-  native configuration flags;
+- relevant compiler, linker, CMake, and standard-library configuration for the
+  base;
+- for full/package scope only: Search Kernel adapter source plus failpoint,
+  sanitizer, coverage, and adapter-only compiler/linker flags;
 - the pinned FlatBuffers version consumed by native packaging where relevant;
-- the pinned Vespa revision and configured Vespa build inputs for the SDK; and
-- the Search Kernel native source/header/configuration content.
+- the pinned Vespa revision and configured Vespa build inputs; and
+- the selected dependency/runtime library content bundled into the base.
 
 The record contains no timestamps, process IDs, temporary paths, or random
 values. The native SDK also stores its fingerprint digest in `manifest.json`.
@@ -58,13 +62,12 @@ resolves the clone-wide/system FlatBuffers 25.12.19 installation, verifies its
 headers and static archive, and either consumes it read-only or fails with the
 one-time bootstrap command.
 
-For the Vespa SDK, `tools/resolve-native-sdk.sh` first computes the same
-provenance fingerprint that will be recorded in the package. The digest is the
-cache object identity. The fingerprint includes Search Kernel native/package
-source, configured Vespa identity/build outputs, content identity for the
-selected external dependency/runtime shared libraries that are bundled into the
-SDK, and the native toolchain/configuration inputs. A matching object is reused
-read-only only after its runtime dependency closure validates.
+For the Vespa base, `tools/resolve-native-sdk.sh` computes a base-scope
+fingerprint. Cache objects contain the Vespa/runtime closure only and explicitly
+exclude Search Kernel adapter libraries and headers. Matching bases are reused
+read-only only after their runtime dependency closure validates. Cargo builds
+Search Kernel's adapter separately in `OUT_DIR` and probes the adapter against
+the immutable base.
 
 A cache miss acquires a per-digest lock, invokes
 `core/native/vespa/build-sdk.sh` into private staging, validates the resulting
@@ -74,11 +77,11 @@ rechecks it under the same lock, moves it to quarantine, rebuilds privately, and
 republishes a valid object at that key. No consumer mutates or recompiles inside
 a published object.
 
-The Rust bindings still compile/link a probe that calls
-`sk_native_abi_version()` from the actual SDK library as an independent final
-consumer check. Native source/package changes and changed packaged dependency
-libraries select a different cache key; accidental corruption of an existing
-object self-heals under the per-key lock.
+The Rust bindings compile/link a probe that calls `sk_native_abi_version()`
+through the local adapter while resolving its dependencies from the shared base.
+Adapter source changes rebuild only that local adapter. Base dependency/runtime
+changes select a new base key. Direct full SDK packaging uses full-scope
+provenance so stale adapter implementations remain detectable.
 
 The configured Vespa CMake outputs themselves remain intentionally untracked.
 When the current worktree does not contain them, the resolver scans sibling Git
@@ -122,6 +125,7 @@ different native provenance
 ```
 
 In particular, edits outside the native fingerprint (for example IR, protocol,
-client, or filter changes) do not force a Vespa rebuild. Edits under
-`core/native/vespa`, a different pinned/configured Vespa tree, toolchain or
-runtime changes, target changes, and relevant native flags do.
+client, or filter changes) do not force a Vespa rebuild. Edits to Search Kernel adapter sources do not change the shared base key; they
+rebuild only the local adapter. A different pinned/configured Vespa tree,
+base-relevant toolchain/runtime change, target change, or packaged dependency
+change selects a different base object.
