@@ -415,7 +415,7 @@ fn validate_highlighting_execution_boundary(request: &SearchRequestIr) -> Result
 }
 
 fn validate_highlighting_query_compatibility(request: &SearchRequestIr) -> Result<()> {
-    let searchkernel_ir::HighlightingIr::Requested { fields } = request.highlighting() else {
+    let searchkernel_ir::HighlightingIr::Requested { fields, .. } = request.highlighting() else {
         return Ok(());
     };
 
