@@ -739,6 +739,24 @@ fn create_fsync_failure_preserves_recoverable_root_and_rejects_destructive_retry
     assert_eq!(retry.code(), crate::ErrorCode::AlreadyExists);
     assert!(root.join("manifest/index.json").is_file());
 
+    FAIL_NEXT_BACKEND_OPEN.with(|flag| flag.set(true));
+    let reopen_error = match Index::open(&root) {
+        Ok(index) => {
+            index.close().unwrap();
+            panic!("injected recovery open failure unexpectedly succeeded")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(reopen_error.code(), crate::ErrorCode::Unavailable);
+    assert!(
+        reopen_error.to_string().contains("injected backend open failure"),
+        "recovery open must preserve backend failure context"
+    );
+    assert!(
+        root.join("manifest/index.json").is_file(),
+        "failed recovery open must not remove the published root"
+    );
+
     let reopened = Index::open(&root).expect("published index remains recoverable");
     reopened.close().expect("close recovered index");
     let _ = std::fs::remove_dir_all(root);
