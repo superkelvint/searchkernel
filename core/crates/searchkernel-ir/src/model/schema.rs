@@ -663,6 +663,14 @@ impl IndexDefinitionIr {
         self.default_search_fields = fields;
     }
 
+    /// Replace document metadata while retaining every other schema member.
+    #[doc(hidden)]
+    pub fn set_document_metadata(&mut self, document_type: Option<String>, schema_inherits: Vec<String>, document_inherits: Vec<String>) {
+        self.document_type = document_type;
+        self.schema_inherits = schema_inherits;
+        self.document_inherits = document_inherits;
+    }
+
     /// Replace top-level schema properties while retaining every other
     /// canonical schema member.
     #[doc(hidden)]
