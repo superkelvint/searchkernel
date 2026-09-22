@@ -80,7 +80,7 @@ fn expected_search_with_facet(field: &str) -> SearchRequestIr {
                     label: None,
                 }),
             ],
-            label: None,
+            label: Some(field.to_owned()),
         },
         continuations: Vec::new(),
     }])
