@@ -7,6 +7,8 @@ on:
       - "dev"
       - "tools/check-issue-queue.py"
       - "tools/test_check_issue_queue.py"
+      - ".github/ci/select-python.sh"
+      - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/issue-queue.yml"
   push:
     branches: [main]
@@ -15,6 +17,8 @@ on:
       - "dev"
       - "tools/check-issue-queue.py"
       - "tools/test_check_issue_queue.py"
+      - ".github/ci/select-python.sh"
+      - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/issue-queue.yml"
   workflow_dispatch:
   schedule:
@@ -31,8 +35,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
+      - name: Enforce runner-Python workflow policy
+        run: bash .github/ci/check-python-workflows.sh
       - run: python tools/test_check_issue_queue.py
       - run: python tools/check-issue-queue.py --repo "${{ github.repository }}"
