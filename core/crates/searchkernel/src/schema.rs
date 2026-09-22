@@ -1210,14 +1210,18 @@ pub(crate) fn field_to_unresolved_input(
             "field name must match [A-Za-z][A-Za-z0-9_]*",
         ))
     })?;
-    let canonical = field.canonical.is_some() || field.capabilities.is_some();
+    // Origin is a facade-local structural concern only. Described values
+    // already expose their complete analyzer/matching/index/attribute state,
+    // while fresh ergonomic builders need those structural shorthands decoded.
+    // Do not carry this provenance into searchkernel-ir semantic resolution.
+    let described = field.canonical.is_some() || field.capabilities.is_some();
     let analyzer = match &field.analyzer_config {
         Some(analyzer) => Some(analyzer.clone()),
-        None if !canonical => field.analyzer.as_ref().map(analyzer_to_ir).transpose()?,
+        None if !described => field.analyzer.as_ref().map(analyzer_to_ir).transpose()?,
         None => None,
     };
     let matching = field.matching_config.clone().or_else(|| {
-        if canonical {
+        if described {
             return None;
         }
         match field.kind {
@@ -1233,7 +1237,7 @@ pub(crate) fn field_to_unresolved_input(
         }
     });
     let index = field.index_config.clone().or_else(|| {
-        if canonical {
+        if described {
             return None;
         }
         field
@@ -1246,7 +1250,7 @@ pub(crate) fn field_to_unresolved_input(
             })
     });
     let attribute = field.attribute_config.clone().or_else(|| {
-        if canonical {
+        if described {
             return None;
         }
         field
@@ -1262,7 +1266,6 @@ pub(crate) fn field_to_unresolved_input(
     Ok(searchkernel_ir::UnresolvedFieldInput {
         name,
         data_type: field.data_type.clone(),
-        canonical,
         stored: field.stored,
         searchable: field.searchable,
         filterable: field.filterable,
