@@ -25,9 +25,40 @@ git diff --cached --name-only --no-renames -z \
 native_required=false
 if grep -qx 'native=true' "$native_selection"; then
     native_required=true
+fi
+
+python_native_e2e_required=false
+if grep -Eq '^(rust|python|native)=true
+echo "pre-commit: checking rustfmt"
+cargo fmt --all --check
+
+echo "pre-commit: running clippy"
+cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+
+echo "pre-commit: running workspace unit tests"
+cargo test --workspace --all-targets --no-default-features
+
+if [[ "$native_required" == true ]]; then
+    echo "pre-commit: native-sensitive changes detected; running local real-Vespa verification"
+    ./reference/vespa/verify-through.sh i
+fi
+
+if [[ "$python_native_e2e_required" == true ]]; then
+    echo "pre-commit: code-sensitive changes detected; running Python native gRPC E2E"
+    tools/run-python-native-e2e.sh
+fi
+ "$native_selection"; then
+    # The real Python gRPC E2E crosses the public Python client, daemon,
+    # dispatcher/IR, and native engine. Keep this deliberately broader than the
+    # native-only lane so backend and client changes cannot bypass end-to-end
+    # verification merely because they did not touch core/native/** directly.
+    python_native_e2e_required=true
+fi
+
+if [[ "$native_required" == true || "$python_native_e2e_required" == true ]]; then
     if ! git diff --quiet; then
-        echo "pre-commit: native-sensitive changes are staged, but tracked unstaged changes also exist" >&2
-        echo "pre-commit: stage or revert those tracked changes so native verification matches the commit" >&2
+        echo "pre-commit: native/E2E-sensitive changes are staged, but tracked unstaged changes also exist" >&2
+        echo "pre-commit: stage or revert those tracked changes so verification matches the commit" >&2
         exit 1
     fi
 fi
