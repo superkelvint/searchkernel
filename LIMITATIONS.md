@@ -158,7 +158,7 @@ approximated.
 
 ### Highlighting (`result.highlighting`)
 
-- This pass supports Vespa-generated dynamic teaser output for scalar stored, indexed text fields. Multi-valued text highlighting is rejected at the adapter boundary because Vespa's current dynamic-teaser path is scalar-only. The TypeScript SearchBuilder does not expose highlighting controls. Custom document-summary definitions, arbitrary Juniper rendering controls, grouped highlights, and rich docsum values remain separate capabilities.
+- This pass supports Vespa-generated dynamic teaser output for stored, indexed text fields. The TypeScript SearchBuilder does not expose highlighting controls. Custom document-summary definitions, arbitrary Juniper rendering controls, grouped highlights, and rich docsum values remain separate capabilities.
 
 ### Dense tensor document readback (`result.tensor_document_readback`)
 
