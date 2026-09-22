@@ -87,11 +87,10 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
         let root = materialize_fixture(version);
         let index = Index::open(&root).unwrap_or_else(|error| panic!("v{version} open: {error}"));
         let described = index.describe().unwrap();
-        assert_eq!(
+        assert!(matches!(
             described.fields()[0].data_type(),
-            &searchkernel::DataType::Primitive(PrimitiveDataType::Int32),
-            "v{version} historical schema must preserve its frozen int32 type"
-        );
+            searchkernel::DataType::Primitive(PrimitiveDataType::Int32)
+        ), "v{version} historical schema must preserve its frozen int32 type");
         assert_expected(&index);
 
         index
