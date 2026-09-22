@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "native SDK cache regression failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
@@ -28,6 +29,8 @@ cp "$source_root/tools/native-build-fingerprint.py" "$repo/tools/"
 cat >"$repo/core/native/vespa/searchkernel_vespa.h" <<'EOF'
 #define SK_NATIVE_ABI_VERSION 1U
 EOF
+printf '{"native_abi_version":1,"vespa_commit":"fixture-vespa-commit"}\n' \
+    >"$repo/core/native/vespa/manifest.json"
 echo 'adapter-v1' >"$repo/core/native/vespa/adapter.cc"
 echo 'vespa-source' >"$repo/upstream/vespa/tracked.txt"
 printf 'dependency-v1\n' >"$repo/vespa-deps/lib64/libsearchkernel_fixture.so"
@@ -42,14 +45,15 @@ mkdir -p "$sdk/include" "$sdk/lib" "$sdk/share" "$SK_NATIVE_BUILD_DIR"
     echo "cache fixture expected base-only builder mode" >&2
     exit 1
 }
-cat >"$SK_NATIVE_BUILD_DIR/cache_fixture_base.c" <<'C'
+if [[ -n "${VESPA_LIBRARY_ROOT:-}" ]]; then
+    find "$VESPA_LIBRARY_ROOT" -maxdepth 1 -name 'libvespa*.so*' -exec cp {} "$sdk/lib/" \;
+else
+    cat >"$SK_NATIVE_BUILD_DIR/cache_fixture_base.c" <<'C'
 int searchkernel_cache_fixture_base(void) { return 1; }
 C
-cc -shared -fPIC "$SK_NATIVE_BUILD_DIR/cache_fixture_base.c" \
-    -Wl,-soname,libvespalib.so \
-    -o "$sdk/lib/libvespalib.so"
-if [[ -f "$VESPA_ROOT/cache-fixture.so" ]]; then
-    cp "$VESPA_ROOT/cache-fixture.so" "$sdk/lib/cache-fixture.so"
+    cc -shared -fPIC "$SK_NATIVE_BUILD_DIR/cache_fixture_base.c" \
+        -Wl,-soname,libvespalib.so \
+        -o "$sdk/lib/libvespalib.so"
 fi
 printf '{"kind":"vespa-base"}\n' >"$sdk/manifest.json"
 python3 "$root/tools/native-build-fingerprint.py" \
@@ -74,7 +78,42 @@ configured="$repo/upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFil
 mkdir -p "$configured"
 printf 'link\n' >"$configured/link.txt"
 printf 'CXX_INCLUDES = \n' >"$configured/flags.make"
-printf 'vespa-library-bytes-v1\n' >"$repo/upstream/vespa/cache-fixture.so"
+
+# Reproduce the post-#234 migration state: the configured Vespa tree still has
+# CMake metadata but no built libvespa*.so files, while the pre-split full SDK
+# already contains a self-contained Vespa runtime closure.
+legacy_sdk="$repo/core/native/sdk/linux-x86_64"
+mkdir -p "$legacy_sdk/lib"
+legacy_source="$fixture/legacy-vespa.c"
+cat >"$legacy_source" <<'C'
+int searchkernel_cache_fixture_base(void) { return 1; }
+C
+cc -shared -fPIC "$legacy_source" \
+    -Wl,-soname,libvespalib.so \
+    -o "$legacy_sdk/lib/libvespalib.so"
+
+refresh_legacy_fingerprint() {
+    VESPA_LIBRARY_ROOT="$legacy_sdk/lib" \
+    SEARCHKERNEL_BUILD_ENV=cache-regression \
+    python3 "$repo/tools/native-build-fingerprint.py" \
+        --root "$repo" \
+        --vespa-root "$repo/upstream/vespa" \
+        --target x86_64-unknown-linux-gnu \
+        --scope full \
+        --output "$legacy_sdk/native-build-fingerprint-v2.txt"
+    printf '{"native_abi_version":1,"vespa_commit":"fixture-vespa-commit"}\n' \
+        >"$legacy_sdk/manifest.json"
+}
+refresh_legacy_fingerprint
+
+untrusted_library_root="$fixture/untrusted-vespa"
+mkdir -p "$untrusted_library_root"
+cat >"$fixture/untrusted-vespa.c" <<'C'
+int searchkernel_untrusted_fixture(void) { return 99; }
+C
+cc -shared -fPIC "$fixture/untrusted-vespa.c" \
+    -Wl,-soname,libvespalib.so \
+    -o "$untrusted_library_root/libvespalib.so"
 
 worktree="$fixture/worktree"
 git -C "$repo" worktree add -q "$worktree" -b cache-test
@@ -90,6 +129,7 @@ run_resolver() {
         SEARCHKERNEL_BUILD_ENV=cache-regression \
         SK_NATIVE_TARGET=x86_64-unknown-linux-gnu \
         SK_NATIVE_CACHE_BUILDER="$root/tools/fake-sdk-builder.sh" \
+        VESPA_LIBRARY_ROOT="$untrusted_library_root" \
             bash "$root/tools/resolve-native-sdk.sh" "$mode"
     )
 }
@@ -104,8 +144,25 @@ fi
 [[ ! -e "$common/sdk-cache-build-count" ]]
 grep -q 'native SDK cache miss' "$fixture/cold-path.err"
 
-first=$(run_resolver "$repo")
+cp "$legacy_sdk/manifest.json" "$fixture/legacy-manifest.good"
+printf '{"native_abi_version":1,"vespa_commit":"stale-vespa-commit"}\n' \
+    >"$legacy_sdk/manifest.json"
+if run_resolver "$repo" >"$fixture/stale.out" 2>"$fixture/stale.err"; then
+    echo 'native SDK cache unexpectedly accepted stale legacy SDK provenance' >&2
+    exit 1
+fi
+grep -q 'no compatible full SDK was available' "$fixture/stale.err"
+[[ ! -e "$common/sdk-cache-build-count" ]]
+mv "$fixture/legacy-manifest.good" "$legacy_sdk/manifest.json"
+
+if ! first=$(run_resolver "$repo" 2>"$fixture/bootstrap.err"); then
+    echo 'native SDK cache bootstrap failed:' >&2
+    cat "$fixture/bootstrap.err" >&2
+    exit 1
+fi
 [[ -d "$first" ]]
+grep -q 'using Vespa shared libraries from compatible full SDK' "$fixture/bootstrap.err"
+[[ -s "$first/lib/libvespalib.so" ]]
 grep -q '^fingerprint-version=3$' "$first/native-build-fingerprint-v2.txt"
 grep -q '^fingerprint.scope[[:space:]]*base$' "$first/native-build-fingerprint-v2.txt"
 grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$first/manifest.json"
@@ -129,12 +186,23 @@ third=$(run_resolver "$worktree")
 [[ ! -e "$third/include/searchkernel_vespa.h" ]]
 [[ -z "$(find "$third" -perm /222 -print -quit)" ]]
 
+printf 'legacy-adapter-bytes-changed\n' >"$legacy_sdk/lib/libsearchkernel_vespa.so"
+same_after_legacy_adapter=$(run_resolver "$worktree")
+[[ "$same_after_legacy_adapter" == "$third" ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
+
 printf 'unrelated-task-dependency\n' >"$worktree/vespa-deps/lib64/libsearchkernel_fixture.so"
 same_after_unrelated_deps=$(run_resolver "$worktree")
 [[ "$same_after_unrelated_deps" == "$third" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
 
-printf 'vespa-library-bytes-v2-changed\n' >"$repo/upstream/vespa/cache-fixture.so"
+cat >"$legacy_source" <<'C'
+int searchkernel_cache_fixture_base(void) { return 2; }
+C
+cc -shared -fPIC "$legacy_source" \
+    -Wl,-soname,libvespalib.so \
+    -o "$legacy_sdk/lib/libvespalib.so"
+refresh_legacy_fingerprint
 vespa_changed=$(run_resolver "$worktree")
 [[ "$vespa_changed" != "$third" ]]
 [[ -d "$vespa_changed" ]]
@@ -155,9 +223,9 @@ healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err")
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/incomplete.err"
 
-chmod u+w "$fourth/lib"
+chmod u+w "$fourth/lib" "$fourth/lib/libvespalib.so"
 truncate -s 1 "$fourth/lib/libvespalib.so"
-chmod a-w "$fourth/lib"
+chmod a-w "$fourth/lib/libvespalib.so" "$fourth/lib"
 corrupted_healed=$(run_resolver "$worktree" 2>"$fixture/corrupt.err")
 [[ "$corrupted_healed" == "$fourth" ]]
 [[ -s "$fourth/lib/libvespalib.so" ]]

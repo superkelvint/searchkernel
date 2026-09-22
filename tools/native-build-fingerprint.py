@@ -73,7 +73,7 @@ def source_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def shared_library_tree_identity(root: Path) -> str:
+def shared_library_tree_identity(root: Path, pattern: str = "*.so*") -> str:
     """Content identity for packaged shared-library inputs.
 
     Cache identity must be stable across Git worktrees, so timestamps and inode
@@ -84,7 +84,7 @@ def shared_library_tree_identity(root: Path) -> str:
     if not root.is_dir():
         return "missing"
     digest = hashlib.sha256()
-    for path in sorted(root.rglob("*.so*")):
+    for path in sorted(root.rglob(pattern)):
         relative = path.relative_to(root).as_posix()
         digest.update(relative.encode())
         digest.update(b"\0")
@@ -249,6 +249,11 @@ def dependency_bundle_identity(root: Path, vespa_root: Path) -> str:
 
 def vespa_library_identity(vespa_root: Path) -> str:
     """Content identity of the already-built Vespa shared libraries we publish."""
+    override = os.environ.get("VESPA_LIBRARY_ROOT")
+    if override:
+        return shared_library_tree_identity(
+            Path(override).resolve(strict=False), "libvespa*.so*"
+        )
     return shared_library_tree_identity(vespa_root)
 
 
