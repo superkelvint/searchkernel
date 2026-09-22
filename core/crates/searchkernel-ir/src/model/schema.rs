@@ -629,7 +629,7 @@ impl IndexDefinitionIr {
         self.constants = constants;
     }
 
-    #[cfg(any(test, feature = "test"))]
+    #[doc(hidden)]
     pub fn set_imported_fields(&mut self, fields: Vec<ImportedFieldDefinitionIr>) {
         self.imported_fields = fields;
     }
