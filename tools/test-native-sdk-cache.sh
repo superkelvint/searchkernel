@@ -42,14 +42,15 @@ mkdir -p "$sdk/include" "$sdk/lib" "$sdk/share" "$SK_NATIVE_BUILD_DIR"
     echo "cache fixture expected base-only builder mode" >&2
     exit 1
 }
-cat >"$SK_NATIVE_BUILD_DIR/cache_fixture_base.c" <<'C'
+if [[ -n "${VESPA_LIBRARY_ROOT:-}" ]]; then
+    find "$VESPA_LIBRARY_ROOT" -maxdepth 1 -name 'libvespa*.so*' -exec cp {} "$sdk/lib/" \;
+else
+    cat >"$SK_NATIVE_BUILD_DIR/cache_fixture_base.c" <<'C'
 int searchkernel_cache_fixture_base(void) { return 1; }
 C
-cc -shared -fPIC "$SK_NATIVE_BUILD_DIR/cache_fixture_base.c" \
-    -Wl,-soname,libvespalib.so \
-    -o "$sdk/lib/libvespalib.so"
-if [[ -f "$VESPA_ROOT/cache-fixture.so" ]]; then
-    cp "$VESPA_ROOT/cache-fixture.so" "$sdk/lib/cache-fixture.so"
+    cc -shared -fPIC "$SK_NATIVE_BUILD_DIR/cache_fixture_base.c" \
+        -Wl,-soname,libvespalib.so \
+        -o "$sdk/lib/libvespalib.so"
 fi
 printf '{"kind":"vespa-base"}\n' >"$sdk/manifest.json"
 python3 "$root/tools/native-build-fingerprint.py" \
@@ -74,7 +75,31 @@ configured="$repo/upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFil
 mkdir -p "$configured"
 printf 'link\n' >"$configured/link.txt"
 printf 'CXX_INCLUDES = \n' >"$configured/flags.make"
-printf 'vespa-library-bytes-v1\n' >"$repo/upstream/vespa/cache-fixture.so"
+
+# Reproduce the post-#234 migration state: the configured Vespa tree still has
+# CMake metadata but no built libvespa*.so files, while the pre-split full SDK
+# already contains a self-contained Vespa runtime closure.
+legacy_sdk="$repo/core/native/sdk/linux-x86_64"
+mkdir -p "$legacy_sdk/lib"
+legacy_source="$fixture/legacy-vespa.c"
+cat >"$legacy_source" <<'C'
+int searchkernel_cache_fixture_base(void) { return 1; }
+C
+cc -shared -fPIC "$legacy_source" \
+    -Wl,-soname,libvespalib.so \
+    -o "$legacy_sdk/lib/libvespalib.so"
+
+refresh_legacy_fingerprint() {
+    VESPA_LIBRARY_ROOT="$legacy_sdk/lib" \
+    SEARCHKERNEL_BUILD_ENV=cache-regression \
+    python3 "$repo/tools/native-build-fingerprint.py" \
+        --root "$repo" \
+        --vespa-root "$repo/upstream/vespa" \
+        --target x86_64-unknown-linux-gnu \
+        --scope full \
+        --output "$legacy_sdk/native-build-fingerprint-v2.txt"
+}
+refresh_legacy_fingerprint
 
 worktree="$fixture/worktree"
 git -C "$repo" worktree add -q "$worktree" -b cache-test
@@ -104,8 +129,10 @@ fi
 [[ ! -e "$common/sdk-cache-build-count" ]]
 grep -q 'native SDK cache miss' "$fixture/cold-path.err"
 
-first=$(run_resolver "$repo")
+first=$(run_resolver "$repo" 2>"$fixture/bootstrap.err")
 [[ -d "$first" ]]
+grep -q 'using Vespa shared libraries from compatible full SDK' "$fixture/bootstrap.err"
+[[ -s "$first/lib/libvespalib.so" ]]
 grep -q '^fingerprint-version=3$' "$first/native-build-fingerprint-v2.txt"
 grep -q '^fingerprint.scope[[:space:]]*base$' "$first/native-build-fingerprint-v2.txt"
 grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$first/manifest.json"
@@ -134,7 +161,13 @@ same_after_unrelated_deps=$(run_resolver "$worktree")
 [[ "$same_after_unrelated_deps" == "$third" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
 
-printf 'vespa-library-bytes-v2-changed\n' >"$repo/upstream/vespa/cache-fixture.so"
+cat >"$legacy_source" <<'C'
+int searchkernel_cache_fixture_base(void) { return 2; }
+C
+cc -shared -fPIC "$legacy_source" \
+    -Wl,-soname,libvespalib.so \
+    -o "$legacy_sdk/lib/libvespalib.so"
+refresh_legacy_fingerprint
 vespa_changed=$(run_resolver "$worktree")
 [[ "$vespa_changed" != "$third" ]]
 [[ -d "$vespa_changed" ]]
