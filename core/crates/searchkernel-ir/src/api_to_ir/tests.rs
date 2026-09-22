@@ -99,6 +99,86 @@ fn bool_value(
 }
 
 #[test]
+fn highlighting_resolution_preserves_multi_valued_field_shape_for_the_adapter() {
+    let tags = FieldIr::new(
+        FieldName::parse("tags").unwrap(),
+        DataTypeIr::Array(Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::String))),
+        None,
+        FieldCapabilities::new(true, true, false, false, false),
+    );
+    let definition = IndexDefinitionIr::new(
+        None,
+        vec![tags],
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .unwrap();
+    let context = IndexContext {
+        document_fields: BTreeMap::from([("tags".to_owned(), 0)]),
+        query_fields: BTreeMap::from([("tags".to_owned(), QueryFieldRef::Document(0))]),
+        definition,
+    };
+    let request = resolve_search(
+        &context,
+        SearchIntent {
+            query: QuerySourceInput::Text("brown".to_owned()),
+            search_fields: Some(vec![SearchFieldInput {
+                field: "tags".to_owned(),
+                weight: None,
+            }]),
+            filters: Vec::new(),
+            textual_filters: Vec::new(),
+            sorts: Vec::new(),
+            grouping: Vec::new(),
+            ranking: None,
+            query_inputs: BTreeMap::new(),
+            rank_properties: BTreeMap::new(),
+            query_model: QueryModelInput::default(),
+            projection: None,
+            highlighting: Some(vec!["tags".to_owned()]),
+            presentation: PresentationInput::default(),
+            properties: BTreeMap::new(),
+            query_profile: None,
+            search_chain: None,
+            timeout: None,
+            limit: None,
+            offset: None,
+        },
+    )
+    .expect("multi-valued text remains semantically representable");
+    let HighlightingIr::Requested {
+        fields,
+        multi_valued_fields,
+    } = request.highlighting()
+    else {
+        panic!("highlighting should be requested");
+    };
+    assert_eq!(
+        fields.iter().map(FieldName::as_str).collect::<Vec<_>>(),
+        ["tags"]
+    );
+    assert_eq!(
+        multi_valued_fields
+            .iter()
+            .map(FieldName::as_str)
+            .collect::<Vec<_>>(),
+        ["tags"]
+    );
+
+    let request_bytes = crate::search_request_ir_to_api(&request);
+    let portable_request = crate::__flatbuffers::root::<api::SearchRequest>(&request_bytes)
+        .expect("decode portable highlighting request");
+    assert_eq!(
+        request,
+        context
+            .search_to_ir(portable_request)
+            .expect("portable highlighting request resolves")
+    );
+}
+
+#[test]
 fn update_resolution_preserves_operations_create_and_condition() {
     let request = resolve_update(
         &context(),
