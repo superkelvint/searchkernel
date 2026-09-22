@@ -12,11 +12,6 @@ build = "build.rs"
 
 [dependencies]
 flatbuffers = "=25.12.19"
-# This dependency is intentionally normal (rather than only a build-dependency):
-# Cargo exposes `links` metadata to build scripts through normal dependencies,
-# which lets build.rs consume the fork's exact native output directory without
-# scanning unrelated target artifacts.
-flatbuffers-build = { path = "../flatbuffers-build", version = "=0.2.4", features = ["vendored"] }
 
 [build-dependencies]
 cc = "1"
