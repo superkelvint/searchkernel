@@ -1451,7 +1451,6 @@ pub(crate) fn resolve_search_fields_at(
     path: &str,
 ) -> Result<Vec<SearchFieldIr>> {
     let mut output = Vec::new();
-    let mut multi_valued_fields = Vec::new();
     let mut seen = BTreeSet::new();
     for (index, input) in fields.iter().enumerate() {
         let field_path = format!("{path}.fields[{index}].field");
@@ -1817,6 +1816,7 @@ pub(crate) fn resolve_highlighting(
         return Ok(HighlightingIr::Disabled);
     };
     let mut output = Vec::new();
+    let mut multi_valued_fields = Vec::new();
     let mut seen = BTreeSet::new();
     for (index, name) in fields.iter().enumerate() {
         let field =
