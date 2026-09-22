@@ -107,10 +107,6 @@ pub struct RustFieldInput {
 pub struct UnresolvedFieldInput {
     pub name: FieldName,
     pub data_type: DataTypeIr,
-    /// A described Rust value already contains resolver-derived capabilities.
-    /// It still enters this resolver, but indexing-script compatibility must
-    /// not mistake those derived values for new explicit builder settings.
-    pub canonical: bool,
     pub stored: Option<bool>,
     pub searchable: Option<bool>,
     pub filterable: Option<bool>,
@@ -161,7 +157,6 @@ struct ResolvedIndexFields {
     fields: Vec<FieldIr>,
     schema_fields: Vec<FieldIr>,
     default_search_fields: Vec<SearchFieldIr>,
-    allow_missing_struct_definitions: bool,
 }
 
 struct ResolvedIndexDefinition {
@@ -169,7 +164,6 @@ struct ResolvedIndexDefinition {
     fields: Vec<FieldIr>,
     schema_fields: Vec<FieldIr>,
     default_search_fields: Vec<SearchFieldIr>,
-    allow_missing_struct_definitions: bool,
     properties: SchemaPropertiesIr,
     document_type: Option<String>,
     schema_inherits: Vec<String>,
@@ -252,7 +246,6 @@ pub fn resolve_index_definition(input: IndexDefinitionInput) -> Result<IndexDefi
         fields,
         schema_fields,
         default_search_fields,
-        allow_missing_struct_definitions,
     } = resolve_index_definition_fields(
         input.name,
         input.fields,
@@ -264,7 +257,6 @@ pub fn resolve_index_definition(input: IndexDefinitionInput) -> Result<IndexDefi
         fields,
         schema_fields,
         default_search_fields,
-        allow_missing_struct_definitions,
         properties: input.properties,
         document_type: input.document_type,
         schema_inherits: input.schema_inherits,
@@ -280,10 +272,8 @@ pub fn resolve_index_definition(input: IndexDefinitionInput) -> Result<IndexDefi
 }
 
 fn assemble_index_definition(input: ResolvedIndexDefinition) -> Result<IndexDefinitionIr> {
-    if !input.allow_missing_struct_definitions {
-        validate_struct_references(&input.fields, &input.structs)?;
-        validate_struct_references(&input.schema_fields, &input.structs)?;
-    }
+    validate_struct_references(&input.fields, &input.structs)?;
+    validate_struct_references(&input.schema_fields, &input.structs)?;
     let rank_profiles = resolve_rank_profiles(input.rank_profiles, "rank_profiles")?;
     Ok(IndexDefinitionIr {
         name: input.name,
@@ -388,13 +378,6 @@ fn resolve_index_definition_fields(
             "an index must define at least one field",
         ));
     }
-    // A described Field can be reused on its own through the public builder;
-    // it has no enclosing schema from which a struct reference can be checked.
-    // Keep this exception limited to that one-value projection. Complete
-    // definitions and all portable inputs still validate every reference.
-    let allow_missing_struct_definitions = fields.len() + schema_fields.len() == 1
-        && fields.iter().all(|field| field.canonical)
-        && schema_fields.iter().all(|field| field.canonical);
     let name = name
         .map(|value| {
             IndexName::parse(value).map_err(|_| {
@@ -467,7 +450,6 @@ fn resolve_index_definition_fields(
         fields,
         schema_fields,
         default_search_fields,
-        allow_missing_struct_definitions,
     })
 }
 
@@ -588,7 +570,6 @@ fn rust_field_to_input(field: RustFieldInput, name: FieldName) -> UnresolvedFiel
     UnresolvedFieldInput {
         name,
         data_type,
-        canonical: false,
         stored,
         searchable,
         filterable,
@@ -609,7 +590,6 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
     let UnresolvedFieldInput {
         name,
         data_type,
-        canonical,
         stored,
         searchable,
         filterable,
@@ -645,22 +625,20 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
         ));
     }
     let attribute_fast_search = attribute.as_ref().and_then(|value| value.fast_search);
-    if !canonical {
-        check_bool_agreement(
-            stored,
-            summary.as_ref().and_then(|value| value.enabled),
-            path,
-            "stored",
-            "summary.enabled",
-        )?;
-        check_bool_agreement(
-            searchable,
-            index.as_ref().and_then(|value| value.enabled),
-            path,
-            "searchable",
-            "index.enabled",
-        )?;
-    }
+    check_bool_agreement(
+        stored,
+        summary.as_ref().and_then(|value| value.enabled),
+        path,
+        "stored",
+        "summary.enabled",
+    )?;
+    check_bool_agreement(
+        searchable,
+        index.as_ref().and_then(|value| value.enabled),
+        path,
+        "searchable",
+        "index.enabled",
+    )?;
     if attribute_fast_search
         .zip(filterable)
         .is_some_and(|(fast_search, filterable)| fast_search && !filterable)
@@ -711,9 +689,7 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
             version: 1,
             options: SchemaPropertiesIr::new(),
         });
-        if !canonical {
-            analyzer_identity(&analyzer, &format!("{path}.analyzer"))?;
-        }
+        analyzer_identity(&analyzer, &format!("{path}.analyzer"))?;
         Some(analyzer)
     } else {
         analyzer
@@ -799,7 +775,6 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
         ));
     }
     if indexing_script.is_some()
-        && !canonical
         && (stored.is_some()
             || searchable.is_some()
             || filterable.is_some()
@@ -871,7 +846,6 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
         fields,
         schema_fields,
         default_search_fields,
-        allow_missing_struct_definitions,
     } = resolve_index_definition_fields(name, fields, schema_fields, default_search_fields)?;
     let all_fields = fields
         .iter()
@@ -894,7 +868,6 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
         fields,
         schema_fields,
         default_search_fields,
-        allow_missing_struct_definitions,
         properties,
         document_type,
         schema_inherits,
@@ -1064,7 +1037,6 @@ pub(crate) fn field_to_input_at(
     Ok(UnresolvedFieldInput {
         name,
         data_type,
-        canonical: false,
         stored: definition.stored().map(|value| value.value()),
         searchable: definition.searchable().map(|value| value.value()),
         filterable: definition.filterable().map(|value| value.value()),
