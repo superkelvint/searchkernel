@@ -1620,29 +1620,40 @@ pub(crate) fn resolve_filter(
             include_lower,
             include_upper,
         } => {
-            let schema_field = context.query_field_for_resolver(field, format!("{path}.field"))?;
+            // Structured FilterExpr paths name the selected union operation
+            // (for example `filter.range`). Leaf range conversion already uses
+            // `range` as its root, so avoid duplicating the operation segment.
+            let range_path = if path == "range" || path.ends_with(".range") {
+                path.to_owned()
+            } else {
+                format!("{path}.range")
+            };
+            let schema_field =
+                context.query_field_for_resolver(field, format!("{range_path}.field"))?;
             if !schema_field.capabilities().filterable() {
                 return Err(invalid(
                     "field_not_filterable",
-                    Some(format!("{path}.field")),
+                    Some(format!("{range_path}.field")),
                     "range requires a filterable field",
                 ));
             }
             if !matches!(schema_field.kind(), FieldKind::Int64 | FieldKind::Float64) {
                 return Err(invalid(
                     "invalid_filter",
-                    Some(path),
+                    Some(&range_path),
                     "range requires an Int64 or Float64 field",
                 ));
             }
-            let lower = resolve_range_bound(lower, schema_field.kind(), &format!("{path}.lower"))?;
-            let upper = resolve_range_bound(upper, schema_field.kind(), &format!("{path}.upper"))?;
+            let lower =
+                resolve_range_bound(lower, schema_field.kind(), &format!("{range_path}.lower"))?;
+            let upper =
+                resolve_range_bound(upper, schema_field.kind(), &format!("{range_path}.upper"))?;
             if matches!(lower, crate::model::FilterRangeBoundIr::Unbounded)
                 && matches!(upper, crate::model::FilterRangeBoundIr::Unbounded)
             {
                 return Err(invalid(
                     "invalid_range",
-                    Some(path),
+                    Some(&range_path),
                     "range requires at least one bound",
                 ));
             }
@@ -1673,7 +1684,7 @@ pub(crate) fn resolve_filter(
             if crate::api_to_ir::filter::filter_bound_greater(&lower, &upper) {
                 return Err(invalid(
                     "invalid_range",
-                    Some(path),
+                    Some(&range_path),
                     "range lower bound must not exceed upper bound",
                 ));
             }
