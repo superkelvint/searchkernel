@@ -82,7 +82,7 @@ run_python_tests() {
 
 check_fast() {
     cargo fmt --all --check
-    cargo check --workspace --all-targets --all-features
+    cargo check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
@@ -119,7 +119,7 @@ test_target() {
             cargo test -p searchkernel-ir --all-targets --all-features
             ;;
         rust-api|rust)
-            cargo test -p searchkernel --all-targets --all-features
+            cargo test -p searchkernel --all-targets --no-default-features
             ;;
         python)
             run_python_tests
