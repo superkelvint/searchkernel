@@ -183,6 +183,14 @@ def configured_deps_root(root: Path, vespa_root: Path) -> Path | None:
         candidate = Path(explicit)
         return candidate.resolve(strict=False) if candidate.is_dir() else None
 
+    try:
+        if vespa_root.name == "vespa" and vespa_root.parent.name == "upstream":
+            affined = vespa_root.parent.parent / "vespa-deps"
+            if affined.is_dir():
+                return affined.resolve()
+    except OSError:
+        pass
+
     local = root / "vespa-deps"
     if local.is_dir():
         return local.resolve()
