@@ -1588,6 +1588,20 @@ fn public_field_data_type_cannot_override_its_declared_kind() {
     assert_eq!(error.details()[0].code, "invalid_type_combination");
 }
 
+#[test]
+fn fresh_indexing_script_preserves_explicit_capability_for_validation() {
+    let mut field = Field::int64("price").stored(true);
+    field.indexing_script = Some("input price | attribute price".to_owned());
+
+    let error = definition_to_ir(&IndexDefinition::new().field(field))
+        .expect_err("explicit capability must remain visible to canonical validation");
+    assert_eq!(error.details()[0].code, "ambiguous_indexing_script");
+    assert_eq!(
+        error.details()[0].path.as_deref(),
+        Some("fields[0].indexing_script")
+    );
+}
+
 fn assert_rust_and_portable_schema_error_match(
     definition: searchkernel_ir::IndexDefinitionIr,
     expected_detail_code: &str,
@@ -1664,17 +1678,6 @@ fn rich_schema_negative_semantics_match_portable_ingress() {
         "invalid_capability",
     );
 
-    let mut invalid_analyzer = text_field();
-    invalid_analyzer.set_analyzer(Some(AnalyzerIr {
-        name: "unknown".to_owned(),
-        version: 99,
-        options: SchemaPropertiesIr::new(),
-    }));
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(invalid_analyzer),
-        "invalid_analyzer",
-    );
-
     let mut ambiguous_indexing_script = text_field();
     ambiguous_indexing_script.set_indexing_script(Some("input title | index title".to_owned()));
     assert_rust_and_portable_schema_error_match(
@@ -1728,6 +1731,48 @@ fn derived_default_search_fields_include_schema_only_fields() {
             .collect::<Vec<_>>(),
         ["title", "derived"]
     );
+}
+
+#[test]
+fn custom_analyzer_configuration_is_shared_portable_schema_state() {
+    use searchkernel_ir::{
+        AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, PrimitiveDataTypeIr,
+        SchemaPropertiesIr,
+    };
+
+    let mut options = SchemaPropertiesIr::new();
+    options.insert(
+        "tokenizer".to_owned(),
+        searchkernel_ir::RequestValueIr::String("custom".to_owned()),
+    );
+    let field = FieldIr::new(
+        FieldName::parse("title").expect("valid field name"),
+        DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+        Some(AnalyzerIr {
+            name: "custom".to_owned(),
+            version: 2,
+            options,
+        }),
+        FieldCapabilities::new(true, true, false, false, false),
+    );
+    let canonical = searchkernel_ir::IndexDefinitionIr::new(None, vec![field], Vec::new())
+        .expect("rich analyzer is valid portable schema state");
+
+    let index = index_from_canonical_ir(canonical.clone());
+    let mut described = index.describe().expect("describe should preserve rich analyzer state");
+    described.canonical = None;
+    described.fields[0].canonical = None;
+    let rust = definition_to_ir(&described).expect("Rust ingress should preserve rich analyzer");
+
+    let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+        .expect("portable schema should decode");
+    let portable =
+        searchkernel_ir::index_definition_to_ir(portable).expect("portable ingress should preserve rich analyzer");
+
+    assert_eq!(rust.fields()[0].analyzer(), canonical.fields()[0].analyzer());
+    assert_eq!(portable.fields()[0].analyzer(), canonical.fields()[0].analyzer());
+    assert_eq!(rust.fields()[0].analyzer(), portable.fields()[0].analyzer());
 }
 
 #[test]
