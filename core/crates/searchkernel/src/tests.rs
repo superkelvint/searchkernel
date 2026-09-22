@@ -689,14 +689,58 @@ fn staged_creation_publishes_only_a_complete_index_directory() {
 
 #[test]
 #[cfg(feature = "native")]
-fn parent_fsync_failure_does_not_turn_publication_into_create_failure() {
+fn parent_fsync_failure_is_reported_after_publication_without_rollback() {
     let root = temporary_path("staged-create-fsync");
     let staging = create_staging_directory(&root).unwrap();
     std::fs::write(staging.join("in-progress"), b"complete before publication").unwrap();
     FAIL_NEXT_PARENT_FSYNC.with(|flag| flag.set(true));
 
-    publish_staging_directory(&staging, &root).expect("parent fsync is advisory after publication");
+    let error = publish_staging_directory(&staging, &root)
+        .expect_err("parent fsync failure after rename must be observable");
+    assert_eq!(error.code(), crate::ErrorCode::Unavailable);
+    assert_eq!(
+        error.details()[0].code,
+        "index_published_durability_uncertain"
+    );
+    assert_eq!(error.details()[0].path.as_deref(), root.to_str());
     assert!(root.join("in-progress").is_file());
+    assert!(!staging.exists());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn create_fsync_failure_preserves_recoverable_root_and_rejects_destructive_retry() {
+    let root = temporary_path("create-fsync-recovery");
+    FAIL_NEXT_PARENT_FSYNC.with(|flag| flag.set(true));
+
+    let error = match Index::create(&root, IndexDefinition::new().field(Field::text("title"))) {
+        Ok(index) => {
+            index.close().unwrap();
+            panic!("injected parent fsync failure unexpectedly reported create success")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), crate::ErrorCode::Unavailable);
+    assert_eq!(
+        error.details()[0].code,
+        "index_published_durability_uncertain"
+    );
+    assert_eq!(error.details()[0].path.as_deref(), root.to_str());
+    assert!(root.join("manifest/index.json").is_file());
+
+    let retry = match Index::create(&root, IndexDefinition::new().field(Field::text("title"))) {
+        Ok(index) => {
+            index.close().unwrap();
+            panic!("retry unexpectedly overwrote published root")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(retry.code(), crate::ErrorCode::AlreadyExists);
+    assert!(root.join("manifest/index.json").is_file());
+
+    let reopened = Index::open(&root).expect("published index remains recoverable");
+    reopened.close().expect("close recovered index");
     let _ = std::fs::remove_dir_all(root);
 }
 

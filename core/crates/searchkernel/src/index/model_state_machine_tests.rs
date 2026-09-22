@@ -1,4 +1,14 @@
 //! Deterministic model coverage for the shared index/session lifecycle.
+
+#[test]
+fn parent_directory_fsync_result_must_not_be_discarded() {
+    let source = include_str!("native.rs");
+    assert!(
+        !source.contains("let _ = sync_published_parent(parent);"),
+        "post-rename parent fsync failure must remain observable"
+    );
+}
+
 //!
 //! The non-native suite deliberately keeps the backend stateless.  A recording
 //! pass captures the exact IR produced by the public facade, then a scripted
