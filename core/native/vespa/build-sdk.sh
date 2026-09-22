@@ -260,6 +260,19 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed -E \
     -e 's#[^ ]*libsearchlib_searchlib_test_features\.so##g' \
     -e 's#[^ ]*libsearchlib_searchlib_test_memoryindex\.so##g' \
     -e 's#[^ ]*libgtest\.so[^ ]*##g')
+
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    # The configured Vespa tree supplies compile flags and link topology only.
+    # Every shared-library input for the adapter must come from the immutable
+    # base object it will run against, never from the mutable build tree.
+    for BASE_LIBRARY in "$BASE_SDK"/lib/*.so*; do
+        [ -f "$BASE_LIBRARY" ] || continue
+        LIB_NAME=$(basename "$BASE_LIBRARY")
+        LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#[^ ]*/$LIB_NAME#$BASE_LIBRARY#g")
+    done
+    LINK_ARGS="-L$BASE_SDK/lib $LINK_ARGS"
+fi
+
 cd "$(dirname "$(dirname "$(dirname "$LINK_FILE")")")"
 eval "$CXX $LINK_ARGS"
 
