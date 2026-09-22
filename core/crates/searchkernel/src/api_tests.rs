@@ -3560,37 +3560,31 @@ fn described_fields_round_trip_from_public_state_without_field_sidecars() {
         let mut public = described.fields()[index].clone();
         public.canonical = None;
 
-        let resolved = definition_to_ir(&IndexDefinition::new().field(public))
+        let mut standalone = IndexDefinition::new().field(public);
+        // A StructReference is not a self-contained field type: its named
+        // struct declaration is schema context, not hidden Field sidecar state.
+        standalone.structs = canonical.structs().to_vec();
+        let resolved = definition_to_ir(&standalone)
             .expect("public field state should resolve without a canonical sidecar");
 
         assert_eq!(
             expected,
             &resolved.fields()[0],
-            "field {} must round-trip solely from public Field state",
+            "field {} must round-trip from public Field state plus required schema context",
             expected.name().as_str()
         );
     }
 }
 
 #[test]
-fn mutating_a_described_field_preserves_untouched_canonical_state() {
-    let (canonical, described) = public_described_canonical_fixture();
+fn mutating_a_described_field_is_revalidated_against_untouched_rich_state() {
+    let (_, described) = public_described_canonical_fixture();
     let modified = described.fields()[0].clone().stored(false);
-    let public = modified
-        .canonical_definition()
-        .expect("mutated described field should retain canonical state")
-        .clone();
 
-    assert!(!public.capabilities().stored());
-    assert_eq!(public.properties(), canonical.fields()[0].properties());
-    assert_eq!(
-        public.struct_fields(),
-        canonical.fields()[0].struct_fields()
-    );
-
-    let resolved = definition_to_ir(&IndexDefinition::new().field(modified))
-        .expect("mutated field should resolve");
-    assert_eq!(resolved.fields()[0], public);
+    let error = definition_to_ir(&IndexDefinition::new().field(modified))
+        .expect_err("capability mutation must be checked against retained summary configuration");
+    assert_eq!(error.details()[0].code, "invalid_capability");
+    assert_eq!(error.details()[0].path.as_deref(), Some("fields[0].stored"));
 }
 
 #[test]
