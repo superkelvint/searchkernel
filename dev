@@ -346,7 +346,7 @@ doctor_flatbuffers_cpp() {
     [[ -x "${flatc:-}" ]] || return 1
 
     cpp_root=${FLATBUFFERS_CPP_ROOT:-$(cd -- "$(dirname -- "$flatc")/.." && pwd)}
-    bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$cpp_root" "$EXPECTED_FLATBUFFERS_VERSION"
+    bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$cpp_root" "$EXPECTED_FLATBUFFERS_VERSION" "$flatc"
 }
 
 doctor_generated_protocol() {
