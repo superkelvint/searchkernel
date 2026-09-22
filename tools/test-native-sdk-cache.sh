@@ -106,14 +106,24 @@ third=$(run_resolver "$worktree")
 [[ -z "$(find "$third" -perm /222 -print -quit)" ]]
 echo 'native SDK cache: native input change selected a distinct read-only object'
 
+# Dependency discovery stays affined to the worktree that supplied the
+# configured Vespa build. A conflicting task-worktree dependency tree must not
+# perturb the cache identity.
+printf 'unrelated-task-dependency\n' >"$worktree/vespa-deps/lib64/libsearchkernel_fixture.so"
+same_after_unrelated_deps=$(run_resolver "$worktree")
+[[ "$same_after_unrelated_deps" == "$third" ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 2 ]]
+echo 'native SDK cache: unrelated task-worktree dependencies do not override Vespa-affined inputs'
+
 # Packaged dependency-library inputs are part of the cache identity. Changing
-# them must select a new object even when Search Kernel/Vespa source is unchanged.
-printf 'dependency-v2-with-different-size\n' >"$worktree/vespa-deps/lib64/libsearchkernel_fixture.so"
+# the dependency tree beside the selected configured Vespa build must select a
+# new object even when Search Kernel/Vespa source is unchanged.
+printf 'dependency-v2-with-different-size\n' >"$repo/vespa-deps/lib64/libsearchkernel_fixture.so"
 fourth=$(run_resolver "$worktree")
 [[ "$fourth" != "$third" ]]
 [[ -d "$fourth" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
-echo 'native SDK cache: dependency-library change selected a distinct object'
+echo 'native SDK cache: Vespa-affined dependency-library change selected a distinct object'
 
 # A published object whose required runtime dependency disappears must be
 # quarantined and rebuilt automatically under the per-digest lock. Normal
