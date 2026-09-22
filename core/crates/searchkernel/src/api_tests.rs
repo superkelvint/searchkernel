@@ -3514,8 +3514,10 @@ fn described_fields_round_trip_from_public_state_without_field_sidecars() {
     for (index, expected) in canonical.fields().iter().enumerate() {
         let mut public = described.fields()[index].clone();
         public.canonical = None;
+        let mut definition = IndexDefinition::new().field(public);
+        definition.structs = described.structs.clone();
 
-        let resolved = definition_to_ir(&IndexDefinition::new().field(public))
+        let resolved = definition_to_ir(&definition)
             .expect("public field state should resolve without a canonical sidecar");
 
         assert_eq!(
