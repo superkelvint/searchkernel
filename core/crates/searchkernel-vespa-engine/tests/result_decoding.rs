@@ -107,14 +107,8 @@ fn grouping_plan() -> GroupingPlan {
     )
 }
 
-fn expected_error_kind(fault: hardening::ResultFault) -> ErrorKind {
-    match fault {
-        hardening::ResultFault::DocumentAccessorError
-        | hardening::ResultFault::MatchFeatureValueError
-        | hardening::ResultFault::GroupAccessorError
-        | hardening::ResultFault::AggregationAccessorError => ErrorKind::Internal,
-        _ => ErrorKind::InvalidArgument,
-    }
+fn expected_error_kind(_fault: hardening::ResultFault) -> ErrorKind {
+    ErrorKind::Internal
 }
 
 fn assert_search_fault(engine: &Engine, fault: hardening::ResultFault) {
@@ -133,6 +127,30 @@ fn assert_search_fault(engine: &Engine, fault: hardening::ResultFault) {
         before + 1,
         "search result was not destroyed on error"
     );
+}
+
+#[test]
+fn caller_input_validation_remains_invalid_argument() {
+    let (engine, config, data) = fixture();
+
+    let nul = engine
+        .get("bad\0id")
+        .expect_err("interior NUL document IDs must be rejected");
+    assert_eq!(nul.kind(), ErrorKind::InvalidArgument);
+
+    let non_finite = engine
+        .search(SearchRequest::new(Query::True).query_feature("boost", f64::NAN))
+        .expect_err("non-finite query features must be rejected");
+    assert_eq!(non_finite.kind(), ErrorKind::InvalidArgument);
+
+    let unknown_field = engine
+        .search(SearchRequest::new(Query::True).sort(SortField::ascending("missing")))
+        .expect_err("unknown caller fields must be rejected");
+    assert_eq!(unknown_field.kind(), ErrorKind::InvalidArgument);
+
+    engine.close().expect("close caller-input validation engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
 }
 
 #[test]
@@ -243,6 +261,7 @@ fn native_result_decoding_rejects_malformed_document_values() {
             .expect_err("malformed document result unexpectedly decoded");
         hardening::clear_result_fault(&engine).expect("clear document result fault");
         assert!(!error.to_string().is_empty());
+        assert_eq!(error.kind(), ErrorKind::Internal);
         assert!(engine.get("decode-1").expect("healthy get").is_some());
     }
 
@@ -334,6 +353,7 @@ fn native_grouping_tree_decoder_rejects_malformed_recursive_results_and_releases
             .expect_err("malformed grouping tree unexpectedly decoded");
         hardening::clear_result_fault(&engine).expect("clear grouping tree fault");
         assert!(!error.to_string().is_empty());
+        assert_eq!(error.kind(), ErrorKind::Internal);
         let after = hardening::result_destroy_count(&engine).expect("read tree destroy count");
         assert_eq!(
             after,
