@@ -218,14 +218,23 @@ jobs:
       - name: Install TypeScript client
         run: npm ci --prefix clients/typescript
 
+      - name: Run TypeScript generation regressions
+        run: ./tools/test-typescript-generation.sh
+
       - name: Generate TypeScript protocol bindings
         run: npm run generate --prefix clients/typescript
+
+      - name: Verify TypeScript generated bindings
+        run: npm run check:generated --prefix clients/typescript
 
       - name: Typecheck TypeScript client
         run: npm --prefix clients/typescript run typecheck
 
       - name: Run TypeScript behavioral tests
         run: npm --prefix clients/typescript test
+
+      - name: Verify TypeScript package
+        run: npm run test:package --prefix clients/typescript
 
   exact-head-gate:
     name: Exact-head gate
