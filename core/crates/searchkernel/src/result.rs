@@ -134,6 +134,7 @@ pub struct CoverageDegraded {
     pub adaptive_timeout: Option<bool>,
     pub ann_timeout: Option<bool>,
     pub non_ideal_state: Option<bool>,
+    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -145,6 +146,7 @@ pub struct Coverage {
     pub results: Option<u64>,
     pub results_full: Option<u64>,
     pub degraded: Option<CoverageDegraded>,
+    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -417,7 +419,11 @@ fn coverage(value: core::Coverage) -> Coverage {
             adaptive_timeout: value.adaptive_timeout,
             ann_timeout: value.ann_timeout,
             non_ideal_state: value.non_ideal_state,
+            metadata: json_map(value.metadata)
+                .expect("coverage degradation metadata already passed backend decoding"),
         }),
+        metadata: json_map(value.metadata)
+            .expect("coverage metadata already passed backend decoding"),
     }
 }
 
@@ -757,6 +763,38 @@ mod tests {
         let converted: SearchResult<serde_json::Value> = search_result(result, &[]).unwrap();
         assert!(converted.hits.is_empty());
         assert!(converted.facets.is_empty());
+    }
+
+    #[test]
+    fn result_conversion_preserves_coverage_metadata() {
+        let converted = coverage(core::Coverage {
+            coverage_percent: Some(99.0),
+            documents: Some(10),
+            full: Some(false),
+            nodes: Some(1),
+            results: Some(9),
+            results_full: Some(10),
+            degraded: Some(core::CoverageDegraded {
+                match_phase: Some(true),
+                timeout: Some(false),
+                adaptive_timeout: None,
+                ann_timeout: Some(false),
+                non_ideal_state: Some(true),
+                metadata: BTreeMap::from([(
+                    "degraded_reason".into(),
+                    Value::String("match-phase".into()),
+                )]),
+            }),
+            metadata: BTreeMap::from([(
+                "coverage_source".into(),
+                Value::String("native".into()),
+            )]),
+        });
+        assert_eq!(converted.metadata["coverage_source"], "native");
+        assert_eq!(
+            converted.degraded.as_ref().unwrap().metadata["degraded_reason"],
+            "match-phase"
+        );
     }
 
     #[test]
