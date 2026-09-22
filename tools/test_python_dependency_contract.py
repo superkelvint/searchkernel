@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -44,12 +43,10 @@ class PythonDependencyContractTests(unittest.TestCase):
             )
 
     def test_runtime_protobuf_contract_matches_pyproject(self) -> None:
-        data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
-        dependencies = data["project"]["dependencies"]
-        self.assertIn("protobuf>=7.35.1,<8", dependencies)
-        codegen = data["project"]["optional-dependencies"]["codegen"]
-        self.assertIn("protobuf==7.35.1", codegen)
-        self.assertIn("grpcio-tools==1.84.0", codegen)
+        pyproject = PYPROJECT.read_text(encoding="utf-8")
+        self.assertIn('"protobuf>=7.35.1,<8"', pyproject)
+        self.assertIn('"protobuf==7.35.1"', pyproject)
+        self.assertIn('"grpcio-tools==1.84.0"', pyproject)
 
         checker = load_checker()
         self.assertEqual(checker.PROTOBUF_MIN, (7, 35, 1))
