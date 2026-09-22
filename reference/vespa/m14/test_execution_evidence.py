@@ -133,6 +133,20 @@ class ExecutionEvidenceTest(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             validate_execution_evidence(evidence)
 
+    def test_duplicate_execution_stage_is_rejected(self) -> None:
+        scenario, raw = query_control_scenario()
+        raw["evidence"].append(raw["evidence"][1])
+        with self.assertRaisesRegex(EvidenceError, "duplicate"):
+            validate_scenario(scenario, raw)
+
+    def test_unexpected_execution_stage_is_rejected(self) -> None:
+        scenario, raw = query_control_scenario()
+        raw["evidence"].append(
+            scenario_query("stale-stage", approximate=True, explore=2, threshold=0.75)
+        )
+        with self.assertRaisesRegex(EvidenceError, "unexpected"):
+            validate_scenario(scenario, raw)
+
     def test_changed_distance_threshold_is_rejected_for_its_stage(self) -> None:
         scenario, raw = query_control_scenario()
         raw["evidence"][1]["trace"]["blueprint"]["distance_threshold"] = 0.5
