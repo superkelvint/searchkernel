@@ -28,26 +28,27 @@ pub struct RustRankProfileInput {
     pub query_inputs: Vec<(String, String)>,
 }
 
+#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
 // Both schema ingresses populate this shape before the shared resolver applies
 // phase normalization and rank-profile validation.
-struct UnresolvedRankProfileInput {
-    name: String,
-    inherits: Vec<String>,
-    inputs: Vec<RankProfileInputIr>,
-    functions: Vec<RankFunctionDefinitionIr>,
-    first_phase: Option<RankPhaseDefinitionIr>,
-    second_phase: Option<RankPhaseDefinitionIr>,
-    global_phase: Option<RankPhaseDefinitionIr>,
-    rank_features: Vec<String>,
-    match_features: Vec<String>,
-    summary_features: Vec<String>,
-    sort_features: Vec<String>,
-    constants: Vec<ConstantDefinitionIr>,
-    onnx_models: Vec<OnnxModelDefinitionIr>,
-    rank_properties: BTreeMap<String, String>,
-    strict: Option<bool>,
-    properties: SchemaPropertiesIr,
+pub struct UnresolvedRankProfileInput {
+    pub name: String,
+    pub inherits: Vec<String>,
+    pub inputs: Vec<RankProfileInputIr>,
+    pub functions: Vec<RankFunctionDefinitionIr>,
+    pub first_phase: Option<RankPhaseDefinitionIr>,
+    pub second_phase: Option<RankPhaseDefinitionIr>,
+    pub global_phase: Option<RankPhaseDefinitionIr>,
+    pub rank_features: Vec<String>,
+    pub match_features: Vec<String>,
+    pub summary_features: Vec<String>,
+    pub sort_features: Vec<String>,
+    pub constants: Vec<ConstantDefinitionIr>,
+    pub onnx_models: Vec<OnnxModelDefinitionIr>,
+    pub rank_properties: BTreeMap<String, String>,
+    pub strict: Option<bool>,
+    pub properties: SchemaPropertiesIr,
 }
 
 impl UnresolvedRankProfileInput {
@@ -101,8 +102,9 @@ pub struct RustFieldInput {
 /// The resolver below owns defaults, capability legality, and backend-neutral
 /// field semantics; ingress code only decodes each input representation into
 /// this shape.
+#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct UnresolvedFieldInput {
+pub struct UnresolvedFieldInput {
     pub name: FieldName,
     pub data_type: DataTypeIr,
     pub stored: Option<bool>,
@@ -127,6 +129,54 @@ pub struct RustSearchFieldInput {
     pub weight: Option<f64>,
 }
 
+/// Complete unresolved schema intent shared by the direct Rust and portable
+/// ingress paths. Both paths decode into this shape before the resolver owns
+/// field defaults, duplicate detection, and derived default search fields.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexDefinitionInput {
+    pub name: Option<String>,
+    pub fields: Vec<UnresolvedFieldInput>,
+    pub schema_fields: Vec<UnresolvedFieldInput>,
+    pub default_search_fields: Option<Vec<RustSearchFieldInput>>,
+    pub properties: SchemaPropertiesIr,
+    pub document_type: Option<String>,
+    pub schema_inherits: Vec<String>,
+    pub document_inherits: Vec<String>,
+    pub structs: Vec<NamedStructDefinitionIr>,
+    pub fieldsets: Vec<FieldSetDefinitionIr>,
+    pub imported_fields: Vec<ImportedFieldDefinitionIr>,
+    pub document_summaries: Vec<DocumentSummaryDefinitionIr>,
+    pub rank_profiles: Vec<UnresolvedRankProfileInput>,
+    pub constants: Vec<ConstantDefinitionIr>,
+    pub onnx_models: Vec<OnnxModelDefinitionIr>,
+}
+
+struct ResolvedIndexFields {
+    name: Option<IndexName>,
+    fields: Vec<FieldIr>,
+    schema_fields: Vec<FieldIr>,
+    default_search_fields: Vec<SearchFieldIr>,
+}
+
+struct ResolvedIndexDefinition {
+    name: Option<IndexName>,
+    fields: Vec<FieldIr>,
+    schema_fields: Vec<FieldIr>,
+    default_search_fields: Vec<SearchFieldIr>,
+    properties: SchemaPropertiesIr,
+    document_type: Option<String>,
+    schema_inherits: Vec<String>,
+    document_inherits: Vec<String>,
+    structs: Vec<NamedStructDefinitionIr>,
+    fieldsets: Vec<FieldSetDefinitionIr>,
+    imported_fields: Vec<ImportedFieldDefinitionIr>,
+    document_summaries: Vec<DocumentSummaryDefinitionIr>,
+    rank_profiles: Vec<UnresolvedRankProfileInput>,
+    constants: Vec<ConstantDefinitionIr>,
+    onnx_models: Vec<OnnxModelDefinitionIr>,
+}
+
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RustIndexDefinitionInput {
@@ -147,15 +197,188 @@ pub fn resolve_rust_index_definition_with_profiles(
     input: RustIndexDefinitionInput,
     rank_profiles: Vec<RustRankProfileInput>,
 ) -> Result<IndexDefinitionIr> {
-    if input.fields.is_empty() {
+    resolve_rust_index_definition_with_schema(input, Vec::new(), rank_profiles)
+}
+
+/// Resolve direct Rust schema intent, including schema-only fields, through
+/// the same top-level resolver used by FlatBuffers schema decoding.
+#[doc(hidden)]
+pub fn resolve_rust_index_definition_with_schema(
+    input: RustIndexDefinitionInput,
+    schema_fields: Vec<RustFieldInput>,
+    rank_profiles: Vec<RustRankProfileInput>,
+) -> Result<IndexDefinitionIr> {
+    let RustIndexDefinitionInput {
+        name,
+        fields,
+        default_search_fields,
+    } = input;
+    let fields = rust_fields_to_input(fields, "fields")?;
+    let schema_fields = rust_fields_to_input(schema_fields, "schema_fields")?;
+    let rank_profiles = rank_profiles
+        .into_iter()
+        .map(rust_rank_profile_to_input)
+        .collect::<Vec<_>>();
+    resolve_index_definition(IndexDefinitionInput {
+        name,
+        fields,
+        schema_fields,
+        default_search_fields,
+        properties: SchemaPropertiesIr::new(),
+        document_type: None,
+        schema_inherits: Vec::new(),
+        document_inherits: Vec::new(),
+        structs: Vec::new(),
+        fieldsets: Vec::new(),
+        imported_fields: Vec::new(),
+        document_summaries: Vec::new(),
+        rank_profiles,
+        constants: Vec::new(),
+        onnx_models: Vec::new(),
+    })
+}
+
+/// Resolve one shared schema input for both direct Rust and portable ingress.
+#[doc(hidden)]
+pub fn resolve_index_definition(input: IndexDefinitionInput) -> Result<IndexDefinitionIr> {
+    let ResolvedIndexFields {
+        name,
+        fields,
+        schema_fields,
+        default_search_fields,
+    } = resolve_index_definition_fields(
+        input.name,
+        input.fields,
+        input.schema_fields,
+        input.default_search_fields,
+    )?;
+    assemble_index_definition(ResolvedIndexDefinition {
+        name,
+        fields,
+        schema_fields,
+        default_search_fields,
+        properties: input.properties,
+        document_type: input.document_type,
+        schema_inherits: input.schema_inherits,
+        document_inherits: input.document_inherits,
+        structs: input.structs,
+        fieldsets: input.fieldsets,
+        imported_fields: input.imported_fields,
+        document_summaries: input.document_summaries,
+        rank_profiles: input.rank_profiles,
+        constants: input.constants,
+        onnx_models: input.onnx_models,
+    })
+}
+
+fn assemble_index_definition(input: ResolvedIndexDefinition) -> Result<IndexDefinitionIr> {
+    validate_struct_references(&input.fields, &input.structs)?;
+    validate_struct_references(&input.schema_fields, &input.structs)?;
+    let rank_profiles = resolve_rank_profiles(input.rank_profiles, "rank_profiles")?;
+    Ok(IndexDefinitionIr {
+        name: input.name,
+        fields: input.fields,
+        default_search_fields: input.default_search_fields,
+        properties: input.properties,
+        document_type: input.document_type,
+        schema_inherits: input.schema_inherits,
+        document_inherits: input.document_inherits,
+        structs: input.structs,
+        fieldsets: input.fieldsets,
+        schema_fields: input.schema_fields,
+        imported_fields: input.imported_fields,
+        document_summaries: input.document_summaries,
+        rank_profiles,
+        constants: input.constants,
+        onnx_models: input.onnx_models,
+    })
+}
+
+fn rust_fields_to_input(
+    fields: Vec<RustFieldInput>,
+    collection: &str,
+) -> Result<Vec<UnresolvedFieldInput>> {
+    let mut output = Vec::with_capacity(fields.len());
+    for (index, field) in fields.into_iter().enumerate() {
+        let path = format!("{collection}[{index}]");
+        let field_name = FieldName::parse(field.name.clone()).map_err(|_| {
+            invalid(
+                "invalid_field_name",
+                Some(format!("{path}.name")),
+                "field name must match [A-Za-z][A-Za-z0-9_]*",
+            )
+        })?;
+        output.push(rust_field_to_input(field, field_name));
+    }
+    Ok(output)
+}
+
+fn rust_rank_profile_to_input(profile: RustRankProfileInput) -> UnresolvedRankProfileInput {
+    UnresolvedRankProfileInput {
+        name: profile.name,
+        inherits: Vec::new(),
+        inputs: profile
+            .query_inputs
+            .into_iter()
+            .map(|(name, type_spec)| RankProfileInputIr {
+                name,
+                data_type: DataTypeIr::Tensor {
+                    type_spec: type_spec.clone(),
+                },
+                default_value: RequestValueIr::Tensor(RequestTensorIr {
+                    type_spec,
+                    payload: RequestTensorPayloadIr::Dense(Vec::new()),
+                }),
+            })
+            .collect(),
+        functions: Vec::new(),
+        first_phase: profile.first_phase.map(|expression| RankPhaseDefinitionIr {
+            expression: Some(expression),
+            rerank_count: None,
+            rank_score_drop_limit: None,
+            properties: SchemaPropertiesIr::new(),
+            total_rerank_count: None,
+            keep_rank_count: None,
+            total_keep_rank_count: None,
+        }),
+        second_phase: (profile.second_phase.is_some() || profile.rerank_count.is_some()).then(
+            || RankPhaseDefinitionIr {
+                expression: profile.second_phase,
+                rerank_count: profile.rerank_count,
+                rank_score_drop_limit: None,
+                properties: SchemaPropertiesIr::new(),
+                total_rerank_count: None,
+                keep_rank_count: None,
+                total_keep_rank_count: None,
+            },
+        ),
+        global_phase: None,
+        rank_features: Vec::new(),
+        match_features: profile.match_features,
+        summary_features: Vec::new(),
+        sort_features: Vec::new(),
+        constants: Vec::new(),
+        onnx_models: Vec::new(),
+        rank_properties: BTreeMap::new(),
+        strict: None,
+        properties: SchemaPropertiesIr::new(),
+    }
+}
+
+fn resolve_index_definition_fields(
+    name: Option<String>,
+    fields: Vec<UnresolvedFieldInput>,
+    schema_fields: Vec<UnresolvedFieldInput>,
+    default_search_fields: Option<Vec<RustSearchFieldInput>>,
+) -> Result<ResolvedIndexFields> {
+    if fields.is_empty() {
         return Err(invalid(
             "invalid_schema",
             Some("fields"),
             "an index must define at least one field",
         ));
     }
-    let name = input
-        .name
+    let name = name
         .map(|value| {
             IndexName::parse(value).map_err(|_| {
                 invalid(
@@ -166,73 +389,54 @@ pub fn resolve_rust_index_definition_with_profiles(
             })
         })
         .transpose()?;
-    let mut fields = Vec::with_capacity(input.fields.len());
     let mut names = BTreeSet::new();
-    for (index, field) in input.fields.into_iter().enumerate() {
-        let path = format!("fields[{index}]");
-        let field_name = FieldName::parse(field.name.clone()).map_err(|_| {
-            invalid(
-                "invalid_field_name",
-                Some(format!("{path}.name")),
-                "field name must match [A-Za-z][A-Za-z0-9_]*",
-            )
-        })?;
-        if !names.insert(field_name.as_str().to_owned()) {
-            return Err(invalid(
-                "duplicate_field",
-                Some(format!("{path}.name")),
-                "field names must be unique",
-            ));
-        }
-        fields.push(resolve_field_input(
-            rust_field_to_input(field, field_name),
-            &path,
-        )?);
-    }
-    let default_search_fields = match input.default_search_fields {
-        Some(fields_input) => fields_input
-            .into_iter()
-            .enumerate()
-            .map(|(index, field)| {
-                let path = format!("default_search_fields[{index}]");
-                let field_name = FieldName::parse(field.field.clone()).map_err(|_| {
-                    invalid(
-                        "invalid_field_name",
-                        Some(format!("{path}.field")),
-                        "field name must match [A-Za-z][A-Za-z0-9_]*",
-                    )
-                })?;
-                let weight = SearchFieldWeight::new(field.weight.unwrap_or(1.0)).map_err(|_| {
-                    invalid(
-                        "invalid_search_weight",
-                        Some(format!("{path}.weight")),
-                        "search-field weight must be finite and non-negative",
-                    )
-                })?;
-                let Some(resolved) = fields
-                    .iter()
-                    .find(|value| value.name.as_str() == field_name.as_str())
-                else {
-                    return Err(invalid(
-                        "unknown_field",
-                        Some(format!("{path}.field")),
-                        "field is not defined",
-                    ));
-                };
-                if !resolved.capabilities.searchable {
-                    return Err(invalid(
-                        "field_not_searchable",
-                        Some(format!("{path}.field")),
-                        "default search fields must be searchable",
-                    ));
-                }
-                Ok(SearchFieldIr {
-                    field: field_name,
-                    weight,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?,
-        None => fields
+    let fields = fields
+        .into_iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let path = format!("fields[{index}]");
+            if !names.insert(field.name.clone()) {
+                return Err(invalid(
+                    "duplicate_field",
+                    Some(format!("{path}.name")),
+                    "field names must be unique",
+                ));
+            }
+            Ok(field)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let schema_fields = schema_fields
+        .into_iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let path = format!("schema_fields[{index}]");
+            if !names.insert(field.name.clone()) {
+                return Err(invalid(
+                    "duplicate_field",
+                    Some(format!("{path}.name")),
+                    "field names must be unique across document and schema fields",
+                ));
+            }
+            Ok(field)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let fields = fields
+        .into_iter()
+        .enumerate()
+        .map(|(index, field)| resolve_field_input(field, &format!("fields[{index}]")))
+        .collect::<Result<Vec<_>>>()?;
+    let schema_fields = schema_fields
+        .into_iter()
+        .enumerate()
+        .map(|(index, field)| resolve_field_input(field, &format!("schema_fields[{index}]")))
+        .collect::<Result<Vec<_>>>()?;
+    let all_fields = fields
+        .iter()
+        .chain(schema_fields.iter())
+        .collect::<Vec<_>>();
+    let default_search_fields = match default_search_fields {
+        Some(selection) => resolve_default_search_fields(selection, &all_fields)?,
+        None => all_fields
             .iter()
             .filter(|field| field.capabilities.searchable)
             .map(|field| SearchFieldIr {
@@ -241,76 +445,67 @@ pub fn resolve_rust_index_definition_with_profiles(
             })
             .collect(),
     };
-    let rank_profiles = rank_profiles
-        .into_iter()
-        .map(|profile| UnresolvedRankProfileInput {
-            name: profile.name,
-            inherits: Vec::new(),
-            inputs: profile
-                .query_inputs
-                .into_iter()
-                .map(|(name, type_spec)| RankProfileInputIr {
-                    name,
-                    data_type: DataTypeIr::Tensor {
-                        type_spec: type_spec.clone(),
-                    },
-                    default_value: RequestValueIr::Tensor(RequestTensorIr {
-                        type_spec,
-                        payload: RequestTensorPayloadIr::Dense(Vec::new()),
-                    }),
-                })
-                .collect(),
-            functions: Vec::new(),
-            first_phase: profile.first_phase.map(|expression| RankPhaseDefinitionIr {
-                expression: Some(expression),
-                rerank_count: None,
-                rank_score_drop_limit: None,
-                properties: SchemaPropertiesIr::new(),
-                total_rerank_count: None,
-                keep_rank_count: None,
-                total_keep_rank_count: None,
-            }),
-            second_phase: (profile.second_phase.is_some() || profile.rerank_count.is_some()).then(
-                || RankPhaseDefinitionIr {
-                    expression: profile.second_phase,
-                    rerank_count: profile.rerank_count,
-                    rank_score_drop_limit: None,
-                    properties: SchemaPropertiesIr::new(),
-                    total_rerank_count: None,
-                    keep_rank_count: None,
-                    total_keep_rank_count: None,
-                },
-            ),
-            global_phase: None,
-            rank_features: Vec::new(),
-            match_features: profile.match_features,
-            summary_features: Vec::new(),
-            sort_features: Vec::new(),
-            constants: Vec::new(),
-            onnx_models: Vec::new(),
-            rank_properties: BTreeMap::new(),
-            strict: None,
-            properties: SchemaPropertiesIr::new(),
-        })
-        .collect::<Vec<_>>();
-    let rank_profiles = resolve_rank_profiles(rank_profiles, "rank_profiles")?;
-    Ok(IndexDefinitionIr {
+    Ok(ResolvedIndexFields {
         name,
         fields,
+        schema_fields,
         default_search_fields,
-        properties: SchemaPropertiesIr::new(),
-        document_type: None,
-        schema_inherits: Vec::new(),
-        document_inherits: Vec::new(),
-        structs: Vec::new(),
-        fieldsets: Vec::new(),
-        schema_fields: Vec::new(),
-        imported_fields: Vec::new(),
-        document_summaries: Vec::new(),
-        rank_profiles,
-        constants: Vec::new(),
-        onnx_models: Vec::new(),
     })
+}
+
+fn resolve_default_search_fields(
+    selection: Vec<RustSearchFieldInput>,
+    fields: &[&FieldIr],
+) -> Result<Vec<SearchFieldIr>> {
+    let mut output = Vec::with_capacity(selection.len());
+    let mut seen = BTreeSet::new();
+    for (index, input) in selection.into_iter().enumerate() {
+        let path = format!("default_search_fields[{index}]");
+        let field_name = FieldName::parse(input.field.clone()).map_err(|_| {
+            invalid(
+                "invalid_field_name",
+                Some(format!("{path}.field")),
+                "field name must match [A-Za-z][A-Za-z0-9_]*",
+            )
+        })?;
+        let field = fields
+            .iter()
+            .find(|field| field.name == field_name)
+            .copied()
+            .ok_or_else(|| {
+                invalid(
+                    "unknown_field",
+                    Some(format!("{path}.field")),
+                    "field is not defined",
+                )
+            })?;
+        if !field.capabilities.searchable {
+            return Err(invalid(
+                "field_not_searchable",
+                Some(format!("{path}.field")),
+                "default search fields must be searchable",
+            ));
+        }
+        if !seen.insert(field_name.clone()) {
+            return Err(invalid(
+                "duplicate_search_field",
+                Some(format!("{path}.field")),
+                "search fields must be unique",
+            ));
+        }
+        let weight = SearchFieldWeight::new(input.weight.unwrap_or(1.0)).map_err(|_| {
+            invalid(
+                "invalid_search_weight",
+                Some(format!("{path}.weight")),
+                "search-field weight must be finite and non-negative",
+            )
+        })?;
+        output.push(SearchFieldIr {
+            field: field_name,
+            weight,
+        });
+    }
+    Ok(output)
 }
 
 fn rust_field_to_input(field: RustFieldInput, name: FieldName) -> UnresolvedFieldInput {
@@ -635,46 +830,28 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
                     "field names must be unique",
                 ));
             }
-            fields.push(field_to_ir_at(field, name, &path)?);
+            fields.push(field_to_input_at(field, name, &path)?);
         }
     }
-    let name = match definition.name() {
-        None => None,
-        Some(value) => Some(IndexName::parse(value).map_err(|_| {
-            invalid(
-                "invalid_index_name",
-                Some("name"),
-                "index name must not be empty",
-            )
-        })?),
-    };
+    let name = definition.name().map(ToOwned::to_owned);
     let properties = schema_properties_to_ir(definition.properties(), "properties")?;
     let document_type = optional_nonempty(definition.document_type(), "document_type")?;
     let schema_inherits = strings_to_ir(definition.schema_inherits(), "schema_inherits")?;
     let document_inherits = strings_to_ir(definition.document_inherits(), "document_inherits")?;
     let structs = named_structs_to_ir(definition.structs())?;
-    let schema_fields = schema_fields_to_ir(definition.schema_fields(), &names)?;
+    let schema_fields = schema_fields_to_input(definition.schema_fields(), &names)?;
+    let default_search_fields = search_fields_to_input(definition.default_search_fields())?;
+    let ResolvedIndexFields {
+        name,
+        fields,
+        schema_fields,
+        default_search_fields,
+    } = resolve_index_definition_fields(name, fields, schema_fields, default_search_fields)?;
     let all_fields = fields
         .iter()
         .chain(schema_fields.iter())
         .collect::<Vec<_>>();
     let document_field_refs = fields.iter().collect::<Vec<_>>();
-    let searchable_fields = all_fields.clone();
-    validate_struct_references(&fields, &structs)?;
-    validate_struct_references(&schema_fields, &structs)?;
-    let default_search_fields = match definition.default_search_fields() {
-        None => all_fields
-            .iter()
-            .filter(|field| field.capabilities.searchable)
-            .map(|field| SearchFieldIr {
-                field: field.name.clone(),
-                weight: SearchFieldWeight::new(1.0).expect("constant is valid"),
-            })
-            .collect(),
-        Some(selection) => {
-            search_fields_to_ir_at(selection, &searchable_fields, "default_search_fields")?
-        }
-    };
     let fieldsets = fieldsets_to_ir(definition.fieldsets(), &all_fields)?;
     // Imported fields are fed from document/reference fields.  Schema-only
     // fields are query-visible, but are not document values and cannot be the
@@ -685,10 +862,11 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
         document_summaries_to_ir(definition.document_summaries(), &all_fields)?;
     let constants = constants_to_ir(definition.constants(), "constants")?;
     let onnx_models = onnx_models_to_ir(definition.onnx_models(), "onnx_models")?;
-    let rank_profiles = rank_profiles_to_ir(definition.rank_profiles())?;
-    Ok(IndexDefinitionIr {
+    let rank_profiles = rank_profiles_to_input(definition.rank_profiles())?;
+    assemble_index_definition(ResolvedIndexDefinition {
         name,
         fields,
+        schema_fields,
         default_search_fields,
         properties,
         document_type,
@@ -696,7 +874,6 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
         document_inherits,
         structs,
         fieldsets,
-        schema_fields,
         imported_fields,
         document_summaries,
         rank_profiles,
@@ -837,6 +1014,14 @@ pub(crate) fn field_to_ir_at(
     name: FieldName,
     path: &str,
 ) -> Result<FieldIr> {
+    resolve_field_input(field_to_input_at(definition, name, path)?, path)
+}
+
+pub(crate) fn field_to_input_at(
+    definition: api::FieldDefinition<'_>,
+    name: FieldName,
+    path: &str,
+) -> Result<UnresolvedFieldInput> {
     let data_type = definition.data_type().ok_or_else(|| {
         invalid(
             "invalid_data_type",
@@ -849,35 +1034,32 @@ pub(crate) fn field_to_ir_at(
         .indexing_script()
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
-    resolve_field_input(
-        UnresolvedFieldInput {
-            name,
-            data_type,
-            stored: definition.stored().map(|value| value.value()),
-            searchable: definition.searchable().map(|value| value.value()),
-            filterable: definition.filterable().map(|value| value.value()),
-            sortable: definition.sortable().map(|value| value.value()),
-            groupable: definition.facetable().map(|value| value.value()),
-            analyzer: analyzer_config_to_ir(definition.analyzer(), &format!("{path}.analyzer"))?,
-            matching: matching_to_ir(definition.matching(), &format!("{path}.matching"))?,
-            index: index_config_to_ir(definition.index(), &format!("{path}.index"))?,
-            attribute: attribute_config_to_ir(
-                definition.attribute(),
-                &format!("{path}.attribute"),
-            )?,
-            summary: summary_config_to_ir(definition.summary(), &format!("{path}.summary"))?,
-            indexing_script,
-            properties: schema_properties_to_ir(
-                definition.properties(),
-                &format!("{path}.properties"),
-            )?,
-            struct_fields: struct_field_configs_to_ir(
-                definition.struct_fields(),
-                &format!("{path}.struct_fields"),
-            )?,
-        },
-        path,
-    )
+    Ok(UnresolvedFieldInput {
+        name,
+        data_type,
+        stored: definition.stored().map(|value| value.value()),
+        searchable: definition.searchable().map(|value| value.value()),
+        filterable: definition.filterable().map(|value| value.value()),
+        sortable: definition.sortable().map(|value| value.value()),
+        groupable: definition.facetable().map(|value| value.value()),
+        analyzer: analyzer_config_to_ir(definition.analyzer(), &format!("{path}.analyzer"))?,
+        matching: matching_to_ir(definition.matching(), &format!("{path}.matching"))?,
+        index: index_config_to_ir(definition.index(), &format!("{path}.index"))?,
+        attribute: attribute_config_to_ir(
+            definition.attribute(),
+            &format!("{path}.attribute"),
+        )?,
+        summary: summary_config_to_ir(definition.summary(), &format!("{path}.summary"))?,
+        indexing_script,
+        properties: schema_properties_to_ir(
+            definition.properties(),
+            &format!("{path}.properties"),
+        )?,
+        struct_fields: struct_field_configs_to_ir(
+            definition.struct_fields(),
+            &format!("{path}.struct_fields"),
+        )?,
+    })
 }
 
 pub(crate) fn analyzer_to_ir_at(
@@ -1392,12 +1574,12 @@ pub(crate) fn validate_struct_references(
     Ok(())
 }
 
-pub(crate) fn schema_fields_to_ir(
+pub(crate) fn schema_fields_to_input(
     values: Option<
         flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::SearchOnlyFieldDefinition<'_>>>,
     >,
     names: &BTreeSet<FieldName>,
-) -> Result<Vec<FieldIr>> {
+) -> Result<Vec<UnresolvedFieldInput>> {
     let mut output = Vec::new();
     let mut all_names = names.clone();
     if let Some(values) = values {
@@ -1418,10 +1600,31 @@ pub(crate) fn schema_fields_to_ir(
                     "field names must be unique across document and schema fields",
                 ));
             }
-            output.push(field_to_ir_at(field, name, &path)?);
+            output.push(field_to_input_at(field, name, &path)?);
         }
     }
     Ok(output)
+}
+
+fn search_fields_to_input(
+    selection: Option<api::SearchFieldSelection<'_>>,
+) -> Result<Option<Vec<RustSearchFieldInput>>> {
+    let Some(selection) = selection else {
+        return Ok(None);
+    };
+    let fields = selection
+        .fields()
+        .map(|fields| {
+            fields
+                .iter()
+                .map(|field| RustSearchFieldInput {
+                    field: field.field().unwrap_or_default().to_owned(),
+                    weight: field.weight().map(|value| value.value()),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(Some(fields))
 }
 
 pub(crate) fn fieldsets_to_ir(
@@ -1961,11 +2164,11 @@ fn resolve_rank_profiles(
     Ok(profiles)
 }
 
-pub(crate) fn rank_profiles_to_ir(
+pub(crate) fn rank_profiles_to_input(
     values: Option<
         flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::RankProfileDefinition<'_>>>,
     >,
-) -> Result<Vec<RankProfileDefinitionIr>> {
+) -> Result<Vec<UnresolvedRankProfileInput>> {
     let mut output = Vec::new();
     if let Some(values) = values {
         for (index, value) in values.iter().enumerate() {
@@ -2080,7 +2283,7 @@ pub(crate) fn rank_profiles_to_ir(
             });
         }
     }
-    resolve_rank_profiles(output, "rank_profiles")
+    Ok(output)
 }
 pub(crate) fn parse_field_name(v: &str, path: String) -> Result<FieldName> {
     FieldName::parse(v.to_owned()).map_err(|_| {

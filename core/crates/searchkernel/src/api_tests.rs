@@ -1579,6 +1579,23 @@ fn schema_field_builder_adds_schema_only_field_to_ir() {
 }
 
 #[test]
+fn derived_default_search_fields_include_schema_only_fields() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title"))
+        .schema_field(Field::text("derived"));
+    let resolved = definition_to_ir(&definition).expect("schema should resolve");
+
+    assert_eq!(
+        resolved
+            .default_search_fields()
+            .iter()
+            .map(|field| field.field().as_str())
+            .collect::<Vec<_>>(),
+        ["title", "derived"]
+    );
+}
+
+#[test]
 fn described_field_preserves_custom_analyzer_options() {
     let mut options = searchkernel_ir::SchemaPropertiesIr::new();
     options.insert(

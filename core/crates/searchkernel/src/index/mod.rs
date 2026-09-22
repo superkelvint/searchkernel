@@ -622,12 +622,18 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             })
             .collect()
     });
-    let mut resolved = searchkernel_ir::resolve_rust_index_definition_with_profiles(
+    let schema_fields = definition
+        .schema_fields
+        .iter()
+        .map(field_to_rust_input)
+        .collect::<Result<Vec<_>>>()?;
+    let mut resolved = searchkernel_ir::resolve_rust_index_definition_with_schema(
         searchkernel_ir::RustIndexDefinitionInput {
             name: definition.name.clone(),
             fields,
             default_search_fields,
         },
+        schema_fields,
         definition
             .rank_profiles
             .iter()
