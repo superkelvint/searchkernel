@@ -89,9 +89,10 @@ The base cache is stored below the repository's Git common directory, so all
 worktrees from one clone can reuse matching objects without sharing mutable Cargo
 build directories. Published base objects contain Vespa/runtime libraries only:
 no `libsearchkernel_vespa.so` and no Search Kernel ABI header. The base identity
-tracks pinned Vespa/config, platform/toolchain/runtime, and packaged dependency
-inputs. Adapter source, failpoints, sanitizer, coverage, and adapter-only flags
-do not change the base key.
+tracks the pinned Vespa/config identity plus the actual Vespa, dependency, and
+runtime library bytes that will be published, partitioned by target/environment.
+The active Rust/C++ compiler, adapter source, failpoints, sanitizer, coverage,
+FlatBuffers version, and adapter-only flags do not change the base key.
 
 The no-default-features workspace command exercises the Rust and FlatBuffers
 paths without requiring the optional Vespa SDK:
