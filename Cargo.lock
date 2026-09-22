@@ -1249,7 +1249,10 @@ dependencies = [
 name = "searchkerneld"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "bytes",
  "flatbuffers",
+ "http",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -1257,13 +1260,14 @@ dependencies = [
  "prost",
  "searchkernel",
  "searchkernel-dispatch",
+ "searchkernel-ir",
  "searchkernel-protocol",
  "searchkernel-testkit",
  "tokio",
  "tokio-stream",
  "tonic",
  "tonic-web",
- "tower 0.5.3",
+ "tower 0.4.13",
 ]
 
 [[package]]

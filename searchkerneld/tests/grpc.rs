@@ -1,4 +1,12 @@
-use std::{net::SocketAddr, path::Path, sync::Arc};
+use std::{
+    net::SocketAddr,
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use flatbuffers::root;
 use http_body_util::{BodyExt, Full};
@@ -9,6 +17,7 @@ use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use prost::Message;
 use searchkernel::{Field, Index, IndexDefinition};
 use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
+use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
 use searchkernel_protocol::protocol::v2 as wire;
 use searchkernel_testkit::RecordingBackend;
 #[cfg(unix)]
@@ -18,6 +27,7 @@ use searchkerneld::{rpc, start, ServerConfig};
 use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::Notify;
 use tonic::{Code, Request};
 
 fn describe_request(version: u32) -> Vec<u8> {
@@ -117,12 +127,92 @@ fn large_search_request() -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
-fn dispatcher(backend: Arc<RecordingBackend>) -> (Index, Arc<Dispatcher>) {
+fn dispatcher(backend: Arc<dyn Backend>) -> (Index, Arc<Dispatcher>) {
     let definition =
         IndexDefinition::new().field(Field::text("title").stored(true).searchable(true));
     let index = Index::from_backend(definition, backend).expect("test index");
     let (context, session) = index.clone().into_session_parts();
     (index, Arc::new(Dispatcher::new(context, session)))
+}
+
+struct BlockingBackend {
+    started: Arc<Notify>,
+    release: Arc<AtomicBool>,
+    searches: Arc<AtomicUsize>,
+}
+
+impl BlockingBackend {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            started: Arc::new(Notify::new()),
+            release: Arc::new(AtomicBool::new(false)),
+            searches: Arc::new(AtomicUsize::new(0)),
+        })
+    }
+
+    fn unsupported<T>() -> BackendResult<T> {
+        Err(PortableError::unsupported(
+            "blocking_test_backend",
+            None::<String>,
+            "the blocking test backend does not implement this operation",
+        ))
+    }
+}
+
+impl Backend for BlockingBackend {
+    fn insert(
+        &self,
+        _request: searchkernel_ir::InsertRequestIr,
+    ) -> BackendResult<searchkernel_ir::InsertResult> {
+        Self::unsupported()
+    }
+
+    fn upsert(
+        &self,
+        _request: searchkernel_ir::UpsertRequestIr,
+    ) -> BackendResult<searchkernel_ir::UpsertResult> {
+        Self::unsupported()
+    }
+
+    fn patch(
+        &self,
+        _request: searchkernel_ir::PatchRequestIr,
+    ) -> BackendResult<searchkernel_ir::PatchResult> {
+        Self::unsupported()
+    }
+
+    fn delete(
+        &self,
+        _request: searchkernel_ir::DeleteRequestIr,
+    ) -> BackendResult<searchkernel_ir::DeleteResult> {
+        Self::unsupported()
+    }
+
+    fn get(
+        &self,
+        _request: searchkernel_ir::GetRequestIr,
+    ) -> BackendResult<searchkernel_ir::GetResult> {
+        Self::unsupported()
+    }
+
+    fn search(
+        &self,
+        _request: searchkernel_ir::SearchRequestIr,
+    ) -> BackendResult<searchkernel_ir::SearchResult> {
+        self.searches.fetch_add(1, Ordering::SeqCst);
+        self.started.notify_waiters();
+        while !self.release.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        Self::unsupported()
+    }
+
+    fn analyze(
+        &self,
+        _request: searchkernel_ir::AnalyzeRequestIr,
+    ) -> BackendResult<searchkernel_ir::AnalyzeResult> {
+        Self::unsupported()
+    }
 }
 
 async fn connect_client(
@@ -133,7 +223,10 @@ async fn connect_client(
         .expect("connect generated gRPC client")
 }
 
-async fn execute_grpc_web(address: SocketAddr, payload: Vec<u8>) -> Vec<u8> {
+async fn execute_grpc_web_raw(
+    address: SocketAddr,
+    payload: Vec<u8>,
+) -> (u16, Option<String>, Vec<u8>) {
     let frame = rpc::FlatBufferFrame { payload }.encode_to_vec();
     let mut grpc_frame = Vec::with_capacity(5 + frame.len());
     grpc_frame.push(0);
@@ -151,21 +244,27 @@ async fn execute_grpc_web(address: SocketAddr, payload: Vec<u8>) -> Vec<u8> {
         .expect("build grpc-web request");
     let client = Client::builder(TokioExecutor::new()).build_http();
     let response = client.request(request).await.expect("grpc-web request");
-    assert_eq!(response.status().as_u16(), 200);
-    assert_eq!(
-        response
-            .headers()
-            .get("content-type")
-            .and_then(|value| value.to_str().ok())
-            .map(|value| value.starts_with("application/grpc-web")),
-        Some(true)
-    );
+    let status = response.status().as_u16();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let body = response
         .into_body()
         .collect()
         .await
         .expect("read grpc-web response")
         .to_bytes();
+    (status, content_type, body.to_vec())
+}
+
+async fn execute_grpc_web(address: SocketAddr, payload: Vec<u8>) -> Vec<u8> {
+    let (status, content_type, body) = execute_grpc_web_raw(address, payload).await;
+    assert_eq!(status, 200);
+    assert!(content_type
+        .as_deref()
+        .is_some_and(|value| value.starts_with("application/grpc-web")));
     assert!(
         body.len() >= 5,
         "grpc-web response must contain a data frame"
@@ -350,6 +449,212 @@ async fn execute_accepts_frames_larger_than_tonic_default_limit() {
         .into_inner();
 
     assert!(!response.payload.is_empty());
+    server.shutdown().await.expect("shutdown server");
+    index.close().expect("close test index");
+}
+
+#[tokio::test]
+async fn admission_limit_rejects_a_large_queued_request() {
+    let backend = BlockingBackend::new();
+    let (index, dispatcher) = dispatcher(backend.clone());
+    let server = start(
+        ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_execution_limit(1)
+            .with_admission_limit(1),
+        dispatcher,
+    )
+    .await
+    .expect("start gRPC server");
+    let address = server.tcp_addr().expect("TCP server address");
+    let mut first_client = connect_client(address).await;
+    let mut second_client = connect_client(address).await;
+    let payload = large_search_request();
+    let first_payload = payload.clone();
+    let started = backend.started.notified();
+    let first = tokio::spawn(async move {
+        first_client
+            .execute(Request::new(rpc::FlatBufferFrame {
+                payload: first_payload,
+            }))
+            .await
+    });
+    started.await;
+
+    let second = tokio::spawn(async move {
+        second_client
+            .execute(Request::new(rpc::FlatBufferFrame { payload }))
+            .await
+    });
+    for _ in 0..1_000 {
+        if second.is_finished() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    let second_finished = second.is_finished();
+    backend.release.store(true, Ordering::Release);
+    first.await.expect("first task").expect("first request");
+    let second_result = second.await.expect("second task");
+
+    assert!(
+        second_finished,
+        "the request beyond the configured admission bound must not wait indefinitely"
+    );
+    assert_eq!(
+        second_result
+            .expect_err("overloaded request must be rejected")
+            .code(),
+        Code::ResourceExhausted
+    );
+
+    server.shutdown().await.expect("shutdown server");
+    index.close().expect("close test index");
+}
+
+#[tokio::test]
+async fn admission_limit_is_shared_by_grpc_web() {
+    let backend = BlockingBackend::new();
+    let (index, dispatcher) = dispatcher(backend.clone());
+    let server = start(
+        ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_web_listen_addr(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_execution_limit(1)
+            .with_admission_limit(1),
+        dispatcher,
+    )
+    .await
+    .expect("start gRPC and grpc-web listeners");
+    let grpc_address = server.tcp_addr().expect("gRPC listener address");
+    let web_address = server.web_tcp_addr().expect("grpc-web listener address");
+    let mut grpc_client = connect_client(grpc_address).await;
+    let payload = large_search_request();
+    let started = backend.started.notified();
+    let first = tokio::spawn(async move {
+        grpc_client
+            .execute(Request::new(rpc::FlatBufferFrame { payload }))
+            .await
+    });
+    started.await;
+
+    let (status, _content_type, body) =
+        execute_grpc_web_raw(web_address, large_search_request()).await;
+    assert_eq!(status, 200);
+    backend.release.store(true, Ordering::Release);
+    let body = String::from_utf8_lossy(&body);
+    assert!(
+        body.contains("grpc-status: 8"),
+        "grpc-web overload response must report ResourceExhausted: {body:?}"
+    );
+
+    first.await.expect("first task").expect("first request");
+    server.shutdown().await.expect("shutdown both listeners");
+    index.close().expect("close test index");
+}
+
+#[tokio::test]
+async fn cancelled_execution_waiter_releases_admission_capacity() {
+    let backend = BlockingBackend::new();
+    let (index, dispatcher) = dispatcher(backend.clone());
+    let server = start(
+        ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_execution_limit(1)
+            .with_admission_limit(2),
+        dispatcher,
+    )
+    .await
+    .expect("start gRPC server");
+    let address = server.tcp_addr().expect("TCP server address");
+    let mut first_client = connect_client(address).await;
+    let mut second_client = connect_client(address).await;
+    let mut third_client = connect_client(address).await;
+    let first_payload = large_search_request();
+    let started = backend.started.notified();
+    let first = tokio::spawn(async move {
+        first_client
+            .execute(Request::new(rpc::FlatBufferFrame {
+                payload: first_payload,
+            }))
+            .await
+    });
+    started.await;
+
+    let mut request = Request::new(rpc::FlatBufferFrame {
+        payload: large_search_request(),
+    });
+    request.set_timeout(Duration::from_millis(50));
+    let second = tokio::spawn(async move { second_client.execute(request).await });
+    let second_result = tokio::time::timeout(Duration::from_secs(2), second)
+        .await
+        .expect("deadline waiter must finish")
+        .expect("deadline task");
+    let second_error = second_result.expect_err("deadline waiter must be cancelled");
+    assert!(matches!(
+        second_error.code(),
+        Code::DeadlineExceeded | Code::Cancelled
+    ));
+
+    // Keep the first request blocked while probing the admission slot released
+    // by the cancelled second waiter. If cancellation stranded its admission
+    // permit, this request would be rejected immediately with ResourceExhausted.
+    // If the permit was released, it is admitted and waits behind the occupied
+    // execution slot until its own deadline expires.
+    let mut third_request = Request::new(rpc::FlatBufferFrame {
+        payload: large_search_request(),
+    });
+    third_request.set_timeout(Duration::from_millis(100));
+    let third_result = tokio::time::timeout(
+        Duration::from_secs(2),
+        third_client.execute(third_request),
+    )
+    .await
+    .expect("third admission probe must finish");
+    let third_error = third_result.expect_err("third request must wait for execution");
+    assert!(
+        matches!(
+            third_error.code(),
+            Code::DeadlineExceeded | Code::Cancelled
+        ),
+        "cancelled waiter must release admission capacity; got {third_error:?}"
+    );
+
+    // The client may observe its deadline just before the server-side
+    // grpc-timeout future is polled to completion. Give the server deadline
+    // wrapper ample time to drop the admitted request while the first execution
+    // permit remains occupied, then prove another request is admitted rather
+    // than rejected as ResourceExhausted.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let mut fourth_client = connect_client(address).await;
+    let mut fourth_request = Request::new(rpc::FlatBufferFrame {
+        payload: large_search_request(),
+    });
+    fourth_request.set_timeout(Duration::from_millis(100));
+    let fourth_result = tokio::time::timeout(
+        Duration::from_secs(2),
+        fourth_client.execute(fourth_request),
+    )
+    .await
+    .expect("fourth admission probe must finish");
+    let fourth_error = fourth_result.expect_err("fourth request must wait for execution");
+    assert!(
+        matches!(
+            fourth_error.code(),
+            Code::DeadlineExceeded | Code::Cancelled
+        ),
+        "deadline-expired waiter stranded admission capacity; got {fourth_error:?}"
+    );
+
+    // Also prove timed-out waiters do not remain queued for execution and run
+    // later when the occupied native slot is finally released.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    backend.release.store(true, Ordering::Release);
+    first.await.expect("first task").expect("first request");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        backend.searches.load(Ordering::SeqCst),
+        1,
+        "deadline-expired waiters must not execute after capacity is released"
+    );
+
     server.shutdown().await.expect("shutdown server");
     index.close().expect("close test index");
 }
