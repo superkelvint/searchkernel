@@ -2358,47 +2358,6 @@ fn query_and_filter_lowering_covers_supported_variants() {
         ])
     );
     assert!(lower_query(&QueryIr::Text("fox".into()), &[]).is_err());
-    assert_eq!(
-        lower_query(
-            &QueryIr::Term {
-                field: price.clone(),
-                value: ScalarValueIr::Int64(10),
-            },
-            &[],
-        )
-        .unwrap(),
-        Query::equals("price", 10)
-    );
-    assert_eq!(
-        lower_query(
-            &QueryIr::Term {
-                field: title.clone(),
-                value: ScalarValueIr::String("fox".into()),
-            },
-            &[],
-        )
-        .unwrap(),
-        Query::term("title", "fox")
-    );
-    assert!(lower_query(
-        &QueryIr::Term {
-            field: price.clone(),
-            value: ScalarValueIr::Float64(1.0),
-        },
-        &[],
-    )
-    .is_err());
-    assert_eq!(
-        lower_query(
-            &QueryIr::And(vec![
-                QueryIr::MatchAll,
-                QueryIr::Not(Box::new(QueryIr::MatchAll,))
-            ]),
-            &[],
-        )
-        .unwrap(),
-        Query::And(vec![Query::True, Query::Not(Box::new(Query::True))])
-    );
 
     let eq_int = FilterIr::Comparison(ComparisonIr::new(
         price.clone(),

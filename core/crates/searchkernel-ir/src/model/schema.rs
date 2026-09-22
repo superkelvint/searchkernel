@@ -479,6 +479,7 @@ pub struct SearchFieldIr {
 }
 
 impl SearchFieldIr {
+    #[cfg(any(test, feature = "test"))]
     pub fn new(field: FieldName, weight: SearchFieldWeight) -> Self {
         Self { field, weight }
     }

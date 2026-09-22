@@ -7,7 +7,7 @@ mod predicate;
 mod text;
 mod weighted;
 
-use super::filter::{integer_query_value, lower_attribute_value};
+use super::filter::lower_attribute_value;
 use crate::unsupported;
 use searchkernel_ir::{
     PortableError, QueryExprIr, QueryExprKindIr, QueryFieldRefIr, QueryIr, QueryRangeBoundIr,
@@ -79,51 +79,6 @@ pub(crate) fn lower_query_with_context(
                 _ => Ok(Query::Or(clauses)),
             }
         }
-        QueryIr::Term { field, value } => match value {
-            ScalarValueIr::String(value) => Ok(Query::term(field.as_str(), value)),
-            ScalarValueIr::Int64(value) => {
-                Ok(Query::equals(field.as_str(), integer_query_value(*value)?))
-            }
-            _ => Err(unsupported("unsupported typed query value")),
-        },
-        QueryIr::And(children) => Ok(Query::And(
-            children
-                .iter()
-                .map(|child| {
-                    lower_query_with_context(
-                        child,
-                        fields,
-                        language,
-                        default_index,
-                        query_string,
-                        rank_properties,
-                    )
-                })
-                .collect::<Result<Vec<_>>>()?,
-        )),
-        QueryIr::Or(children) => Ok(Query::Or(
-            children
-                .iter()
-                .map(|child| {
-                    lower_query_with_context(
-                        child,
-                        fields,
-                        language,
-                        default_index,
-                        query_string,
-                        rank_properties,
-                    )
-                })
-                .collect::<Result<Vec<_>>>()?,
-        )),
-        QueryIr::Not(child) => Ok(Query::Not(Box::new(lower_query_with_context(
-            child,
-            fields,
-            language,
-            default_index,
-            query_string,
-            rank_properties,
-        )?))),
         QueryIr::Yql { source, .. } => SearchRequest::from_yql(source)
             .map(|request| request.query)
             .map_err(|error| {

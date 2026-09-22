@@ -14,7 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "tools" / "check-ir-boundary.sh"
 
 
-def run_checker(model_source: str) -> subprocess.CompletedProcess[str]:
+def run_checker(
+    model_source: str, production_source: str | None = None
+) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory() as directory:
         fixture_root = Path(directory)
         checker = fixture_root / "tools" / "check-ir-boundary.sh"
@@ -25,6 +27,17 @@ def run_checker(model_source: str) -> subprocess.CompletedProcess[str]:
         model = fixture_root / "core" / "crates" / "searchkernel-ir" / "src" / "model"
         model.mkdir(parents=True)
         (model / "fixture.rs").write_text(model_source, encoding="utf-8")
+        (model / "query.rs").write_text(model_source, encoding="utf-8")
+        if production_source is not None:
+            source = (
+                fixture_root
+                / "core"
+                / "crates"
+                / "searchkernel-ir"
+                / "src"
+                / "fixture.rs"
+            )
+            source.write_text(production_source, encoding="utf-8")
         core = model.parent
         (core / "backend.rs").touch()
         (core / "error.rs").touch()
@@ -61,6 +74,23 @@ class IrBoundaryCheckerTests(unittest.TestCase):
                 pub fn new() {}
             }
             """
+        )
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_legacy_query_variants_are_rejected(self) -> None:
+        result = run_checker(
+            """pub enum QueryIr {
+                Term,
+                Typed,
+            }
+            """
+        )
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_legacy_query_construction_in_production_is_rejected(self) -> None:
+        result = run_checker(
+            "pub enum QueryIr { Typed }\n",
+            "fn build() { let _query = QueryIr::Term; }\n",
         )
         self.assertNotEqual(result.returncode, 0)
 

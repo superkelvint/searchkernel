@@ -18,8 +18,7 @@ mod value;
 mod tests;
 
 use filter::{
-    comparison_op_to_api, filter_offset, query_field_ref_offset, resolved_sort_offset,
-    scalar_value_offset, sort_offset, value_object_offset,
+    comparison_op_to_api, filter_offset, resolved_sort_offset, sort_offset, value_object_offset,
 };
 use grouping::{grouping_offsets, resolved_grouping_offsets};
 use query::{

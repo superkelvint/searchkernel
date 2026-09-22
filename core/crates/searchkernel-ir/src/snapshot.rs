@@ -395,16 +395,6 @@ fn query_json(value: &QueryIr) -> Value {
     match value {
         QueryIr::MatchAll => json!({"kind":"match_all"}),
         QueryIr::Text(value) => json!({"kind":"text","value":value}),
-        QueryIr::Term { field, value } => {
-            json!({"kind":"term","field":field.as_str(),"value":scalar_json(value)})
-        }
-        QueryIr::And(values) => {
-            json!({"kind":"and","children":values.iter().map(query_json).collect::<Vec<_>>() })
-        }
-        QueryIr::Or(values) => {
-            json!({"kind":"or","children":values.iter().map(query_json).collect::<Vec<_>>() })
-        }
-        QueryIr::Not(value) => json!({"kind":"not","child":query_json(value)}),
         QueryIr::Yql { source, parameters } => {
             json!({"kind":"yql","source":source,"parameters":request_map_json(parameters)})
         }
