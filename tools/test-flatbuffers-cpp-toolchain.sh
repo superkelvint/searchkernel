@@ -62,4 +62,12 @@ fi
 
 grep -q "FlatBuffers C++ compile/link probe failed" "$tmp/check.err"
 
-echo "PASS incompatible FlatBuffers C++ archive is rejected"
+cat >"$tmp/build/abi.cc" <<'EOF'
+extern "C" void searchkernel_missing_flatbuffers_abi_symbol() {}
+EOF
+"${CXX:-c++}" -std=c++17 -c "$tmp/build/abi.cc" -o "$tmp/build/abi.o"
+"${AR:-ar}" rcs "$prefix/lib/libflatbuffers.a" "$tmp/build/abi.o"
+
+"$CHECK" "$prefix" 25.12.19
+
+echo "PASS incompatible FlatBuffers C++ archive is rejected and compatible archive is accepted"
