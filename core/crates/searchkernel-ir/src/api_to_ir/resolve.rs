@@ -2327,7 +2327,7 @@ fn resolve_scalar_or_multi_value(
                 .into_iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    resolve_scalar_value(value, field.kind(), format!("{in_path}.values[{index}]"))
+                    resolve_scalar_value(value, field.kind(), format!("{path}.values[{index}]"))
                 })
                 .collect::<Result<Vec<_>>>()?;
             return Ok(FieldValueIr::Multi(values));
