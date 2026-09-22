@@ -3236,6 +3236,21 @@ fn public_fieldsets_round_trip_without_canonical_sidecar() {
 }
 
 #[test]
+fn described_public_values_expose_onnx_models() {
+    let (canonical, described) = public_described_canonical_fixture();
+    assert_eq!(described.onnx_models(), canonical.onnx_models());
+}
+
+#[test]
+fn public_onnx_models_round_trip_without_canonical_sidecar() {
+    let (canonical, mut described) = public_described_canonical_fixture();
+    described.canonical = None;
+    described.onnx_models = canonical.onnx_models().to_vec();
+    let resolved = definition_to_ir(&described).expect("public ONNX models should resolve");
+    assert_eq!(resolved.onnx_models(), canonical.onnx_models());
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();
