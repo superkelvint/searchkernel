@@ -45,7 +45,10 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify runner Rust toolchain
+        run: |
+          rustc -vV
+          cargo -V
 
       - name: Ensure pinned FlatBuffers toolchain
         run: ./dev install flatbuffers
@@ -76,7 +79,10 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify runner Rust toolchain
+        run: |
+          rustc -vV
+          cargo -V
 
       - name: Ensure pinned FlatBuffers toolchain
         run: ./dev install flatbuffers
