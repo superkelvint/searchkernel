@@ -76,6 +76,52 @@ The implementation agent may claim that a pull request is ready for review. It
 does not independently declare its own work VERIFIED or CLOSED. Final review
 and merge provide that disposition.
 
+### Self-unblock assigned work
+
+When the user directly assigns an issue or task, optimize for forward progress
+toward that outcome. Do not treat an unmet repository-internal dependency as a
+reason to stop when the dependency itself is actionable.
+
+If the assigned issue depends on other issues or prerequisite changes:
+
+- inspect the current state of each prerequisite before declaring a blocker;
+- if a prerequisite is open, unclaimed (or otherwise safely claimable), and can
+  be completed in the current repository/runtime, treat it as the next unit of
+  work;
+- walk the dependency chain to the nearest actionable leaf, claim and complete
+  that atomic issue, hand it off through its own pull request, then continue
+  toward the originally assigned issue without requiring the user to prompt
+  again;
+- preserve one-issue/one-PR review boundaries while doing this; self-unblocking
+  does not mean combining the dependency chain into one oversized change;
+- treat work on an explicitly required prerequisite as part of completing the
+  assigned outcome, not as unrelated scope expansion;
+- re-evaluate stale blocker comments against current GitHub state instead of
+  assuming they are still true;
+- for audit/final-verification issues whose gate requires remediation issues to
+  land first, advance the missing remediation issues rather than merely
+  reporting that the audit cannot start yet.
+
+An open prerequisite, unmet dependency gate, missing generated artifact, build
+prerequisite, or failing repository check is **not by itself a terminal
+blocker**. First attempt the repository-documented remediation and any
+actionable prerequisite work that is within the agent's permissions and scope.
+
+Stop and report a blocker only when making further progress requires something
+the agent cannot safely or legitimately resolve itself, such as:
+
+- a required user/product/specification decision;
+- credentials, permissions, or an external service the agent cannot obtain;
+- a prerequisite currently owned by another active worker where taking it would
+  duplicate or conflict with that work;
+- an unavailable runtime/toolchain prerequisite after following `BUILDING.md`
+  recovery guidance;
+- a genuine contract conflict that requires CTO/user disposition.
+
+When stopping, name the first non-self-resolvable blocker and the concrete
+action required from someone else. Do not stop merely because another issue is
+open.
+
 ### Follow-up and CTO handoff lifecycle
 
 When the CTO/reviewer requests follow-up on an existing issue/pull request,
