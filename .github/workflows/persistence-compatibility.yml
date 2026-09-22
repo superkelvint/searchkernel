@@ -28,16 +28,22 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  persistence:
-    name: Historical reopen and fault matrix
-    runs-on: [self-hosted, linux, x64]
+  fixtures:
+    name: Immutable fixture corpus
+    runs-on: ubuntu-24.04
     env:
-      CARGO_TARGET_DIR: target/ci-persistence
-      SEARCHKERNEL_BUILD_ENV: ci-persistence
+      CARGO_TARGET_DIR: target/ci-persistence-fixtures
+      SEARCHKERNEL_BUILD_ENV: ci
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
 
       - name: Ensure pinned FlatBuffers toolchain
         run: ./dev install flatbuffers
@@ -57,6 +63,21 @@ jobs:
 
       - name: Verify fixture generator is reproducible
         run: bash tools/check-persistence-fixture-generation.sh
+
+  persistence:
+    name: Historical reopen and fault matrix
+    needs: fixtures
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CARGO_TARGET_DIR: target/ci-persistence
+      SEARCHKERNEL_BUILD_ENV: ci-persistence
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
 
       - name: Ensure native SDK
         run: ./dev native-sdk ensure
