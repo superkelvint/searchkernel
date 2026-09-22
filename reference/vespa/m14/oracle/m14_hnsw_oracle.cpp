@@ -45,7 +45,7 @@
 #include <vespa/searchcore/proton/server/bootstrapconfig.h>
 #include <vespa/searchcore/proton/server/documentdb.h>
 #include <vespa/searchcore/proton/server/documentdbconfigmanager.h>
-#include <vespa/searchcore/proton/server/memoryconfigstore.h>
+#include <vespa/searchcore/proton/server/fileconfigmanager.h>
 #include <vespa/searchcore/proton/server/persistencehandlerproxy.h>
 #include <vespa/searchcore/proton/test/bucketfactory.h>
 #include <vespa/searchcore/proton/test/dummydbowner.h>
@@ -104,7 +104,6 @@ using document::test::makeBucketSpace;
 using proton::DocTypeName;
 using proton::DocumentDB;
 using proton::DocumentDBConfigHelper;
-using proton::MemoryConfigStore;
 using proton::PersistenceEngine;
 using proton::PersistenceHandlerProxy;
 using search::engine::SearchReply;
@@ -433,12 +432,13 @@ class Fixture {
     std::shared_ptr<PersistenceHandlerProxy> _handler;
     std::unordered_set<uint64_t> _prepared;
     std::vector<std::pair<document::GlobalId, std::string>> _ids;
-    uint64_t _timestamp = 1;
+    // Persistence timestamps must stay monotonic across Fixture instances; Vespa ignores stale mutations.
+    uint64_t& _timestamp;
     std::string _tensor_field;
     std::string _tensor_type_spec;
 
 public:
-    Fixture(const std::filesystem::path& config_dir, const FixtureSpec& spec)
+    Fixture(const std::filesystem::path& config_dir, const FixtureSpec& spec, uint64_t& timestamp)
         : _wire(),
           _owner(),
           _summary_executor(8),
@@ -456,6 +456,7 @@ public:
           _resource_usage(),
           _persistence(_persistence_owner, _write_filter, _resource_usage, -1, false),
           _handler(),
+          _timestamp(timestamp),
           _tensor_field(spec.tensor_field),
           _tensor_type_spec(spec.tensor_type) {
         require(static_cast<bool>(_tensor_type), "could not create Vespa tensor data type");
@@ -481,7 +482,9 @@ public:
         _db = DocumentDB::create(".", config.getConfig(), tls_spec(), _limiter, DocTypeName(DOC_TYPE),
                                  makeBucketSpace(), *proton_config, _owner, _shared, _tls, _wire, _header,
                                  std::make_shared<search::attribute::Interlock>(),
-                                 std::make_unique<MemoryConfigStore>(),
+                                 // Config snapshots participate in reopen recovery. A fresh in-memory store
+                                 // makes the replayed config advance past the persisted attribute state.
+                                 std::make_unique<proton::FileConfigManager>(_shared.transport(), "config", "", DOC_TYPE),
                                  std::make_shared<vespalib::ThreadStackExecutor>(16), _hw,
                                  std::shared_ptr<search::diskindex::IPostingListCache>());
         _db->start();
@@ -490,6 +493,11 @@ public:
         _persistence.putHandler(_persistence.getWLock(), makeBucketSpace(), DocTypeName(DOC_TYPE), _handler);
         require(!_persistence.initialize().hasError(), "persistence initialization failed");
         require(!_persistence.setClusterState(makeBucketSpace(), cluster_state()).hasError(), "cluster state failed");
+        for (const auto& id : spec.document_ids) {
+            // The embedded persistence fixture does not restore active bucket state from cluster state;
+            // reactivate known buckets before matching and mutation after every reopen.
+            prepare_bucket(proton::BucketFactory::getBucket(DocumentId(id)));
+        }
     }
 
     ~Fixture() {
@@ -667,9 +675,10 @@ int run_mode(const std::filesystem::path& scenario_path) {
     auto work = unique_work_dir(); auto config_dir=work/"config"; auto data_dir=work/"data";
     prepare_data_dir(data_dir); write_fixture_config(config_dir,spec);
     DummyFileHeaderContext::setCreator("searchkernel_m14_cpp_oracle");
+    uint64_t timestamp = 1;
     try {
         if (id == "hnsw-query-controls") {
-            CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec); feed_documents(fixture,root); execute_query_controls(root,fixture);
+            CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); feed_documents(fixture,root); execute_query_controls(root,fixture);
         } else if (id == "hnsw-mutation-reopen") {
             const auto query=root_query(root); const auto& opts=object_field(root,"query_options");
             const bool approx=bool_value(object_field(opts,"approximate"),"approximate");
@@ -678,9 +687,9 @@ int run_mode(const std::filesystem::path& scenario_path) {
             const uint32_t limit=positive_u32(object_field(opts,"limit"),"limit");
             const auto& mutation=object_field(root,"mutation"); const auto update_id=string_value(object_field(mutation,"update_id"),"update id"); const auto delete_id=string_value(object_field(mutation,"delete_id"),"delete id");
             std::vector<std::string> before,after,after_reopen,after_delete,after_delete_reopen;
-            { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec); feed_documents(fixture,root); before=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); fixture.update_tensor(update_id,mutation_values(root)); after=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
-            { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec); after_reopen=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); fixture.remove_document(delete_id); after_delete=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
-            { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec); after_delete_reopen=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
+            { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); feed_documents(fixture,root); before=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); fixture.update_tensor(update_id,mutation_values(root)); after=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
+            { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); after_reopen=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); fixture.remove_document(delete_id); after_delete=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
+            { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); after_delete_reopen=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
             std::cout << "{\"id\":\"hnsw-mutation-reopen\",\"before_update\":"; emit_hits(before); std::cout << ",\"after_update\":"; emit_hits(after); std::cout << ",\"after_reopen\":"; emit_hits(after_reopen); std::cout << ",\"after_delete\":"; emit_hits(after_delete); std::cout << ",\"after_delete_reopen\":"; emit_hits(after_delete_reopen); std::cout << "}\n";
         } else { fail("unknown M14 scenario id"); }
         std::filesystem::remove_all(work);
@@ -702,9 +711,10 @@ int prepare_mode(const std::filesystem::path& scenario_path,
     write_fixture_config(config_dir, spec);
 
     DummyFileHeaderContext::setCreator("searchkernel_m14_cpp_oracle_prepare");
+    uint64_t timestamp = 1;
     {
         CurrentDirectoryGuard cwd(data_dir);
-        Fixture fixture(config_dir, spec);
+        Fixture fixture(config_dir, spec, timestamp);
         feed_documents(fixture, root);
     }
     return 0;
