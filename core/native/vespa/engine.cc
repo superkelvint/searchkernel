@@ -2054,50 +2054,74 @@ class EmbeddedEngine {
                                                const std::filesystem::path &config_path) {
         const auto values = read_config(config_path / "summary.cfg");
         require_config_value(values, "defaultsummaryid", "1");
-        if (config_section_count(values, "classes") != 1) {
+        const auto highlight_count = std::count_if(
+            manifest.fields.begin(), manifest.fields.end(),
+            [](const auto &field) {
+                return field.type == "text" && field.index && field.summary;
+            });
+        const size_t expected_class_count = highlight_count == 0 ? 1 : 2;
+        if (config_section_count(values, "classes") != expected_class_count) {
             throw std::invalid_argument("inconsistent generated configuration");
         }
-        require_config_value(values, "classes[0].id", "1");
-        require_config_value(values, "classes[0].name", "default");
-        const auto count = config_section_count(values, "classes[0].fields");
+
         const std::vector<std::tuple<std::string, std::string, std::string, std::string>> implicit = {
             {"documentid", "longstring", "documentid", ""},
             {"rankfeatures", "featuredata", "rankfeatures", ""},
             {"summaryfeatures", "featuredata", "summaryfeatures", ""}};
-        size_t index = 0;
-        for (const auto &[name, type, command, source] : implicit) {
-            const auto prefix = "classes[0].fields[" + std::to_string(index++) + "].";
-            if (config_value(values, prefix + "name") != name ||
-                config_value(values, prefix + "type") != type ||
-                config_value(values, prefix + "command") != command ||
-                config_value(values, prefix + "source") != source) {
-                throw std::invalid_argument("inconsistent generated configuration");
+        const auto validate_common_fields = [&](size_t class_index) {
+            size_t index = 0;
+            for (const auto &[name, type, command, source] : implicit) {
+                const auto prefix = "classes[" + std::to_string(class_index) + "].fields[" +
+                                    std::to_string(index++) + "].";
+                if (config_value(values, prefix + "name") != name ||
+                    config_value(values, prefix + "type") != type ||
+                    config_value(values, prefix + "command") != command ||
+                    config_value(values, prefix + "source") != source) {
+                    throw std::invalid_argument("inconsistent generated configuration");
+                }
             }
-        }
-        for (const auto &field : manifest.fields) {
-            if (!field.summary) continue;
-            const auto prefix = "classes[0].fields[" + std::to_string(index++) + "].";
-            const auto command = field.attribute ? "attribute" : "";
-            const auto source = field.attribute ? field.name : "";
-            if (config_value(values, prefix + "name") != field.name ||
-                config_value(values, prefix + "type") != manifest_summary_type(field.type) ||
-                config_value(values, prefix + "command") != command ||
-                config_value(values, prefix + "source") != source) {
-                throw std::invalid_argument("inconsistent generated configuration");
+            for (const auto &field : manifest.fields) {
+                if (!field.summary) continue;
+                const auto prefix = "classes[" + std::to_string(class_index) + "].fields[" +
+                                    std::to_string(index++) + "].";
+                const auto command = field.attribute ? "attribute" : "";
+                const auto source = field.attribute ? field.name : "";
+                if (config_value(values, prefix + "name") != field.name ||
+                    config_value(values, prefix + "type") != manifest_summary_type(field.type) ||
+                    config_value(values, prefix + "command") != command ||
+                    config_value(values, prefix + "source") != source) {
+                    throw std::invalid_argument("inconsistent generated configuration");
+                }
             }
-        }
-        for (const auto &field : manifest.fields) {
-            if (field.type != "text" || !field.index || !field.summary) continue;
-            const auto prefix = "classes[0].fields[" + std::to_string(index++) + "].";
-            if (config_value(values, prefix + "name") != highlight_summary_name(field.name) ||
-                config_value(values, prefix + "type") != "longstring" ||
-                config_value(values, prefix + "command") != "dynamicteaser" ||
-                config_value(values, prefix + "source") != field.name) {
-                throw std::invalid_argument("inconsistent generated configuration");
-            }
-        }
-        if (count != index) {
+            return index;
+        };
+
+        require_config_value(values, "classes[0].id", "1");
+        require_config_value(values, "classes[0].name", "default");
+        const auto default_count = config_section_count(values, "classes[0].fields");
+        const auto common_count = validate_common_fields(0);
+        if (default_count != common_count) {
             throw std::invalid_argument("inconsistent generated configuration");
+        }
+
+        if (highlight_count != 0) {
+            require_config_value(values, "classes[1].id", "2");
+            require_config_value(values, "classes[1].name", "searchkernel_highlight");
+            const auto highlight_class_count = config_section_count(values, "classes[1].fields");
+            size_t index = validate_common_fields(1);
+            for (const auto &field : manifest.fields) {
+                if (field.type != "text" || !field.index || !field.summary) continue;
+                const auto prefix = "classes[1].fields[" + std::to_string(index++) + "].";
+                if (config_value(values, prefix + "name") != highlight_summary_name(field.name) ||
+                    config_value(values, prefix + "type") != "longstring" ||
+                    config_value(values, prefix + "command") != "dynamicteaser" ||
+                    config_value(values, prefix + "source") != field.name) {
+                    throw std::invalid_argument("inconsistent generated configuration");
+                }
+            }
+            if (highlight_class_count != index) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
         }
     }
 
@@ -3820,7 +3844,11 @@ public:
             }
             DocsumRequest docsum_request;
             docsum_request.setTimeout(remaining);
-            docsum_request.resultClassName = options.summary_class.value_or("default");
+            if (options.highlight_fields.empty()) {
+                docsum_request.resultClassName = options.summary_class.value_or("default");
+            } else {
+                docsum_request.resultClassName = "searchkernel_highlight";
+            }
             docsum_request.ranking = options.rank_profile;
             // Dynamic teaser fields consume the query tree from the docsum
             // request, not from the preceding match request. Keep this

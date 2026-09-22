@@ -270,7 +270,7 @@ fn native_rejects_every_owned_generated_configuration_setting_when_mutated() {
             "attribute[0].collectiontype ARRAY",
         ),
         ("summary.cfg", "defaultsummaryid 1", "defaultsummaryid 2"),
-        ("summary.cfg", "classes[1]", "classes[2]"),
+        ("summary.cfg", "classes[1].id 2", "classes[1].id 3"),
         ("summary.cfg", "classes[0].id 1", "classes[0].id 2"),
         (
             "summary.cfg",
@@ -279,8 +279,8 @@ fn native_rejects_every_owned_generated_configuration_setting_when_mutated() {
         ),
         (
             "summary.cfg",
+            "classes[0].fields[5]\n",
             "classes[0].fields[6]\n",
-            "classes[0].fields[7]\n",
         ),
         ("rank-profiles.cfg", "rankprofile[2]", "rankprofile[1]"),
         (
