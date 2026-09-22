@@ -668,7 +668,7 @@ fn projection_json(value: &ProjectionIr) -> Value {
 fn highlighting_json(value: &HighlightingIr) -> Value {
     match value {
         HighlightingIr::Disabled => json!({"kind":"disabled"}),
-        HighlightingIr::Requested { fields } => {
+        HighlightingIr::Requested { fields, .. } => {
             json!({"kind":"requested","fields":fields.iter().map(FieldName::as_str).collect::<Vec<_>>() })
         }
     }

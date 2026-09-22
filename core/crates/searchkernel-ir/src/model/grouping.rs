@@ -128,5 +128,10 @@ pub enum GroupingFilterIr {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HighlightingIr {
     Disabled,
-    Requested { fields: Vec<FieldName> },
+    Requested {
+        fields: Vec<FieldName>,
+        /// Keep resolved cardinality with the request so the Vespa adapter
+        /// can reject shapes its scalar-only dynamic-teaser path cannot run.
+        multi_valued_fields: Vec<FieldName>,
+    },
 }
