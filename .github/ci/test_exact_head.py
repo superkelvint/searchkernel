@@ -112,11 +112,25 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
         self.assertIn(
-            'python3 "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
+            '"$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
             workflow,
         )
         self.assertNotIn(
-            'python3 "$EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
+            '"$CI_PYTHON" "$EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
+            workflow,
+        )
+
+    def test_workflow_keeps_native_signal_without_running_native_ci(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("\n  native:\n", workflow)
+        self.assertNotIn("./dev native-sdk ensure", workflow)
+        self.assertNotIn("./reference/vespa/verify-through.sh i", workflow)
+        self.assertIn(
+            'NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}',
+            workflow,
+        )
+        self.assertIn(
+            "Native-sensitive paths changed. CI intentionally does not bootstrap Vespa",
             workflow,
         )
 
