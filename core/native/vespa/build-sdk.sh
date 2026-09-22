@@ -430,10 +430,9 @@ fi
 # those out of the distributable SDK even when they share a directory with
 # production libraries.
 find "$SDK/lib" -maxdepth 1 \( -iname '*test*' -o -iname '*gtest*' \) -delete
-if command -v patchelf >/dev/null 2>&1; then
-    # Keep the bundled upstream binaries byte-for-byte intact.  The adapter's
-    # legacy RPATH is sufficient for transitive dependencies in this private
-    # SDK and avoids rewriting unusual upstream ELF layouts.
+if [ "$BASE_ONLY" != 1 ] && command -v patchelf >/dev/null 2>&1; then
+    # Keep the bundled upstream binaries byte-for-byte intact. The adapter's
+    # legacy RPATH is sufficient for transitive dependencies in a full package.
     patchelf --force-rpath --set-rpath '$ORIGIN' "$SDK/lib/libsearchkernel_vespa.so.2"
 fi
 
