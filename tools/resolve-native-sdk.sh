@@ -147,9 +147,11 @@ if valid_object; then
 fi
 
 if [[ -e "$OBJECT" ]]; then
-    echo "immutable native SDK cache object '$OBJECT' exists but failed validation" >&2
-    echo "refusing to replace a published object; remove it explicitly after investigating cache integrity" >&2
-    exit 1
+    QUARANTINE_ROOT="$CACHE_ROOT/quarantine"
+    mkdir -p "$QUARANTINE_ROOT"
+    QUARANTINED="$QUARANTINE_ROOT/$DIGEST.$(date +%s).$"
+    echo "native SDK cache object '$OBJECT' failed validation; quarantining and rebuilding under the cache lock" >&2
+    mv "$OBJECT" "$QUARANTINED"
 fi
 
 rm -rf "$TMP" "$BUILD"
