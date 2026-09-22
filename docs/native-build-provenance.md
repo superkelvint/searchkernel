@@ -60,19 +60,25 @@ rebuild of that FlatBuffers sub-build and one retry.
 
 For the Vespa SDK, `tools/resolve-native-sdk.sh` first computes the same
 provenance fingerprint that will be recorded in the package. The digest is the
-cache object identity. A matching object is reused read-only; a miss acquires a
-per-digest lock, invokes `core/native/vespa/build-sdk.sh` into private staging,
-verifies the resulting digest, marks the package read-only, and atomically
-publishes it. The Rust bindings still compile/link a probe that calls
-`sk_native_abi_version()` from the actual SDK library, including its bundled
-transitive runtime libraries.
+cache object identity. The fingerprint includes Search Kernel native/package
+source, configured Vespa identity/build outputs, and cheap metadata identity for
+the Vespa/dependency shared-library inputs that are bundled into the SDK. A
+matching object is reused read-only only after its runtime dependency closure
+validates.
 
-A probe failure never recompiles inside a published cache object. Published
-objects are immutable: if an existing object fails validation or the link probe,
-the build stops with a cache-integrity error rather than allowing one worktree
-to rewrite an object consumed by other worktrees. Native source changes cannot
-overwrite another worktree's object because `native.source` is part of the
-fingerprint and therefore selects a different key.
+A cache miss acquires a per-digest lock, invokes
+`core/native/vespa/build-sdk.sh` into private staging, validates the resulting
+digest and runtime closure, marks the package read-only, and atomically
+publishes it. If a previously published object fails validation, the resolver
+rechecks it under the same lock, moves it to quarantine, rebuilds privately, and
+republishes a valid object at that key. No consumer mutates or recompiles inside
+a published object.
+
+The Rust bindings still compile/link a probe that calls
+`sk_native_abi_version()` from the actual SDK library as an independent final
+consumer check. Native source/package changes and changed packaged dependency
+libraries select a different cache key; accidental corruption of an existing
+object self-heals under the per-key lock.
 
 The configured Vespa CMake outputs themselves remain intentionally untracked.
 When the current worktree does not contain them, the resolver scans sibling Git
