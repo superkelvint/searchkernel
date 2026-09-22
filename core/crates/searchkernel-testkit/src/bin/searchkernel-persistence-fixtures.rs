@@ -1,0 +1,169 @@
+use searchkernel_ir::{
+    index_definition_ir_to_api, resolve_rust_index_definition, snapshot, RustFieldInput,
+    RustFieldKind, RustIndexDefinitionInput,
+};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+const DEFAULT_OUTPUT: &str = "reference/persistence/fixtures";
+
+fn main() {
+    let output = std::env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_OUTPUT));
+    fs::create_dir_all(&output).expect("create persistence fixture directory");
+
+    let input = RustIndexDefinitionInput {
+        name: Some("persistence_compat".to_owned()),
+        fields: vec![RustFieldInput {
+            name: "attr1".to_owned(),
+            kind: RustFieldKind::Int64,
+            multi: false,
+            analyzer: None,
+            stored: false,
+            searchable: false,
+            filterable: true,
+            sortable: true,
+            facetable: false,
+        }],
+        default_search_fields: None,
+    };
+    let resolved = resolve_rust_index_definition(&input).expect("resolve persistence fixture schema");
+    let canonical = index_definition_ir_to_api(&resolved);
+    let schema_snapshot = snapshot::index_definition(&resolved);
+
+    for (version, revision, abi) in [
+        (2_u32, "a7abfe6213dea5e7fc1132d52c1fef163b42f729", 5_u32),
+        (3_u32, "e5b7f60cdf837866355756b55d3cb1e77d5c9b62", 5_u32),
+        (4_u32, "e02da1cf4c91544a7dbab120e961c47d26b67278", 5_u32),
+    ] {
+        let directory = output.join(format!("manifest-v{version}-storage-v1"));
+        fs::create_dir_all(&directory).expect("create version fixture");
+        fs::write(directory.join("index-definition.bfbs"), &canonical)
+            .expect("write canonical definition");
+        fs::write(directory.join("portable-index-definition.bfbs"), &canonical)
+            .expect("write portable definition");
+
+        let manifest = match version {
+            2 => serde_json::json!({
+                "format_version": 2,
+                "searchkernel_version": "0.1.0",
+                "native_abi_version": abi,
+                "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
+                "portable_index_definition": {
+                    "name": "persistence_compat",
+                    "fields": [{
+                        "name": "attr1",
+                        "kind": "Int64",
+                        "stored": false,
+                        "searchable": false,
+                        "filterable": true,
+                        "sortable": true,
+                        "facetable": false
+                    }]
+                },
+                "resolved_index_definition": {
+                    "name": "persistence_compat",
+                    "fields": [{
+                        "name": "attr1",
+                        "kind": "Int64",
+                        "stored": false,
+                        "searchable": false,
+                        "filterable": true,
+                        "sortable": true,
+                        "facetable": false
+                    }]
+                }
+            }),
+            3 => serde_json::json!({
+                "manifest_format_version": 3,
+                "storage_compatibility_generation": 1,
+                "provenance": {
+                    "created_by_searchkernel_version": "0.1.0",
+                    "created_by_native_abi": abi,
+                    "created_by_vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
+                },
+                "portable_index_definition": "portable-index-definition.bfbs",
+                "canonical_index_definition": "index-definition.bfbs"
+            }),
+            4 => serde_json::json!({
+                "manifest_format_version": 4,
+                "storage_compatibility_generation": 1,
+                "resolved_schema_snapshot_version": 1,
+                "resolved_schema_snapshot": schema_snapshot,
+                "provenance": {
+                    "created_by_searchkernel_version": "0.1.0",
+                    "created_by_native_abi": abi,
+                    "created_by_vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
+                },
+                "portable_index_definition": "portable-index-definition.bfbs",
+                "canonical_index_definition": "index-definition.bfbs"
+            }),
+            _ => unreachable!(),
+        };
+        fs::write(
+            directory.join("manifest-template.json"),
+            serde_json::to_vec_pretty(&manifest).expect("encode manifest"),
+        )
+        .expect("write manifest template");
+
+        let metadata = serde_json::json!({
+            "fixture_format": 1,
+            "searchkernel_revision": revision,
+            "manifest_version": version,
+            "storage_compatibility_generation": 1,
+            "native_abi_version": abi,
+            "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
+            "schema": {
+                "name": "persistence_compat",
+                "fields": [{
+                    "name": "attr1",
+                    "type": "int64",
+                    "stored": false,
+                    "searchable": false,
+                    "filterable": true,
+                    "sortable": true,
+                    "facetable": false
+                }]
+            },
+            "storage_fixture": "reference/vespa/m5/fixtures/persisted-v1/index",
+            "mutations": [
+                "put doc1 attr1=10",
+                "put doc2 attr1=20",
+                "put doc3 attr1=30",
+                "update doc2 attr1=10",
+                "remove doc3",
+                "update doc1 attr1=40",
+                "put doc4 attr1=10"
+            ],
+            "expected_queries": {
+                "10": ["doc2", "doc4"],
+                "20": [],
+                "30": [],
+                "40": ["doc1"]
+            }
+        });
+        fs::write(
+            directory.join("METADATA.json"),
+            serde_json::to_vec_pretty(&metadata).expect("encode metadata"),
+        )
+        .expect("write metadata");
+    }
+
+    write_readme(&output);
+}
+
+fn write_readme(output: &Path) {
+    let readme = r#"# Persistence compatibility fixtures
+
+These files are immutable compatibility artifacts. The manifest version, canonical
+schema bytes, provenance, mutation history, and expected queries are checked in.
+The Vespa storage-generation-1 payload is the immutable M5 fixture referenced by
+each metadata file and is copied by the verifier before mutation.
+
+Do not regenerate or edit an existing version fixture after it lands. A format
+change adds a new fixture directory.
+"#;
+    fs::write(output.join("README.md"), readme).expect("write fixture README");
+}
