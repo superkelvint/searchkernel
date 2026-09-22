@@ -1066,9 +1066,13 @@ fn persistence_fault_matrix_rejects_unknown_versions_without_touching_state() {
             &config,
         )
         .unwrap();
-        manifest.value["manifest_format_version"] = serde_json::json!(version);
-        manifest.value["storage_compatibility_generation"] = serde_json::json!(generation);
         manifest.write(root).unwrap();
+        let path = root.join("manifest/index.json");
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        value["manifest_format_version"] = serde_json::json!(version);
+        value["storage_compatibility_generation"] = serde_json::json!(generation);
+        std::fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
     }
 
     for (label, version, generation) in [
