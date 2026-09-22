@@ -21,14 +21,66 @@ pub struct TotalHits {
     pub relation: TotalHitsRelation,
 }
 
+/// The canonical recursive result tree exposed by Search Kernel.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum ResultNode {
+    Hit(ResultHit),
+    Group(ResultGroup),
+}
+
+/// A hit stored in the canonical result tree.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct ResultHit {
+    pub id: DocumentId,
+    pub relevance: Option<f64>,
+    pub score: Option<f64>,
+    pub fields: std::collections::BTreeMap<String, serde_json::Value>,
+    pub highlights: Vec<HighlightResult>,
+    pub source: Option<String>,
+    pub types: Vec<String>,
+    pub match_features: std::collections::BTreeMap<String, serde_json::Value>,
+    pub summary_features: std::collections::BTreeMap<String, serde_json::Value>,
+    pub rank_features: std::collections::BTreeMap<String, serde_json::Value>,
+    pub sort_values: Vec<serde_json::Value>,
+}
+
+/// Limits attached to a canonical result group.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct ResultLimits {
+    pub from: Option<serde_json::Value>,
+    pub to: Option<serde_json::Value>,
+}
+
+/// A canonical recursive result group.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct ResultGroup {
+    pub id: Option<String>,
+    pub label: Option<String>,
+    pub value: Option<serde_json::Value>,
+    pub fields: std::collections::BTreeMap<String, serde_json::Value>,
+    pub children: Vec<ResultNode>,
+    pub continuations: std::collections::BTreeMap<String, String>,
+    pub source: Option<String>,
+    pub types: Vec<String>,
+    pub relevance: Option<f64>,
+    pub limits: Option<ResultLimits>,
+    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 /// Search hits, total-hit information, and facet values.
 #[non_exhaustive]
 pub struct SearchResult<T> {
+    pub root: ResultNode,
     pub hits: Vec<Hit<T>>,
     pub total_hits: TotalHits,
     pub facets: Vec<FacetResult>,
     pub groups: Vec<GroupingResult<T>>,
+    pub aggregations: std::collections::BTreeMap<String, serde_json::Value>,
     pub coverage: Option<Coverage>,
     pub timing: Option<SearchTiming>,
     pub issues: Vec<ResultIssue>,
@@ -160,6 +212,7 @@ pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
     result: core::SearchResult,
     requested_facets: &[(&str, &str)],
 ) -> Result<SearchResult<T>> {
+    let root = convert_result_node(result.root.clone())?;
     let mut hits = Vec::new();
     let mut facets = Vec::new();
     let mut groups = Vec::new();
@@ -170,11 +223,17 @@ pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
         &mut facets,
         &mut groups,
     )?;
+    let aggregations = match &root {
+        ResultNode::Group(group) => group.fields.clone(),
+        ResultNode::Hit(_) => std::collections::BTreeMap::new(),
+    };
     Ok(SearchResult {
+        root,
         hits,
         total_hits: total_hits(result.total_hits),
         facets,
         groups,
+        aggregations,
         coverage: result.coverage.map(coverage),
         timing: result.timing.map(search_timing).transpose()?,
         issues: result
@@ -273,6 +332,50 @@ fn convert_feature_value(value: core::Value) -> Result<FeatureValue> {
         core::Value::Float64(value) => FeatureValue::Double(value),
         core::Value::Bytes(value) => FeatureValue::Data(value),
         other => FeatureValue::Json(json_value(other)?),
+    })
+}
+
+fn convert_result_node(node: core::ResultNode) -> Result<ResultNode> {
+    match node {
+        core::ResultNode::Hit(hit) => Ok(ResultNode::Hit(convert_result_hit(hit)?)),
+        core::ResultNode::Group(group) => Ok(ResultNode::Group(convert_result_group(group)?)),
+    }
+}
+
+fn convert_result_hit(hit: core::Hit) -> Result<ResultHit> {
+    Ok(ResultHit {
+        id: DocumentId::from(hit.id),
+        relevance: hit.score,
+        score: hit.score,
+        fields: json_map(hit.fields)?,
+        highlights: hit.highlights.into_iter().map(convert_highlight).collect(),
+        source: hit.source,
+        types: hit.types,
+        match_features: json_map(hit.match_features)?,
+        summary_features: json_map(hit.summary_features)?,
+        rank_features: json_map(hit.rank_features)?,
+        sort_values: hit.sort_values.into_iter().map(json_value).collect::<Result<Vec<_>>>()?,
+    })
+}
+
+fn convert_result_group(group: core::ResultGroup) -> Result<ResultGroup> {
+    Ok(ResultGroup {
+        id: group.id,
+        label: group.label,
+        value: group.value.map(json_value).transpose()?,
+        fields: json_map(group.fields)?,
+        children: group.children.into_iter().map(convert_result_node).collect::<Result<Vec<_>>>()?,
+        continuations: group.continuations,
+        source: group.source,
+        types: group.types,
+        relevance: group.score,
+        limits: group.limits.map(|limits| {
+            Ok(ResultLimits {
+                from: limits.from.map(json_value).transpose()?,
+                to: limits.to.map(json_value).transpose()?,
+            })
+        }).transpose()?,
+        metadata: json_map(group.metadata)?,
     })
 }
 
@@ -457,6 +560,15 @@ fn fields_to_json(fields: std::collections::BTreeMap<String, Value>) -> Result<s
         object.insert(name, json_value(value)?);
     }
     Ok(serde_json::Value::Object(object))
+}
+
+fn json_map(
+    values: std::collections::BTreeMap<String, Value>,
+) -> Result<std::collections::BTreeMap<String, serde_json::Value>> {
+    values
+        .into_iter()
+        .map(|(name, value)| json_value(value).map(|value| (name, value)))
+        .collect()
 }
 
 fn json_value(value: Value) -> Result<serde_json::Value> {
@@ -784,6 +896,77 @@ mod tests {
             converted.hits[0].match_features["typed"],
             FeatureValue::Json(serde_json::json!([1, true]))
         );
+    }
+
+    #[test]
+    fn result_conversion_preserves_canonical_mixed_tree_and_group_metadata() {
+        let result = core::SearchResult {
+            root: core::ResultNode::Group(core::ResultGroup {
+                id: Some("root".into()),
+                label: Some("Root".into()),
+                fields: BTreeMap::from([("count".into(), Value::UInt64(2))]),
+                metadata: BTreeMap::from([("trace_id".into(), Value::String("r-1".into()))]),
+                children: vec![
+                    core::ResultNode::Hit(core::Hit {
+                        id: "root-hit".into(),
+                        source: Some("catalog".into()),
+                        types: vec!["product".into()],
+                        ..Default::default()
+                    }),
+                    core::ResultNode::Group(core::ResultGroup {
+                        id: Some("nested".into()),
+                        label: Some("Nested".into()),
+                        continuations: BTreeMap::from([("next".into(), "token".into())]),
+                        source: Some("group-source".into()),
+                        types: vec!["bucket".into()],
+                        score: Some(2.5),
+                        limits: Some(core::ResultLimits {
+                            from: Some(Value::UInt64(0)),
+                            to: Some(Value::UInt64(10)),
+                        }),
+                        metadata: BTreeMap::from([("owner".into(), Value::Bool(true))]),
+                        children: vec![core::ResultNode::Hit(core::Hit {
+                            id: "nested-hit".into(),
+                            ..Default::default()
+                        })],
+                        ..core::ResultGroup::root(vec![])
+                    }),
+                ],
+                ..core::ResultGroup::root(vec![])
+            }),
+            total_hits: core::TotalHits {
+                value: 2,
+                relation: core::TotalHitsRelation::Exact,
+            },
+            coverage: None,
+            timing: None,
+            errors: Vec::new(),
+            trace: None,
+            metadata: BTreeMap::new(),
+        };
+
+        let converted: SearchResult<serde_json::Value> = search_result(result, &[]).unwrap();
+        assert_eq!(converted.aggregations["count"], serde_json::json!(2));
+        let ResultNode::Group(root) = converted.root else {
+            panic!("canonical root must remain a result group");
+        };
+        assert_eq!(root.id.as_deref(), Some("root"));
+        assert_eq!(root.fields["count"], serde_json::json!(2));
+        assert_eq!(root.metadata["trace_id"], serde_json::json!("r-1"));
+        assert_eq!(root.children.len(), 2);
+        let ResultNode::Hit(root_hit) = &root.children[0] else { panic!("first root child must remain a hit"); };
+        assert_eq!(root_hit.id.as_str(), "root-hit");
+        assert_eq!(root_hit.source.as_deref(), Some("catalog"));
+        let ResultNode::Group(nested) = &root.children[1] else { panic!("second root child must remain a group"); };
+        assert_eq!(nested.continuations["next"], "token");
+        assert_eq!(nested.source.as_deref(), Some("group-source"));
+        assert_eq!(nested.types, ["bucket"]);
+        assert_eq!(nested.relevance, Some(2.5));
+        assert_eq!(nested.metadata["owner"], serde_json::json!(true));
+        assert_eq!(nested.limits.as_ref().unwrap().to, Some(serde_json::json!(10)));
+        assert_eq!(nested.children.len(), 1);
+        let ResultNode::Hit(nested_hit) = &nested.children[0] else { panic!("nested hit must remain in the canonical tree"); };
+        assert_eq!(nested_hit.id.as_str(), "nested-hit");
     }
 
     #[test]
