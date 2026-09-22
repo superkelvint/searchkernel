@@ -332,7 +332,8 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
         "flatbuffers.version": os.environ.get("FLATBUFFERS_VERSION", "25.12.19"),
         "vespa.commit": git_tree_identity(vespa_root),
         "vespa.config": vespa_config_digest(vespa_root),
-        "native.source": source_digest(root),
+        # Search Kernel adapter sources deliberately do not participate in the
+        # immutable Vespa base identity. abi.cc is a normal project artifact.
         "native.dependency_bundle": dependency_bundle_identity(root, vespa_root),
         "native.runtime_bundle": runtime_bundle_identity(root, vespa_root),
     }
