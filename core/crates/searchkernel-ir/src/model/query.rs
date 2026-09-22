@@ -5,13 +5,6 @@ use super::*;
 pub enum QueryIr {
     MatchAll,
     Text(String),
-    Term {
-        field: FieldName,
-        value: ScalarValueIr,
-    },
-    And(Vec<QueryIr>),
-    Or(Vec<QueryIr>),
-    Not(Box<QueryIr>),
     /// A YQL source is intentionally kept separate from the portable typed
     /// query tree. Its syntax belongs to the backend, but its request-level
     /// parameters are still portable request semantics.
@@ -19,8 +12,8 @@ pub enum QueryIr {
         source: String,
         parameters: std::collections::BTreeMap<String, RequestValueIr>,
     },
-    /// A lossless typed V2 query expression. The legacy variants above remain
-    /// as the normalized execution forms used by the current native adapter.
+    /// The sole structured-query representation. Validation and normalization
+    /// complete before this IR reaches the backend adapter.
     Typed(Box<QueryExprIr>),
 }
 
