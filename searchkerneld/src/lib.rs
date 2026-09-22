@@ -10,8 +10,19 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
-use std::{fmt, net::SocketAddr, sync::Arc};
+use std::{
+    fmt,
+    future::Future,
+    net::SocketAddr,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
+use base64::Engine as _;
+use bytes::Bytes;
+use http::{header::CONTENT_TYPE, Request as HttpRequest, Response as HttpResponse, StatusCode};
+use http_body_util::Full;
 use searchkernel_dispatch::{DispatchError, Dispatcher};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
@@ -24,8 +35,9 @@ use tokio::{
 #[cfg(unix)]
 use tokio_stream::wrappers::UnixListenerStream;
 use tokio_stream::{wrappers::TcpListenerStream, Stream};
-use tonic::{Request, Response, Status};
+use tonic::{body::BoxBody, Request, Response, Status};
 use tonic_web::GrpcWebLayer;
+use tower::{Layer, Service};
 
 /// Rust bindings generated from the public Search Kernel gRPC protocol.
 #[allow(clippy::result_large_err)]
@@ -45,6 +57,9 @@ pub const MAX_GRPC_MESSAGE_SIZE: usize = 256 * 1024 * 1024;
 
 /// Default maximum number of native dispatches that may execute concurrently.
 pub const DEFAULT_EXECUTION_LIMIT: usize = 16;
+
+/// Default maximum number of requests admitted across all transport listeners.
+pub const DEFAULT_ADMISSION_LIMIT: usize = 32;
 
 /// The address type used by the gRPC transport server.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -73,13 +88,16 @@ pub struct ServerConfig {
     /// The browser listener is separate from [`Self::listen_addr`] so local
     /// SDKs can continue to use the Unix-domain socket without changing
     /// transports. Both listeners share the same dispatcher and execution
-    /// limit when enabled.
+    /// limit when enabled. The admission limit is shared as well.
     pub web_listen_addr: Option<SocketAddr>,
     /// Maximum number of blocking dispatcher calls that may execute at once.
     ///
     /// Requests above this limit wait asynchronously for admission instead of
     /// creating additional blocking-pool jobs.
     pub execution_limit: usize,
+    /// Maximum number of requests admitted into the RPC service at once,
+    /// including requests waiting for a native dispatch permit.
+    pub admission_limit: usize,
 }
 
 impl ServerConfig {
@@ -89,6 +107,7 @@ impl ServerConfig {
             listen_addr: ListenAddress::Tcp(listen_addr),
             web_listen_addr: None,
             execution_limit: DEFAULT_EXECUTION_LIMIT,
+            admission_limit: DEFAULT_ADMISSION_LIMIT,
         }
     }
 
@@ -99,6 +118,7 @@ impl ServerConfig {
             listen_addr: ListenAddress::Unix(path.into()),
             web_listen_addr: None,
             execution_limit: DEFAULT_EXECUTION_LIMIT,
+            admission_limit: DEFAULT_ADMISSION_LIMIT,
         }
     }
 
@@ -112,6 +132,13 @@ impl ServerConfig {
     /// concurrently. A value of zero is rejected by [`start`].
     pub const fn with_execution_limit(mut self, execution_limit: usize) -> Self {
         self.execution_limit = execution_limit;
+        self
+    }
+
+    /// Sets the maximum number of requests admitted across all listeners.
+    /// A value of zero is rejected by [`start`].
+    pub const fn with_admission_limit(mut self, admission_limit: usize) -> Self {
+        self.admission_limit = admission_limit;
         self
     }
 
@@ -206,6 +233,118 @@ fn dispatch_error_status(error: DispatchError) -> Status {
     }
 }
 
+#[derive(Clone)]
+struct AdmissionLayer {
+    semaphore: Arc<Semaphore>,
+}
+
+impl AdmissionLayer {
+    fn new(semaphore: Arc<Semaphore>) -> Self {
+        Self { semaphore }
+    }
+}
+
+impl<S> Layer<S> for AdmissionLayer {
+    type Service = AdmissionService<S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        AdmissionService {
+            inner: service,
+            semaphore: self.semaphore.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct AdmissionService<S> {
+    inner: S,
+    semaphore: Arc<Semaphore>,
+}
+
+impl<S> Service<HttpRequest<BoxBody>> for AdmissionService<S>
+where
+    S: Service<HttpRequest<BoxBody>, Response = HttpResponse<BoxBody>> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Send + 'static,
+{
+    type Response = HttpResponse<BoxBody>;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(context)
+    }
+
+    fn call(&mut self, request: HttpRequest<BoxBody>) -> Self::Future {
+        let Some(permit) = self.semaphore.clone().try_acquire_owned().ok() else {
+            let response = admission_response(&request);
+            return Box::pin(async move { Ok(response) });
+        };
+        let future = self.inner.call(request);
+        Box::pin(async move {
+            let result = future.await;
+            drop(permit);
+            result
+        })
+    }
+}
+
+fn admission_response(request: &HttpRequest<BoxBody>) -> HttpResponse<BoxBody> {
+    let status = Status::resource_exhausted("Search Kernel request admission limit reached");
+    if request
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("application/grpc-web"))
+    {
+        let text_response = request
+            .headers()
+            .get("accept")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| {
+                matches!(
+                    value,
+                    "application/grpc-web-text" | "application/grpc-web-text+proto"
+                )
+            });
+        let mut headers = http::HeaderMap::new();
+        let _ = status.add_header(&mut headers);
+        let mut trailers = Vec::new();
+        for (name, value) in &headers {
+            trailers.extend_from_slice(name.as_str().as_bytes());
+            trailers.extend_from_slice(b": ");
+            trailers.extend_from_slice(value.as_bytes());
+            trailers.extend_from_slice(b"\r\n");
+        }
+        let length = u32::try_from(trailers.len()).unwrap_or(u32::MAX);
+        let mut frame = Vec::with_capacity(5 + trailers.len());
+        frame.push(0x80);
+        frame.extend_from_slice(&length.to_be_bytes());
+        frame.extend_from_slice(&trailers);
+        let frame = if text_response {
+            base64::engine::general_purpose::STANDARD
+                .encode(frame)
+                .into_bytes()
+        } else {
+            frame
+        };
+        let content_type = if text_response {
+            "application/grpc-web-text+proto"
+        } else {
+            "application/grpc-web+proto"
+        };
+        return HttpResponse::builder()
+            .status(StatusCode::OK)
+            .header(CONTENT_TYPE, content_type)
+            .body(tonic::body::boxed(Full::new(Bytes::from(frame))))
+            .expect("static gRPC-Web admission response must be valid");
+    }
+
+    let mut response = HttpResponse::new(tonic::body::empty_body());
+    let _ = status.add_header(response.headers_mut());
+    response
+}
+
 /// Errors reported while starting, serving, or stopping the transport host.
 #[derive(Debug)]
 pub enum ServerError {
@@ -229,6 +368,8 @@ pub enum ServerError {
     Environment(std::env::VarError),
     /// The configured execution limit must admit at least one request.
     InvalidExecutionLimit,
+    /// The configured admission limit must admit at least one request.
+    InvalidAdmissionLimit,
 }
 
 impl fmt::Display for ServerError {
@@ -247,6 +388,9 @@ impl fmt::Display for ServerError {
             Self::Environment(error) => write!(formatter, "read daemon environment: {error}"),
             Self::InvalidExecutionLimit => {
                 write!(formatter, "execution limit must be greater than zero")
+            }
+            Self::InvalidAdmissionLimit => {
+                write!(formatter, "admission limit must be greater than zero")
             }
         }
     }
@@ -485,9 +629,13 @@ pub async fn start(
     let execution_limit = (config.execution_limit > 0)
         .then(|| Arc::new(Semaphore::new(config.execution_limit)))
         .ok_or(ServerError::InvalidExecutionLimit)?;
+    let admission_limit = (config.admission_limit > 0)
+        .then(|| Arc::new(Semaphore::new(config.admission_limit)))
+        .ok_or(ServerError::InvalidAdmissionLimit)?;
     start_with_service(
         config,
         SearchKernelTransport::new(dispatcher, execution_limit),
+        admission_limit,
     )
     .await
 }
@@ -495,6 +643,7 @@ pub async fn start(
 async fn start_with_service(
     config: ServerConfig,
     service: SearchKernelTransport,
+    admission_limit: Arc<Semaphore>,
 ) -> Result<RunningServer, ServerError> {
     let (shutdown, _) = watch::channel(false);
 
@@ -518,14 +667,26 @@ async fn start_with_service(
                 .map_err(ServerError::Bind)?;
             let local_addr = listener.local_addr().map_err(ServerError::Bind)?;
             let incoming = TcpListenerStream::new(listener);
-            let task = serve(incoming, service.clone(), shutdown.subscribe(), false);
+            let task = serve(
+                incoming,
+                service.clone(),
+                admission_limit.clone(),
+                shutdown.subscribe(),
+                false,
+            );
             (ListenAddress::Tcp(local_addr), task, None)
         }
         #[cfg(unix)]
         ListenAddress::Unix(path) => {
             let (listener, ownership) = bind_unix_listener(&path).await?;
             let incoming = UnixListenerStream::new(listener);
-            let task = serve(incoming, service.clone(), shutdown.subscribe(), false);
+            let task = serve(
+                incoming,
+                service.clone(),
+                admission_limit.clone(),
+                shutdown.subscribe(),
+                false,
+            );
             (ListenAddress::Unix(path), task, Some(ownership))
         }
     };
@@ -533,7 +694,13 @@ async fn start_with_service(
     let (web_local_addr, web_task) = match web_listener {
         Some((web_local_addr, listener)) => {
             let incoming = TcpListenerStream::new(listener);
-            let web_task = serve(incoming, service, shutdown.subscribe(), true);
+            let web_task = serve(
+                incoming,
+                service,
+                admission_limit,
+                shutdown.subscribe(),
+                true,
+            );
             (Some(web_local_addr), Some(web_task))
         }
         None => (None, None),
@@ -553,6 +720,7 @@ async fn start_with_service(
 fn serve<I, IO>(
     incoming: I,
     service: SearchKernelTransport,
+    admission_limit: Arc<Semaphore>,
     mut shutdown_requested: watch::Receiver<bool>,
     grpc_web: bool,
 ) -> JoinHandle<Result<(), tonic::transport::Error>>
@@ -568,6 +736,7 @@ where
         if grpc_web {
             tonic::transport::Server::builder()
                 .accept_http1(true)
+                .layer(AdmissionLayer::new(admission_limit.clone()))
                 .layer(GrpcWebLayer::new())
                 .add_service(
                     SearchKernelServer::new(service)
@@ -578,6 +747,7 @@ where
                 .await
         } else {
             tonic::transport::Server::builder()
+                .layer(AdmissionLayer::new(admission_limit))
                 .add_service(
                     SearchKernelServer::new(service)
                         .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)

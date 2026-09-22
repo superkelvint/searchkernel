@@ -1,0 +1,43 @@
+name: Issue queue
+
+on:
+  pull_request:
+    paths:
+      - "AGENTS.md"
+      - "dev"
+      - "tools/check-issue-queue.py"
+      - "tools/test_check_issue_queue.py"
+      - ".github/ci/select-python.sh"
+      - ".github/ci/check-python-workflows.sh"
+      - ".github/workflows/issue-queue.yml"
+  push:
+    branches: [main]
+    paths:
+      - "AGENTS.md"
+      - "dev"
+      - "tools/check-issue-queue.py"
+      - "tools/test_check_issue_queue.py"
+      - ".github/ci/select-python.sh"
+      - ".github/ci/check-python-workflows.sh"
+      - ".github/workflows/issue-queue.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  consistency:
+    runs-on: [self-hosted, linux, x64]
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
+      - name: Enforce runner-Python workflow policy
+        run: bash .github/ci/check-python-workflows.sh
+      - run: python tools/test_check_issue_queue.py
+      - run: python tools/check-issue-queue.py --repo "${{ github.repository }}"

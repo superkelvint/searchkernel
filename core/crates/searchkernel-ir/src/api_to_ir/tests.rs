@@ -418,6 +418,66 @@ fn parity_document(
     )
 }
 
+#[test]
+fn duplicate_document_fields_are_rejected_for_insert_and_upsert() {
+    let duplicate_document = |builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>| {
+        let fields = [
+            value_entry(
+                builder,
+                "brand",
+                &RequestValueIr::String("first".to_owned()),
+            ),
+            value_entry(
+                builder,
+                "brand",
+                &RequestValueIr::String("second".to_owned()),
+            ),
+        ];
+        let fields = builder.create_vector(&fields);
+        let id = builder.create_string("doc-duplicate");
+        api::Document::create(
+            builder,
+            &api::DocumentArgs {
+                id: Some(id),
+                fields: Some(fields),
+            },
+        )
+    };
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let document = duplicate_document(&mut builder);
+    let request = api::InsertRequest::create(
+        &mut builder,
+        &api::InsertRequestArgs {
+            document: Some(document),
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::InsertRequest>(builder.finished_data())
+        .expect("valid insert request");
+    let error = context()
+        .insert_to_ir(request)
+        .expect_err("duplicate insert fields must be rejected");
+    assert_eq!(error.details[0].code, "duplicate_document_field");
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let document = duplicate_document(&mut builder);
+    let request = api::UpsertRequest::create(
+        &mut builder,
+        &api::UpsertRequestArgs {
+            document: Some(document),
+            condition: None,
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::UpsertRequest>(builder.finished_data())
+        .expect("valid upsert request");
+    let error = context()
+        .upsert_to_ir(request)
+        .expect_err("duplicate upsert fields must be rejected");
+    assert_eq!(error.details[0].code, "duplicate_document_field");
+}
+
 fn parity_schema() -> RustIndexDefinitionInput {
     let analyzer = || RustAnalyzerInput {
         name: "standard".to_owned(),
