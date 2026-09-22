@@ -34,6 +34,7 @@ fn main() {
     let schema_snapshot = snapshot::index_definition(&resolved);
 
     let config_identity = embedded_config_identity();
+    let config_identity = &config_identity;
 
     for (version, revision, abi) in [
         (2_u32, "a7abfe6213dea5e7fc1132d52c1fef163b42f729", 5_u32),
@@ -67,7 +68,7 @@ fn main() {
                         "facetable": false
                     }]
                 },
-                "resolved_engine_config_identity": config_identity.clone(),
+                "resolved_engine_config_identity": config_identity,
                 "resolved_index_definition": {
                     "name": "persistence_compat",
                     "fields": [{
@@ -91,13 +92,13 @@ fn main() {
                 },
                 "portable_index_definition": "portable-index-definition.bfbs",
                 "canonical_index_definition": "index-definition.bfbs",
-                "resolved_engine_config_identity": config_identity.clone()
+                "resolved_engine_config_identity": config_identity
             }),
             4 => serde_json::json!({
                 "manifest_format_version": 4,
                 "storage_compatibility_generation": 1,
                 "resolved_schema_snapshot_version": 1,
-                "resolved_schema_snapshot": schema_snapshot,
+                "resolved_schema_snapshot": &schema_snapshot,
                 "provenance": {
                     "created_by_searchkernel_version": "0.1.0",
                     "created_by_native_abi": abi,
@@ -105,7 +106,7 @@ fn main() {
                 },
                 "portable_index_definition": "portable-index-definition.bfbs",
                 "canonical_index_definition": "index-definition.bfbs",
-                "resolved_engine_config_identity": config_identity.clone()
+                "resolved_engine_config_identity": config_identity
             }),
             _ => unreachable!(),
         };
