@@ -282,7 +282,7 @@ impl Index {
             };
             let highlighting = match normalized.highlighting() {
                 searchkernel_ir::HighlightingIr::Disabled => None,
-                searchkernel_ir::HighlightingIr::Requested { fields } => Some(
+                searchkernel_ir::HighlightingIr::Requested { fields, .. } => Some(
                     fields
                         .iter()
                         .map(|field| field.as_str().to_owned())
