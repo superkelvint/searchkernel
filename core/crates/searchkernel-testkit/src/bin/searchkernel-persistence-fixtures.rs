@@ -108,31 +108,19 @@ fn main() {
         };
         let mut manifest = manifest;
         if version == 3 {
-            let mut v3 = resolved.clone();
-            let mut fields = v3.fields().to_vec();
-            fields[0].set_data_type(searchkernel_ir::DataTypeIr::Primitive(
-                searchkernel_ir::PrimitiveDataTypeIr::Int64,
-            ));
-            v3.set_fields(fields);
-            let bytes = index_definition_ir_to_api(&v3);
+            let bytes = index_definition_ir_to_api(&resolved);
             fs::write(directory.join("index-definition.bfbs"), &bytes)
                 .expect("write v3 canonical definition");
             fs::write(directory.join("portable-index-definition.bfbs"), &bytes)
                 .expect("write v3 portable definition");
         }
         if version == 4 {
-            let mut v4 = resolved.clone();
-            let mut fields = v4.fields().to_vec();
-            fields[0].set_data_type(searchkernel_ir::DataTypeIr::Primitive(
-                searchkernel_ir::PrimitiveDataTypeIr::Int64,
-            ));
-            v4.set_fields(fields);
-            let bytes = index_definition_ir_to_api(&v4);
+            let bytes = index_definition_ir_to_api(&resolved);
             fs::write(directory.join("index-definition.bfbs"), &bytes)
                 .expect("write v4 canonical definition");
             fs::write(directory.join("portable-index-definition.bfbs"), &bytes)
                 .expect("write v4 portable definition");
-            manifest["resolved_schema_snapshot"] = snapshot::index_definition(&v4);
+            manifest["resolved_schema_snapshot"] = snapshot::index_definition(&resolved);
         }
 
         fs::write(
