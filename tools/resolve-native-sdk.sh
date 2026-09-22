@@ -174,6 +174,11 @@ if [[ -e "$OBJECT" ]]; then
     mkdir -p "$QUARANTINE_ROOT"
     QUARANTINED="$QUARANTINE_ROOT/$DIGEST.$(date +%s).$BASHPID"
     echo "native SDK cache object '$OBJECT' failed validation; quarantining and rebuilding under the cache lock" >&2
+    # Published objects are mode-locked read-only. Once validation has failed
+    # and this digest lock is held, make only the object directory itself
+    # owner-writable so it can be retired from the published namespace. Do not
+    # modify any packaged contents in place.
+    chmod u+w "$OBJECT"
     mv "$OBJECT" "$QUARANTINED"
 fi
 
