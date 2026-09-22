@@ -676,7 +676,12 @@ pub(crate) fn facet_lowering(value: &searchkernel_ir::GroupingRequestIr) -> Opti
     else {
         return None;
     };
-    if value.root.label.as_deref().is_some_and(|label| label != field) {
+    if value
+        .root
+        .label
+        .as_deref()
+        .is_some_and(|label| label != field)
+    {
         return None;
     }
     if each.label.is_some() {

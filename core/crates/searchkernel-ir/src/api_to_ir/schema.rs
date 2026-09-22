@@ -1045,10 +1045,7 @@ pub(crate) fn field_to_input_at(
         analyzer: analyzer_config_to_ir(definition.analyzer(), &format!("{path}.analyzer"))?,
         matching: matching_to_ir(definition.matching(), &format!("{path}.matching"))?,
         index: index_config_to_ir(definition.index(), &format!("{path}.index"))?,
-        attribute: attribute_config_to_ir(
-            definition.attribute(),
-            &format!("{path}.attribute"),
-        )?,
+        attribute: attribute_config_to_ir(definition.attribute(), &format!("{path}.attribute"))?,
         summary: summary_config_to_ir(definition.summary(), &format!("{path}.summary"))?,
         indexing_script,
         properties: schema_properties_to_ir(

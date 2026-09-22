@@ -639,7 +639,227 @@ fn json_value(value: Value) -> Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use searchkernel_testkit::{
+        canonical_facet_result, canonical_result_fixtures, mixed_hit_and_group_children_result,
+        non_facet_grouping_result, sibling_groups_result,
+    };
     use std::collections::BTreeMap;
+
+    fn assert_public_node_matches(expected: &core::ResultNode, actual: &ResultNode) {
+        match (expected, actual) {
+            (core::ResultNode::Hit(expected), ResultNode::Hit(actual)) => {
+                assert_eq!(actual.id.as_str(), expected.id);
+                assert_eq!(actual.relevance, expected.score);
+                assert_eq!(actual.score, expected.score);
+                assert_eq!(actual.fields, json_map(expected.fields.clone()).unwrap());
+                assert_eq!(actual.source, expected.source);
+                assert_eq!(actual.types, expected.types);
+                assert_eq!(
+                    actual.match_features,
+                    json_map(expected.match_features.clone()).unwrap()
+                );
+                assert_eq!(
+                    actual.summary_features,
+                    json_map(expected.summary_features.clone()).unwrap()
+                );
+                assert_eq!(
+                    actual.rank_features,
+                    json_map(expected.rank_features.clone()).unwrap()
+                );
+                assert_eq!(
+                    actual.sort_values,
+                    expected
+                        .sort_values
+                        .iter()
+                        .cloned()
+                        .map(json_value)
+                        .collect::<Result<Vec<_>>>()
+                        .unwrap()
+                );
+                assert_eq!(actual.highlights.len(), expected.highlights.len());
+                for (actual, expected) in actual.highlights.iter().zip(&expected.highlights) {
+                    assert_eq!(actual.field, expected.field);
+                    assert_eq!(actual.fragments.len(), expected.fragments.len());
+                    for (actual, expected) in actual.fragments.iter().zip(&expected.fragments) {
+                        assert_eq!(actual.text, expected.text);
+                        assert_eq!(actual.matches.len(), expected.matches.len());
+                        for (actual, expected) in actual.matches.iter().zip(&expected.matches) {
+                            assert_eq!(actual.start_byte, expected.start_byte);
+                            assert_eq!(actual.end_byte, expected.end_byte);
+                        }
+                    }
+                }
+            }
+            (core::ResultNode::Group(expected), ResultNode::Group(actual)) => {
+                assert_eq!(actual.id, expected.id);
+                assert_eq!(actual.label, expected.label);
+                assert_eq!(
+                    actual.value,
+                    expected.value.clone().map(json_value).transpose().unwrap()
+                );
+                assert_eq!(actual.fields, json_map(expected.fields.clone()).unwrap());
+                assert_eq!(actual.continuations, expected.continuations);
+                assert_eq!(actual.source, expected.source);
+                assert_eq!(actual.types, expected.types);
+                assert_eq!(actual.relevance, expected.score);
+                assert_eq!(
+                    actual.metadata,
+                    json_map(expected.metadata.clone()).unwrap()
+                );
+                assert_eq!(actual.children.len(), expected.children.len());
+                for (expected, actual) in expected.children.iter().zip(&actual.children) {
+                    assert_public_node_matches(expected, actual);
+                }
+                match (&expected.limits, &actual.limits) {
+                    (None, None) => {}
+                    (Some(expected), Some(actual)) => {
+                        assert_eq!(
+                            actual.from,
+                            expected.from.clone().map(json_value).transpose().unwrap()
+                        );
+                        assert_eq!(
+                            actual.to,
+                            expected.to.clone().map(json_value).transpose().unwrap()
+                        );
+                    }
+                    _ => panic!("public result changed limits presence"),
+                }
+            }
+            _ => panic!("public result changed canonical node kind"),
+        }
+    }
+
+    #[test]
+    fn public_root_preserves_every_shared_canonical_fixture() {
+        for (name, expected) in canonical_result_fixtures() {
+            let expected_root = expected.root.clone();
+            let actual: SearchResult<serde_json::Value> = search_result(expected, &[])
+                .unwrap_or_else(|error| {
+                    panic!("fixture {name} failed public conversion: {error:?}")
+                });
+            assert_public_node_matches(&expected_root, &actual.root);
+        }
+    }
+
+    #[test]
+    fn projections_are_views_over_root_and_preserve_projection_order() {
+        let mixed = mixed_hit_and_group_children_result();
+        let actual: SearchResult<serde_json::Value> = search_result(mixed, &[]).unwrap();
+        let ResultNode::Group(root) = &actual.root else {
+            panic!("mixed fixture root must be a group");
+        };
+        assert_eq!(
+            actual
+                .hits
+                .iter()
+                .map(|hit| hit.id.as_str())
+                .collect::<Vec<_>>(),
+            ["root-a", "root-b"]
+        );
+        assert_eq!(
+            actual
+                .groups
+                .iter()
+                .map(|group| group.key.clone())
+                .collect::<Vec<_>>(),
+            [
+                Some(serde_json::Value::String("A".into())),
+                Some(serde_json::Value::String("B".into()))
+            ]
+        );
+        assert_eq!(root.children.len(), 4);
+        assert!(matches!(root.children[0], ResultNode::Hit(_)));
+        assert!(matches!(root.children[1], ResultNode::Group(_)));
+        assert!(matches!(root.children[2], ResultNode::Hit(_)));
+        assert!(matches!(root.children[3], ResultNode::Group(_)));
+        assert_eq!(actual.groups[0].hits[0].id.as_str(), "nested-a");
+        assert_eq!(actual.groups[1].hits[0].id.as_str(), "nested-b");
+
+        let sibling: SearchResult<serde_json::Value> =
+            search_result(sibling_groups_result(), &[]).unwrap();
+        assert_eq!(
+            sibling
+                .groups
+                .iter()
+                .map(|group| group.key.clone())
+                .collect::<Vec<_>>(),
+            [
+                Some(serde_json::Value::String("A".into())),
+                Some(serde_json::Value::String("B".into())),
+                Some(serde_json::Value::String("C".into()))
+            ]
+        );
+
+        let aggregations: SearchResult<serde_json::Value> = search_result(
+            searchkernel_testkit::group_fields_and_aggregations_result(),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(aggregations.aggregations["count"], serde_json::json!(7));
+        let ResultNode::Group(root) = aggregations.root else {
+            panic!("aggregation fixture root must be a group");
+        };
+        assert_eq!(root.fields["max_price"], serde_json::json!(19.5));
+    }
+
+    #[test]
+    fn facet_projection_is_strict_and_root_remains_complete() {
+        let facet: SearchResult<serde_json::Value> =
+            search_result(canonical_facet_result(), &[("brand", "brands")]).unwrap();
+        assert_eq!(facet.facets.len(), 1);
+        assert!(facet.groups.is_empty());
+        let ResultNode::Group(root) = &facet.root else {
+            panic!("facet fixture root must be a group");
+        };
+        assert_eq!(root.children.len(), 1);
+        assert!(matches!(root.children[0], ResultNode::Group(_)));
+
+        let ordinary: SearchResult<serde_json::Value> =
+            search_result(non_facet_grouping_result(), &[("brand", "brands")]).unwrap();
+        assert!(ordinary.facets.is_empty());
+        assert_eq!(ordinary.groups.len(), 1);
+        assert_eq!(
+            ordinary.groups[0].groups[0].aggregations["count"],
+            serde_json::json!(4)
+        );
+        let ResultNode::Group(root) = ordinary.root else {
+            panic!("ordinary grouping root must be a group");
+        };
+        let ResultNode::Group(ordinary) = &root.children[0] else {
+            panic!("ordinary grouping child must remain a group");
+        };
+        assert_eq!(ordinary.metadata["owner"], serde_json::json!("user"));
+    }
+
+    #[test]
+    fn public_api_preserves_meaningful_optional_presence_states() {
+        let absent: SearchResult<serde_json::Value> =
+            search_result(searchkernel_testkit::absent_optional_fields_result(), &[]).unwrap();
+        assert!(absent.coverage.is_none());
+        assert!(absent.timing.is_none());
+        assert!(absent.trace.is_none());
+
+        let present: SearchResult<serde_json::Value> = search_result(
+            searchkernel_testkit::present_empty_optional_fields_result(),
+            &[],
+        )
+        .unwrap();
+        assert!(present.coverage.is_some());
+        assert!(present.timing.is_some());
+        assert_eq!(present.trace, Some(serde_json::json!({})));
+        let ResultNode::Group(root) = present.root else {
+            panic!("present-empty fixture root must be a group");
+        };
+        assert_eq!(root.source.as_deref(), Some(""));
+        assert_eq!(root.value, Some(serde_json::json!([])));
+        assert_eq!(
+            root.limits,
+            Some(ResultLimits {
+                from: None,
+                to: None
+            })
+        );
+    }
 
     #[test]
     fn result_conversion_preserves_totals_facets_highlights_and_nested_values() {

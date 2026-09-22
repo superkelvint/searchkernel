@@ -38,6 +38,9 @@ use native::{
 #[cfg(test)]
 #[path = "../api_tests.rs"]
 mod api_tests;
+#[cfg(test)]
+#[path = "model_state_machine_tests.rs"]
+mod model_state_machine_tests;
 #[cfg(all(test, feature = "native"))]
 #[path = "../tests.rs"]
 mod tests;

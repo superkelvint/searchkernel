@@ -40,7 +40,7 @@ fn context() -> IndexContext {
             field("rating", FieldKind::Float64),
             field("in_stock", FieldKind::Bool),
         ],
-        Vec::new()
+        Vec::new(),
     )
     .unwrap();
     let document_fields = definition
@@ -103,12 +103,7 @@ fn highlighting_resolution_preserves_multi_valued_field_shape_for_the_adapter() 
         None,
         FieldCapabilities::new(true, true, false, false, false),
     );
-    let definition = IndexDefinitionIr::new(
-        None,
-        vec![tags],
-        Vec::new()
-    )
-    .unwrap();
+    let definition = IndexDefinitionIr::new(None, vec![tags], Vec::new()).unwrap();
     let context = IndexContext {
         document_fields: BTreeMap::from([("tags".to_owned(), 0)]),
         query_fields: BTreeMap::from([("tags".to_owned(), QueryFieldRef::Document(0))]),
@@ -778,7 +773,11 @@ fn rust_rank_profile_validation_matches_portable_errors() {
 #[test]
 fn rust_and_portable_field_defaults_match_for_position_and_tensor() {
     for (name, kind, data_type) in [
-        ("position", RustFieldKind::Position, api::DataTypeKind::PositionDataType),
+        (
+            "position",
+            RustFieldKind::Position,
+            api::DataTypeKind::PositionDataType,
+        ),
         (
             "embedding",
             RustFieldKind::Tensor("tensor<float>(x[3])".to_owned()),
@@ -815,7 +814,9 @@ fn rust_and_portable_field_defaults_match_for_position_and_tensor() {
                 let type_spec = builder.create_string("tensor<float>(x[3])");
                 api::TensorDataType::create(
                     &mut builder,
-                    &api::TensorDataTypeArgs { type_spec: Some(type_spec) },
+                    &api::TensorDataTypeArgs {
+                        type_spec: Some(type_spec),
+                    },
                 )
                 .as_union_value()
             }
@@ -842,7 +843,11 @@ fn rust_and_portable_field_defaults_match_for_position_and_tensor() {
                 .expect("portable field should decode");
         let portable = field_to_ir(portable_field).expect("portable field should resolve");
 
-        assert_eq!(rust_definition.fields()[0], portable, "{name} ingress drift");
+        assert_eq!(
+            rust_definition.fields()[0],
+            portable,
+            "{name} ingress drift"
+        );
     }
 }
 
@@ -2744,7 +2749,7 @@ fn tensor_patch_resolution_preserves_tensor_values_and_rejects_scalars() {
             None,
             FieldCapabilities::new(false, false, true, false, false),
         )],
-        Vec::new()
+        Vec::new(),
     )
     .unwrap();
     let context = IndexContext::from_definition_ir(definition);
@@ -2794,7 +2799,7 @@ fn schema_only_fields_are_query_visible_but_not_feedable() {
             None,
             FieldCapabilities::new(true, true, false, false, false),
         )],
-        Vec::new()
+        Vec::new(),
     )
     .unwrap();
     definition.set_schema_fields(vec![FieldIr::new(
@@ -2857,7 +2862,7 @@ fn imported_aliases_are_preserved_but_explicitly_not_query_bound() {
             None,
             FieldCapabilities::new(false, false, false, false, false),
         )],
-        Vec::new()
+        Vec::new(),
     )
     .unwrap();
     definition.set_imported_fields(vec![ImportedFieldDefinitionIr {
@@ -2886,7 +2891,7 @@ fn imported_aliases_are_preserved_but_explicitly_not_query_bound() {
             None,
             FieldCapabilities::new(true, true, false, false, false),
         )],
-        Vec::new()
+        Vec::new(),
     )
     .unwrap();
     invalid.set_schema_fields(vec![FieldIr::new(

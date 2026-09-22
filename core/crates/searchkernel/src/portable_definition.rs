@@ -89,6 +89,7 @@ fn encode_field<'a>(
                 fast_access: None,
                 distance_metric: match field.distance_metric {
                     None => api::DistanceMetric::Unspecified,
+                    Some(DistanceMetric::Unspecified) => api::DistanceMetric::Unspecified,
                     Some(DistanceMetric::Euclidean) => api::DistanceMetric::Euclidean,
                     Some(DistanceMetric::Angular) => api::DistanceMetric::Angular,
                     Some(DistanceMetric::DotProduct) => api::DistanceMetric::DotProduct,

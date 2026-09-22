@@ -257,9 +257,13 @@ impl FieldIr {
     }
 
     #[doc(hidden)]
-    pub fn set_indexing_script(&mut self, script: Option<String>) { self.indexing_script = script; }
+    pub fn set_indexing_script(&mut self, script: Option<String>) {
+        self.indexing_script = script;
+    }
     #[doc(hidden)]
-    pub fn set_properties(&mut self, properties: SchemaPropertiesIr) { self.properties = properties; }
+    pub fn set_properties(&mut self, properties: SchemaPropertiesIr) {
+        self.properties = properties;
+    }
 
     #[doc(hidden)]
     pub fn set_matching_config(&mut self, config: Option<MatchingConfigIr>) {
@@ -656,7 +660,12 @@ impl IndexDefinitionIr {
 
     /// Replace document metadata while retaining every other schema member.
     #[doc(hidden)]
-    pub fn set_document_metadata(&mut self, document_type: Option<String>, schema_inherits: Vec<String>, document_inherits: Vec<String>) {
+    pub fn set_document_metadata(
+        &mut self,
+        document_type: Option<String>,
+        schema_inherits: Vec<String>,
+        document_inherits: Vec<String>,
+    ) {
         self.document_type = document_type;
         self.schema_inherits = schema_inherits;
         self.document_inherits = document_inherits;

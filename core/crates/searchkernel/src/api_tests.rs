@@ -1561,123 +1561,6 @@ fn public_schema_fields_round_trip_to_ir() {
 }
 
 #[test]
-fn rich_public_field_state_is_validated_by_shared_resolver() {
-    let (_, mut described) = public_described_canonical_fixture();
-    described.fields[0]
-        .attribute_config
-        .as_mut()
-        .expect("fixture field should have attribute configuration")
-        .fast_search = Some(true);
-
-    let error = definition_to_ir(&described)
-        .expect_err("rich field state must be validated before final IR construction");
-    assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
-}
-
-fn assert_rust_and_portable_schema_error_match(
-    definition: searchkernel_ir::IndexDefinitionIr,
-    expected_detail_code: &str,
-) {
-    let index = index_from_canonical_ir(definition.clone());
-    let described = index
-        .describe()
-        .expect("invalid fixture should still describe structurally");
-
-    let rust_error = definition_to_ir(&described)
-        .expect_err("Rust schema ingress should reject invalid semantic state");
-
-    let bytes = searchkernel_ir::index_definition_ir_to_api(&definition);
-    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
-        .expect("portable invalid fixture should still decode structurally");
-    let portable_error = searchkernel_ir::index_definition_to_ir(portable)
-        .expect_err("portable schema ingress should reject the same semantic state");
-
-    assert_eq!(rust_error.details()[0].code, expected_detail_code);
-    assert_eq!(portable_error.details[0].code, expected_detail_code);
-    assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
-}
-
-fn invalid_schema_with_field(
-    field: searchkernel_ir::FieldIr,
-) -> searchkernel_ir::IndexDefinitionIr {
-    searchkernel_ir::IndexDefinitionIr::new(None, vec![field], Vec::new())
-        .expect("invalid field semantics are intentionally injected after construction")
-}
-
-#[test]
-fn rich_schema_negative_semantics_match_portable_ingress() {
-    use searchkernel_ir::{
-        AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexConfigIr,
-        PrimitiveDataTypeIr, SchemaPropertiesIr, SummaryConfigIr,
-    };
-
-    let text_field = || {
-        FieldIr::new(
-            FieldName::parse("title").expect("valid field name"),
-            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
-            Some(AnalyzerIr {
-                name: "standard".to_owned(),
-                version: 1,
-                options: SchemaPropertiesIr::new(),
-            }),
-            FieldCapabilities::new(true, true, false, false, false),
-        )
-    };
-
-    let mut stored_summary_conflict = text_field();
-    stored_summary_conflict.set_summary_config(Some(SummaryConfigIr {
-        enabled: Some(false),
-        options: SchemaPropertiesIr::new(),
-    }));
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(stored_summary_conflict),
-        "invalid_capability",
-    );
-
-    let mut searchable_index_conflict = text_field();
-    searchable_index_conflict.set_index_config(Some(IndexConfigIr {
-        enabled: Some(false),
-        hnsw: None,
-        options: SchemaPropertiesIr::new(),
-    }));
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(searchable_index_conflict),
-        "invalid_capability",
-    );
-
-    let mut invalid_analyzer = text_field();
-    invalid_analyzer.set_analyzer(Some(AnalyzerIr {
-        name: "unknown".to_owned(),
-        version: 99,
-        options: SchemaPropertiesIr::new(),
-    }));
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(invalid_analyzer),
-        "unsupported_analyzer",
-    );
-
-    let mut ambiguous_indexing_script = text_field();
-    ambiguous_indexing_script.set_indexing_script(Some("input title | index title".to_owned()));
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(ambiguous_indexing_script),
-        "ambiguous_indexing_script",
-    );
-
-    let missing_struct = FieldIr::new(
-        FieldName::parse("payload").expect("valid field name"),
-        DataTypeIr::StructReference {
-            name: "MissingStruct".to_owned(),
-        },
-        None,
-        FieldCapabilities::new(true, false, true, true, false),
-    );
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(missing_struct),
-        "unknown_struct",
-    );
-}
-
-#[test]
 fn schema_field_builder_adds_schema_only_field_to_ir() {
     let definition = IndexDefinition::new()
         .field(Field::text("title"))
@@ -1691,23 +1574,6 @@ fn schema_field_builder_adds_schema_only_field_to_ir() {
             .map(|field| field.name().as_str())
             .collect::<Vec<_>>(),
         ["derived"]
-    );
-}
-
-#[test]
-fn derived_default_search_fields_include_schema_only_fields() {
-    let definition = IndexDefinition::new()
-        .field(Field::text("title"))
-        .schema_field(Field::text("derived"));
-    let resolved = definition_to_ir(&definition).expect("schema should resolve");
-
-    assert_eq!(
-        resolved
-            .default_search_fields()
-            .iter()
-            .map(|field| field.field().as_str())
-            .collect::<Vec<_>>(),
-        ["title", "derived"]
     );
 }
 
@@ -3923,15 +3789,6 @@ fn describe_round_trips_complete_index_definition_without_semantic_loss() {
 }
 
 #[test]
-fn rich_public_definition_matches_portable_without_canonical_sidecar() {
-    let (canonical, described) = public_described_canonical_fixture();
-
-    let resolved = definition_to_ir(&described)
-        .expect("complete public schema state should use the shared resolver");
-    assert_eq!(canonical, resolved);
-}
-
-#[test]
 fn public_rust_browse_and_portable_match_all_share_source_semantics() {
     let definition = scripted_definition();
     let context = context_for(&definition);
@@ -4878,48 +4735,6 @@ fn search_normalization_covers_explicit_options_and_defaults() {
 }
 
 #[test]
-fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
-    let definition = scripted_definition();
-    let context = context_for(&definition);
-    let (_runtime, probe) = runtime_index(definition, Arc::new(RecordingBackend::new()));
-    let rust_request = probe
-        .search("fox")
-        .search_fields(["title"])
-        .filter(field("brand").eq("acme"))
-        .filter("category = 'books'")
-        .sort(Sort::desc("brand").missing_first())
-        .facet(crate::Facet::new("category").name("categories").limit(3))
-        .grouping(
-            GroupingPlan::new().level(
-                GroupingPlan::by("brand")
-                    .output(crate::GroupingAggregation::count())
-                    .nested(GroupingPlan::by("category")),
-            ),
-        )
-        .ranking(Ranking::bm25())
-        .rank_property("source", "catalog")
-        .projection(["title", "brand"])
-        .highlight(["title"])
-        .language("EN-us")
-        .limit(7)
-        .offset(2);
-
-    let direct = expected_search(&context, &rust_request);
-    let bytes = searchkernel_ir::search_request_ir_to_api(&direct);
-    let portable = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
-        .expect("canonical search request should decode");
-    let portable = context
-        .search_to_ir(portable)
-        .expect("canonical portable search should resolve");
-
-    assert_eq!(direct, portable);
-    assert_eq!(
-        searchkernel_ir::snapshot::search_request(&direct),
-        searchkernel_ir::snapshot::search_request(&portable)
-    );
-}
-
-#[test]
 fn scripted_backend_errors_preserve_code_message_and_details() {
     let definition = scripted_definition();
     let context = context_for(&definition);
@@ -4986,4 +4801,189 @@ fn backend_errors_are_returned_without_being_rewritten() {
         .expect_err("recording backend intentionally rejects searches");
     assert_eq!(error.code(), crate::ErrorCode::Unsupported);
     assert_eq!(backend.calls().len(), 2);
+}
+
+#[test]
+fn rich_public_field_state_is_validated_by_shared_resolver() {
+    let (_, mut described) = public_described_canonical_fixture();
+    described.fields[0]
+        .attribute_config
+        .as_mut()
+        .expect("fixture field should have attribute configuration")
+        .fast_search = Some(true);
+
+    let error = definition_to_ir(&described)
+        .expect_err("rich field state must be validated before final IR construction");
+    assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
+}
+
+#[test]
+fn derived_default_search_fields_include_schema_only_fields() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title"))
+        .schema_field(Field::text("derived"));
+    let resolved = definition_to_ir(&definition).expect("schema should resolve");
+
+    assert_eq!(
+        resolved
+            .default_search_fields()
+            .iter()
+            .map(|field| field.field().as_str())
+            .collect::<Vec<_>>(),
+        ["title", "derived"]
+    );
+}
+
+#[test]
+fn rich_public_definition_matches_portable_without_canonical_sidecar() {
+    let (canonical, described) = public_described_canonical_fixture();
+
+    let resolved = definition_to_ir(&described)
+        .expect("complete public schema state should use the shared resolver");
+    assert_eq!(canonical, resolved);
+}
+
+#[test]
+fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
+    let definition = scripted_definition();
+    let context = context_for(&definition);
+    let (_runtime, probe) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+    let rust_request = probe
+        .search("fox")
+        .search_fields(["title"])
+        .filter(field("brand").eq("acme"))
+        .filter("category = 'books'")
+        .sort(Sort::desc("brand").missing_first())
+        .facet(crate::Facet::new("category").name("categories").limit(3))
+        .grouping(
+            GroupingPlan::new().level(
+                GroupingPlan::by("brand")
+                    .output(crate::GroupingAggregation::count())
+                    .nested(GroupingPlan::by("category")),
+            ),
+        )
+        .ranking(Ranking::bm25())
+        .rank_property("source", "catalog")
+        .projection(["title", "brand"])
+        .highlight(["title"])
+        .language("EN-us")
+        .limit(7)
+        .offset(2);
+
+    let direct = expected_search(&context, &rust_request);
+    let bytes = searchkernel_ir::search_request_ir_to_api(&direct);
+    let portable = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
+        .expect("canonical search request should decode");
+    let portable = context
+        .search_to_ir(portable)
+        .expect("canonical portable search should resolve");
+
+    assert_eq!(direct, portable);
+    assert_eq!(
+        searchkernel_ir::snapshot::search_request(&direct),
+        searchkernel_ir::snapshot::search_request(&portable)
+    );
+}
+
+fn assert_rust_and_portable_schema_error_match(
+    definition: searchkernel_ir::IndexDefinitionIr,
+    expected_detail_code: &str,
+) {
+    let index = index_from_canonical_ir(definition.clone());
+    let described = index
+        .describe()
+        .expect("invalid fixture should still describe structurally");
+
+    let rust_error = definition_to_ir(&described)
+        .expect_err("Rust schema ingress should reject invalid semantic state");
+
+    let bytes = searchkernel_ir::index_definition_ir_to_api(&definition);
+    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+        .expect("portable invalid fixture should still decode structurally");
+    let portable_error = searchkernel_ir::index_definition_to_ir(portable)
+        .expect_err("portable schema ingress should reject the same semantic state");
+
+    assert_eq!(rust_error.details()[0].code, expected_detail_code);
+    assert_eq!(portable_error.details[0].code, expected_detail_code);
+    assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
+}
+
+fn invalid_schema_with_field(
+    field: searchkernel_ir::FieldIr,
+) -> searchkernel_ir::IndexDefinitionIr {
+    searchkernel_ir::IndexDefinitionIr::new(None, vec![field], Vec::new())
+        .expect("invalid field semantics are intentionally injected after construction")
+}
+
+#[test]
+fn rich_schema_negative_semantics_match_portable_ingress() {
+    use searchkernel_ir::{
+        AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexConfigIr,
+        PrimitiveDataTypeIr, SchemaPropertiesIr, SummaryConfigIr,
+    };
+
+    let text_field = || {
+        FieldIr::new(
+            FieldName::parse("title").expect("valid field name"),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            Some(AnalyzerIr {
+                name: "standard".to_owned(),
+                version: 1,
+                options: SchemaPropertiesIr::new(),
+            }),
+            FieldCapabilities::new(true, true, false, false, false),
+        )
+    };
+
+    let mut stored_summary_conflict = text_field();
+    stored_summary_conflict.set_summary_config(Some(SummaryConfigIr {
+        enabled: Some(false),
+        options: SchemaPropertiesIr::new(),
+    }));
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(stored_summary_conflict),
+        "invalid_capability",
+    );
+
+    let mut searchable_index_conflict = text_field();
+    searchable_index_conflict.set_index_config(Some(IndexConfigIr {
+        enabled: Some(false),
+        hnsw: None,
+        options: SchemaPropertiesIr::new(),
+    }));
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(searchable_index_conflict),
+        "invalid_capability",
+    );
+
+    let mut invalid_analyzer = text_field();
+    invalid_analyzer.set_analyzer(Some(AnalyzerIr {
+        name: "unknown".to_owned(),
+        version: 99,
+        options: SchemaPropertiesIr::new(),
+    }));
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(invalid_analyzer),
+        "unsupported_analyzer",
+    );
+
+    let mut ambiguous_indexing_script = text_field();
+    ambiguous_indexing_script.set_indexing_script(Some("input title | index title".to_owned()));
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(ambiguous_indexing_script),
+        "ambiguous_indexing_script",
+    );
+
+    let missing_struct = FieldIr::new(
+        FieldName::parse("payload").expect("valid field name"),
+        DataTypeIr::StructReference {
+            name: "MissingStruct".to_owned(),
+        },
+        None,
+        FieldCapabilities::new(true, false, true, true, false),
+    );
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(missing_struct),
+        "unknown_struct",
+    );
 }
