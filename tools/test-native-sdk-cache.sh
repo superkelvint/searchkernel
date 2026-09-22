@@ -156,6 +156,11 @@ third=$(run_resolver "$worktree")
 [[ ! -e "$third/include/searchkernel_vespa.h" ]]
 [[ -z "$(find "$third" -perm /222 -print -quit)" ]]
 
+printf 'legacy-adapter-bytes-changed\n' >"$legacy_sdk/lib/libsearchkernel_vespa.so"
+same_after_legacy_adapter=$(run_resolver "$worktree")
+[[ "$same_after_legacy_adapter" == "$third" ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
+
 printf 'unrelated-task-dependency\n' >"$worktree/vespa-deps/lib64/libsearchkernel_fixture.so"
 same_after_unrelated_deps=$(run_resolver "$worktree")
 [[ "$same_after_unrelated_deps" == "$third" ]]
