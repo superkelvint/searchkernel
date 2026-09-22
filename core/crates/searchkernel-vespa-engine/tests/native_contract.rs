@@ -12,6 +12,9 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "hardening")]
+use searchkernel_vespa_engine::{hardening, ErrorKind};
+
 fn temporary_path(label: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -33,6 +36,29 @@ fn compile_config(label: &str, schema: &Schema) -> (PathBuf, PathBuf) {
         .compile_to(schema, &config)
         .expect("compile generated config");
     (config, data)
+}
+
+#[cfg(feature = "hardening")]
+#[test]
+fn native_open_failures_preserve_error_kinds_and_leave_no_handle() {
+    let (config, data) = compile_config(
+        "open-error-kinds",
+        &Schema::new("typea").field(Field::new("qty", FieldType::Integer).attribute()),
+    );
+    for stage in ["open_constructor", "open_initialize"] {
+        for (action, expected) in [
+            (hardening::Action::Error, ErrorKind::InvalidArgument),
+            (hardening::Action::BadAlloc, ErrorKind::ResourceExhausted),
+            (hardening::Action::StdException, ErrorKind::Internal),
+        ] {
+            hardening::set_open(stage, 1, action).expect("set open failpoint");
+            let error = Engine::open(&data, &config).expect_err("open failpoint must fail");
+            hardening::clear_open(stage).expect("clear open failpoint");
+            assert_eq!(error.kind(), expected);
+        }
+    }
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
 }
 
 #[cfg(feature = "native-contract-tests")]

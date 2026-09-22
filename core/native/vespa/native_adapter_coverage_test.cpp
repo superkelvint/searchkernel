@@ -9,9 +9,11 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -44,8 +46,9 @@ void highlighting_decoder_unit() {
     const auto literal_markup = searchkernel::native_highlighting::decode(
         "stored <b>text</b>");
     assert(literal_markup);
-    assert(literal_markup->text == "stored <b>text</b>");
-    assert(literal_markup->matches.empty());
+    assert(literal_markup->size() == 1);
+    assert(literal_markup->at(0).text == "stored <b>text</b>");
+    assert(literal_markup->at(0).matches.empty());
 
     const auto annotated = searchkernel::native_highlighting::decode(
         "\xEF\xBF\xB9The\xEF\xBF\xBAthe\xEF\xBF\xBB quick");
@@ -401,6 +404,43 @@ void exercise_native_engine(const std::filesystem::path &data,
                             const std::filesystem::path &config) {
     ErrorBuffer error;
     sk_engine *engine = nullptr;
+    const auto invalid_config = config / "invalid-open-config";
+    std::filesystem::create_directories(invalid_config);
+    {
+        std::ofstream manifest(invalid_config / "searchkernel-schema.json");
+        manifest << "{}";
+    }
+    expect(sk_engine_open(data.c_str(), invalid_config.c_str(), &engine,
+                          error.data(), ERROR_CAPACITY),
+           SK_NATIVE_STATUS_INVALID_ARGUMENT, "invalid generated schema on engine open");
+    assert(engine == nullptr);
+    std::filesystem::remove_all(invalid_config);
+
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    for (const auto *stage : {"open_constructor", "open_initialize"}) {
+        for (const auto &[action, expected, label] : {
+                 std::tuple{SK_TEST_FAILPOINT_ERROR, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                            "open invalid argument"},
+                 std::tuple{SK_TEST_FAILPOINT_BAD_ALLOC, SK_NATIVE_STATUS_OUT_OF_MEMORY,
+                            "open out of memory"},
+                 std::tuple{SK_TEST_FAILPOINT_STD_EXCEPTION, SK_NATIVE_STATUS_INTERNAL,
+                            "open internal failure"},
+             }) {
+            expect_ok(sk_test_failpoint_set_open(stage, 1, action,
+                                                 error.data(), ERROR_CAPACITY),
+                      "set open failpoint");
+            engine = reinterpret_cast<sk_engine *>(1);
+            expect(sk_engine_open(data.c_str(), config.c_str(), &engine,
+                                  error.data(), ERROR_CAPACITY),
+                   expected, label);
+            assert(engine == nullptr);
+            expect_ok(sk_test_failpoint_clear_open(stage, error.data(),
+                                                    ERROR_CAPACITY),
+                      "clear open failpoint");
+        }
+    }
+#endif
+
     sk_local_grouping_request *local_grouping = nullptr;
     sk_local_grouping_result *local_grouping_result = nullptr;
     expect_ok(sk_engine_open(data.c_str(), config.c_str(), &engine, error.data(), ERROR_CAPACITY),
