@@ -149,7 +149,7 @@ fi
 if [[ -e "$OBJECT" ]]; then
     QUARANTINE_ROOT="$CACHE_ROOT/quarantine"
     mkdir -p "$QUARANTINE_ROOT"
-    QUARANTINED="$QUARANTINE_ROOT/$DIGEST.$(date +%s).$"
+    QUARANTINED="$QUARANTINE_ROOT/$DIGEST.$(date +%s).$BASHPID"
     echo "native SDK cache object '$OBJECT' failed validation; quarantining and rebuilding under the cache lock" >&2
     mv "$OBJECT" "$QUARANTINED"
 fi
