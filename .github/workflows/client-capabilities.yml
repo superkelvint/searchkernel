@@ -19,6 +19,12 @@ on:
       - "tools/test_check_client_contracts.py"
       - "tools/check-python-dependencies.py"
       - "tools/test_python_dependency_contract.py"
+      - ".github/ci/select-python.sh"
+      - ".github/ci/check-python-workflows.sh"
+      - ".github/workflows/client-capabilities.yml"
+      - ".github/ci/select-python.sh"
+      - ".github/ci/check-python-workflows.sh"
+      - ".github/workflows/client-capabilities.yml"
   push:
     branches: [main]
     paths:
@@ -47,14 +53,12 @@ concurrency:
 jobs:
   verify:
     runs-on: [self-hosted, linux, x64]
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
+      - name: Enforce runner-Python workflow policy
+        run: bash .github/ci/check-python-workflows.sh
       - run: python tools/check-capabilities.py --check
       - run: python tools/check-client-contracts.py --check
       - run: python tools/test_check_capabilities.py
@@ -69,9 +73,8 @@ jobs:
       SEARCHKERNEL_BUILD_ENV: ci
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
