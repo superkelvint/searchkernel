@@ -223,37 +223,13 @@ SK_NATIVE_BUILD_DIR="$BUILD" \
 SK_NATIVE_TARGET="$TARGET" \
 SK_NATIVE_REGENERATE_BINDINGS=0 \
 SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
+SK_NATIVE_BASE_ONLY=1 \
     "$BUILDER"
 
 grep -q "^sha256=$DIGEST$" "$TMP/native-build-fingerprint-v2.txt" || {
     echo "built SDK fingerprint does not match requested cache key $DIGEST" >&2
     exit 1
 }
-
-# The builder also emits the Search Kernel adapter for release packaging.
-# The shared development cache is deliberately Vespa/runtime-only so its bytes
-# are independent of Search Kernel source. Strip all adapter-owned artifacts
-# before validation/publication and normalize the manifest as a base object.
-rm -f "$TMP"/lib/libsearchkernel_vespa.so*
-rm -f "$TMP"/include/searchkernel_vespa*.h
-python3 - "$TMP/manifest.json" "$DIGEST" <<'PY'
-import json
-import sys
-path, digest = sys.argv[1:]
-try:
-    with open(path, encoding="utf-8") as stream:
-        manifest = json.load(stream)
-except (FileNotFoundError, json.JSONDecodeError):
-    manifest = {}
-manifest.pop("native_abi_version", None)
-manifest.pop("hardening_failpoints", None)
-manifest.pop("sanitizer", None)
-manifest["kind"] = "vespa-base"
-manifest["native_build_fingerprint"] = digest
-with open(path, "w", encoding="utf-8") as stream:
-    json.dump(manifest, stream, indent=2, sort_keys=True)
-    stream.write("\n")
-PY
 
 validate_link_closure "$TMP" || {
     echo "refusing to publish native SDK with incomplete runtime dependency closure" >&2
