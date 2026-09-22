@@ -112,7 +112,7 @@ printf 'dependency-v2-with-different-size\n' >"$worktree/vespa-deps/lib64/libsea
 fourth=$(run_resolver "$worktree")
 [[ "$fourth" != "$third" ]]
 [[ -d "$fourth" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
 echo 'native SDK cache: dependency-library change selected a distinct object'
 
 # A published object whose required runtime dependency disappears must be
@@ -124,7 +124,7 @@ chmod a-w "$fourth/lib"
 healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err")
 [[ "$healed" == "$fourth" ]]
 [[ -f "$fourth/lib/libsearchkernel_cache_fixture_dep.so" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/incomplete.err"
 [[ -n "$(find "$(dirname "$fourth")/../quarantine" -maxdepth 1 -type d -name "$(basename "$fourth").*" -print -quit 2>/dev/null)" ]]
 echo 'native SDK cache: incomplete published runtime closure self-healed automatically'
