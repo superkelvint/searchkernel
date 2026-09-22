@@ -222,6 +222,10 @@ fn manifest_round_trips_definition_and_config_identity() {
         RESOLVED_SCHEMA_SNAPSHOT_VERSION
     );
     assert!(loaded.value["resolved_schema_snapshot"].is_object());
+    assert_eq!(
+        loaded.value["resolved_schema_snapshot"],
+        searchkernel_ir::snapshot::index_definition(loaded.resolved_context().unwrap().definition())
+    );
     assert!(root.join("manifest/index-definition.bfbs").is_file());
     assert!(root
         .join("manifest/portable-index-definition.bfbs")
@@ -348,6 +352,10 @@ fn manifest_preserves_rich_resolved_ir() {
 
     let loaded = IndexManifest::read(&root).unwrap();
     let loaded_context = loaded.resolved_context().unwrap();
+    assert_eq!(
+        loaded.value["resolved_schema_snapshot"],
+        searchkernel_ir::snapshot::index_definition(loaded_context.definition())
+    );
     let profile = &loaded_context.definition().rank_profiles()[0];
     assert_eq!(profile.name, "product_search");
     assert_eq!(

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import math
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,7 +15,14 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel import Boolean, ClientError, Float, Group, Hit, HnswIndexConfig, Integer, Keyword, RankProfile, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
 from searchkernel.client import _document, _python_value, value  # noqa: E402
-from searchkernel.ergonomic import _feature_entries, _node, _value_entries  # noqa: E402
+from searchkernel.ergonomic import (  # noqa: E402
+    SearchBuilder,
+    _facet_request,
+    _feature_entries,
+    _node,
+    _root_aggregation_request,
+    _value_entries,
+)
 from searchkernel.protocol import pack_object, pack_request  # noqa: E402
 from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelopeT  # noqa: E402
 from SearchKernel.V2.Document import DocumentT  # noqa: E402
@@ -38,6 +48,9 @@ from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
 from SearchKernel.V2.FilterClause import FilterClauseT  # noqa: E402
 from SearchKernel.V2.FilterRequest import FilterRequestT  # noqa: E402
 from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
+from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
+from SearchKernel.V2.QuerySource import QuerySourceT  # noqa: E402
+from SearchKernel.V2.QuerySourceKind import QuerySourceKind  # noqa: E402
 from SearchKernel.V2.ErrorCode import ErrorCode  # noqa: E402
 from SearchKernel.V2.GroupingBinaryOperator import GroupingBinaryOperator  # noqa: E402
 from SearchKernel.V2.GroupingFilterExprKind import GroupingFilterExprKind  # noqa: E402
@@ -52,7 +65,60 @@ from SearchKernel.V2.FiniteRelevance import FiniteRelevanceT  # noqa: E402
 from SearchKernel.V2.PositiveInfinityRelevance import PositiveInfinityRelevanceT  # noqa: E402
 from SearchKernel.V2.NegativeInfinityRelevance import NegativeInfinityRelevanceT  # noqa: E402
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind  # noqa: E402
-from searchkernel.ergonomic import SearchBuilder  # noqa: E402
+
+
+_SNAPSHOT_BINARY = None
+
+
+def _snapshot_binary(root):
+    global _SNAPSHOT_BINARY
+    if _SNAPSHOT_BINARY is None:
+        subprocess.run(
+            [
+                "cargo",
+                "build",
+                "--quiet",
+                "--no-default-features",
+                "-p",
+                "searchkernel-testkit",
+                "--bin",
+                "searchkernel-semantic-snapshot",
+            ],
+            cwd=root,
+            check=True,
+        )
+        metadata = subprocess.run(
+            ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        target = Path(json.loads(metadata.stdout)["target_directory"])
+        _SNAPSHOT_BINARY = target / "debug" / "searchkernel-semantic-snapshot"
+    return _SNAPSHOT_BINARY
+
+
+def _canonical_snapshot(request):
+    root = Path(__file__).parents[3]
+    fixture = root / "reference/api-conformance/fixtures/indexes/product-v2.json"
+    with tempfile.TemporaryDirectory() as directory:
+        request_path = Path(directory) / "request.bfbs"
+        request_path.write_bytes(pack_object(request))
+        result = subprocess.run(
+            [
+                str(_snapshot_binary(root)),
+                "--index-json",
+                str(fixture),
+                "--request",
+                str(request_path),
+            ],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    return json.loads(result.stdout)
 
 
 class FlatBuffersObjectApiTest(unittest.TestCase):
@@ -778,6 +844,93 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             [entry.name for entry in index.client.request.inputs],
             ["alpha_input", "zeta_input"],
         )
+
+    def test_page_and_grouping_helpers_match_canonical_rust_ir(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        page_index = Index()
+        SearchBuilder(page_index, None).page(2, 20).execute()
+        explicit_index = Index()
+        SearchBuilder(explicit_index, None).limit(20).offset(20).execute()
+        self.assertEqual(
+            _canonical_snapshot(page_index.client.request),
+            _canonical_snapshot(explicit_index.client.request),
+        )
+        first_page_index = Index()
+        SearchBuilder(first_page_index, None).page(1, 20).execute()
+        first_page_explicit_index = Index()
+        SearchBuilder(first_page_explicit_index, None).limit(20).offset(0).execute()
+        self.assertEqual(
+            _canonical_snapshot(first_page_index.client.request),
+            _canonical_snapshot(first_page_explicit_index.client.request),
+        )
+        zero_page_index = Index()
+        SearchBuilder(zero_page_index, None).page(1, 0).execute()
+        zero_explicit_index = Index()
+        SearchBuilder(zero_explicit_index, None).limit(0).offset(0).execute()
+        self.assertEqual(
+            _canonical_snapshot(zero_page_index.client.request),
+            _canonical_snapshot(zero_explicit_index.client.request),
+        )
+
+        helper_index = Index()
+        SearchBuilder(helper_index, None).facet(
+            "brand", name="brands", limit=5, sort="count_desc"
+        ).aggregate(agg.count().as_("products")).group(
+            Group.by("category").limit(3).output(agg.count().as_("products"))
+        ).execute()
+        explicit = SearchRequestT(
+            query=QuerySourceT(
+                sourceType=QuerySourceKind.MatchAllQuery,
+                source=MatchAllQueryT(),
+            ),
+            grouping=[
+                Group.by("category").limit(3).output(agg.count().as_("products")).to_request(),
+                _facet_request("brand", "brands", 5, "count_desc"),
+                _root_aggregation_request([agg.count().as_("products")]),
+            ],
+        )
+        self.assertEqual(
+            _canonical_snapshot(helper_index.client.request),
+            _canonical_snapshot(explicit),
+        )
+
+    def test_page_rejects_non_uint32_and_conflicting_pagination(self):
+        class Index:
+            class Client:
+                def search(self, _request):
+                    raise AssertionError("invalid pagination must fail before transport")
+
+            client = Client()
+
+        for number, size in [
+            (0, 10),
+            (1, -1),
+            (1, 0x1_0000_0000),
+            (2, 0xFFFF_FFFF),
+            (0x1_0000_0000, 1),
+        ]:
+            with self.subTest(number=number, size=size):
+                with self.assertRaises(ValueError):
+                    SearchBuilder(Index(), None).page(number, size)
+        with self.assertRaises(ValueError):
+            SearchBuilder(Index(), None).page(2, 10).limit(10)
+        with self.assertRaises(ValueError):
+            SearchBuilder(Index(), None).limit(0x1_0000_0000)
 
 
 if __name__ == "__main__":

@@ -774,6 +774,12 @@ def _root_aggregation_request(outputs):
     )
 
 
+def _uint32(item, label):
+    if isinstance(item, bool) or not isinstance(item, int) or not 0 <= item <= 0xFFFF_FFFF:
+        raise ValueError(f"{label} must be a uint32")
+    return item
+
+
 class SearchBuilder:
     def __init__(self, index, query):
         self.index, self.query = index, query
@@ -800,13 +806,25 @@ class SearchBuilder:
     def rank_property(self, name, item): self._rank_properties[name] = str(item); return self
     def property(self, name, item): self._properties[name] = value(item); return self
     def limit(self, item):
-        if item < 0 or self._paged: raise ValueError("limit must be non-negative and cannot follow page()")
+        _uint32(item, "limit")
+        if self._paged: raise ValueError("limit must be non-negative and cannot follow page()")
         self._limit = item; return self
     def offset(self, item):
-        if item < 0 or self._paged: raise ValueError("offset must be non-negative and cannot follow page()")
+        _uint32(item, "offset")
+        if self._paged: raise ValueError("offset must be non-negative and cannot follow page()")
         self._offset = item; return self
     def page(self, number, size):
-        if number < 1 or size < 0 or self._limit is not None or self._offset is not None: raise ValueError("invalid page() combination")
+        if (
+            isinstance(number, bool)
+            or not isinstance(number, int)
+            or number < 1
+            or self._limit is not None
+            or self._offset is not None
+        ):
+            raise ValueError("invalid page() combination")
+        _uint32(size, "page size")
+        if number * size > 0xFFFF_FFFF:
+            raise ValueError("page range exceeds uint32 range")
         self._paged, self._offset, self._limit = True, (number - 1) * size, size; return self
 
     def execute(self):
