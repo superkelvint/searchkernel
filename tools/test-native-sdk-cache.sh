@@ -29,6 +29,8 @@ cp "$source_root/tools/native-build-fingerprint.py" "$repo/tools/"
 cat >"$repo/core/native/vespa/searchkernel_vespa.h" <<'EOF'
 #define SK_NATIVE_ABI_VERSION 1U
 EOF
+printf '{"native_abi_version":1,"vespa_commit":"fixture-vespa-commit"}\n' \
+    >"$repo/core/native/vespa/manifest.json"
 echo 'adapter-v1' >"$repo/core/native/vespa/adapter.cc"
 echo 'vespa-source' >"$repo/upstream/vespa/tracked.txt"
 printf 'dependency-v1\n' >"$repo/vespa-deps/lib64/libsearchkernel_fixture.so"
@@ -99,12 +101,19 @@ refresh_legacy_fingerprint() {
         --target x86_64-unknown-linux-gnu \
         --scope full \
         --output "$legacy_sdk/native-build-fingerprint-v2.txt"
-    legacy_commit=$(awk -F '\t' '$1 == "vespa.commit" { print $2; exit }' \
-        "$legacy_sdk/native-build-fingerprint-v2.txt")
-    printf '{"native_abi_version":1,"vespa_commit":"%s"}\n' "$legacy_commit" \
+    printf '{"native_abi_version":1,"vespa_commit":"fixture-vespa-commit"}\n' \
         >"$legacy_sdk/manifest.json"
 }
 refresh_legacy_fingerprint
+
+untrusted_library_root="$fixture/untrusted-vespa"
+mkdir -p "$untrusted_library_root"
+cat >"$fixture/untrusted-vespa.c" <<'C'
+int searchkernel_untrusted_fixture(void) { return 99; }
+C
+cc -shared -fPIC "$fixture/untrusted-vespa.c" \
+    -Wl,-soname,libvespalib.so \
+    -o "$untrusted_library_root/libvespalib.so"
 
 worktree="$fixture/worktree"
 git -C "$repo" worktree add -q "$worktree" -b cache-test
@@ -120,6 +129,7 @@ run_resolver() {
         SEARCHKERNEL_BUILD_ENV=cache-regression \
         SK_NATIVE_TARGET=x86_64-unknown-linux-gnu \
         SK_NATIVE_CACHE_BUILDER="$root/tools/fake-sdk-builder.sh" \
+        VESPA_LIBRARY_ROOT="$untrusted_library_root" \
             bash "$root/tools/resolve-native-sdk.sh" "$mode"
     )
 }
