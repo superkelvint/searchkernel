@@ -778,13 +778,13 @@ fn validate_schema(schema: &Schema) -> Result<()> {
     for (index, field) in schema.fields.iter().enumerate() {
         validate_name(&field.name, &format!("field at index {index}"))?;
         if RESERVED_FIELD_NAMES.contains(&field.name.as_str()) {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "reserved field name '{}'",
                 field.name
             )));
         }
         if field.name.starts_with(HIGHLIGHT_SUMMARY_PREFIX) {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "reserved field name prefix '{}': '{}'",
                 HIGHLIGHT_SUMMARY_PREFIX, field.name
             )));
@@ -795,7 +795,7 @@ fn validate_schema(schema: &Schema) -> Result<()> {
             .take(index)
             .any(|previous| previous.name == field.name)
         {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "duplicate field name '{}'",
                 field.name
             )));
@@ -803,13 +803,13 @@ fn validate_schema(schema: &Schema) -> Result<()> {
 
         if field.hnsw.is_some() {
             if !matches!(field.field_type, FieldType::Tensor(_)) {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "hnsw_requires_tensor: field '{}' must be a tensor",
                     field.name
                 )));
             }
             if !field.attribute {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "hnsw_requires_attribute: field '{}' must be an attribute",
                     field.name
                 )));
@@ -820,7 +820,7 @@ fn validate_schema(schema: &Schema) -> Result<()> {
                 .and_then(|value| value.max_links_per_node)
                 .is_some_and(|value| value == 0)
             {
-                return Err(Error::message(
+                return Err(Error::invalid(
                     "invalid_hnsw_max_links: max links per node must be positive",
                 ));
             }
@@ -830,13 +830,13 @@ fn validate_schema(schema: &Schema) -> Result<()> {
                 .and_then(|value| value.neighbors_to_explore_at_insert)
                 .is_some_and(|value| value == 0)
             {
-                return Err(Error::message(
+                return Err(Error::invalid(
                     "invalid_hnsw_neighbors_at_insert: neighbors to explore at insert must be positive",
                 ));
             }
         }
         if field.distance_metric.is_some() && !matches!(field.field_type, FieldType::Tensor(_)) {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "distance_metric_requires_tensor: field '{}' must be a tensor",
                 field.name
             )));
@@ -844,69 +844,69 @@ fn validate_schema(schema: &Schema) -> Result<()> {
 
         match &field.field_type {
             FieldType::Text if !field.indexed => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "text field '{}' must be indexed",
                     field.name
                 )));
             }
             FieldType::Text => {}
             FieldType::ArrayString if !field.indexed && !field.attribute => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "array string field '{}' must be indexed or an attribute",
                     field.name
                 )));
             }
             FieldType::ArrayString => {}
             FieldType::Position | FieldType::Predicate if !field.attribute => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "special field '{}' must be an attribute",
                     field.name
                 )));
             }
             FieldType::Position | FieldType::Predicate if field.indexed => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "special field '{}' may not be indexed",
                     field.name
                 )));
             }
             FieldType::Position | FieldType::Predicate if field.summary => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "special field '{}' may not be a summary field",
                     field.name
                 )));
             }
             FieldType::Predicate if field.predicate_arity.is_none_or(|arity| arity == 0) => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "predicate field '{}' must have a positive arity",
                     field.name
                 )));
             }
             _ if field.indexed => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "non-text field '{}' may not be indexed",
                     field.name
                 )));
             }
             FieldType::Tensor(_) if !field.attribute => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "tensor field '{}' must be an attribute",
                     field.name
                 )));
             }
             FieldType::Tensor(type_spec) if type_spec.trim().is_empty() => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "tensor field '{}' must have a type spec",
                     field.name
                 )));
             }
             FieldType::Tensor(_) if field.summary => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "tensor field '{}' may not be a summary field",
                     field.name
                 )));
             }
             _ if !field.attribute => {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "non-text field '{}' must be an attribute",
                     field.name
                 )));
@@ -918,13 +918,13 @@ fn validate_schema(schema: &Schema) -> Result<()> {
     for (index, profile) in schema.rank_profiles.iter().enumerate() {
         validate_name(&profile.name, &format!("rank profile at index {index}"))?;
         if profile.name == "default" {
-            return Err(Error::message("rank profile 'default' is reserved"));
+            return Err(Error::invalid("rank profile 'default' is reserved"));
         }
         if profile_names
             .iter()
             .any(|name| name.as_str() == profile.name.as_str())
         {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "duplicate rank profile name '{}'",
                 profile.name
             )));
@@ -932,7 +932,7 @@ fn validate_schema(schema: &Schema) -> Result<()> {
         profile_names.push(&profile.name);
         validate_rank_expression(&profile.first_phase, "first-phase ranking expression")?;
         if profile.rerank_count.is_some() && profile.second_phase.is_none() {
-            return Err(Error::message(
+            return Err(Error::invalid(
                 "second-phase rerank count requires a second-phase ranking expression",
             ));
         }
@@ -943,7 +943,7 @@ fn validate_schema(schema: &Schema) -> Result<()> {
         for (name, type_spec) in &profile.query_inputs {
             validate_name(name, "query input")?;
             if type_spec.trim().is_empty() {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "query input '{name}' must have a type spec"
                 )));
             }
@@ -951,7 +951,7 @@ fn validate_schema(schema: &Schema) -> Result<()> {
                 .iter()
                 .any(|input| input.as_str() == name.as_str())
             {
-                return Err(Error::message(format!("duplicate query input '{name}'")));
+                return Err(Error::invalid(format!("duplicate query input '{name}'")));
             }
             query_inputs.push(name);
         }
@@ -962,7 +962,7 @@ fn validate_schema(schema: &Schema) -> Result<()> {
                 .iter()
                 .any(|feature| feature.as_str() == expression.as_str())
             {
-                return Err(Error::message(format!(
+                return Err(Error::invalid(format!(
                     "duplicate match feature expression '{}'",
                     expression
                 )));
@@ -975,10 +975,10 @@ fn validate_schema(schema: &Schema) -> Result<()> {
 
 fn validate_rank_expression(expression: &str, kind: &str) -> Result<()> {
     if expression.is_empty() {
-        return Err(Error::message(format!("{kind} must not be empty")));
+        return Err(Error::invalid(format!("{kind} must not be empty")));
     }
     if expression.len() > MAX_RANK_EXPRESSION_BYTES {
-        return Err(Error::message(format!(
+        return Err(Error::invalid(format!(
             "{kind} is too long: maximum length is {MAX_RANK_EXPRESSION_BYTES} bytes"
         )));
     }
@@ -987,7 +987,7 @@ fn validate_rank_expression(expression: &str, kind: &str) -> Result<()> {
 
 fn validate_name(value: &str, kind: &str) -> Result<()> {
     if value.len() > MAX_SCHEMA_IDENTIFIER_BYTES {
-        return Err(Error::message(format!(
+        return Err(Error::invalid(format!(
             "invalid {kind} name: maximum length is {MAX_SCHEMA_IDENTIFIER_BYTES} bytes"
         )));
     }
@@ -999,7 +999,7 @@ fn validate_name(value: &str, kind: &str) -> Result<()> {
     if !valid_first
         || !characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
     {
-        return Err(Error::message(format!(
+        return Err(Error::invalid(format!(
             "invalid {kind} name '{value}': {NAME_ERROR}"
         )));
     }
@@ -1145,20 +1145,20 @@ fn rank_profiles(schema: &Schema) -> String {
 fn write_config(directory: &Path, name: &str, content: &str) -> Result<()> {
     let path = directory.join(name);
     let mut file = File::create(&path).map_err(|error| {
-        Error::message(format!("could not create '{}': {error}", path.display()))
+        Error::invalid(format!("could not create '{}': {error}", path.display()))
     })?;
     file.write_all(content.as_bytes()).map_err(|error| {
-        Error::message(format!("could not write '{}': {error}", path.display()))
+        Error::invalid(format!("could not write '{}': {error}", path.display()))
     })?;
     file.sync_all()
-        .map_err(|error| Error::message(format!("could not sync '{}': {error}", path.display())))
+        .map_err(|error| Error::invalid(format!("could not sync '{}': {error}", path.display())))
 }
 
 fn sync_directory(path: &Path) -> Result<()> {
     File::open(path)
         .and_then(|directory| directory.sync_all())
         .map_err(|error| {
-            Error::message(format!(
+            Error::invalid(format!(
                 "could not sync directory '{}': {error}",
                 path.display()
             ))
@@ -1177,19 +1177,19 @@ impl OutputState {
             return Ok(Self::Absent);
         }
         if !path.is_dir() {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "configuration output is not a directory: {}",
                 path.display()
             )));
         }
         let mut entries = fs::read_dir(path).map_err(|error| {
-            Error::message(format!(
+            Error::invalid(format!(
                 "could not inspect configuration output '{}': {error}",
                 path.display()
             ))
         })?;
         if entries.next().is_some() {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "configuration output directory is not empty: {}",
                 path.display()
             )));
@@ -1208,14 +1208,14 @@ impl TemporaryDirectory {
     fn create(output: &Path) -> Result<Self> {
         let parent = output.parent().unwrap_or_else(|| Path::new("."));
         fs::create_dir_all(parent).map_err(|error| {
-            Error::message(format!(
+            Error::invalid(format!(
                 "could not create configuration parent '{}': {error}",
                 parent.display()
             ))
         })?;
         let name = output
             .file_name()
-            .ok_or_else(|| Error::message("configuration output must have a directory name"))?
+            .ok_or_else(|| Error::invalid("configuration output must have a directory name"))?
             .to_string_lossy();
 
         for attempt in 0..100u32 {
@@ -1229,14 +1229,14 @@ impl TemporaryDirectory {
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(error) => {
-                    return Err(Error::message(format!(
+                    return Err(Error::invalid(format!(
                         "could not create temporary configuration directory '{}': {error}",
                         candidate.display()
                     )));
                 }
             }
         }
-        Err(Error::message(format!(
+        Err(Error::invalid(format!(
             "could not allocate a temporary configuration directory beside '{}'",
             output.display()
         )))
@@ -1246,14 +1246,14 @@ impl TemporaryDirectory {
         sync_directory(&self.path)?;
         if matches!(state, OutputState::Empty) {
             fs::remove_dir(output).map_err(|error| {
-                Error::message(format!(
+                Error::invalid(format!(
                     "could not replace empty configuration output '{}': {error}",
                     output.display()
                 ))
             })?;
         }
         fs::rename(&self.path, output).map_err(|error| {
-            Error::message(format!(
+            Error::invalid(format!(
                 "could not install generated configuration '{}': {error}",
                 output.display()
             ))
