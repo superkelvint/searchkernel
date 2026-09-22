@@ -5052,6 +5052,17 @@ fn rich_schema_negative_semantics_match_portable_ingress() {
         "invalid_capability",
     );
 
+    let mut invalid_analyzer = text_field();
+    invalid_analyzer.set_analyzer(Some(AnalyzerIr {
+        name: String::new(),
+        version: 1,
+        options: SchemaPropertiesIr::new(),
+    }));
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(invalid_analyzer),
+        "invalid_analyzer",
+    );
+
     let mut ambiguous_indexing_script = text_field();
     ambiguous_indexing_script.set_indexing_script(Some("input title | index title".to_owned()));
     assert_rust_and_portable_schema_error_match(

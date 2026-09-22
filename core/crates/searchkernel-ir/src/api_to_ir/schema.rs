@@ -683,6 +683,13 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
             "only text fields may specify an analyzer",
         ));
     }
+    if analyzer.as_ref().is_some_and(|value| value.name.is_empty()) {
+        return Err(invalid(
+            "invalid_analyzer",
+            Some(format!("{path}.analyzer")),
+            "analyzer name is required",
+        ));
+    }
     let analyzer = if string_type && !keyword && indexing_script.is_none() {
         let analyzer = analyzer.unwrap_or(AnalyzerIr {
             name: "standard".to_owned(),
@@ -1099,8 +1106,15 @@ pub(crate) fn analyzer_config_to_ir(
 ) -> Result<Option<AnalyzerIr>> {
     analyzer
         .map(|analyzer| {
+            let name = analyzer.name().filter(|value| !value.is_empty()).ok_or_else(|| {
+                invalid(
+                    "invalid_analyzer",
+                    Some(path.to_owned()),
+                    "analyzer name is required",
+                )
+            })?;
             let analyzer = AnalyzerIr {
-                name: required_string(analyzer.name(), path, "analyzer name")?,
+                name: name.to_owned(),
                 version: analyzer.version(),
                 options: schema_properties_to_ir(analyzer.options(), &format!("{path}.options"))?,
             };
