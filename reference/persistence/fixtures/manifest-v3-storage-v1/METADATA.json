@@ -34,7 +34,7 @@
         "portable_type": "int64",
         "searchable": false,
         "sortable": true,
-        "stored": true
+        "stored": false
       }
     ]
   },

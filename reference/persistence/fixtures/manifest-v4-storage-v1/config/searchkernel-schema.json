@@ -1,1 +1,1 @@
-{"version":1,"document_type":"typea","fields":[{"name":"attr1","type":"integer","index":false,"attribute":true,"summary":true}]}
+{"version":1,"document_type":"typea","fields":[{"name":"attr1","type":"integer","index":false,"attribute":true,"summary":false}]}
