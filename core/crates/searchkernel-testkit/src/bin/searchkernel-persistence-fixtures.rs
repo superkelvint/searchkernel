@@ -15,7 +15,7 @@ fn main() {
     fs::create_dir_all(&output).expect("create persistence fixture directory");
 
     let input = RustIndexDefinitionInput {
-        name: Some("persistence_compat".to_owned()),
+        name: Some("typea".to_owned()),
         fields: vec![RustFieldInput {
             name: "attr1".to_owned(),
             kind: RustFieldKind::Int64,
@@ -57,20 +57,20 @@ fn main() {
                 "native_abi_version": abi,
                 "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
                 "portable_index_definition": {
-                    "name": "persistence_compat",
+                    "name": "typea",
                     "fields": [{
                         "name": "attr1",
                         "kind": "Int64",
                         "stored": false,
                         "searchable": false,
                         "filterable": true,
-                        "sortable": false,
+                        "sortable": true,
                         "facetable": false
                     }]
                 },
                 "resolved_engine_config_identity": config_identity,
                 "resolved_index_definition": {
-                    "name": "persistence_compat",
+                    "name": "typea",
                     "fields": [{
                         "name": "attr1",
                         "kind": "Int64",
@@ -128,14 +128,14 @@ fn main() {
             "native_abi_version": abi,
             "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
             "schema": {
-                "name": "persistence_compat",
+                "name": "typea",
                 "fields": [{
                     "name": "attr1",
                     "type": "int64",
                     "stored": false,
                     "searchable": false,
                     "filterable": true,
-                    "sortable": false,
+                    "sortable": true,
                     "facetable": false
                 }]
             },
@@ -170,7 +170,7 @@ fn embedded_config_files() -> [(&'static str, &'static str); 7] {
     [
         ("searchkernel-schema.json", "{\"version\":1,\"document_type\":\"typea\",\"fields\":[{\"name\":\"attr1\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":false}]}\n"),
         ("indexschema.cfg", "indexfield[0]\n"),
-        ("attributes.cfg", "attribute[1]\nattribute[0].name \"attr1\"\nattribute[0].datatype INT64\nattribute[0].collectiontype SINGLE\n"),
+        ("attributes.cfg", "attribute[1]\nattribute[0].name \"attr1\"\nattribute[0].datatype INT32\nattribute[0].collectiontype SINGLE\n"),
         ("summary.cfg", "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\nclasses[0].fields[3]\nclasses[0].fields[0].name \"documentid\"\nclasses[0].fields[0].type \"longstring\"\nclasses[0].fields[0].command \"documentid\"\nclasses[0].fields[0].source \"\"\nclasses[0].fields[1].name \"rankfeatures\"\nclasses[0].fields[1].type \"featuredata\"\nclasses[0].fields[1].command \"rankfeatures\"\nclasses[0].fields[1].source \"\"\nclasses[0].fields[2].name \"summaryfeatures\"\nclasses[0].fields[2].type \"featuredata\"\nclasses[0].fields[2].command \"summaryfeatures\"\nclasses[0].fields[2].source \"\"\n"),
         ("rank-profiles.cfg", "rankprofile[1]\nrankprofile[0].name \"default\"\n"),
         ("juniperrc.cfg", ""),
