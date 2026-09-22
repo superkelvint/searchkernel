@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 
-VERSION = "2"
+VERSION = "3"
 
 
 def command_output(program: str, *args: str) -> str:
