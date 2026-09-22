@@ -1,11 +1,10 @@
 # Building Search Kernel
 
-Search Kernel builds Rust code together with two native components: the
-vendored FlatBuffers C++ library and, for the default native feature, the
-Vespa adapter SDK. Native outputs are compiler- and runtime-sensitive. Cargo
-build outputs remain environment-local, while Vespa SDK packages are resolved
-through an immutable content-addressed store shared by Git worktrees and keyed
-by the full native provenance fingerprint.
+Search Kernel builds Rust code against pinned native prerequisites. FlatBuffers
+C++ 25.12.19 is installed once as a clone-wide toolchain and is never rebuilt by
+ordinary Cargo commands. The default native feature also links the Search Kernel
+Vespa adapter SDK. Cargo build outputs remain environment-local, while native
+prerequisites are shared safely across Git worktrees.
 
 ## Authority and failure handling
 
@@ -61,9 +60,12 @@ environment failure:
 ```
 
 The normal host workflow uses `target/host` automatically through
-`.cargo/config.toml`. Before linking a native target, Cargo resolves the
-matching shared SDK automatically; `./dev native-sdk ensure` may be used to
-populate it explicitly:
+`.cargo/config.toml`. Ordinary `./dev check-fast`, standalone Rust API
+tests, and non-native workspace checks do not populate the Vespa SDK cache.
+Before linking a native target, Cargo resolves the matching shared SDK
+automatically; `./dev native-sdk ensure` may be used to populate it
+explicitly. `./dev native-sdk path` is diagnostic-only: it prints an existing
+matching object and reports a cache miss without building one.
 
 A fresh or isolated worktree is not expected to already contain a built
 `searchkerneld` binary. If `./dev doctor` reports it as informational,
@@ -148,27 +150,34 @@ reused without rebuilding. For a deliberate custom prefix, set
 `FLATBUFFERS_INSTALL_PREFIX`; explicit `FLATBUFFERS_CPP_ROOT` and `FLATC_PATH`
 overrides remain supported.
 
-Cargo's protocol build still uses its matching pinned vendored FlatBuffers
-build under the active target root. The shared standalone toolchain is for
-schema generation, reproducibility checks, and doctor; it is not silently
-mixed into Cargo's native build outputs.
+Cargo's protocol build uses this same installed FlatBuffers C++ prerequisite.
+It verifies the exact pinned header version and static library, then compiles
+only Search Kernel's small JSON bridge against them. Cargo never downloads,
+configures, compiles, invalidates, or repairs FlatBuffers itself.
 
-The FlatBuffers build records a deterministic fingerprint and compiles a
-parser/link probe against the actual static archive. A changed fingerprint or
-failed probe invalidates only that FlatBuffers sub-build. Rust incremental
-outputs and unrelated native components remain intact.
+A fresh Cargo target directory or Git worktree therefore does not rebuild
+FlatBuffers. If the prerequisite is missing or the wrong version, the build
+fails quickly and tells the developer to run `./dev install flatbuffers`.
+Only an intentional FlatBuffers version/toolchain change requires another
+FlatBuffers installation.
 
 ## Python runtime vs code-generation dependencies
 
 Baseline Python runtime checks require the dependencies needed to import and
-use the checked-in client/runtime code: pinned `flatbuffers`, `grpcio`, and
-`protobuf`.
+use the checked-in client/runtime code. `flatbuffers==25.12.19` and
+`grpcio==1.84.0` are exact runtime pins. Protobuf follows the package's
+declared compatibility range, `protobuf>=7.35.1,<8`; a newer compatible 7.x
+runtime such as 7.36.2 is healthy and must not fail `./dev doctor`.
 
-`grpcio-tools` (`grpc_tools`) is a code-generation dependency only. It is
-required by `./dev regen protocol` and `tools/check-python-grpc.sh`, but its
-absence does not make ordinary `./dev doctor`, Rust builds, or SDK-independent
-verification unhealthy. Install the Python `codegen` extra only when changing
-or verifying generated gRPC sources:
+`grpcio-tools` (`grpc_tools`) is a code-generation dependency only. Generated
+gRPC sources remain reproducible by requiring the exact codegen stack:
+`grpcio-tools==1.84.0` and `protobuf==7.35.1`. These exact codegen pins do
+not narrow the Python client's runtime protobuf compatibility range.
+`grpcio-tools` is required by `./dev regen protocol` and
+`tools/check-python-grpc.sh`, but its absence does not make ordinary
+`./dev doctor`, Rust builds, or SDK-independent verification unhealthy.
+Install the Python `codegen` extra only when changing or verifying generated
+gRPC sources:
 
 ```bash
 python3 -m pip install -e 'clients/python[codegen]'
@@ -217,34 +226,48 @@ container or host.
 
 ## Native SDK environment recovery
 
-Vespa SDK packages are immutable content-addressed cache objects. Do not copy,
-edit, or rebuild a published cache object in place. Use
-`./dev native-sdk ensure` (or a normal all-features Cargo command that invokes
-the resolver) and let a changed source/toolchain/target/native flag select a new
-fingerprint.
+Normal development should not require native SDK environment overrides.
 
-If native SDK setup reports:
-
-```text
-LLVM 21 runtime was not found for the Vespa SDK link
-```
-
-point `VESPA_EXTRA_LIB_DIR` at the canonical LLVM runtime directory for the
-command, for example:
+Use:
 
 ```bash
-VESPA_EXTRA_LIB_DIR=/home/kelvin/projects/searchkern2/core/native/sdk/linux-x86_64/lib \
-  ./dev doctor
-VESPA_EXTRA_LIB_DIR=/home/kelvin/projects/searchkern2/core/native/sdk/linux-x86_64/lib \
-  ./dev native-sdk ensure
+./dev doctor
+./dev native-sdk ensure
 ```
 
-The default resolver checks the container-style fallback
-`$VESPA_DEPS/../../usr/lib64` for the versioned `libLLVM.so.21.1`.
-`vespa-deps/lib64/libLLVM-21.so` is only a link-name symlink to the canonical
-runtime under `core/native/sdk`. If the checkout path differs, use
-`readlink -f vespa-deps/lib64/libLLVM-21.so` and set
-`VESPA_EXTRA_LIB_DIR` to its containing directory.
+`./dev doctor` does not build native artifacts. Native SDK / ABI / pinned
+Vespa readiness is informational for ordinary non-native development and becomes
+a prerequisite only when the requested verification actually uses the native
+feature.
+
+The resolver discovers a configured pinned Vespa build from the current or a
+matching sibling worktree, discovers its repository-local `vespa-deps`, and
+lets the SDK builder discover the matching LLVM/libffi runtime from the same
+clone. The resulting dependency/runtime inputs are part of the native cache
+identity.
+
+A published SDK object is reused only after its bundled runtime dependency
+closure validates. If an otherwise matching immutable cache object is incomplete
+or corrupt, the resolver acquires that digest's cache lock, moves the bad object
+to quarantine for diagnosis, rebuilds into private staging, validates the new
+SDK, and atomically republishes it. Consumers never rebuild or mutate a published
+object in place.
+
+Therefore an agent encountering missing `libvespa_*.so`, LLVM, or other SDK
+runtime libraries should **not** start by exporting `VESPA_DEPS`,
+`VESPA_DEPS_LIB_DIR`, `VESPA_EXTRA_LIB_DIR`, deleting cache objects, or
+running `cargo clean`. Run `./dev doctor` or `./dev native-sdk ensure` and
+let the resolver recover the canonical environment.
+
+Environment variables such as `VESPA_ROOT`, `VESPA_DEPS`,
+`VESPA_DEPS_LIB_DIR`, `VESPA_EXTRA_LIB_DIR`, and `VESPA_AWS_LIB_DIR`
+remain supported only for deliberately custom/non-standard environments or when
+automatic discovery reports that no unique usable input exists. When such an
+override is genuinely necessary, the diagnostic should identify the missing
+input explicitly.
+
+After recovery, rerun the original Cargo command. Cargo's native ABI/link probe
+remains an independent final check that the resolved SDK is consumable.
 
 ## Task worktrees and native prerequisites
 
@@ -310,9 +333,9 @@ cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 cargo test --workspace --all-targets --no-default-features
 ```
 
-The native verifiers cover stable warm reuse, compiler-wrapper and flag
-invalidation, host/container/CI target separation, preservation of unrelated
-Rust artifacts, and one-shot recovery from a broken FlatBuffers archive.
+The native verifiers cover host/container/CI isolation, preservation of
+unrelated Rust artifacts, and the invariant that ordinary Cargo builds consume
+the installed FlatBuffers prerequisite without rebuilding it.
 
 Do not use `cargo clean`, delete `target/`, or manually remove an SDK as a
 normal response to a native linker failure. Read the first provenance warning

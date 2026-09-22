@@ -70,8 +70,16 @@ fi
 RAW_INCLUDES=$(sed -n 's/^CXX_INCLUDES = //p' "$FLAGS_FILE")
 CONFIGURED_DEPS=$(printf '%s\n' "$RAW_INCLUDES" |
     sed -n 's#.*-isystem \([^ ]*\)/include.*#\1#p')
+VESPA_WORKTREE_ROOT=
+case "$VESPA_ROOT" in
+    */upstream/vespa)
+        VESPA_WORKTREE_ROOT=$(CDPATH= cd -- "$VESPA_ROOT/../.." && pwd)
+        ;;
+esac
 if [ -z "${VESPA_DEPS:-}" ]; then
-    if [ -d "$ROOT/vespa-deps" ]; then
+    if [ -n "$VESPA_WORKTREE_ROOT" ] && [ -d "$VESPA_WORKTREE_ROOT/vespa-deps" ]; then
+        VESPA_DEPS=$VESPA_WORKTREE_ROOT/vespa-deps
+    elif [ -d "$ROOT/vespa-deps" ]; then
         VESPA_DEPS=$ROOT/vespa-deps
     else
         # A task worktree normally has the source checkout but not the large
@@ -118,10 +126,27 @@ if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
         VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
     elif [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
-    elif [ -f "$ROOT/target/native-sdk-package/lib/libLLVM.so.21.1" ]; then
-        VESPA_EXTRA_LIB_DIR=$ROOT/target/native-sdk-package/lib
+    elif [ -n "$VESPA_WORKTREE_ROOT" ] && [ -f "$VESPA_WORKTREE_ROOT/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$VESPA_WORKTREE_ROOT/core/native/sdk/linux-x86_64/lib
+    elif [ -f "$ROOT/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$ROOT/core/native/sdk/linux-x86_64/lib
     else
-        VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
+        WORKTREE_EXTRA_LIB=$(git -C "$ROOT" worktree list --porcelain 2>/dev/null |
+            sed -n 's/^worktree //p' |
+            while IFS= read -r WORKTREE; do
+                if [ -f "$WORKTREE/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
+                    printf '%s\n' "$WORKTREE/core/native/sdk/linux-x86_64/lib"
+                    break
+                fi
+            done)
+        if [ -n "$WORKTREE_EXTRA_LIB" ]; then
+            VESPA_EXTRA_LIB_DIR=$WORKTREE_EXTRA_LIB
+            echo "using native runtime libraries from worktree: $VESPA_EXTRA_LIB_DIR" >&2
+        elif [ -f "$ROOT/target/native-sdk-package/lib/libLLVM.so.21.1" ]; then
+            VESPA_EXTRA_LIB_DIR=$ROOT/target/native-sdk-package/lib
+        else
+            VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
+        fi
     fi
 fi
 if [ ! -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
@@ -276,19 +301,27 @@ cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 
 # Bundle the exact Vespa and third-party shared libraries used by the pinned
 # build. Test support libraries are not part of the production ABI package.
-# The adapter's private RPATH makes the SDK independent of the build paths.
-find "$VESPA_ROOT" -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
+# Dependency installs often expose unversioned linker names as absolute
+# symlinks whose ELF DT_SONAME is a different runtime name (for example,
+# libxxhash.so -> .../libxxhash.so.0.8.2 with SONAME libxxhash.so.0).
+# Materialize both names as SDK-owned regular files so the runtime loader
+# cannot fall back to a host path.
+find "$VESPA_ROOT" -name '*.so*' \
+    -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
 find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' \
     ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
-    -exec cp -a -t "$SDK/lib" {} +
+    -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
 if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
     if [ "$(readlink -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")" != \
          "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
-        cp -a "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" "$SDK/lib/"
+        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" \
+            "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1"
     fi
 fi
 if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
     AWS_LIB_DIR=$VESPA_AWS_LIB_DIR
+elif [ -f "$VESPA_EXTRA_LIB_DIR/libffi.so.6" ]; then
+    AWS_LIB_DIR=$VESPA_EXTRA_LIB_DIR
 elif [ -f "$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6" ]; then
     AWS_LIB_DIR=$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist
 else
@@ -296,18 +329,24 @@ else
 fi
 if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
     if [ "$(readlink -f "$AWS_LIB_DIR/libffi.so.6")" != "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
-        cp -a "$AWS_LIB_DIR/libffi.so.6" "$SDK/lib/"
+        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$AWS_LIB_DIR/libffi.so.6"
     fi
 elif [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
     # LLVM in the pinned Vespa environment carries a libffi.so.6 dependency.
     # Preserve it when rebuilding an existing SDK even if the AWS CLI bundle
     # is not installed in this host environment.
-    cp -a "$SDK_PACKAGE/lib/libffi.so.6" "$SDK/lib/"
+    sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$SDK_PACKAGE/lib/libffi.so.6"
 elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
-    cp -a "$DEPS_LIB_DIR/libffi.so.6" "$SDK/lib/"
+    sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$DEPS_LIB_DIR/libffi.so.6"
 else
     echo "libffi.so.6 required by the bundled LLVM runtime was not found" >&2
     echo "set VESPA_AWS_LIB_DIR or provide libffi.so.6 in $DEPS_LIB_DIR" >&2
+    exit 1
+fi
+
+if find "$SDK/lib" -maxdepth 1 -type l -print -quit | grep -q .; then
+    echo "refusing to publish native SDK containing shared-library symlinks:" >&2
+    find "$SDK/lib" -maxdepth 1 -type l -print >&2
     exit 1
 fi
 

@@ -4,21 +4,21 @@ For day-to-day commands and prerequisite handling, start with
 [`BUILDING.md`](../BUILDING.md). This document records the provenance model
 that makes those commands safe against warm native caches.
 
-Search Kernel has two native build layers with different cache scopes:
+Search Kernel separates immutable third-party prerequisites from project build
+artifacts:
 
 ```text
-Cargo target directory
-  └── FlatBuffers C++ build output       worktree/environment-local
-
 Git common directory
+  ├── searchkernel/toolchains/flatbuffers/25.12.19/
+  │      immutable installed FlatBuffers C++ toolchain
   └── searchkernel/native-sdk-cache/
-      └── <environment>/<target>/objects/<fingerprint>/
-                                            immutable Vespa adapter SDK
+         └── <environment>/<target>/objects/<fingerprint>/
+                                               immutable Vespa adapter SDK
 ```
 
-Cargo/FlatBuffers outputs are never shared across environments. Vespa SDK
-objects may be shared by worktrees only when their complete native provenance
-fingerprint is identical.
+Ordinary Cargo targets contain Search Kernel build artifacts only. FlatBuffers
+is installed once per clone/version and is read by every worktree; Cargo never
+owns or repairs a per-target FlatBuffers C++ build.
 
 The supported environment roots are:
 
@@ -36,15 +36,15 @@ the Rust target partition incompatible environments before fingerprinting.
 
 ## What is recorded
 
-Both native layers record a deterministic provenance fingerprint containing the
-inputs that can affect binary compatibility, including:
+The Vespa native SDK records a deterministic provenance fingerprint containing
+the inputs that can affect binary compatibility, including:
 
 - Rust host/toolchain and Cargo target;
 - canonical C/C++ compiler paths, versions, and target/dumpmachine output;
 - archiver, ranlib, linker, libc, and C++ runtime identities;
 - relevant compiler, linker, CMake, standard-library, sanitizer, coverage, and
   native configuration flags;
-- the pinned FlatBuffers source identity for the FlatBuffers build;
+- the pinned FlatBuffers version consumed by native packaging where relevant;
 - the pinned Vespa revision and configured Vespa build inputs for the SDK; and
 - the Search Kernel native source/header/configuration content.
 
@@ -53,26 +53,32 @@ values. The native SDK also stores its fingerprint digest in `manifest.json`.
 
 ## Build behavior
 
-For FlatBuffers, a changed fingerprint invalidates only the FlatBuffers CMake
-output under that Cargo package's `OUT_DIR`. A parser compile/link probe then
-checks the actual `libflatbuffers.a` archive. A failed probe causes one clean
-rebuild of that FlatBuffers sub-build and one retry.
+FlatBuffers has no Cargo-native recovery state machine. The protocol build
+resolves the clone-wide/system FlatBuffers 25.12.19 installation, verifies its
+headers and static archive, and either consumes it read-only or fails with the
+one-time bootstrap command.
 
 For the Vespa SDK, `tools/resolve-native-sdk.sh` first computes the same
 provenance fingerprint that will be recorded in the package. The digest is the
-cache object identity. A matching object is reused read-only; a miss acquires a
-per-digest lock, invokes `core/native/vespa/build-sdk.sh` into private staging,
-verifies the resulting digest, marks the package read-only, and atomically
-publishes it. The Rust bindings still compile/link a probe that calls
-`sk_native_abi_version()` from the actual SDK library, including its bundled
-transitive runtime libraries.
+cache object identity. The fingerprint includes Search Kernel native/package
+source, configured Vespa identity/build outputs, content identity for the
+selected external dependency/runtime shared libraries that are bundled into the
+SDK, and the native toolchain/configuration inputs. A matching object is reused
+read-only only after its runtime dependency closure validates.
 
-A probe failure never recompiles inside a published cache object. Published
-objects are immutable: if an existing object fails validation or the link probe,
-the build stops with a cache-integrity error rather than allowing one worktree
-to rewrite an object consumed by other worktrees. Native source changes cannot
-overwrite another worktree's object because `native.source` is part of the
-fingerprint and therefore selects a different key.
+A cache miss acquires a per-digest lock, invokes
+`core/native/vespa/build-sdk.sh` into private staging, validates the resulting
+digest and runtime closure, marks the package read-only, and atomically
+publishes it. If a previously published object fails validation, the resolver
+rechecks it under the same lock, moves it to quarantine, rebuilds privately, and
+republishes a valid object at that key. No consumer mutates or recompiles inside
+a published object.
+
+The Rust bindings still compile/link a probe that calls
+`sk_native_abi_version()` from the actual SDK library as an independent final
+consumer check. Native source/package changes and changed packaged dependency
+libraries select a different cache key; accidental corruption of an existing
+object self-heals under the per-key lock.
 
 The configured Vespa CMake outputs themselves remain intentionally untracked.
 When the current worktree does not contain them, the resolver scans sibling Git
@@ -94,9 +100,9 @@ cargo test --workspace --all-targets --no-default-features
 ```
 
 The first verifier exercises stable fingerprints, compiler-wrapper changes,
-flag changes, and host/container/CI target separation. The second verifies
-FlatBuffers warm reuse, targeted invalidation, preservation of unrelated Rust
-artifacts, and one-shot recovery from a broken archive.
+flag changes, and host/container/CI target separation. The second verifies that
+Cargo never rebuilds FlatBuffers, including from fresh target directories, while
+preserving unrelated Rust artifacts.
 
 
 ## Worktree isolation invariant

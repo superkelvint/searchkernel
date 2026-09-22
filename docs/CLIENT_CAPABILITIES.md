@@ -42,7 +42,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Named summary-class selection (result.named_summary_class) | result | — | — | — | — |
 | Rich document-summary values (scalar subset) (result.rich_docsum_values) | result | — | — | — | — |
 | Summary-feature readback (result.summary_features) | result | — | — | — | — |
-| Highlighting (result.highlighting) | result | — | ergonomic (native) | ergonomic (grpc) | — |
+| Highlighting (result.highlighting) | result | — | ergonomic (native) | ergonomic · conformance (grpc, shared) | conformance (shared) |
 | Dense tensor document readback (result.tensor_document_readback) | result | — | — | — | — |
 | Typed tensor feature readback (result.tensor_feature_readback) | result | — | — | — | — |
 | Structured grouping and faceting (grouping.structured) | grouping | — | — | — | ergonomic (node, shared) |
@@ -149,8 +149,10 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Highlighting (result.highlighting)
 
 - **Basic structured dynamic-teaser highlighting** (basic)
+  - python / shared / conformance — [clients/python/tests/test_results.py](../clients/python/tests/test_results.py#L181)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L508)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L220)
+  - typescript / shared / conformance — [clients/typescript/tests/results.test.ts](../clients/typescript/tests/results.test.ts#L273)
 
 ### Structured grouping and faceting (grouping.structured)
 

@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "core/crates/flatbuffers-build",
     "core/crates/searchkernel-protocol",
     "core/crates/searchkernel-ir",
     "core/crates/searchkernel-filter",

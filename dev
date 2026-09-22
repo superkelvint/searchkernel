@@ -29,6 +29,7 @@ Search Kernel development commands
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client
   ./dev regen protocol        Regenerate checked-in protocol artifacts
+  ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify m13            Run a frozen Vespa milestone verifier
   ./dev verify integration   Run the cross-entry-point integration verifier
   ./dev install flatbuffers   Build and install the pinned FlatBuffers toolchain
@@ -82,14 +83,16 @@ run_python_tests() {
 
 check_fast() {
     cargo fmt --all --check
-    cargo check --workspace --all-targets --all-features
+    cargo check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
+    "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
         "$ROOT/core/native/vespa/searchkernel_vespa.h"
     "$PYTHON" "$ROOT/tools/check-python-flatbuffers-boundary.py"
     "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+    cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
 }
 
 check_all() {
@@ -113,13 +116,17 @@ regen_protocol() {
     bash "$ROOT/tools/generate-python-grpc.sh"
 }
 
+regen_result_fixtures() {
+    cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures
+}
+
 test_target() {
     case "${1:-}" in
         ir)
             cargo test -p searchkernel-ir --all-targets --all-features
             ;;
         rust-api|rust)
-            cargo test -p searchkernel --all-targets --all-features
+            cargo test -p searchkernel --all-targets --no-default-features
             ;;
         python)
             run_python_tests
@@ -378,28 +385,7 @@ doctor_vespa() {
 }
 
 doctor_python() {
-    "$PYTHON" - <<'PY'
-expected = {
-    "flatbuffers": "25.12.19",
-    "grpcio": "1.84.0",
-    "protobuf": "7.35.1",
-}
-try:
-    import flatbuffers
-    import google.protobuf
-    import grpc
-except ModuleNotFoundError as error:
-    raise SystemExit(f"missing Python module: {error.name}") from None
-
-actual = {
-    "flatbuffers": getattr(flatbuffers, "__version__", None),
-    "grpcio": grpc.__version__,
-    "protobuf": google.protobuf.__version__,
-}
-for package, wanted in expected.items():
-    if actual[package] != wanted:
-        raise SystemExit(f"{package} {actual[package]} (expected {wanted})")
-PY
+    "$PYTHON" "$ROOT/tools/check-python-dependencies.py"
 }
 
 doctor_searchkerneld() {
@@ -448,9 +434,15 @@ doctor() {
     doctor_check 'flatc correct version' doctor_flatc
     doctor_check 'FlatBuffers C++ correct version' doctor_flatbuffers_cpp
     doctor_check 'generated protocol present/current' doctor_generated_protocol
-    doctor_check 'native SDK present' doctor_native_sdk
-    doctor_check 'native ABI versions agree' doctor_native_abi
-    doctor_check 'pinned Vespa checkout present' doctor_vespa
+    doctor_optional 'native SDK present' \
+        'Only required for native/all-features verification; populate with: ./dev native-sdk ensure' \
+        doctor_native_sdk
+    doctor_optional 'native ABI versions agree' \
+        'Only checked when a native SDK is present/required.' \
+        doctor_native_abi
+    doctor_optional 'pinned Vespa checkout present' \
+        'Only required for Vespa/native verification; ordinary Rust/API work may proceed without it.' \
+        doctor_vespa
     doctor_check 'Python dependencies present' doctor_python
     doctor_optional 'searchkerneld built' \
         'Build it with: cargo build -p searchkerneld' \
@@ -485,11 +477,14 @@ case "${1:-help}" in
         test_target "${1:-}"
         ;;
     regen)
-        [[ "${2:-}" == protocol ]] || {
-            echo 'usage: ./dev regen protocol' >&2
-            exit 2
-        }
-        regen_protocol
+        case "${2:-}" in
+            protocol) regen_protocol ;;
+            result-fixtures) regen_result_fixtures ;;
+            *)
+                echo 'usage: ./dev regen protocol|result-fixtures' >&2
+                exit 2
+                ;;
+        esac
         ;;
     verify)
         shift

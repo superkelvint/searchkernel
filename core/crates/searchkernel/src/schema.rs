@@ -1200,6 +1200,9 @@ impl Field {
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.stored = value;
         }
+        if let Some(summary) = self.summary_config.as_mut() {
+            summary.enabled = Some(value);
+        }
         self
     }
     /// Explicitly set whether this field can be searched with text queries.
@@ -1674,60 +1677,239 @@ fn hnsw_to_ir(value: &HnswIndexConfig) -> searchkernel_ir::HnswIndexConfigIr {
     }
 }
 
-pub(crate) fn field_to_rust_input(field: &Field) -> Result<searchkernel_ir::RustFieldInput> {
-    let analyzer = field
-        .analyzer
-        .as_ref()
-        .map(|analyzer| {
-            analyzer
-                .options
-                .iter()
-                .map(|(key, value)| {
-                    searchkernel_ir::request_value_from_json(
-                        value,
-                        format!("fields.{}.analyzer.options.{key}", field.name),
-                    )
-                    .map(|value| (key.clone(), value))
-                    .map_err(Error::from_ir)
-                })
-                .collect::<Result<searchkernel_ir::SchemaPropertiesIr>>()
-                .map(|options| searchkernel_ir::RustAnalyzerInput {
-                    name: analyzer.name.clone(),
-                    version: analyzer.version,
-                    options,
-                })
-        })
-        .transpose()?;
-    Ok(searchkernel_ir::RustFieldInput {
-        name: field.name.clone(),
-        kind: match &field.kind {
-            FieldKind::Text => searchkernel_ir::RustFieldKind::Text,
-            FieldKind::Keyword => searchkernel_ir::RustFieldKind::Keyword,
-            FieldKind::Int64 => searchkernel_ir::RustFieldKind::Int64,
-            FieldKind::Float64 => searchkernel_ir::RustFieldKind::Float64,
-            FieldKind::Bool => searchkernel_ir::RustFieldKind::Bool,
-            FieldKind::Position => searchkernel_ir::RustFieldKind::Position,
-            FieldKind::Tensor(type_spec) => {
-                searchkernel_ir::RustFieldKind::Tensor(type_spec.clone())
-            }
-        },
-        multi: field.multi,
-        stored: field.stored,
-        searchable: field.searchable,
-        filterable: field.filterable,
-        sortable: field.sortable,
-        facetable: field.facetable,
-        analyzer,
-        distance_metric: field.distance_metric.map(distance_metric_to_ir),
-        hnsw: field
-            .hnsw
-            .as_ref()
-            .map(|value| searchkernel_ir::HnswIndexConfigIr {
-                max_links_per_node: value.max_links_per_node,
-                neighbors_to_explore_at_insert: value.neighbors_to_explore_at_insert,
+pub(crate) fn field_to_unresolved_input(
+    field: &Field,
+) -> Result<searchkernel_ir::UnresolvedFieldInput> {
+    let name = searchkernel_ir::FieldName::parse(field.name.clone()).map_err(|_| {
+        Error::from_ir(searchkernel_ir::PortableError::invalid(
+            "invalid_field_name",
+            Some(format!("fields.{}.name", field.name)),
+            "field name must match [A-Za-z][A-Za-z0-9_]*",
+        ))
+    })?;
+    let analyzer = match &field.analyzer_config {
+        Some(analyzer) => Some(analyzer.clone()),
+        None => field.analyzer.as_ref().map(analyzer_to_ir).transpose()?,
+    };
+    let matching = field.matching_config.clone().or_else(|| {
+        if field.capabilities.is_some() {
+            return None;
+        }
+        match field.kind {
+            FieldKind::Text => Some(searchkernel_ir::MatchingConfigIr {
+                mode: searchkernel_ir::MatchingModeIr::Text,
                 options: BTreeMap::new(),
             }),
+            FieldKind::Keyword => Some(searchkernel_ir::MatchingConfigIr {
+                mode: searchkernel_ir::MatchingModeIr::Exact,
+                options: BTreeMap::new(),
+            }),
+            _ => None,
+        }
+    });
+    let index = field.index_config.clone().or_else(|| {
+        if field.capabilities.is_some() {
+            return None;
+        }
+        field
+            .hnsw
+            .as_ref()
+            .map(|value| searchkernel_ir::IndexConfigIr {
+                enabled: Some(true),
+                hnsw: Some(hnsw_to_ir(value)),
+                options: BTreeMap::new(),
+            })
+    });
+    let attribute = field.attribute_config.clone().or_else(|| {
+        if field.capabilities.is_some() {
+            return None;
+        }
+        field
+            .distance_metric
+            .map(|value| searchkernel_ir::AttributeConfigIr {
+                enabled: Some(true),
+                fast_search: None,
+                fast_access: None,
+                distance_metric: distance_metric_to_ir(value),
+                options: BTreeMap::new(),
+            })
+    });
+    let indexing_script = field.indexing_script.is_some();
+    let stored = field
+        .stored
+        .filter(|value| !indexing_script || !*value)
+        .filter(|value| {
+            field
+                .summary_config
+                .as_ref()
+                .and_then(|summary| summary.enabled)
+                != Some(*value)
+        });
+    let searchable = field
+        .searchable
+        .filter(|value| !indexing_script || *value)
+        .filter(|value| {
+            field.index_config.as_ref().and_then(|index| index.enabled) != Some(*value)
+        });
+    let filterable = field
+        .filterable
+        .filter(|value| !indexing_script || *value)
+        .filter(|value| {
+            field
+                .attribute_config
+                .as_ref()
+                .and_then(|attribute| attribute.fast_search)
+                != Some(true)
+                || !*value
+        });
+    let sortable = field.sortable.filter(|value| !indexing_script || *value);
+    let groupable = field.facetable.filter(|value| !indexing_script || *value);
+    Ok(searchkernel_ir::UnresolvedFieldInput {
+        name,
+        data_type: field.data_type.to_ir(),
+        stored,
+        searchable,
+        filterable,
+        sortable,
+        groupable,
+        analyzer,
+        matching,
+        index,
+        attribute,
+        summary: field.summary_config.clone(),
+        indexing_script: field.indexing_script.clone(),
+        properties: field.properties.clone(),
+        struct_fields: field
+            .struct_fields
+            .iter()
+            .map(StructFieldConfig::to_ir)
+            .collect(),
     })
+}
+
+pub(crate) fn index_definition_to_input(
+    definition: &IndexDefinition,
+) -> Result<searchkernel_ir::IndexDefinitionInput> {
+    Ok(searchkernel_ir::IndexDefinitionInput {
+        name: definition.name.clone(),
+        fields: definition
+            .fields
+            .iter()
+            .map(field_to_unresolved_input)
+            .collect::<Result<Vec<_>>>()?,
+        schema_fields: definition
+            .schema_fields
+            .iter()
+            .map(field_to_unresolved_input)
+            .collect::<Result<Vec<_>>>()?,
+        default_search_fields: definition.default_search_fields.as_ref().map(|fields| {
+            fields
+                .iter()
+                .map(|field| searchkernel_ir::RustSearchFieldInput {
+                    field: field.field.clone(),
+                    weight: field.weight,
+                })
+                .collect()
+        }),
+        properties: properties_to_ir(&definition.properties),
+        document_type: definition.document_type.clone(),
+        schema_inherits: definition.schema_inherits.clone(),
+        document_inherits: definition.document_inherits.clone(),
+        structs: definition.structs.iter().map(NamedStruct::to_ir).collect(),
+        fieldsets: definition
+            .fieldsets
+            .iter()
+            .map(FieldSet::to_ir)
+            .collect::<Result<Vec<_>>>()?,
+        imported_fields: definition
+            .imported_fields
+            .iter()
+            .map(ImportedField::to_ir)
+            .collect::<Result<Vec<_>>>()?,
+        document_summaries: definition
+            .document_summaries
+            .iter()
+            .map(DocumentSummary::to_ir)
+            .collect(),
+        rank_profiles: definition
+            .rank_profiles
+            .iter()
+            .map(rank_profile_to_unresolved_input)
+            .collect(),
+        constants: definition
+            .constants
+            .iter()
+            .map(ConstantDefinition::to_ir)
+            .collect(),
+        onnx_models: definition
+            .onnx_models
+            .iter()
+            .map(OnnxModel::to_ir)
+            .collect(),
+    })
+}
+
+fn rank_profile_to_unresolved_input(
+    profile: &RankProfile,
+) -> searchkernel_ir::UnresolvedRankProfileInput {
+    let inputs = if profile.inputs.is_empty() {
+        profile
+            .query_inputs
+            .iter()
+            .map(|(name, type_spec)| searchkernel_ir::RankProfileInputIr {
+                name: name.clone(),
+                data_type: searchkernel_ir::DataTypeIr::Tensor {
+                    type_spec: type_spec.clone(),
+                },
+                default_value: searchkernel_ir::RequestValueIr::Tensor(
+                    searchkernel_ir::RequestTensorIr {
+                        type_spec: type_spec.clone(),
+                        payload: searchkernel_ir::RequestTensorPayloadIr::Dense(Vec::new()),
+                    },
+                ),
+            })
+            .collect()
+    } else {
+        profile.inputs.iter().map(RankProfileInput::to_ir).collect()
+    };
+    searchkernel_ir::UnresolvedRankProfileInput {
+        name: profile.name.clone(),
+        inherits: profile.inherits.clone(),
+        inputs,
+        functions: profile.functions.iter().map(RankFunction::to_ir).collect(),
+        first_phase: profile.first_phase.as_ref().map(RankPhase::to_ir),
+        second_phase: profile
+            .second_phase
+            .as_ref()
+            .map(RankPhase::to_ir)
+            .or_else(|| {
+                profile
+                    .rerank_count
+                    .map(|rerank_count| searchkernel_ir::RankPhaseDefinitionIr {
+                        expression: None,
+                        rerank_count: Some(rerank_count),
+                        rank_score_drop_limit: None,
+                        properties: BTreeMap::new(),
+                        total_rerank_count: None,
+                        keep_rank_count: None,
+                        total_keep_rank_count: None,
+                    })
+            }),
+        global_phase: profile.global_phase.as_ref().map(RankPhase::to_ir),
+        rank_features: profile.rank_features.clone(),
+        match_features: profile.match_features.clone(),
+        summary_features: profile.summary_features.clone(),
+        sort_features: profile.sort_features.clone(),
+        constants: profile
+            .constants
+            .iter()
+            .map(ConstantDefinition::to_ir)
+            .collect(),
+        onnx_models: profile.onnx_models.iter().map(OnnxModel::to_ir).collect(),
+        rank_properties: profile.rank_properties.clone(),
+        strict: profile.strict,
+        properties: properties_to_ir(&profile.properties),
+    }
 }
 
 fn distance_metric_to_ir(value: DistanceMetric) -> searchkernel_ir::DistanceMetricIr {

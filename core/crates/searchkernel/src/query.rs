@@ -1308,7 +1308,8 @@ mod tests {
     #[allow(clippy::type_complexity)]
     #[test]
     fn typed_query_facade_covers_every_canonical_expression_kind() {
-        let cases: Vec<(&str, Query, fn(QueryExprIr) -> bool)> = vec![
+        type QueryCase = (&'static str, Query, fn(QueryExprIr) -> bool);
+        let cases: Vec<QueryCase> = vec![
             ("term", Query::term_value("value"), |query| {
                 matches!(query.kind, QueryExprKindIr::Term { .. })
             }),
