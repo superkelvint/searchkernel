@@ -24,7 +24,7 @@ fn main() {
             stored: false,
             searchable: false,
             filterable: true,
-            sortable: true,
+            sortable: false,
             facetable: false,
         }],
         default_search_fields: None,
@@ -64,7 +64,7 @@ fn main() {
                         "stored": false,
                         "searchable": false,
                         "filterable": true,
-                        "sortable": true,
+                        "sortable": false,
                         "facetable": false
                     }]
                 },
@@ -135,7 +135,7 @@ fn main() {
                     "stored": false,
                     "searchable": false,
                     "filterable": true,
-                    "sortable": true,
+                    "sortable": false,
                     "facetable": false
                 }]
             },
