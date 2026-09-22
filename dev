@@ -85,6 +85,7 @@ check_fast() {
     cargo fmt --all --check
     cargo check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
+    bash "$ROOT/tools/test-flatbuffers-cpp-toolchain.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
     "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
@@ -170,8 +171,8 @@ install_flatbuffers() (
     header="$prefix/include/flatbuffers/base.h"
     library="$prefix/lib/libflatbuffers.a"
     if [[ -x "$flatc" && -f "$header" && -f "$library" ]] &&
-       [[ "$("$flatc" --version 2>/dev/null || true)" == "flatc version $EXPECTED_FLATBUFFERS_VERSION" ]]; then
-        echo "FlatBuffers $EXPECTED_FLATBUFFERS_VERSION already available under $prefix"
+       bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$prefix" "$EXPECTED_FLATBUFFERS_VERSION" >/dev/null 2>&1; then
+        echo "FlatBuffers $EXPECTED_FLATBUFFERS_VERSION already available and link-compatible under $prefix"
         echo "This install is shared by every worktree in this clone."
         return 0
     fi
@@ -250,6 +251,10 @@ install_flatbuffers() (
         echo "error: installed flatc reports '$actual_version'" >&2
         return 1
     }
+    if ! bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$prefix" "$EXPECTED_FLATBUFFERS_VERSION"; then
+        echo "error: installed FlatBuffers C++ library is not compatible with this build environment" >&2
+        return 1
+    fi
 
     echo "Installed FlatBuffers ${EXPECTED_FLATBUFFERS_VERSION} under $prefix"
     echo "This install is shared by every worktree in this clone."
@@ -336,19 +341,12 @@ doctor_flatc() {
 }
 
 doctor_flatbuffers_cpp() {
-    local flatc cpp_root header major minor revision actual
+    local flatc cpp_root
     flatc=${DOCTOR_FLATC:-$(find_flatc)}
     [[ -x "${flatc:-}" ]] || return 1
 
     cpp_root=${FLATBUFFERS_CPP_ROOT:-$(cd -- "$(dirname -- "$flatc")/.." && pwd)}
-    header="$cpp_root/include/flatbuffers/base.h"
-    [[ -f "$header" ]] || return 1
-    major=$(sed -n 's/^#define FLATBUFFERS_VERSION_MAJOR //p' "$header")
-    minor=$(sed -n 's/^#define FLATBUFFERS_VERSION_MINOR //p' "$header")
-    revision=$(sed -n 's/^#define FLATBUFFERS_VERSION_REVISION //p' "$header")
-    actual="$major.$minor.$revision"
-    [[ "$actual" == "$EXPECTED_FLATBUFFERS_VERSION" ]] || return 1
-    find "$cpp_root" -maxdepth 3 -type f -name 'libflatbuffers.*' -print -quit 2>/dev/null | grep -q .
+    bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$cpp_root" "$EXPECTED_FLATBUFFERS_VERSION"
 }
 
 doctor_generated_protocol() {
