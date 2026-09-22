@@ -584,17 +584,16 @@ impl<'a> DerivedConfig<'a> {
             ));
         }
 
-        for field in self.fields().iter().filter(|field| {
-            matches!(field.field_type, FieldType::Text) && field.indexed && field.summary
-        }) {
-            fields.push(SummaryField::dynamic_teaser(
-                &highlight_summary_name(&field.name),
-                &field.name,
-            ));
-        }
-
-        let mut output = String::from(
-            "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\n",
+        let highlight_fields: Vec<_> = self
+            .fields()
+            .iter()
+            .filter(|field| {
+                matches!(field.field_type, FieldType::Text) && field.indexed && field.summary
+            })
+            .collect();
+        let class_count = 1 + usize::from(!highlight_fields.is_empty());
+        let mut output = format!(
+            "defaultsummaryid 1\nclasses[{class_count}]\nclasses[0].id 1\nclasses[0].name \"default\"\n"
         );
         output.push_str(&format!("classes[0].fields[{}]\n", fields.len()));
         for (index, field) in fields.iter().enumerate() {
@@ -605,6 +604,35 @@ impl<'a> DerivedConfig<'a> {
                 quoted(&field.command),
                 quoted(&field.source)
             ));
+        }
+
+        if !highlight_fields.is_empty() {
+            output.push_str("classes[1].id 2\nclasses[1].name \"searchkernel_highlight\"\n");
+            output.push_str(&format!(
+                "classes[1].fields[{}]\n",
+                fields.len() + highlight_fields.len()
+            ));
+            for (index, field) in fields.iter().enumerate() {
+                output.push_str(&format!(
+                    "classes[1].fields[{index}].name {}\nclasses[1].fields[{index}].type {}\nclasses[1].fields[{index}].command {}\nclasses[1].fields[{index}].source {}\n",
+                    quoted(&field.name),
+                    quoted(&field.data_type),
+                    quoted(&field.command),
+                    quoted(&field.source)
+                ));
+            }
+            for (offset, field) in highlight_fields.iter().enumerate() {
+                let index = fields.len() + offset;
+                let field =
+                    SummaryField::dynamic_teaser(&highlight_summary_name(&field.name), &field.name);
+                output.push_str(&format!(
+                    "classes[1].fields[{index}].name {}\nclasses[1].fields[{index}].type {}\nclasses[1].fields[{index}].command {}\nclasses[1].fields[{index}].source {}\n",
+                    quoted(&field.name),
+                    quoted(&field.data_type),
+                    quoted(&field.command),
+                    quoted(&field.source)
+                ));
+            }
         }
         output
     }
@@ -1355,6 +1383,24 @@ mod tests {
         let index = fs::read_to_string(path.join("indexschema.cfg")).expect("index config");
         assert!(index.contains("indexfield[0].name \"title\""));
         assert!(index.contains("indexfield[1].name \"description\""));
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn highlighting_does_not_change_m6_default_summary_projection() {
+        let path = compile(
+            Schema::new("typea").field(Field::new("title", FieldType::Text).indexed().summary()),
+            "highlight-summary-isolation",
+        );
+        let summary = fs::read_to_string(path.join("summary.cfg")).expect("summary config");
+        let hidden = highlight_summary_name("title");
+
+        assert!(summary.contains("classes[0].name \"default\""));
+        assert!(!summary.contains(&format!("classes[0].fields[4].name \"{hidden}\"")));
+        assert!(summary.contains("classes[1].name \"searchkernel_highlight\""));
+        assert!(summary.contains(&format!("classes[1].fields[4].name \"{hidden}\"")));
+        assert!(summary.contains("classes[1].fields[4].command \"dynamicteaser\""));
+        assert!(summary.contains("classes[1].fields[4].source \"title\""));
         let _ = fs::remove_dir_all(path);
     }
 
