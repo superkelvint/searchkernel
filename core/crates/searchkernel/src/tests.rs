@@ -1060,7 +1060,7 @@ fn persistence_fault_matrix_rejects_unknown_versions_without_touching_state() {
         write_config(&config);
         let definition = manifest_definition();
         let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
-        let mut manifest = IndexManifest::for_definitions(
+        let manifest = IndexManifest::for_definitions(
             &crate::portable_definition::encode_portable_definition(&definition),
             &resolved_context(&resolved),
             &config,
