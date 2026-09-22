@@ -406,6 +406,9 @@ impl Field {
     /// Explicitly set whether values are stored in search results.
     pub fn stored(mut self, value: bool) -> Self {
         self.stored = Some(value);
+        if let Some(summary) = self.summary_config.as_mut() {
+            summary.enabled = Some(value);
+        }
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.stored = value;
         }
@@ -418,6 +421,10 @@ impl Field {
                 capabilities.sortable(),
                 capabilities.groupable(),
             );
+            if let Some(mut summary) = field.summary().cloned() {
+                summary.enabled = Some(value);
+                field.set_summary_config(Some(summary));
+            }
         }
         self
     }
