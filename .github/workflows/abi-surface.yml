@@ -2,7 +2,31 @@ name: ABI surface
 
 on:
   push:
+    paths:
+      - "core/native/**"
+      - "core/crates/searchkernel-vespa-bindings/**"
+      - "tools/check_abi_surface.py"
+      - "tools/test_check_abi_surface.py"
+      - "tools/resolve-native-sdk.sh"
+      - "tools/test-native-sdk-cache.sh"
+      - "BUILDING.md"
+      - "dev"
+      - ".github/workflows/abi-surface.yml"
   pull_request:
+    paths:
+      - "core/native/**"
+      - "core/crates/searchkernel-vespa-bindings/**"
+      - "tools/check_abi_surface.py"
+      - "tools/test_check_abi_surface.py"
+      - "tools/resolve-native-sdk.sh"
+      - "tools/test-native-sdk-cache.sh"
+      - "BUILDING.md"
+      - "dev"
+      - ".github/workflows/abi-surface.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   abi-surface:
