@@ -60,6 +60,34 @@ class PythonDependencyContractTests(unittest.TestCase):
                     errors,
                 )
 
+    def test_codegen_remains_exact_pinned(self) -> None:
+        checker = load_checker()
+        compatible_runtime = {
+            "flatbuffers": "25.12.19",
+            "grpcio": "1.84.0",
+            "protobuf": "7.36.2",
+            "grpcio-tools": "1.84.0",
+        }
+        self.assertEqual(
+            checker.validate_versions(compatible_runtime),
+            [],
+        )
+        codegen_errors = checker.validate_versions(
+            compatible_runtime,
+            codegen=True,
+        )
+        self.assertTrue(
+            any("protobuf" in error and "codegen" in error for error in codegen_errors),
+            codegen_errors,
+        )
+
+        exact_codegen = dict(compatible_runtime)
+        exact_codegen["protobuf"] = "7.35.1"
+        self.assertEqual(
+            checker.validate_versions(exact_codegen, codegen=True),
+            [],
+        )
+
     def test_flatbuffers_and_grpc_remain_exact(self) -> None:
         checker = load_checker()
         errors = checker.validate_versions(
