@@ -59,6 +59,7 @@ configured="$repo/upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFil
 mkdir -p "$configured"
 printf 'link\n' >"$configured/link.txt"
 printf 'CXX_INCLUDES = \n' >"$configured/flags.make"
+printf 'vespa-library-bytes-v1\n' >"$repo/upstream/vespa/cache-fixture.so"
 
 worktree="$fixture/worktree"
 git -C "$repo" worktree add -q "$worktree" -b cache-test
@@ -118,11 +119,17 @@ same_after_unrelated_deps=$(run_resolver "$worktree")
 [[ "$same_after_unrelated_deps" == "$third" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
 
+printf 'vespa-library-bytes-v2-changed\n' >"$repo/upstream/vespa/cache-fixture.so"
+vespa_changed=$(run_resolver "$worktree")
+[[ "$vespa_changed" != "$third" ]]
+[[ -d "$vespa_changed" ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 2 ]]
+
 printf 'dependency-v2-with-different-size\n' >"$repo/vespa-deps/lib64/libsearchkernel_fixture.so"
 fourth=$(run_resolver "$worktree")
-[[ "$fourth" != "$third" ]]
+[[ "$fourth" != "$vespa_changed" ]]
 [[ -d "$fourth" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 2 ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
 
 chmod u+w "$fourth/lib"
 rm "$fourth/lib/libvespalib.so"
@@ -130,7 +137,7 @@ chmod a-w "$fourth/lib"
 healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err")
 [[ "$healed" == "$fourth" ]]
 [[ -s "$fourth/lib/libvespalib.so" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/incomplete.err"
 
 chmod u+w "$fourth/lib"
@@ -139,7 +146,7 @@ chmod a-w "$fourth/lib"
 corrupted_healed=$(run_resolver "$worktree" 2>"$fixture/corrupt.err")
 [[ "$corrupted_healed" == "$fourth" ]]
 [[ -s "$fourth/lib/libvespalib.so" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 5 ]]
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/corrupt.err"
 
 chmod u+w "$fourth/lib"
