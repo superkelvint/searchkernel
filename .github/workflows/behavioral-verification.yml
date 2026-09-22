@@ -73,7 +73,7 @@ jobs:
           echo "EXACT_HEAD_TEST=$regression_dir/test_exact_head.py" >> "$GITHUB_ENV"
 
       - name: Verify exact-head CI regressions
-        run: "$CI_PYTHON" "$EXACT_HEAD_TEST"
+        run: $CI_PYTHON "$EXACT_HEAD_TEST"
 
       - name: Classify changed behavior
         id: changes
@@ -164,10 +164,10 @@ jobs:
           echo "Verified exact PR head $actual."
 
       - name: Install Python client
-        run: "$CI_PYTHON" -m pip install -e clients/python
+        run: $CI_PYTHON -m pip install -e clients/python
 
       - name: Run Python behavioral tests
-        run: "$CI_PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
+        run: $CI_PYTHON -m unittest discover -s clients/python/tests -p 'test_*.py'
 
   typescript:
     name: TypeScript behavior
