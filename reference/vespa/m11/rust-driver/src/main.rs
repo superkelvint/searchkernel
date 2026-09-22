@@ -1,8 +1,9 @@
 use searchkernel_ir::{
-    Backend, ComparisonIr, ComparisonOp, DocumentId, DocumentIr, FacetIr, FacetSort, FieldName,
-    FieldValueIr, FilterIr, HighlightingIr, MissingPlacement, PatchOperationIr, PrefixPolicy,
-    ProjectionIr, QueryIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight,
-    SearchRequestIr, SortDirection, SortIr, TypoPolicy,
+    Backend, ComparisonIr, ComparisonOp, DocumentId, DocumentIr, FieldName, FieldValueIr, FilterIr,
+    GroupingAggregationIr, GroupingAllIr, GroupingExpressionIr, GroupingOperationIr,
+    GroupingOutputIr, GroupingRequestIr, HighlightingIr, MissingPlacement, PatchOperationIr,
+    PrefixPolicy, ProjectionIr, QueryIr, ResultNode, ScalarValueIr, SearchFieldIr,
+    SearchFieldWeight, SearchRequestIr, SearchResult, SortDirection, SortIr, TypoPolicy,
 };
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_vespa_engine::{
@@ -247,6 +248,35 @@ fn adapter_document(id: &str, category: &str, qty: i64) -> AnyResult<DocumentIr>
     Ok(DocumentIr::new(DocumentId::parse(id.to_owned())?, fields))
 }
 
+fn adapter_facet_grouping() -> GroupingRequestIr {
+    // The adapter lowers this canonical grouping shape to Vespa's facet
+    // request, preserving the M11 facet scenario without a separate API.
+    let field = GroupingExpressionIr::Attribute("category".to_owned());
+    let count = GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count));
+    GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(field),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Max(Some(8)),
+                        GroupingOperationIr::Order(vec![GroupingExpressionIr::Negative(Box::new(
+                            count.clone(),
+                        ))]),
+                        GroupingOperationIr::Output(vec![GroupingOutputIr {
+                            label: None,
+                            expression: count,
+                        }]),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    }
+}
+
 fn adapter_search() -> AnyResult<SearchRequestIr> {
     Ok(SearchRequestIr::new(
         QueryIr::Text("adapter".to_owned()),
@@ -264,7 +294,6 @@ fn adapter_search() -> AnyResult<SearchRequestIr> {
             SortDirection::Desc,
             MissingPlacement::Last,
         )],
-        vec![FacetIr::new(ir_field("category")?, 8, FacetSort::ValueAsc)],
         10,
         0,
         ProjectionIr::new(vec![ir_field("title")?, ir_field("category")?]),
@@ -272,7 +301,33 @@ fn adapter_search() -> AnyResult<SearchRequestIr> {
         None,
         PrefixPolicy::Disabled,
         TypoPolicy::Disabled,
-    ))
+    )
+    .with_grouping(vec![adapter_facet_grouping()]))
+}
+
+fn result_has_non_finite_hit(result: &SearchResult) -> bool {
+    let ResultNode::Group(group) = &result.root else {
+        return false;
+    };
+    group.children.iter().any(|child| {
+        matches!(
+            child,
+            ResultNode::Hit(hit) if hit.score.is_some_and(|score| !score.is_finite())
+        )
+    })
+}
+
+fn result_has_category_facet(result: &SearchResult) -> bool {
+    let ResultNode::Group(group) = &result.root else {
+        return false;
+    };
+    group.children.iter().any(|child| {
+        matches!(
+            child,
+            ResultNode::Group(facet) if facet.id.as_deref() == Some("category")
+                && !facet.children.is_empty()
+        )
+    })
 }
 
 fn adapter_torture(config: &Path, data: &Path) -> AnyResult<()> {
@@ -289,7 +344,15 @@ fn adapter_torture(config: &Path, data: &Path) -> AnyResult<()> {
         7,
     )?))?;
     let result = backend.search(adapter_search()?)?;
-    if result.hits.len() != 2 || result.facets.is_empty() {
+    let ResultNode::Group(root) = &result.root else {
+        return Err("IR adapter search returned a non-group root".into());
+    };
+    let hit_count = root
+        .children
+        .iter()
+        .filter(|child| matches!(child, ResultNode::Hit(_)))
+        .count();
+    if hit_count != 2 || !result_has_category_facet(&result) {
         return Err("IR adapter search/filter/facet path returned incomplete results".into());
     }
     let mut readers = Vec::new();
@@ -298,11 +361,7 @@ fn adapter_torture(config: &Path, data: &Path) -> AnyResult<()> {
         readers.push(thread::spawn(move || -> AnyResult<()> {
             for _ in 0..100 {
                 let result = backend.search(adapter_search()?)?;
-                if result
-                    .hits
-                    .iter()
-                    .any(|hit| hit.score.is_some_and(|score| !score.is_finite()))
-                {
+                if result_has_non_finite_hit(&result) {
                     return Err("IR adapter returned a non-finite score".into());
                 }
             }
