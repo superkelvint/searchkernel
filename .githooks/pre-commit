@@ -45,7 +45,7 @@ fi
 
 if [[ "$python_native_e2e_required" == true ]]; then
     echo "pre-commit: code-sensitive changes detected; running Python native gRPC E2E"
-    tools/run-python-native-e2e.sh
+    bash tools/run-python-native-e2e.sh
 fi
  "$native_selection"; then
     # The real Python gRPC E2E crosses the public Python client, daemon,
