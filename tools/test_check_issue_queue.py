@@ -1,0 +1,118 @@
+"""Tests for the GitHub issue queue consistency validator."""
+
+from __future__ import annotations
+
+import importlib.util
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = ROOT / "tools" / "check-issue-queue.py"
+SPEC = importlib.util.spec_from_file_location("check_issue_queue", MODULE_PATH)
+assert SPEC and SPEC.loader
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+
+
+def issue(number: int, *labels: str, title: str = "fixture") -> dict[str, object]:
+    return {
+        "number": number,
+        "title": title,
+        "labels": [{"name": label} for label in labels],
+    }
+
+
+class IssueQueueTests(unittest.TestCase):
+    def test_canonical_queue_with_matching_claims_passes(self) -> None:
+        issues = [
+            issue(1, "status:ready", "priority:p1", "area:ir", "type:bug"),
+            issue(2, "status:in-progress", "priority:p2", "area:ci", "type:chore"),
+            issue(3, "status:blocked", "priority:p0", "area:native", "type:bug"),
+            issue(4, "status:needs-followup", "priority:p2"),
+        ]
+        self.assertEqual(MODULE.validate_queue(issues, {"codex/issue-2"}), [])
+
+    def test_missing_workflow_state_is_rejected(self) -> None:
+        errors = MODULE.validate_queue(
+            [issue(1, "priority:p1", "area:ir", "type:bug")],
+            set(),
+        )
+        self.assertIn("expected exactly one workflow state label", errors[0])
+
+    def test_multiple_workflow_states_are_rejected(self) -> None:
+        errors = MODULE.validate_queue(
+            [
+                issue(
+                    1,
+                    "status:ready",
+                    "status:in-progress",
+                    "priority:p1",
+                    "area:ir",
+                    "type:bug",
+                )
+            ],
+            set(),
+        )
+        self.assertTrue(any("exactly one workflow state" in error for error in errors))
+
+    def test_ready_issue_with_claim_branch_is_rejected(self) -> None:
+        errors = MODULE.validate_queue(
+            [issue(1, "status:ready", "priority:p1", "area:ir", "type:bug")],
+            {"codex/issue-1"},
+        )
+        self.assertTrue(any("active claim branch" in error for error in errors))
+
+    def test_in_progress_issue_without_claim_branch_is_rejected(self) -> None:
+        errors = MODULE.validate_queue(
+            [issue(1, "status:in-progress", "priority:p1", "area:ir", "type:bug")],
+            set(),
+        )
+        self.assertTrue(any("lacks claim branch" in error for error in errors))
+
+    def test_actionable_issue_requires_priority_area_and_type(self) -> None:
+        errors = MODULE.validate_queue([issue(1, "status:ready")], set())
+        self.assertTrue(any("priority label" in error for error in errors))
+        self.assertTrue(any("area:*" in error for error in errors))
+        self.assertTrue(any("type:*" in error for error in errors))
+
+    def test_actionable_issue_requires_exactly_one_priority(self) -> None:
+        errors = MODULE.validate_queue(
+            [
+                issue(
+                    1,
+                    "status:ready",
+                    "priority:p1",
+                    "priority:p2",
+                    "area:ir",
+                    "type:bug",
+                )
+            ],
+            set(),
+        )
+        self.assertTrue(any("exactly one priority" in error for error in errors))
+
+    def test_legacy_workflow_labels_are_rejected(self) -> None:
+        errors = MODULE.validate_queue(
+            [
+                issue(
+                    1,
+                    "status:ready",
+                    "in-progress",
+                    "priority:p1",
+                    "area:ir",
+                    "type:bug",
+                )
+            ],
+            set(),
+        )
+        self.assertTrue(any("legacy workflow label" in error for error in errors))
+
+    def test_duplicate_issue_numbers_are_rejected(self) -> None:
+        fixture = issue(1, "status:ready", "priority:p1", "area:ir", "type:bug")
+        errors = MODULE.validate_queue([fixture, fixture], set())
+        self.assertTrue(any("duplicate issue" in error for error in errors))
+
+
+if __name__ == "__main__":
+    unittest.main()

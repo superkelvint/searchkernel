@@ -24,7 +24,8 @@ searchkerneld --index /path/to/index \
 ```
 
 The browser listener is optional and separate from the local listener. Both
-listeners share the same dispatcher and bounded execution limit. The
+listeners share the same dispatcher, admission limit, and bounded execution
+limit. The
 `SEARCHKERNEL_GRPC_WEB_ADDR` environment variable is equivalent to
 `--web-listen` when the flag is omitted.
 
@@ -35,6 +36,13 @@ Native dispatches are admitted through a bounded blocking executor. The
 default limit is 16 concurrent dispatches; override it with
 `--execution-limit N` or `SEARCHKERNEL_EXECUTION_LIMIT`. Requests above the
 limit wait asynchronously until a dispatch slot is available.
+
+The transport also bounds total admitted requests before FlatBuffer payload
+decoding. The default admission limit is 32 requests across both listeners;
+override it with `--admission-limit N` or
+`SEARCHKERNEL_ADMISSION_LIMIT`. Requests above that bound are rejected with
+`ResourceExhausted` (or the equivalent gRPC-Web trailer) instead of being
+queued with decoded payload memory.
 
 ## Request and response path
 

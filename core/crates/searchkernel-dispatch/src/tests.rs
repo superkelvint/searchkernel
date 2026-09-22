@@ -935,3 +935,45 @@ fn standard_flatbuffers_json_enters_the_canonical_dispatch_path() {
         wire::ResponsePayload::SearchKernel_V2_DescribeResult
     );
 }
+
+#[test]
+fn standard_flatbuffers_json_duplicate_document_fields_are_rejected_before_backend() {
+    let request = searchkernel_protocol::json::request_json_to_flatbuffer(
+        br#"{
+          "protocol_version": 2,
+          "payload_type": "SearchKernel_V2_InsertRequest",
+          "payload": {
+            "document": {
+              "id": "doc-duplicate",
+              "fields": [
+                {"key":"brand","value":{"kind_type":"StringValue","kind":{"value":"first"}}},
+                {"key":"brand","value":{"kind_type":"StringValue","kind":{"value":"second"}}}
+              ]
+            }
+          }
+        }"#,
+    )
+    .expect("standard JSON duplicate-field request");
+    let recording = Arc::new(RecordingBackend::new());
+    let dispatcher = Dispatcher::from_backend(context(), recording.clone());
+    let response = dispatcher
+        .dispatch(&request)
+        .expect("semantic validation returns a portable error response");
+    let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
+    let error = envelope
+        .payload_as_search_kernel_v2_error()
+        .expect("duplicate document fields must produce an error response");
+    assert_eq!(error.code(), api::ErrorCode::InvalidArgument);
+    assert_eq!(
+        error.details().unwrap().get(0).code(),
+        Some("duplicate_document_field")
+    );
+    assert_eq!(
+        error.details().unwrap().get(0).path(),
+        Some("document.fields[1].key")
+    );
+    assert!(
+        recording.take_calls().is_empty(),
+        "invalid duplicate fields must not reach the backend"
+    );
+}

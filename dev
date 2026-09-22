@@ -118,6 +118,7 @@ check_all() {
     bash "$ROOT/tools/check-python-grpc.sh"
     "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
     "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
+    "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
     cargo clippy --workspace --all-targets --all-features -- -D warnings
     cargo test --workspace --all-targets --all-features
     run_python_tests

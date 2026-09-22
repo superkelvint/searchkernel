@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
+HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -133,6 +135,199 @@ class ExactHeadTests(unittest.TestCase):
             "Native-sensitive paths changed. CI intentionally does not bootstrap Vespa",
             workflow,
         )
+
+    def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        typescript = workflow.split("\n  typescript:\n", 1)[1].split(
+            "\n  exact-head-gate:\n", 1
+        )[0]
+        self.assertIn("uses: dtolnay/rust-toolchain@stable", typescript)
+
+    def test_precommit_runs_native_gate_only_for_native_sensitive_staged_paths(self) -> None:
+        for staged_path, expect_native in (
+            ("core/native/vespa/abi.cc", True),
+            ("docs/architecture.md", False),
+        ):
+            with self.subTest(staged_path=staged_path):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                repo = Path(temp.name)
+                git(repo, "init", "-q")
+                git(repo, "config", "user.name", "CI Test")
+                git(repo, "config", "user.email", "ci@example.invalid")
+
+                (repo / ".githooks").mkdir(parents=True)
+                (repo / ".github" / "ci").mkdir(parents=True)
+                (repo / "reference" / "vespa").mkdir(parents=True)
+                (repo / "fakebin").mkdir(parents=True)
+                (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+
+                log = repo / "hook.log"
+                cargo = repo / "fakebin" / "cargo"
+                cargo.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                cargo.chmod(0o755)
+                native_gate = repo / "reference" / "vespa" / "verify-through.sh"
+                native_gate.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'native %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                native_gate.chmod(0o755)
+
+                git(repo, "add", ".githooks", ".github", "reference", "fakebin")
+                git(repo, "commit", "-q", "-m", "fixture")
+
+                staged = repo / staged_path
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                staged.write_text("changed\n", encoding="utf-8")
+                git(repo, "add", staged_path)
+
+                env = os.environ.copy()
+                env["HOOK_LOG"] = str(log)
+                env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+                result = subprocess.run(
+                    ["bash", str(repo / ".githooks" / "pre-commit")],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout)
+                logged = log.read_text(encoding="utf-8")
+                self.assertIn("cargo fmt --all --check", logged)
+                self.assertIn(
+                    "cargo clippy --workspace --all-targets --no-default-features -- -D warnings",
+                    logged,
+                )
+                self.assertIn(
+                    "cargo test --workspace --all-targets --no-default-features",
+                    logged,
+                )
+                self.assertEqual("native i" in logged, expect_native)
+
+    def test_precommit_treats_native_rename_as_native_sensitive(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+
+        (repo / ".githooks").mkdir(parents=True)
+        (repo / ".github" / "ci").mkdir(parents=True)
+        (repo / "reference" / "vespa").mkdir(parents=True)
+        (repo / "fakebin").mkdir(parents=True)
+        (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+
+        log = repo / "hook.log"
+        cargo = repo / "fakebin" / "cargo"
+        cargo.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        cargo.chmod(0o755)
+        native_gate = repo / "reference" / "vespa" / "verify-through.sh"
+        native_gate.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'native %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        native_gate.chmod(0o755)
+
+        source = repo / "core" / "native" / "vespa" / "moved.cc"
+        source.parent.mkdir(parents=True)
+        source.write_text("native\n", encoding="utf-8")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "fixture")
+
+        destination = repo / "docs" / "moved.cc"
+        destination.parent.mkdir(parents=True)
+        source.rename(destination)
+        git(repo, "add", "-A")
+
+        env = os.environ.copy()
+        env["HOOK_LOG"] = str(log)
+        env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks" / "pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        logged = log.read_text(encoding="utf-8")
+        self.assertIn("native i", logged)
+
+    def test_precommit_rejects_native_verification_with_unstaged_tracked_changes(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+
+        (repo / ".githooks").mkdir(parents=True)
+        (repo / ".github" / "ci").mkdir(parents=True)
+        (repo / "reference" / "vespa").mkdir(parents=True)
+        (repo / "fakebin").mkdir(parents=True)
+        (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        (repo / "tracked.txt").write_text("original\n", encoding="utf-8")
+
+        log = repo / "hook.log"
+        cargo = repo / "fakebin" / "cargo"
+        cargo.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        cargo.chmod(0o755)
+        native_gate = repo / "reference" / "vespa" / "verify-through.sh"
+        native_gate.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'native %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        native_gate.chmod(0o755)
+
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "fixture")
+
+        native = repo / "core" / "native" / "vespa" / "abi.cc"
+        native.parent.mkdir(parents=True)
+        native.write_text("changed\n", encoding="utf-8")
+        git(repo, "add", "core/native/vespa/abi.cc")
+        (repo / "tracked.txt").write_text("unstaged\n", encoding="utf-8")
+
+        env = os.environ.copy()
+        env["HOOK_LOG"] = str(log)
+        env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks" / "pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tracked unstaged changes also exist", result.stdout)
+        logged = log.read_text(encoding="utf-8") if log.exists() else ""
+        self.assertNotIn("cargo ", logged)
+        self.assertNotIn("native i", logged)
 
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
