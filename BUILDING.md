@@ -2,9 +2,10 @@
 
 Search Kernel builds Rust code against pinned native prerequisites. FlatBuffers
 C++ 25.12.19 is installed once as a clone-wide toolchain and is never rebuilt by
-ordinary Cargo commands. The default native feature also links the Search Kernel
-Vespa adapter SDK. Cargo build outputs remain environment-local, while native
-prerequisites are shared safely across Git worktrees.
+ordinary Cargo commands. The default native feature links a small Search Kernel-owned Vespa adapter
+against an immutable pinned Vespa/runtime base. Cargo build outputs, including
+the adapter, remain environment-local; third-party native prerequisites are
+shared safely across Git worktrees.
 
 ## Authority and failure handling
 
@@ -62,10 +63,12 @@ environment failure:
 The normal host workflow uses `target/host` automatically through
 `.cargo/config.toml`. Ordinary `./dev check-fast`, standalone Rust API
 tests, and non-native workspace checks do not populate the Vespa SDK cache.
-Before linking a native target, Cargo resolves the matching shared SDK
-automatically; `./dev native-sdk ensure` may be used to populate it
-explicitly. `./dev native-sdk path` is diagnostic-only: it prints an existing
-matching object and reports a cache miss without building one.
+Before linking a native target, Cargo resolves the matching immutable Vespa
+base automatically, then builds only Search Kernel's `abi.cc` adapter into that
+Cargo target's `OUT_DIR`. `./dev native-sdk ensure` may be used to populate
+the shared Vespa base explicitly. `./dev native-sdk path` is diagnostic-only:
+it prints an existing matching base object and reports a cache miss without
+building one.
 
 A fresh or isolated worktree is not expected to already contain a built
 `searchkerneld` binary. If `./dev doctor` reports it as informational,
@@ -78,17 +81,17 @@ cargo test --workspace --all-targets --no-default-features
 ```
 
 `searchkerneld` enables the Vespa native feature by default. Its Rust bindings
-derive the SDK location from the active Cargo target directory, validate the
-SDK fingerprint, and run a real ABI link probe before Rust links. If the SDK is
-missing, stale, or incompatible, Cargo invokes one targeted SDK rebuild and
-tries the probe once more. A second failure is reported with the prerequisite,
-compiler, target, and linker diagnostics that need attention.
+resolve a read-only shared Vespa base, build the Search Kernel adapter locally,
+and run a real compile/link probe against the combined adapter + base before Rust
+links. Search Kernel source changes never rebuild or repackage the Vespa base.
 
-The cache is stored below the repository's Git common directory, so all
-worktrees from one clone can reuse matching SDK objects without sharing mutable
-build directories. Published objects are read-only. A different native source,
-Vespa/config identity, target, compiler/runtime, or relevant native flag yields
-a different fingerprint and therefore a different object.
+The base cache is stored below the repository's Git common directory, so all
+worktrees from one clone can reuse matching objects without sharing mutable Cargo
+build directories. Published base objects contain Vespa/runtime libraries only:
+no `libsearchkernel_vespa.so` and no Search Kernel ABI header. The base identity
+tracks pinned Vespa/config, platform/toolchain/runtime, and packaged dependency
+inputs. Adapter source, failpoints, sanitizer, coverage, and adapter-only flags
+do not change the base key.
 
 The no-default-features workspace command exercises the Rust and FlatBuffers
 paths without requiring the optional Vespa SDK:
@@ -122,11 +125,11 @@ SEARCHKERNEL_BUILD_ENV=my-native-environment \
 ```
 
 `CARGO_TARGET_DIR` remains the isolation boundary for Cargo/FlatBuffers build
-outputs. The Vespa SDK resolver separately partitions its shared object store by
-`SEARCHKERNEL_BUILD_ENV` and target, then keys objects by the complete native
-fingerprint. `SK_NATIVE_SDK` bypasses this resolver for an explicitly managed
-SDK and must point to an SDK built for the same compiler, target, libc, C++
-runtime, Vespa source, and native flags as the consuming build.
+outputs. The Vespa base resolver separately partitions its shared object store by
+`SEARCHKERNEL_BUILD_ENV` and target, then keys base objects by base-scope
+provenance. `SK_NATIVE_SDK` bypasses this split model for a deliberately
+managed full SDK; full-package provenance still includes Search Kernel adapter
+source and adapter-only native flags.
 
 ## FlatBuffers
 
@@ -183,7 +186,7 @@ gRPC sources:
 python3 -m pip install -e 'clients/python[codegen]'
 ```
 
-## Vespa SDK builds
+## Vespa base and adapter builds
 
 Normal `cargo build -p searchkerneld` is the preferred entry point. The
 equivalent explicit cache commands are:
@@ -211,12 +214,13 @@ SK_NATIVE_BUILD_DIR="$PWD/target/host/native-sdk-build" \
 ```
 
 The selected Vespa checkout must have the configured CMake outputs and
-dependency installation expected by `build-sdk.sh`. The shared resolver
-serializes builders per fingerprint, builds into a private staging directory,
-verifies the resulting fingerprint, marks the completed SDK read-only, and
-publishes it atomically. It never builds directly inside an object visible to
-another worktree. Use a separate SDK/build path for qualification or sanitizer
-configurations when bypassing the resolver.
+dependency installation expected by `build-sdk.sh`. The shared resolver builds
+only the immutable Vespa/runtime base, serializes builders per base fingerprint,
+validates runtime closure, marks the completed base read-only, and publishes it
+atomically. Ordinary Cargo then compiles/relinks only Search Kernel's adapter
+against that base. A direct `build-sdk.sh` invocation still produces the full
+self-contained release/qualification SDK, with full-package provenance including
+adapter source and flags.
 
 When a task worktree does not contain `vespa-deps`, the script looks for a
 repository-local `vespa-deps` in a sibling Git worktree before falling back to
