@@ -22,10 +22,7 @@ fn main() {
     let explicit_sdk = env::var_os("SK_NATIVE_SDK").map(PathBuf::from);
     #[cfg(feature = "native")]
     let (sdk, base_sdk) = if let Some(configured) = explicit_sdk {
-        (
-            prepare_native_sdk(&manifest_dir, configured, &target),
-            None,
-        )
+        (prepare_native_sdk(&manifest_dir, configured, &target), None)
     } else {
         let base = resolve_shared_native_sdk(&manifest_dir, &target, "path").unwrap_or_else(|error| {
             panic!(
@@ -138,8 +135,14 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     #[cfg(feature = "native")]
     if let Some(base) = base_sdk.as_deref() {
-        println!("cargo:rustc-link-search=native={}", base.join("lib").display());
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", base.join("lib").display());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            base.join("lib").display()
+        );
+        println!(
+            "cargo:rustc-link-arg=-Wl,-rpath,{}",
+            base.join("lib").display()
+        );
         println!(
             "cargo:rustc-link-arg=-Wl,-rpath-link,{}",
             base.join("lib").display()
@@ -156,11 +159,15 @@ fn main() {
     );
     println!(
         "cargo:rerun-if-changed={}",
-        manifest_dir.join("../../native/vespa/searchkernel_vespa.map").display()
+        manifest_dir
+            .join("../../native/vespa/searchkernel_vespa.map")
+            .display()
     );
     println!(
         "cargo:rerun-if-changed={}",
-        manifest_dir.join("../../native/vespa/searchkernel_vespa_test.map").display()
+        manifest_dir
+            .join("../../native/vespa/searchkernel_vespa_test.map")
+            .display()
     );
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ENABLE_FAILPOINTS");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_CXX_FLAGS");
@@ -244,11 +251,7 @@ fn default_native_sdk(manifest_dir: &Path) -> PathBuf {
 }
 
 #[cfg(feature = "native")]
-fn prepare_native_sdk(
-    manifest_dir: &Path,
-    configured: PathBuf,
-    target: &str,
-) -> PathBuf {
+fn prepare_native_sdk(manifest_dir: &Path, configured: PathBuf, target: &str) -> PathBuf {
     let root = manifest_dir.join("../../..");
     let configured = if configured.is_absolute() {
         configured
@@ -359,7 +362,10 @@ fn verify_shared_cache_object(sdk: &Path) -> Result<(), String> {
     }
     let manifest_path = sdk.join("manifest.json");
     let manifest = fs::read_to_string(&manifest_path).map_err(|error| {
-        format!("read shared Vespa base manifest '{}': {error}", manifest_path.display())
+        format!(
+            "read shared Vespa base manifest '{}': {error}",
+            manifest_path.display()
+        )
     })?;
     if !manifest.contains(r#""kind": "vespa-base""#) && !manifest.contains(r#""kind":"vespa-base""#)
     {

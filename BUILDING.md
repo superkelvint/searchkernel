@@ -210,9 +210,14 @@ build (or after a declared base-input change):
 
 If the current worktree lacks untracked configured Vespa build outputs, the
 resolver searches sibling Git worktrees for a configured `upstream/vespa`
-with the same pinned Vespa identity. This is what allows an isolated agent
-worktree to run all-features Clippy/tests without copying the large Vespa build
-tree.
+with the same pinned Vespa identity. Configuration metadata alone is not treated
+as a usable library build. If that tree no longer contains its built
+`libvespa*.so*` files (for example after the immutable-base split), the resolver
+may seed the new base from an existing self-contained full SDK in the same clone,
+but only when that SDK's recorded Vespa commit and config identity match the
+selected pinned tree. The selected DSO bytes are part of the base fingerprint.
+This lets an isolated agent worktree reuse the clone's already-built native
+prerequisite without copying or rebuilding Vespa.
 
 A direct SDK build is still useful for native adapter qualification or an
 explicitly managed SDK:
@@ -259,8 +264,11 @@ feature.
 The resolver discovers a configured pinned Vespa build from the current or a
 matching sibling worktree, discovers its repository-local `vespa-deps`, and
 lets the SDK builder discover the matching LLVM/libffi runtime from the same
-clone. The resulting dependency/runtime inputs are part of the native cache
-identity.
+clone. A configured tree that contains only CMake metadata but no Vespa DSOs is
+not enough to publish a base. In that migration case, a compatible pre-split
+full SDK may supply the Vespa DSOs; otherwise `ensure` fails before staging with
+a concrete prerequisite diagnostic. The resulting Vespa/dependency/runtime
+bytes are part of the native cache identity.
 
 A published SDK object is reused only after its bundled runtime dependency
 closure validates. If an otherwise matching immutable cache object is incomplete

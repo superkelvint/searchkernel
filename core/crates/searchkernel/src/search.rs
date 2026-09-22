@@ -513,7 +513,9 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
                     FacetSort::ValueDesc => searchkernel_ir::FacetSortInput::ValueDesc,
                 }),
             };
-            searchkernel_ir::GroupingInput::Structured(searchkernel_ir::facet_grouping_input(&input))
+            searchkernel_ir::GroupingInput::Structured(searchkernel_ir::facet_grouping_input(
+                &input,
+            ))
         })
         .collect::<Vec<_>>();
     grouping.extend(

@@ -224,7 +224,9 @@ fn manifest_round_trips_definition_and_config_identity() {
     assert!(loaded.value["resolved_schema_snapshot"].is_object());
     assert_eq!(
         loaded.value["resolved_schema_snapshot"],
-        searchkernel_ir::snapshot::index_definition(loaded.resolved_context().unwrap().definition())
+        searchkernel_ir::snapshot::index_definition(
+            loaded.resolved_context().unwrap().definition()
+        )
     );
     assert!(root.join("manifest/index-definition.bfbs").is_file());
     assert!(root

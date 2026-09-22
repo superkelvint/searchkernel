@@ -125,30 +125,29 @@ impl IndexManifest {
             .get("manifest_format_version")
             .or_else(|| value.get("format_version"))
             .and_then(serde_json::Value::as_u64);
-        let (resolved_definition_bytes, portable_definition_bytes) =
-            if matches!(
-                version,
-                Some(value)
-                    if value == u64::from(MANIFEST_FORMAT_VERSION)
-                        || value == u64::from(PREVIOUS_MANIFEST_FORMAT_VERSION)
-            ) {
-                let read_definition = |name: &str| {
-                    let path = root.join("manifest").join(name);
-                    std::fs::read(&path).map_err(|error| {
-                        if error.kind() == std::io::ErrorKind::NotFound {
-                            Error::corrupt_index(path.display().to_string())
-                        } else {
-                            Error::Infrastructure(error.to_string())
-                        }
-                    })
-                };
-                (
-                    read_definition("index-definition.bfbs")?,
-                    read_definition("portable-index-definition.bfbs")?,
-                )
-            } else {
-                (Vec::new(), Vec::new())
+        let (resolved_definition_bytes, portable_definition_bytes) = if matches!(
+            version,
+            Some(value)
+                if value == u64::from(MANIFEST_FORMAT_VERSION)
+                    || value == u64::from(PREVIOUS_MANIFEST_FORMAT_VERSION)
+        ) {
+            let read_definition = |name: &str| {
+                let path = root.join("manifest").join(name);
+                std::fs::read(&path).map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        Error::corrupt_index(path.display().to_string())
+                    } else {
+                        Error::Infrastructure(error.to_string())
+                    }
+                })
             };
+            (
+                read_definition("index-definition.bfbs")?,
+                read_definition("portable-index-definition.bfbs")?,
+            )
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let manifest = Self {
             value,
             portable_definition_bytes,
@@ -338,9 +337,7 @@ impl IndexManifest {
                 .and_then(serde_json::Value::as_u64)
                 .and_then(|value| u32::try_from(value).ok())
                 .ok_or_else(|| {
-                    Error::corrupt_index(
-                        "resolved schema snapshot version is missing or invalid",
-                    )
+                    Error::corrupt_index("resolved schema snapshot version is missing or invalid")
                 })?;
             if snapshot_version != RESOLVED_SCHEMA_SNAPSHOT_VERSION {
                 return Err(Error::incompatible_index(format!(
