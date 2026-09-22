@@ -12,9 +12,9 @@ concurrency:
 jobs:
   rust:
     name: Rust all-target verification
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     env:
-      CARGO_TARGET_DIR: target/ci-nightly
+      CARGO_TARGET_DIR: target/ci-non-native
       SEARCHKERNEL_BUILD_ENV: ci
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
@@ -24,8 +24,8 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ". -> target/ci-nightly"
-          shared-key: nightly
+          workspaces: ". -> target/ci-non-native"
+          shared-key: non-native
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4
         with:
@@ -51,7 +51,7 @@ jobs:
 
   contracts:
     name: Contracts and generated artifacts
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -98,7 +98,7 @@ jobs:
 
   client-e2e:
     name: Client executable E2E evidence
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     env:
       CARGO_TARGET_DIR: target/ci-nightly-e2e
       SEARCHKERNEL_BUILD_ENV: ci
@@ -136,7 +136,7 @@ jobs:
 
   abi:
     name: ABI and native-cache regression tests
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     env:
       CARGO_TARGET_DIR: target/ci-nightly-abi
       SEARCHKERNEL_BUILD_ENV: ci
