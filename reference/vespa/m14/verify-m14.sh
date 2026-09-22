@@ -11,6 +11,7 @@ require_sdk_manifest "$SDK/manifest.json"
 "$M14/validate_expected.py"
 python3 "$M14/test_execution_evidence.py"
 python3 "$M14/test_symbol_expectations.py"
+python3 "$M14/test_flatc_invocation.py"
 
 # M14 is cumulative.
 "$ROOT/reference/vespa/m13/verify-m13.sh"
@@ -88,10 +89,7 @@ while read -r id path expected; do
   if [[ "$path" != low_level ]]; then
     json="$case_dir/definition.json"
     "$M14/make-error-definition.py" "$M14/fixture/index-definition.json" "$ERRORS" "$id" > "$json"
-    mkdir -p "$case_dir/fb"
-    "${FLATC_PATH:-flatc}" --binary --root-type SearchKernel.V2.IndexDefinition -o "$case_dir/fb" \
-      "$ROOT/api/searchkernel.fbs" -- "$json"
-    definition="$(find "$case_dir/fb" -maxdepth 1 -type f \( -name '*.bin' -o -name '*.bfbs' \) | head -1)"
+    definition="$("$M14/prepare-portable-definition.sh" "$case_dir/fb" "$json")"
   fi
   actual="$("$ERROR" "$ERRORS" "$id" "$definition" "$case_dir/config" 2>/dev/null || true)"
   [[ "$actual" == "$expected" ]] || {
