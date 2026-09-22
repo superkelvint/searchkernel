@@ -35,12 +35,11 @@ compatible_full_sdk() {
     local wanted_commit=$2
     local wanted_config=$3
     local fingerprint="$sdk/native-build-fingerprint-v2.txt"
+    local manifest="$sdk/manifest.json"
 
-    [[ -f "$fingerprint" && -d "$sdk/lib" ]] || return 1
-    if [[ -f "$sdk/manifest.json" ]] &&
-       grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$sdk/manifest.json"; then
-        return 1
-    fi
+    [[ -f "$fingerprint" && -f "$manifest" && -d "$sdk/lib" ]] || return 1
+    grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$manifest" && return 1
+    grep -Eq '"vespa_commit"[[:space:]]*:[[:space:]]*"'"$wanted_commit"'"' "$manifest" || return 1
     has_vespa_libraries "$sdk/lib" || return 1
     [[ "$(fingerprint_field "$fingerprint" vespa.commit)" == "$wanted_commit" ]] || return 1
     [[ "$(fingerprint_field "$fingerprint" vespa.config)" == "$wanted_config" ]] || return 1
