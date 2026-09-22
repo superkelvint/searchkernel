@@ -4359,6 +4359,151 @@ fn named_summary_and_highlighting_lower_together() {
 }
 
 #[test]
+fn highlighting_rejects_unsupported_same_field_query_shapes() {
+    let title = field("title");
+    let request = |query| {
+        SearchRequestIr::new(
+            query,
+            vec![SearchFieldIr::new(
+                title.clone(),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+            None,
+            Vec::new(),
+            10,
+            0,
+            ProjectionIr::new(Vec::new()),
+            HighlightingIr::Requested {
+                fields: vec![title.clone()],
+            },
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+    };
+
+    let fuzzy = typed_contains(
+        "title",
+        QueryExprKindIr::Fuzzy {
+            value: RequestValueIr::String("broun".to_owned()),
+            max_edit_distance: 1,
+            prefix_length: 0,
+            prefix: false,
+        },
+    );
+    let error = validate_search_request(&request(fuzzy))
+        .expect_err("same-field fuzzy highlighting must be rejected before native lowering");
+    assert_eq!(error.code, ErrorCode::Unsupported);
+
+    let matches = typed_expression(QueryExprKindIr::Matches {
+        field: typed_field("title"),
+        pattern: "bro.*".to_owned(),
+    });
+    let error = validate_search_request(&request(matches))
+        .expect_err("same-field regexp highlighting must be rejected before native lowering");
+    assert_eq!(error.code, ErrorCode::Unsupported);
+
+    let mixed = typed_expression(QueryExprKindIr::And(vec![
+        QueryExprIr {
+            kind: QueryExprKindIr::Contains {
+                field: typed_field("title"),
+                item: Box::new(typed_term("brown")),
+            },
+            annotations: BTreeMap::new(),
+        },
+        QueryExprIr {
+            kind: QueryExprKindIr::In {
+                field: typed_field("category"),
+                values: vec![RequestValueIr::String("animal".to_owned())],
+            },
+            annotations: BTreeMap::new(),
+        },
+    ]));
+    validate_search_request(&request(mixed))
+        .expect("an unrelated attribute branch must not disable title highlighting");
+
+    let mixed_specialized = typed_expression(QueryExprKindIr::And(vec![
+        QueryExprIr {
+            kind: QueryExprKindIr::Contains {
+                field: typed_field("title"),
+                item: Box::new(typed_term("brown")),
+            },
+            annotations: BTreeMap::new(),
+        },
+        QueryExprIr {
+            kind: QueryExprKindIr::Wand {
+                field: typed_field("category"),
+                items: vec![WeightedQueryItemIr {
+                    key: RequestValueIr::String("animal".to_owned()),
+                    weight: 1,
+                }],
+            },
+            annotations: BTreeMap::new(),
+        },
+    ]));
+    validate_search_request(&request(mixed_specialized))
+        .expect("an unrelated specialized branch must not disable title highlighting");
+}
+
+#[test]
+fn highlighting_compatibility_survives_portable_flatbuffers_resolution() {
+    let title = field("title");
+    let request = SearchRequestIr::new(
+        typed_contains(
+            "title",
+            QueryExprKindIr::Fuzzy {
+                value: RequestValueIr::String("runnng".to_owned()),
+                max_edit_distance: 2,
+                prefix_length: 0,
+                prefix: false,
+            },
+        ),
+        Vec::new(),
+        None,
+        Vec::new(),
+        10,
+        0,
+        ProjectionIr::new(Vec::new()),
+        HighlightingIr::Requested {
+            fields: vec![title.clone()],
+        },
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    );
+    let definition = IndexDefinitionIr::new(
+        None,
+        vec![FieldIr::new(
+            title,
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            None,
+            FieldCapabilities::new(true, true, false, false, false),
+        )],
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .expect("highlighting parity definition");
+
+    let bytes = searchkernel_ir::search_request_ir_to_api(&request);
+    let api_request =
+        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::SearchRequest>(&bytes)
+            .expect("encoded highlighting request");
+    let portable = IndexContext::from_definition_ir(definition)
+        .search_to_ir(api_request)
+        .expect("portable highlighting request should resolve");
+    assert_eq!(portable, request);
+
+    for candidate in [&request, &portable] {
+        let error = validate_search_request(candidate)
+            .expect_err("same-field fuzzy highlighting must be rejected consistently");
+        assert_eq!(error.code, ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "highlighting_query_not_supported");
+    }
+}
+
+#[test]
 fn every_expressible_search_option_is_lowered_to_the_generic_m_api() {
     let title = field("title");
     let description = field("description");
