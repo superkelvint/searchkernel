@@ -1001,6 +1001,175 @@ fn manifest_validation_rejects_identity_and_structure_corruption() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+
+#[test]
+fn persistence_fault_matrix_rejects_truncated_and_missing_binary_state() {
+    fn assert_corrupt(root: &std::path::Path) {
+        assert!(matches!(
+            IndexManifest::read(root),
+            Err(Error::Search {
+                code: crate::ErrorCode::CorruptIndex,
+                ..
+            })
+        ));
+    }
+
+    let root = temporary_path("persistence-fault-matrix");
+    let config = root.join("config");
+    write_config(&config);
+    let definition = manifest_definition();
+    let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved_context(&resolved),
+        &config,
+    )
+    .unwrap();
+
+    for case in ["truncated-manifest", "missing-canonical", "missing-portable", "missing-snapshot"] {
+        let case_root = root.join(case);
+        std::fs::create_dir_all(&case_root).unwrap();
+        manifest.write(&case_root).unwrap();
+        match case {
+            "truncated-manifest" => {
+                std::fs::write(case_root.join("manifest/index.json"), br#"{"manifest_format_version":4"#).unwrap();
+            }
+            "missing-canonical" => {
+                std::fs::remove_file(case_root.join("manifest/index-definition.bfbs")).unwrap();
+            }
+            "missing-portable" => {
+                std::fs::remove_file(case_root.join("manifest/portable-index-definition.bfbs")).unwrap();
+            }
+            "missing-snapshot" => {
+                let path = case_root.join("manifest/index.json");
+                let mut value: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                value.as_object_mut().unwrap().remove("resolved_schema_snapshot");
+                std::fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        assert_corrupt(&case_root);
+    }
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn persistence_fault_matrix_rejects_unknown_versions_without_touching_state() {
+    fn write_version(root: &std::path::Path, version: u32, generation: u32) {
+        let config = root.join("config");
+        write_config(&config);
+        let definition = manifest_definition();
+        let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+        let manifest = IndexManifest::for_definitions(
+            &crate::portable_definition::encode_portable_definition(&definition),
+            &resolved_context(&resolved),
+            &config,
+        )
+        .unwrap();
+        manifest.write(root).unwrap();
+        let path = root.join("manifest/index.json");
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        value["manifest_format_version"] = serde_json::json!(version);
+        value["storage_compatibility_generation"] = serde_json::json!(generation);
+        std::fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+    }
+
+    for (label, version, generation) in [
+        ("future", MANIFEST_FORMAT_VERSION + 1, STORAGE_COMPATIBILITY_GENERATION),
+        ("old", LEGACY_MANIFEST_FORMAT_VERSION - 1, STORAGE_COMPATIBILITY_GENERATION),
+        ("generation", MANIFEST_FORMAT_VERSION, STORAGE_COMPATIBILITY_GENERATION + 1),
+    ] {
+        let root = temporary_path(label);
+        write_version(&root, version, generation);
+        let marker = root.join("do-not-touch");
+        std::fs::write(&marker, b"stable").unwrap();
+        let before = std::fs::read(&marker).unwrap();
+
+        for _ in 0..2 {
+            assert!(matches!(
+                IndexManifest::read(&root),
+                Err(Error::Search {
+                    code: crate::ErrorCode::IncompatibleIndex,
+                    ..
+                })
+            ));
+            assert_eq!(std::fs::read(&marker).unwrap(), before);
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn persistence_fault_matrix_ignores_uncommitted_manifest_temporary_files() {
+    let root = temporary_path("manifest-temporary");
+    let config = root.join("config");
+    write_config(&config);
+    let definition = manifest_definition();
+    let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved_context(&resolved),
+        &config,
+    )
+    .unwrap();
+    manifest.write(&root).unwrap();
+
+    let committed = std::fs::read(root.join("manifest/index.json")).unwrap();
+    std::fs::write(
+        root.join("manifest/.index.json.tmp"),
+        br#"{"manifest_format_version":999"#,
+    )
+    .unwrap();
+
+    let loaded = IndexManifest::read(&root).expect("temporary manifest must not shadow committed state");
+    loaded.validate_config(&config).unwrap();
+    assert_eq!(std::fs::read(root.join("manifest/index.json")).unwrap(), committed);
+    assert!(root.join("manifest/.index.json.tmp").exists());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn repeated_failed_manifest_reads_do_not_mutate_a_valid_index() {
+    let root = temporary_path("repeated-failed-open");
+    let config = root.join("config");
+    write_config(&config);
+    let definition = manifest_definition();
+    let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved_context(&resolved),
+        &config,
+    )
+    .unwrap();
+    manifest.write(&root).unwrap();
+
+    let path = root.join("manifest/index.json");
+    let valid = std::fs::read(&path).unwrap();
+    std::fs::write(&path, b"{").unwrap();
+    let corrupt = std::fs::read(&path).unwrap();
+
+    for _ in 0..3 {
+        assert!(matches!(
+            IndexManifest::read(&root),
+            Err(Error::Search {
+                code: crate::ErrorCode::CorruptIndex,
+                ..
+            })
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), corrupt);
+        assert!(root.join("manifest/index-definition.bfbs").is_file());
+        assert!(root.join("manifest/portable-index-definition.bfbs").is_file());
+    }
+
+    std::fs::write(&path, valid).unwrap();
+    let loaded = IndexManifest::read(&root).expect("restored valid manifest must remain readable");
+    loaded.validate_config(&config).unwrap();
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[test]
 fn manifest_definition_decoder_rejects_malformed_fields() {
     let invalid_definitions = [

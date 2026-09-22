@@ -1,0 +1,41 @@
+{
+  "format_version": 2,
+  "native_abi_version": 5,
+  "portable_index_definition": {
+    "fields": [
+      {
+        "facetable": false,
+        "filterable": true,
+        "kind": "Int64",
+        "name": "attr1",
+        "searchable": false,
+        "sortable": true,
+        "stored": false
+      }
+    ]
+  },
+  "resolved_engine_config_identity": {
+    "attributes.cfg": "attribute[1]\nattribute[0].name \"attr1\"\nattribute[0].datatype INT32\nattribute[0].collectiontype SINGLE\n",
+    "indexschema.cfg": "indexfield[0]\n",
+    "juniperrc.cfg": "",
+    "proton.cfg": "documentdb[1]\ndocumentdb[0].inputdoctypename \"typea\"\ndocumentdb[0].document_id_attribute true\n",
+    "rank-profiles.cfg": "rankprofile[1]\nrankprofile[0].name \"default\"\n",
+    "searchkernel-schema.json": "{\"version\":1,\"document_type\":\"typea\",\"fields\":[{\"name\":\"attr1\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":false}]}\n",
+    "summary.cfg": "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\nclasses[0].fields[3]\nclasses[0].fields[0].name \"documentid\"\nclasses[0].fields[0].type \"longstring\"\nclasses[0].fields[0].command \"documentid\"\nclasses[0].fields[0].source \"\"\nclasses[0].fields[1].name \"rankfeatures\"\nclasses[0].fields[1].type \"featuredata\"\nclasses[0].fields[1].command \"rankfeatures\"\nclasses[0].fields[1].source \"\"\nclasses[0].fields[2].name \"summaryfeatures\"\nclasses[0].fields[2].type \"featuredata\"\nclasses[0].fields[2].command \"summaryfeatures\"\nclasses[0].fields[2].source \"\"\n"
+  },
+  "resolved_index_definition": {
+    "fields": [
+      {
+        "facetable": false,
+        "filterable": true,
+        "kind": "Int64",
+        "name": "attr1",
+        "searchable": false,
+        "sortable": true,
+        "stored": false
+      }
+    ]
+  },
+  "searchkernel_version": "0.1.0",
+  "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
+}
