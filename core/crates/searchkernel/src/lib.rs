@@ -31,8 +31,13 @@ pub use result::{
     SearchTiming, TotalHits, TotalHitsRelation,
 };
 pub use schema::{
-    Analyzer, ConstantDefinition, ConstantSource, DistanceMetric, Field, FieldCapabilities,
-    HnswIndexConfig, IndexDefinition, RankProfile, SearchField,
+    Analyzer, AnalyzerConfig, AttributeConfig, ConstantDefinition, ConstantSource, DataType,
+    DistanceMetric, DocumentSummary, DocumentSummaryField, Field, FieldCapabilities, FieldSet,
+    HnswConfig, HnswIndexConfig, ImportedField, IndexConfig, IndexDefinition, MatchingConfig,
+    MatchingMode, NamedStruct, OnnxModel, PrimitiveDataType, RankFunction, RankPhase, RankProfile,
+    RankProfileInput, SchemaNonFiniteFloat, SchemaProperties, SchemaStructField, SchemaTensor,
+    SchemaTensorBlock, SchemaTensorCell, SchemaTensorPayload, SchemaValue, SearchField,
+    StructFieldConfig, SummaryConfig,
 };
 pub use search::{
     Facet, FacetSort, InspectedQuery, MissingPlacement, QueryInputValue, Ranking, SearchBuilder,

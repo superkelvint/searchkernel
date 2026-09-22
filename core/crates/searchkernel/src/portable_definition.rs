@@ -8,10 +8,9 @@ use searchkernel_ir::{__flatbuffers as flatbuffers, api};
 use serde_json::Value;
 
 pub(crate) fn encode_portable_definition(definition: &IndexDefinition) -> Vec<u8> {
-    if let Some(canonical) = definition.canonical_definition() {
-        return searchkernel_ir::index_definition_ir_to_api(canonical);
-    }
-
+    // Encode the caller-visible definition. A described value must remain
+    // independently serializable; recovering a hidden resolved definition
+    // here would reintroduce the schema sidecar bypass.
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let name = definition
         .name
@@ -90,6 +89,7 @@ fn encode_field<'a>(
                 fast_access: None,
                 distance_metric: match field.distance_metric {
                     None => api::DistanceMetric::Unspecified,
+                    Some(DistanceMetric::Unspecified) => api::DistanceMetric::Unspecified,
                     Some(DistanceMetric::Euclidean) => api::DistanceMetric::Euclidean,
                     Some(DistanceMetric::Angular) => api::DistanceMetric::Angular,
                     Some(DistanceMetric::DotProduct) => api::DistanceMetric::DotProduct,
