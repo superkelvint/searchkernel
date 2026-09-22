@@ -42,8 +42,10 @@ sidecar. Public-schema implementation remains open in Phases 2–5.
 
 -  [x] Build one comprehensive canonical `IndexDefinition` fixture.
 -  [x] Resolve it through the real FlatBuffers → IR path.
--  [x] Prove `IndexDefinitionIr -> FlatBuffers -> IndexDefinitionIr` is lossless.
+-  [x] Prove `IndexDefinitionIr -> FlatBuffers -> IndexDefinitionIr` is lossless from an independently constructed IR value.
 -  [x] Keep the existing `describe_preserves_configured_rank_profiles` test green.
+
+Schema IR contains only meaning owned by the portable `IndexDefinition` contract. Search-time ranking, prefix, and typo defaults are request semantics, not independently mutable schema state.
 
 ## IndexDefinitionIr coverage
 
@@ -52,9 +54,6 @@ The comprehensive fixture must cover every current top-level field:
 -  [x] `name`
 -  [x] `fields`
 -  [x] `default_search_fields`
--  [x] `default_ranking`
--  [x] `default_prefix_policy`
--  [x] `default_typo_policy`
 -  [x] `properties`
 -  [x] `document_type`
 -  [x] `schema_inherits`
