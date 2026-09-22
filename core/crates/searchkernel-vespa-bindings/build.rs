@@ -23,17 +23,26 @@ fn main() {
     #[cfg(feature = "native")]
     let (sdk, base_sdk) = if let Some(configured) = explicit_sdk {
         (
-            prepare_native_sdk(&manifest_dir, configured, &target, false),
+            prepare_native_sdk(&manifest_dir, configured, &target),
             None,
         )
     } else {
-        let base = resolve_shared_native_sdk(&manifest_dir, &target, "ensure")
-            .unwrap_or_else(|error| panic!("resolve shared Vespa base SDK: {error}"));
-        let base = fs::canonicalize(&base).unwrap_or_else(|error| {
-            panic!("canonicalize shared Vespa base SDK '{}': {error}", base.display())
+        let base = resolve_shared_native_sdk(&manifest_dir, &target, "path").unwrap_or_else(|error| {
+            panic!(
+                "immutable Vespa base prerequisite is unavailable: {error}\nRun './dev native-sdk ensure' to bootstrap or repair it. Cargo never builds or repairs the shared Vespa base."
+            )
         });
-        verify_shared_cache_object(&base)
-            .unwrap_or_else(|error| panic!("verify shared Vespa base SDK: {error}"));
+        let base = fs::canonicalize(&base).unwrap_or_else(|error| {
+            panic!(
+                "canonicalize shared Vespa base SDK '{}': {error}\nRun './dev native-sdk ensure' to bootstrap or repair it.",
+                base.display()
+            )
+        });
+        verify_shared_cache_object(&base).unwrap_or_else(|error| {
+            panic!(
+                "immutable Vespa base prerequisite is invalid: {error}\nRun './dev native-sdk ensure' to bootstrap or repair it."
+            )
+        });
         let adapter = build_local_adapter(&manifest_dir, &base, &target)
             .unwrap_or_else(|error| panic!("build Search Kernel Vespa adapter: {error}"));
         (adapter, Some(base))
@@ -239,7 +248,6 @@ fn prepare_native_sdk(
     manifest_dir: &Path,
     configured: PathBuf,
     target: &str,
-    using_shared_sdk: bool,
 ) -> PathBuf {
     let root = manifest_dir.join("../../..");
     let configured = if configured.is_absolute() {
@@ -250,12 +258,7 @@ fn prepare_native_sdk(
     let mut last_error = String::new();
     for attempt in 0..=1 {
         if let Ok(sdk) = fs::canonicalize(&configured) {
-            let verification = if using_shared_sdk {
-                verify_shared_cache_object(&sdk)
-            } else {
-                verify_native_provenance(manifest_dir, &sdk, target)
-            };
-            match verification {
+            match verify_native_provenance(manifest_dir, &sdk, target) {
                 Ok(()) => return sdk,
                 Err(error) => last_error = error,
             }
@@ -264,25 +267,16 @@ fn prepare_native_sdk(
         }
         if attempt == 0 {
             println!(
-                "cargo:warning=searchkernel: native Vespa SDK is missing or stale; rebuilding the affected SDK once"
+                "cargo:warning=searchkernel: explicitly managed native SDK is missing or stale; rebuilding it once"
             );
-            if using_shared_sdk {
-                return resolve_shared_native_sdk(manifest_dir, target, "ensure").unwrap_or_else(
-                    |error| {
-                        panic!(
-                            "native Vespa SDK is missing or stale and shared cache resolution failed:\n{last_error}\n{error}"
-                        )
-                    },
-                );
-            }
             rebuild_native_sdk(manifest_dir, &configured).unwrap_or_else(|error| {
                 panic!(
-                    "native Vespa SDK is missing or stale and automatic rebuild failed:\n{last_error}\n{error}"
+                    "explicit native Vespa SDK is missing or stale and automatic rebuild failed:\n{last_error}\n{error}"
                 )
             });
         }
     }
-    panic!("native Vespa SDK is incompatible after one automatic rebuild:\n{last_error}")
+    panic!("explicit native Vespa SDK is incompatible after one automatic rebuild:\n{last_error}")
 }
 
 #[cfg(feature = "native")]

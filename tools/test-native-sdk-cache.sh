@@ -2,6 +2,18 @@
 set -euo pipefail
 
 source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+
+# Cargo must not bootstrap or repair the immutable Vespa base. The default
+# build-script path is read-only; mutation belongs to ./dev native-sdk ensure.
+grep -q 'resolve_shared_native_sdk(&manifest_dir, &target, "path")' \
+    "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
+if grep -Eq 'resolve_shared_native_sdk\([^\n]*"ensure"\)' \
+    "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"; then
+    echo 'Cargo build.rs must not invoke the mutating shared-base ensure path' >&2
+    exit 1
+fi
+grep -q "./dev native-sdk ensure" \
+    "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-sdk-cache.XXXXXX")
 cleanup_fixture() {
     chmod -R u+w "$fixture" 2>/dev/null || true
