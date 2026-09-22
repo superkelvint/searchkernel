@@ -1562,6 +1562,21 @@ fn public_schema_fields_round_trip_to_ir() {
 }
 
 #[test]
+fn rich_public_field_state_is_validated_by_shared_resolver() {
+    let (_, mut described) = public_described_canonical_fixture();
+    described.canonical = None;
+    described.fields[0]
+        .attribute_config
+        .as_mut()
+        .expect("fixture field should have attribute configuration")
+        .fast_search = Some(true);
+
+    let error = definition_to_ir(&described)
+        .expect_err("rich field state must be validated before final IR construction");
+    assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
+}
+
+#[test]
 fn schema_field_builder_adds_schema_only_field_to_ir() {
     let definition = IndexDefinition::new()
         .field(Field::text("title"))
@@ -3682,6 +3697,16 @@ fn describe_preserves_schema_onnx_models() {
 fn describe_round_trips_complete_index_definition_without_semantic_loss() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical, described);
+}
+
+#[test]
+fn rich_public_definition_matches_portable_without_canonical_sidecar() {
+    let (canonical, mut described) = public_described_canonical_fixture();
+    described.canonical = None;
+
+    let resolved = definition_to_ir(&described)
+        .expect("complete public schema state should use the shared resolver");
+    assert_eq!(canonical, resolved);
 }
 
 #[test]
