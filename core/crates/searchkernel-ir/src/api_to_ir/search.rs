@@ -4,7 +4,7 @@ use crate::api_to_ir::resolve::{
 };
 use crate::model::*;
 use searchkernel_protocol::v2 as api;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 impl IndexContext {
     pub fn inspect_query(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
@@ -607,64 +607,4 @@ pub(crate) fn validate_query_input_references_in_expr(
         validate_query_input_references_in_expr(child, inputs, &child_path)?;
     }
     Ok(())
-}
-pub(crate) fn search_fields_to_ir_at(
-    selection: api::SearchFieldSelection<'_>,
-    fields: &[&FieldIr],
-    path: &str,
-) -> Result<Vec<SearchFieldIr>> {
-    let inputs = selection
-        .fields()
-        .map(|fields| {
-            fields
-                .iter()
-                .map(|field| SearchFieldInput {
-                    field: field.field().unwrap_or_default().to_owned(),
-                    weight: field.weight().map(|value| value.value()),
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let mut output = Vec::new();
-    let mut seen = BTreeSet::new();
-    for (index, input) in inputs.iter().enumerate() {
-        let field_path = format!("{path}.fields[{index}].field");
-        let field = fields
-            .iter()
-            .find(|field| field.name.as_str() == input.field)
-            .copied()
-            .ok_or_else(|| {
-                invalid(
-                    "unknown_field",
-                    Some(field_path.clone()),
-                    "field is not defined",
-                )
-            })?;
-        if !field.capabilities.searchable {
-            return Err(invalid(
-                "field_not_searchable",
-                Some(field_path),
-                "search field must be searchable",
-            ));
-        }
-        if !seen.insert(field.name.clone()) {
-            return Err(invalid(
-                "duplicate_search_field",
-                Some(format!("{path}.fields[{index}].field")),
-                "search fields must be unique",
-            ));
-        }
-        let weight = SearchFieldWeight::new(input.weight.unwrap_or(1.0)).map_err(|_| {
-            invalid(
-                "invalid_search_weight",
-                Some(format!("{path}.fields[{index}].weight")),
-                "search-field weight must be finite and non-negative",
-            )
-        })?;
-        output.push(SearchFieldIr {
-            field: field.name.clone(),
-            weight,
-        });
-    }
-    Ok(output)
 }
