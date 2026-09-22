@@ -28,7 +28,7 @@ cargo test --workspace --all-targets --no-default-features
 
 native_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-native.XXXXXX")
 trap 'rm -f -- "$native_selection"' EXIT
-git diff --cached --name-only -z \
+git diff --cached --name-only --no-renames -z \
     | python3 .github/ci/exact_head.py classify --github-output "$native_selection" >/dev/null
 
 if grep -qx 'native=true' "$native_selection"; then
