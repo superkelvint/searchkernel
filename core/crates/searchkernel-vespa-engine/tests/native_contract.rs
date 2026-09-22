@@ -52,7 +52,10 @@ fn native_open_failures_preserve_error_kinds_and_leave_no_handle() {
             (hardening::Action::StdException, ErrorKind::Internal),
         ] {
             hardening::set_open(stage, 1, action).expect("set open failpoint");
-            let error = Engine::open(&data, &config).expect_err("open failpoint must fail");
+            let error = match Engine::open(&data, &config) {
+                Ok(_) => panic!("open failpoint must fail"),
+                Err(error) => error,
+            };
             hardening::clear_open(stage).expect("clear open failpoint");
             assert_eq!(error.kind(), expected);
         }
