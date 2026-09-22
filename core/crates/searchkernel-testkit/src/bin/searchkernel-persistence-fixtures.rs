@@ -15,7 +15,7 @@ fn main() {
     fs::create_dir_all(&output).expect("create persistence fixture directory");
 
     let input = RustIndexDefinitionInput {
-        name: Some("typea".to_owned()),
+        name: None,
         fields: vec![RustFieldInput {
             name: "attr1".to_owned(),
             kind: RustFieldKind::Int64,
@@ -59,7 +59,6 @@ fn main() {
                 "native_abi_version": 4,
                 "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
                 "portable_index_definition": {
-                    "name": "typea",
                     "fields": [{
                         "name": "attr1",
                         "kind": "Int64",
@@ -72,7 +71,6 @@ fn main() {
                 },
                 "resolved_engine_config_identity": config_identity,
                 "resolved_index_definition": {
-                    "name": "typea",
                     "fields": [{
                         "name": "attr1",
                         "kind": "Int64",
@@ -130,7 +128,6 @@ fn main() {
             "native_abi_version": 4,
             "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
             "schema": {
-                "name": "typea",
                 "fields": [{
                     "name": "attr1",
                     "type": "int64",
