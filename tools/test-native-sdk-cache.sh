@@ -144,6 +144,17 @@ fi
 [[ ! -e "$common/sdk-cache-build-count" ]]
 grep -q 'native SDK cache miss' "$fixture/cold-path.err"
 
+cp "$legacy_sdk/manifest.json" "$fixture/legacy-manifest.good"
+printf '{"native_abi_version":1,"vespa_commit":"stale-vespa-commit"}\n' \
+    >"$legacy_sdk/manifest.json"
+if run_resolver "$repo" >"$fixture/stale.out" 2>"$fixture/stale.err"; then
+    echo 'native SDK cache unexpectedly accepted stale legacy SDK provenance' >&2
+    exit 1
+fi
+grep -q 'no compatible full SDK was available' "$fixture/stale.err"
+[[ ! -e "$common/sdk-cache-build-count" ]]
+mv "$fixture/legacy-manifest.good" "$legacy_sdk/manifest.json"
+
 first=$(run_resolver "$repo" 2>"$fixture/bootstrap.err")
 [[ -d "$first" ]]
 grep -q 'using Vespa shared libraries from compatible full SDK' "$fixture/bootstrap.err"
