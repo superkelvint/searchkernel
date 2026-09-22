@@ -1,0 +1,257 @@
+name: Behavioral verification
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: behavioral-verification-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    name: Classify exact-head behavior
+    runs-on: [self-hosted, linux, x64]
+    outputs:
+      rust: ${{ steps.changes.outputs.rust }}
+      python: ${{ steps.changes.outputs.python }}
+      typescript: ${{ steps.changes.outputs.typescript }}
+      native: ${{ steps.changes.outputs.native }}
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python for CI helpers
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Reject stale verification checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+
+      - name: Verify exact-head CI regressions
+        run: python3 .github/ci/test_exact_head.py
+
+      - name: Classify changed behavior
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" -- \
+            | python3 .github/ci/exact_head.py classify --github-output "$GITHUB_OUTPUT"
+
+  rust:
+    name: Rust behavior
+    needs: classify
+    if: needs.classify.outputs.rust == 'true'
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CARGO_TARGET_DIR: target/ci-exact-head-rust
+      SEARCHKERNEL_BUILD_ENV: ci
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python for exact-head guard
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Reject stale verification checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/ci-exact-head-rust"
+          shared-key: exact-head-rust
+
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
+
+      - name: Run Rust behavioral tests
+        run: cargo test --workspace --all-targets --no-default-features
+
+  python:
+    name: Python behavior
+    needs: classify
+    if: needs.classify.outputs.python == 'true'
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: clients/python/pyproject.toml
+
+      - name: Reject stale verification checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+
+      - name: Install Python client
+        run: python -m pip install -e clients/python
+
+      - name: Run Python behavioral tests
+        run: python -m unittest discover -s clients/python/tests -p 'test_*.py'
+
+  typescript:
+    name: TypeScript behavior
+    needs: classify
+    if: needs.classify.outputs.typescript == 'true'
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python for exact-head guard
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Reject stale verification checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
+
+      - name: Install TypeScript client
+        run: npm ci --prefix clients/typescript
+
+      - name: Typecheck TypeScript client
+        run: npm --prefix clients/typescript run typecheck
+
+      - name: Run TypeScript behavioral tests
+        run: npm --prefix clients/typescript test
+
+  native:
+    name: Native product behavior
+    needs: classify
+    if: needs.classify.outputs.native == 'true'
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CARGO_TARGET_DIR: target/ci-exact-head-native
+      SEARCHKERNEL_BUILD_ENV: ci
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python for exact-head guard
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Reject stale verification checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/ci-exact-head-native"
+          shared-key: exact-head-native
+
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Bootstrap native prerequisites
+        run: |
+          ./dev install flatbuffers
+          ./dev native-sdk ensure
+
+      - name: Run authoritative native product gate
+        run: ./reference/vespa/verify-through.sh i
+
+  exact-head-gate:
+    name: Exact-head gate
+    needs: [classify, rust, python, typescript, native]
+    if: always()
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Require every selected behavioral lane
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          RUST_REQUIRED: ${{ needs.classify.outputs.rust }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          PYTHON_REQUIRED: ${{ needs.classify.outputs.python }}
+          PYTHON_RESULT: ${{ needs.python.result }}
+          TYPESCRIPT_REQUIRED: ${{ needs.classify.outputs.typescript }}
+          TYPESCRIPT_RESULT: ${{ needs.typescript.result }}
+          NATIVE_REQUIRED: ${{ needs.classify.outputs.native }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$CLASSIFY_RESULT" != "success" ]]; then
+            echo "::error::Exact-head classification failed for $EXPECTED_HEAD."
+            exit 1
+          fi
+
+          require_lane() {
+            local lane=$1
+            local required=$2
+            local result=$3
+            if [[ "$required" == "true" && "$result" != "success" ]]; then
+              echo "::error::$lane behavioral verification for $EXPECTED_HEAD ended as '$result'."
+              exit 1
+            fi
+          }
+
+          require_lane Rust "$RUST_REQUIRED" "$RUST_RESULT"
+          require_lane Python "$PYTHON_REQUIRED" "$PYTHON_RESULT"
+          require_lane TypeScript "$TYPESCRIPT_REQUIRED" "$TYPESCRIPT_RESULT"
+          require_lane Native "$NATIVE_REQUIRED" "$NATIVE_RESULT"
+
+          echo "All behavior required for exact PR head $EXPECTED_HEAD is verified."
