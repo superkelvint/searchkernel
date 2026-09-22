@@ -61,10 +61,10 @@ rebuild of that FlatBuffers sub-build and one retry.
 For the Vespa SDK, `tools/resolve-native-sdk.sh` first computes the same
 provenance fingerprint that will be recorded in the package. The digest is the
 cache object identity. The fingerprint includes Search Kernel native/package
-source, configured Vespa identity/build outputs, and cheap metadata identity for
-the Vespa/dependency shared-library inputs that are bundled into the SDK. A
-matching object is reused read-only only after its runtime dependency closure
-validates.
+source, configured Vespa identity/build outputs, content identity for the
+selected external dependency/runtime shared libraries that are bundled into the
+SDK, and the native toolchain/configuration inputs. A matching object is reused
+read-only only after its runtime dependency closure validates.
 
 A cache miss acquires a per-digest lock, invokes
 `core/native/vespa/build-sdk.sh` into private staging, validates the resulting
