@@ -61,9 +61,12 @@ environment failure:
 ```
 
 The normal host workflow uses `target/host` automatically through
-`.cargo/config.toml`. Before linking a native target, Cargo resolves the
-matching shared SDK automatically; `./dev native-sdk ensure` may be used to
-populate it explicitly:
+`.cargo/config.toml`. Ordinary `./dev check-fast`, standalone Rust API
+tests, and non-native workspace checks do not populate the Vespa SDK cache.
+Before linking a native target, Cargo resolves the matching shared SDK
+automatically; `./dev native-sdk ensure` may be used to populate it
+explicitly. `./dev native-sdk path` is diagnostic-only: it prints an existing
+matching object and reports a cache miss without building one.
 
 A fresh or isolated worktree is not expected to already contain a built
 `searchkerneld` binary. If `./dev doctor` reports it as informational,
@@ -225,6 +228,11 @@ Use:
 ./dev doctor
 ./dev native-sdk ensure
 ```
+
+`./dev doctor` does not build native artifacts. Native SDK / ABI / pinned
+Vespa readiness is informational for ordinary non-native development and becomes
+a prerequisite only when the requested verification actually uses the native
+feature.
 
 The resolver discovers a configured pinned Vespa build from the current or a
 matching sibling worktree, discovers its repository-local `vespa-deps`, and
