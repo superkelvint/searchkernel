@@ -196,6 +196,9 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
