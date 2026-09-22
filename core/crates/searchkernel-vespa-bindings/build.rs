@@ -198,9 +198,10 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=src/abi.rs");
     println!("cargo:rerun-if-changed=src/bindings.rs");
-    println!("cargo:rerun-if-changed={}", header.display());
     #[cfg(feature = "native")]
     if base_sdk.is_none() {
+        // Explicitly managed full SDKs are external inputs, so track them.
+        println!("cargo:rerun-if-changed={}", header.display());
         println!(
             "cargo:rerun-if-changed={}",
             sdk.join("native-build-fingerprint-v2.txt").display()
@@ -209,11 +210,11 @@ fn main() {
             "cargo:rerun-if-changed={}",
             sdk.join("manifest.json").display()
         );
+        println!(
+            "cargo:rerun-if-changed={}",
+            lib_dir.join("libsearchkernel_vespa.so").display()
+        );
     }
-    println!(
-        "cargo:rerun-if-changed={}",
-        lib_dir.join("libsearchkernel_vespa.so").display()
-    );
 
     #[cfg(feature = "native-contract-tests")]
     compile_contract_tests(&manifest_dir, &sdk);
