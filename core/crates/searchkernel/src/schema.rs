@@ -137,6 +137,11 @@ pub struct Field {
     pub(crate) filterable: Option<bool>,
     pub(crate) sortable: Option<bool>,
     pub(crate) facetable: Option<bool>,
+    pub(crate) stored_explicit: bool,
+    pub(crate) searchable_explicit: bool,
+    pub(crate) filterable_explicit: bool,
+    pub(crate) sortable_explicit: bool,
+    pub(crate) facetable_explicit: bool,
     pub(crate) capabilities: Option<FieldCapabilities>,
     pub(crate) analyzer: Option<Analyzer>,
     pub(crate) analyzer_config: Option<searchkernel_ir::AnalyzerIr>,
@@ -313,6 +318,11 @@ impl Field {
             filterable: None,
             sortable: None,
             facetable: None,
+            stored_explicit: false,
+            searchable_explicit: false,
+            filterable_explicit: false,
+            sortable_explicit: false,
+            facetable_explicit: false,
             capabilities: None,
             analyzer: None,
             analyzer_config: None,
@@ -406,6 +416,7 @@ impl Field {
     /// Explicitly set whether values are stored in search results.
     pub fn stored(mut self, value: bool) -> Self {
         self.stored = Some(value);
+        self.stored_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.stored = value;
         }
@@ -424,6 +435,7 @@ impl Field {
     /// Explicitly set whether this field can be searched with text queries.
     pub fn searchable(mut self, value: bool) -> Self {
         self.searchable = Some(value);
+        self.searchable_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.searchable = value;
         }
@@ -442,6 +454,7 @@ impl Field {
     /// Explicitly set whether this field can be used in filters.
     pub fn filterable(mut self, value: bool) -> Self {
         self.filterable = Some(value);
+        self.filterable_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.filterable = value;
         }
@@ -460,6 +473,7 @@ impl Field {
     /// Explicitly set whether this field can be used for sorting.
     pub fn sortable(mut self, value: bool) -> Self {
         self.sortable = Some(value);
+        self.sortable_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.sortable = value;
         }
@@ -478,6 +492,7 @@ impl Field {
     /// Explicitly set whether this field can be used for facets.
     pub fn facetable(mut self, value: bool) -> Self {
         self.facetable = Some(value);
+        self.facetable_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.groupable = value;
         }
@@ -493,6 +508,14 @@ impl Field {
         }
         self
     }
+    pub(crate) fn mark_capabilities_resolved(&mut self) {
+        self.stored_explicit = false;
+        self.searchable_explicit = false;
+        self.filterable_explicit = false;
+        self.sortable_explicit = false;
+        self.facetable_explicit = false;
+    }
+
     /// Select the analyzer used for this field.
     pub fn analyzer(mut self, value: Analyzer) -> Self {
         let canonical = analyzer_to_ir(&value).ok();
@@ -1270,12 +1293,37 @@ pub(crate) fn field_to_unresolved_input(
     // caller mutation away from the script semantics remains visible and is
     // rejected by the resolver.
     let indexing_script = field.indexing_script.clone();
-    let script_defaults = indexing_script.is_some();
-    let stored = omit_script_default(field.stored, script_defaults, true);
-    let searchable = omit_script_default(field.searchable, script_defaults, false);
-    let filterable = omit_script_default(field.filterable, script_defaults, false);
-    let sortable = omit_script_default(field.sortable, script_defaults, false);
-    let groupable = omit_script_default(field.facetable, script_defaults, false);
+    let script_defaults = indexing_script.is_some() && field.capabilities.is_some();
+    let stored = omit_script_default(
+        field.stored,
+        script_defaults,
+        field.stored_explicit,
+        true,
+    );
+    let searchable = omit_script_default(
+        field.searchable,
+        script_defaults,
+        field.searchable_explicit,
+        false,
+    );
+    let filterable = omit_script_default(
+        field.filterable,
+        script_defaults,
+        field.filterable_explicit,
+        false,
+    );
+    let sortable = omit_script_default(
+        field.sortable,
+        script_defaults,
+        field.sortable_explicit,
+        false,
+    );
+    let groupable = omit_script_default(
+        field.facetable,
+        script_defaults,
+        field.facetable_explicit,
+        false,
+    );
     Ok(searchkernel_ir::UnresolvedFieldInput {
         name,
         data_type: field.data_type.clone(),
@@ -1295,8 +1343,13 @@ pub(crate) fn field_to_unresolved_input(
     })
 }
 
-fn omit_script_default(value: Option<bool>, script_defaults: bool, default: bool) -> Option<bool> {
-    if script_defaults && value == Some(default) {
+fn omit_script_default(
+    value: Option<bool>,
+    script_defaults: bool,
+    explicit: bool,
+    default: bool,
+) -> Option<bool> {
+    if script_defaults && !explicit && value == Some(default) {
         None
     } else {
         value
