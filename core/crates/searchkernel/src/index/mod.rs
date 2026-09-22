@@ -583,6 +583,10 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
         .filterable(capabilities.filterable())
         .sortable(capabilities.sortable())
         .facetable(capabilities.facetable());
+    // Capability setters are also public mutation APIs and may normalize
+    // described rich state. Restore the exact canonical summary projection
+    // after construction so presence/options round-trip losslessly.
+    value.summary_config = field.summary().cloned();
     value.capabilities = Some(FieldCapabilities::from_ir(capabilities));
     value.mark_capabilities_resolved();
     if field.analyzer().is_some_and(|analyzer| {

@@ -1213,6 +1213,9 @@ impl Field {
     pub fn stored(mut self, value: bool) -> Self {
         self.stored = Some(value);
         self.stored_explicit = true;
+        if let Some(summary) = self.summary_config.as_mut() {
+            summary.enabled = Some(value);
+        }
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.stored = value;
         }
