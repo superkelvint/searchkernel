@@ -4614,6 +4614,48 @@ fn search_normalization_covers_explicit_options_and_defaults() {
 }
 
 #[test]
+fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
+    let definition = scripted_definition();
+    let context = context_for(&definition);
+    let (_runtime, probe) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+    let rust_request = probe
+        .search("fox")
+        .search_fields(["title"])
+        .filter(field("brand").eq("acme"))
+        .filter("category = 'books'")
+        .sort(Sort::desc("brand").missing_first())
+        .facet(crate::Facet::new("category").name("categories").limit(3))
+        .grouping(
+            GroupingPlan::new().level(
+                GroupingPlan::by("brand")
+                    .output(crate::GroupingAggregation::count())
+                    .nested(GroupingPlan::by("category")),
+            ),
+        )
+        .ranking(Ranking::bm25())
+        .rank_property("source", "catalog")
+        .projection(["title", "brand"])
+        .highlight(["title"])
+        .language("EN-us")
+        .limit(7)
+        .offset(2);
+
+    let direct = expected_search(&context, &rust_request);
+    let bytes = searchkernel_ir::search_request_ir_to_api(&direct);
+    let portable = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
+        .expect("canonical search request should decode");
+    let portable = context
+        .search_to_ir(portable)
+        .expect("canonical portable search should resolve");
+
+    assert_eq!(direct, portable);
+    assert_eq!(
+        searchkernel_ir::snapshot::search_request(&direct),
+        searchkernel_ir::snapshot::search_request(&portable)
+    );
+}
+
+#[test]
 fn scripted_backend_errors_preserve_code_message_and_details() {
     let definition = scripted_definition();
     let context = context_for(&definition);

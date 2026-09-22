@@ -13,8 +13,8 @@ pub use error::{OperationKind, ScriptedCallError, TestkitError};
 pub use recording::RecordingBackend;
 pub use result_fixture::representative_search_result;
 pub use runner::{
-    build_component_transport_case, ConformanceReport, ConformanceRunner, RunnerError,
-    TransportCase,
+    build_component_transport_case, build_index_definition_from_json, ConformanceReport,
+    ConformanceRunner, RunnerError, TransportCase,
 };
 pub use scripted::{ExpectedCall, ScriptedBackend, ScriptedOutcome, ScriptedResult};
 

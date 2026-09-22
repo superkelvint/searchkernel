@@ -193,4 +193,53 @@ mod tests {
             Some(GroupingOperationIr::All(_))
         ));
     }
+
+    #[test]
+    fn by_helper_matches_the_explicit_canonical_grouping_tree() {
+        let actual = GroupingPlan::new()
+            .level(
+                GroupingPlan::by("category")
+                    .max_groups(5)
+                    .output(GroupingAggregation::count())
+                    .nested(GroupingPlan::by("brand")),
+            )
+            .into_ir()
+            .expect("grouping helper should lower");
+        let expected = GroupingRequestIr {
+            root: GroupingAllIr {
+                operations: vec![
+                    GroupingOperationIr::Group(GroupingExpressionIr::Attribute(
+                        "category".to_owned(),
+                    )),
+                    GroupingOperationIr::Each(GroupingAllIr {
+                        operations: vec![
+                            GroupingOperationIr::Max(Some(5)),
+                            GroupingOperationIr::Output(vec![GroupingOutputIr {
+                                label: None,
+                                expression: GroupingExpressionIr::Aggregation(Box::new(
+                                    GroupingAggregationIr::Count,
+                                )),
+                            }]),
+                            GroupingOperationIr::All(GroupingAllIr {
+                                operations: vec![
+                                    GroupingOperationIr::Group(GroupingExpressionIr::Attribute(
+                                        "brand".to_owned(),
+                                    )),
+                                    GroupingOperationIr::Each(GroupingAllIr {
+                                        operations: Vec::new(),
+                                        label: None,
+                                    }),
+                                ],
+                                label: None,
+                            }),
+                        ],
+                        label: None,
+                    }),
+                ],
+                label: None,
+            },
+            continuations: Vec::new(),
+        };
+        assert_eq!(actual, expected);
+    }
 }
