@@ -63,9 +63,14 @@ shared_flatbuffers_prefix() {
 
 flatbuffers_archive_is_compatible() {
     local archive=$1
+    local undefined
 
+    [[ -f "$archive" ]] || return 1
     command -v nm >/dev/null 2>&1 || return 1
-    if nm -u "$archive" | grep -F '__isoc23_' >/dev/null; then
+    if ! undefined=$(nm -u "$archive" 2>/dev/null); then
+        return 1
+    fi
+    if grep -F '__isoc23_' <<<"$undefined" >/dev/null; then
         return 1
     fi
     return 0
