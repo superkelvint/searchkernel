@@ -97,6 +97,29 @@ pub struct RustFieldInput {
     pub hnsw: Option<HnswIndexConfigIr>,
 }
 
+/// Field intent shared by the direct Rust and portable schema ingress paths.
+/// The resolver below owns defaults, capability legality, and backend-neutral
+/// field semantics; ingress code only decodes each input representation into
+/// this shape.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UnresolvedFieldInput {
+    pub name: FieldName,
+    pub data_type: DataTypeIr,
+    pub stored: Option<bool>,
+    pub searchable: Option<bool>,
+    pub filterable: Option<bool>,
+    pub sortable: Option<bool>,
+    pub groupable: Option<bool>,
+    pub analyzer: Option<AnalyzerIr>,
+    pub matching: Option<MatchingConfigIr>,
+    pub index: Option<IndexConfigIr>,
+    pub attribute: Option<AttributeConfigIr>,
+    pub summary: Option<SummaryConfigIr>,
+    pub indexing_script: Option<String>,
+    pub properties: SchemaPropertiesIr,
+    pub struct_fields: Vec<StructFieldConfigIr>,
+}
+
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RustSearchFieldInput {
@@ -161,7 +184,10 @@ pub fn resolve_rust_index_definition_with_profiles(
                 "field names must be unique",
             ));
         }
-        fields.push(rust_field_to_ir(field, field_name, &path)?);
+        fields.push(resolve_field_input(
+            rust_field_to_input(field, field_name),
+            &path,
+        )?);
     }
     let default_search_fields = match input.default_search_fields {
         Some(fields_input) => fields_input
@@ -287,160 +313,306 @@ pub fn resolve_rust_index_definition_with_profiles(
     })
 }
 
-fn rust_field_to_ir(field: RustFieldInput, name: FieldName, path: &str) -> Result<FieldIr> {
-    let hnsw_enabled = field.hnsw.is_some();
-    let (data_type, string_type, keyword) = match field.kind {
-        RustFieldKind::Text => (
-            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
-            true,
-            false,
-        ),
-        RustFieldKind::Keyword => (
-            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
-            true,
-            true,
-        ),
-        RustFieldKind::Int64 => (
-            DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
-            false,
-            false,
-        ),
-        RustFieldKind::Float64 => (
-            DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
-            false,
-            false,
-        ),
-        RustFieldKind::Bool => (
-            DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
-            false,
-            false,
-        ),
-        RustFieldKind::Position => (DataTypeIr::Position, false, false),
-        RustFieldKind::Tensor(type_spec) => (DataTypeIr::Tensor { type_spec }, false, false),
+fn rust_field_to_input(field: RustFieldInput, name: FieldName) -> UnresolvedFieldInput {
+    let RustFieldInput {
+        kind,
+        multi,
+        stored,
+        searchable,
+        filterable,
+        sortable,
+        facetable,
+        analyzer,
+        distance_metric,
+        hnsw,
+        ..
+    } = field;
+    let is_keyword = matches!(&kind, RustFieldKind::Keyword);
+    let data_type = match kind {
+        RustFieldKind::Text | RustFieldKind::Keyword => {
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
+        }
+        RustFieldKind::Int64 => DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+        RustFieldKind::Float64 => DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+        RustFieldKind::Bool => DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+        RustFieldKind::Position => DataTypeIr::Position,
+        RustFieldKind::Tensor(type_spec) => DataTypeIr::Tensor { type_spec },
     };
-    let data_type = if field.multi {
+    let data_type = if multi {
         DataTypeIr::Array(Box::new(data_type))
     } else {
         data_type
     };
-    let (default_searchable, default_filterable, default_sortable, default_groupable) =
-        field_capability_defaults(&data_type, keyword, false);
-    if keyword && field.searchable == Some(true) {
+    let is_string = matches!(
+        data_type.scalar_primitive(),
+        Some(PrimitiveDataTypeIr::String)
+    );
+    let matching = is_string.then(|| MatchingConfigIr {
+        mode: if is_keyword {
+            MatchingModeIr::Exact
+        } else {
+            MatchingModeIr::Text
+        },
+        options: SchemaPropertiesIr::new(),
+    });
+    let analyzer = analyzer.map(|value| AnalyzerIr {
+        name: value.name,
+        version: value.version,
+        options: value.options,
+    });
+    let index = hnsw.map(|hnsw| IndexConfigIr {
+        enabled: Some(true),
+        hnsw: Some(hnsw),
+        options: SchemaPropertiesIr::new(),
+    });
+    let attribute = distance_metric.map(|distance_metric| AttributeConfigIr {
+        enabled: Some(true),
+        fast_search: None,
+        fast_access: None,
+        distance_metric,
+        options: SchemaPropertiesIr::new(),
+    });
+    UnresolvedFieldInput {
+        name,
+        data_type,
+        stored,
+        searchable,
+        filterable,
+        sortable,
+        groupable: facetable,
+        analyzer,
+        matching,
+        index,
+        attribute,
+        summary: None,
+        indexing_script: None,
+        properties: SchemaPropertiesIr::new(),
+        struct_fields: Vec::new(),
+    }
+}
+
+fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldIr> {
+    let UnresolvedFieldInput {
+        name,
+        data_type,
+        stored,
+        searchable,
+        filterable,
+        sortable,
+        groupable,
+        analyzer,
+        matching,
+        index,
+        attribute,
+        summary,
+        indexing_script,
+        properties,
+        struct_fields,
+    } = input;
+    if index.as_ref().is_some_and(|config| config.hnsw.is_some())
+        && !matches!(data_type, DataTypeIr::Tensor { .. })
+    {
+        return Err(invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.index.hnsw")),
+            "HNSW indexing requires a tensor field",
+        ));
+    }
+    if attribute
+        .as_ref()
+        .is_some_and(|config| config.distance_metric != DistanceMetricIr::Unspecified)
+        && !matches!(data_type, DataTypeIr::Tensor { .. })
+    {
+        return Err(invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.attribute.distance_metric")),
+            "a distance metric requires a tensor field",
+        ));
+    }
+    let attribute_fast_search = attribute.as_ref().and_then(|value| value.fast_search);
+    check_bool_agreement(
+        stored,
+        summary.as_ref().and_then(|value| value.enabled),
+        path,
+        "stored",
+        "summary.enabled",
+    )?;
+    check_bool_agreement(
+        searchable,
+        index.as_ref().and_then(|value| value.enabled),
+        path,
+        "searchable",
+        "index.enabled",
+    )?;
+    if attribute_fast_search
+        .zip(filterable)
+        .is_some_and(|(fast_search, filterable)| fast_search && !filterable)
+    {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.attribute.fast_search")),
+            "attribute.fast_search requires a filterable field",
+        ));
+    }
+    let string_type = data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::String);
+    let explicit_analyzer = analyzer.is_some();
+    let explicit_matching = matching.is_some();
+    let keyword = string_type
+        && matches!(
+            matching.as_ref().map(|value| value.mode),
+            Some(MatchingModeIr::Exact | MatchingModeIr::Word)
+        );
+    if keyword && searchable == Some(true) {
         return Err(invalid(
             "invalid_capability",
             Some(format!("{path}.searchable")),
             "keyword fields cannot opt into full-text search",
         ));
     }
-    if !keyword && string_type && field.filterable == Some(true) {
+    if matches!(
+        data_type,
+        DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
+    ) && !keyword
+        && filterable == Some(true)
+    {
         return Err(invalid(
             "invalid_capability",
             Some(format!("{path}.filterable")),
             "text fields cannot opt into filtering",
         ));
     }
-    let analyzer = if string_type && !keyword {
-        let analyzer = field.analyzer.unwrap_or(RustAnalyzerInput {
+    if analyzer.is_some() && (!string_type || keyword) {
+        return Err(invalid(
+            "invalid_analyzer",
+            Some(format!("{path}.analyzer")),
+            "only text fields may specify an analyzer",
+        ));
+    }
+    let analyzer = if string_type && !keyword && indexing_script.is_none() {
+        let analyzer = analyzer.unwrap_or(AnalyzerIr {
             name: "standard".to_owned(),
             version: 1,
             options: SchemaPropertiesIr::new(),
         });
-        let analyzer_ir = AnalyzerIr {
-            name: analyzer.name,
-            version: analyzer.version,
-            options: analyzer.options,
-        };
-        analyzer_identity(&analyzer_ir, &format!("{path}.analyzer"))?;
-        Some(analyzer_ir)
+        analyzer_identity(&analyzer, &format!("{path}.analyzer"))?;
+        Some(analyzer)
     } else {
-        if field.analyzer.is_some() {
+        analyzer
+    };
+    let matching = if string_type && indexing_script.is_none() {
+        Some(matching.unwrap_or(MatchingConfigIr {
+            mode: if keyword {
+                MatchingModeIr::Exact
+            } else {
+                MatchingModeIr::Text
+            },
+            options: SchemaPropertiesIr::new(),
+        }))
+    } else {
+        if matching.is_some() {
             return Err(invalid(
-                "invalid_analyzer",
-                Some(format!("{path}.analyzer")),
-                "only text fields may specify an analyzer",
+                "invalid_type_combination",
+                Some(format!("{path}.matching")),
+                "matching is valid only for string fields",
             ));
         }
         None
     };
-    Ok(FieldIr {
-        name,
-        data_type,
-        analyzer,
-        capabilities: FieldCapabilities {
-            stored: field.stored.unwrap_or(true),
-            searchable: field
-                .searchable
-                .or_else(|| hnsw_enabled.then_some(true))
-                .unwrap_or(default_searchable),
-            filterable: field.filterable.unwrap_or(default_filterable),
-            sortable: field.sortable.unwrap_or(default_sortable),
-            groupable: field.facetable.unwrap_or(default_groupable),
-        },
-        matching: if string_type {
-            Some(MatchingConfigIr {
-                mode: if keyword {
-                    MatchingModeIr::Exact
-                } else {
-                    MatchingModeIr::Text
-                },
-                options: SchemaPropertiesIr::new(),
-            })
-        } else {
-            None
-        },
-        index: field.hnsw.map(|hnsw| IndexConfigIr {
-            enabled: Some(true),
-            hnsw: Some(hnsw),
-            options: SchemaPropertiesIr::new(),
-        }),
-        attribute: field
-            .distance_metric
-            .map(|distance_metric| AttributeConfigIr {
-                enabled: Some(true),
-                fast_search: None,
-                fast_access: None,
-                distance_metric,
-                options: SchemaPropertiesIr::new(),
-            }),
-        summary: None,
-        indexing_script: None,
-        properties: SchemaPropertiesIr::new(),
-        struct_fields: Vec::new(),
-    })
-}
-
-fn field_capability_defaults(
-    data_type: &DataTypeIr,
-    keyword: bool,
-    indexing_script: bool,
-) -> (bool, bool, bool, bool) {
-    let string_type = data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::String);
-    let default_searchable = string_type && !keyword && !indexing_script;
-    let default_filterable = if indexing_script {
+    let default_searchable = string_type && !keyword && indexing_script.is_none();
+    let default_filterable = if indexing_script.is_some() {
         false
     } else if string_type {
         keyword
     } else {
         true
     };
-    let default_sortable = if indexing_script {
+    let default_sortable = if indexing_script.is_some() {
         false
     } else {
         !data_type.is_multi_valued() && (!string_type || keyword)
     };
-    let default_groupable = if indexing_script {
+    let default_groupable = if indexing_script.is_some() {
         false
     } else if string_type {
         keyword
     } else {
         data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::Bool)
     };
-    (
-        default_searchable,
-        default_filterable,
-        default_sortable,
-        default_groupable,
-    )
+    let capabilities = FieldCapabilities {
+        stored: stored
+            .or_else(|| summary.as_ref().and_then(|value| value.enabled))
+            .unwrap_or(true),
+        searchable: searchable
+            .or_else(|| index.as_ref().and_then(|value| value.enabled))
+            .or_else(|| {
+                index
+                    .as_ref()
+                    .and_then(|value| value.hnsw.as_ref())
+                    .map(|_| true)
+            })
+            .unwrap_or(default_searchable),
+        filterable: filterable
+            .or(attribute_fast_search.filter(|value| *value))
+            .unwrap_or(default_filterable),
+        sortable: sortable.unwrap_or(default_sortable),
+        groupable: groupable.unwrap_or(default_groupable),
+    };
+    if attribute
+        .as_ref()
+        .and_then(|value| value.enabled)
+        .is_some_and(|enabled| !enabled)
+        && (capabilities.filterable
+            || capabilities.sortable
+            || capabilities.groupable
+            || !matches!(
+                &data_type,
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
+            ))
+    {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.attribute.enabled")),
+            "attribute.enabled=false conflicts with the resolved attribute-backed capabilities",
+        ));
+    }
+    if data_type.is_multi_valued() && capabilities.sortable {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.sortable")),
+            "multi-valued fields cannot be sortable",
+        ));
+    }
+    if indexing_script.is_some()
+        && (stored.is_some()
+            || searchable.is_some()
+            || filterable.is_some()
+            || sortable.is_some()
+            || groupable.is_some()
+            || explicit_analyzer
+            || explicit_matching
+            || index.is_some()
+            || attribute.is_some()
+            || summary.is_some())
+    {
+        return Err(invalid(
+            "ambiguous_indexing_script",
+            Some(format!("{path}.indexing_script")),
+            "an indexing script cannot be combined with typed field behavior that C2 cannot prove equivalent",
+        ));
+    }
+    Ok(FieldIr {
+        name,
+        data_type,
+        analyzer,
+        capabilities,
+        matching,
+        index,
+        attribute,
+        summary,
+        indexing_script,
+        properties,
+        struct_fields,
+    })
 }
 
 pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<IndexDefinitionIr> {
@@ -676,187 +848,39 @@ pub(crate) fn field_to_ir_at(
         )
     })?;
     let data_type = data_type_to_ir(data_type, &format!("{path}.data_type"))?;
-    let matching = matching_to_ir(definition.matching(), &format!("{path}.matching"))?;
-    let index = index_config_to_ir(definition.index(), &format!("{path}.index"))?;
-    let attribute = attribute_config_to_ir(definition.attribute(), &format!("{path}.attribute"))?;
-    let summary = summary_config_to_ir(definition.summary(), &format!("{path}.summary"))?;
-    let stored = definition.stored().map(|value| value.value());
-    let searchable = definition.searchable().map(|value| value.value());
-    let filterable = definition.filterable().map(|value| value.value());
-    let sortable = definition.sortable().map(|value| value.value());
-    let groupable = definition.facetable().map(|value| value.value());
-    let attribute_fast_search = attribute.as_ref().and_then(|value| value.fast_search);
     let indexing_script = definition
         .indexing_script()
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
-    // Report the feature-specific type error before capability agreement
-    // checks. A malformed HNSW field may also have contradictory searchable
-    // flags, but the portable contract requires the HNSW/type violation to
-    // remain the primary structured failure.
-    if index.as_ref().is_some_and(|config| config.hnsw.is_some())
-        && !matches!(data_type, DataTypeIr::Tensor { .. })
-    {
-        return Err(invalid(
-            "invalid_type_combination",
-            Some(format!("{path}.index.hnsw")),
-            "HNSW indexing requires a tensor field",
-        ));
-    }
-    if attribute
-        .as_ref()
-        .is_some_and(|config| config.distance_metric != DistanceMetricIr::Unspecified)
-        && !matches!(data_type, DataTypeIr::Tensor { .. })
-    {
-        return Err(invalid(
-            "invalid_type_combination",
-            Some(format!("{path}.attribute.distance_metric")),
-            "a distance metric requires a tensor field",
-        ));
-    }
-    check_bool_agreement(
-        stored,
-        summary.as_ref().and_then(|value| value.enabled),
+    resolve_field_input(
+        UnresolvedFieldInput {
+            name,
+            data_type,
+            stored: definition.stored().map(|value| value.value()),
+            searchable: definition.searchable().map(|value| value.value()),
+            filterable: definition.filterable().map(|value| value.value()),
+            sortable: definition.sortable().map(|value| value.value()),
+            groupable: definition.facetable().map(|value| value.value()),
+            analyzer: analyzer_config_to_ir(definition.analyzer(), &format!("{path}.analyzer"))?,
+            matching: matching_to_ir(definition.matching(), &format!("{path}.matching"))?,
+            index: index_config_to_ir(definition.index(), &format!("{path}.index"))?,
+            attribute: attribute_config_to_ir(
+                definition.attribute(),
+                &format!("{path}.attribute"),
+            )?,
+            summary: summary_config_to_ir(definition.summary(), &format!("{path}.summary"))?,
+            indexing_script,
+            properties: schema_properties_to_ir(
+                definition.properties(),
+                &format!("{path}.properties"),
+            )?,
+            struct_fields: struct_field_configs_to_ir(
+                definition.struct_fields(),
+                &format!("{path}.struct_fields"),
+            )?,
+        },
         path,
-        "stored",
-        "summary.enabled",
-    )?;
-    check_bool_agreement(
-        searchable,
-        index.as_ref().and_then(|value| value.enabled),
-        path,
-        "searchable",
-        "index.enabled",
-    )?;
-    if attribute_fast_search
-        .zip(filterable)
-        .is_some_and(|(fast_search, filterable)| fast_search && !filterable)
-    {
-        return Err(invalid(
-            "invalid_capability",
-            Some(format!("{path}.attribute.fast_search")),
-            "attribute.fast_search requires a filterable field",
-        ));
-    }
-    let string_type = data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::String);
-    if matching.is_some() && !string_type {
-        return Err(invalid(
-            "invalid_type_combination",
-            Some(format!("{path}.matching")),
-            "matching is valid only for string fields",
-        ));
-    }
-    let keyword = string_type
-        && matches!(
-            matching.as_ref().map(|value| value.mode),
-            Some(MatchingModeIr::Exact | MatchingModeIr::Word)
-        );
-    if keyword && searchable == Some(true) {
-        return Err(invalid(
-            "invalid_capability",
-            Some(format!("{path}.searchable")),
-            "keyword fields cannot opt into full-text search",
-        ));
-    }
-    if matches!(
-        data_type,
-        DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
-    ) && !keyword
-        && filterable == Some(true)
-    {
-        return Err(invalid(
-            "invalid_capability",
-            Some(format!("{path}.filterable")),
-            "text fields cannot opt into filtering",
-        ));
-    }
-    let analyzer = analyzer_config_to_ir(
-        definition.analyzer(),
-        string_type && !keyword,
-        &format!("{path}.analyzer"),
-    )?;
-    let (default_searchable, default_filterable, default_sortable, default_groupable) =
-        field_capability_defaults(&data_type, keyword, indexing_script.is_some());
-    let analyzer = if string_type && !keyword && indexing_script.is_none() {
-        Some(analyzer.unwrap_or(AnalyzerIr {
-            name: "standard".to_owned(),
-            version: 1,
-            options: SchemaPropertiesIr::new(),
-        }))
-    } else {
-        analyzer
-    };
-    let capabilities = FieldCapabilities {
-        stored: stored
-            .or_else(|| summary.as_ref().and_then(|value| value.enabled))
-            .unwrap_or(true),
-        searchable: searchable
-            .or_else(|| index.as_ref().and_then(|value| value.enabled))
-            .unwrap_or(default_searchable),
-        filterable: filterable
-            .or(attribute_fast_search.filter(|value| *value))
-            .unwrap_or(default_filterable),
-        sortable: sortable.unwrap_or(default_sortable),
-        groupable: groupable.unwrap_or(default_groupable),
-    };
-    if attribute
-        .as_ref()
-        .and_then(|value| value.enabled)
-        .is_some_and(|enabled| !enabled)
-        && (capabilities.filterable
-            || capabilities.sortable
-            || capabilities.groupable
-            || !matches!(
-                &data_type,
-                DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
-            ))
-    {
-        return Err(invalid(
-            "invalid_capability",
-            Some(format!("{path}.attribute.enabled")),
-            "attribute.enabled=false conflicts with the resolved attribute-backed capabilities",
-        ));
-    }
-    if data_type.is_multi_valued() && capabilities.sortable {
-        return Err(invalid(
-            "invalid_capability",
-            Some(format!("{path}.sortable")),
-            "multi-valued fields cannot be sortable",
-        ));
-    }
-    if indexing_script.is_some()
-        && (stored.is_some()
-            || searchable.is_some()
-            || filterable.is_some()
-            || sortable.is_some()
-            || groupable.is_some()
-            || analyzer.is_some()
-            || matching.is_some()
-            || index.is_some()
-            || attribute.is_some()
-            || summary.is_some())
-    {
-        return Err(invalid("ambiguous_indexing_script", Some(format!("{path}.indexing_script")), "an indexing script cannot be combined with typed field behavior that C2 cannot prove equivalent"));
-    }
-    Ok(FieldIr {
-        name,
-        data_type,
-        analyzer,
-        capabilities,
-        matching,
-        index,
-        attribute,
-        summary,
-        indexing_script,
-        properties: schema_properties_to_ir(
-            definition.properties(),
-            &format!("{path}.properties"),
-        )?,
-        struct_fields: struct_field_configs_to_ir(
-            definition.struct_fields(),
-            &format!("{path}.struct_fields"),
-        )?,
-    })
+    )
 }
 
 pub(crate) fn analyzer_to_ir_at(
@@ -890,16 +914,8 @@ pub(crate) fn analyzer_to_ir_at(
 
 pub(crate) fn analyzer_config_to_ir(
     analyzer: Option<api::Analyzer<'_>>,
-    string_type: bool,
     path: &str,
 ) -> Result<Option<AnalyzerIr>> {
-    if !string_type && analyzer.is_some() {
-        return Err(invalid(
-            "invalid_analyzer",
-            Some(path),
-            "only text fields may specify an analyzer",
-        ));
-    }
     analyzer
         .map(|analyzer| {
             let analyzer = AnalyzerIr {
@@ -907,7 +923,6 @@ pub(crate) fn analyzer_config_to_ir(
                 version: analyzer.version(),
                 options: schema_properties_to_ir(analyzer.options(), &format!("{path}.options"))?,
             };
-            analyzer_identity(&analyzer, path)?;
             Ok(analyzer)
         })
         .transpose()
