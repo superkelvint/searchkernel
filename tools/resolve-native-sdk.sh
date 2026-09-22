@@ -88,7 +88,7 @@ OBJECT=$CACHE_ROOT/objects/$DIGEST
 validate_link_closure() {
     local sdk=$1
     local library="$sdk/lib/libsearchkernel_vespa.so"
-    local sdk_lib output missing external name path resolved
+    local sdk_lib output missing external line name path resolved
 
     command -v ldd >/dev/null 2>&1 || {
         echo "native SDK runtime dependency closure validation requires ldd" >&2
@@ -109,19 +109,17 @@ validate_link_closure() {
         return 1
     fi
 
-    # Vespa/private runtime dependencies must resolve from the SDK itself.
-    # A matching host installation must never make an incomplete package green.
     external=
     while IFS= read -r line; do
         name=$(printf '%s\n' "$line" | awk '{print $1}')
         case "$name" in
-            libvespa*.so*|libvespalib.so*|libvespalog.so*|libLLVM*.so*|libffi.so*|libxxhash.so*|libsearchkernel_*.so*)
+            libvespa*.so*|libLLVM*.so*|libffi.so*|libxxhash.so*|libsearchkernel_*.so*)
                 path=$(printf '%s\n' "$line" | awk '$2 == "=>" {print $3}')
                 [[ -n "$path" && "$path" != "not" ]] || continue
                 resolved=$(readlink -f "$path" 2>/dev/null || true)
                 case "$resolved" in
                     "$sdk_lib"/*) ;;
-                    *) external="${external}${name} => ${path}"
+                    *) external+="$name => $path"
 valid_object() {
     [[ -f "$OBJECT/include/searchkernel_vespa.h" &&
        -f "$OBJECT/manifest.json" &&
@@ -198,6 +196,7 @@ printf '%s\n' "$OBJECT"
                 ;;
         esac
     done <<<"$output"
+
     if [[ -n "$external" ]]; then
         echo "native SDK '$sdk' resolved private runtime dependencies outside its bundled lib directory:" >&2
         printf '%s' "$external" >&2
@@ -243,11 +242,9 @@ if valid_object; then
 fi
 
 if [[ -e "$OBJECT" ]]; then
-    QUARANTINE_ROOT="$CACHE_ROOT/quarantine"
-    mkdir -p "$QUARANTINE_ROOT"
-    QUARANTINED="$QUARANTINE_ROOT/$DIGEST.$(date +%s).$BASHPID"
-    echo "native SDK cache object '$OBJECT' failed validation; quarantining and rebuilding under the cache lock" >&2
-    mv "$OBJECT" "$QUARANTINED"
+    echo "immutable native SDK cache object '$OBJECT' exists but failed validation" >&2
+    echo "refusing to replace a published object; remove it explicitly after investigating cache integrity" >&2
+    exit 1
 fi
 
 rm -rf "$TMP" "$BUILD"
