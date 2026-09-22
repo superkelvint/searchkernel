@@ -60,6 +60,50 @@ class ExactHeadTests(unittest.TestCase):
         fresh = run("assert-head", "--expected", second, "--repo", str(repo))
         self.assertEqual(fresh.returncode, 0, fresh.stdout.decode())
 
+    def test_base_helper_can_classify_pre_gate_head(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+        (repo / "file.txt").write_text("root\n", encoding="utf-8")
+        git(repo, "add", "file.txt")
+        git(repo, "commit", "-q", "-m", "root")
+        root = git(repo, "rev-parse", "HEAD")
+
+        git(repo, "checkout", "-q", "-b", "base")
+        helper_dir = repo / ".github" / "ci"
+        helper_dir.mkdir(parents=True)
+        (helper_dir / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        git(repo, "add", ".github/ci/exact_head.py")
+        git(repo, "commit", "-q", "-m", "add gate helper")
+        base = git(repo, "rev-parse", "HEAD")
+
+        git(repo, "checkout", "-q", "-b", "pre-gate-head", root)
+        (repo / "file.txt").write_text("head change\n", encoding="utf-8")
+        git(repo, "add", "file.txt")
+        git(repo, "commit", "-q", "-m", "pre-gate change")
+        self.assertFalse((repo / ".github" / "ci" / "exact_head.py").exists())
+
+        fallback = repo / "base-exact-head.py"
+        fallback.write_bytes(
+            subprocess.check_output(
+                ["git", "show", f"{base}:.github/ci/exact_head.py"],
+                cwd=repo,
+            )
+        )
+        classified = subprocess.run(
+            [sys.executable, str(fallback), "classify"],
+            cwd=repo,
+            input=b"core/crates/searchkernel-ir/src/model.rs\0",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(classified.returncode, 0, classified.stdout.decode())
+        self.assertIn("rust: required", classified.stdout.decode())
+
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
             b"core/crates/searchkernel-ir/src/model.rs\0": {
