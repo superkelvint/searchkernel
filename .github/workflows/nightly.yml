@@ -60,6 +60,7 @@ jobs:
         run: |
           bash tools/check-layout.sh
           bash tools/check-ir-boundary.sh
+          python tools/check-search-semantic-entry-points.py
           python tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
           python tools/check-python-flatbuffers-boundary.py
 

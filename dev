@@ -85,6 +85,7 @@ check_fast() {
     cargo check --workspace --all-targets --all-features
     bash "$ROOT/tools/check-layout.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
+    "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
         "$ROOT/core/native/vespa/searchkernel_vespa.h"
     "$PYTHON" "$ROOT/tools/check-python-flatbuffers-boundary.py"
