@@ -1267,6 +1267,12 @@
       "operation": "insert_to_ir"
     },
     {
+      "id": "write.update-assign",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-assign.json",
+      "golden": "golden/write/update-assign.json"
+    },
+    {
       "case": "cases/write/upsert.json",
       "golden": "golden/write/upsert.json",
       "id": "write.upsert",

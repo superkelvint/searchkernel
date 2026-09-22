@@ -1,7 +1,7 @@
 {
   "adapter_protocol": "sk-ir-conformance/v1",
   "snapshot_format": "searchkernel-ir-internal/v2",
-  "case_count": 214,
+  "case_count": 215,
   "categories": {
     "analyze": 7,
     "component": 15,
@@ -16,7 +16,7 @@
     "textual-filter": 8,
     "value": 11,
     "wire": 33,
-    "write": 21
+    "write": 22
   },
   "semantics_version": "searchkernel-ir/v2",
   "suite": "searchkernel-ir-conformance",
