@@ -225,8 +225,13 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed 's#-rdynamic##g')
 # Use an old-style RPATH so the SDK's bundled libraries remain discoverable
 # for transitive dependencies when the standalone native library is inspected
 # or loaded without LD_LIBRARY_PATH.  Keep the SDK relocatable.
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    ADAPTER_RPATH=$BASE_SDK/lib
+else
+    ADAPTER_RPATH='\$ORIGIN'
+fi
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed \
-    "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'\$ORIGIN'|g")
+    "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'$ADAPTER_RPATH'|g")
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1#")
 MAP_FILE=$ROOT/core/native/vespa/searchkernel_vespa.map
 if [ "$ENABLE_FAILPOINTS" = 1 ]; then
