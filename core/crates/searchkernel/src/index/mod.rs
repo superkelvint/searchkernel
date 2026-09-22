@@ -767,6 +767,7 @@ fn field_to_ir_with_fallback(
     resolved.set_index_config(field.index_config.clone());
     resolved.set_attribute_config(field.attribute_config.clone());
     resolved.set_data_type(field.data_type.clone());
+    resolved.set_struct_fields(field.struct_fields.clone());
     if let Some(capabilities) = field.capabilities {
         resolved.set_capabilities(
             capabilities.stored(),
@@ -804,6 +805,7 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
     value.analyzer_config = field.analyzer().cloned();
     value.matching_config = field.matching().cloned();
     value.data_type = field.data_type().clone();
+    value.struct_fields = field.struct_fields().to_vec();
     if matches!(
         field.cardinality(),
         searchkernel_ir::FieldCardinality::Multi

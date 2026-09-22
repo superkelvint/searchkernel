@@ -261,6 +261,11 @@ impl FieldIr {
         self.matching = config;
     }
 
+    #[doc(hidden)]
+    pub fn set_struct_fields(&mut self, struct_fields: Vec<StructFieldConfigIr>) {
+        self.struct_fields = struct_fields;
+    }
+
     /// Update the resolved collection shape without changing other field
     /// configuration.
     #[doc(hidden)]
