@@ -3,13 +3,13 @@ set -euo pipefail
 
 prefix=${1:-}
 expected_version=${2:-25.12.19}
+flatc=${3:-"$prefix/bin/flatc"}
 
 if [[ -z "$prefix" ]]; then
-    echo "usage: $0 <flatbuffers-prefix> [expected-version]" >&2
+    echo "usage: $0 <flatbuffers-prefix> [expected-version] [flatc-path]" >&2
     exit 2
 fi
 
-flatc="$prefix/bin/flatc"
 header="$prefix/include/flatbuffers/base.h"
 idl_header="$prefix/include/flatbuffers/idl.h"
 library="$prefix/lib/libflatbuffers.a"
