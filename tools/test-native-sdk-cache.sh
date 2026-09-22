@@ -98,6 +98,10 @@ refresh_legacy_fingerprint() {
         --target x86_64-unknown-linux-gnu \
         --scope full \
         --output "$legacy_sdk/native-build-fingerprint-v2.txt"
+    legacy_commit=$(awk -F '\t' '$1 == "vespa.commit" { print $2; exit }' \
+        "$legacy_sdk/native-build-fingerprint-v2.txt")
+    printf '{"native_abi_version":1,"vespa_commit":"%s"}\n' "$legacy_commit" \
+        >"$legacy_sdk/manifest.json"
 }
 refresh_legacy_fingerprint
 
