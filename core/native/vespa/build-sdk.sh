@@ -42,6 +42,35 @@ ENABLE_COVERAGE=${SK_NATIVE_COVERAGE:-0}
 EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
 SANITIZER=${SK_NATIVE_SANITIZER:-none}
 REGENERATE_BINDINGS=${SK_NATIVE_REGENERATE_BINDINGS:-1}
+ADAPTER_ONLY=${SK_NATIVE_ADAPTER_ONLY:-0}
+BASE_ONLY=${SK_NATIVE_BASE_ONLY:-0}
+BASE_SDK=${SK_NATIVE_BASE_SDK:-}
+if [ "$ADAPTER_ONLY" = 1 ] && [ "$BASE_ONLY" = 1 ]; then
+    echo "SK_NATIVE_ADAPTER_ONLY and SK_NATIVE_BASE_ONLY are mutually exclusive" >&2
+    exit 1
+fi
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    if [ -z "$BASE_SDK" ] || [ ! -d "$BASE_SDK/lib" ]; then
+        echo "SK_NATIVE_ADAPTER_ONLY=1 requires SK_NATIVE_BASE_SDK with a lib directory" >&2
+        exit 1
+    fi
+    BASE_SDK=$(CDPATH= cd -- "$BASE_SDK" && pwd)
+fi
+
+# Never let a full/custom SDK rebuild overwrite an immutable published Vespa
+# base (or vice versa). Explicit SK_NATIVE_SDK is an override, not permission
+# to cross package-kind boundaries.
+if [ -f "$SDK_PACKAGE/manifest.json" ]; then
+    if grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$SDK_PACKAGE/manifest.json"; then
+        if [ "$BASE_ONLY" != 1 ]; then
+            echo "refusing to overwrite Vespa base '$SDK_PACKAGE' with a Search Kernel adapter/full SDK" >&2
+            exit 1
+        fi
+    elif [ "$BASE_ONLY" = 1 ]; then
+        echo "refusing to overwrite full native SDK '$SDK_PACKAGE' with a Vespa base" >&2
+        exit 1
+    fi
+fi
 FAILPOINT_DEFINES=
 COVERAGE_FLAGS=
 COVERAGE_LINK_FLAGS=
@@ -122,7 +151,9 @@ else
 fi
 DEPS_INCLUDE_DIR=${VESPA_DEPS_INCLUDE_DIR:-$VESPA_DEPS/include}
 if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
-    if [ -f "$SDK_PACKAGE/lib/libLLVM.so.21.1" ]; then
+    if [ "$ADAPTER_ONLY" = 1 ] && [ -f "$BASE_SDK/lib/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$BASE_SDK/lib
+    elif [ -f "$SDK_PACKAGE/lib/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
     elif [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
@@ -186,6 +217,7 @@ CXX_FLAGS=$(sed -n 's/^CXX_FLAGS = //p' "$FLAGS_FILE")
 # libabigail to compare the types reachable from the exported C functions.
 # These explicit final flags make that property independent of the harvested
 # test target's optimization/debug configuration.
+if [ "$BASE_ONLY" != 1 ]; then
 $CXX $DEFINES $INCLUDES $CXX_FLAGS $EXTRA_CXX_FLAGS $FAILPOINT_DEFINES $COVERAGE_FLAGS \
     -Wno-inline -std=gnu++23 -fPIC \
     $OPTIMIZATION_FLAGS -g \
@@ -208,8 +240,13 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed 's#-rdynamic##g')
 # Use an old-style RPATH so the SDK's bundled libraries remain discoverable
 # for transitive dependencies when the standalone native library is inspected
 # or loaded without LD_LIBRARY_PATH.  Keep the SDK relocatable.
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    ADAPTER_RPATH=$BASE_SDK/lib
+else
+    ADAPTER_RPATH='$ORIGIN'
+fi
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed \
-    "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'\$ORIGIN'|g")
+    "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'$ADAPTER_RPATH'|g")
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1#")
 MAP_FILE=$ROOT/core/native/vespa/searchkernel_vespa.map
 if [ "$ENABLE_FAILPOINTS" = 1 ]; then
@@ -238,6 +275,19 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed -E \
     -e 's#[^ ]*libsearchlib_searchlib_test_features\.so##g' \
     -e 's#[^ ]*libsearchlib_searchlib_test_memoryindex\.so##g' \
     -e 's#[^ ]*libgtest\.so[^ ]*##g')
+
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    # The configured Vespa tree supplies compile flags and link topology only.
+    # Every shared-library input for the adapter must come from the immutable
+    # base object it will run against, never from the mutable build tree.
+    for BASE_LIBRARY in "$BASE_SDK"/lib/*.so*; do
+        [ -f "$BASE_LIBRARY" ] || continue
+        LIB_NAME=$(basename "$BASE_LIBRARY")
+        LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#[^ ]*/$LIB_NAME#$BASE_LIBRARY#g")
+    done
+    LINK_ARGS="-L$BASE_SDK/lib $LINK_ARGS"
+fi
+
 cd "$(dirname "$(dirname "$(dirname "$LINK_FILE")")")"
 eval "$CXX $LINK_ARGS"
 
@@ -253,21 +303,61 @@ if [ -n "$UNEXPECTED_SYMBOLS" ]; then
     printf '%s\n' "$UNEXPECTED_SYMBOLS" >&2
     exit 1
 fi
-
-cp "$ROOT/core/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
-if [ "$ENABLE_FAILPOINTS" = 1 ]; then
-    cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
 fi
-cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
+
+# Development builds treat the pinned Vespa/runtime closure as an immutable
+# prerequisite. Rebuild only Search Kernel's adapter into Cargo OUT_DIR and
+# point its RPATH at that shared base. Do not copy or mutate the Vespa base.
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    if command -v patchelf >/dev/null 2>&1; then
+        patchelf --force-rpath --set-rpath "$BASE_SDK/lib" "$SDK/lib/libsearchkernel_vespa.so.2"
+        cp -f "$SDK/lib/libsearchkernel_vespa.so.2" "$SDK/lib/libsearchkernel_vespa.so"
+    fi
+    cp "$ROOT/core/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
+    if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+        cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
+    fi
+
+    SDK_BACKUP="${SDK_PACKAGE}.old.$$"
+    if [ -e "$SDK_BACKUP" ]; then
+        echo "adapter backup path already exists: $SDK_BACKUP" >&2
+        exit 1
+    fi
+    if [ -e "$SDK_PACKAGE" ]; then
+        mv "$SDK_PACKAGE" "$SDK_BACKUP"
+    fi
+    mv "$SDK" "$SDK_PACKAGE"
+    if [ -e "$SDK_BACKUP" ]; then
+        rm -rf "$SDK_BACKUP"
+    fi
+    trap - EXIT
+    echo "built Search Kernel adapter at $SDK_PACKAGE"
+    exit 0
+fi
+
+if [ "$BASE_ONLY" != 1 ]; then
+    cp "$ROOT/core/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
+    if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+        cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
+    fi
+    cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
+else
+    printf '{"kind":"vespa-base"}\n' >"$SDK/manifest.json"
+fi
 NATIVE_TARGET=${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}
 if [ -z "$NATIVE_TARGET" ]; then
     echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
     exit 1
 fi
+FINGERPRINT_SCOPE=full
+if [ "$BASE_ONLY" = 1 ]; then
+    FINGERPRINT_SCOPE=base
+fi
 python3 "$ROOT/tools/native-build-fingerprint.py" \
     --root "$ROOT" \
     --vespa-root "$VESPA_ROOT" \
     --target "$NATIVE_TARGET" \
+    --scope "$FINGERPRINT_SCOPE" \
     --output "$SDK/native-build-fingerprint-v2.txt"
 python3 - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
 import json
@@ -275,18 +365,19 @@ import re
 import sys
 
 path, source_header, failpoints, sanitizer = sys.argv[1:]
-with open(source_header, encoding="utf-8") as stream:
-    header = stream.read()
-matches = re.findall(r"^#define SK_NATIVE_ABI_VERSION ([0-9]+)U$", header, re.MULTILINE)
-if len(matches) != 1:
-    raise SystemExit(
-        f"expected exactly one SK_NATIVE_ABI_VERSION in {source_header}, found {len(matches)}"
-    )
 with open(path, encoding="utf-8") as stream:
     manifest = json.load(stream)
-manifest["native_abi_version"] = int(matches[0])
-manifest["hardening_failpoints"] = failpoints == "1"
-manifest["sanitizer"] = sanitizer
+if manifest.get("kind") != "vespa-base":
+    with open(source_header, encoding="utf-8") as stream:
+        header = stream.read()
+    matches = re.findall(r"^#define SK_NATIVE_ABI_VERSION ([0-9]+)U$", header, re.MULTILINE)
+    if len(matches) != 1:
+        raise SystemExit(
+            f"expected exactly one SK_NATIVE_ABI_VERSION in {source_header}, found {len(matches)}"
+        )
+    manifest["native_abi_version"] = int(matches[0])
+    manifest["hardening_failpoints"] = failpoints == "1"
+    manifest["sanitizer"] = sanitizer
 with open(path.replace("manifest.json", "native-build-fingerprint-v2.txt"), encoding="utf-8") as stream:
     manifest["native_build_fingerprint"] = next(
         line.split("=", 1)[1].strip()
@@ -354,12 +445,12 @@ fi
 # header whenever the SDK is rebuilt. This is intentionally a hard failure:
 # the header is the ABI source of truth, while ordinary consumers use the
 # checked-in bindings and do not need libclang.
-if [ "$REGENERATE_BINDINGS" = 1 ]; then
+if [ "$BASE_ONLY" != 1 ] && [ "$REGENERATE_BINDINGS" = 1 ]; then
     if [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; then
         SK_NATIVE_SDK="$SDK" SK_NATIVE_BINDINGS_REGENERATE=1 \
             "$ROOT/tools/check-vespa-bindings.sh"
     fi
-elif [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; then
+elif [ "$BASE_ONLY" != 1 ] && [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; then
     SK_NATIVE_SDK="$SDK" "$ROOT/tools/check-vespa-bindings.sh"
 fi
 
@@ -367,10 +458,9 @@ fi
 # those out of the distributable SDK even when they share a directory with
 # production libraries.
 find "$SDK/lib" -maxdepth 1 \( -iname '*test*' -o -iname '*gtest*' \) -delete
-if command -v patchelf >/dev/null 2>&1; then
-    # Keep the bundled upstream binaries byte-for-byte intact.  The adapter's
-    # legacy RPATH is sufficient for transitive dependencies in this private
-    # SDK and avoids rewriting unusual upstream ELF layouts.
+if [ "$BASE_ONLY" != 1 ] && command -v patchelf >/dev/null 2>&1; then
+    # Keep the bundled upstream binaries byte-for-byte intact. The adapter's
+    # legacy RPATH is sufficient for transitive dependencies in a full package.
     patchelf --force-rpath --set-rpath '$ORIGIN' "$SDK/lib/libsearchkernel_vespa.so.2"
 fi
 
@@ -380,7 +470,7 @@ if find "$SDK/lib" -type f \( -name '*.h' -o -name '*.hh' -o -name '*.hpp' \) -p
     echo "refusing to publish native headers under SDK/lib" >&2
     exit 1
 fi
-if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+if [ "$BASE_ONLY" != 1 ] && [ "$ENABLE_FAILPOINTS" = 1 ]; then
     "$ROOT/tools/check-native-sdk-hardening.sh" "$SDK"
 fi
 

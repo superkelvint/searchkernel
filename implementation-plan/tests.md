@@ -17,6 +17,36 @@ For any pull request implementing a checklist item here:
 - after verification and merge/reconciliation, the CTO updates the corresponding checkbox(es) in this file as part of closure;
 - partial implementations must leave unmet checklist items unchecked.
 
+## Recent merged implementation status — 2026-09-22
+
+The following hardening work is now reachable from `main` and has received CTO
+implementation acceptance against this plan. These entries record **implementation
+state**, not checkbox closure. Unless a checklist item below is explicitly checked,
+the remaining closure requirement is independent exact-head execution plus evidence
+that a deliberate regression in the protected behavior makes the relevant test/gate
+fail.
+
+- PR #203 — deterministic lifecycle/state-machine hardening for the P0 lifecycle
+  sequence requirements.
+- PR #204 — deterministic seeded lifecycle/document model tests, bounded PR budget,
+  larger nightly budget, injected failures, and native reopen coverage.
+- PR #206 — expanded named canonical result-fidelity corpus, recursive production
+  FlatBuffer assertions, Dispatcher traversal, and Rust public projection checks.
+- PR #227 — cross-facade semantic differential tests at the canonical IR/snapshot
+  boundary, including Rust/portable, dispatcher/gRPC, Python, TypeScript,
+  pagination, grouping/facets, persisted schema, round trips, and negative cases.
+- PR #230 — canonical result projection invariants plus one generated shared encoded
+  result corpus consumed by Rust/Python/TypeScript, strict facet negatives, and
+  fixture-drift checking.
+- PR #190 — fast PR/main Rust unit lane plus a larger scheduled/manual nightly
+  verification lane.
+- PR #221 — supplemental structural guard preventing new production SearchRequest
+  semantic entry points outside the canonical resolver path.
+
+GitHub-hosted runner allocation is currently failing before checkout for some exact
+heads (`steps=[]`, `runner_id=0`). That is not treated as passing evidence and does
+not relax the acceptance rule above.
+
 
 ---
 
@@ -69,6 +99,10 @@ Lifecycle correctness must be tested over transitions and operation sequences, n
 
 ## Deterministic lifecycle tests
 
+> **Implemented on main:** PR #203. CTO review accepted the architecture and mapped
+> the merged tests to this deterministic lifecycle section. The boxes remain open
+> until deliberate-regression sensitivity is independently recorded.
+
 - [ ] Closing a runtime invalidates every cloned handle.
 - [ ] Close waits for one in-flight operation.
 - [ ] Close waits for multiple simultaneous in-flight operations.
@@ -84,6 +118,11 @@ Lifecycle correctness must be tested over transitions and operation sequences, n
 - [ ] Mutations racing with close obey one documented outcome.
 
 ## Model/state-machine tests
+
+> **Implemented on main:** PR #204. The merged model covers deterministic seeded
+> lifecycle/document sequences with Recording/Scripted backends, injected failures,
+> native reopen coverage, a bounded PR budget, and a larger nightly budget. Checkbox
+> closure still requires deliberate-regression sensitivity evidence.
 
 Build a small reference model for lifecycle/document state. It should model API state and document existence, not Vespa ranking.
 
@@ -126,6 +165,12 @@ attempt operation on closed handle
 
 ## Shared canonical result corpus
 
+> **Implemented on main:** PR #206 supplies the expanded named Rust/dispatcher
+> corpus; PR #230 supplies the generated shared encoded corpus consumed by first-class
+> Python and TypeScript decode paths. CTO review accepted both implementations against
+> this section. Individual boxes remain open until their deliberate-regression
+> sensitivity is independently recorded.
+
 Create immutable result fixtures covering:
 
 - [ ] root hits only;
@@ -154,6 +199,13 @@ Create immutable result fixtures covering:
 
 ## Projection invariants
 
+> **Implemented on main:** PR #230 makes `SearchResult.root` the canonical source
+> for Rust/Python/TypeScript projections, adds strict positive/negative facet-shape
+> coverage, preserves recursive ordering/state and result metadata, and makes the
+> first-class clients consume the same generated fixture bytes. PR #206 adds
+> complementary explicit Rust corpus cases. Boxes remain open pending the ledger's
+> deliberate-regression closure requirement.
+
 - [ ] Rust canonical tree decoding is lossless.
 - [ ] Rust `hits` is derived only from the canonical tree.
 - [ ] Rust `groups` is derived only from the canonical tree.
@@ -173,6 +225,12 @@ Create immutable result fixtures covering:
 # P0 — Differential semantic tests
 
 Whenever two public paths express the same semantics, compare them at the canonical IR boundary.
+
+> **Implemented on main:** PR #227 adds the required cross-facade comparisons at the
+> canonical owned-IR/snapshot boundary; PR #221 adds a structural guard against new
+> duplicate SearchRequest semantic entry points. CTO review accepted #227 against the
+> equivalence matrix below. Boxes remain open until deliberate-regression sensitivity
+> is independently demonstrated for the corresponding gates.
 
 ## Required equivalence pairs
 
@@ -458,6 +516,11 @@ Run expensive stress checks outside the fast PR loop but continuously on `main`.
 ---
 
 # CI structure
+
+> **Current implementation note:** PR #190 split the ordinary Rust unit lane from a
+> larger scheduled/manual nightly lane, including broader all-target, contract,
+> generated-artifact, client, ABI, and native-cache checks. This is partial progress
+> against the CI structure below; unchecked items are not implied complete.
 
 ## Fast mandatory PR gate
 

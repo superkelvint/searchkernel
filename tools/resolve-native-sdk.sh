@@ -7,8 +7,8 @@ BUILD_ENV=${SEARCHKERNEL_BUILD_ENV:-host}
 MODE=${1:-ensure}
 
 case "$MODE" in
-    ensure|path) ;;
-    *) echo "usage: tools/resolve-native-sdk.sh [ensure|path]" >&2; exit 2 ;;
+    ensure|path|vespa-root) ;;
+    *) echo "usage: tools/resolve-native-sdk.sh [ensure|path|vespa-root]" >&2; exit 2 ;;
 esac
 
 [[ -n "$TARGET" ]] || { echo "could not determine Rust target; set SK_NATIVE_TARGET" >&2; exit 1; }
@@ -77,18 +77,23 @@ CACHE_ROOT=$CACHE_BASE/$BUILD_ENV/$TARGET
 mkdir -p "$CACHE_ROOT/objects" "$CACHE_ROOT/locks" "$CACHE_ROOT/build"
 
 VESPA_BUILD_ROOT=$(resolve_vespa_root)
+if [[ "$MODE" == vespa-root ]]; then
+    printf '%s\n' "$VESPA_BUILD_ROOT"
+    exit 0
+fi
 FINGERPRINT=$(python3 "$ROOT/tools/native-build-fingerprint.py" \
     --root "$ROOT" \
     --vespa-root "$VESPA_BUILD_ROOT" \
-    --target "$TARGET")
+    --target "$TARGET" \
+    --scope base)
 DIGEST=$(printf '%s' "$FINGERPRINT" | sed -n 's/^sha256=//p' | head -1)
 [[ ${#DIGEST} -eq 64 ]] || { echo "native fingerprint did not produce a SHA-256 digest" >&2; exit 1; }
 OBJECT=$CACHE_ROOT/objects/$DIGEST
 
 validate_link_closure() {
     local sdk=$1
-    local library="$sdk/lib/libsearchkernel_vespa.so"
-    local sdk_lib output missing external line name path resolved
+    local sdk_lib library output missing external line name path resolved
+    local found=0
 
     command -v ldd >/dev/null 2>&1 || {
         echo "native SDK runtime dependency closure validation requires ldd" >&2
@@ -96,20 +101,8 @@ validate_link_closure() {
     }
 
     sdk_lib=$(cd -- "$sdk/lib" && pwd -P)
-    if ! output=$(env -u LD_LIBRARY_PATH -u LD_PRELOAD ldd "$library" 2>&1); then
-        echo "native SDK '$sdk' runtime dependency closure probe failed" >&2
-        printf '%s\n' "$output" >&2
-        return 1
-    fi
-
-    missing=$(printf '%s\n' "$output" | sed -n '/=> not found/p')
-    if [[ -n "$missing" ]]; then
-        echo "native SDK '$sdk' has incomplete runtime dependency closure:" >&2
-        printf '%s\n' "$missing" >&2
-        return 1
-    fi
-
     external=
+
     while IFS= read -r path; do
         resolved=$(readlink -f "$path" 2>/dev/null || true)
         case "$resolved" in
@@ -118,43 +111,66 @@ validate_link_closure() {
         esac
     done < <(find "$sdk_lib" -maxdepth 1 -type l -print)
 
-    while IFS= read -r line; do
-        name=$(printf '%s\n' "$line" | awk '{print $1}')
-        path=$(printf '%s\n' "$line" | awk '$2 == "=>" {print $3}')
-        [[ -n "$path" && "$path" != "not" ]] || continue
-
-        if [[ -e "$sdk_lib/$name" || -L "$sdk_lib/$name" ]]; then
-            resolved=$(readlink -f "$path" 2>/dev/null || true)
-            case "$resolved" in
-                "$sdk_lib"/*) ;;
-                *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
-            esac
-            continue
+    while IFS= read -r library; do
+        found=1
+        if ! output=$(env -u LD_LIBRARY_PATH -u LD_PRELOAD ldd "$library" 2>&1); then
+            echo "native Vespa base '$sdk' runtime dependency closure probe failed for '$(basename "$library")'" >&2
+            printf '%s\n' "$output" >&2
+            return 1
         fi
 
-        case "$name" in
-            libvespa*.so*|libLLVM*.so*|libffi.so*|libxxhash.so*|libsearchkernel_*.so*)
+        missing=$(printf '%s\n' "$output" | sed -n '/=> not found/p')
+        if [[ -n "$missing" ]]; then
+            echo "native Vespa base '$sdk' has incomplete runtime dependency closure for '$(basename "$library")':" >&2
+            printf '%s\n' "$missing" >&2
+            return 1
+        fi
+
+        while IFS= read -r line; do
+            name=$(printf '%s\n' "$line" | awk '{print $1}')
+            path=$(printf '%s\n' "$line" | awk '$2 == "=>" {print $3}')
+            [[ -n "$path" && "$path" != "not" ]] || continue
+
+            if [[ -e "$sdk_lib/$name" || -L "$sdk_lib/$name" ]]; then
                 resolved=$(readlink -f "$path" 2>/dev/null || true)
                 case "$resolved" in
                     "$sdk_lib"/*) ;;
                     *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
                 esac
-                ;;
-        esac
-    done <<<"$output"
+                continue
+            fi
+
+            case "$name" in
+                libvespa*.so*|libLLVM*.so*|libffi.so*|libxxhash.so*)
+                    resolved=$(readlink -f "$path" 2>/dev/null || true)
+                    case "$resolved" in
+                        "$sdk_lib"/*) ;;
+                        *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
+                    esac
+                    ;;
+            esac
+        done <<<"$output"
+    done < <(find "$sdk_lib" -maxdepth 1 -type f -name 'libvespa*.so*' -print)
+
+    if [[ "$found" != 1 ]]; then
+        echo "native Vespa base '$sdk' does not contain Vespa shared libraries" >&2
+        return 1
+    fi
 
     if [[ -n "$external" ]]; then
-        echo "native SDK '$sdk' resolved private runtime dependencies outside its bundled lib directory:" >&2
+        echo "native Vespa base '$sdk' resolved private runtime dependencies outside its bundled lib directory:" >&2
         printf '%s\n' "$external" >&2
         return 1
     fi
 }
 
 valid_object() {
-    [[ -f "$OBJECT/include/searchkernel_vespa.h" &&
-       -f "$OBJECT/manifest.json" &&
-       -f "$OBJECT/native-build-fingerprint-v2.txt" &&
-       -f "$OBJECT/lib/libsearchkernel_vespa.so" ]] || return 1
+    [[ -f "$OBJECT/manifest.json" &&
+       -f "$OBJECT/native-build-fingerprint-v2.txt" ]] || return 1
+    [[ ! -e "$OBJECT/lib/libsearchkernel_vespa.so" &&
+       ! -e "$OBJECT/include/searchkernel_vespa.h" ]] || return 1
+    grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$OBJECT/manifest.json" || return 1
+    grep -q "^fingerprint-version=3$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
     grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
     validate_link_closure "$OBJECT"
 }
@@ -214,6 +230,7 @@ SK_NATIVE_BUILD_DIR="$BUILD" \
 SK_NATIVE_TARGET="$TARGET" \
 SK_NATIVE_REGENERATE_BINDINGS=0 \
 SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
+SK_NATIVE_BASE_ONLY=1 \
     "$BUILDER"
 
 grep -q "^sha256=$DIGEST$" "$TMP/native-build-fingerprint-v2.txt" || {

@@ -254,7 +254,7 @@ export class SearchBuilder {
 
   async execute(options?: ExecuteOptions): Promise<SearchResults> {
     const result = new SearchResults(await this.index.client.search(this.build(), options));
-    for (const facet of this.facets) result.projectFacet(facet.name, facet.name);
+    for (const facet of this.facets) result.projectFacet(facet.name, facet.name, facet.field);
     return result;
   }
 }

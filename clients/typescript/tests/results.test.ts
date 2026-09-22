@@ -1,5 +1,7 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SearchResults } from "../src/client/results.js";
+import { Hit, ResultGroup, SearchResults } from "../src/client/results.js";
 import { uint64, value } from "../src/client/values.js";
 import { CoverageDegradedT } from "../src/generated/flatbuffers/search-kernel/v2/coverage-degraded.js";
 import { CoverageT } from "../src/generated/flatbuffers/search-kernel/v2/coverage.js";
@@ -21,6 +23,18 @@ import { StringEntryT } from "../src/generated/flatbuffers/search-kernel/v2/stri
 import { TotalHitsRelation } from "../src/generated/flatbuffers/search-kernel/v2/total-hits-relation.js";
 import { TotalHitsT } from "../src/generated/flatbuffers/search-kernel/v2/total-hits.js";
 import { ValueEntryT } from "../src/generated/flatbuffers/search-kernel/v2/value-entry.js";
+import { unpackResponse } from "../src/protocol/envelope.js";
+
+const fixtureRoot = resolve(
+  process.cwd(),
+  "../../core/crates/searchkernel-dispatch/tests/fixtures/portable/responses",
+);
+
+function loadFixture(name: string): SearchResults {
+  const bytes = readFileSync(`${fixtureRoot}/result-${name}.skrs`);
+  const response = unpackResponse(new Uint8Array(bytes), "search");
+  return new SearchResults(response.payload as SearchResultT);
+}
 
 const node = (group: ResultGroupT) => new ResultNodeT(ResultNodeKind.ResultGroup, group);
 
@@ -49,19 +63,12 @@ describe("ergonomic search results", () => {
       [],
       [node(brandBucket)],
     );
-    const groupingContainer = new ResultGroupT(
-      null,
-      null,
-      null,
-      [],
-      [node(facetGroup)],
-    );
     const root = new ResultGroupT(
       null,
       null,
       null,
       [new ValueEntryT("avg_price", value(12.5))],
-      [new ResultNodeT(ResultNodeKind.Hit, hit), node(groupingContainer)],
+      [new ResultNodeT(ResultNodeKind.Hit, hit), node(facetGroup)],
       [new StringEntryT("next", "token-1")],
     );
 
@@ -90,7 +97,7 @@ describe("ergonomic search results", () => {
     expect(result.totalHits).toBe(10n);
     expect(result.totalHitsRelation).toBe("exact");
     expect(result.coverage?.full).toBe(true);
-    expect(result.continuations).toEqual(["token-1"]);
+    expect(result.continuations).toEqual([{ key: "next", value: "token-1" }]);
     expect(result.root).not.toBeNull();
   });
 });
@@ -154,6 +161,33 @@ it("does not infer arbitrary labeled groups or synthesize malformed facet counts
   const wrong = new SearchResults(new SearchResultT(node(malformedRoot)));
   wrong.projectFacet("brand", "brand");
   expect(wrong.facets).toEqual({});
+});
+
+it("does not project facets when the parent carries extra metadata", () => {
+  const bucket = new ResultGroupT(
+    null,
+    null,
+    value("Acme"),
+    [new ValueEntryT("count", value(uint64("3")))],
+  );
+  const facet = new ResultGroupT(
+    null,
+    "brand",
+    null,
+    [],
+    [node(bucket)],
+    [],
+    null,
+    [],
+    null,
+    null,
+    [new ValueEntryT("unexpected", value(true))],
+  );
+  const root = new ResultGroupT(null, null, null, [], [node(facet)]);
+  const result = new SearchResults(new SearchResultT(node(root)));
+
+  result.projectFacet("brand", "brand");
+  expect(result.facets).toEqual({});
 });
 
 it("projects named facets only when explicitly requested", () => {
@@ -233,4 +267,84 @@ it("decodes finite and infinite relevance kinds consistently", () => {
     const result = new SearchResults(new SearchResultT(node(root)));
     expect(result.hits[0]?.relevance).toBe(expected);
   }
+});
+
+describe("shared canonical result corpus", () => {
+  // SKC: result.highlighting/basic kinds=conformance runtime=shared
+  it("preserves the canonical recursive tree and envelope state", () => {
+    const result = loadFixture("canonical");
+    if (!(result.root instanceof ResultGroup)) throw new Error("canonical root is not a group");
+    const root = result.root;
+    expect(root.id).toBe("root");
+    expect(root.children.map((child) => child instanceof Hit ? "hit" : "group")).toEqual(["hit", "group"]);
+    expect(result.hits.map((hit) => hit.id)).toEqual(["doc-1"]);
+    expect(result.groups.map((group) => group.id)).toEqual(["nested"]);
+    expect(result.groups[0]?.hits.map((hit) => hit.id)).toEqual(["doc-2"]);
+    expect(result.aggregations).toEqual({ count: 2n });
+    expect(result.groups[0]?.fields).toEqual({ count: 1n });
+    expect(root.continuations).toEqual([{ key: "page", value: "token-1" }]);
+    expect(result.groups[0]?.continuations).toEqual([{ key: "next", value: "token" }]);
+    expect(root.limits).toEqual({ from: 0n, to: 20n });
+    expect(root.metadata).toEqual({ trace_id: "r-1" });
+
+    const hit = result.hits[0]!;
+    expect(hit.relevance).toBe(4.5);
+    expect(hit.highlights).toEqual([{
+      field: "title",
+      fragments: [{ text: "<em>First</em>", matches: [{ startByte: 0, endByte: 5 }] }],
+    }]);
+    expect(hit.matchFeatures).toEqual({ bm25: 2 });
+    expect(hit.summaryFeatures).toEqual({ summary: "ready" });
+    expect(hit.rankFeatures).toEqual({ rank: 8 });
+    expect(hit.sortValues).toEqual([1n]);
+    expect(result.totalHits).toBe(12n);
+    expect(result.coverage?.coveragePercent).toBe(99);
+    expect(result.coverage?.metadata).toEqual({ region: "west" });
+    expect(result.timing?.searchTimeSeconds).toBe(0.002);
+    expect(result.timing?.metadata).toEqual({ phase: "done" });
+    expect(result.errors[0]?.code).toBe(503n);
+    expect(result.errors[0]?.metadata).toEqual({ node: "2" });
+    expect(result.trace).toEqual({ level: 3n });
+    expect(result.metadata).toEqual({ request_id: "r1" });
+  });
+
+  it("preserves infinities and absent optional envelope state", () => {
+    const result = loadFixture("infinite-relevance");
+    expect(result.hits[1]?.relevance).toBe(Number.POSITIVE_INFINITY);
+    expect(result.hits[2]?.relevance).toBe(Number.NEGATIVE_INFINITY);
+
+    const empty = loadFixture("empty");
+    expect(empty.hits).toEqual([]);
+    expect(empty.groups).toEqual([]);
+    expect(empty.coverage).toBeNull();
+    expect(empty.timing).toBeNull();
+    expect(empty.metadata).toEqual({});
+
+    const rootHit = loadFixture("root-hit");
+    expect(rootHit.hits.map((hit) => hit.id)).toEqual(["root-hit"]);
+    expect(rootHit.groups).toEqual([]);
+
+    const stateOnly = loadFixture("root-state-only");
+    if (!(stateOnly.root instanceof ResultGroup)) throw new Error("state-only root is not a group");
+    expect(stateOnly.continuations).toEqual([{ key: "page", value: "token" }]);
+    expect(stateOnly.root.limits).toEqual({ from: 1n, to: 2n });
+    expect(stateOnly.root.metadata).toEqual({ state: "present" });
+  });
+
+  it("uses the exact Rust facet shape for every shared fixture", () => {
+    const valid = loadFixture("facet-valid");
+    valid.projectFacet("brand", "brand");
+    expect(valid.facets).toEqual({ brand: [{ value: "Acme", count: 3n }] });
+
+    const named = loadFixture("facet-valid-named");
+    named.projectFacet("brands", "brands", "brand");
+    expect(named.facets).toEqual({ brands: [{ value: "Acme", count: 3n }] });
+
+    for (const filename of readdirSync(fixtureRoot).filter((item) => item.startsWith("result-facet-"))) {
+      if (filename === "result-facet-valid.skrs" || filename === "result-facet-valid-named.skrs") continue;
+      const result = loadFixture(filename.slice("result-".length, -".skrs".length));
+      result.projectFacet("brand", "brand");
+      expect(result.facets, filename).toEqual({});
+    }
+  });
 });
