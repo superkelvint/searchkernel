@@ -49,7 +49,9 @@ fn boundary_helpers_enforce_native_size_and_pointer_contracts() {
         length_u32(u32::MAX as usize + 1, "items").expect_err("values above u32 must be rejected");
     assert!(overflow.to_string().contains("items count"));
 
-    assert!(require_ptr::<u8>(std::ptr::null_mut(), "result").is_err());
+    let null_result = require_ptr::<u8>(std::ptr::null_mut(), "result")
+        .expect_err("null native output after a successful call must be rejected");
+    assert_eq!(null_result.kind(), ErrorKind::Internal);
     let mut value = 1_u8;
     assert!(require_ptr(&mut value, "result").is_ok());
 }
@@ -59,6 +61,8 @@ fn errors_preserve_codes_kinds_and_messages() {
     for (code, kind) in [
         (1, ErrorKind::InvalidArgument),
         (3, ErrorKind::ResourceExhausted),
+        (4, ErrorKind::Unsupported),
+        (5, ErrorKind::DeadlineExceeded),
         (6, ErrorKind::Type),
         (77, ErrorKind::Internal),
     ] {
@@ -68,10 +72,16 @@ fn errors_preserve_codes_kinds_and_messages() {
         assert_eq!(error.to_string(), "native failure");
     }
 
-    let local = Error::message("wrapper failure");
+    let local = Error::invalid("wrapper failure");
     assert_eq!(local.code(), 0);
     assert_eq!(local.kind(), ErrorKind::InvalidArgument);
     assert_eq!(local.to_string(), "wrapper failure");
+
+    let invariant = Error::internal("native_result_invariant", "malformed native result");
+    assert_eq!(invariant.code(), 0);
+    assert_eq!(invariant.kind(), ErrorKind::Internal);
+    assert_eq!(invariant.detail_code(), Some("native_result_invariant"));
+    assert_eq!(invariant.to_string(), "malformed native result");
 
     let nul = std::ffi::CString::new(b"bad\0value".as_slice()).expect_err("interior NUL");
     let nul_error = Error::from_nul(nul);
