@@ -3,10 +3,6 @@ set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 expected=25.12.19
-target_dir=${CARGO_TARGET_DIR:-$root/target/host}
-if [[ "$target_dir" != /* ]]; then
-    target_dir="$root/$target_dir"
-fi
 
 is_expected_flatc() {
     local candidate=$1
@@ -41,23 +37,6 @@ if command -v flatc >/dev/null 2>&1; then
         exit 0
     fi
 fi
-
-candidate=$(find "$target_dir" -type f -path '*/flatbuffers-build-*/out/bin/flatc' \
-    -perm -111 -print -quit 2>/dev/null || true)
-if [[ -n "$candidate" ]] && is_expected_flatc "$candidate"; then
-    printf '%s\n' "$candidate"
-    exit 0
-fi
-
-while IFS= read -r worktree; do
-    [[ "$worktree" == "$root" ]] && continue
-    candidate=$(find "$worktree/target" -type f -path '*/flatbuffers-build-*/out/bin/flatc' \
-        -perm -111 -print -quit 2>/dev/null || true)
-    if [[ -n "$candidate" ]] && is_expected_flatc "$candidate"; then
-        printf '%s\n' "$candidate"
-        exit 0
-    fi
-done < <(git -C "$root" worktree list --porcelain | sed -n 's/^worktree //p')
 
 if is_expected_flatc /usr/local/bin/flatc; then
     printf '%s\n' /usr/local/bin/flatc

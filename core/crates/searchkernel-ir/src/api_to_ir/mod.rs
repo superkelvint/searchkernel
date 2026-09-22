@@ -22,20 +22,21 @@ mod tests;
 
 pub(crate) use grouping::grouping_to_input;
 pub use resolve::{
-    facet_grouping_input, resolve_analyze, resolve_delete, resolve_document, resolve_facets, resolve_facets_at,
-    resolve_get, resolve_insert, resolve_patch, resolve_projection, resolve_search, resolve_update,
-    resolve_upsert, AnalyzeInput, AnalyzeTargetInput, AnalyzerInput, DeleteInput, DocumentInput,
-    FacetInput, FacetSortInput, FilterBoundInput, FilterInput, GetInput, GroupingInput,
-    PatchOperationInput, PresentationInput, QueryModelInput, QuerySourceInput, RankingInput,
-    SearchFieldInput, SearchInput, SearchIntent, SortInput, SortTargetInput, TextualFilterInput,
-    UpdateOperationInput,
+    facet_grouping_input, resolve_analyze, resolve_delete, resolve_document, resolve_facets,
+    resolve_facets_at, resolve_get, resolve_insert, resolve_patch, resolve_projection,
+    resolve_search, resolve_update, resolve_upsert, AnalyzeInput, AnalyzeTargetInput,
+    AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput, FilterBoundInput,
+    FilterInput, GetInput, GroupingInput, PatchOperationInput, PresentationInput, QueryModelInput,
+    QuerySourceInput, RankingInput, SearchFieldInput, SearchInput, SearchIntent, SortInput,
+    SortTargetInput, TextualFilterInput, UpdateOperationInput,
 };
 pub use schema::{
-    analyzer_to_ir, field_to_ir, index_definition_to_ir, resolve_rust_index_definition,
-    resolve_rust_index_definition_with_profiles, RustAnalyzerInput, RustFieldInput, RustFieldKind,
-    RustIndexDefinitionInput, RustRankProfileInput, RustSearchFieldInput,
+    analyzer_to_ir, field_to_ir, index_definition_to_ir, resolve_index_definition,
+    resolve_rust_index_definition, resolve_rust_index_definition_with_profiles,
+    resolve_rust_index_definition_with_schema, IndexDefinitionInput, RustAnalyzerInput,
+    RustFieldInput, RustFieldKind, RustIndexDefinitionInput, RustRankProfileInput,
+    RustSearchFieldInput, UnresolvedFieldInput, UnresolvedRankProfileInput,
 };
-pub(crate) use search::search_fields_to_ir_at;
 pub use value::{filter_binding_value_from_json, request_value_from_json};
 pub(crate) use value::{request_values_to_map, value_from_api};
 

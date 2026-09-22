@@ -43,7 +43,7 @@ fn schema() -> IndexDefinitionIr {
             field("title", FieldKind::Text, true),
             field("hidden", FieldKind::Keyword, false),
         ],
-        Vec::new()
+        Vec::new(),
     )
     .unwrap()
 }

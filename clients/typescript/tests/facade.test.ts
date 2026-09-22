@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Index, SearchKernelError } from "../src/client/index.js";
 import { int64, uint64 } from "../src/client/values.js";
-import { agg, desc, g, Group } from "../src/ergonomic/grouping.js";
+import {
+  agg,
+  desc,
+  facetRequest,
+  g,
+  Group,
+  rootAggregationRequest,
+} from "../src/ergonomic/grouping.js";
 import { q } from "../src/ergonomic/query.js";
 import { Keyword, RankProfile, TensorField, Text } from "../src/ergonomic/schema.js";
 import { DocumentT } from "../src/generated/flatbuffers/search-kernel/v2/document.js";
@@ -18,7 +29,57 @@ import { QuerySourceKind } from "../src/generated/flatbuffers/search-kernel/v2/q
 import { ValueKind } from "../src/generated/flatbuffers/search-kernel/v2/value-kind.js";
 import type { GrpcWebTransport } from "../src/transport/grpc-web.js";
 import { ByteBuffer } from "flatbuffers";
-import { packRequest } from "../src/protocol/envelope.js";
+import { packObject, packRequest } from "../src/protocol/envelope.js";
+
+let semanticSnapshotBinary: string | undefined;
+
+function canonicalSnapshot(request: SearchRequestT): unknown {
+  const repository = resolve(process.cwd(), "../..");
+  const fixture = join(repository, "reference/api-conformance/fixtures/indexes/product-v2.json");
+  const directory = mkdtempSync(join(tmpdir(), "searchkernel-ir-"));
+  const requestPath = join(directory, "request.bfbs");
+  try {
+    writeFileSync(requestPath, packObject(request));
+    if (semanticSnapshotBinary === undefined) {
+      execFileSync(
+        "cargo",
+        [
+          "build",
+          "--quiet",
+          "--no-default-features",
+          "-p",
+          "searchkernel-testkit",
+          "--bin",
+          "searchkernel-semantic-snapshot",
+        ],
+        { cwd: repository, stdio: "ignore" },
+      );
+      const metadata = execFileSync(
+        "cargo",
+        ["metadata", "--no-deps", "--format-version", "1"],
+        { cwd: repository, encoding: "utf8" },
+      );
+      semanticSnapshotBinary = join(
+        JSON.parse(metadata).target_directory as string,
+        "debug",
+        "searchkernel-semantic-snapshot",
+      );
+    }
+    const output = execFileSync(
+      semanticSnapshotBinary,
+      [
+        "--index-json",
+        fixture,
+        "--request",
+        requestPath,
+      ],
+      { cwd: repository, encoding: "utf8" },
+    );
+    return JSON.parse(output) as unknown;
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
 
 function index(): Index {
   return Index.connect("unused", { execute: async () => new Uint8Array() } as unknown as GrpcWebTransport);
@@ -94,6 +155,47 @@ describe("ergonomic facade", () => {
     expect(expression.label).toBe("revenue");
     expect(() => index().browse().page(2, 10).offset(20)).toThrow(/cannot follow page/);
   });
+
+  it("compares pagination and grouping helpers through canonical Rust IR", () => {
+    const page = index().browse().page(2, 20).build();
+    const explicit = index().browse().limit(20).offset(20).build();
+    expect(canonicalSnapshot(page)).toEqual(canonicalSnapshot(explicit));
+    const firstPage = index().browse().page(1, 20).build();
+    const firstPageExplicit = index().browse().limit(20).offset(0).build();
+    expect(canonicalSnapshot(firstPage)).toEqual(canonicalSnapshot(firstPageExplicit));
+    const zeroPage = index().browse().page(1, 0).build();
+    const zeroPageExplicit = index().browse().limit(0).offset(0).build();
+    expect(canonicalSnapshot(zeroPage)).toEqual(canonicalSnapshot(zeroPageExplicit));
+
+    const helper = index()
+      .browse()
+      .group(Group.by("category").limit(3).output(agg.count().as("products")))
+      .facet("brand", { name: "brands", limit: 5, sort: "count_desc" })
+      .aggregate(agg.count().as("products"))
+      .build();
+    const explicitGrouping = new SearchRequestT(
+      helper.query,
+      helper.searchFields,
+      helper.filters,
+      helper.sort,
+      [
+        Group.by("category").limit(3).output(agg.count().as("products")).toRequest(),
+        facetRequest("brand", 5, "count_desc", "brands"),
+        rootAggregationRequest([agg.count().as("products")]),
+      ],
+      helper.ranking,
+      helper.inputs,
+      helper.limit,
+      helper.offset,
+      helper.timeoutMs,
+      helper.queryModel,
+      helper.presentation,
+      helper.properties,
+      helper.queryProfile,
+      helper.searchChain,
+    );
+    expect(canonicalSnapshot(helper)).toEqual(canonicalSnapshot(explicitGrouping));
+  }, 120_000);
 
   it("maps portable error codes to stable names", () => {
     const error = new SearchKernelError(

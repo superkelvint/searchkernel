@@ -26,6 +26,13 @@ jobs:
         with:
           workspaces: ". -> target/ci-nightly"
           shared-key: nightly
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
 
       - name: Formatting
         run: cargo fmt --all --check
@@ -37,6 +44,9 @@ jobs:
         run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
       - name: Test every non-native target
+        env:
+          SEARCHKERNEL_MODEL_STEPS: 250
+          SEARCHKERNEL_MODEL_SEEDS: 0x517a11,0x9e3779,0xd1ce42,0x4f1ab7,0xa50933,0xe2710d,0x6c8824,0xb342f0
         run: cargo test --workspace --all-targets --no-default-features
 
   contracts:
@@ -53,6 +63,12 @@ jobs:
       - name: Install Python client/codegen dependencies
         run: python -m pip install -e 'clients/python[codegen]'
 
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
       - name: Install pinned FlatBuffers toolchain
         run: ./dev install flatbuffers
 
@@ -60,6 +76,7 @@ jobs:
         run: |
           bash tools/check-layout.sh
           bash tools/check-ir-boundary.sh
+          python tools/check-search-semantic-entry-points.py
           python tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
           python tools/check-python-flatbuffers-boundary.py
 
@@ -101,6 +118,13 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: clients/typescript/package-lock.json
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
 
       - name: Install clients
         run: |

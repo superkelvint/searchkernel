@@ -17,17 +17,19 @@ pub mod session;
 pub mod snapshot;
 
 pub use api_to_ir::{
-    analyzer_to_ir, facet_grouping_input, field_to_ir, filter_binding_value_from_json, index_definition_to_ir,
-    request_value_from_json, resolve_analyze, resolve_delete, resolve_document, resolve_facets,
-    resolve_facets_at, resolve_get, resolve_insert, resolve_patch, resolve_projection,
-    resolve_rust_index_definition, resolve_rust_index_definition_with_profiles, resolve_search,
-    resolve_update, resolve_upsert, AnalyzeInput, AnalyzeTargetInput, AnalyzerInput, DeleteInput,
-    DocumentInput, FacetInput, FacetSortInput, FilterBoundInput, FilterInput, GetInput,
-    GroupingInput, IndexContext, PatchOperationInput, PresentationInput, QueryModelInput,
-    QuerySourceInput, RankingInput, RustAnalyzerInput, RustFieldInput, RustFieldKind,
-    RustIndexDefinitionInput, RustRankProfileInput, RustSearchFieldInput, SearchFieldInput,
-    SearchInput, SearchIntent, SortInput, SortTargetInput, TextualFilterInput,
-    UpdateOperationInput, WriteRequestRef,
+    analyzer_to_ir, facet_grouping_input, field_to_ir, filter_binding_value_from_json,
+    index_definition_to_ir, request_value_from_json, resolve_analyze, resolve_delete,
+    resolve_document, resolve_facets, resolve_facets_at, resolve_get, resolve_index_definition,
+    resolve_insert, resolve_patch, resolve_projection, resolve_rust_index_definition,
+    resolve_rust_index_definition_with_profiles, resolve_rust_index_definition_with_schema,
+    resolve_search, resolve_update, resolve_upsert, AnalyzeInput, AnalyzeTargetInput,
+    AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput, FilterBoundInput,
+    FilterInput, GetInput, GroupingInput, IndexContext, IndexDefinitionInput, PatchOperationInput,
+    PresentationInput, QueryModelInput, QuerySourceInput, RankingInput, RustAnalyzerInput,
+    RustFieldInput, RustFieldKind, RustIndexDefinitionInput, RustRankProfileInput,
+    RustSearchFieldInput, SearchFieldInput, SearchInput, SearchIntent, SortInput, SortTargetInput,
+    TextualFilterInput, UnresolvedFieldInput, UnresolvedRankProfileInput, UpdateOperationInput,
+    WriteRequestRef,
 };
 pub use backend::Backend;
 pub use error::{ErrorCode, ErrorDetail, PortableError, Result};

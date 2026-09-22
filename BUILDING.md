@@ -1,11 +1,10 @@
 # Building Search Kernel
 
-Search Kernel builds Rust code together with two native components: the
-vendored FlatBuffers C++ library and, for the default native feature, the
-Vespa adapter SDK. Native outputs are compiler- and runtime-sensitive. Cargo
-build outputs remain environment-local, while Vespa SDK packages are resolved
-through an immutable content-addressed store shared by Git worktrees and keyed
-by the full native provenance fingerprint.
+Search Kernel builds Rust code against pinned native prerequisites. FlatBuffers
+C++ 25.12.19 is installed once as a clone-wide toolchain and is never rebuilt by
+ordinary Cargo commands. The default native feature also links the Search Kernel
+Vespa adapter SDK. Cargo build outputs remain environment-local, while native
+prerequisites are shared safely across Git worktrees.
 
 ## Authority and failure handling
 
@@ -151,15 +150,16 @@ reused without rebuilding. For a deliberate custom prefix, set
 `FLATBUFFERS_INSTALL_PREFIX`; explicit `FLATBUFFERS_CPP_ROOT` and `FLATC_PATH`
 overrides remain supported.
 
-Cargo's protocol build still uses its matching pinned vendored FlatBuffers
-build under the active target root. The shared standalone toolchain is for
-schema generation, reproducibility checks, and doctor; it is not silently
-mixed into Cargo's native build outputs.
+Cargo's protocol build uses this same installed FlatBuffers C++ prerequisite.
+It verifies the exact pinned header version and static library, then compiles
+only Search Kernel's small JSON bridge against them. Cargo never downloads,
+configures, compiles, invalidates, or repairs FlatBuffers itself.
 
-The FlatBuffers build records a deterministic fingerprint and compiles a
-parser/link probe against the actual static archive. A changed fingerprint or
-failed probe invalidates only that FlatBuffers sub-build. Rust incremental
-outputs and unrelated native components remain intact.
+A fresh Cargo target directory or Git worktree therefore does not rebuild
+FlatBuffers. If the prerequisite is missing or the wrong version, the build
+fails quickly and tells the developer to run `./dev install flatbuffers`.
+Only an intentional FlatBuffers version/toolchain change requires another
+FlatBuffers installation.
 
 ## Python runtime vs code-generation dependencies
 
@@ -333,9 +333,9 @@ cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 cargo test --workspace --all-targets --no-default-features
 ```
 
-The native verifiers cover stable warm reuse, compiler-wrapper and flag
-invalidation, host/container/CI target separation, preservation of unrelated
-Rust artifacts, and one-shot recovery from a broken FlatBuffers archive.
+The native verifiers cover host/container/CI isolation, preservation of
+unrelated Rust artifacts, and the invariant that ordinary Cargo builds consume
+the installed FlatBuffers prerequisite without rebuilding it.
 
 Do not use `cargo clean`, delete `target/`, or manually remove an SDK as a
 normal response to a native linker failure. Read the first provenance warning
