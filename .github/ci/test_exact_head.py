@@ -205,6 +205,64 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 self.assertEqual("native i" in logged, expect_native)
 
+    def test_precommit_treats_native_rename_as_native_sensitive(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+
+        (repo / ".githooks").mkdir(parents=True)
+        (repo / ".github" / "ci").mkdir(parents=True)
+        (repo / "reference" / "vespa").mkdir(parents=True)
+        (repo / "fakebin").mkdir(parents=True)
+        (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+
+        log = repo / "hook.log"
+        cargo = repo / "fakebin" / "cargo"
+        cargo.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        cargo.chmod(0o755)
+        native_gate = repo / "reference" / "vespa" / "verify-through.sh"
+        native_gate.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'native %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        native_gate.chmod(0o755)
+
+        source = repo / "core" / "native" / "vespa" / "moved.cc"
+        source.parent.mkdir(parents=True)
+        source.write_text("native\n", encoding="utf-8")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "fixture")
+
+        destination = repo / "docs" / "moved.cc"
+        destination.parent.mkdir(parents=True)
+        source.rename(destination)
+        git(repo, "add", "-A")
+
+        env = os.environ.copy()
+        env["HOOK_LOG"] = str(log)
+        env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks" / "pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        logged = log.read_text(encoding="utf-8")
+        self.assertIn("native i", logged)
+
     def test_precommit_rejects_native_verification_with_unstaged_tracked_changes(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
