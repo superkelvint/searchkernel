@@ -49,6 +49,21 @@ coordination:
   tied to an issue, create a new GitHub issue for that exact task before code
   changes begin. The issue is for durable tracking and PR linkage, not for
   rediscovering or redefining the user's task.
+- **Create every new actionable implementation issue with its canonical queue
+  labels in the same creation operation.** At minimum this means exactly one
+  workflow-state label plus priority, area, and type classification. Ordinary
+  unclaimed work MUST be created with `status:ready`; do not create an
+  unlabeled issue and plan to classify it later.
+- The canonical issue taxonomy is defined by
+  `searchkernel-cto-state/ISSUE_LABELS.md`. For ordinary actionable work use:
+  `status:ready`, exactly one `priority:p0`..`priority:p3`, at least one
+  stable `area:*`, and one primary `type:*` where practical. If the issue is
+  genuinely not actionable at creation time, use `status:blocked` instead.
+  Follow-up work uses `status:needs-followup`. Tracking/umbrella issues are not
+  implementation candidates and MUST NOT be labeled `status:ready`.
+- If a newly-created issue will be claimed immediately, it is still created as
+  `status:ready` first; the race-safe claim operation then transitions it to
+  `status:in-progress`. Issue creation itself is not a claim.
 - Search or browse the issue queue only when the user asks to find/select/claim
   work, explicitly invokes an issue-discovery workflow, or the task itself
   requires broader issue context.
@@ -161,9 +176,9 @@ When the CTO/reviewer requests follow-up on an existing issue/pull request,
 use GitHub labels as the durable workflow state:
 
 ```text
-issue: needs-followup
+issue: status:needs-followup
     ↓
-issue: followup-in-progress
+issue: status:in-progress
     ↓
 PR: needs-cto-review
 ```
@@ -172,12 +187,12 @@ The transitions are authoritative:
 
 - When review finds a concrete repair or missing verification, keep or convert
   the pull request to Draft when it is not ready, remove `needs-cto-review`
-  from the **pull request** if present, add `needs-followup` to the issue,
+  from the **pull request** if present, add `status:needs-followup` to the issue,
   and leave actionable review feedback describing the defect, expected repair,
   and required verification.
 - A follow-up worker must identify the one existing open pull request before
-  claiming. To claim, remove `needs-followup` from the issue, add
-  `followup-in-progress` to the issue, and comment on the issue exactly:
+  claiming. To claim, remove `status:needs-followup` from the issue, add
+  `status:in-progress` to the issue, and comment on the issue exactly:
   `Claimed follow-up; working on PR #X.`
 - Follow-up work normally updates the existing pull request branch. Do not
   create a replacement pull request merely to perform review-requested work.
@@ -185,7 +200,7 @@ The transitions are authoritative:
 - A successful follow-up handoff requires a pull request comment stating what
   changed and the exact verification commands/results, plus the tested head
   SHA. Then mark the pull request **Ready for review**, remove
-  `followup-in-progress` from the issue, and add `needs-cto-review` to the
+  `status:in-progress` from the issue, and add `needs-cto-review` to the
   **pull request**.
 - Ordinary implementation work follows the same review signal: after the
   implementation PR exists and all required verification passes, add
@@ -196,15 +211,15 @@ The transitions are authoritative:
   handing it back to the CTO/reviewer. It is not verification or acceptance by
   itself.
 - If follow-up is blocked or required verification still fails, keep
-  `followup-in-progress` on the issue, leave the exact blocker and next step
+  `status:in-progress` on the issue, leave the exact blocker and next step
   on the issue or pull request, do not add `needs-cto-review` to the PR, and
   do not mark the pull request ready. If the claim is discovered to be invalid
-  before meaningful work begins, restore `needs-followup` on the issue and
-  remove `followup-in-progress`.
+  before meaningful work begins, restore `status:needs-followup` on the issue and
+  remove `status:in-progress`.
 - On a PR labeled `needs-cto-review`, the CTO/reviewer independently verifies
   the current pull request head. If accepted, merge normally. If more follow-up
   is required, remove `needs-cto-review` from the PR, add
-  `needs-followup` to the issue, and leave another actionable review request.
+  `status:needs-followup` to the issue, and leave another actionable review request.
 
 Follow-up workers do not approve, merge, close, or declare their own work
 VERIFIED/CLOSED.
