@@ -104,6 +104,11 @@ first=$(run_resolver "$repo")
 [[ -d "$first" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
 
+warm_path=$(run_resolver "$repo" path)
+[[ "$warm_path" == "$first" ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
+echo 'native SDK cache: warm path lookup reuses without rebuilding'
+
 second=$(run_resolver "$worktree")
 [[ "$second" == "$first" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
