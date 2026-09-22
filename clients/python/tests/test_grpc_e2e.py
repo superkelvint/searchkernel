@@ -51,10 +51,7 @@ from SearchKernel.V2.ValueEntry import ValueEntryT  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
-_target_dir = Path(os.environ.get("CARGO_TARGET_DIR", "target/host"))
-if not _target_dir.is_absolute():
-    _target_dir = ROOT / _target_dir
-DAEMON = _target_dir / "debug" / "searchkerneld"
+DAEMON = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target" / "host"))) / "debug" / "searchkerneld"
 SDK_LIB = ROOT / "core" / "native" / "sdk" / "linux-x86_64" / "lib"
 VESPA_DEPS_LIB = ROOT / "vespa-deps" / "lib64"
 
@@ -75,10 +72,6 @@ def _field(name: str, primitive: int, *, matching: int = MatchingMode.Unspecifie
     )
 
 
-@unittest.skipUnless(
-    os.environ.get("SEARCHKERNEL_RUN_NATIVE_E2E") == "1",
-    "requires explicit native Vespa E2E opt-in",
-)
 class RealGrpcPythonE2ETest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -535,6 +528,18 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             result.hits[0].highlights[0]["fragments"][0]["matches"],
             [(0, 9)],
         )
+
+
+def load_tests(loader, tests, pattern):
+    if os.environ.get("SEARCHKERNEL_RUN_NATIVE_E2E") == "1":
+        return tests
+
+    class NativeE2EOptInRequired(unittest.TestCase):
+        @unittest.skip("requires explicit native Vespa E2E opt-in")
+        def test_native_e2e_requires_opt_in(self):
+            pass
+
+    return loader.loadTestsFromTestCase(NativeE2EOptInRequired)
 
 
 if __name__ == "__main__":
