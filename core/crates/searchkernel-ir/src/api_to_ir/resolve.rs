@@ -1485,6 +1485,14 @@ pub(crate) fn resolve_search_fields_at(
     Ok(output)
 }
 
+fn filter_operation_path(path: &str, operation: &str) -> String {
+    if path == operation || path.ends_with(&format!(".{operation}")) {
+        path.to_owned()
+    } else {
+        format!("{path}.{operation}")
+    }
+}
+
 pub(crate) fn resolve_filter(
     context: &IndexContext,
     input: &FilterInput,
@@ -1533,11 +1541,13 @@ pub(crate) fn resolve_filter(
             &format!("{path}.negation.clause"),
         )?))),
         FilterInput::Exists { field } => {
-            let field = context.query_field_for_resolver(field, format!("{path}.field"))?;
+            let exists_path = filter_operation_path(path, "exists");
+            let field =
+                context.query_field_for_resolver(field, format!("{exists_path}.field"))?;
             if !field.capabilities().filterable() {
                 return Err(invalid(
                     "field_not_filterable",
-                    Some(format!("{path}.field")),
+                    Some(format!("{exists_path}.field")),
                     "exists requires a filterable field",
                 ));
             }
@@ -1546,11 +1556,13 @@ pub(crate) fn resolve_filter(
             })
         }
         FilterInput::Comparison { field, op, value } => {
-            let schema_field = context.query_field_for_resolver(field, format!("{path}.field"))?;
+            let comparison_path = filter_operation_path(path, "comparison");
+            let schema_field =
+                context.query_field_for_resolver(field, format!("{comparison_path}.field"))?;
             if !schema_field.capabilities().filterable() {
                 return Err(invalid(
                     "field_not_filterable",
-                    Some(format!("{path}.field")),
+                    Some(format!("{comparison_path}.field")),
                     "comparison requires a filterable field",
                 ));
             }
@@ -1564,29 +1576,35 @@ pub(crate) fn resolve_filter(
             {
                 return Err(invalid(
                     "invalid_filter",
-                    Some(format!("{path}.op")),
+                    Some(format!("{comparison_path}.op")),
                     "ordered comparison requires a numeric field",
                 ));
             }
             Ok(FilterIr::Comparison(crate::model::ComparisonIr {
                 field: schema_field.name().clone(),
                 op: *op,
-                value: resolve_scalar(value.clone(), schema_field.kind(), format!("{path}.value"))?,
+                value: resolve_scalar(
+                    value.clone(),
+                    schema_field.kind(),
+                    format!("{comparison_path}.value"),
+                )?,
             }))
         }
         FilterInput::In { field, values } => {
-            let schema_field = context.query_field_for_resolver(field, format!("{path}.field"))?;
+            let in_path = filter_operation_path(path, "in");
+            let schema_field =
+                context.query_field_for_resolver(field, format!("{in_path}.field"))?;
             if !schema_field.capabilities().filterable() {
                 return Err(invalid(
                     "field_not_filterable",
-                    Some(format!("{path}.field")),
+                    Some(format!("{in_path}.field")),
                     "IN requires a filterable field",
                 ));
             }
             if !matches!(schema_field.kind(), FieldKind::Keyword | FieldKind::Int64) {
                 return Err(invalid(
                     "invalid_filter",
-                    Some(path),
+                    Some(&in_path),
                     "IN requires a Keyword or Int64 field",
                 ));
             }
@@ -1597,14 +1615,14 @@ pub(crate) fn resolve_filter(
                     resolve_scalar(
                         value.clone(),
                         schema_field.kind(),
-                        format!("{path}.values[{index}]"),
+                        format!("{in_path}.values[{index}]"),
                     )
                 })
                 .collect::<Result<Vec<_>>>()?;
             if values.is_empty() {
                 return Err(invalid(
                     "empty_in",
-                    Some(path),
+                    Some(&in_path),
                     "IN requires at least one value",
                 ));
             }
@@ -1623,11 +1641,7 @@ pub(crate) fn resolve_filter(
             // Structured FilterExpr paths name the selected union operation
             // (for example `filter.range`). Leaf range conversion already uses
             // `range` as its root, so avoid duplicating the operation segment.
-            let range_path = if path == "range" || path.ends_with(".range") {
-                path.to_owned()
-            } else {
-                format!("{path}.range")
-            };
+            let range_path = filter_operation_path(path, "range");
             let schema_field =
                 context.query_field_for_resolver(field, format!("{range_path}.field"))?;
             if !schema_field.capabilities().filterable() {
@@ -1667,7 +1681,7 @@ pub(crate) fn resolve_filter(
             {
                 return Err(invalid(
                     "invalid_range",
-                    Some(format!("{path}.include_lower")),
+                    Some(format!("{range_path}.include_lower")),
                     "lower inclusion requires a lower bound",
                 ));
             }
@@ -1677,7 +1691,7 @@ pub(crate) fn resolve_filter(
             {
                 return Err(invalid(
                     "invalid_range",
-                    Some(format!("{path}.include_upper")),
+                    Some(format!("{range_path}.include_upper")),
                     "upper inclusion requires an upper bound",
                 ));
             }
@@ -2313,7 +2327,7 @@ fn resolve_scalar_or_multi_value(
                 .into_iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    resolve_scalar_value(value, field.kind(), format!("{path}.values[{index}]"))
+                    resolve_scalar_value(value, field.kind(), format!("{in_path}.values[{index}]"))
                 })
                 .collect::<Result<Vec<_>>>()?;
             return Ok(FieldValueIr::Multi(values));
