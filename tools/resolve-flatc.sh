@@ -24,7 +24,8 @@ if [[ "$common" != /* ]]; then
     common="$root/$common"
 fi
 common=$(cd -- "$common" && pwd)
-shared="$common/searchkernel/toolchains/flatbuffers/$expected/bin/flatc"
+build_env=${SEARCHKERNEL_BUILD_ENV:-host}
+shared="$common/searchkernel/toolchains/flatbuffers/$expected/$build_env/bin/flatc"
 if is_expected_flatc "$shared"; then
     printf '%s\n' "$shared"
     exit 0
@@ -44,5 +45,5 @@ if is_expected_flatc /usr/local/bin/flatc; then
 fi
 
 echo "error: FlatBuffers $expected flatc was not found" >&2
-echo "       Run './dev install flatbuffers' once from any worktree; the versioned install is shared by the whole clone." >&2
+echo "       Run './dev install flatbuffers' once from any worktree; the versioned install is shared by the whole clone within this build environment." >&2
 exit 1
