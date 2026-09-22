@@ -560,8 +560,12 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
     }
     value.analyzer_config = field.analyzer().cloned();
     value.matching_config = field.matching().cloned();
-    value.data_type = field.data_type().clone();
-    value.struct_fields = field.struct_fields().to_vec();
+    value.data_type = crate::schema::DataType::from_ir(field.data_type());
+    value.struct_fields = field
+        .struct_fields()
+        .iter()
+        .map(StructFieldConfig::from_ir)
+        .collect();
     value.summary_config = field.summary().cloned();
     value.indexing_script = field.indexing_script().map(ToOwned::to_owned);
     value.properties = field.properties().clone();
@@ -625,7 +629,11 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
 
 fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {
     let mut result = IndexDefinition::new();
-    result.properties = definition.properties().clone();
+    result.properties = definition
+        .properties()
+        .iter()
+        .map(|(key, value)| (key.clone(), crate::schema::SchemaValue::from_ir(value)))
+        .collect();
     if let Some(name) = definition.name() {
         result = result.name(name.as_str());
     }
@@ -635,13 +643,11 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         let described = result.fields.last_mut().expect("field was just appended");
         described.index_config = field.index().cloned();
         described.attribute_config = field.attribute().cloned();
-        described.canonical = Some(field.clone());
     }
     for field in definition.schema_fields() {
         let mut value = field_from_ir(field);
         value.index_config = field.index().cloned();
         value.attribute_config = field.attribute().cloned();
-        value.canonical = Some(field.clone());
         result.schema_fields.push(value);
     }
     result = result.default_search_fields(
@@ -667,9 +673,9 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
                 value = value.rerank_count(rerank_count);
             }
         }
-        value.first_phase = profile.first_phase.clone();
-        value.second_phase = profile.second_phase.clone();
-        value.global_phase = profile.global_phase.clone();
+        value.first_phase = profile.first_phase.as_ref().map(RankPhase::from_ir);
+        value.second_phase = profile.second_phase.as_ref().map(RankPhase::from_ir);
+        value.global_phase = profile.global_phase.as_ref().map(RankPhase::from_ir);
         for feature in &profile.match_features {
             value = value.match_feature(feature.clone());
         }
@@ -683,32 +689,66 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         value.sort_features = profile.sort_features.clone();
         value.rank_properties = profile.rank_properties.clone();
         value.strict = profile.strict;
-        value.properties = profile.properties.clone();
+        value.properties = profile
+            .properties
+            .iter()
+            .map(|(key, value)| (key.clone(), crate::schema::SchemaValue::from_ir(value)))
+            .collect();
         result = result.rank_profile(value);
         let described = result
             .rank_profiles
             .last_mut()
             .expect("rank profile was just appended");
         described.inherits = profile.inherits.clone();
-        described.functions = profile.functions.clone();
-        described.inputs = profile.inputs.clone();
-        described.constants = profile.constants.clone();
-        described.onnx_models = profile.onnx_models.clone();
-        described.canonical = Some(profile.clone());
+        described.functions = profile
+            .functions
+            .iter()
+            .map(RankFunction::from_ir)
+            .collect();
+        described.inputs = profile
+            .inputs
+            .iter()
+            .map(RankProfileInput::from_ir)
+            .collect();
+        described.constants = profile
+            .constants
+            .iter()
+            .map(ConstantDefinition::from_ir)
+            .collect();
+        described.onnx_models = profile.onnx_models.iter().map(OnnxModel::from_ir).collect();
     }
     result.constants = definition
         .constants()
         .iter()
         .map(ConstantDefinition::from_ir)
         .collect();
-    result.fieldsets = definition.fieldsets().to_vec();
-    result.onnx_models = definition.onnx_models().to_vec();
-    result.imported_fields = definition.imported_fields().to_vec();
-    result.document_summaries = definition.document_summaries().to_vec();
+    result.fieldsets = definition
+        .fieldsets()
+        .iter()
+        .map(FieldSet::from_ir)
+        .collect();
+    result.onnx_models = definition
+        .onnx_models()
+        .iter()
+        .map(OnnxModel::from_ir)
+        .collect();
+    result.imported_fields = definition
+        .imported_fields()
+        .iter()
+        .map(ImportedField::from_ir)
+        .collect();
+    result.document_summaries = definition
+        .document_summaries()
+        .iter()
+        .map(DocumentSummary::from_ir)
+        .collect();
     result.document_type = definition.document_type().map(str::to_owned);
     result.schema_inherits = definition.schema_inherits().to_vec();
     result.document_inherits = definition.document_inherits().to_vec();
-    result.structs = definition.structs().to_vec();
-    result.canonical = Some(definition.clone());
+    result.structs = definition
+        .structs()
+        .iter()
+        .map(NamedStruct::from_ir)
+        .collect();
     result
 }
