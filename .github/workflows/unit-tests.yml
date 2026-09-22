@@ -29,5 +29,14 @@ jobs:
         with:
           workspaces: ". -> target/ci"
 
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
+
       - name: Run workspace unit tests
         run: cargo test --workspace --no-default-features

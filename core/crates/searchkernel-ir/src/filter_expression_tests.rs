@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
-    api, AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexContext, PrefixPolicy,
-    PrimitiveDataTypeIr, RankingPolicyIr, TypoPolicy,
+    api, AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexContext,
+    PrimitiveDataTypeIr,
 };
 use std::collections::BTreeSet;
 
@@ -43,7 +43,7 @@ fn schema() -> IndexDefinitionIr {
             field("title", FieldKind::Text, true),
             field("hidden", FieldKind::Keyword, false),
         ],
-        Vec::new()
+        Vec::new(),
     )
     .unwrap()
 }

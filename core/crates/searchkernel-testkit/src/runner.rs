@@ -1091,6 +1091,18 @@ struct WireBuilder {
     builder: flatbuffers::FlatBufferBuilder<'static>,
 }
 
+/// Encode an index fixture JSON object using the same FlatBuffers builder used
+/// by the frozen API→IR corpus.
+///
+/// Client differential tests use this to send their actual packed request
+/// objects through the Rust resolver without introducing a language-specific
+/// semantic decoder or expected-value model.
+pub fn build_index_definition_from_json(input: &JsonValue) -> StdResult<Vec<u8>, String> {
+    let mut builder = WireBuilder::new();
+    let root = builder.index(input)?;
+    builder.finish(root)
+}
+
 impl WireBuilder {
     fn new() -> Self {
         Self {

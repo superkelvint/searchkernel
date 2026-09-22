@@ -4363,6 +4363,7 @@ fn highlighting_rejects_unsupported_same_field_query_shapes() {
             ProjectionIr::new(Vec::new()),
             HighlightingIr::Requested {
                 fields: vec![title.clone()],
+                multi_valued_fields: Vec::new(),
             },
             None,
             PrefixPolicy::Disabled,
@@ -4454,6 +4455,7 @@ fn highlighting_compatibility_survives_portable_flatbuffers_resolution() {
         ProjectionIr::new(Vec::new()),
         HighlightingIr::Requested {
             fields: vec![title.clone()],
+            multi_valued_fields: Vec::new(),
         },
         None,
         PrefixPolicy::Disabled,

@@ -29,6 +29,7 @@ Search Kernel development commands
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client
   ./dev regen protocol        Regenerate checked-in protocol artifacts
+  ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify m13            Run a frozen Vespa milestone verifier
   ./dev verify integration   Run the cross-entry-point integration verifier
   ./dev install flatbuffers   Build and install the pinned FlatBuffers toolchain
@@ -85,11 +86,13 @@ check_fast() {
     cargo check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
+    "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
         "$ROOT/core/native/vespa/searchkernel_vespa.h"
     "$PYTHON" "$ROOT/tools/check-python-flatbuffers-boundary.py"
     "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+    cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
 }
 
 check_all() {
@@ -111,6 +114,10 @@ regen_protocol() {
     bash "$ROOT/tools/generate-searchkernel-rpc.sh"
     bash "$ROOT/tools/generate-python-flatbuffers.sh"
     bash "$ROOT/tools/generate-python-grpc.sh"
+}
+
+regen_result_fixtures() {
+    cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures
 }
 
 test_target() {
@@ -470,11 +477,14 @@ case "${1:-help}" in
         test_target "${1:-}"
         ;;
     regen)
-        [[ "${2:-}" == protocol ]] || {
-            echo 'usage: ./dev regen protocol' >&2
-            exit 2
-        }
-        regen_protocol
+        case "${2:-}" in
+            protocol) regen_protocol ;;
+            result-fixtures) regen_result_fixtures ;;
+            *)
+                echo 'usage: ./dev regen protocol|result-fixtures' >&2
+                exit 2
+                ;;
+        esac
         ;;
     verify)
         shift

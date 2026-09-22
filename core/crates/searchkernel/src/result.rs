@@ -537,6 +537,9 @@ fn convert_facet_group(
         let Some(value) = child.value.clone() else {
             return Ok(None);
         };
+        if child.fields.len() != 1 {
+            return Ok(None);
+        }
         let Some(core::Value::UInt64(count)) = child.fields.get("count") else {
             return Ok(None);
         };
@@ -1293,5 +1296,23 @@ mod tests {
             document::<i64>(bad_document),
             Err(Error::Deserialization(_))
         ));
+    }
+
+    #[test]
+    fn result_fixture_corpus_freezes_strict_facet_shape() {
+        for fixture in searchkernel_testkit::result_fixtures() {
+            let converted: SearchResult<serde_json::Value> =
+                search_result(fixture.result, &[("brand", "brand")]).unwrap();
+            if fixture.name == "facet-valid" {
+                assert_eq!(converted.facets.len(), 1);
+                assert_eq!(converted.facets[0].values[0].count, 3);
+            } else if fixture.name.starts_with("facet-") {
+                assert!(
+                    converted.facets.is_empty(),
+                    "malformed facet fixture was projected: {}",
+                    fixture.name
+                );
+            }
+        }
     }
 }

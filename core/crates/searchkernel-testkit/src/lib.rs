@@ -18,11 +18,12 @@ pub use result_fixture::{
     mixed_hit_and_group_children_result, negative_infinity_relevance_result, nested_groups_result,
     non_facet_grouping_result, one_group_containing_hits_result,
     positive_infinity_relevance_result, present_empty_optional_fields_result, relevance_result,
-    representative_search_result, root_hit_result, sibling_groups_result,
+    representative_search_result, result_fixtures, root_hit_result, sibling_groups_result,
+    ResultFixture,
 };
 pub use runner::{
-    build_component_transport_case, ConformanceReport, ConformanceRunner, RunnerError,
-    TransportCase,
+    build_component_transport_case, build_index_definition_from_json, ConformanceReport,
+    ConformanceRunner, RunnerError, TransportCase,
 };
 pub use scripted::{ExpectedCall, ScriptedBackend, ScriptedOutcome, ScriptedResult};
 

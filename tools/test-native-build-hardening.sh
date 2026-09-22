@@ -2,91 +2,63 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-test_target=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-native-build.XXXXXX")
-trap 'rm -rf "$test_target"' EXIT
+test_root=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-native-build.XXXXXX")
+trap 'rm -rf "$test_root"' EXIT
 
 grep -q 'target-dir = "target/host"' "$root/.cargo/config.toml"
-! grep -q 'core/native/sdk' "$root/.cargo/config.toml"
+! grep -q 'core/crates/flatbuffers-build' "$root/Cargo.toml"
+! grep -q 'flatbuffers-build' "$root/core/crates/searchkernel-protocol/Cargo.toml"
+grep -q 'FLATBUFFERS_CPP_ROOT' "$root/core/crates/searchkernel-protocol/build.rs"
+grep -q "Cargo does not build FlatBuffers itself" "$root/core/crates/searchkernel-protocol/build.rs"
+
 grep -q 'ENV CARGO_TARGET_DIR=target/devcontainer' "$root/.yolobox.Dockerfile"
 grep -q 'CARGO_TARGET_DIR: target/ci' "$root/.github/workflows/abi-surface.yml"
 grep -q 'git -C "\$ROOT" worktree list' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'SDK_PACKAGE/lib/libLLVM.so.21.1' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'libffi.so.6 required by the bundled LLVM runtime' "$root/core/native/vespa/build-sdk.sh"
-grep -Fq 'cp -L -f -t "$SDK/lib"' "$root/core/native/vespa/build-sdk.sh"
+grep -q 'copy-shared-library-into-sdk.sh' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'refusing to publish native SDK containing shared-library symlinks' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'rpath-link' "$root/core/crates/searchkernel-vespa-bindings/build.rs"
+bash "$root/tools/test-native-sdk-packaging.sh"
 echo 'native build hardening: host, devcontainer, and CI target directories are distinct'
 
-native_target="$test_target/cargo"
-build_filter() {
-    CARGO_TARGET_DIR="$native_target" \
-    SEARCHKERNEL_BUILD_ENV=native-build-regression \
-        cargo build --manifest-path "$root/Cargo.toml" -p searchkernel-filter
-}
+flatc=$(bash "$root/tools/resolve-flatc.sh")
+flatbuffers_root=${FLATBUFFERS_CPP_ROOT:-$(cd -- "$(dirname -- "$flatc")/.." && pwd)}
+[[ -f "$flatbuffers_root/include/flatbuffers/base.h" ]]
+[[ -f "$flatbuffers_root/lib/libflatbuffers.a" ]]
 
 build_protocol() {
-    local flags=$1
-    local rustflags=$2
-    if [[ "$rustflags" == unset ]]; then
-        env -u CMAKE_GENERATOR -u RUSTFLAGS \
-            CARGO_TARGET_DIR="$native_target" \
-            SEARCHKERNEL_BUILD_ENV=native-build-regression \
-            CXXFLAGS="$flags" \
-                cargo check --manifest-path "$root/Cargo.toml" -p searchkernel-protocol \
-                    --no-default-features
-    else
-        env -u CMAKE_GENERATOR \
-        RUSTFLAGS="$rustflags" \
-        CARGO_TARGET_DIR="$native_target" \
-        SEARCHKERNEL_BUILD_ENV=native-build-regression \
-        CXXFLAGS="$flags" \
-            cargo check --manifest-path "$root/Cargo.toml" -p searchkernel-protocol \
-                --no-default-features
-    fi
+    local target=$1
+    FLATBUFFERS_CPP_ROOT="$flatbuffers_root" \
+    CMAKE=/bin/false \
+    CARGO_TARGET_DIR="$target" \
+    SEARCHKERNEL_BUILD_ENV=native-build-regression \
+        cargo check --manifest-path "$root/Cargo.toml" -p searchkernel-protocol --no-default-features
 }
 
-find_native_output() {
-    find "$native_target/debug/build" -path '*/flatbuffers-build-*/out' -type d -print -quit
-}
+# A completely fresh Cargo target must consume the installed FlatBuffers
+# prerequisite. Setting CMAKE=/bin/false makes any accidental return of the
+# vendored CMake build path fail immediately.
+fresh_target="$test_root/fresh"
+build_protocol "$fresh_target"
+! find "$fresh_target" -type f -path '*/flatbuffers-build-*/out/bin/flatc' -print -quit | grep -q .
+! find "$fresh_target" -type f -path '*/flatbuffers-build-*/out/lib/libflatbuffers.a' -print -quit | grep -q .
+echo 'native build hardening: fresh Cargo target does not build FlatBuffers'
 
-build_filter
-base_flags=${CXXFLAGS-}
-build_protocol "$base_flags" unset
-native_output=$(find_native_output)
-[[ -n "$native_output" ]] || { echo 'native FlatBuffers output was not found' >&2; exit 1; }
-fingerprint="$native_output/native-build-fingerprint-v1.txt"
-archive="$native_output/lib/libflatbuffers.a"
-probe="$native_output/probe/flatbuffers_link_probe"
-[[ -s "$fingerprint" && -s "$archive" && -x "$probe" ]]
-
-first_fingerprint=$(sha256sum "$fingerprint")
-first_archive=$(sha256sum "$archive")
-first_archive_inode=$(stat -c '%i' "$archive")
-unrelated=$(find "$native_target/debug/deps" -maxdepth 1 -name 'libsearchkernel_filter-*.rlib' -type f -print -quit)
-[[ -n "$unrelated" && -f "$unrelated" ]] || { echo 'unrelated Rust artifact was not built' >&2; exit 1; }
-
-# An unchanged environment must retain both the native output and unrelated Rust output.
-build_protocol "$base_flags" unset
-[[ "$first_fingerprint" == "$(sha256sum "$fingerprint")" ]]
-[[ "$first_archive" == "$(sha256sum "$archive")" ]]
-[[ -f "$unrelated" ]]
-echo 'native build hardening: unchanged environment reuses FlatBuffers output'
-
-# A relevant native flag changes the fingerprint and replaces only the native output.
-changed_flags="$base_flags -DSEARCHKERNEL_NATIVE_BUILD_REGRESSION=1"
-build_protocol "$changed_flags" unset
-second_archive_inode=$(stat -c '%i' "$archive")
-[[ "$first_fingerprint" != "$(sha256sum "$fingerprint")" ]]
-[[ "$first_archive_inode" != "$second_archive_inode" ]]
-[[ -f "$unrelated" ]]
-echo 'native build hardening: changed CXXFLAGS rebuilt the native component only'
-
-# Corrupt output, then make Cargo rerun the native builder without changing its
-# fingerprint. The real parser/link probe must fail once and recover automatically.
-truncate -s 1 "$archive"
-build_protocol "$changed_flags" '-C debuginfo=0'
-[[ -s "$archive" && -x "$probe" ]]
-echo 'native build hardening: failed link probe triggered one targeted recovery'
+# Independent consumers may compile concurrently, but both must treat the
+# installed FlatBuffers toolchain as read-only. Neither gets a private native
+# FlatBuffers build.
+build_protocol "$test_root/concurrent-a" >"$test_root/a.log" 2>&1 &
+pid_a=$!
+build_protocol "$test_root/concurrent-b" >"$test_root/b.log" 2>&1 &
+pid_b=$!
+wait "$pid_a"
+wait "$pid_b"
+! find "$test_root/concurrent-a" "$test_root/concurrent-b" -type f \
+    -path '*/flatbuffers-build-*/out/bin/flatc' -print -quit | grep -q .
+! find "$test_root/concurrent-a" "$test_root/concurrent-b" -type f \
+    -path '*/flatbuffers-build-*/out/lib/libflatbuffers.a' -print -quit | grep -q .
+echo 'native build hardening: concurrent Cargo builds reuse installed FlatBuffers'
 
 bash "$root/tools/test-native-sdk-cache.sh"
 
