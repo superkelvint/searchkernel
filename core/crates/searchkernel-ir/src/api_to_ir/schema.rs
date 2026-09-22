@@ -689,7 +689,9 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
             version: 1,
             options: SchemaPropertiesIr::new(),
         });
-        analyzer_identity(&analyzer, &format!("{path}.analyzer"))?;
+        // Analyzer support is a backend executability concern. The portable
+        // schema contract must preserve rich analyzer configuration losslessly;
+        // the Vespa adapter rejects analyzer configurations it cannot execute.
         Some(analyzer)
     } else {
         analyzer

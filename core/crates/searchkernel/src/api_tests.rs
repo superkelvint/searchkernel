@@ -1,5 +1,5 @@
 use super::*;
-use crate::schema::ConstantSource;
+use crate::schema::{ConstantSource, DataType, FieldKind, PrimitiveDataType};
 use crate::{
     field, Analyzer, Filter, GroupingPlan, Query, QueryAlternative, Ranking, SearchBuilder, Sort,
     Tensor, WandOptions,
@@ -1575,6 +1575,49 @@ fn schema_field_builder_adds_schema_only_field_to_ir() {
             .collect::<Vec<_>>(),
         ["derived"]
     );
+}
+
+#[test]
+fn custom_analyzer_configuration_is_shared_portable_schema_state() {
+    use searchkernel_ir::{
+        AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, PrimitiveDataTypeIr,
+        SchemaPropertiesIr,
+    };
+
+    let mut options = SchemaPropertiesIr::new();
+    options.insert(
+        "tokenizer".to_owned(),
+        searchkernel_ir::RequestValueIr::String("custom".to_owned()),
+    );
+    let field = FieldIr::new(
+        FieldName::parse("title").expect("valid field name"),
+        DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+        Some(AnalyzerIr {
+            name: "custom".to_owned(),
+            version: 2,
+            options,
+        }),
+        FieldCapabilities::new(true, true, false, false, false),
+    );
+    let canonical = searchkernel_ir::IndexDefinitionIr::new(None, vec![field], Vec::new())
+        .expect("rich analyzer is valid portable schema state");
+
+    let index = index_from_canonical_ir(canonical.clone());
+    let described = index.describe().expect("describe should preserve rich analyzer state");
+    let rust = definition_to_ir(&described).expect("Rust ingress should preserve rich analyzer");
+
+    let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+        .expect("portable schema should decode");
+    let portable = searchkernel_ir::index_definition_to_ir(portable)
+        .expect("portable ingress should preserve rich analyzer");
+
+    assert_eq!(rust.fields()[0].analyzer(), canonical.fields()[0].analyzer());
+    assert_eq!(
+        portable.fields()[0].analyzer(),
+        canonical.fields()[0].analyzer()
+    );
+    assert_eq!(rust.fields()[0].analyzer(), portable.fields()[0].analyzer());
 }
 
 #[test]
@@ -3462,34 +3505,31 @@ fn described_fields_round_trip_from_public_state_without_field_sidecars() {
     for (index, expected) in canonical.fields().iter().enumerate() {
         let public = described.fields()[index].clone();
 
-        let resolved = definition_to_ir(&IndexDefinition::new().field(public))
+        let mut standalone = IndexDefinition::new().field(public);
+        // A StructReference is not a self-contained field type: its named
+        // struct declaration is schema context, not hidden Field sidecar state.
+        standalone.structs = described.structs().to_vec();
+        let resolved = definition_to_ir(&standalone)
             .expect("public field state should resolve without a canonical sidecar");
 
         assert_eq!(
             expected,
             &resolved.fields()[0],
-            "field {} must round-trip solely from public Field state",
+            "field {} must round-trip from public Field state plus required schema context",
             expected.name().as_str()
         );
     }
 }
 
 #[test]
-fn mutating_a_described_field_preserves_untouched_canonical_state() {
-    let (canonical, described) = public_described_canonical_fixture();
+fn mutating_a_described_field_is_revalidated_against_untouched_rich_state() {
+    let (_, described) = public_described_canonical_fixture();
     let modified = described.fields()[0].clone().stored(false);
 
-    let resolved = definition_to_ir(&IndexDefinition::new().field(modified))
-        .expect("mutated field should resolve");
-    assert!(!resolved.fields()[0].capabilities().stored());
-    assert_eq!(
-        resolved.fields()[0].properties(),
-        canonical.fields()[0].properties()
-    );
-    assert_eq!(
-        resolved.fields()[0].struct_fields(),
-        canonical.fields()[0].struct_fields()
-    );
+    let error = definition_to_ir(&IndexDefinition::new().field(modified))
+        .expect_err("capability mutation must be checked against retained summary configuration");
+    assert_eq!(error.details()[0].code, "invalid_capability");
+    assert_eq!(error.details()[0].path.as_deref(), Some("fields[0].stored"));
 }
 
 #[test]
@@ -4844,6 +4884,31 @@ fn rich_public_field_state_is_validated_by_shared_resolver() {
     assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
 }
 
+#[test]
+fn public_field_data_type_cannot_override_its_declared_kind() {
+    let mut field = Field::int64("price");
+    assert!(matches!(field.kind, FieldKind::Int64));
+    field.data_type = DataType::Primitive(PrimitiveDataType::Float64);
+
+    let error = definition_to_ir(&IndexDefinition::new().field(field))
+        .expect_err("a public data-type mutation must be canonically validated");
+    assert_eq!(error.details()[0].code, "invalid_type_combination");
+}
+
+#[test]
+fn fresh_indexing_script_preserves_explicit_capability_for_validation() {
+    let mut field = Field::int64("price").stored(true);
+    field.indexing_script = Some("input price | attribute price".to_owned());
+
+    let error = definition_to_ir(&IndexDefinition::new().field(field))
+        .expect_err("explicit capability must remain visible to canonical validation");
+    assert_eq!(error.details()[0].code, "ambiguous_indexing_script");
+    assert_eq!(
+        error.details()[0].path.as_deref(),
+        Some("fields[0].indexing_script")
+    );
+}
+
 
 #[test]
 fn derived_default_search_fields_include_schema_only_fields() {
@@ -4985,17 +5050,6 @@ fn rich_schema_negative_semantics_match_portable_ingress() {
     assert_rust_and_portable_schema_error_match(
         invalid_schema_with_field(searchable_index_conflict),
         "invalid_capability",
-    );
-
-    let mut invalid_analyzer = text_field();
-    invalid_analyzer.set_analyzer(Some(AnalyzerIr {
-        name: "unknown".to_owned(),
-        version: 99,
-        options: SchemaPropertiesIr::new(),
-    }));
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(invalid_analyzer),
-        "invalid_analyzer",
     );
 
     let mut ambiguous_indexing_script = text_field();

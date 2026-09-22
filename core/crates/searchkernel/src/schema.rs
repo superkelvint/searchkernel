@@ -962,6 +962,11 @@ pub struct Field {
     pub(crate) filterable: Option<bool>,
     pub(crate) sortable: Option<bool>,
     pub(crate) facetable: Option<bool>,
+    pub(crate) stored_explicit: bool,
+    pub(crate) searchable_explicit: bool,
+    pub(crate) filterable_explicit: bool,
+    pub(crate) sortable_explicit: bool,
+    pub(crate) facetable_explicit: bool,
     pub(crate) capabilities: Option<FieldCapabilities>,
     pub(crate) analyzer: Option<Analyzer>,
     pub(crate) analyzer_config: Option<searchkernel_ir::AnalyzerIr>,
@@ -1109,6 +1114,11 @@ impl Field {
             filterable: None,
             sortable: None,
             facetable: None,
+            stored_explicit: false,
+            searchable_explicit: false,
+            filterable_explicit: false,
+            sortable_explicit: false,
+            facetable_explicit: false,
             capabilities: None,
             analyzer: None,
             analyzer_config: None,
@@ -1168,6 +1178,11 @@ impl Field {
             filterable: None,
             sortable: None,
             facetable: None,
+            stored_explicit: false,
+            searchable_explicit: false,
+            filterable_explicit: false,
+            sortable_explicit: false,
+            facetable_explicit: false,
             capabilities: None,
             analyzer: None,
             analyzer_config: None,
@@ -1197,6 +1212,7 @@ impl Field {
     /// Explicitly set whether values are stored in search results.
     pub fn stored(mut self, value: bool) -> Self {
         self.stored = Some(value);
+        self.stored_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.stored = value;
         }
@@ -1205,6 +1221,7 @@ impl Field {
     /// Explicitly set whether this field can be searched with text queries.
     pub fn searchable(mut self, value: bool) -> Self {
         self.searchable = Some(value);
+        self.searchable_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.searchable = value;
         }
@@ -1213,6 +1230,7 @@ impl Field {
     /// Explicitly set whether this field can be used in filters.
     pub fn filterable(mut self, value: bool) -> Self {
         self.filterable = Some(value);
+        self.filterable_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.filterable = value;
         }
@@ -1221,6 +1239,7 @@ impl Field {
     /// Explicitly set whether this field can be used for sorting.
     pub fn sortable(mut self, value: bool) -> Self {
         self.sortable = Some(value);
+        self.sortable_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.sortable = value;
         }
@@ -1229,11 +1248,20 @@ impl Field {
     /// Explicitly set whether this field can be used for facets.
     pub fn facetable(mut self, value: bool) -> Self {
         self.facetable = Some(value);
+        self.facetable_explicit = true;
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.groupable = value;
         }
         self
     }
+    pub(crate) fn mark_capabilities_resolved(&mut self) {
+        self.stored_explicit = false;
+        self.searchable_explicit = false;
+        self.filterable_explicit = false;
+        self.sortable_explicit = false;
+        self.facetable_explicit = false;
+    }
+
     /// Select the analyzer used for this field.
     pub fn analyzer(mut self, value: Analyzer) -> Self {
         let canonical = analyzer_to_ir(&value).ok();
@@ -1733,7 +1761,9 @@ pub(crate) fn field_to_rust_input(field: &Field) -> Result<searchkernel_ir::Rust
 
 pub(crate) fn field_to_unresolved_input(
     field: &Field,
+    path: &str,
 ) -> Result<searchkernel_ir::UnresolvedFieldInput> {
+    validate_public_field_data_type(field, path)?;
     let name = searchkernel_ir::FieldName::parse(field.name.clone()).map_err(|_| {
         Error::from_ir(searchkernel_ir::PortableError::invalid(
             "invalid_field_name",
@@ -1779,23 +1809,144 @@ pub(crate) fn field_to_unresolved_input(
             options: BTreeMap::new(),
         })
     });
+    let indexing_script = field.indexing_script.clone();
+    let script_defaults = indexing_script.is_some() && described;
+    let stored = omit_script_default(
+        field.stored,
+        script_defaults,
+        field.stored_explicit,
+        true,
+    );
+    let searchable = omit_script_default(
+        field.searchable,
+        script_defaults,
+        field.searchable_explicit,
+        false,
+    );
+    let filterable = omit_script_default(
+        field.filterable,
+        script_defaults,
+        field.filterable_explicit,
+        false,
+    );
+    let sortable = omit_script_default(
+        field.sortable,
+        script_defaults,
+        field.sortable_explicit,
+        false,
+    );
+    let groupable = omit_script_default(
+        field.facetable,
+        script_defaults,
+        field.facetable_explicit,
+        false,
+    );
     Ok(searchkernel_ir::UnresolvedFieldInput {
         name,
         data_type: field.data_type.to_ir(),
-        stored: field.stored,
-        searchable: field.searchable,
-        filterable: field.filterable,
-        sortable: field.sortable,
-        groupable: field.facetable,
+        stored,
+        searchable,
+        filterable,
+        sortable,
+        groupable,
         analyzer,
         matching,
         index,
         attribute,
         summary: field.summary_config.clone(),
-        indexing_script: field.indexing_script.clone(),
+        indexing_script,
         properties: field.properties.clone(),
         struct_fields: field.struct_fields.iter().map(StructFieldConfig::to_ir).collect(),
     })
+}
+
+fn omit_script_default(
+    value: Option<bool>,
+    script_defaults: bool,
+    explicit: bool,
+    default: bool,
+) -> Option<bool> {
+    if script_defaults && !explicit && value == Some(default) {
+        None
+    } else {
+        value
+    }
+}
+
+fn validate_public_field_data_type(field: &Field, path: &str) -> Result<()> {
+    let data_type = match &field.data_type {
+        DataType::Array(value) | DataType::WeightedSet(value) => value.as_ref(),
+        value => value,
+    };
+    let matches_kind = match (&field.kind, data_type) {
+        (
+            FieldKind::Text | FieldKind::Keyword,
+            DataType::Primitive(PrimitiveDataType::String),
+        )
+        | (FieldKind::Int64, DataType::Primitive(PrimitiveDataType::Int64))
+        | (FieldKind::Float64, DataType::Primitive(PrimitiveDataType::Float64))
+        | (FieldKind::Bool, DataType::Primitive(PrimitiveDataType::Bool))
+        | (FieldKind::Position, DataType::Position) => true,
+        (FieldKind::Tensor(expected_type), DataType::Tensor { type_spec }) => {
+            expected_type == type_spec
+        }
+        (FieldKind::Keyword, _) if field.capabilities.is_some() => {
+            is_opaque_public_data_type(data_type)
+        }
+        _ => false,
+    };
+    if !matches_kind {
+        return Err(Error::from_ir(searchkernel_ir::PortableError::invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.data_type")),
+            "the public field data type must match its declared field kind",
+        )));
+    }
+    let is_multi = matches!(
+        field.data_type,
+        DataType::Array(_) | DataType::WeightedSet(_)
+    );
+    if is_multi != field.multi {
+        return Err(Error::from_ir(searchkernel_ir::PortableError::invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.data_type")),
+            "the public field collection shape must match its declared cardinality",
+        )));
+    }
+    if let Some(matching) = &field.matching_config {
+        let matches_kind = match &field.kind {
+            FieldKind::Text => !matches!(
+                matching.mode,
+                searchkernel_ir::MatchingModeIr::Exact | searchkernel_ir::MatchingModeIr::Word
+            ),
+            FieldKind::Keyword => matches!(
+                matching.mode,
+                searchkernel_ir::MatchingModeIr::Exact | searchkernel_ir::MatchingModeIr::Word
+            ),
+            _ => false,
+        };
+        if !matches_kind {
+            return Err(Error::from_ir(searchkernel_ir::PortableError::invalid(
+                "invalid_type_combination",
+                Some(format!("{path}.matching")),
+                "the public field matching mode must match its declared field kind",
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn is_opaque_public_data_type(data_type: &DataType) -> bool {
+    !matches!(
+        data_type,
+        DataType::Primitive(
+            PrimitiveDataType::String
+                | PrimitiveDataType::Bool
+                | PrimitiveDataType::Int64
+                | PrimitiveDataType::Float64,
+        ) | DataType::Tensor { .. }
+            | DataType::Position
+    )
 }
 
 pub(crate) fn index_definition_to_input(
@@ -1803,8 +1954,20 @@ pub(crate) fn index_definition_to_input(
 ) -> Result<searchkernel_ir::IndexDefinitionInput> {
     Ok(searchkernel_ir::IndexDefinitionInput {
         name: definition.name.clone(),
-        fields: definition.fields.iter().map(field_to_unresolved_input).collect::<Result<Vec<_>>>()?,
-        schema_fields: definition.schema_fields.iter().map(field_to_unresolved_input).collect::<Result<Vec<_>>>()?,
+        fields: definition
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(index, field)| field_to_unresolved_input(field, &format!("fields[{index}]")))
+            .collect::<Result<Vec<_>>>()?,
+        schema_fields: definition
+            .schema_fields
+            .iter()
+            .enumerate()
+            .map(|(index, field)| {
+                field_to_unresolved_input(field, &format!("schema_fields[{index}]"))
+            })
+            .collect::<Result<Vec<_>>>()?,
         default_search_fields: definition.default_search_fields.as_ref().map(|fields| {
             fields.iter().map(|field| searchkernel_ir::RustSearchFieldInput {
                 field: field.field.clone(),
