@@ -2,7 +2,7 @@ use searchkernel_ir::__flatbuffers::{root, FlatBufferBuilder};
 use searchkernel_ir::{
     api, AnalyzeRequestIr, DeleteRequestIr, DeleteResult, GetRequestIr, GetResult, IndexContext,
     InsertRequestIr, InsertResult, OperationIr, PatchRequestIr, PatchResult, SearchRequestIr,
-    SearchResult, UpsertRequestIr, UpsertResult,
+    SearchResult, UpdateRequestIr, UpdateResult, UpsertRequestIr, UpsertResult,
 };
 use searchkernel_testkit::{
     Backend, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedCallError, ScriptedResult,
@@ -134,6 +134,40 @@ fn patch() -> PatchRequestIr {
         .unwrap()
 }
 
+fn update() -> UpdateRequestIr {
+    let mut builder = FlatBufferBuilder::new();
+    let id = builder.create_string("a");
+    let path = builder.create_string("title");
+    let target = api::FieldPath::create(
+        &mut builder,
+        &api::FieldPathArgs { path: Some(path) },
+    );
+    let clear = api::ClearUpdate::create(&mut builder, &api::ClearUpdateArgs {});
+    let operation = api::UpdateOperation::create(
+        &mut builder,
+        &api::UpdateOperationArgs {
+            target: Some(target),
+            operation_type: api::UpdateOperationKind::ClearUpdate,
+            operation: Some(clear.as_union_value()),
+        },
+    );
+    let operations = builder.create_vector(&[operation]);
+    let request = api::UpdateRequest::create(
+        &mut builder,
+        &api::UpdateRequestArgs {
+            id: Some(id),
+            operations: Some(operations),
+            condition: None,
+            create: None,
+        },
+    );
+    builder.finish(request, None);
+    let bytes = builder.finished_data().to_vec();
+    context()
+        .update_to_ir(root::<api::UpdateRequest>(&bytes).unwrap())
+        .unwrap()
+}
+
 fn delete() -> DeleteRequestIr {
     let mut builder = FlatBufferBuilder::new();
     let id = builder.create_string("a");
@@ -246,11 +280,12 @@ fn recording_supports_all_backend_variants() {
     let backend = RecordingBackend::default();
     assert!(Backend::upsert(&backend, upsert()).is_err());
     assert!(Backend::patch(&backend, patch()).is_err());
+    assert!(Backend::update(&backend, update()).is_err());
     assert!(Backend::delete(&backend, delete()).is_err());
     assert!(Backend::get(&backend, get()).is_err());
     assert!(Backend::search(&backend, search()).is_err());
     assert!(Backend::analyze(&backend, analyze()).is_err());
-    assert_eq!(backend.calls().len(), 6);
+    assert_eq!(backend.calls().len(), 7);
 }
 
 #[test]
@@ -261,6 +296,17 @@ fn scripted_backend_matches_typed_requests_and_returns_owned_results() {
         ScriptedResult::Insert(InsertResult { id: "a".to_owned() }),
     )]);
     assert_eq!(backend.call_insert(expected).unwrap().id, "a");
+    assert_eq!(backend.finish(), Ok(()));
+}
+
+#[test]
+fn scripted_backend_matches_update_requests_and_returns_owned_results() {
+    let expected = update();
+    let backend = ScriptedBackend::new(vec![ExpectedCall::success(
+        OperationIr::Update(expected.clone()),
+        ScriptedResult::Update(UpdateResult { id: "a".to_owned() }),
+    )]);
+    assert_eq!(backend.call_update(expected).unwrap().id, "a");
     assert_eq!(backend.finish(), Ok(()));
 }
 
@@ -351,7 +397,7 @@ fn scripted_backend_reports_request_mismatch_and_unused_entries() {
 }
 
 #[test]
-fn scripted_trait_supports_all_seven_families() {
+fn scripted_trait_supports_all_eight_families() {
     let backend = ScriptedBackend::new(vec![
         ExpectedCall::success(
             OperationIr::Insert(insert()),
@@ -364,6 +410,10 @@ fn scripted_trait_supports_all_seven_families() {
         ExpectedCall::success(
             OperationIr::Patch(patch()),
             ScriptedResult::Patch(PatchResult { id: "a".into() }),
+        ),
+        ExpectedCall::success(
+            OperationIr::Update(update()),
+            ScriptedResult::Update(UpdateResult { id: "a".into() }),
         ),
         ExpectedCall::success(
             OperationIr::Delete(delete()),
@@ -391,6 +441,7 @@ fn scripted_trait_supports_all_seven_families() {
     assert!(Backend::insert(&backend, insert()).is_ok());
     assert!(Backend::upsert(&backend, upsert()).is_ok());
     assert!(Backend::patch(&backend, patch()).is_ok());
+    assert!(Backend::update(&backend, update()).is_ok());
     assert!(Backend::delete(&backend, delete()).is_ok());
     assert!(Backend::get(&backend, get()).is_ok());
     assert!(Backend::search(&backend, search()).is_ok());

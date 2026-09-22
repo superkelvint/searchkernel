@@ -1,0 +1,25 @@
+{
+  "category": "write",
+  "description": "Multiple ordered updates to one target remain explicitly unsupported.",
+  "id": "write.update-duplicate-target",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "set": {
+          "field": "brand",
+          "value": {
+            "string": "Sony"
+          }
+        }
+      },
+      {
+        "unset": {
+          "field": "brand"
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}

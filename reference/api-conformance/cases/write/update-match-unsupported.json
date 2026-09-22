@@ -1,0 +1,17 @@
+{
+  "category": "write",
+  "description": "Represented MatchUpdate remains explicitly unsupported.",
+  "id": "write.update-match-unsupported",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "match": {
+          "field": "tags"
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}

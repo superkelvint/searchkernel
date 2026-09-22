@@ -1,0 +1,15 @@
+{
+  "ok": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "divide": {
+          "field": "price",
+          "value": 2.5
+        }
+      }
+    ],
+    "condition": null,
+    "create": null
+  }
+}

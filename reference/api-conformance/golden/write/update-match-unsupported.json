@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "unsupported",
+    "details": [
+      {
+        "code": "update_operation_not_supported",
+        "path": "operations.operation"
+      }
+    ],
+    "retryable": false
+  }
+}

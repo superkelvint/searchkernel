@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "empty_update",
+        "path": "operations"
+      }
+    ],
+    "retryable": false
+  }
+}

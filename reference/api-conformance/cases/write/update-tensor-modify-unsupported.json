@@ -1,0 +1,17 @@
+{
+  "category": "write",
+  "description": "Represented TensorModifyUpdate remains explicitly unsupported.",
+  "id": "write.update-tensor-modify-unsupported",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "tensor_modify": {
+          "field": "price"
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}

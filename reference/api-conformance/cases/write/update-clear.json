@@ -1,0 +1,17 @@
+{
+  "category": "write",
+  "description": "Update clear lowers through canonical update_to_ir.",
+  "id": "write.update-clear",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "unset": {
+          "field": "brand"
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}

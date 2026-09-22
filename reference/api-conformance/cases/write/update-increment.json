@@ -1,0 +1,20 @@
+{
+  "category": "write",
+  "description": "Integer arithmetic increment preserves numeric semantics.",
+  "id": "write.update-increment",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "increment": {
+          "field": "popularity",
+          "value": {
+            "int64": 2
+          }
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}
