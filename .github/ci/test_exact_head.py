@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("exact_head.py")
+WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -103,6 +104,21 @@ class ExactHeadTests(unittest.TestCase):
         )
         self.assertEqual(classified.returncode, 0, classified.stdout.decode())
         self.assertIn("rust: required", classified.stdout.decode())
+
+    def test_workflow_uses_base_classifier_for_authoritative_lane_selection(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            'git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"',
+            workflow,
+        )
+        self.assertIn(
+            'python3 "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
+            workflow,
+        )
+        self.assertNotIn(
+            'python3 "$EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
+            workflow,
+        )
 
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
