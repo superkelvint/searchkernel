@@ -1,0 +1,73 @@
+name: Persistence compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "api/**"
+      - "core/crates/searchkernel/src/index/**"
+      - "core/crates/searchkernel/src/schema.rs"
+      - "core/crates/searchkernel/src/portable_definition.rs"
+      - "core/crates/searchkernel/tests/persistence_compatibility.rs"
+      - "core/crates/searchkernel-ir/src/api_to_ir/schema.rs"
+      - "core/crates/searchkernel-ir/src/ir_to_api/schema.rs"
+      - "core/crates/searchkernel-ir/src/model/schema.rs"
+      - "core/crates/searchkernel-ir/src/snapshot.rs"
+      - "core/crates/searchkernel-testkit/**"
+      - "core/native/vespa/embedded_crud_cfg/**"
+      - "reference/persistence/**"
+      - "reference/vespa/m5/fixtures/persisted-v1/**"
+      - "tools/check-persistence-fixture-generation.sh"
+      - "tools/check-persistence-fixtures.sh"
+      - "tools/check-persistence-sensitivity.sh"
+      - ".github/workflows/persistence-compatibility.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  persistence:
+    name: Historical reopen and fault matrix
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CARGO_TARGET_DIR: target/ci-persistence
+      SEARCHKERNEL_BUILD_ENV: ci-persistence
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
+
+      - name: Generate fixture candidate
+        run: cargo run --quiet -p searchkernel-testkit --bin searchkernel-persistence-fixtures -- target/persistence-fixtures
+
+      - name: Upload generated fixture candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: persistence-fixture-candidate
+          path: target/persistence-fixtures
+          if-no-files-found: error
+
+      - name: Verify committed fixture structure
+        run: bash tools/check-persistence-fixtures.sh
+
+      - name: Verify fixture generator is reproducible
+        run: bash tools/check-persistence-fixture-generation.sh
+
+      - name: Ensure native SDK
+        run: ./dev native-sdk ensure
+
+      - name: Verify historical reopen/search/mutate/reopen
+        run: cargo test -p searchkernel --test persistence_compatibility --features native -- --nocapture
+
+      - name: Verify persisted-state fault matrix
+        run: |
+          cargo test -p searchkernel --features native --lib persistence_fault_matrix_ -- --nocapture
+          cargo test -p searchkernel --features native --lib repeated_failed_manifest_reads_do_not_mutate_a_valid_index -- --nocapture
+
+      - name: Verify gate sensitivity
+        run: bash tools/check-persistence-sensitivity.sh
