@@ -1,7 +1,8 @@
 use super::*;
 use crate::schema::ConstantSource;
 use crate::{
-    field, Analyzer, Filter, GroupingPlan, Query, Ranking, SearchBuilder, Sort, Tensor, WandOptions,
+    field, Analyzer, Filter, GroupingPlan, Query, QueryAlternative, Ranking, SearchBuilder, Sort,
+    Tensor, WandOptions,
 };
 use searchkernel_ir::{BackendSession, IndexContext, OperationIr};
 use searchkernel_protocol::v2 as api;
@@ -4059,6 +4060,162 @@ fn public_rust_omitted_typed_query_defaults_match_portable_requests() {
         .expect("portable nearest-neighbor should resolve");
     assert_eq!(rust_request.query(), portable_request.query());
     assert_eq!(rust_request.inputs(), portable_request.inputs());
+}
+
+#[test]
+fn public_compositional_typed_queries_match_portable_requests() {
+    let definition = scripted_definition();
+    let context = context_for(&definition);
+    let term = |value: &str| searchkernel_ir::QueryExprIr {
+        kind: searchkernel_ir::QueryExprKindIr::Term {
+            value: searchkernel_ir::RequestValueIr::String(value.to_owned()),
+        },
+        annotations: BTreeMap::new(),
+    };
+    let cases = [
+        (
+            Query::contains("title", Query::term_value("value")),
+            typed_contains("title", term("value").kind),
+        ),
+        (
+            Query::contains(
+                "title",
+                Query::phrase_terms([Query::term_value("quick"), Query::term_value("brown")]),
+            ),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::Phrase(vec![term("quick"), term("brown")]),
+            ),
+        ),
+        (
+            Query::contains(
+                "title",
+                Query::equiv([Query::term_value("one"), Query::term_value("two")]),
+            ),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::Equiv(vec![term("one"), term("two")]),
+            ),
+        ),
+        (
+            Query::contains(
+                "title",
+                Query::alternatives([
+                    QueryAlternative::new(Query::term_value("one")).exactness(0.5)
+                ]),
+            ),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::Alternatives(vec![
+                    searchkernel_ir::QueryAlternativeIr {
+                        query: term("one"),
+                        exactness: Some(0.5),
+                    },
+                ]),
+            ),
+        ),
+        (
+            Query::contains("title", Query::text("free form")),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::Text {
+                    text: "free form".to_owned(),
+                },
+            ),
+        ),
+        (
+            Query::matches("title", "value.*"),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::Matches {
+                    field: typed_field("title"),
+                    pattern: "value.*".to_owned(),
+                },
+                annotations: BTreeMap::new(),
+            },
+        ),
+        (
+            Query::contains(
+                "title",
+                Query::user_input_with_default_index("free form", "title"),
+            ),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::UserInput {
+                    value: "free form".to_owned(),
+                    default_index: Some("title".to_owned()),
+                    target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
+                },
+            ),
+        ),
+        (
+            Query::user_query_with_default_index("title"),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::UserQuery {
+                    default_index: Some("title".to_owned()),
+                    target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
+                },
+                annotations: BTreeMap::new(),
+            },
+        ),
+        (
+            Query::labeled(Query::true_query(), "label", 1.0),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::Labeled {
+                    query: Box::new(searchkernel_ir::QueryExprIr {
+                        kind: searchkernel_ir::QueryExprKindIr::True,
+                        annotations: BTreeMap::new(),
+                    }),
+                    label: "label".to_owned(),
+                    score: 1.0,
+                },
+                annotations: BTreeMap::new(),
+            },
+        ),
+        (
+            Query::non_empty(Query::false_query()),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::NonEmpty(Box::new(
+                    searchkernel_ir::QueryExprIr {
+                        kind: searchkernel_ir::QueryExprKindIr::False,
+                        annotations: BTreeMap::new(),
+                    },
+                )),
+                annotations: BTreeMap::new(),
+            },
+        ),
+        (
+            Query::contains(
+                "title",
+                Query::near_terms([Query::term_value("quick"), Query::term_value("brown")])
+                    .with_annotation("distance", 7_u32),
+            ),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::Near {
+                    children: vec![term("quick"), term("brown")],
+                    distance: 7,
+                },
+            ),
+        ),
+    ];
+
+    for (rust_query, portable_query) in cases {
+        let recording = Arc::new(RecordingBackend::new());
+        let (_runtime, index) = runtime_index(definition.clone(), recording);
+        let request = index.search("typed").typed_query(rust_query);
+        let rust_request = searchkernel_ir::resolve_search(
+            &context,
+            crate::search::to_resolver_input(&request).expect("Rust query should lower"),
+        )
+        .expect("Rust query should resolve");
+        let bytes = portable_typed_request(portable_query, BTreeMap::new());
+        let portable_request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
+            .expect("portable request should parse");
+        let portable_request = context
+            .search_to_ir(portable_request)
+            .expect("portable query should resolve");
+        assert_eq!(rust_request.query(), portable_request.query());
+    }
 }
 
 #[test]

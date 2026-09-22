@@ -22,7 +22,8 @@ pub use grouping::{GroupingAggregation, GroupingExpression, GroupingLevel, Group
 pub use index::{Index, IndexRuntime};
 pub use patch::Patch;
 pub use query::{
-    NearestNeighborOptions, Query, QueryBound, QueryValue, WandOptions, WeightedQueryItem,
+    NearestNeighborOptions, Query, QueryAlternative, QueryBound, QueryValue, WandOptions,
+    WeightedQueryItem,
 };
 pub use result::{
     Coverage, CoverageDegraded, FacetResult, FacetValue, FeatureSet, FeatureValue, GroupingResult,
