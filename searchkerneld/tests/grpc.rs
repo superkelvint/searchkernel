@@ -617,12 +617,42 @@ async fn cancelled_execution_waiter_releases_admission_capacity() {
         "cancelled waiter must release admission capacity; got {third_error:?}"
     );
 
+    // The client may observe its deadline just before the server-side
+    // grpc-timeout future is polled to completion. Give the server deadline
+    // wrapper ample time to drop the admitted request while the first execution
+    // permit remains occupied, then prove another request is admitted rather
+    // than rejected as ResourceExhausted.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let mut fourth_client = connect_client(address).await;
+    let mut fourth_request = Request::new(rpc::FlatBufferFrame {
+        payload: large_search_request(),
+    });
+    fourth_request.set_timeout(Duration::from_millis(100));
+    let fourth_result = tokio::time::timeout(
+        Duration::from_secs(2),
+        fourth_client.execute(fourth_request),
+    )
+    .await
+    .expect("fourth admission probe must finish");
+    let fourth_error = fourth_result.expect_err("fourth request must wait for execution");
+    assert!(
+        matches!(
+            fourth_error.code(),
+            Code::DeadlineExceeded | Code::Cancelled
+        ),
+        "deadline-expired waiter stranded admission capacity; got {fourth_error:?}"
+    );
+
+    // Also prove timed-out waiters do not remain queued for execution and run
+    // later when the occupied native slot is finally released.
+    tokio::time::sleep(Duration::from_millis(200)).await;
     backend.release.store(true, Ordering::Release);
     first.await.expect("first task").expect("first request");
+    tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
         backend.searches.load(Ordering::SeqCst),
         1,
-        "deadline probes must not reach the blocked backend"
+        "deadline-expired waiters must not execute after capacity is released"
     );
 
     server.shutdown().await.expect("shutdown server");
