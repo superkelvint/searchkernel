@@ -579,6 +579,7 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
         .sortable(capabilities.sortable())
         .facetable(capabilities.facetable());
     value.capabilities = Some(FieldCapabilities::from_ir(capabilities));
+    value.mark_capabilities_resolved();
     if field.analyzer().is_some_and(|analyzer| {
         analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty()
     }) {
