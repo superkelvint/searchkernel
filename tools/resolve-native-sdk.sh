@@ -37,6 +37,10 @@ compatible_full_sdk() {
     local fingerprint="$sdk/native-build-fingerprint-v2.txt"
 
     [[ -f "$fingerprint" && -d "$sdk/lib" ]] || return 1
+    if [[ -f "$sdk/manifest.json" ]] &&
+       grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$sdk/manifest.json"; then
+        return 1
+    fi
     has_vespa_libraries "$sdk/lib" || return 1
     [[ "$(fingerprint_field "$fingerprint" vespa.commit)" == "$wanted_commit" ]] || return 1
     [[ "$(fingerprint_field "$fingerprint" vespa.config)" == "$wanted_config" ]] || return 1
@@ -65,7 +69,10 @@ resolve_vespa_library_root() {
     case "$vespa_root" in
         */upstream/vespa)
             worktree_root=$(cd -- "$vespa_root/../.." && pwd)
-            for candidate in                 "$worktree_root/core/native/sdk/linux-x86_64"                 "$worktree_root/target/host/native-sdk/linux-x86_64"                 "$worktree_root/target/native-sdk-package"; do
+            for candidate in \
+                "$worktree_root/core/native/sdk/linux-x86_64" \
+                "$worktree_root/target/host/native-sdk/linux-x86_64" \
+                "$worktree_root/target/native-sdk-package"; do
                 if compatible_full_sdk "$candidate" "$wanted_commit" "$wanted_config"; then
                     echo "using Vespa shared libraries from compatible full SDK: $candidate/lib" >&2
                     printf '%s\n' "$candidate/lib"
@@ -76,7 +83,10 @@ resolve_vespa_library_root() {
     esac
 
     while IFS= read -r worktree; do
-        for candidate in             "$worktree/core/native/sdk/linux-x86_64"             "$worktree/target/host/native-sdk/linux-x86_64"             "$worktree/target/native-sdk-package"; do
+        for candidate in \
+            "$worktree/core/native/sdk/linux-x86_64" \
+            "$worktree/target/host/native-sdk/linux-x86_64" \
+            "$worktree/target/native-sdk-package"; do
             if compatible_full_sdk "$candidate" "$wanted_commit" "$wanted_config"; then
                 echo "using Vespa shared libraries from compatible sibling full SDK: $candidate/lib" >&2
                 printf '%s\n' "$candidate/lib"
