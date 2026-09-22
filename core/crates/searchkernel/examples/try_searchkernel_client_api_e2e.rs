@@ -891,8 +891,39 @@ mod showcase {
         assert!(!highlighted.hits[0].highlights[0].fragments[0]
             .matches
             .is_empty());
+        for query in [
+            Query::fuzzy("title", "runnng"),
+            Query::prefix("title", "Run"),
+            Query::substring("title", "unn"),
+            Query::suffix("title", "ing"),
+        ] {
+            let error = index
+                .search("")
+                .typed_query(query)
+                .highlight(["title"])
+                .execute::<Value>()
+                .expect_err("same-field unsupported query shapes must fail before native search");
+            assert_eq!(error.code(), ErrorCode::Unsupported);
+            assert!(error
+                .details()
+                .iter()
+                .any(|detail| detail.code == "highlighting_query_not_supported"));
+        }
+        let mixed_highlighting = index
+            .search("")
+            .typed_query(Query::and([
+                Query::term("title", "running"),
+                Query::in_values("category", [QueryValue::from("shoes")]),
+            ]))
+            .highlight(["title"])
+            .execute::<Value>()?;
+        assert_id_set(&mixed_highlighting, ["shoe-1", "shoe-2"]);
+        assert_eq!(mixed_highlighting.hits[0].highlights.len(), 1);
+        assert!(!mixed_highlighting.hits[0].highlights[0].fragments[0]
+            .matches
+            .is_empty());
         println!(
-            "search_fields/language/timeout/inspect/missing-first and Vespa highlighting PASS"
+            "search_fields/language/timeout/inspect/missing-first, field-aware highlighting, and Vespa highlighting PASS"
         );
 
         heading("19. COVERAGE AND DEGRADATION");
@@ -1257,6 +1288,7 @@ Successfully demonstrated through the public Rust facade:
   ✓ facet convenience
   ✓ facet ordering request
   ✓ filtered facets
+  ✓ field-aware highlighting compatibility for fuzzy and regexp-family queries
   ✓ nested grouping keys, counts, averages, and nested children
   ✓ coverage and valid match-phase degradation metadata
   ✓ invalid semantic request remains a hard operation error
