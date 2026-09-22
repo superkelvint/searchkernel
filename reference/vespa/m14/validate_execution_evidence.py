@@ -161,6 +161,7 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
                 step["id"],
                 bool(step["approximate"]),
                 step["explore_additional_hits"],
+                step.get("distance_threshold"),
             )
             for step in scenario.get("steps", [])
         ]
@@ -170,6 +171,7 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
                 stage,
                 bool(scenario["query_options"]["approximate"]),
                 scenario["query_options"]["explore_additional_hits"],
+                scenario["query_options"].get("distance_threshold"),
             )
             for stage in (
                 "before_update",
@@ -183,7 +185,7 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
         raise EvidenceError(f"unsupported scenario: {scenario.get('id')}")
 
     expected_queries: list[dict[str, Any]] = []
-    for stage, approximate, expected_explore in expected:
+    for stage, approximate, expected_explore, expected_threshold in expected:
         query = by_stage.get(stage)
         if query is None:
             raise EvidenceError(f"scenario query {stage!r} has no execution evidence")
@@ -194,6 +196,13 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
                 f"{stage}: observed exploreAdditionalHits {observed_explore:g} "
                 f"does not match requested value {expected_explore}"
             )
+        if expected_threshold is not None:
+            observed_threshold = _number(query, "distance_threshold")
+            if observed_threshold != expected_threshold:
+                raise EvidenceError(
+                    f"{stage}: observed distanceThreshold {observed_threshold:g} "
+                    f"does not match requested value {expected_threshold}"
+                )
         expected_queries.append(query)
 
     ann_queries = [query for query in expected_queries if query["wanted_approximate"]]
