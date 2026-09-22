@@ -42,10 +42,17 @@ coordination:
   and other actionable CTO work.
 - Do not use a separate `dispatches/` directory, `agent-reports/` directory,
   or coordination repository as the work queue or completion channel.
-- A non-trivial implementation task should have an issue before code changes
-  begin. If a task is given directly and no issue exists, create one when GitHub
-  access is available.
-- Before starting an issue, read the full issue and recent comments, check for
+- Do not search GitHub merely because a task is non-trivial. If the user gives a
+  concrete implementation task directly, treat that task as the work
+  specification and begin with the relevant repository code, tests, contracts,
+  and documentation.
+- Do not create an issue solely to satisfy process for a directly assigned task.
+  Search or browse the issue queue only when the user asks to find/select/claim
+  work, explicitly invokes an issue-driven workflow, or the task itself requires
+  issue context.
+- If the user names an issue or pull request, fetch that item directly. Do not
+  enumerate or search the wider GitHub queue first.
+- For issue-driven work, read the full issue and recent comments, check for
   linked/open pull requests, and make sure another agent has not already
   claimed it.
 - Claim work before editing by assigning yourself when permissions allow and by
@@ -223,16 +230,21 @@ Do not silently redefine either one.
 
 Before editing:
 
-1. Identify the GitHub issue that defines the work. For non-trivial work, create
-   one first if none exists and GitHub access is available.
-2. Read the issue, its comments, and linked pull requests. Confirm it is an
-   atomic actionable issue rather than an umbrella. If it contains multiple
-   independently reviewable outcomes, split them into child issues before
-   implementation. Confirm the chosen issue is not already claimed, then claim
-   it before changing code.
+1. Determine whether the task is direct or issue-driven. For a concrete task
+   assigned directly by the user, do not search GitHub for an issue; begin from
+   the task and relevant repository context. For issue-driven work, use the
+   named issue directly, or search the queue only when the user asked you to
+   select/find work.
+2. For issue-driven work only, read the issue, its comments, and linked pull
+   requests. Confirm it is an atomic actionable issue rather than an umbrella.
+   If it contains multiple independently reviewable outcomes, split them into
+   child issues before implementation. Confirm the chosen issue is not already
+   claimed, then claim it before changing code. Skip this step for a directly
+   assigned task that is not tied to an issue.
 3. Start from the current `main` branch and create a dedicated task
-   branch/worktree. Prefer a branch name that includes the issue number, for
-   example `agent/123-fix-grouping-order`.
+   branch/worktree. For issue-driven work, prefer a branch name that includes
+   the issue number, for example `agent/123-fix-grouping-order`; otherwise use
+   a concise task-oriented branch name.
 4. Inspect `git status --short` and the current branch in the task worktree.
 5. Identify pre-existing changes and treat them as belonging to someone else
    unless the task explicitly says otherwise.
