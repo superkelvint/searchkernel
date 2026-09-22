@@ -22,9 +22,6 @@ on:
       - ".github/ci/select-python.sh"
       - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/client-capabilities.yml"
-      - ".github/ci/select-python.sh"
-      - ".github/ci/check-python-workflows.sh"
-      - ".github/workflows/client-capabilities.yml"
   push:
     branches: [main]
     paths:
@@ -44,6 +41,9 @@ on:
       - "tools/test_check_client_contracts.py"
       - "tools/check-python-dependencies.py"
       - "tools/test_python_dependency_contract.py"
+      - ".github/ci/select-python.sh"
+      - ".github/ci/check-python-workflows.sh"
+      - ".github/workflows/client-capabilities.yml"
   workflow_dispatch:
 
 concurrency:
