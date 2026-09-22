@@ -715,6 +715,9 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             canonical.properties = profile.properties.clone();
             canonical.inherits = profile.inherits.clone();
             canonical.functions = profile.functions.clone();
+            canonical.inputs = profile.inputs.clone();
+            canonical.constants = profile.constants.clone();
+            canonical.onnx_models = profile.onnx_models.clone();
             Ok(canonical)
         })
         .collect::<Result<Vec<_>>>()?;
@@ -933,6 +936,9 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             .expect("rank profile was just appended");
         described.inherits = profile.inherits.clone();
         described.functions = profile.functions.clone();
+        described.inputs = profile.inputs.clone();
+        described.constants = profile.constants.clone();
+        described.onnx_models = profile.onnx_models.clone();
         described.canonical = Some(profile.clone());
     }
     result.constants = definition
