@@ -74,28 +74,106 @@ def source_digest(root: Path) -> str:
 
 
 def shared_library_tree_identity(root: Path) -> str:
-    """Cheap identity for packaged shared-library inputs.
+    """Content identity for packaged shared-library inputs.
 
-    Native SDK packaging copies shared libraries from configured Vespa/dependency
-    trees. Hashing every large DSO on every resolver invocation would make cache
-    lookup unnecessarily expensive, so use stable path/symlink/size/mtime
-    metadata. A rebuilt or replaced library changes this identity in normal build
-    workflows while keeping warm-cache lookup cheap.
+    Cache identity must be stable across Git worktrees, so timestamps and inode
+    metadata are deliberately excluded. Symlinks contribute their link target;
+    regular shared-library files contribute their content digest.
     """
     if not root.is_dir():
         return "missing"
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*.so*")):
-        try:
-            stat = path.stat()
-        except OSError as error:
-            digest.update(f"{path.relative_to(root)}:error={error}\n".encode())
-            continue
         relative = path.relative_to(root).as_posix()
-        target = os.readlink(path) if path.is_symlink() else ""
-        digest.update(
-            f"{relative}\0{target}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode()
+        digest.update(relative.encode())
+        digest.update(b"\0")
+        try:
+            if path.is_symlink():
+                digest.update(b"symlink\0")
+                digest.update(os.readlink(path).encode())
+            elif path.is_file():
+                digest.update(b"file\0")
+                digest.update(file_digest(path).encode())
+            else:
+                digest.update(b"other")
+        except OSError as error:
+            digest.update(f"error={error}".encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def runtime_bundle_identity(root: Path, vespa_root: Path) -> str:
+    """Identity of LLVM/libffi/xxhash candidates used by SDK packaging.
+
+    Discovery intentionally includes every usable candidate rather than only the
+    first one. This is conservative: adding or replacing a candidate may select a
+    new cache key, but an SDK can never remain keyed to runtime bytes that have
+    changed behind the resolver.
+    """
+    candidates: set[tuple[str, str]] = set()
+
+    def add_file(path: Path) -> None:
+        try:
+            if not path.is_file():
+                return
+            resolved = path.resolve()
+            candidates.add((path.name, file_digest(resolved)))
+        except OSError:
+            return
+
+    explicit_extra = os.environ.get("VESPA_EXTRA_LIB_DIR")
+    explicit_aws = os.environ.get("VESPA_AWS_LIB_DIR")
+    if explicit_extra:
+        directory = Path(explicit_extra)
+        for name in ("libLLVM.so.21.1", "libffi.so.6", "libxxhash.so"):
+            add_file(directory / name)
+    if explicit_aws:
+        add_file(Path(explicit_aws) / "libffi.so.6")
+
+    deps = configured_deps_root(root, vespa_root)
+    if deps is not None:
+        for directory in (
+            deps / "lib64",
+            deps / "lib",
+            deps / "../../usr/lib64",
+            deps / "../../usr/local/aws-cli/v2/2.36.43/dist",
+        ):
+            for name in ("libLLVM.so.21.1", "libffi.so.6", "libxxhash.so"):
+                add_file(directory / name)
+
+    for directory in (
+        root / "core/native/sdk/linux-x86_64/lib",
+        root / "target/native-sdk-package/lib",
+    ):
+        for name in ("libLLVM.so.21.1", "libffi.so.6", "libxxhash.so"):
+            add_file(directory / name)
+
+    try:
+        worktrees = subprocess.run(
+            ["git", "-C", str(root), "worktree", "list", "--porcelain"],
+            check=False,
+            capture_output=True,
+            text=True,
         )
+    except OSError:
+        worktrees = None
+    if worktrees is not None:
+        for line in worktrees.stdout.splitlines():
+            if not line.startswith("worktree "):
+                continue
+            directory = (
+                Path(line.removeprefix("worktree "))
+                / "core/native/sdk/linux-x86_64/lib"
+            )
+            for name in ("libLLVM.so.21.1", "libffi.so.6", "libxxhash.so"):
+                add_file(directory / name)
+
+    digest = hashlib.sha256()
+    for name, content in sorted(candidates):
+        digest.update(name.encode())
+        digest.update(b"\0")
+        digest.update(content.encode())
+        digest.update(b"\n")
     return digest.hexdigest()
 
 
@@ -242,6 +320,7 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
         "vespa.shared_libraries": shared_library_tree_identity(vespa_root),
         "native.source": source_digest(root),
         "native.dependency_bundle": dependency_bundle_identity(root, vespa_root),
+        "native.runtime_bundle": runtime_bundle_identity(root, vespa_root),
     }
 
     tracked = (
