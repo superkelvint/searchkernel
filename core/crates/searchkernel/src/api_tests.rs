@@ -1745,12 +1745,8 @@ fn described_field_preserves_custom_analyzer_options() {
         mode: searchkernel_ir::MatchingModeIr::Text,
         options: matching_options,
     }));
-    let definition = searchkernel_ir::IndexDefinitionIr::new(
-        None,
-        vec![field],
-        Vec::new()
-    )
-    .expect("valid analyzer definition");
+    let definition = searchkernel_ir::IndexDefinitionIr::new(None, vec![field], Vec::new())
+        .expect("valid analyzer definition");
 
     let index = index_from_canonical_ir(definition);
     let described = index.describe().expect("describe should succeed");
@@ -3394,7 +3390,10 @@ fn public_imported_fields_round_trip_without_canonical_sidecar() {
 #[test]
 fn described_public_index_definition_exposes_document_summaries() {
     let (canonical, described) = public_described_canonical_fixture();
-    assert_eq!(described.document_summaries(), canonical.document_summaries());
+    assert_eq!(
+        described.document_summaries(),
+        canonical.document_summaries()
+    );
 }
 
 #[test]
@@ -3402,7 +3401,10 @@ fn public_document_summaries_round_trip_without_canonical_sidecar() {
     let (canonical, mut described) = public_described_canonical_fixture();
     described.canonical = None;
     let resolved = definition_to_ir(&described).expect("public document summaries should resolve");
-    assert_eq!(resolved.document_summaries(), canonical.document_summaries());
+    assert_eq!(
+        resolved.document_summaries(),
+        canonical.document_summaries()
+    );
 }
 
 #[test]
@@ -3410,8 +3412,12 @@ fn field_to_ir_preserves_struct_field_configuration_without_canonical_sidecar() 
     let (canonical, described) = public_described_canonical_fixture();
     let mut field = described.fields()[0].clone();
     field.canonical = None;
-    let resolved = definition_to_ir(&IndexDefinition::new().field(field)).expect("field should resolve");
-    assert_eq!(resolved.fields()[0].struct_fields(), canonical.fields()[0].struct_fields());
+    let resolved =
+        definition_to_ir(&IndexDefinition::new().field(field)).expect("field should resolve");
+    assert_eq!(
+        resolved.fields()[0].struct_fields(),
+        canonical.fields()[0].struct_fields()
+    );
 }
 
 #[test]
@@ -3428,9 +3434,20 @@ fn public_rank_profile_configuration_round_trips_without_canonical_sidecar() {
     let (canonical, described) = public_described_canonical_fixture();
     let mut profile = described.rank_profiles()[0].clone();
     profile.canonical = None;
-    let resolved = definition_to_ir(&IndexDefinition::new().field(Field::text("title")).rank_profile(profile)).expect("profile should resolve");
-    assert_eq!(resolved.rank_profiles()[0].inherits, canonical.rank_profiles()[0].inherits);
-    assert_eq!(resolved.rank_profiles()[0].functions, canonical.rank_profiles()[0].functions);
+    let resolved = definition_to_ir(
+        &IndexDefinition::new()
+            .field(Field::text("title"))
+            .rank_profile(profile),
+    )
+    .expect("profile should resolve");
+    assert_eq!(
+        resolved.rank_profiles()[0].inherits,
+        canonical.rank_profiles()[0].inherits
+    );
+    assert_eq!(
+        resolved.rank_profiles()[0].functions,
+        canonical.rank_profiles()[0].functions
+    );
 }
 
 #[test]
@@ -3448,10 +3465,24 @@ fn public_rank_profile_model_state_round_trips_without_sidecar() {
     let (canonical, described) = public_described_canonical_fixture();
     let mut profile = described.rank_profiles()[0].clone();
     profile.canonical = None;
-    let resolved = definition_to_ir(&IndexDefinition::new().field(Field::text("title")).rank_profile(profile)).expect("profile");
-    assert_eq!(resolved.rank_profiles()[0].inputs, canonical.rank_profiles()[0].inputs);
-    assert_eq!(resolved.rank_profiles()[0].constants, canonical.rank_profiles()[0].constants);
-    assert_eq!(resolved.rank_profiles()[0].onnx_models, canonical.rank_profiles()[0].onnx_models);
+    let resolved = definition_to_ir(
+        &IndexDefinition::new()
+            .field(Field::text("title"))
+            .rank_profile(profile),
+    )
+    .expect("profile");
+    assert_eq!(
+        resolved.rank_profiles()[0].inputs,
+        canonical.rank_profiles()[0].inputs
+    );
+    assert_eq!(
+        resolved.rank_profiles()[0].constants,
+        canonical.rank_profiles()[0].constants
+    );
+    assert_eq!(
+        resolved.rank_profiles()[0].onnx_models,
+        canonical.rank_profiles()[0].onnx_models
+    );
 }
 
 #[test]
@@ -3460,24 +3491,40 @@ fn described_field_exposes_summary_script_and_properties() {
     let expected = &canonical.fields()[0];
     let actual = &described.fields()[0];
     assert_eq!(actual.summary_config.as_ref(), expected.summary());
-    assert_eq!(actual.indexing_script.as_deref(), expected.indexing_script());
+    assert_eq!(
+        actual.indexing_script.as_deref(),
+        expected.indexing_script()
+    );
     assert_eq!(&actual.properties, expected.properties());
 }
 
 #[test]
 fn public_field_rich_state_round_trips_without_sidecar() {
     let (canonical, described) = public_described_canonical_fixture();
-    let mut field = described.fields()[0].clone(); field.canonical = None;
+    let mut field = described.fields()[0].clone();
+    field.canonical = None;
     let resolved = definition_to_ir(&IndexDefinition::new().field(field)).expect("field");
-    assert_eq!(resolved.fields()[0].summary(), canonical.fields()[0].summary());
-    assert_eq!(resolved.fields()[0].indexing_script(), canonical.fields()[0].indexing_script());
-    assert_eq!(resolved.fields()[0].properties(), canonical.fields()[0].properties());
+    assert_eq!(
+        resolved.fields()[0].summary(),
+        canonical.fields()[0].summary()
+    );
+    assert_eq!(
+        resolved.fields()[0].indexing_script(),
+        canonical.fields()[0].indexing_script()
+    );
+    assert_eq!(
+        resolved.fields()[0].properties(),
+        canonical.fields()[0].properties()
+    );
 }
 
 #[test]
 fn described_index_definition_exposes_document_metadata() {
     let (canonical, described) = public_described_canonical_fixture();
-    assert_eq!(described.document_type, canonical.document_type().map(str::to_owned));
+    assert_eq!(
+        described.document_type,
+        canonical.document_type().map(str::to_owned)
+    );
     assert_eq!(described.schema_inherits, canonical.schema_inherits());
     assert_eq!(described.document_inherits, canonical.document_inherits());
     let resolved = definition_to_ir(&described).expect("described schema should resolve");
