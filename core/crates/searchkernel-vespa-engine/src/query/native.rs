@@ -42,7 +42,7 @@ pub(crate) fn lower_query(
             for term_length in terms.term_lengths.iter().copied() {
                 let end = offset
                     + usize::try_from(term_length).map_err(|_| {
-                        Error::message("text query term length cannot be represented")
+                        Error::invalid("text query term length cannot be represented")
                     })?;
                 let single = NativeQueryTerms {
                     term_bytes: terms.term_bytes[offset..end].to_vec(),
@@ -288,7 +288,7 @@ pub(crate) fn lower_query(
                     check(status, &error)
                 }
                 Some(AttributeKind::String | AttributeKind::Boolean) => {
-                    Err(Error::message("unsupported attribute range field type"))
+                    Err(Error::invalid("unsupported attribute range field type"))
                 }
             }
         }
@@ -603,7 +603,7 @@ fn integer_attribute_bound(bound: &AttributeBound) -> Result<(u32, i64), Error> 
         AttributeBound::Excluded(Value::Integer(value)) => {
             Ok((sys::SK_QUERY_BOUND_EXCLUDED, *value))
         }
-        _ => Err(Error::message(
+        _ => Err(Error::invalid(
             "wrong value type: attribute range bounds must have matching integer types",
         )),
     }
@@ -614,17 +614,17 @@ fn float_attribute_bound(bound: &AttributeBound) -> Result<(u32, f64), Error> {
         AttributeBound::Unbounded => Ok((sys::SK_QUERY_BOUND_UNBOUNDED, 0.0)),
         AttributeBound::Included(Value::Float(value)) => {
             if !value.is_finite() {
-                return Err(Error::message("attribute float bound must be finite"));
+                return Err(Error::invalid("attribute float bound must be finite"));
             }
             Ok((sys::SK_QUERY_BOUND_INCLUDED, *value))
         }
         AttributeBound::Excluded(Value::Float(value)) => {
             if !value.is_finite() {
-                return Err(Error::message("attribute float bound must be finite"));
+                return Err(Error::invalid("attribute float bound must be finite"));
             }
             Ok((sys::SK_QUERY_BOUND_EXCLUDED, *value))
         }
-        _ => Err(Error::message(
+        _ => Err(Error::invalid(
             "wrong value type: attribute range bounds must have matching float types",
         )),
     }
