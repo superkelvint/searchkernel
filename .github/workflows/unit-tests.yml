@@ -3,16 +3,35 @@ name: Rust unit tests
 on:
   push:
     branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - "rust-toolchain*"
+      - "api/**"
+      - "core/**"
+      - "searchkerneld/**"
+      - "dev"
   pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - "rust-toolchain*"
+      - "api/**"
+      - "core/**"
+      - "searchkerneld/**"
+      - "dev"
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   unit-tests:
     name: Workspace unit tests
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     env:
       CARGO_TARGET_DIR: target/ci-non-native
       SEARCHKERNEL_BUILD_ENV: ci
@@ -20,49 +39,24 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Detect Rust-relevant changes
-        id: rust-changes
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if git diff --quiet "${{ github.event.pull_request.base.sha }}"...HEAD -- \
-            Cargo.toml Cargo.lock '.cargo/**' 'api/**' 'core/**' 'searchkerneld/**' \
-            dev '.github/workflows/unit-tests.yml'; then
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No Rust-relevant changes; skipping Rust setup and tests."
-          else
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Install Rust toolchain
-        if: steps.rust-changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust build
-        if: steps.rust-changes.outputs.run == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target/ci-non-native"
           shared-key: non-native
 
       - name: Cache pinned FlatBuffers toolchain
-        if: steps.rust-changes.outputs.run == 'true'
         uses: actions/cache@v4
         with:
           path: .git/searchkernel/toolchains/flatbuffers/25.12.19
           key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
 
       - name: Ensure pinned FlatBuffers toolchain
-        if: steps.rust-changes.outputs.run == 'true'
         run: ./dev install flatbuffers
 
       - name: Run workspace unit tests
-        if: steps.rust-changes.outputs.run == 'true'
         run: cargo test --workspace --no-default-features

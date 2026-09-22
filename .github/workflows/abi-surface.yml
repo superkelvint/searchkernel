@@ -2,6 +2,7 @@ name: ABI surface
 
 on:
   push:
+    branches: [main]
     paths:
       - "core/native/**"
       - "core/crates/searchkernel-vespa-bindings/**"
@@ -10,9 +11,7 @@ on:
       - "tools/check-layout.sh"
       - "tools/native-build-fingerprint.py"
       - "tools/*native-sdk*.sh"
-      - "BUILDING.md"
       - "dev"
-      - ".github/workflows/abi-surface.yml"
   pull_request:
     paths:
       - "core/native/**"
@@ -22,18 +21,17 @@ on:
       - "tools/check-layout.sh"
       - "tools/native-build-fingerprint.py"
       - "tools/*native-sdk*.sh"
-      - "BUILDING.md"
       - "dev"
-      - ".github/workflows/abi-surface.yml"
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   abi-surface:
     name: Public ABI aggregate check
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     env:
       CARGO_TARGET_DIR: target/ci
       SEARCHKERNEL_BUILD_ENV: ci
