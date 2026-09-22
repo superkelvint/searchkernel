@@ -1,0 +1,23 @@
+name: Rust unit tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit-tests:
+    name: Workspace unit tests
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_TARGET_DIR: target/ci
+      SEARCHKERNEL_BUILD_ENV: ci
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run workspace unit tests
+        run: cargo test --workspace --all-targets --no-default-features
