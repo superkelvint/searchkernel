@@ -217,7 +217,7 @@ fn packed_strings(values: &[String]) -> Result<(Vec<u8>, Vec<u32>), Error> {
     for value in values {
         lengths.push(
             u32::try_from(value.len())
-                .map_err(|_| Error::message("string array element exceeds native capacity"))?,
+                .map_err(|_| Error::invalid("string array element exceeds native capacity"))?,
         );
         bytes.extend_from_slice(value.as_bytes());
     }
@@ -380,7 +380,7 @@ pub(crate) fn add_document_field(
                     bytes.as_ptr(),
                     lengths.as_ptr(),
                     u32::try_from(values.len())
-                        .map_err(|_| Error::message("string array exceeds native capacity"))?,
+                        .map_err(|_| Error::invalid("string array exceeds native capacity"))?,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -434,7 +434,7 @@ pub(crate) fn add_document_field(
                     value_bytes.as_ptr(),
                     value_lengths.as_ptr(),
                     u32::try_from(value.features.len())
-                        .map_err(|_| Error::message("predicate features exceed native capacity"))?,
+                        .map_err(|_| Error::invalid("predicate features exceed native capacity"))?,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -443,7 +443,7 @@ pub(crate) fn add_document_field(
         FieldValue::Tensor(TensorValue::Dense { type_spec, values }) => {
             let type_spec = cstring(type_spec)?;
             let value_count = u32::try_from(values.len())
-                .map_err(|_| Error::message("tensor value count exceeds native capacity"))?;
+                .map_err(|_| Error::invalid("tensor value count exceeds native capacity"))?;
             unsafe {
                 sys::sk_document_add_tensor_dense(
                     document,
@@ -545,7 +545,7 @@ pub(crate) fn add_update_field(
                     bytes.as_ptr(),
                     lengths.as_ptr(),
                     u32::try_from(values.len())
-                        .map_err(|_| Error::message("string array exceeds native capacity"))?,
+                        .map_err(|_| Error::invalid("string array exceeds native capacity"))?,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -595,7 +595,7 @@ pub(crate) fn add_update_field(
                     value_bytes.as_ptr(),
                     value_lengths.as_ptr(),
                     u32::try_from(value.features.len())
-                        .map_err(|_| Error::message("predicate features exceed native capacity"))?,
+                        .map_err(|_| Error::invalid("predicate features exceed native capacity"))?,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -604,7 +604,7 @@ pub(crate) fn add_update_field(
         FieldUpdate::Assign(FieldValue::Tensor(TensorValue::Dense { type_spec, values })) => {
             let type_spec = cstring(type_spec)?;
             let value_count = u32::try_from(values.len())
-                .map_err(|_| Error::message("tensor value count exceeds native capacity"))?;
+                .map_err(|_| Error::invalid("tensor value count exceeds native capacity"))?;
             unsafe {
                 sys::sk_document_update_assign_tensor_dense(
                     update,
@@ -717,7 +717,7 @@ pub(crate) fn add_text_array_annotation<T>(
 
 pub(crate) fn length_u32(length: usize, what: &str) -> Result<u32, Error> {
     u32::try_from(length)
-        .map_err(|_| Error::message(format!("{what} count exceeds native ABI capacity")))
+        .map_err(|_| Error::invalid(format!("{what} count exceeds native ABI capacity")))
 }
 
 pub(crate) struct NativeOccurrences {
@@ -796,10 +796,10 @@ pub(crate) fn text_query_terms(analysis: &QueryAnalysis) -> Result<NativeQueryTe
     };
     for term in &analysis.terms {
         let stem = term.stems.first().ok_or_else(|| {
-            Error::message("M4 query analysis returned no stem for a query position")
+            Error::invalid("M4 query analysis returned no stem for a query position")
         })?;
         if term.stems.len() != 1 {
-            return Err(Error::message(
+            return Err(Error::invalid(
                 "M4 query analysis returned multiple stems for a query position",
             ));
         }
@@ -815,7 +815,7 @@ pub(crate) fn validate_term_query(analysis: &QueryAnalysis) -> Result<(), Error>
     if analysis.terms.len() == 1 {
         Ok(())
     } else {
-        Err(Error::message(
+        Err(Error::invalid(
             "term query must analyze to exactly one term",
         ))
     }
@@ -823,7 +823,7 @@ pub(crate) fn validate_term_query(analysis: &QueryAnalysis) -> Result<(), Error>
 
 pub(crate) fn require_ptr<T>(pointer: *mut T, name: &str) -> Result<NonNull<T>, Error> {
     NonNull::new(pointer)
-        .ok_or_else(|| Error::message(format!("native operation returned a null {name}")))
+        .ok_or_else(|| Error::internal("native_result_invariant", format!("native operation returned a null {name}")))
 }
 
 pub(crate) fn native_bytes<'a>(
@@ -836,7 +836,7 @@ pub(crate) fn native_bytes<'a>(
         return Ok(&[]);
     }
     if pointer.is_null() {
-        return Err(Error::message(format!(
+        return Err(Error::internal("native_result_invariant", format!(
             "native operation returned a null {name}"
         )));
     }
@@ -856,7 +856,7 @@ pub(crate) fn native_f64s<'a>(
         return Ok(&[]);
     }
     if pointer.is_null() {
-        return Err(Error::message(format!(
+        return Err(Error::internal("native_result_invariant", format!(
             "native operation returned a null {name}"
         )));
     }
@@ -1112,7 +1112,7 @@ pub(crate) fn grouping_expression_function(
         .map(|argument| argument.0.as_ptr().cast_const())
         .collect::<Vec<_>>();
     let argument_count = u32::try_from(arguments.len())
-        .map_err(|_| Error::message("too many grouping function arguments"))?;
+        .map_err(|_| Error::invalid("too many grouping function arguments"))?;
     let mut pointer = ptr::null_mut();
     let mut error = NativeError::new();
     check(
@@ -1138,7 +1138,7 @@ pub(crate) fn grouping_expression_aggregation_reference(
     index: usize,
 ) -> Result<NativeGroupingExpression, Error> {
     let index = u32::try_from(index)
-        .map_err(|_| Error::message("grouping aggregation reference is too large"))?;
+        .map_err(|_| Error::invalid("grouping aggregation reference is too large"))?;
     let mut pointer = ptr::null_mut();
     let mut error = NativeError::new();
     check(
@@ -1233,7 +1233,7 @@ fn grouping_aggregation_expression(
                 error.as_mut_ptr(),
                 error.capacity(),
             ),
-            _ => return Err(Error::message("unknown grouping aggregation kind")),
+            _ => return Err(Error::invalid("unknown grouping aggregation kind")),
         }
     };
     check(status, &error)?;
@@ -1257,7 +1257,7 @@ pub(crate) fn grouping_aggregation_quantiles(
     let mut pointer = ptr::null_mut();
     let mut error = NativeError::new();
     let count = u32::try_from(quantiles.len())
-        .map_err(|_| Error::message("too many grouping quantiles"))?;
+        .map_err(|_| Error::invalid("too many grouping quantiles"))?;
     check(
         unsafe {
             sys::sk_grouping_aggregation_quantiles(
@@ -1328,7 +1328,7 @@ pub(crate) fn grouping_level_set_limits(
 ) -> Result<(), Error> {
     if let Some(value) = max_groups {
         let value =
-            i64::try_from(value).map_err(|_| Error::message("grouping max groups is too large"))?;
+            i64::try_from(value).map_err(|_| Error::invalid("grouping max groups is too large"))?;
         let mut error = NativeError::new();
         check(
             unsafe {
@@ -1344,7 +1344,7 @@ pub(crate) fn grouping_level_set_limits(
     }
     if let Some(value) = precision {
         let value =
-            i64::try_from(value).map_err(|_| Error::message("grouping precision is too large"))?;
+            i64::try_from(value).map_err(|_| Error::invalid("grouping precision is too large"))?;
         let mut error = NativeError::new();
         check(
             unsafe {
@@ -1448,7 +1448,7 @@ pub(crate) fn grouping_filter_multi(
         .map(|filter| filter.0.as_ptr().cast_const())
         .collect::<Vec<_>>();
     let count = u32::try_from(filters.len())
-        .map_err(|_| Error::message("too many grouping filter clauses"))?;
+        .map_err(|_| Error::invalid("too many grouping filter clauses"))?;
     let mut pointer = ptr::null_mut();
     let mut error = NativeError::new();
     let status = unsafe {
@@ -1649,7 +1649,7 @@ fn grouping_result_value(
     pointer: *const sys::sk_grouping_result_value,
 ) -> Result<GroupingResultValue, Error> {
     let pointer = NonNull::new(pointer.cast_mut())
-        .ok_or_else(|| Error::message("native grouping returned a null result value"))?;
+        .ok_or_else(|| Error::internal("native_result_invariant", "native grouping returned a null result value"))?;
     let value = pointer.as_ptr();
     match unsafe { sys::sk_grouping_result_value_kind(value) } {
         sys::SK_GROUPING_RESULT_VALUE_STRING => {
@@ -1669,7 +1669,7 @@ fn grouping_result_value(
                 &error,
             )?;
             if length != 0 && string.is_null() {
-                return Err(Error::message(
+                return Err(Error::internal("native_result_invariant", 
                     "native grouping returned a null string value",
                 ));
             }
@@ -1680,7 +1680,7 @@ fn grouping_result_value(
             };
             Ok(GroupingResultValue::String(
                 String::from_utf8(bytes.to_vec())
-                    .map_err(|_| Error::message("native grouping returned invalid UTF-8"))?,
+                    .map_err(|_| Error::internal("native_result_invariant", "native grouping returned invalid UTF-8"))?,
             ))
         }
         sys::SK_GROUPING_RESULT_VALUE_INTEGER => {
@@ -1755,7 +1755,7 @@ fn grouping_result_value(
             }
             Ok(GroupingResultValue::Quantiles(values))
         }
-        kind => Err(Error::unsupported(format!(
+        kind => Err(Error::internal("native_result_invariant", format!(
             "native grouping returned unknown result-value kind {kind}"
         ))),
     }
@@ -1763,7 +1763,7 @@ fn grouping_result_value(
 
 fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<GroupingOutput, Error> {
     let pointer = NonNull::new(pointer.cast_mut())
-        .ok_or_else(|| Error::message("native grouping returned a null output"))?;
+        .ok_or_else(|| Error::internal("native_result_invariant", "native grouping returned a null output"))?;
     let output = pointer.as_ptr();
     match unsafe { sys::sk_grouping_tree_output_kind(output) } {
         sys::SK_GROUPING_TREE_OUTPUT_VALUE => {
@@ -1804,7 +1804,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                 )?;
                 let id = unsafe { std::slice::from_raw_parts(id.cast::<u8>(), id_length as usize) };
                 let document_id = String::from_utf8(id.to_vec())
-                    .map_err(|_| Error::message("native grouping returned a non-UTF-8 hit ID"))?;
+                    .map_err(|_| Error::internal("native_result_invariant", "native grouping returned a non-UTF-8 hit ID"))?;
                 let mut score = 0.0;
                 let mut error = NativeError::new();
                 check(
@@ -1841,7 +1841,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                         &error,
                     )?;
                     if name.is_null() {
-                        return Err(Error::message(
+                        return Err(Error::internal("native_result_invariant", 
                             "native grouping returned a null summary field name",
                         ));
                     }
@@ -1849,7 +1849,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                         std::slice::from_raw_parts(name.cast::<u8>(), name_length as usize)
                     };
                     let name = String::from_utf8(name.to_vec()).map_err(|_| {
-                        Error::message("native grouping returned a non-UTF-8 summary field name")
+                        Error::internal("native_result_invariant", "native grouping returned a non-UTF-8 summary field name")
                     })?;
                     let mut kind = 0;
                     let mut string = ptr::null();
@@ -1879,7 +1879,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                     let value = match kind {
                         sys::SK_VALUE_STRING => {
                             if string.is_null() {
-                                return Err(Error::message(
+                                return Err(Error::internal("native_result_invariant", 
                                     "native grouping returned a null summary string",
                                 ));
                             }
@@ -1891,7 +1891,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                             };
                             FieldValue::Scalar(ScalarValue::String(
                                 String::from_utf8(value.to_vec()).map_err(|_| {
-                                    Error::message(
+                                    Error::internal("native_result_invariant", 
                                         "native grouping returned a non-UTF-8 summary string",
                                     )
                                 })?,
@@ -1903,7 +1903,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                             FieldValue::Scalar(ScalarValue::Boolean(boolean != 0))
                         }
                         _ => {
-                            return Err(Error::message(
+                            return Err(Error::internal("native_result_invariant", 
                                 "native grouping returned an unknown summary value kind",
                             ))
                         }
@@ -1920,7 +1920,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
             }
             Ok(GroupingOutput::HitList(hits))
         }
-        kind => Err(Error::unsupported(format!(
+        kind => Err(Error::internal("native_result_invariant", format!(
             "native grouping returned unknown output kind {kind}"
         ))),
     }
@@ -1931,7 +1931,7 @@ fn grouping_tree_node(
     include_key: bool,
 ) -> Result<GroupingResult, Error> {
     let node = NonNull::new(node.cast_mut())
-        .ok_or_else(|| Error::message("native grouping returned a null tree node"))?;
+        .ok_or_else(|| Error::internal("native_result_invariant", "native grouping returned a null tree node"))?;
     let node = node.as_ptr();
     let key = if include_key {
         let mut value = ptr::null();
@@ -2052,7 +2052,7 @@ pub(crate) fn read_generic_search_result(
         };
         check(status, &error)?;
         if message.is_null() && message_length != 0 {
-            return Err(Error::message(
+            return Err(Error::internal("native_result_invariant", 
                 "native search result issue returned null message",
             ));
         }
@@ -2063,7 +2063,7 @@ pub(crate) fn read_generic_search_result(
         };
         issues.push(
             String::from_utf8(bytes.to_vec())
-                .map_err(|_| Error::message("native search result issue is invalid UTF-8"))?,
+                .map_err(|_| Error::internal("native_result_invariant", "native search result issue is invalid UTF-8"))?,
         );
     }
     let match_feature_count =
@@ -2085,13 +2085,13 @@ pub(crate) fn read_generic_search_result(
         };
         check(status, &error)?;
         if name.is_null() {
-            return Err(Error::message("native match feature returned null name"));
+            return Err(Error::internal("native_result_invariant", "native match feature returned null name"));
         }
         let bytes = unsafe { std::slice::from_raw_parts(name.cast::<u8>(), name_length as usize) };
         let name = String::from_utf8(bytes.to_vec())
-            .map_err(|_| Error::message("native match feature returned invalid UTF-8 name"))?;
+            .map_err(|_| Error::internal("native_result_invariant", "native match feature returned invalid UTF-8 name"))?;
         if match_feature_names.iter().any(|previous| previous == &name) {
-            return Err(Error::message(
+            return Err(Error::internal("native_result_invariant", 
                 "native match features contain duplicate names",
             ));
         }
@@ -2116,13 +2116,13 @@ pub(crate) fn read_generic_search_result(
         };
         check(status, &error)?;
         if id.is_null() {
-            return Err(Error::message(
+            return Err(Error::internal("native_result_invariant", 
                 "native local result returned null document ID",
             ));
         }
         let id = unsafe { std::slice::from_raw_parts(id.cast::<u8>(), id_length as usize) };
         let document_id = String::from_utf8(id.to_vec())
-            .map_err(|_| Error::message("native result returned invalid UTF-8"))?;
+            .map_err(|_| Error::internal("native_result_invariant", "native result returned invalid UTF-8"))?;
         let summaries =
             unsafe { sys::sk_generic_search_result_summary_count(result.0.as_ptr(), index as u32) }
                 as usize;
@@ -2144,12 +2144,12 @@ pub(crate) fn read_generic_search_result(
             };
             check(status, &error)?;
             if name.is_null() {
-                return Err(Error::message("native summary returned null field name"));
+                return Err(Error::internal("native_result_invariant", "native summary returned null field name"));
             }
             let name_bytes =
                 unsafe { std::slice::from_raw_parts(name.cast::<u8>(), name_length as usize) };
             let name = String::from_utf8(name_bytes.to_vec())
-                .map_err(|_| Error::message("native summary returned invalid UTF-8 field name"))?;
+                .map_err(|_| Error::internal("native_result_invariant", "native summary returned invalid UTF-8 field name"))?;
             let mut kind = 0;
             let mut string = ptr::null();
             let mut string_length = 0;
@@ -2176,20 +2176,20 @@ pub(crate) fn read_generic_search_result(
             let value = match kind {
                 sys::SK_VALUE_STRING => {
                     if string.is_null() {
-                        return Err(Error::message("native summary returned null string"));
+                        return Err(Error::internal("native_result_invariant", "native summary returned null string"));
                     }
                     let bytes = unsafe {
                         std::slice::from_raw_parts(string.cast::<u8>(), string_length as usize)
                     };
                     Value::String(
                         String::from_utf8(bytes.to_vec())
-                            .map_err(|_| Error::message("native summary returned invalid UTF-8"))?,
+                            .map_err(|_| Error::internal("native_result_invariant", "native summary returned invalid UTF-8"))?,
                     )
                 }
                 sys::SK_VALUE_INTEGER => Value::Integer(integer),
                 sys::SK_VALUE_FLOAT => Value::Float(float),
                 sys::SK_VALUE_BOOLEAN => Value::Boolean(boolean != 0),
-                _ => return Err(Error::message("native summary returned unknown value kind")),
+                _ => return Err(Error::internal("native_result_invariant", "native summary returned unknown value kind")),
             };
             summary.insert(name, value);
         }
@@ -2216,7 +2216,7 @@ pub(crate) fn read_generic_search_result(
                 &error,
             )?;
             if field.is_null() && field_length != 0 {
-                return Err(Error::message("native highlight returned null field"));
+                return Err(Error::internal("native_result_invariant", "native highlight returned null field"));
             }
             let field_bytes = if field_length == 0 {
                 &[][..]
@@ -2224,7 +2224,7 @@ pub(crate) fn read_generic_search_result(
                 unsafe { std::slice::from_raw_parts(field.cast::<u8>(), field_length as usize) }
             };
             let field = String::from_utf8(field_bytes.to_vec())
-                .map_err(|_| Error::message("native highlight field is invalid UTF-8"))?;
+                .map_err(|_| Error::internal("native_result_invariant", "native highlight field is invalid UTF-8"))?;
             let fragment_count = unsafe {
                 sys::sk_generic_search_result_highlight_fragment_count(
                     result.0.as_ptr(),
@@ -2253,7 +2253,7 @@ pub(crate) fn read_generic_search_result(
                     &error,
                 )?;
                 if text.is_null() && text_length != 0 {
-                    return Err(Error::message(
+                    return Err(Error::internal("native_result_invariant", 
                         "native highlight returned null fragment text",
                     ));
                 }
@@ -2263,7 +2263,7 @@ pub(crate) fn read_generic_search_result(
                     unsafe { std::slice::from_raw_parts(text.cast::<u8>(), text_length as usize) }
                 };
                 let text = String::from_utf8(text_bytes.to_vec())
-                    .map_err(|_| Error::message("native highlight text is invalid UTF-8"))?;
+                    .map_err(|_| Error::internal("native_result_invariant", "native highlight text is invalid UTF-8"))?;
                 let match_count = unsafe {
                     sys::sk_generic_search_result_highlight_match_count(
                         result.0.as_ptr(),
@@ -2294,7 +2294,7 @@ pub(crate) fn read_generic_search_result(
                         &error,
                     )?;
                     if start_byte > end_byte || end_byte as usize > text.len() {
-                        return Err(Error::message("native highlight span is out of bounds"));
+                        return Err(Error::internal("native_result_invariant", "native highlight span is out of bounds"));
                     }
                     matches.push(HighlightSpan {
                         start_byte,
@@ -2321,7 +2321,7 @@ pub(crate) fn read_generic_search_result(
             };
             check(status, &error)?;
             if native_value.is_null() {
-                return Err(Error::message("native match feature returned null value"));
+                return Err(Error::internal("native_result_invariant", "native match feature returned null value"));
             }
             let value = match unsafe { sys::sk_feature_value_kind(native_value) } {
                 sys::SK_FEATURE_VALUE_DOUBLE => {
@@ -2355,7 +2355,7 @@ pub(crate) fn read_generic_search_result(
                         &error,
                     )?;
                     if size != 0 && data.is_null() {
-                        return Err(Error::message("native match feature returned null data"));
+                        return Err(Error::internal("native_result_invariant", "native match feature returned null data"));
                     }
                     let bytes = if size == 0 {
                         &[][..]
@@ -2364,7 +2364,7 @@ pub(crate) fn read_generic_search_result(
                     };
                     MatchFeatureValue::Data(bytes.to_vec())
                 }
-                _ => return Err(Error::message("native match feature returned unknown kind")),
+                _ => return Err(Error::internal("native_result_invariant", "native match feature returned unknown kind")),
             };
             match_features.insert(feature_name.clone(), value);
         }
@@ -2438,20 +2438,20 @@ fn read_search_facet(
         let key = match key_kind {
             sys::SK_VALUE_STRING => {
                 if key_string.is_null() {
-                    return Err(Error::message("native search returned null facet key"));
+                    return Err(Error::internal("native_result_invariant", "native search returned null facet key"));
                 }
                 let bytes = unsafe {
                     std::slice::from_raw_parts(key_string.cast::<u8>(), key_string_length as usize)
                 };
                 Value::String(
                     String::from_utf8(bytes.to_vec())
-                        .map_err(|_| Error::message("native search returned invalid facet key"))?,
+                        .map_err(|_| Error::internal("native_result_invariant", "native search returned invalid facet key"))?,
                 )
             }
             sys::SK_VALUE_INTEGER => Value::Integer(key_integer),
             sys::SK_VALUE_BOOLEAN => Value::Boolean(key_integer != 0),
             _ => {
-                return Err(Error::message(
+                return Err(Error::internal("native_result_invariant", 
                     "native search returned unsupported facet key kind",
                 ))
             }
@@ -2459,4 +2459,18 @@ fn read_search_facet(
         groups.push(FacetGroup { key, count });
     }
     Ok(FacetResult { groups })
+}
+
+
+#[cfg(test)]
+mod error_domain_tests {
+    use super::require_ptr;
+    use crate::ErrorKind;
+
+    #[test]
+    fn null_output_after_success_is_internal() {
+        let error = require_ptr::<u8>(std::ptr::null_mut(), "result")
+            .expect_err("a successful native call must not return a null output");
+        assert_eq!(error.kind(), ErrorKind::Internal);
+    }
 }
