@@ -133,10 +133,11 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/src/query.rs"
       ],
       "limitations": [
-        "The high-level Rust Query and TypeScript q facades do not expose proximity constructors yet."
+        "The TypeScript q facade does not expose proximity constructors yet."
       ]
     },
     {

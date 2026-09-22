@@ -108,6 +108,22 @@ class CapabilityLedgerTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.LedgerError, "assigned to both"):
             MODULE.validate_ledger(ledger)
 
+
+    def test_proximity_capability_matches_rust_facade_support(self) -> None:
+        capability = next(
+            capability
+            for capability in self.ledger["capabilities"]
+            if capability["id"] == "query.proximity"
+        )
+        self.assertIn(
+            "core/crates/searchkernel/src/query.rs",
+            capability["verified_by"],
+        )
+        self.assertNotIn(
+            "Rust Query",
+            " ".join(capability["limitations"]),
+        )
+
     def test_stale_document_is_detected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "generated.md"
