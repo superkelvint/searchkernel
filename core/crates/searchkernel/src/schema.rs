@@ -766,6 +766,7 @@ pub struct IndexDefinition {
     pub(crate) name: Option<String>,
     pub(crate) fields: Vec<Field>,
     pub(crate) default_search_fields: Option<Vec<SearchField>>,
+    pub(crate) document_summaries: Vec<searchkernel_ir::DocumentSummaryDefinitionIr>,
     pub(crate) rank_profiles: Vec<RankProfile>,
     pub(crate) constants: Vec<ConstantDefinition>,
     pub(crate) fieldsets: Vec<searchkernel_ir::FieldSetDefinitionIr>,
@@ -788,6 +789,7 @@ impl fmt::Debug for IndexDefinition {
             .field("name", &self.name)
             .field("fields", &self.fields)
             .field("default_search_fields", &self.default_search_fields)
+            .field("document_summaries", &self.document_summaries)
             .field("rank_profiles", &self.rank_profiles)
             .field("constants", &self.constants)
             .field("fieldsets", &self.fieldsets)
@@ -978,6 +980,11 @@ impl IndexDefinition {
     /// Return the explicitly configured default search fields.
     pub fn configured_default_search_fields(&self) -> Option<&[SearchField]> {
         self.default_search_fields.as_deref()
+    }
+
+    /// Return the complete document-summary definitions represented by this public schema value.
+    pub fn document_summaries(&self) -> &[searchkernel_ir::DocumentSummaryDefinitionIr] {
+        &self.document_summaries
     }
 
     pub fn rank_profiles(&self) -> &[RankProfile] {
