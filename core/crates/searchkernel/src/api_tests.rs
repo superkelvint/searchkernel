@@ -1,5 +1,5 @@
 use super::*;
-use crate::schema::{ConstantSource, FieldKind};
+use crate::schema::{ConstantSource, DataType, FieldKind, PrimitiveDataType};
 use crate::{
     field, Analyzer, Filter, GroupingPlan, Query, QueryAlternative, Ranking, SearchBuilder, Sort,
     Tensor, WandOptions,
@@ -1554,149 +1554,10 @@ fn describe_exposes_schema_fields_publicly() {
 
 #[test]
 fn public_schema_fields_round_trip_to_ir() {
-    let (canonical, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
+    let (canonical, described) = public_described_canonical_fixture();
     let resolved = definition_to_ir(&described).expect("public schema fields should resolve");
 
     assert_eq!(resolved.schema_fields(), canonical.schema_fields());
-}
-
-#[test]
-fn rich_public_field_state_is_validated_by_shared_resolver() {
-    let (_, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
-    described.fields[0]
-        .attribute_config
-        .as_mut()
-        .expect("fixture field should have attribute configuration")
-        .fast_search = Some(true);
-
-    let error = definition_to_ir(&described)
-        .expect_err("rich field state must be validated before final IR construction");
-    assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
-}
-
-#[test]
-fn public_field_data_type_cannot_override_its_declared_kind() {
-    let mut field = Field::int64("price");
-    assert!(matches!(field.kind, FieldKind::Int64));
-    field.data_type =
-        searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Float64);
-
-    let error = definition_to_ir(&IndexDefinition::new().field(field))
-        .expect_err("a public data-type mutation must be canonically validated");
-    assert_eq!(error.details()[0].code, "invalid_type_combination");
-}
-
-#[test]
-fn fresh_indexing_script_preserves_explicit_capability_for_validation() {
-    let mut field = Field::int64("price").stored(true);
-    field.indexing_script = Some("input price | attribute price".to_owned());
-
-    let error = definition_to_ir(&IndexDefinition::new().field(field))
-        .expect_err("explicit capability must remain visible to canonical validation");
-    assert_eq!(error.details()[0].code, "ambiguous_indexing_script");
-    assert_eq!(
-        error.details()[0].path.as_deref(),
-        Some("fields[0].indexing_script")
-    );
-}
-
-fn assert_rust_and_portable_schema_error_match(
-    definition: searchkernel_ir::IndexDefinitionIr,
-    expected_detail_code: &str,
-) {
-    let index = index_from_canonical_ir(definition.clone());
-    let mut described = index.describe().expect("invalid fixture should still describe structurally");
-    // Whole-definition and field sidecars must not participate in this check.
-    // Resolved public capabilities remain present, reproducing the exact path
-    // that previously set the Rust-only `canonical` resolver provenance bit.
-    described.canonical = None;
-    for field in &mut described.fields {
-        field.canonical = None;
-    }
-
-    let rust_error = definition_to_ir(&described)
-        .expect_err("Rust schema ingress should reject invalid semantic state");
-
-    let bytes = searchkernel_ir::index_definition_ir_to_api(&definition);
-    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
-        .expect("portable invalid fixture should still decode structurally");
-    let portable_error = searchkernel_ir::index_definition_to_ir(portable)
-        .expect_err("portable schema ingress should reject the same semantic state");
-
-    assert_eq!(rust_error.details()[0].code, expected_detail_code);
-    assert_eq!(portable_error.details[0].code, expected_detail_code);
-    assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
-}
-
-fn invalid_schema_with_field(
-    field: searchkernel_ir::FieldIr,
-) -> searchkernel_ir::IndexDefinitionIr {
-    searchkernel_ir::IndexDefinitionIr::new(None, vec![field], Vec::new())
-        .expect("invalid field semantics are intentionally injected after construction")
-}
-
-#[test]
-fn rich_schema_negative_semantics_match_portable_ingress() {
-    use searchkernel_ir::{
-        AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexConfigIr,
-        PrimitiveDataTypeIr, SchemaPropertiesIr, SummaryConfigIr,
-    };
-
-    let text_field = || {
-        FieldIr::new(
-            FieldName::parse("title").expect("valid field name"),
-            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
-            Some(AnalyzerIr {
-                name: "standard".to_owned(),
-                version: 1,
-                options: SchemaPropertiesIr::new(),
-            }),
-            FieldCapabilities::new(true, true, false, false, false),
-        )
-    };
-
-    let mut stored_summary_conflict = text_field();
-    stored_summary_conflict.set_summary_config(Some(SummaryConfigIr {
-        enabled: Some(false),
-        options: SchemaPropertiesIr::new(),
-    }));
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(stored_summary_conflict),
-        "invalid_capability",
-    );
-
-    let mut searchable_index_conflict = text_field();
-    searchable_index_conflict.set_index_config(Some(IndexConfigIr {
-        enabled: Some(false),
-        hnsw: None,
-        options: SchemaPropertiesIr::new(),
-    }));
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(searchable_index_conflict),
-        "invalid_capability",
-    );
-
-    let mut ambiguous_indexing_script = text_field();
-    ambiguous_indexing_script.set_indexing_script(Some("input title | index title".to_owned()));
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(ambiguous_indexing_script),
-        "ambiguous_indexing_script",
-    );
-
-    let missing_struct = FieldIr::new(
-        FieldName::parse("payload").expect("valid field name"),
-        DataTypeIr::StructReference {
-            name: "MissingStruct".to_owned(),
-        },
-        None,
-        FieldCapabilities::new(true, false, true, true, false),
-    );
-    assert_rust_and_portable_schema_error_match(
-        invalid_schema_with_field(missing_struct),
-        "unknown_struct",
-    );
 }
 
 #[test]
@@ -1713,23 +1574,6 @@ fn schema_field_builder_adds_schema_only_field_to_ir() {
             .map(|field| field.name().as_str())
             .collect::<Vec<_>>(),
         ["derived"]
-    );
-}
-
-#[test]
-fn derived_default_search_fields_include_schema_only_fields() {
-    let definition = IndexDefinition::new()
-        .field(Field::text("title"))
-        .schema_field(Field::text("derived"));
-    let resolved = definition_to_ir(&definition).expect("schema should resolve");
-
-    assert_eq!(
-        resolved
-            .default_search_fields()
-            .iter()
-            .map(|field| field.field().as_str())
-            .collect::<Vec<_>>(),
-        ["title", "derived"]
     );
 }
 
@@ -1759,19 +1603,20 @@ fn custom_analyzer_configuration_is_shared_portable_schema_state() {
         .expect("rich analyzer is valid portable schema state");
 
     let index = index_from_canonical_ir(canonical.clone());
-    let mut described = index.describe().expect("describe should preserve rich analyzer state");
-    described.canonical = None;
-    described.fields[0].canonical = None;
+    let described = index.describe().expect("describe should preserve rich analyzer state");
     let rust = definition_to_ir(&described).expect("Rust ingress should preserve rich analyzer");
 
     let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
     let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
         .expect("portable schema should decode");
-    let portable =
-        searchkernel_ir::index_definition_to_ir(portable).expect("portable ingress should preserve rich analyzer");
+    let portable = searchkernel_ir::index_definition_to_ir(portable)
+        .expect("portable ingress should preserve rich analyzer");
 
     assert_eq!(rust.fields()[0].analyzer(), canonical.fields()[0].analyzer());
-    assert_eq!(portable.fields()[0].analyzer(), canonical.fields()[0].analyzer());
+    assert_eq!(
+        portable.fields()[0].analyzer(),
+        canonical.fields()[0].analyzer()
+    );
     assert_eq!(rust.fields()[0].analyzer(), portable.fields()[0].analyzer());
 }
 
@@ -1801,12 +1646,8 @@ fn described_field_preserves_custom_analyzer_options() {
         mode: searchkernel_ir::MatchingModeIr::Text,
         options: matching_options,
     }));
-    let definition = searchkernel_ir::IndexDefinitionIr::new(
-        None,
-        vec![field],
-        Vec::new()
-    )
-    .expect("valid analyzer definition");
+    let definition = searchkernel_ir::IndexDefinitionIr::new(None, vec![field], Vec::new())
+        .expect("valid analyzer definition");
 
     let index = index_from_canonical_ir(definition);
     let described = index.describe().expect("describe should succeed");
@@ -1817,31 +1658,45 @@ fn described_field_preserves_custom_analyzer_options() {
     assert_eq!(analyzer.version, 2);
     assert_eq!(
         analyzer.options.get("tokenizer"),
-        Some(&searchkernel_ir::RequestValueIr::String(
-            "custom".to_owned()
-        ))
+        Some(&crate::schema::SchemaValue::String("custom".to_owned()))
     );
     assert_eq!(
         described.fields()[0].matching(),
-        Some(&searchkernel_ir::MatchingConfigIr {
-            mode: searchkernel_ir::MatchingModeIr::Text,
+        Some(crate::schema::MatchingConfig {
+            mode: crate::schema::MatchingMode::Text,
             options: [(
                 "match-key".to_owned(),
-                searchkernel_ir::RequestValueIr::String("value".to_owned()),
+                crate::schema::SchemaValue::String("value".to_owned()),
             )]
             .into_iter()
             .collect(),
         })
     );
 
-    let mut public_field = described.fields()[0].clone();
-    public_field.canonical = None;
+    let public_field = described.fields()[0].clone();
     let reused = IndexDefinition::new().field(public_field);
     let resolved = definition_to_ir(&reused).expect("reused field should resolve");
-    assert_eq!(resolved.fields()[0].analyzer(), Some(analyzer));
+    let analyzer_ir = searchkernel_ir::AnalyzerIr {
+        name: analyzer.name.clone(),
+        version: analyzer.version,
+        options: analyzer
+            .options
+            .iter()
+            .map(|(key, value)| (key.clone(), value.to_ir()))
+            .collect(),
+    };
+    assert_eq!(resolved.fields()[0].analyzer(), Some(&analyzer_ir));
     assert_eq!(
         resolved.fields()[0].matching(),
-        described.fields()[0].matching()
+        Some(&searchkernel_ir::MatchingConfigIr {
+            mode: searchkernel_ir::MatchingModeIr::Text,
+            options: [(
+                "match-key".to_owned(),
+                searchkernel_ir::RequestValueIr::String("value".to_owned())
+            )]
+            .into_iter()
+            .collect(),
+        })
     );
 }
 
@@ -2915,12 +2770,16 @@ fn canonical_fixture_covers_the_complete_schema_surface() {
 
 #[cfg(feature = "native")]
 #[test]
-fn described_rich_definition_preserves_canonical_portable_provenance() {
-    let (canonical, described) = public_described_canonical_fixture();
+fn portable_definition_encoding_uses_public_state_without_a_canonical_sidecar() {
+    let (_canonical, mut described) = public_described_canonical_fixture();
+    described.default_search_fields = Some(vec![SearchField::new("title").weight(0.125)]);
     let described_bytes = crate::portable_definition::encode_portable_definition(&described);
-    let canonical_bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&described_bytes)
+        .expect("portable definition should parse");
+    let encoded =
+        searchkernel_ir::index_definition_to_ir(root).expect("portable definition should resolve");
 
-    assert_eq!(described_bytes, canonical_bytes);
+    assert_eq!(encoded.default_search_fields()[0].weight().get(), 0.125);
 }
 
 #[test]
@@ -3082,7 +2941,7 @@ fn describe_exposes_canonical_field_data_types_publicly() {
             .iter()
             .find(|field| field.name() == name)
             .expect("described field should exist");
-        assert_eq!(actual.data_type(), expected.data_type(), "field {name}");
+        assert_eq!(actual.data_type().to_ir(), *expected.data_type(), "field {name}");
     }
 }
 
@@ -3097,13 +2956,12 @@ fn cloned_described_fields_round_trip_data_types_without_sidecar_state() {
         "scores",
         "parent",
     ] {
-        let mut field = described
+        let field = described
             .fields()
             .iter()
             .find(|field| field.name() == name)
             .expect("described field should exist")
             .clone();
-        field.canonical = None;
         let resolved = definition_to_ir(&IndexDefinition::new().field(field))
             .expect("cloned public field should resolve");
         let expected = canonical
@@ -3151,13 +3009,12 @@ fn cloned_described_field_round_trips_capabilities_without_sidecar_state() {
         .iter()
         .find(|field| field.name().as_str() == "location")
         .expect("canonical location field should exist");
-    let mut field = described
+    let field = described
         .fields()
         .iter()
         .find(|field| field.name() == "location")
         .expect("described location field should exist")
         .clone();
-    field.canonical = None;
 
     let resolved = definition_to_ir(&IndexDefinition::new().field(field))
         .expect("public capabilities should resolve without sidecar state");
@@ -3191,60 +3048,32 @@ fn describe_preserves_default_search_fields_and_weights() {
 }
 
 #[test]
-fn described_public_values_expose_the_complete_canonical_schema_state() {
-    let (canonical, described) = public_described_canonical_fixture();
-
-    assert_eq!(described.canonical_definition(), Some(&canonical));
-    assert_eq!(
-        described.fields()[0].canonical_definition(),
-        Some(&canonical.fields()[0])
-    );
-    assert_eq!(
-        described.rank_profiles()[0].canonical_definition(),
-        Some(&canonical.rank_profiles()[0])
-    );
-    assert_eq!(described.rank_profiles()[2].first_phase, None);
-    assert_eq!(described.rank_profiles()[2].second_phase, None);
-    assert_eq!(
-        described.rank_profiles()[2].canonical_definition(),
-        Some(&canonical.rank_profiles()[2])
-    );
-
-    let scores = described
-        .fields()
-        .iter()
-        .find(|field| field.name() == "scores")
-        .expect("scores field should be described");
-    assert!(matches!(
-        scores
-            .canonical_definition()
-            .expect("scores should expose canonical state")
-            .data_type(),
-        searchkernel_ir::DataTypeIr::Map { .. }
-    ));
-    assert_eq!(
-        scores
-            .canonical_definition()
-            .and_then(|field| field.index()),
-        canonical.fields()[10].index()
-    );
-    assert_eq!(
-        scores
-            .canonical_definition()
-            .and_then(|field| field.attribute()),
-        canonical.fields()[10].attribute()
-    );
-}
-
-#[test]
 fn described_rank_profile_exposes_phase_presence_and_controls() {
     let (canonical, described) = public_described_canonical_fixture();
     let expected = &canonical.rank_profiles()[0];
     let actual = &described.rank_profiles()[0];
 
-    assert_eq!(actual.first_phase, expected.first_phase);
-    assert_eq!(actual.second_phase, expected.second_phase);
-    assert_eq!(actual.global_phase, expected.global_phase);
+    assert_eq!(
+        actual
+            .first_phase
+            .as_ref()
+            .map(crate::schema::RankPhase::to_ir),
+        expected.first_phase
+    );
+    assert_eq!(
+        actual
+            .second_phase
+            .as_ref()
+            .map(crate::schema::RankPhase::to_ir),
+        expected.second_phase
+    );
+    assert_eq!(
+        actual
+            .global_phase
+            .as_ref()
+            .map(crate::schema::RankPhase::to_ir),
+        expected.global_phase
+    );
     assert!(described.rank_profiles()[2].first_phase.is_none());
     assert!(described.rank_profiles()[2].second_phase.is_none());
     assert!(described.rank_profiles()[2].global_phase.is_none());
@@ -3262,13 +3091,16 @@ fn described_rank_profile_exposes_feature_and_property_metadata() {
     assert_eq!(actual.sort_features, expected.sort_features);
     assert_eq!(actual.rank_properties, expected.rank_properties);
     assert_eq!(actual.strict, expected.strict);
-    assert_eq!(actual.properties, expected.properties);
+    assert_eq!(
+        crate::schema::properties_to_ir(&actual.properties),
+        expected.properties
+    );
 }
 
 #[test]
 fn public_rank_profile_phase_state_round_trips_to_ir() {
     let phase = |expression, rerank_count, rank_score_drop_limit, total_rerank_count| {
-        searchkernel_ir::RankPhaseDefinitionIr {
+        crate::schema::RankPhase {
             expression,
             rerank_count,
             rank_score_drop_limit,
@@ -3294,9 +3126,22 @@ fn public_rank_profile_phase_state_round_trips_to_ir() {
     .expect("public rank-profile phases should resolve");
     let resolved = &resolved.rank_profiles()[0];
 
-    assert_eq!(resolved.first_phase, expected_first);
-    assert_eq!(resolved.second_phase, expected_second);
-    assert_eq!(resolved.global_phase, expected_global);
+    assert_eq!(
+        resolved.first_phase,
+        expected_first.as_ref().map(crate::schema::RankPhase::to_ir)
+    );
+    assert_eq!(
+        resolved.second_phase,
+        expected_second
+            .as_ref()
+            .map(crate::schema::RankPhase::to_ir)
+    );
+    assert_eq!(
+        resolved.global_phase,
+        expected_global
+            .as_ref()
+            .map(crate::schema::RankPhase::to_ir)
+    );
 }
 
 #[test]
@@ -3310,7 +3155,7 @@ fn public_rank_profile_metadata_round_trips_to_ir() {
     profile.strict = Some(true);
     profile.properties = BTreeMap::from([(
         "generic.property".to_owned(),
-        searchkernel_ir::RequestValueIr::String("value".to_owned()),
+        crate::schema::SchemaValue::String("value".to_owned()),
     )]);
 
     let resolved = definition_to_ir(
@@ -3381,13 +3226,12 @@ fn tensor_builder_populates_public_index_and_attribute_configuration() {
 #[test]
 fn public_field_configurations_round_trip_without_canonical_sidecar() {
     let (canonical, described) = public_described_canonical_fixture();
-    let mut field = described
+    let field = described
         .fields()
         .iter()
         .find(|field| field.name() == "embedding")
         .expect("embedding field should be described")
         .clone();
-    field.canonical = None;
 
     let resolved = definition_to_ir(&IndexDefinition::new().field(field))
         .expect("public field configuration should resolve");
@@ -3405,14 +3249,23 @@ fn public_field_configurations_round_trip_without_canonical_sidecar() {
 #[test]
 fn described_public_values_expose_fieldset_definitions() {
     let (canonical, described) = public_described_canonical_fixture();
-    assert_eq!(described.fieldsets(), canonical.fieldsets());
+    let actual = described
+        .fieldsets()
+        .iter()
+        .map(crate::schema::FieldSet::to_ir)
+        .collect::<Result<Vec<_>>>()
+        .expect("public fieldsets should convert");
+    assert_eq!(actual, canonical.fieldsets());
 }
 
 #[test]
 fn public_fieldsets_round_trip_without_canonical_sidecar() {
     let (canonical, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
-    described.fieldsets = canonical.fieldsets().to_vec();
+    described.fieldsets = canonical
+        .fieldsets()
+        .iter()
+        .map(crate::schema::FieldSet::from_ir)
+        .collect();
     let resolved = definition_to_ir(&described).expect("public fieldsets should resolve");
     assert_eq!(resolved.fieldsets(), canonical.fieldsets());
 }
@@ -3420,14 +3273,22 @@ fn public_fieldsets_round_trip_without_canonical_sidecar() {
 #[test]
 fn described_public_values_expose_onnx_models() {
     let (canonical, described) = public_described_canonical_fixture();
-    assert_eq!(described.onnx_models(), canonical.onnx_models());
+    let actual = described
+        .onnx_models()
+        .iter()
+        .map(crate::schema::OnnxModel::to_ir)
+        .collect::<Vec<_>>();
+    assert_eq!(actual, canonical.onnx_models());
 }
 
 #[test]
 fn public_onnx_models_round_trip_without_canonical_sidecar() {
     let (canonical, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
-    described.onnx_models = canonical.onnx_models().to_vec();
+    described.onnx_models = canonical
+        .onnx_models()
+        .iter()
+        .map(crate::schema::OnnxModel::from_ir)
+        .collect();
     let resolved = definition_to_ir(&described).expect("public ONNX models should resolve");
     assert_eq!(resolved.onnx_models(), canonical.onnx_models());
 }
@@ -3435,14 +3296,23 @@ fn public_onnx_models_round_trip_without_canonical_sidecar() {
 #[test]
 fn described_public_values_expose_imported_fields() {
     let (canonical, described) = public_described_canonical_fixture();
-    assert_eq!(described.imported_fields(), canonical.imported_fields());
+    let actual = described
+        .imported_fields()
+        .iter()
+        .map(crate::schema::ImportedField::to_ir)
+        .collect::<Result<Vec<_>>>()
+        .expect("public imported fields should convert");
+    assert_eq!(actual, canonical.imported_fields());
 }
 
 #[test]
 fn public_imported_fields_round_trip_without_canonical_sidecar() {
     let (canonical, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
-    described.imported_fields = canonical.imported_fields().to_vec();
+    described.imported_fields = canonical
+        .imported_fields()
+        .iter()
+        .map(crate::schema::ImportedField::from_ir)
+        .collect();
     let resolved = definition_to_ir(&described).expect("public imported fields should resolve");
     assert_eq!(resolved.imported_fields(), canonical.imported_fields());
 }
@@ -3450,24 +3320,34 @@ fn public_imported_fields_round_trip_without_canonical_sidecar() {
 #[test]
 fn described_public_index_definition_exposes_document_summaries() {
     let (canonical, described) = public_described_canonical_fixture();
-    assert_eq!(described.document_summaries(), canonical.document_summaries());
+    let actual = described
+        .document_summaries()
+        .iter()
+        .map(crate::schema::DocumentSummary::to_ir)
+        .collect::<Vec<_>>();
+    assert_eq!(actual, canonical.document_summaries());
 }
 
 #[test]
 fn public_document_summaries_round_trip_without_canonical_sidecar() {
-    let (canonical, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
+    let (canonical, described) = public_described_canonical_fixture();
     let resolved = definition_to_ir(&described).expect("public document summaries should resolve");
-    assert_eq!(resolved.document_summaries(), canonical.document_summaries());
+    assert_eq!(
+        resolved.document_summaries(),
+        canonical.document_summaries()
+    );
 }
 
 #[test]
 fn field_to_ir_preserves_struct_field_configuration_without_canonical_sidecar() {
     let (canonical, described) = public_described_canonical_fixture();
-    let mut field = described.fields()[0].clone();
-    field.canonical = None;
-    let resolved = definition_to_ir(&IndexDefinition::new().field(field)).expect("field should resolve");
-    assert_eq!(resolved.fields()[0].struct_fields(), canonical.fields()[0].struct_fields());
+    let field = described.fields()[0].clone();
+    let resolved =
+        definition_to_ir(&IndexDefinition::new().field(field)).expect("field should resolve");
+    assert_eq!(
+        resolved.fields()[0].struct_fields(),
+        canonical.fields()[0].struct_fields()
+    );
 }
 
 #[test]
@@ -3476,17 +3356,34 @@ fn described_rank_profile_exposes_inheritance_and_functions_publicly() {
     let actual = &described.rank_profiles()[0];
     let expected = &canonical.rank_profiles()[0];
     assert_eq!(actual.inherits, expected.inherits);
-    assert_eq!(actual.functions, expected.functions);
+    assert_eq!(
+        actual
+            .functions
+            .iter()
+            .map(crate::schema::RankFunction::to_ir)
+            .collect::<Vec<_>>(),
+        expected.functions
+    );
 }
 
 #[test]
 fn public_rank_profile_configuration_round_trips_without_canonical_sidecar() {
     let (canonical, described) = public_described_canonical_fixture();
-    let mut profile = described.rank_profiles()[0].clone();
-    profile.canonical = None;
-    let resolved = definition_to_ir(&IndexDefinition::new().field(Field::text("title")).rank_profile(profile)).expect("profile should resolve");
-    assert_eq!(resolved.rank_profiles()[0].inherits, canonical.rank_profiles()[0].inherits);
-    assert_eq!(resolved.rank_profiles()[0].functions, canonical.rank_profiles()[0].functions);
+    let profile = described.rank_profiles()[0].clone();
+    let resolved = definition_to_ir(
+        &IndexDefinition::new()
+            .field(Field::text("title"))
+            .rank_profile(profile),
+    )
+    .expect("profile should resolve");
+    assert_eq!(
+        resolved.rank_profiles()[0].inherits,
+        canonical.rank_profiles()[0].inherits
+    );
+    assert_eq!(
+        resolved.rank_profiles()[0].functions,
+        canonical.rank_profiles()[0].functions
+    );
 }
 
 #[test]
@@ -3494,20 +3391,54 @@ fn described_rank_profile_exposes_model_state_publicly() {
     let (canonical, described) = public_described_canonical_fixture();
     let expected = &canonical.rank_profiles()[0];
     let actual = &described.rank_profiles()[0];
-    assert_eq!(actual.inputs, expected.inputs);
-    assert_eq!(actual.constants, expected.constants);
-    assert_eq!(actual.onnx_models, expected.onnx_models);
+    assert_eq!(
+        actual
+            .inputs
+            .iter()
+            .map(crate::schema::RankProfileInput::to_ir)
+            .collect::<Vec<_>>(),
+        expected.inputs
+    );
+    assert_eq!(
+        actual
+            .constants
+            .iter()
+            .map(crate::schema::ConstantDefinition::to_ir)
+            .collect::<Vec<_>>(),
+        expected.constants
+    );
+    assert_eq!(
+        actual
+            .onnx_models
+            .iter()
+            .map(crate::schema::OnnxModel::to_ir)
+            .collect::<Vec<_>>(),
+        expected.onnx_models
+    );
 }
 
 #[test]
 fn public_rank_profile_model_state_round_trips_without_sidecar() {
     let (canonical, described) = public_described_canonical_fixture();
-    let mut profile = described.rank_profiles()[0].clone();
-    profile.canonical = None;
-    let resolved = definition_to_ir(&IndexDefinition::new().field(Field::text("title")).rank_profile(profile)).expect("profile");
-    assert_eq!(resolved.rank_profiles()[0].inputs, canonical.rank_profiles()[0].inputs);
-    assert_eq!(resolved.rank_profiles()[0].constants, canonical.rank_profiles()[0].constants);
-    assert_eq!(resolved.rank_profiles()[0].onnx_models, canonical.rank_profiles()[0].onnx_models);
+    let profile = described.rank_profiles()[0].clone();
+    let resolved = definition_to_ir(
+        &IndexDefinition::new()
+            .field(Field::text("title"))
+            .rank_profile(profile),
+    )
+    .expect("profile");
+    assert_eq!(
+        resolved.rank_profiles()[0].inputs,
+        canonical.rank_profiles()[0].inputs
+    );
+    assert_eq!(
+        resolved.rank_profiles()[0].constants,
+        canonical.rank_profiles()[0].constants
+    );
+    assert_eq!(
+        resolved.rank_profiles()[0].onnx_models,
+        canonical.rank_profiles()[0].onnx_models
+    );
 }
 
 #[test]
@@ -3516,24 +3447,39 @@ fn described_field_exposes_summary_script_and_properties() {
     let expected = &canonical.fields()[0];
     let actual = &described.fields()[0];
     assert_eq!(actual.summary_config.as_ref(), expected.summary());
-    assert_eq!(actual.indexing_script.as_deref(), expected.indexing_script());
+    assert_eq!(
+        actual.indexing_script.as_deref(),
+        expected.indexing_script()
+    );
     assert_eq!(&actual.properties, expected.properties());
 }
 
 #[test]
 fn public_field_rich_state_round_trips_without_sidecar() {
     let (canonical, described) = public_described_canonical_fixture();
-    let mut field = described.fields()[0].clone(); field.canonical = None;
+    let field = described.fields()[0].clone();
     let resolved = definition_to_ir(&IndexDefinition::new().field(field)).expect("field");
-    assert_eq!(resolved.fields()[0].summary(), canonical.fields()[0].summary());
-    assert_eq!(resolved.fields()[0].indexing_script(), canonical.fields()[0].indexing_script());
-    assert_eq!(resolved.fields()[0].properties(), canonical.fields()[0].properties());
+    assert_eq!(
+        resolved.fields()[0].summary(),
+        canonical.fields()[0].summary()
+    );
+    assert_eq!(
+        resolved.fields()[0].indexing_script(),
+        canonical.fields()[0].indexing_script()
+    );
+    assert_eq!(
+        resolved.fields()[0].properties(),
+        canonical.fields()[0].properties()
+    );
 }
 
 #[test]
 fn described_index_definition_exposes_document_metadata() {
     let (canonical, described) = public_described_canonical_fixture();
-    assert_eq!(described.document_type, canonical.document_type().map(str::to_owned));
+    assert_eq!(
+        described.document_type,
+        canonical.document_type().map(str::to_owned)
+    );
     assert_eq!(described.schema_inherits, canonical.schema_inherits());
     assert_eq!(described.document_inherits, canonical.document_inherits());
     let resolved = definition_to_ir(&described).expect("described schema should resolve");
@@ -3557,13 +3503,12 @@ fn described_fields_round_trip_from_public_state_without_field_sidecars() {
     let (canonical, described) = public_described_canonical_fixture();
 
     for (index, expected) in canonical.fields().iter().enumerate() {
-        let mut public = described.fields()[index].clone();
-        public.canonical = None;
+        let public = described.fields()[index].clone();
 
         let mut standalone = IndexDefinition::new().field(public);
         // A StructReference is not a self-contained field type: its named
         // struct declaration is schema context, not hidden Field sidecar state.
-        standalone.structs = canonical.structs().to_vec();
+        standalone.structs = described.structs().to_vec();
         let resolved = definition_to_ir(&standalone)
             .expect("public field state should resolve without a canonical sidecar");
 
@@ -3608,22 +3553,31 @@ fn mutating_a_described_rank_profile_preserves_untouched_canonical_state() {
         .clone()
         .first_phase("new_rank_expression")
         .match_feature("new_feature");
-    let public = modified
-        .canonical_definition()
-        .expect("mutated described profile should retain canonical state")
-        .clone();
-
-    assert_eq!(public.inherits, canonical.rank_profiles()[0].inherits);
-    assert_eq!(public.functions, canonical.rank_profiles()[0].functions);
-    assert_eq!(public.constants, canonical.rank_profiles()[0].constants);
+    assert_eq!(modified.inherits, canonical.rank_profiles()[0].inherits);
     assert_eq!(
-        public
+        modified
+            .functions
+            .iter()
+            .map(crate::schema::RankFunction::to_ir)
+            .collect::<Vec<_>>(),
+        canonical.rank_profiles()[0].functions
+    );
+    assert_eq!(
+        modified
+            .constants
+            .iter()
+            .map(crate::schema::ConstantDefinition::to_ir)
+            .collect::<Vec<_>>(),
+        canonical.rank_profiles()[0].constants
+    );
+    assert_eq!(
+        modified
             .first_phase
             .as_ref()
             .and_then(|phase| phase.expression.as_deref()),
         Some("new_rank_expression")
     );
-    assert!(public
+    assert!(modified
         .match_features
         .iter()
         .any(|feature| feature == "new_feature"));
@@ -3634,7 +3588,17 @@ fn mutating_a_described_rank_profile_preserves_untouched_canonical_state() {
             .rank_profile(modified),
     )
     .expect("mutated profile should resolve");
-    assert_eq!(resolved.rank_profiles()[0], public);
+    assert_eq!(
+        resolved.rank_profiles()[0]
+            .first_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_deref()),
+        Some("new_rank_expression")
+    );
+    assert!(resolved.rank_profiles()[0]
+        .match_features
+        .iter()
+        .any(|feature| feature == "new_feature"));
 }
 
 #[test]
@@ -3659,6 +3623,21 @@ fn modifying_rich_described_definition_preserves_untouched_canonical_state() {
     let expected = canonical_fixture_ir_named("renamed", 0.75, 0.25);
 
     assert_eq!(expected, resolved);
+}
+
+#[test]
+fn anti_sidecar_acceptance_guard_uses_public_definition_state() {
+    let (canonical, mut described) = public_described_canonical_fixture();
+    described.default_search_fields = Some(vec![SearchField::new("title").weight(0.125)]);
+
+    let resolved = definition_to_ir(&described).expect("public definition should resolve");
+
+    assert_ne!(
+        resolved.default_search_fields(),
+        canonical.default_search_fields(),
+        "Rust-to-IR conversion must not restore default search fields from the hidden definition sidecar"
+    );
+    assert_eq!(resolved.default_search_fields()[0].weight().get(), 0.125);
 }
 
 #[test]
@@ -3716,7 +3695,10 @@ fn describe_preserves_schema_properties() {
 #[test]
 fn describe_exposes_schema_properties_publicly() {
     let (canonical, described) = public_described_canonical_fixture();
-    assert_eq!(described.properties(), canonical.properties());
+    assert_eq!(
+        crate::schema::properties_to_ir(described.properties()),
+        canonical.properties().clone()
+    );
 }
 
 #[test]
@@ -3724,10 +3706,13 @@ fn public_schema_properties_round_trip_through_definition_to_ir() {
     let (canonical, mut described) = public_described_canonical_fixture();
     described.properties.insert(
         "schema.property".to_owned(),
-        searchkernel_ir::RequestValueIr::String("public-edit".to_owned()),
+        crate::schema::SchemaValue::String("public-edit".to_owned()),
     );
     let resolved = definition_to_ir(&described).expect("described schema should resolve");
-    assert_eq!(resolved.properties(), described.properties());
+    assert_eq!(
+        resolved.properties(),
+        &crate::schema::properties_to_ir(described.properties())
+    );
     assert_ne!(resolved.properties(), canonical.properties());
 }
 
@@ -3758,14 +3743,22 @@ fn describe_preserves_named_structs() {
 #[test]
 fn describe_exposes_named_structs_publicly() {
     let (canonical, described) = public_described_canonical_fixture();
-    assert_eq!(described.structs(), canonical.structs());
+    let actual = described
+        .structs()
+        .iter()
+        .map(crate::schema::NamedStruct::to_ir)
+        .collect::<Vec<_>>();
+    assert_eq!(actual, canonical.structs());
 }
 
 #[test]
 fn public_named_structs_round_trip_without_sidecar_state() {
     let (canonical, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
-    described.structs = canonical.structs().to_vec();
+    described.structs = canonical
+        .structs()
+        .iter()
+        .map(crate::schema::NamedStruct::from_ir)
+        .collect();
 
     let resolved = definition_to_ir(&described).expect("public structs should resolve");
     assert_eq!(resolved.structs(), canonical.structs());
@@ -3810,13 +3803,16 @@ fn described_schema_constants_are_publicly_represented() {
     assert_eq!(described.constants().len(), canonical.constants().len());
     for (public, expected) in described.constants().iter().zip(canonical.constants()) {
         assert_eq!(public.name(), expected.name);
-        assert_eq!(public.data_type(), &expected.data_type);
-        assert_eq!(public.properties(), &expected.properties);
+        assert_eq!(public.data_type().to_ir(), expected.data_type);
+        assert_eq!(
+            crate::schema::properties_to_ir(public.properties()),
+            expected.properties
+        );
         match (public.source(), &expected.source) {
             (
                 ConstantSource::Literal(public_value),
                 searchkernel_ir::ConstantSourceIr::Literal(expected_value),
-            ) => assert_eq!(public_value, expected_value),
+            ) => assert_eq!(public_value.to_ir(), *expected_value),
             (
                 ConstantSource::File { path: public_path },
                 searchkernel_ir::ConstantSourceIr::File {
@@ -3856,16 +3852,6 @@ fn describe_preserves_schema_onnx_models() {
 fn describe_round_trips_complete_index_definition_without_semantic_loss() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical, described);
-}
-
-#[test]
-fn rich_public_definition_matches_portable_without_canonical_sidecar() {
-    let (canonical, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
-
-    let resolved = definition_to_ir(&described)
-        .expect("complete public schema state should use the shared resolver");
-    assert_eq!(canonical, resolved);
 }
 
 #[test]
@@ -4815,48 +4801,6 @@ fn search_normalization_covers_explicit_options_and_defaults() {
 }
 
 #[test]
-fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
-    let definition = scripted_definition();
-    let context = context_for(&definition);
-    let (_runtime, probe) = runtime_index(definition, Arc::new(RecordingBackend::new()));
-    let rust_request = probe
-        .search("fox")
-        .search_fields(["title"])
-        .filter(field("brand").eq("acme"))
-        .filter("category = 'books'")
-        .sort(Sort::desc("brand").missing_first())
-        .facet(crate::Facet::new("category").name("categories").limit(3))
-        .grouping(
-            GroupingPlan::new().level(
-                GroupingPlan::by("brand")
-                    .output(crate::GroupingAggregation::count())
-                    .nested(GroupingPlan::by("category")),
-            ),
-        )
-        .ranking(Ranking::bm25())
-        .rank_property("source", "catalog")
-        .projection(["title", "brand"])
-        .highlight(["title"])
-        .language("EN-us")
-        .limit(7)
-        .offset(2);
-
-    let direct = expected_search(&context, &rust_request);
-    let bytes = searchkernel_ir::search_request_ir_to_api(&direct);
-    let portable = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
-        .expect("canonical search request should decode");
-    let portable = context
-        .search_to_ir(portable)
-        .expect("canonical portable search should resolve");
-
-    assert_eq!(direct, portable);
-    assert_eq!(
-        searchkernel_ir::snapshot::search_request(&direct),
-        searchkernel_ir::snapshot::search_request(&portable)
-    );
-}
-
-#[test]
 fn scripted_backend_errors_preserve_code_message_and_details() {
     let definition = scripted_definition();
     let context = context_for(&definition);
@@ -4923,4 +4867,208 @@ fn backend_errors_are_returned_without_being_rewritten() {
         .expect_err("recording backend intentionally rejects searches");
     assert_eq!(error.code(), crate::ErrorCode::Unsupported);
     assert_eq!(backend.calls().len(), 2);
+}
+
+
+#[test]
+fn rich_public_field_state_is_validated_by_shared_resolver() {
+    let (_, mut described) = public_described_canonical_fixture();
+    described.fields[0]
+        .attribute_config
+        .as_mut()
+        .expect("fixture field should have attribute configuration")
+        .fast_search = Some(true);
+
+    let error = definition_to_ir(&described)
+        .expect_err("rich field state must be validated before final IR construction");
+    assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
+}
+
+#[test]
+fn public_field_data_type_cannot_override_its_declared_kind() {
+    let mut field = Field::int64("price");
+    assert!(matches!(field.kind, FieldKind::Int64));
+    field.data_type = DataType::Primitive(PrimitiveDataType::Float64);
+
+    let error = definition_to_ir(&IndexDefinition::new().field(field))
+        .expect_err("a public data-type mutation must be canonically validated");
+    assert_eq!(error.details()[0].code, "invalid_type_combination");
+}
+
+#[test]
+fn fresh_indexing_script_preserves_explicit_capability_for_validation() {
+    let mut field = Field::int64("price").stored(true);
+    field.indexing_script = Some("input price | attribute price".to_owned());
+
+    let error = definition_to_ir(&IndexDefinition::new().field(field))
+        .expect_err("explicit capability must remain visible to canonical validation");
+    assert_eq!(error.details()[0].code, "ambiguous_indexing_script");
+    assert_eq!(
+        error.details()[0].path.as_deref(),
+        Some("fields[0].indexing_script")
+    );
+}
+
+
+#[test]
+fn derived_default_search_fields_include_schema_only_fields() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title"))
+        .schema_field(Field::text("derived"));
+    let resolved = definition_to_ir(&definition).expect("schema should resolve");
+
+    assert_eq!(
+        resolved
+            .default_search_fields()
+            .iter()
+            .map(|field| field.field().as_str())
+            .collect::<Vec<_>>(),
+        ["title", "derived"]
+    );
+}
+
+
+#[test]
+fn rich_public_definition_matches_portable_without_canonical_sidecar() {
+    let (canonical, described) = public_described_canonical_fixture();
+
+    let resolved = definition_to_ir(&described)
+        .expect("complete public schema state should use the shared resolver");
+    assert_eq!(canonical, resolved);
+}
+
+
+#[test]
+fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
+    let definition = scripted_definition();
+    let context = context_for(&definition);
+    let (_runtime, probe) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+    let rust_request = probe
+        .search("fox")
+        .search_fields(["title"])
+        .filter(field("brand").eq("acme"))
+        .filter("category = 'books'")
+        .sort(Sort::desc("brand").missing_first())
+        .facet(crate::Facet::new("category").name("categories").limit(3))
+        .grouping(
+            GroupingPlan::new().level(
+                GroupingPlan::by("brand")
+                    .output(crate::GroupingAggregation::count())
+                    .nested(GroupingPlan::by("category")),
+            ),
+        )
+        .ranking(Ranking::bm25())
+        .rank_property("source", "catalog")
+        .projection(["title", "brand"])
+        .highlight(["title"])
+        .language("EN-us")
+        .limit(7)
+        .offset(2);
+
+    let direct = expected_search(&context, &rust_request);
+    let bytes = searchkernel_ir::search_request_ir_to_api(&direct);
+    let portable = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
+        .expect("canonical search request should decode");
+    let portable = context
+        .search_to_ir(portable)
+        .expect("canonical portable search should resolve");
+
+    assert_eq!(direct, portable);
+    assert_eq!(
+        searchkernel_ir::snapshot::search_request(&direct),
+        searchkernel_ir::snapshot::search_request(&portable)
+    );
+}
+
+
+fn assert_rust_and_portable_schema_error_match(
+    definition: searchkernel_ir::IndexDefinitionIr,
+    expected_detail_code: &str,
+) {
+    let index = index_from_canonical_ir(definition.clone());
+    let described = index.describe().expect("invalid fixture should still describe structurally");
+
+    let rust_error = definition_to_ir(&described)
+        .expect_err("Rust schema ingress should reject invalid semantic state");
+
+    let bytes = searchkernel_ir::index_definition_ir_to_api(&definition);
+    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+        .expect("portable invalid fixture should still decode structurally");
+    let portable_error = searchkernel_ir::index_definition_to_ir(portable)
+        .expect_err("portable schema ingress should reject the same semantic state");
+
+    assert_eq!(rust_error.details()[0].code, expected_detail_code);
+    assert_eq!(portable_error.details[0].code, expected_detail_code);
+    assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
+}
+
+
+fn invalid_schema_with_field(
+    field: searchkernel_ir::FieldIr,
+) -> searchkernel_ir::IndexDefinitionIr {
+    searchkernel_ir::IndexDefinitionIr::new(None, vec![field], Vec::new())
+        .expect("invalid field semantics are intentionally injected after construction")
+}
+
+
+#[test]
+fn rich_schema_negative_semantics_match_portable_ingress() {
+    use searchkernel_ir::{
+        AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexConfigIr,
+        PrimitiveDataTypeIr, SchemaPropertiesIr, SummaryConfigIr,
+    };
+
+    let text_field = || {
+        FieldIr::new(
+            FieldName::parse("title").expect("valid field name"),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            Some(AnalyzerIr {
+                name: "standard".to_owned(),
+                version: 1,
+                options: SchemaPropertiesIr::new(),
+            }),
+            FieldCapabilities::new(true, true, false, false, false),
+        )
+    };
+
+    let mut stored_summary_conflict = text_field();
+    stored_summary_conflict.set_summary_config(Some(SummaryConfigIr {
+        enabled: Some(false),
+        options: SchemaPropertiesIr::new(),
+    }));
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(stored_summary_conflict),
+        "invalid_capability",
+    );
+
+    let mut searchable_index_conflict = text_field();
+    searchable_index_conflict.set_index_config(Some(IndexConfigIr {
+        enabled: Some(false),
+        hnsw: None,
+        options: SchemaPropertiesIr::new(),
+    }));
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(searchable_index_conflict),
+        "invalid_capability",
+    );
+
+    let mut ambiguous_indexing_script = text_field();
+    ambiguous_indexing_script.set_indexing_script(Some("input title | index title".to_owned()));
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(ambiguous_indexing_script),
+        "ambiguous_indexing_script",
+    );
+
+    let missing_struct = FieldIr::new(
+        FieldName::parse("payload").expect("valid field name"),
+        DataTypeIr::StructReference {
+            name: "MissingStruct".to_owned(),
+        },
+        None,
+        FieldCapabilities::new(true, false, true, true, false),
+    );
+    assert_rust_and_portable_schema_error_match(
+        invalid_schema_with_field(missing_struct),
+        "unknown_struct",
+    );
 }
