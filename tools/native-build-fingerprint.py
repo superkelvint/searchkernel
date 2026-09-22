@@ -249,7 +249,9 @@ def dependency_bundle_identity(root: Path, vespa_root: Path) -> str:
 
 def vespa_library_identity(vespa_root: Path) -> str:
     """Content identity of the already-built Vespa shared libraries we publish."""
-    return shared_library_tree_identity(vespa_root)
+    override = os.environ.get("VESPA_LIBRARY_ROOT")
+    library_root = Path(override).resolve(strict=False) if override else vespa_root
+    return shared_library_tree_identity(library_root)
 
 
 def vespa_config_digest(vespa_root: Path) -> str:
