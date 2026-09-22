@@ -62,7 +62,7 @@ fn main() {
                     "fields": [{
                         "name": "attr1",
                         "kind": "Int64",
-                        "stored": false,
+                        "stored": true,
                         "searchable": false,
                         "filterable": true,
                         "sortable": true,
@@ -74,7 +74,7 @@ fn main() {
                     "fields": [{
                         "name": "attr1",
                         "kind": "Int64",
-                        "stored": false,
+                        "stored": true,
                         "searchable": false,
                         "filterable": true,
                         "sortable": false,
@@ -131,7 +131,7 @@ fn main() {
                 "fields": [{
                     "name": "attr1",
                     "type": "int64",
-                    "stored": false,
+                    "stored": true,
                     "searchable": false,
                     "filterable": true,
                     "sortable": true,
@@ -167,10 +167,10 @@ fn main() {
 
 fn embedded_config_files() -> [(&'static str, &'static str); 7] {
     [
-        ("searchkernel-schema.json", "{\"version\":1,\"document_type\":\"typea\",\"fields\":[{\"name\":\"attr1\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":false}]}\n"),
+        ("searchkernel-schema.json", "{\"version\":1,\"document_type\":\"typea\",\"fields\":[{\"name\":\"attr1\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":true}]}\n"),
         ("indexschema.cfg", "indexfield[0]\n"),
         ("attributes.cfg", "attribute[1]\nattribute[0].name \"attr1\"\nattribute[0].datatype INT32\nattribute[0].collectiontype SINGLE\n"),
-        ("summary.cfg", "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\nclasses[0].fields[3]\nclasses[0].fields[0].name \"documentid\"\nclasses[0].fields[0].type \"longstring\"\nclasses[0].fields[0].command \"documentid\"\nclasses[0].fields[0].source \"\"\nclasses[0].fields[1].name \"rankfeatures\"\nclasses[0].fields[1].type \"featuredata\"\nclasses[0].fields[1].command \"rankfeatures\"\nclasses[0].fields[1].source \"\"\nclasses[0].fields[2].name \"summaryfeatures\"\nclasses[0].fields[2].type \"featuredata\"\nclasses[0].fields[2].command \"summaryfeatures\"\nclasses[0].fields[2].source \"\"\n"),
+        ("summary.cfg", "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\nclasses[0].fields[4]\nclasses[0].fields[0].name \"documentid\"\nclasses[0].fields[0].type \"longstring\"\nclasses[0].fields[0].command \"documentid\"\nclasses[0].fields[0].source \"\"\nclasses[0].fields[1].name \"rankfeatures\"\nclasses[0].fields[1].type \"featuredata\"\nclasses[0].fields[1].command \"rankfeatures\"\nclasses[0].fields[1].source \"\"\nclasses[0].fields[2].name \"summaryfeatures\"\nclasses[0].fields[2].type \"featuredata\"\nclasses[0].fields[2].command \"summaryfeatures\"\nclasses[0].fields[2].source \"\"\nclasses[0].fields[3].name \"attr1\"\nclasses[0].fields[3].type \"integer\"\nclasses[0].fields[3].command \"\"\nclasses[0].fields[3].source \"attr1\"\n"),
         ("rank-profiles.cfg", "rankprofile[1]\nrankprofile[0].name \"default\"\n"),
         ("juniperrc.cfg", ""),
         ("proton.cfg", "documentdb[1]\ndocumentdb[0].inputdoctypename \"typea\"\ndocumentdb[0].document_id_attribute true\n"),
@@ -179,7 +179,7 @@ fn embedded_config_files() -> [(&'static str, &'static str); 7] {
 
 fn embedded_config_identity() -> serde_json::Value {
     serde_json::json!({
-        "searchkernel-schema.json": "{\"version\":1,\"document_type\":\"typea\",\"fields\":[{\"name\":\"attr1\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":false}]}\n",
+        "searchkernel-schema.json": "{\"version\":1,\"document_type\":\"typea\",\"fields\":[{\"name\":\"attr1\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":true}]}\n",
         "indexschema.cfg": "indexfield[0]\n",
         "attributes.cfg": "attribute[1]\nattribute[0].name \"attr1\"\nattribute[0].datatype INT32\nattribute[0].collectiontype SINGLE\n",
         "summary.cfg": "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\nclasses[0].fields[3]\nclasses[0].fields[0].name \"documentid\"\nclasses[0].fields[0].type \"longstring\"\nclasses[0].fields[0].command \"documentid\"\nclasses[0].fields[0].source \"\"\nclasses[0].fields[1].name \"rankfeatures\"\nclasses[0].fields[1].type \"featuredata\"\nclasses[0].fields[1].command \"rankfeatures\"\nclasses[0].fields[1].source \"\"\nclasses[0].fields[2].name \"summaryfeatures\"\nclasses[0].fields[2].type \"featuredata\"\nclasses[0].fields[2].command \"summaryfeatures\"\nclasses[0].fields[2].source \"\"\n",
