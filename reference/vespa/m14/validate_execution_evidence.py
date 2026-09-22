@@ -154,6 +154,15 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
     if len(normalized) != len(records):
         raise EvidenceError("driver output contains malformed execution evidence")
 
+    stages = [query["stage"] for query in normalized]
+    if any(not isinstance(stage, str) or not stage for stage in stages):
+        raise EvidenceError("driver output contains execution evidence without a stage")
+    if len(set(stages)) != len(stages):
+        duplicates = sorted({stage for stage in stages if stages.count(stage) > 1})
+        raise EvidenceError(
+            "driver output contains duplicate execution evidence stages: "
+            + ", ".join(duplicates)
+        )
     by_stage = {query["stage"]: query for query in normalized}
     if scenario.get("id") == "hnsw-query-controls":
         expected = [
@@ -183,6 +192,18 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
         ]
     else:
         raise EvidenceError(f"unsupported scenario: {scenario.get('id')}")
+
+    expected_stages = {stage for stage, *_ in expected} | {"threshold-probe"}
+    observed_stages = set(by_stage)
+    if observed_stages != expected_stages:
+        missing = sorted(expected_stages - observed_stages)
+        unexpected = sorted(observed_stages - expected_stages)
+        details = []
+        if missing:
+            details.append("missing: " + ", ".join(missing))
+        if unexpected:
+            details.append("unexpected: " + ", ".join(unexpected))
+        raise EvidenceError("driver output stage mismatch (" + "; ".join(details) + ")")
 
     expected_queries: list[dict[str, Any]] = []
     for stage, approximate, expected_explore, expected_threshold in expected:
