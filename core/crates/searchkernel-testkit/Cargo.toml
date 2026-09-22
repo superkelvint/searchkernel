@@ -18,3 +18,11 @@ searchkernel-protocol = { path = "../searchkernel-protocol" }
 [[bin]]
 name = "searchkernel-conformance"
 path = "src/bin/searchkernel-conformance.rs"
+
+[[bin]]
+name = "searchkernel-semantic-snapshot"
+path = "src/bin/searchkernel-semantic-snapshot.rs"
+
+[[bin]]
+name = "searchkernel-result-fixtures"
+path = "src/bin/searchkernel-result-fixtures.rs"

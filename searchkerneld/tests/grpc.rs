@@ -51,6 +51,39 @@ fn search_request() -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+fn valid_search_request() -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let text = builder.create_string("headphones");
+    let query = wire::SearchKernelTextQuery::create(
+        &mut builder,
+        &wire::SearchKernelTextQueryArgs { text: Some(text) },
+    );
+    let source = wire::QuerySource::create(
+        &mut builder,
+        &wire::QuerySourceArgs {
+            source_type: wire::QuerySourceKind::SearchKernelTextQuery,
+            source: Some(query.as_union_value()),
+        },
+    );
+    let request = wire::SearchRequest::create(
+        &mut builder,
+        &wire::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload: Some(request.as_union_value()),
+        },
+    );
+    builder.finish(envelope, Some("SKRQ"));
+    builder.finished_data().to_vec()
+}
+
 fn large_search_request() -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let text = builder.create_string(&"x".repeat(5 * 1024 * 1024));
@@ -245,6 +278,52 @@ async fn semantic_dispatch_errors_remain_canonical_error_payloads() {
     assert_eq!(
         direct.payload_as_search_kernel_v2_error().unwrap().code(),
         remote.payload_as_search_kernel_v2_error().unwrap().code()
+    );
+
+    server.shutdown().await.expect("shutdown server");
+    index.close().expect("close test index");
+}
+
+#[tokio::test]
+async fn direct_dispatch_and_grpc_share_the_same_backend_operation_ir() {
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend.clone());
+    let request = valid_search_request();
+    let direct_response = dispatcher.dispatch(&request).expect("direct dispatch");
+    let direct_calls = backend.take_calls();
+    assert_eq!(direct_calls.len(), 1);
+
+    let server = start(
+        ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))),
+        dispatcher,
+    )
+    .await
+    .expect("start gRPC server");
+    let mut client = connect_client(server.tcp_addr().expect("TCP server address")).await;
+    let remote_response = client
+        .execute(Request::new(rpc::FlatBufferFrame { payload: request }))
+        .await
+        .expect("gRPC semantic errors are response payloads")
+        .into_inner()
+        .payload;
+    let remote_calls = backend.take_calls();
+
+    assert_eq!(direct_calls, remote_calls, "gRPC must add framing only");
+    assert_eq!(direct_response, remote_response);
+    let direct = root::<wire::ResponseEnvelope<'_>>(&direct_response).unwrap();
+    let remote = root::<wire::ResponseEnvelope<'_>>(&remote_response).unwrap();
+    let direct_error = direct.payload_as_search_kernel_v2_error().unwrap();
+    let remote_error = remote.payload_as_search_kernel_v2_error().unwrap();
+    assert_eq!(direct_error.code(), remote_error.code());
+    assert_eq!(
+        direct_error.details().map(|details| details
+            .iter()
+            .map(|detail| detail.code())
+            .collect::<Vec<_>>()),
+        remote_error.details().map(|details| details
+            .iter()
+            .map(|detail| detail.code())
+            .collect::<Vec<_>>())
     );
 
     server.shutdown().await.expect("shutdown server");

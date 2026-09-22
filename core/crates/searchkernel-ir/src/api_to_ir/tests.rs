@@ -915,6 +915,258 @@ fn textual_clause(
     )
 }
 
+fn match_all_source(
+    builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+) -> crate::__flatbuffers::WIPOffset<api::QuerySource<'static>> {
+    let match_all = api::MatchAllQuery::create(builder, &api::MatchAllQueryArgs {});
+    api::QuerySource::create(
+        builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    )
+}
+
+fn portable_search_with_textual_filter(source: &str) -> Vec<u8> {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let query_source = match_all_source(&mut builder);
+    let clause = textual_clause(&mut builder, source);
+    let textual = builder.create_vector(&[clause]);
+    let filters = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query_source),
+            filters: Some(filters),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+fn filter_search_input(
+    filters: Vec<FilterInput>,
+    textual_filters: Vec<TextualFilterInput>,
+) -> SearchInput {
+    SearchInput {
+        query: QuerySourceInput::MatchAll,
+        search_fields: None,
+        filters,
+        textual_filters,
+        sorts: Vec::new(),
+        grouping: Vec::new(),
+        ranking: None,
+        query_inputs: BTreeMap::new(),
+        rank_properties: BTreeMap::new(),
+        query_model: QueryModelInput::default(),
+        projection: None,
+        highlighting: None,
+        presentation: PresentationInput::default(),
+        properties: BTreeMap::new(),
+        query_profile: None,
+        search_chain: None,
+        timeout: None,
+        limit: None,
+        offset: None,
+    }
+}
+
+fn assert_same_error(left: &crate::PortableError, right: &crate::PortableError) {
+    assert_eq!(left.code, right.code);
+    assert_eq!(
+        left.details.first().map(|detail| &detail.code),
+        right.details.first().map(|detail| &detail.code)
+    );
+}
+
+#[test]
+fn equivalent_filter_representations_resolve_to_one_owned_ir() {
+    let structured = FilterInput::Comparison {
+        field: "price".to_owned(),
+        op: ComparisonOp::Lte,
+        value: RequestValueIr::Int64(120),
+    };
+    let direct = resolve_search(
+        &context(),
+        filter_search_input(vec![structured], Vec::new()),
+    )
+    .expect("structured filter should resolve");
+
+    let bytes = portable_search_with_textual_filter("price <= 120");
+    let portable = crate::__flatbuffers::root::<api::SearchRequest>(&bytes)
+        .expect("textual filter request should decode");
+    let portable = context()
+        .search_to_ir(portable)
+        .expect("textual filter should resolve");
+
+    assert_eq!(direct, portable);
+    assert_eq!(
+        crate::snapshot::search_request(&direct),
+        crate::snapshot::search_request(&portable)
+    );
+
+    let round_trip_bytes = crate::search_request_ir_to_api(&portable);
+    let round_trip = crate::__flatbuffers::root::<api::SearchRequest>(&round_trip_bytes)
+        .expect("IR-to-API search request should decode");
+    let round_trip = context()
+        .search_to_ir(round_trip)
+        .expect("API-to-IR round trip should resolve");
+    assert_eq!(
+        crate::snapshot::search_request(&portable),
+        crate::snapshot::search_request(&round_trip)
+    );
+}
+
+#[test]
+fn repeated_filters_equal_one_nested_all_after_canonical_flattening() {
+    let first = FilterInput::Comparison {
+        field: "price".to_owned(),
+        op: ComparisonOp::Gt,
+        value: RequestValueIr::Int64(10),
+    };
+    let second = FilterInput::Comparison {
+        field: "in_stock".to_owned(),
+        op: ComparisonOp::Eq,
+        value: RequestValueIr::Bool(true),
+    };
+    let repeated = resolve_search(
+        &context(),
+        filter_search_input(vec![first.clone(), second.clone()], Vec::new()),
+    )
+    .expect("repeated filters should resolve");
+    let nested = resolve_search(
+        &context(),
+        filter_search_input(
+            vec![FilterInput::All(vec![
+                first,
+                FilterInput::All(vec![second]),
+            ])],
+            Vec::new(),
+        ),
+    )
+    .expect("nested all filter should resolve");
+
+    assert_eq!(repeated, nested);
+    assert_eq!(
+        crate::snapshot::search_request(&repeated),
+        crate::snapshot::search_request(&nested)
+    );
+}
+
+#[test]
+fn equivalent_invalid_filters_share_portable_error_identity() {
+    let structured = resolve_search(
+        &context(),
+        filter_search_input(
+            vec![FilterInput::Comparison {
+                field: "unknown".to_owned(),
+                op: ComparisonOp::Eq,
+                value: RequestValueIr::Int64(1),
+            }],
+            Vec::new(),
+        ),
+    )
+    .expect_err("unknown structured field must fail");
+
+    let bytes = portable_search_with_textual_filter("unknown = 1");
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let textual = context()
+        .search_to_ir(request)
+        .expect_err("unknown textual field must fail");
+    assert_same_error(&structured, &textual);
+
+    let mut non_filterable_context = context();
+    non_filterable_context.definition.fields[0]
+        .capabilities
+        .filterable = false;
+    let structured = resolve_search(
+        &non_filterable_context,
+        filter_search_input(
+            vec![FilterInput::Comparison {
+                field: "brand".to_owned(),
+                op: ComparisonOp::Eq,
+                value: RequestValueIr::String("acme".to_owned()),
+            }],
+            Vec::new(),
+        ),
+    )
+    .expect_err("non-filterable structured field must fail");
+    let bytes = portable_search_with_textual_filter("brand = 'acme'");
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let textual = non_filterable_context
+        .search_to_ir(request)
+        .expect_err("non-filterable textual field must fail");
+    assert_same_error(&structured, &textual);
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let empty = api::FilterAnd::create(&mut builder, &api::FilterAndArgs { clauses: None });
+    let empty = api::FilterExpr::create(
+        &mut builder,
+        &api::FilterExprArgs {
+            expr_type: api::FilterExprKind::FilterAnd,
+            expr: Some(empty.as_union_value()),
+        },
+    );
+    let structured_filters = builder.create_vector(&[empty]);
+    let source = match_all_source(&mut builder);
+    let filters = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            structured: Some(structured_filters),
+            ..Default::default()
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            filters: Some(filters),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let bytes = builder.finished_data().to_vec();
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let wire = context()
+        .search_to_ir(request)
+        .expect_err("empty boolean filter must fail");
+    let direct = resolve_search(
+        &context(),
+        filter_search_input(vec![FilterInput::All(Vec::new())], Vec::new()),
+    )
+    .expect_err("empty structured all must fail");
+    assert_same_error(&direct, &wire);
+}
+
+#[test]
+fn presence_sensitive_empty_presentation_controls_do_not_equal_absence() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.stored = true;
+
+    let absent = resolve_search(&context, filter_search_input(Vec::new(), Vec::new()))
+        .expect("absent presentation controls should resolve");
+    let mut explicit_input = filter_search_input(Vec::new(), Vec::new());
+    explicit_input.projection = Some(Vec::new());
+    explicit_input.highlighting = Some(Vec::new());
+    let explicit = resolve_search(&context, explicit_input)
+        .expect("present-empty presentation controls should resolve");
+
+    assert_ne!(absent.projection(), explicit.projection());
+    assert_ne!(absent.highlighting(), explicit.highlighting());
+    assert_ne!(
+        crate::snapshot::search_request(&absent),
+        crate::snapshot::search_request(&explicit)
+    );
+}
+
 fn assert_flattened_and(filter: FilterIr, expected_len: usize) {
     match filter {
         FilterIr::And(clauses) => {
@@ -2243,6 +2495,8 @@ fn search_resolver_keeps_parallel_grouping_branches_semantically_valid() {
 
 #[test]
 fn facet_expansion_is_canonical_for_defaults_names_limits_and_sorts() {
+    let mut facet_context = context();
+    facet_context.definition.fields[0].capabilities.groupable = true;
     let cases = [
         (None, FacetSortInput::CountDesc),
         (Some(FacetSortInput::CountDesc), FacetSortInput::CountDesc),
@@ -2259,6 +2513,11 @@ fn facet_expansion_is_canonical_for_defaults_names_limits_and_sorts() {
             sort: requested,
         };
         let grouping = facet_grouping_input(&input);
+        assert_eq!(
+            resolve_facets(&facet_context, vec![input.clone()]).unwrap(),
+            vec![grouping.clone()],
+            "facet shorthand must enter the same canonical grouping IR"
+        );
         assert_eq!(grouping.root.label.as_deref(), Some("brands"));
         let [GroupingOperationIr::Group(GroupingExpressionIr::Attribute(field)), GroupingOperationIr::Each(each)] =
             grouping.root.operations.as_slice()
@@ -2317,6 +2576,19 @@ fn facet_expansion_is_canonical_for_defaults_names_limits_and_sorts() {
         limit: None,
         sort: None,
     });
+    assert_eq!(
+        resolve_facets(
+            &facet_context,
+            vec![FacetInput {
+                field: "brand".to_owned(),
+                name: None,
+                limit: None,
+                sort: None,
+            }]
+        )
+        .unwrap(),
+        vec![defaults.clone()]
+    );
     assert_eq!(defaults.root.label.as_deref(), Some("brand"));
     let GroupingOperationIr::Each(each) = &defaults.root.operations[1] else {
         panic!("default facet expansion must contain each");
