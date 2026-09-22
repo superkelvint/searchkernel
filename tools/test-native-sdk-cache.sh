@@ -77,20 +77,37 @@ git -C "$worktree" commit -qm 'unrelated branch change'
 
 run_resolver() {
     local root=$1
+    local mode=${2:-ensure}
     (
         cd "$root"
         SEARCHKERNEL_BUILD_ENV=cache-regression \
         SK_NATIVE_TARGET=x86_64-unknown-linux-gnu \
         SK_NATIVE_CACHE_BUILDER="$root/tools/fake-sdk-builder.sh" \
-            bash "$root/tools/resolve-native-sdk.sh" ensure
+            bash "$root/tools/resolve-native-sdk.sh" "$mode"
     )
 }
 
-first=$(run_resolver "$repo")
-[[ -d "$first" ]]
 common=$(git -C "$repo" rev-parse --git-common-dir)
 [[ "$common" = /* ]] || common="$repo/$common"
+
+# Path lookup is diagnostic-only. On a cold cache it must report the miss
+# without invoking the expensive SDK builder.
+if run_resolver "$repo" path >"$fixture/cold-path.out" 2>"$fixture/cold-path.err"; then
+    echo 'native SDK cache path lookup unexpectedly succeeded on a cold cache' >&2
+    exit 1
+fi
+[[ ! -e "$common/sdk-cache-build-count" ]]
+grep -q 'native SDK cache miss' "$fixture/cold-path.err"
+echo 'native SDK cache: cold path lookup does not build'
+
+first=$(run_resolver "$repo")
+[[ -d "$first" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
+
+warm_path=$(run_resolver "$repo" path)
+[[ "$warm_path" == "$first" ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
+echo 'native SDK cache: warm path lookup reuses without rebuilding'
 
 second=$(run_resolver "$worktree")
 [[ "$second" == "$first" ]]

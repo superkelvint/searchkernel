@@ -82,7 +82,7 @@ run_python_tests() {
 
 check_fast() {
     cargo fmt --all --check
-    cargo check --workspace --all-targets --all-features
+    cargo check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
@@ -119,7 +119,7 @@ test_target() {
             cargo test -p searchkernel-ir --all-targets --all-features
             ;;
         rust-api|rust)
-            cargo test -p searchkernel --all-targets --all-features
+            cargo test -p searchkernel --all-targets --no-default-features
             ;;
         python)
             run_python_tests
@@ -427,9 +427,15 @@ doctor() {
     doctor_check 'flatc correct version' doctor_flatc
     doctor_check 'FlatBuffers C++ correct version' doctor_flatbuffers_cpp
     doctor_check 'generated protocol present/current' doctor_generated_protocol
-    doctor_check 'native SDK present' doctor_native_sdk
-    doctor_check 'native ABI versions agree' doctor_native_abi
-    doctor_check 'pinned Vespa checkout present' doctor_vespa
+    doctor_optional 'native SDK present' \
+        'Only required for native/all-features verification; populate with: ./dev native-sdk ensure' \
+        doctor_native_sdk
+    doctor_optional 'native ABI versions agree' \
+        'Only checked when a native SDK is present/required.' \
+        doctor_native_abi
+    doctor_optional 'pinned Vespa checkout present' \
+        'Only required for Vespa/native verification; ordinary Rust/API work may proceed without it.' \
+        doctor_vespa
     doctor_check 'Python dependencies present' doctor_python
     doctor_optional 'searchkerneld built' \
         'Build it with: cargo build -p searchkerneld' \
