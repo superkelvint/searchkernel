@@ -214,11 +214,13 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 self.assertEqual("native i" in logged, expect_native)
 
-    def test_precommit_runs_python_native_e2e_for_code_sensitive_changes(self) -> None:
+    def test_precommit_runs_python_native_e2e_only_for_native_sensitive_changes(self) -> None:
         cases = (
-            ("clients/python/searchkernel/client.py", True),
-            ("searchkerneld/src/main.rs", True),
             ("core/native/vespa/abi.cc", True),
+            ("core/crates/searchkernel-ir-adapter/src/backend.rs", True),
+            ("clients/python/searchkernel/client.py", False),
+            ("searchkerneld/src/main.rs", False),
+            ("core/crates/searchkernel-ir/src/model.rs", False),
             ("docs/architecture.md", False),
         )
         for staged_path, expect_e2e in cases:
