@@ -5,13 +5,18 @@ use searchkernel_vespa_engine::{
     SearchRequest,
 };
 use std::collections::BTreeMap;
-#[cfg(feature = "native-contract-tests")]
+#[cfg(any(feature = "native-contract-tests", feature = "hardening"))]
 use std::ffi::CString;
 use std::fs;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "hardening")]
+use searchkernel_vespa_bindings::{
+    sk_engine, sk_engine_open, SK_ERROR_MESSAGE_CAPACITY, SK_NATIVE_STATUS_INTERNAL,
+    SK_NATIVE_STATUS_INVALID_ARGUMENT, SK_NATIVE_STATUS_OUT_OF_MEMORY,
+};
 #[cfg(feature = "hardening")]
 use searchkernel_vespa_engine::{hardening, ErrorKind};
 
@@ -45,19 +50,56 @@ fn native_open_failures_preserve_error_kinds_and_leave_no_handle() {
         "open-error-kinds",
         &Schema::new("typea").field(Field::new("qty", FieldType::Integer).attribute()),
     );
+    let config_c = CString::new(config.to_str().expect("config path is UTF-8")).unwrap();
+    let data_c = CString::new(data.to_str().expect("data path is UTF-8")).unwrap();
+
     for stage in ["open_constructor", "open_initialize"] {
-        for (action, expected) in [
-            (hardening::Action::Error, ErrorKind::InvalidArgument),
-            (hardening::Action::BadAlloc, ErrorKind::ResourceExhausted),
-            (hardening::Action::StdException, ErrorKind::Internal),
+        for (action, expected_kind, expected_status) in [
+            (
+                hardening::Action::Error,
+                ErrorKind::InvalidArgument,
+                SK_NATIVE_STATUS_INVALID_ARGUMENT,
+            ),
+            (
+                hardening::Action::BadAlloc,
+                ErrorKind::ResourceExhausted,
+                SK_NATIVE_STATUS_OUT_OF_MEMORY,
+            ),
+            (
+                hardening::Action::StdException,
+                ErrorKind::Internal,
+                SK_NATIVE_STATUS_INTERNAL,
+            ),
         ] {
-            hardening::set_open(stage, 1, action).expect("set open failpoint");
+            hardening::set_open(stage, 1, action).expect("set raw open failpoint");
+            let mut raw_engine = std::ptr::NonNull::<sk_engine>::dangling().as_ptr();
+            let mut raw_error = [0_u8; SK_ERROR_MESSAGE_CAPACITY as usize];
+            let status = unsafe {
+                // SAFETY: both C strings and output/error buffers remain valid
+                // for this call. The non-null sentinel is never dereferenced;
+                // it proves the ABI clears the caller's output before failure.
+                sk_engine_open(
+                    data_c.as_ptr(),
+                    config_c.as_ptr(),
+                    &mut raw_engine,
+                    raw_error.as_mut_ptr(),
+                    raw_error.len() as u32,
+                )
+            };
+            hardening::clear_open(stage).expect("clear raw open failpoint");
+            assert_eq!(status, expected_status as i32, "raw status at {stage}");
+            assert!(
+                raw_engine.is_null(),
+                "native open failure at {stage} left a caller-visible handle"
+            );
+
+            hardening::set_open(stage, 1, action).expect("set Rust open failpoint");
             let error = match Engine::open(&data, &config) {
                 Ok(_) => panic!("open failpoint must fail"),
                 Err(error) => error,
             };
-            hardening::clear_open(stage).expect("clear open failpoint");
-            assert_eq!(error.kind(), expected);
+            hardening::clear_open(stage).expect("clear Rust open failpoint");
+            assert_eq!(error.kind(), expected_kind);
         }
     }
     let _ = fs::remove_dir_all(config);
