@@ -109,22 +109,9 @@ def configured_deps_root(root: Path, vespa_root: Path) -> Path | None:
     if local.is_dir():
         return local.resolve()
 
-    flags = (
-        vespa_root
-        / "searchcore/src/tests/proton/documentdb/CMakeFiles/"
-        "searchcore_embedded_crud_spike_app.dir/flags.make"
-    )
-    if flags.is_file():
-        text = flags.read_text(encoding="utf-8", errors="replace")
-        marker = "-isystem "
-        for token in text.split():
-            if token.startswith(marker):
-                token = token[len(marker):]
-            if token.endswith("/include"):
-                candidate = Path(token).parent
-                if candidate.is_dir():
-                    return candidate.resolve()
-
+    # Match build-sdk.sh: task worktrees prefer a sibling repository-local
+    # dependency installation before falling back to the absolute path recorded
+    # by the configured Vespa build.
     try:
         worktrees = subprocess.run(
             ["git", "-C", str(root), "worktree", "list", "--porcelain"],
@@ -133,15 +120,29 @@ def configured_deps_root(root: Path, vespa_root: Path) -> Path | None:
             text=True,
         )
     except OSError:
-        return None
-    for line in worktrees.stdout.splitlines():
-        if not line.startswith("worktree "):
-            continue
-        candidate = Path(line.removeprefix("worktree ")) / "vespa-deps"
-        if candidate.is_dir():
-            return candidate.resolve()
-    return None
+        worktrees = None
+    if worktrees is not None:
+        for line in worktrees.stdout.splitlines():
+            if not line.startswith("worktree "):
+                continue
+            candidate = Path(line.removeprefix("worktree ")) / "vespa-deps"
+            if candidate.is_dir():
+                return candidate.resolve()
 
+    flags = (
+        vespa_root
+        / "searchcore/src/tests/proton/documentdb/CMakeFiles/"
+        "searchcore_embedded_crud_spike_app.dir/flags.make"
+    )
+    if flags.is_file():
+        text = flags.read_text(encoding="utf-8", errors="replace")
+        tokens = text.split()
+        for token in tokens:
+            if token.endswith("/include"):
+                candidate = Path(token).parent
+                if candidate.is_dir():
+                    return candidate.resolve()
+    return None
 
 def dependency_bundle_identity(root: Path, vespa_root: Path) -> str:
     deps = configured_deps_root(root, vespa_root)
