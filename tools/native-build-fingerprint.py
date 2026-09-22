@@ -77,8 +77,9 @@ def shared_library_tree_identity(root: Path) -> str:
     """Content identity for packaged shared-library inputs.
 
     Cache identity must be stable across Git worktrees, so timestamps and inode
-    metadata are deliberately excluded. Symlinks contribute their link target;
-    regular shared-library files contribute their content digest.
+    metadata are deliberately excluded. Because SDK packaging dereferences
+    shared-library symlinks, valid symlinks contribute the bytes that will
+    actually be packaged under each library name.
     """
     if not root.is_dir():
         return "missing"
@@ -88,12 +89,12 @@ def shared_library_tree_identity(root: Path) -> str:
         digest.update(relative.encode())
         digest.update(b"\0")
         try:
-            if path.is_symlink():
-                digest.update(b"symlink\0")
-                digest.update(os.readlink(path).encode())
-            elif path.is_file():
+            if path.is_file():
                 digest.update(b"file\0")
                 digest.update(file_digest(path).encode())
+            elif path.is_symlink():
+                digest.update(b"broken-symlink\0")
+                digest.update(os.readlink(path).encode())
             else:
                 digest.update(b"other")
         except OSError as error:
