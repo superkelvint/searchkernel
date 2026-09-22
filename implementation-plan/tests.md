@@ -5,7 +5,7 @@
 
 An ordinary checklist checkbox means the corresponding test, corpus case, or CI gate is implemented and reachable on `main`.
 
-Each hardened section also has a separate **Sensitivity verification** gate. That gate is complete only when the CTO has independently demonstrated that a deliberate regression in the protected behavior makes the relevant test/gate fail. A section is not VERIFIED/CLOSED until both its implementation checklist and its sensitivity gate are satisfied.
+For hardened sections with implemented work, a separate **Sensitivity verification** gate tracks deliberate-break evidence. That gate is complete only when the CTO has independently demonstrated that a deliberate regression in the protected behavior makes the relevant test/gate fail. A section is not VERIFIED/CLOSED until its implementation checklist and applicable sensitivity gate are satisfied.
 
 ## CTO acceptance ledger
 
@@ -577,7 +577,7 @@ This hardening plan is complete when:
 
 - [ ] Every claimed persisted format is protected by a historical reopen fixture.
 - [x] Lifecycle correctness is tested through generated operation sequences.
-- [x] Every alternate semantic representation has a differential-equivalence test.
+- [ ] Every alternate semantic representation has a differential-equivalence test.
 - [x] The canonical result tree has a shared recursive cross-language corpus.
 - [ ] All untrusted parser/decoder boundaries have fuzz coverage.
 - [ ] High-dimensional pure semantics have property tests.
