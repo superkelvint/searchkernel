@@ -114,7 +114,7 @@ pub(crate) fn lower_search_options(
     } else {
         m_request = m_request.fields(fields.iter().map(|field| field.as_str()));
     }
-    if let searchkernel_ir::HighlightingIr::Requested { fields } = request.highlighting() {
+    if let searchkernel_ir::HighlightingIr::Requested { fields, .. } = request.highlighting() {
         m_request = m_request.highlight(fields.iter().map(|field| field.as_str()));
     }
     Ok(m_request)
@@ -326,6 +326,7 @@ pub(crate) fn lower_sort(sort: &searchkernel_ir::SortIr) -> Result<SortField> {
 pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
     grouping::lower_groupings(request.grouping())?;
     validate_ranking_inputs(request)?;
+    validate_highlighting_execution_boundary(request)?;
     validate_highlighting_query_compatibility(request)?;
     validate_yql_controls(request)?;
     if !request.properties().is_empty() && !matches!(request.query(), QueryIr::Yql { .. }) {
@@ -386,6 +387,30 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
         ));
     }
     analysis_options(request.language())?;
+    Ok(())
+}
+
+fn validate_highlighting_execution_boundary(request: &SearchRequestIr) -> Result<()> {
+    let searchkernel_ir::HighlightingIr::Requested {
+        fields,
+        multi_valued_fields,
+    } = request.highlighting()
+    else {
+        return Ok(());
+    };
+
+    if let Some(field) = fields.iter().find(|field| {
+        multi_valued_fields.iter().any(|candidate| candidate == *field)
+    }) {
+        return Err(PortableError::unsupported(
+            "highlighting_multi_valued_field_not_supported",
+            Some("highlighting.fields"),
+            format!(
+                "Vespa dynamic-teaser highlighting currently supports only scalar stored indexed text; field '{}' is multi-valued",
+                field.as_str()
+            ),
+        ));
+    }
     Ok(())
 }
 
