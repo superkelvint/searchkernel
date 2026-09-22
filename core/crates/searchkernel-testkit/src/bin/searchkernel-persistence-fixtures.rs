@@ -24,7 +24,7 @@ fn main() {
             stored: false,
             searchable: false,
             filterable: true,
-            sortable: false,
+            sortable: true,
             facetable: false,
         }],
         default_search_fields: None,
