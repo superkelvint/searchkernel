@@ -76,6 +76,39 @@ The implementation agent may claim that a pull request is ready for review. It
 does not independently declare its own work VERIFIED or CLOSED. Final review
 and merge provide that disposition.
 
+### Definition of done for substantive work
+
+Implementation complete is **not** closure.
+
+For substantive changes, especially lifecycle/concurrency, portable semantics,
+schema conversion, persistence/reopen, result encoding, native boundaries, and
+other high-blast-radius work, the reviewer/CTO must perform all of the following
+before treating the work as done:
+
+1. independently adversarially review the implementation and try to falsify it;
+2. verify the applicable checks against the exact current head being accepted;
+3. reconcile the implementation against the issue acceptance criteria, frozen
+   contracts, and architectural invariants;
+4. confirm merged/closed work is actually reachable from `main`;
+5. reconcile issue/PR state after merge, closing stale or superseded blockers
+   only when the current tree proves their acceptance conditions;
+6. update project control-plane state when the active frontier materially
+   changes.
+
+A green happy-path test suite is evidence, not closure. Adversarial review must
+ask how the change could be falsely green: races/interleavings, malformed input,
+absence-vs-empty state, persistence/reopen, alternate ingress paths, generated
+artifact drift, error-domain mismatch, architectural bypasses, silent fallback,
+or stale/unmerged work as applicable.
+
+Scale review depth to blast radius. Trivial documentation or mechanical edits do
+not require a heavyweight audit; correctness-sensitive changes do.
+
+Work in architectural closure clusters where appropriate. The invariant being
+closed is the unit of reasoning; individual issues and pull requests are bounded
+review units within that cluster.
+
+
 ### Self-unblock assigned work
 
 When the user directly assigns an issue or task, optimize for forward progress
