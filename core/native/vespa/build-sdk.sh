@@ -301,15 +301,17 @@ cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 
 # Bundle the exact Vespa and third-party shared libraries used by the pinned
 # build. Test support libraries are not part of the production ABI package.
-# The adapter's private RPATH makes the SDK independent of the build paths.
-find "$VESPA_ROOT" -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
+# Dereference shared-library entries while copying: dependency installs often
+# expose linker names as symlinks, including absolute links into host paths.
+# Published SDKs must contain the bytes behind those names.
+find "$VESPA_ROOT" -name '*.so*' -exec cp -L -f -t "$SDK/lib" {} +
 find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' \
     ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
-    -exec cp -a -t "$SDK/lib" {} +
+    -exec cp -L -f -t "$SDK/lib" {} +
 if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
     if [ "$(readlink -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")" != \
          "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
-        cp -a "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" "$SDK/lib/"
+        cp -L -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" "$SDK/lib/"
     fi
 fi
 if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
@@ -323,18 +325,24 @@ else
 fi
 if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
     if [ "$(readlink -f "$AWS_LIB_DIR/libffi.so.6")" != "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
-        cp -a "$AWS_LIB_DIR/libffi.so.6" "$SDK/lib/"
+        cp -L -f "$AWS_LIB_DIR/libffi.so.6" "$SDK/lib/"
     fi
 elif [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
     # LLVM in the pinned Vespa environment carries a libffi.so.6 dependency.
     # Preserve it when rebuilding an existing SDK even if the AWS CLI bundle
     # is not installed in this host environment.
-    cp -a "$SDK_PACKAGE/lib/libffi.so.6" "$SDK/lib/"
+    cp -L -f "$SDK_PACKAGE/lib/libffi.so.6" "$SDK/lib/"
 elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
-    cp -a "$DEPS_LIB_DIR/libffi.so.6" "$SDK/lib/"
+    cp -L -f "$DEPS_LIB_DIR/libffi.so.6" "$SDK/lib/"
 else
     echo "libffi.so.6 required by the bundled LLVM runtime was not found" >&2
     echo "set VESPA_AWS_LIB_DIR or provide libffi.so.6 in $DEPS_LIB_DIR" >&2
+    exit 1
+fi
+
+if find "$SDK/lib" -maxdepth 1 -type l -print -quit | grep -q .; then
+    echo "refusing to publish native SDK containing shared-library symlinks:" >&2
+    find "$SDK/lib" -maxdepth 1 -type l -print >&2
     exit 1
 fi
 

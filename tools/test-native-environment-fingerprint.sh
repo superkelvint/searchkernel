@@ -19,11 +19,13 @@ chmod +x "$temporary/compiler-a" "$temporary/compiler-b"
 
 fingerprint() {
     local extra_lib_dir=${3:-}
+    local deps_root=${4:-}
     env \
         SEARCHKERNEL_BUILD_ENV=regression \
         CXX="$1" \
         CXXFLAGS="${2:-}" \
         VESPA_EXTRA_LIB_DIR="$extra_lib_dir" \
+        VESPA_DEPS="$deps_root" \
         python3 "$root/tools/native-build-fingerprint.py" \
             --root "$root" \
             --target x86_64-unknown-linux-gnu \
@@ -51,6 +53,17 @@ printf 'llvm-runtime-b\n' >"$runtime_dir/libLLVM.so.21.1"
 runtime_b=$(fingerprint "$temporary/compiler-a" '' "$runtime_dir")
 [[ "$runtime_a" != "$runtime_b" ]]
 echo 'native fingerprint: selected runtime library content changes the fingerprint'
+
+deps_root="$temporary/deps"
+external_deps="$temporary/external-deps"
+mkdir -p "$deps_root/lib64" "$external_deps"
+printf 'dependency-target-a\n' >"$external_deps/libfixture.so.1"
+ln -s "$external_deps/libfixture.so.1" "$deps_root/lib64/libfixture.so"
+dependency_a=$(fingerprint "$temporary/compiler-a" '' "$runtime_dir" "$deps_root")
+printf 'dependency-target-b\n' >"$external_deps/libfixture.so.1"
+dependency_b=$(fingerprint "$temporary/compiler-a" '' "$runtime_dir" "$deps_root")
+[[ "$dependency_a" != "$dependency_b" ]]
+echo 'native fingerprint: dereferenced dependency symlink contents change the fingerprint'
 
 [[ "$(grep -o 'target/host' "$root/.cargo/config.toml" | head -1)" == target/host ]]
 grep -q 'ENV CARGO_TARGET_DIR=target/devcontainer' "$root/.yolobox.Dockerfile"

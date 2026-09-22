@@ -110,12 +110,30 @@ validate_link_closure() {
     fi
 
     external=
+    while IFS= read -r path; do
+        resolved=$(readlink -f "$path" 2>/dev/null || true)
+        case "$resolved" in
+            "$sdk_lib"/*) ;;
+            *) external=$(printf '%s%s => %s\n' "$external" "$(basename "$path")" "${resolved:-unresolved}") ;;
+        esac
+    done < <(find "$sdk_lib" -maxdepth 1 -type l -print)
+
     while IFS= read -r line; do
         name=$(printf '%s\n' "$line" | awk '{print $1}')
+        path=$(printf '%s\n' "$line" | awk '$2 == "=>" {print $3}')
+        [[ -n "$path" && "$path" != "not" ]] || continue
+
+        if [[ -e "$sdk_lib/$name" || -L "$sdk_lib/$name" ]]; then
+            resolved=$(readlink -f "$path" 2>/dev/null || true)
+            case "$resolved" in
+                "$sdk_lib"/*) ;;
+                *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
+            esac
+            continue
+        fi
+
         case "$name" in
             libvespa*.so*|libLLVM*.so*|libffi.so*|libxxhash.so*|libsearchkernel_*.so*)
-                path=$(printf '%s\n' "$line" | awk '$2 == "=>" {print $3}')
-                [[ -n "$path" && "$path" != "not" ]] || continue
                 resolved=$(readlink -f "$path" 2>/dev/null || true)
                 case "$resolved" in
                     "$sdk_lib"/*) ;;
@@ -144,6 +162,12 @@ valid_object() {
 if valid_object; then
     printf '%s\n' "$OBJECT"
     exit 0
+fi
+
+if [[ "$MODE" == path ]]; then
+    echo "native SDK cache miss for fingerprint $DIGEST" >&2
+    echo "run './dev native-sdk ensure' only when native verification is required" >&2
+    exit 1
 fi
 
 LOCK=$CACHE_ROOT/locks/$DIGEST.lock
