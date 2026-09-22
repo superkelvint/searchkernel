@@ -157,11 +157,20 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
     by_stage = {query["stage"]: query for query in normalized}
     if scenario.get("id") == "hnsw-query-controls":
         expected = [
-            (step["id"], bool(step["approximate"])) for step in scenario.get("steps", [])
+            (
+                step["id"],
+                bool(step["approximate"]),
+                step["explore_additional_hits"],
+            )
+            for step in scenario.get("steps", [])
         ]
     elif scenario.get("id") == "hnsw-mutation-reopen":
         expected = [
-            (stage, bool(scenario["query_options"]["approximate"]))
+            (
+                stage,
+                bool(scenario["query_options"]["approximate"]),
+                scenario["query_options"]["explore_additional_hits"],
+            )
             for stage in (
                 "before_update",
                 "after_update",
@@ -174,11 +183,17 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
         raise EvidenceError(f"unsupported scenario: {scenario.get('id')}")
 
     expected_queries: list[dict[str, Any]] = []
-    for stage, approximate in expected:
+    for stage, approximate, expected_explore in expected:
         query = by_stage.get(stage)
         if query is None:
             raise EvidenceError(f"scenario query {stage!r} has no execution evidence")
         _validate_query(query, require_ann=approximate)
+        observed_explore = _number(query, "explore_additional_hits")
+        if observed_explore != expected_explore:
+            raise EvidenceError(
+                f"{stage}: observed exploreAdditionalHits {observed_explore:g} "
+                f"does not match requested value {expected_explore}"
+            )
         expected_queries.append(query)
 
     ann_queries = [query for query in expected_queries if query["wanted_approximate"]]
