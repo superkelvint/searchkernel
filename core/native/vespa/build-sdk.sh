@@ -150,6 +150,12 @@ else
     exit 1
 fi
 DEPS_INCLUDE_DIR=${VESPA_DEPS_INCLUDE_DIR:-$VESPA_DEPS/include}
+VESPA_LIBRARY_ROOT=${VESPA_LIBRARY_ROOT:-$VESPA_ROOT}
+if ! find "$VESPA_LIBRARY_ROOT" -name 'libvespa*.so*' -print -quit 2>/dev/null | grep -q .; then
+    echo "Vespa shared libraries were not found below $VESPA_LIBRARY_ROOT" >&2
+    echo "run './dev native-sdk ensure' from a clone with the pinned Vespa prerequisite or provide VESPA_LIBRARY_ROOT" >&2
+    exit 1
+fi
 if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
     if [ "$ADAPTER_ONLY" = 1 ] && [ -f "$BASE_SDK/lib/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$BASE_SDK/lib
@@ -397,8 +403,16 @@ cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 # libxxhash.so -> .../libxxhash.so.0.8.2 with SONAME libxxhash.so.0).
 # Materialize both names as SDK-owned regular files so the runtime loader
 # cannot fall back to a host path.
-find "$VESPA_ROOT" -name '*.so*' \
-    -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
+if [ "$VESPA_LIBRARY_ROOT" = "$VESPA_ROOT" ]; then
+    find "$VESPA_ROOT" -name '*.so*' \
+        -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
+else
+    # Migration/bootstrap path for clones that already have a self-contained
+    # full SDK from before the immutable-base split. The resolver verifies that
+    # SDK's Vespa commit/config identity before selecting its lib directory.
+    find "$VESPA_LIBRARY_ROOT" -maxdepth 1 -name 'libvespa*.so*' \
+        -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
+fi
 find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' \
     ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
     -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
