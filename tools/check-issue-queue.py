@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import os
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -131,57 +134,58 @@ def validate_queue(
     return errors
 
 
-def _run_gh(args: Sequence[str]) -> str:
+def _github_json(repo: str, path: str, *, page: int | None = None) -> Any:
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise QueueError("GH_TOKEN or GITHUB_TOKEN is required for live issue queue validation")
+
+    query = {"per_page": "100"}
+    if page is not None:
+        query["page"] = str(page)
+    url = f"https://api.github.com/repos/{repo}/{path}?{urllib.parse.urlencode(query)}"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "searchkernel-issue-queue-check",
+        },
+    )
     try:
-        completed = subprocess.run(
-            ["gh", *args],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError as error:
-        raise QueueError("gh CLI is required for live issue queue validation") from error
-    except subprocess.CalledProcessError as error:
-        detail = error.stderr.strip() or error.stdout.strip() or "unknown gh error"
-        raise QueueError(f"gh {' '.join(args)} failed: {detail}") from error
-    return completed.stdout
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
+        detail = getattr(error, "reason", None) or str(error)
+        raise QueueError(f"GitHub API request failed for {path}: {detail}") from error
 
 
 def load_open_issues(repo: str) -> list[dict[str, Any]]:
-    payload = _run_gh(
-        [
-            "issue",
-            "list",
-            "--repo",
-            repo,
-            "--state",
-            "open",
-            "--limit",
-            "1000",
-            "--json",
-            "number,title,labels",
-        ]
-    )
-    value = json.loads(payload)
-    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
-        raise QueueError("gh issue list returned an invalid issue snapshot")
-    return value
+    issues: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        value = _github_json(repo, "issues", page=page)
+        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+            raise QueueError("GitHub issues API returned an invalid issue snapshot")
+        # GitHub's REST issues collection includes pull requests. Queue state is
+        # defined only for issues, matching `gh issue list` semantics.
+        issues.extend(item for item in value if "pull_request" not in item)
+        if len(value) < 100:
+            break
+        page += 1
+    return issues
 
 
 def load_claim_branches(repo: str) -> set[str]:
-    payload = _run_gh(
-        [
-            "api",
-            f"repos/{repo}/git/matching-refs/heads/codex/issue-",
-            "--jq",
-            ".[].ref",
-        ]
-    )
-    return {
-        line.removeprefix("refs/heads/")
-        for line in payload.splitlines()
-        if line.startswith("refs/heads/")
-    }
+    value = _github_json(repo, "git/matching-refs/heads/codex/issue-")
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise QueueError("GitHub matching-refs API returned an invalid branch snapshot")
+    result: set[str] = set()
+    for item in value:
+        ref = item.get("ref")
+        if isinstance(ref, str) and ref.startswith("refs/heads/"):
+            result.add(ref.removeprefix("refs/heads/"))
+    return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:
