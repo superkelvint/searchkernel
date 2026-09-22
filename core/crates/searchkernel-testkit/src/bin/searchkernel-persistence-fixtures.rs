@@ -77,7 +77,7 @@ fn main() {
                         "stored": false,
                         "searchable": false,
                         "filterable": true,
-                        "sortable": true,
+                        "sortable": false,
                         "facetable": false
                     }]
                 }
@@ -101,7 +101,7 @@ fn main() {
                 "resolved_schema_snapshot": &schema_snapshot,
                 "provenance": {
                     "created_by_searchkernel_version": "0.1.0",
-                    "created_by_native_abi": abi,
+                    "created_by_native_abi": 4,
                     "created_by_vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
                 },
                 "portable_index_definition": "portable-index-definition.bfbs",
