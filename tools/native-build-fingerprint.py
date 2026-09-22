@@ -103,50 +103,23 @@ def shared_library_tree_identity(root: Path) -> str:
 
 
 def runtime_bundle_identity(root: Path, vespa_root: Path) -> str:
-    """Identity of LLVM/libffi/xxhash candidates used by SDK packaging.
-
-    Discovery intentionally includes every usable candidate rather than only the
-    first one. This is conservative: adding or replacing a candidate may select a
-    new cache key, but an SDK can never remain keyed to runtime bytes that have
-    changed behind the resolver.
-    """
-    candidates: set[tuple[str, str]] = set()
-
-    def add_file(path: Path) -> None:
-        try:
-            if not path.is_file():
-                return
-            resolved = path.resolve()
-            candidates.add((path.name, file_digest(resolved)))
-        except OSError:
-            return
+    """Identity of the runtime files the SDK builder would actually select."""
+    deps = configured_deps_root(root, vespa_root)
+    affined_root = (
+        vespa_root.parent.parent
+        if vespa_root.name == "vespa" and vespa_root.parent.name == "upstream"
+        else None
+    )
 
     explicit_extra = os.environ.get("VESPA_EXTRA_LIB_DIR")
-    explicit_aws = os.environ.get("VESPA_AWS_LIB_DIR")
+    extra_candidates: list[Path] = []
     if explicit_extra:
-        directory = Path(explicit_extra)
-        for name in ("libLLVM.so.21.1", "libffi.so.6", "libxxhash.so"):
-            add_file(directory / name)
-    if explicit_aws:
-        add_file(Path(explicit_aws) / "libffi.so.6")
-
-    deps = configured_deps_root(root, vespa_root)
+        extra_candidates.append(Path(explicit_extra))
     if deps is not None:
-        for directory in (
-            deps / "lib64",
-            deps / "lib",
-            deps / "../../usr/lib64",
-            deps / "../../usr/local/aws-cli/v2/2.36.43/dist",
-        ):
-            for name in ("libLLVM.so.21.1", "libffi.so.6", "libxxhash.so"):
-                add_file(directory / name)
-
-    for directory in (
-        root / "core/native/sdk/linux-x86_64/lib",
-        root / "target/native-sdk-package/lib",
-    ):
-        for name in ("libLLVM.so.21.1", "libffi.so.6", "libxxhash.so"):
-            add_file(directory / name)
+        extra_candidates.append((deps / "../../usr/lib64").resolve(strict=False))
+    if affined_root is not None:
+        extra_candidates.append(affined_root / "core/native/sdk/linux-x86_64/lib")
+    extra_candidates.append(root / "core/native/sdk/linux-x86_64/lib")
 
     try:
         worktrees = subprocess.run(
@@ -159,23 +132,56 @@ def runtime_bundle_identity(root: Path, vespa_root: Path) -> str:
         worktrees = None
     if worktrees is not None:
         for line in worktrees.stdout.splitlines():
-            if not line.startswith("worktree "):
-                continue
-            directory = (
-                Path(line.removeprefix("worktree "))
-                / "core/native/sdk/linux-x86_64/lib"
+            if line.startswith("worktree "):
+                extra_candidates.append(
+                    Path(line.removeprefix("worktree "))
+                    / "core/native/sdk/linux-x86_64/lib"
+                )
+    extra_candidates.append(root / "target/native-sdk-package/lib")
+
+    selected_extra = next(
+        (directory for directory in extra_candidates if (directory / "libLLVM.so.21.1").is_file()),
+        None,
+    )
+
+    selected: list[Path] = []
+    if selected_extra is not None:
+        for name in ("libLLVM.so.21.1", "libxxhash.so"):
+            path = selected_extra / name
+            if path.is_file():
+                selected.append(path)
+
+    explicit_aws = os.environ.get("VESPA_AWS_LIB_DIR")
+    ffi_candidates: list[Path] = []
+    if explicit_aws:
+        ffi_candidates.append(Path(explicit_aws) / "libffi.so.6")
+    if selected_extra is not None:
+        ffi_candidates.append(selected_extra / "libffi.so.6")
+    if deps is not None:
+        ffi_candidates.append(
+            (deps / "../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6").resolve(
+                strict=False
             )
-            for name in ("libLLVM.so.21.1", "libffi.so.6", "libxxhash.so"):
-                add_file(directory / name)
+        )
+    ffi_candidates.append(root / "target/native-sdk-package/lib/libffi.so.6")
+    if deps is not None:
+        deps_lib = deps / "lib64" if (deps / "lib64").is_dir() else deps / "lib"
+        ffi_candidates.append(deps_lib / "libffi.so.6")
+
+    selected_ffi = next((path for path in ffi_candidates if path.is_file()), None)
+    if selected_ffi is not None:
+        selected.append(selected_ffi)
 
     digest = hashlib.sha256()
-    for name, content in sorted(candidates):
-        digest.update(name.encode())
+    for path in selected:
+        digest.update(path.name.encode())
         digest.update(b"\0")
-        digest.update(content.encode())
+        try:
+            digest.update(file_digest(path.resolve()).encode())
+        except OSError as error:
+            digest.update(f"error={error}".encode())
         digest.update(b"\n")
     return digest.hexdigest()
-
 
 def configured_deps_root(root: Path, vespa_root: Path) -> Path | None:
     explicit = os.environ.get("VESPA_DEPS")
