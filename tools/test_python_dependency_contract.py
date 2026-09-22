@@ -24,10 +24,32 @@ def load_checker():
 
 
 class PythonDependencyContractTests(unittest.TestCase):
+    def test_tooling_uses_the_shared_policy(self) -> None:
+        dev = (ROOT / "dev").read_text(encoding="utf-8")
+        self.assertIn(
+            '"$PYTHON" "$ROOT/tools/check-python-dependencies.py"',
+            dev,
+        )
+        self.assertNotIn('"protobuf": "7.35.1"', dev)
+
+        for relative in (
+            "tools/check-python-grpc.sh",
+            "tools/generate-python-grpc.sh",
+        ):
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn(
+                'python3 "$root/tools/check-python-dependencies.py" --codegen',
+                text,
+                relative,
+            )
+
     def test_runtime_protobuf_contract_matches_pyproject(self) -> None:
         data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
         dependencies = data["project"]["dependencies"]
         self.assertIn("protobuf>=7.35.1,<8", dependencies)
+        codegen = data["project"]["optional-dependencies"]["codegen"]
+        self.assertIn("protobuf==7.35.1", codegen)
+        self.assertIn("grpcio-tools==1.84.0", codegen)
 
         checker = load_checker()
         self.assertEqual(checker.PROTOBUF_MIN, (7, 35, 1))
