@@ -80,12 +80,30 @@ class SearchSemanticEntryPointCheckerTests(unittest.TestCase):
                     &self,
                     sort: api::SortExpr<'_>,
                 ) -> Result<SortIr> {
-                    resolve_sort(self, &decode_sort(sort)?, "sort")
+                    let input = self.sort_to_input(sort, "sort")?;
+                    resolve_sort(self, &input, "sort")
                 }
             }
             """
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_existing_component_name_with_independent_body_is_rejected(self) -> None:
+        result = run_checker(
+            """
+            impl IndexContext {
+                pub fn sort_to_ir(
+                    &self,
+                    sort: api::SortExpr<'_>,
+                ) -> Result<SortIr> {
+                    independently_normalize(sort)
+                }
+            }
+            """
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("sort_to_ir", result.stdout + result.stderr)
+        self.assertIn("no longer delegates", result.stdout + result.stderr)
 
     def test_new_public_component_ir_entry_point_is_rejected(self) -> None:
         result = run_checker(
