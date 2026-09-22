@@ -37,8 +37,6 @@ fn main() {
         searchkernel_ir::PrimitiveDataTypeIr::Int32,
     ));
     resolved.set_fields(fields);
-    let canonical = index_definition_ir_to_api(&resolved);
-    let schema_snapshot = snapshot::index_definition(&resolved);
 
     let config_identity = embedded_config_identity();
     let config_identity = &config_identity;
@@ -50,13 +48,6 @@ fn main() {
     ] {
         let directory = output.join(format!("manifest-v{version}-storage-v1"));
         fs::create_dir_all(&directory).expect("create version fixture");
-        if version != 2 {
-            fs::write(directory.join("index-definition.bfbs"), &canonical)
-                .expect("write canonical definition");
-            fs::write(directory.join("portable-index-definition.bfbs"), &canonical)
-                .expect("write portable definition");
-        }
-
         let manifest = match version {
             2 => serde_json::json!({
                 "format_version": 2,
@@ -103,7 +94,7 @@ fn main() {
                 "manifest_format_version": 4,
                 "storage_compatibility_generation": 1,
                 "resolved_schema_snapshot_version": 1,
-                "resolved_schema_snapshot": &schema_snapshot,
+                "resolved_schema_snapshot": {},
                 "provenance": {
                     "created_by_searchkernel_version": "0.1.0",
                     "created_by_native_abi": 4,
