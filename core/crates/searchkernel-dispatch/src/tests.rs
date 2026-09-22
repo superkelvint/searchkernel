@@ -1,7 +1,8 @@
 use super::*;
 use searchkernel_ir::{api, OperationIr};
 use searchkernel_testkit::{
-    representative_search_result, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
+    assert_api_search_result_matches, canonical_result_fixtures, representative_search_result,
+    ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
 };
 use std::fs;
 
@@ -159,6 +160,44 @@ fn empty_search_request() -> Vec<u8> {
     );
     builder.finish(envelope, Some("SKRQ"));
     builder.finished_data().to_vec()
+}
+
+fn canonical_search_request() -> Vec<u8> {
+    fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/portable/requests/search.defaults.skrq"),
+    )
+    .unwrap()
+}
+
+fn expected_search_operation() -> OperationIr {
+    let recording = Arc::new(RecordingBackend::new());
+    let dispatcher = Dispatcher::from_backend(context(), recording.clone());
+    dispatcher.dispatch(&canonical_search_request()).unwrap();
+    recording
+        .take_calls()
+        .into_iter()
+        .next()
+        .expect("canonical search request must reach the backend")
+}
+
+#[test]
+fn scripted_dispatch_preserves_every_canonical_result_fixture() {
+    for (name, expected) in canonical_result_fixtures() {
+        let backend = Arc::new(ScriptedBackend::new([ExpectedCall::success(
+            expected_search_operation(),
+            ScriptedResult::Search(Box::new(expected.clone())),
+        )]));
+        let dispatcher = Dispatcher::from_backend(context(), backend);
+        let response = dispatcher
+            .dispatch(&canonical_search_request())
+            .unwrap_or_else(|error| panic!("fixture {name} dispatch failed: {error:?}"));
+        let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
+        let actual = envelope
+            .payload_as_search_kernel_v2_search_result()
+            .unwrap_or_else(|| panic!("fixture {name} did not produce SearchResult"));
+        assert_api_search_result_matches(actual, &expected);
+    }
 }
 
 #[test]

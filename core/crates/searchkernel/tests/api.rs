@@ -13,6 +13,24 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+#[test]
+fn public_schema_signatures_use_searchkernel_owned_types() {
+    use searchkernel::{
+        DataType, FieldSet, IndexConfig, IndexDefinition, RankPhase, RankProfile, SchemaValue,
+    };
+
+    let field = Field::tensor("embedding", "tensor<float>(x[3])");
+    let _: &DataType = field.data_type();
+
+    let profile = RankProfile::new("semantic");
+    let _: Option<&RankPhase> = profile.first_phase.as_ref();
+
+    let definition = IndexDefinition::new().field(field).rank_profile(profile);
+    let _: &[FieldSet] = definition.fieldsets();
+    let _: Option<IndexConfig> = None;
+    let _: SchemaValue = SchemaValue::Null;
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct Product {
     title: String,
