@@ -1,6 +1,6 @@
 #![cfg(feature = "native")]
 
-use searchkernel::{Index, Patch};
+use searchkernel::{field, Index, Patch};
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
