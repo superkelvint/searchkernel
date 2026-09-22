@@ -342,16 +342,10 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
         "CC", "CXX", "AR", "RANLIB", "LD", "CFLAGS", "CXXFLAGS", "CPPFLAGS",
         "LDFLAGS", "CMAKE", "CMAKE_ARGS", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH",
         "CMAKE_TOOLCHAIN_FILE", "CXXSTDLIB",
-        "CRATE_CC_NO_DEFAULTS", "SK_NATIVE_ENABLE_FAILPOINTS", "SK_NATIVE_COVERAGE",
-        "SK_NATIVE_SANITIZER", "SK_NATIVE_EXTRA_CXX_FLAGS", "SK_NATIVE_EXTRA_LINK_FLAGS",
+        "CRATE_CC_NO_DEFAULTS",
     )
     for name in tracked:
-        defaults = {
-            "SK_NATIVE_ENABLE_FAILPOINTS": "0",
-            "SK_NATIVE_COVERAGE": "0",
-            "SK_NATIVE_SANITIZER": "none",
-        }
-        fields[f"env.{name}"] = os.environ.get(name, defaults.get(name, ""))
+        fields[f"env.{name}"] = os.environ.get(name, "")
     target_underscore = target.replace("-", "_")
     for base in ("CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS"):
         fields[f"env.{base}_{target}"] = os.environ.get(f"{base}_{target}", "")
