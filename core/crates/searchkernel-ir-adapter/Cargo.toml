@@ -12,6 +12,7 @@ categories.workspace = true
 [features]
 default = ["native"]
 native = ["searchkernel-vespa-engine/native"]
+hardening = ["native", "searchkernel-vespa-engine/hardening"]
 
 [dependencies]
 searchkernel-ir = { path = "../searchkernel-ir" }
