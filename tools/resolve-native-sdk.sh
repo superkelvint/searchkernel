@@ -84,7 +84,8 @@ fi
 FINGERPRINT=$(python3 "$ROOT/tools/native-build-fingerprint.py" \
     --root "$ROOT" \
     --vespa-root "$VESPA_BUILD_ROOT" \
-    --target "$TARGET")
+    --target "$TARGET" \
+    --scope base)
 DIGEST=$(printf '%s' "$FINGERPRINT" | sed -n 's/^sha256=//p' | head -1)
 [[ ${#DIGEST} -eq 64 ]] || { echo "native fingerprint did not produce a SHA-256 digest" >&2; exit 1; }
 OBJECT=$CACHE_ROOT/objects/$DIGEST
