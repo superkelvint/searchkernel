@@ -17,6 +17,21 @@ if ! git diff --cached --quiet -- docs/capabilities.json; then
     git add docs/CAPABILITIES.md LIMITATIONS.md
 fi
 
+native_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-native.XXXXXX")
+trap 'rm -f -- "$native_selection"' EXIT
+git diff --cached --name-only --no-renames -z \
+    | python3 .github/ci/exact_head.py classify --github-output "$native_selection" >/dev/null
+
+native_required=false
+if grep -qx 'native=true' "$native_selection"; then
+    native_required=true
+    if ! git diff --quiet; then
+        echo "pre-commit: native-sensitive changes are staged, but tracked unstaged changes also exist" >&2
+        echo "pre-commit: stage or revert those tracked changes so native verification matches the commit" >&2
+        exit 1
+    fi
+fi
+
 echo "pre-commit: checking rustfmt"
 cargo fmt --all --check
 
@@ -25,3 +40,8 @@ cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
 echo "pre-commit: running workspace unit tests"
 cargo test --workspace --all-targets --no-default-features
+
+if [[ "$native_required" == true ]]; then
+    echo "pre-commit: native-sensitive changes detected; running local real-Vespa verification"
+    ./reference/vespa/verify-through.sh i
+fi
