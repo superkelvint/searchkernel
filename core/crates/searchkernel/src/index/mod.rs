@@ -727,6 +727,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             .map(ConstantDefinition::to_ir)
             .collect(),
     );
+    resolved.set_fieldsets(definition.fieldsets.clone());
 
     Ok(resolved)
 }
@@ -930,6 +931,7 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         .iter()
         .map(ConstantDefinition::from_ir)
         .collect();
+    result.fieldsets = definition.fieldsets().to_vec();
     result.structs = definition.structs().to_vec();
     result.canonical = Some(definition.clone());
     result
