@@ -38,10 +38,10 @@ fn main() {
     let config_identity = embedded_config_identity();
     let config_identity = &config_identity;
 
-    for (version, revision, abi) in [
-        (2_u32, "a7abfe6213dea5e7fc1132d52c1fef163b42f729", 5_u32),
-        (3_u32, "e5b7f60cdf837866355756b55d3cb1e77d5c9b62", 5_u32),
-        (4_u32, "e02da1cf4c91544a7dbab120e961c47d26b67278", 5_u32),
+    for (version, revision) in [
+        (2_u32, "a7abfe6213dea5e7fc1132d52c1fef163b42f729"),
+        (3_u32, "e5b7f60cdf837866355756b55d3cb1e77d5c9b62"),
+        (4_u32, "e02da1cf4c91544a7dbab120e961c47d26b67278"),
     ] {
         let directory = output.join(format!("manifest-v{version}-storage-v1"));
         fs::create_dir_all(&directory).expect("create version fixture");
@@ -56,7 +56,7 @@ fn main() {
             2 => serde_json::json!({
                 "format_version": 2,
                 "searchkernel_version": "0.1.0",
-                "native_abi_version": abi,
+                "native_abi_version": 4,
                 "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
                 "portable_index_definition": {
                     "name": "typea",
@@ -89,7 +89,7 @@ fn main() {
                 "storage_compatibility_generation": 1,
                 "provenance": {
                     "created_by_searchkernel_version": "0.1.0",
-                    "created_by_native_abi": abi,
+                    "created_by_native_abi": 4,
                     "created_by_vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
                 },
                 "portable_index_definition": "portable-index-definition.bfbs",
@@ -127,7 +127,7 @@ fn main() {
             "searchkernel_revision": revision,
             "manifest_version": version,
             "storage_compatibility_generation": 1,
-            "native_abi_version": abi,
+            "native_abi_version": 4,
             "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
             "schema": {
                 "name": "typea",
