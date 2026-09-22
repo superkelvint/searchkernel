@@ -325,7 +325,6 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
         "flatbuffers.version": os.environ.get("FLATBUFFERS_VERSION", "25.12.19"),
         "vespa.commit": git_tree_identity(vespa_root),
         "vespa.config": vespa_config_digest(vespa_root),
-        "vespa.shared_libraries": shared_library_tree_identity(vespa_root),
         "native.source": source_digest(root),
         "native.dependency_bundle": dependency_bundle_identity(root, vespa_root),
         "native.runtime_bundle": runtime_bundle_identity(root, vespa_root),
