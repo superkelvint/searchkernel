@@ -442,6 +442,58 @@ fn struct_fields(
         .collect()
 }
 
+fn validate_rank_profile_input_default(
+    profile: &searchkernel_ir::RankProfileDefinitionIr,
+    input: &searchkernel_ir::RankProfileInputIr,
+    type_spec: &str,
+) -> Result<()> {
+    let path = format!(
+        "rank_profiles.{}.inputs.{}.default_value",
+        profile.name, input.name
+    );
+    let searchkernel_ir::RequestValueIr::Tensor(tensor) = &input.default_value else {
+        return Err(PortableError::unsupported(
+            "rank_profile_input_default_not_supported",
+            Some(path),
+            "rank-profile input defaults must be tensor values",
+        ));
+    };
+    if tensor.type_spec != type_spec {
+        return Err(PortableError::invalid(
+            "rank_profile_input_default_type_mismatch",
+            Some(path),
+            format!(
+                "rank-profile input type is `{type_spec}` but the default is `{}`",
+                tensor.type_spec
+            ),
+        ));
+    }
+    let searchkernel_ir::RequestTensorPayloadIr::Dense(values) = &tensor.payload else {
+        return Err(PortableError::unsupported(
+            "rank_profile_input_default_not_supported",
+            Some(path),
+            "only dense tensor rank-profile input declarations are supported by the native schema model",
+        ));
+    };
+
+    // The ergonomic Rust facade uses an empty dense tensor as a
+    // declaration-only placeholder. It means "no explicit default" and
+    // preserves the established query_input() behavior.
+    if values.is_empty() {
+        return Ok(());
+    }
+
+    // Native rank-profile defaults are deliberately rejected until the
+    // embedded Vespa boundary has a proven shape-faithful tensor literal
+    // representation and real-engine execution coverage. Failing here keeps
+    // represented canonical IR from being silently dropped or approximated.
+    Err(PortableError::unsupported(
+        "rank_profile_input_default_not_supported",
+        Some(path),
+        "explicit rank-profile input defaults are not supported by native schema compilation",
+    ))
+}
+
 /// Lower the deliberately small portable rank-profile subset understood by
 /// the current native configuration compiler.  Ranking expressions remain
 /// opaque Vespa expressions; this function only wires their declared shape
@@ -571,19 +623,136 @@ fn lower_rank_profile(profile: &searchkernel_ir::RankProfileDefinitionIr) -> Res
                 "only dense tensor rank-profile inputs are representable by the native schema model",
             );
         };
-        if !matches!(
-            input.default_value,
-            searchkernel_ir::RequestValueIr::Tensor(_)
-        ) {
-            return unsupported(
-                "inputs",
-                "tensor rank-profile inputs require tensor default values",
-            );
-        }
+        validate_rank_profile_input_default(profile, input, type_spec)?;
         native = native.query_input(input.name.clone(), type_spec.clone());
     }
     for feature in &profile.match_features {
         native = native.match_feature(feature);
     }
     Ok(native)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compile_index_definition;
+    use searchkernel_ir::{
+        DataTypeIr, ErrorCode, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr,
+        PrimitiveDataTypeIr, RankPhaseDefinitionIr, RankProfileDefinitionIr, RankProfileInputIr,
+        RequestTensorIr, RequestTensorPayloadIr, RequestValueIr,
+    };
+
+    fn field(name: &str) -> FieldName {
+        FieldName::parse(name).unwrap()
+    }
+
+    fn definition_with_rank_input_default(
+        type_spec: &str,
+        values: Vec<f64>,
+    ) -> IndexDefinitionIr {
+        let mut definition = IndexDefinitionIr::new(
+            None,
+            vec![FieldIr::new(
+                field("title"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                None,
+                FieldCapabilities::new(true, true, false, false, false),
+            )],
+            Vec::new(),
+        )
+        .unwrap();
+        definition.set_rank_profiles(vec![RankProfileDefinitionIr {
+            name: "with_default".to_owned(),
+            inherits: Vec::new(),
+            inputs: vec![RankProfileInputIr {
+                name: "embedding".to_owned(),
+                data_type: DataTypeIr::Tensor {
+                    type_spec: type_spec.to_owned(),
+                },
+                default_value: RequestValueIr::Tensor(RequestTensorIr {
+                    type_spec: type_spec.to_owned(),
+                    payload: RequestTensorPayloadIr::Dense(values),
+                }),
+            }],
+            functions: Vec::new(),
+            first_phase: Some(RankPhaseDefinitionIr {
+                expression: Some("query(embedding)".to_owned()),
+                rerank_count: None,
+                rank_score_drop_limit: None,
+                properties: std::collections::BTreeMap::new(),
+                total_rerank_count: None,
+                keep_rank_count: None,
+                total_keep_rank_count: None,
+            }),
+            second_phase: None,
+            global_phase: None,
+            rank_features: Vec::new(),
+            match_features: Vec::new(),
+            summary_features: Vec::new(),
+            sort_features: Vec::new(),
+            constants: Vec::new(),
+            onnx_models: Vec::new(),
+            rank_properties: std::collections::BTreeMap::new(),
+            strict: None,
+            properties: std::collections::BTreeMap::new(),
+        }]);
+        definition
+    }
+
+    #[test]
+    fn explicit_rank_profile_input_defaults_fail_closed_before_native_config() {
+        let cases = [
+            // Same declared tensor type, distinct explicit defaults: neither
+            // may be silently collapsed into the declaration-only path.
+            ("tensor<float>(x[2])", vec![1.0, 0.0]),
+            ("tensor<float>(x[2])", vec![0.0, 1.0]),
+            ("tensor<float>(a[1],b[4])", vec![1.0, 2.0, 3.0, 4.0]),
+            // Deliberately malformed cell count. The adapter rejects all
+            // explicit defaults before native config, so malformed dense
+            // shapes cannot be flattened into a misleading Vespa literal.
+            ("tensor<float>(a[1],b[4])", vec![1.0, 2.0, 3.0]),
+        ];
+
+        for (case_index, (type_spec, values)) in cases.into_iter().enumerate() {
+            let definition = definition_with_rank_input_default(type_spec, values);
+            let root = std::env::temp_dir().join(format!(
+                "searchkernel-adapter-rank-profile-default-{}-{case_index}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&root);
+
+            let error = compile_index_definition(&definition, &root)
+                .expect_err("explicit rank-profile defaults must fail closed");
+            assert_eq!(error.code, ErrorCode::Unsupported);
+            assert_eq!(error.details.len(), 1);
+            assert_eq!(
+                error.details[0].code,
+                "rank_profile_input_default_not_supported"
+            );
+            assert_eq!(
+                error.details[0].path.as_deref(),
+                Some("rank_profiles.with_default.inputs.embedding.default_value")
+            );
+            assert!(
+                !root.exists(),
+                "validation must fail before native config output is created"
+            );
+        }
+    }
+
+    #[test]
+    fn declaration_only_rank_profile_input_remains_supported() {
+        let definition = definition_with_rank_input_default("tensor<float>(x[2])", Vec::new());
+        let root = std::env::temp_dir().join(format!(
+            "searchkernel-adapter-rank-profile-declaration-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+
+        compile_index_definition(&definition, &root)
+            .expect("empty dense payload is the declaration-only placeholder");
+        let config = std::fs::read_to_string(root.join("rank-profiles.cfg")).unwrap();
+        assert!(config.contains("vespa.type.query.embedding"));
+        assert!(!config.contains(".name \"query(embedding)\""));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

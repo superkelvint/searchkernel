@@ -1,9 +1,6 @@
 //! Vespa-backed implementation of the portable backend contract.
 
-use crate::search::{
-    lower_facets_into_request, lower_groupings, lower_search_options, lower_search_query,
-    validate_search_request, GroupingLowering,
-};
+use crate::search::{preflight_search_request, GroupingLowering};
 use crate::{
     analysis_options, internal, lower_document, lower_field_value, native_error,
     native_search_error, project_document, value_to_ir,
@@ -576,19 +573,9 @@ impl Backend for VespaBackend {
 
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult> {
         let started = Instant::now();
-        validate_search_request(&request)?;
-        let language = analysis_options(request.language())?;
-        let query = lower_search_query(&request, language)?;
-        let groupings = lower_groupings(request.grouping())?;
-        let facets = groupings
-            .iter()
-            .filter_map(|grouping| match grouping {
-                GroupingLowering::Facet(facet) => Some(facet.clone()),
-                GroupingLowering::Native(_) => None,
-            })
-            .collect::<Vec<_>>();
-        let m_request = lower_search_options(&request, query.clone(), language)?;
-        let m_request = lower_facets_into_request(m_request, &facets);
+        let preflight = preflight_search_request(&request)?;
+        let groupings = preflight.groupings;
+        let m_request = preflight.request;
         let deadline = started.checked_add(m_request.timeout).ok_or_else(|| {
             PortableError::new(
                 searchkernel_ir::ErrorCode::DeadlineExceeded,
@@ -599,7 +586,7 @@ impl Backend for VespaBackend {
             .engine
             .search(m_request.clone())
             .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
-        if result.facets.len() != facets.len() {
+        if result.facets.len() != m_request.facets.len() {
             return Err(internal(
                 "native search returned an unexpected grouping count",
             ));

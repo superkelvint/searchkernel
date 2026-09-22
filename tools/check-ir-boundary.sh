@@ -51,4 +51,20 @@ if awk '
 else
   echo "ungated public aggregate IR constructor" >&2; exit 1
 fi
+
+# Structured query execution has one production representation: QueryIr::Typed.
+# The old execution-shaped variants were easy to construct beside the typed
+# tree and therefore created a second semantic path into the adapter. Keep
+# this guard structural so a future production ingress cannot silently restore
+# that split; focused tests may still use the backend model directly.
+if [ -f "$MODEL/query.rs" ] && sed -n '/^pub enum QueryIr {/,/^}/p' "$MODEL/query.rs" \
+  | rg -n '^[[:space:]]*(Term|And|Or|Not)\b'; then
+  echo "legacy structured QueryIr variants remain" >&2
+  exit 1
+fi
+if rg -n 'QueryIr::(Term|And|Or|Not)\b' "$ROOT/core/crates" -g '*.rs' \
+  -g '!**/tests/**' -g '!**/tests.rs' -g '!**/*_tests.rs'; then
+  echo "legacy structured QueryIr construction remains in production" >&2
+  exit 1
+fi
 echo "IR boundary PASS"

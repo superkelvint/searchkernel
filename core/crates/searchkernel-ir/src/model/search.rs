@@ -191,6 +191,80 @@ impl SearchRequestIr {
         self
     }
 
+    #[cfg(any(test, feature = "test"))]
+    pub fn with_properties(
+        mut self,
+        properties: std::collections::BTreeMap<String, RequestValueIr>,
+    ) -> Self {
+        self.properties = properties;
+        self
+    }
+
+    #[cfg(any(test, feature = "test"))]
+    pub fn with_query_profile(mut self, query_profile: impl Into<String>) -> Self {
+        self.query_profile = Some(query_profile.into());
+        self
+    }
+
+    #[cfg(any(test, feature = "test"))]
+    pub fn with_search_chain(mut self, search_chain: impl Into<String>) -> Self {
+        self.search_chain = Some(search_chain.into());
+        self
+    }
+
+    /// Exhaustive semantic surface used by adapter tests.
+    ///
+    /// The destructuring pattern intentionally omits `..`: adding a field to
+    /// `SearchRequestIr` must fail the test build until the adapter review
+    /// matrix gives that field an explicit lowered/rejected disposition.
+    #[cfg(any(test, feature = "test"))]
+    pub fn semantic_field_names(&self) -> &'static [&'static str] {
+        let Self {
+            query: _,
+            search_fields: _,
+            filter: _,
+            sort: _,
+            grouping: _,
+            ranking_request: _,
+            inputs: _,
+            limit: _,
+            offset: _,
+            projection: _,
+            highlighting: _,
+            language: _,
+            query_model: _,
+            presentation: _,
+            properties: _,
+            query_profile: _,
+            search_chain: _,
+            timeout: _,
+            prefix_policy: _,
+            typo_policy: _,
+        } = self;
+        &[
+            "query",
+            "search_fields",
+            "filter",
+            "sort",
+            "grouping",
+            "ranking_request",
+            "inputs",
+            "limit",
+            "offset",
+            "projection",
+            "highlighting",
+            "language",
+            "query_model",
+            "presentation",
+            "properties",
+            "query_profile",
+            "search_chain",
+            "timeout",
+            "prefix_policy",
+            "typo_policy",
+        ]
+    }
+
     pub fn prefix_policy(&self) -> PrefixPolicy {
         self.prefix_policy
     }

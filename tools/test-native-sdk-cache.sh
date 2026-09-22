@@ -84,13 +84,32 @@ printf 'CXX_INCLUDES = \n' >"$configured/flags.make"
 # already contains a self-contained Vespa runtime closure.
 legacy_sdk="$repo/core/native/sdk/linux-x86_64"
 mkdir -p "$legacy_sdk/lib"
+legacy_dependency_source="$fixture/legacy-vespa-defaults.c"
+cat >"$legacy_dependency_source" <<'C'
+int searchkernel_cache_fixture_dependency(void) { return 3; }
+C
+cc -shared -fPIC "$legacy_dependency_source" \
+    -Wl,-soname,libvespadefaults.so \
+    -o "$legacy_sdk/lib/libvespadefaults.so"
+
 legacy_source="$fixture/legacy-vespa.c"
 cat >"$legacy_source" <<'C'
-int searchkernel_cache_fixture_base(void) { return 1; }
+extern int searchkernel_cache_fixture_dependency(void);
+int searchkernel_cache_fixture_base(void) {
+    return searchkernel_cache_fixture_dependency();
+}
 C
 cc -shared -fPIC "$legacy_source" \
+    -L"$legacy_sdk/lib" -Wl,--no-as-needed -lvespadefaults \
     -Wl,-soname,libvespalib.so \
     -o "$legacy_sdk/lib/libvespalib.so"
+
+# A flattened base must resolve sibling DSOs from its own lib directory even
+# when the producer library did not encode an RPATH/RUNPATH.
+if readelf -d "$legacy_sdk/lib/libvespalib.so" | grep -Eq '(RPATH|RUNPATH)'; then
+    echo 'cache fixture unexpectedly encoded an RPATH/RUNPATH' >&2
+    exit 1
+fi
 
 refresh_legacy_fingerprint() {
     VESPA_LIBRARY_ROOT="$legacy_sdk/lib" \
@@ -197,9 +216,13 @@ same_after_unrelated_deps=$(run_resolver "$worktree")
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
 
 cat >"$legacy_source" <<'C'
-int searchkernel_cache_fixture_base(void) { return 2; }
+extern int searchkernel_cache_fixture_dependency(void);
+int searchkernel_cache_fixture_base(void) {
+    return 1 + searchkernel_cache_fixture_dependency();
+}
 C
 cc -shared -fPIC "$legacy_source" \
+    -L"$legacy_sdk/lib" -Wl,--no-as-needed -lvespadefaults \
     -Wl,-soname,libvespalib.so \
     -o "$legacy_sdk/lib/libvespalib.so"
 refresh_legacy_fingerprint
@@ -215,11 +238,11 @@ fourth=$(run_resolver "$worktree")
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
 
 chmod u+w "$fourth/lib"
-rm "$fourth/lib/libvespalib.so"
+rm "$fourth/lib/libvespadefaults.so"
 chmod a-w "$fourth/lib"
 healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err")
 [[ "$healed" == "$fourth" ]]
-[[ -s "$fourth/lib/libvespalib.so" ]]
+[[ -s "$fourth/lib/libvespadefaults.so" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/incomplete.err"
 
@@ -233,7 +256,7 @@ corrupted_healed=$(run_resolver "$worktree" 2>"$fixture/corrupt.err")
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/corrupt.err"
 
 chmod u+w "$fourth/lib"
-rm "$fourth/lib/libvespalib.so"
+rm "$fourth/lib/libvespadefaults.so"
 chmod a-w "$fourth/lib"
 before=$(wc -l <"$common/sdk-cache-build-count")
 run_resolver "$worktree" >"$fixture/race-a.out" 2>"$fixture/race-a.err" &
@@ -246,6 +269,40 @@ wait "$pid_b"
 [[ "$(cat "$fixture/race-b.out")" == "$fourth" ]]
 after=$(wc -l <"$common/sdk-cache-build-count")
 [[ $((after - before)) -eq 1 ]]
-[[ -s "$fourth/lib/libvespalib.so" ]]
+[[ -s "$fourth/lib/libvespadefaults.so" ]]
+
+# The sibling lookup must not weaken the fail-closed boundary. If a Vespa-
+# private dependency is absent from the package but a producer RPATH can find
+# it elsewhere on the host, validation must reject that external resolution.
+external_private="$fixture/external-private"
+mkdir -p "$external_private"
+cat >"$fixture/external-private.c" <<'C'
+int searchkernel_external_private_dependency(void) { return 11; }
+C
+cc -shared -fPIC "$fixture/external-private.c" \
+    -Wl,-soname,libvespa_external_fixture.so \
+    -o "$external_private/libvespa_external_fixture.so"
+cat >"$legacy_source" <<'C'
+extern int searchkernel_cache_fixture_dependency(void);
+extern int searchkernel_external_private_dependency(void);
+int searchkernel_cache_fixture_base(void) {
+    return searchkernel_cache_fixture_dependency()
+        + searchkernel_external_private_dependency();
+}
+C
+cc -shared -fPIC "$legacy_source" \
+    -L"$legacy_sdk/lib" -Wl,--no-as-needed -lvespadefaults \
+    -L"$external_private" -Wl,--no-as-needed -lvespa_external_fixture \
+    -Wl,-rpath,"$external_private" \
+    -Wl,-soname,libvespalib.so \
+    -o "$legacy_sdk/lib/libvespalib.so"
+refresh_legacy_fingerprint
+if run_resolver "$repo" >"$fixture/external-private.out" 2>"$fixture/external-private.err"; then
+    echo 'native SDK cache unexpectedly accepted an external Vespa-private dependency' >&2
+    exit 1
+fi
+grep -q 'resolved private runtime dependencies outside its bundled lib directory' \
+    "$fixture/external-private.err"
+grep -q 'libvespa_external_fixture.so' "$fixture/external-private.err"
 
 echo 'native SDK cache regression PASS'

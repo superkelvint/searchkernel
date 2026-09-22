@@ -273,10 +273,6 @@ impl Index {
                 searchkernel_ir::QueryIr::MatchAll => String::new(),
                 searchkernel_ir::QueryIr::Text(value) => value.clone(),
                 searchkernel_ir::QueryIr::Yql { .. }
-                | searchkernel_ir::QueryIr::Term { .. }
-                | searchkernel_ir::QueryIr::And(_)
-                | searchkernel_ir::QueryIr::Or(_)
-                | searchkernel_ir::QueryIr::Not(_)
                 | searchkernel_ir::QueryIr::Typed { .. } => {
                     return Err(Error::search(
                         crate::error::ErrorCode::Unsupported,
