@@ -166,7 +166,7 @@ if ! corrupted_healed=$(run_resolver "$worktree" 2>"$fixture/corrupt.err"); then
 fi
 [[ "$corrupted_healed" == "$fourth" ]]
 [[ -s "$fourth/lib/libvespalib.so" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/corrupt.err"
 echo 'native SDK cache: corrupted Vespa base self-healed automatically'
 
