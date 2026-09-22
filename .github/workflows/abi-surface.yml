@@ -33,7 +33,7 @@ concurrency:
 jobs:
   abi-surface:
     name: Public ABI aggregate check
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     env:
       CARGO_TARGET_DIR: target/ci
       SEARCHKERNEL_BUILD_ENV: ci

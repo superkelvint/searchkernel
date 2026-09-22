@@ -43,7 +43,7 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     strategy:
       matrix:
         python-version: ["3.10", "3.13"]
@@ -60,7 +60,7 @@ jobs:
 
   e2e:
     name: Executable E2E evidence
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     env:
       CARGO_TARGET_DIR: target/ci
       SEARCHKERNEL_BUILD_ENV: ci
