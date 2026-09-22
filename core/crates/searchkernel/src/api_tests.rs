@@ -3280,6 +3280,15 @@ fn public_document_summaries_round_trip_without_canonical_sidecar() {
 }
 
 #[test]
+fn field_to_ir_preserves_struct_field_configuration_without_canonical_sidecar() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let mut field = described.fields()[0].clone();
+    field.canonical = None;
+    let resolved = definition_to_ir(&IndexDefinition::new().field(field)).expect("field should resolve");
+    assert_eq!(resolved.fields()[0].struct_fields(), canonical.fields()[0].struct_fields());
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();
