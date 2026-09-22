@@ -43,6 +43,11 @@ section's **Sensitivity verification** gate.
   verification lane.
 - PR #221 — supplemental structural guard preventing new production SearchRequest
   semantic entry points outside the canonical resolver path.
+- PR #145 — persisted resolved-schema snapshot compatibility: versioned canonical
+  snapshot replay, snapshot drift rejection, storage/config identity validation, and
+  persistence fault regressions.
+- PR #176 — explicit manifest-v3 reopen compatibility without reinterpreting portable
+  caller intent; unknown manifest versions continue to fail closed.
 
 GitHub-hosted runner allocation is currently failing before checkout for some exact
 heads (`steps=[]`, `runner_id=0`). That is not treated as passing evidence and does
@@ -54,6 +59,17 @@ not relax the acceptance rule above.
 # P0 — Persistence compatibility
 
 Persistent indexes are a compatibility boundary. Historical formats must be tested as immutable artifacts, not reconstructed on the fly.
+
+> **Implemented on main:** PR #145 added versioned resolved-schema snapshot replay and
+> compatibility/fault regressions; PR #176 restored explicit manifest-v3 reopen support.
+> Existing manifest tests also cover corrupt BFBS payloads, storage-generation mismatch,
+> resolved engine-config drift, missing generated config, and missing/invalid manifests.
+>
+> **Still open:** the historical manifest corpus is not yet immutable/comprehensive.
+> In particular, the v3 regression in #176 reconstructs the prior manifest shape in the
+> test rather than opening a checked-in historical Search Kernel index artifact. The
+> preserved M5 `persisted-v1` Vespa fixture provides real persisted-engine provenance,
+> but it does not by itself satisfy the manifest-version corpus below.
 
 ## Historical fixture corpus
 
@@ -69,18 +85,18 @@ Persistent indexes are a compatibility boundary. Historical formats must be test
 
 ## Persisted-state fault matrix
 
-- [ ] Missing `manifest/index.json` is classified correctly.
+- [x] Missing `manifest/index.json` is classified correctly.
 - [ ] Truncated `index.json` is classified correctly.
-- [ ] Invalid manifest JSON is classified correctly.
+- [x] Invalid manifest JSON is classified correctly.
 - [ ] Missing canonical definition BFBS is classified correctly.
 - [ ] Missing portable definition BFBS is classified correctly.
-- [ ] Corrupted canonical definition BFBS is classified correctly.
-- [ ] Corrupted portable definition BFBS is classified correctly.
+- [x] Corrupted canonical definition BFBS is classified correctly.
+- [x] Corrupted portable definition BFBS is classified correctly.
 - [ ] Missing resolved schema snapshot is rejected where required.
-- [ ] Mismatched resolved schema snapshot is rejected.
-- [ ] Mismatched storage compatibility generation is rejected.
-- [ ] Mismatched resolved engine configuration identity is rejected.
-- [ ] Missing generated engine configuration files are rejected.
+- [x] Mismatched resolved schema snapshot is rejected.
+- [x] Mismatched storage compatibility generation is rejected.
+- [x] Mismatched resolved engine configuration identity is rejected.
+- [x] Missing generated engine configuration files are rejected.
 - [ ] Partially written temporary manifest files cannot be mistaken for committed state.
 - [ ] Repeated failed open attempts do not mutate or destroy a valid persisted index.
 
@@ -89,6 +105,11 @@ Persistent indexes are a compatibility boundary. Historical formats must be test
 - [ ] Add a persistence compatibility CI job.
 - [ ] Run it for changes touching manifest, schema, persistence, API/IR schema encoding, Vespa configuration, or index lifecycle.
 - [ ] Run the complete persistence compatibility corpus on `main`.
+
+**Sensitivity verification**
+
+- [ ] Deliberately removing support for a claimed historical manifest/storage generation makes the persistence compatibility gate fail.
+- [ ] Deliberately weakening persisted-state corruption/config/snapshot validation makes the persistence fault-matrix gate fail.
 
 **Exit criterion:** deliberately removing support for any claimed historical persisted format makes CI fail.
 
