@@ -3308,6 +3308,27 @@ fn public_rank_profile_configuration_round_trips_without_canonical_sidecar() {
 }
 
 #[test]
+fn described_rank_profile_exposes_model_state_publicly() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let expected = &canonical.rank_profiles()[0];
+    let actual = &described.rank_profiles()[0];
+    assert_eq!(actual.inputs, expected.inputs);
+    assert_eq!(actual.constants, expected.constants);
+    assert_eq!(actual.onnx_models, expected.onnx_models);
+}
+
+#[test]
+fn public_rank_profile_model_state_round_trips_without_sidecar() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let mut profile = described.rank_profiles()[0].clone();
+    profile.canonical = None;
+    let resolved = definition_to_ir(&IndexDefinition::new().field(Field::text("title")).rank_profile(profile)).expect("profile");
+    assert_eq!(resolved.rank_profiles()[0].inputs, canonical.rank_profiles()[0].inputs);
+    assert_eq!(resolved.rank_profiles()[0].constants, canonical.rank_profiles()[0].constants);
+    assert_eq!(resolved.rank_profiles()[0].onnx_models, canonical.rank_profiles()[0].onnx_models);
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();
