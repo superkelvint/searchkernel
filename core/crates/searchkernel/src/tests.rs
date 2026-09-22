@@ -751,7 +751,9 @@ fn create_fsync_failure_preserves_recoverable_root_and_rejects_destructive_retry
     };
     assert_eq!(reopen_error.code(), crate::ErrorCode::Unavailable);
     assert!(
-        reopen_error.to_string().contains("injected backend open failure"),
+        reopen_error
+            .to_string()
+            .contains("injected backend open failure"),
         "recovery open must preserve backend failure context"
     );
     assert!(
