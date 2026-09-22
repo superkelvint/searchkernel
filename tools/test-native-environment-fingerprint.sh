@@ -18,10 +18,12 @@ sed -i 's/fixture A/fixture B/' "$temporary/compiler-b"
 chmod +x "$temporary/compiler-a" "$temporary/compiler-b"
 
 fingerprint() {
+    local extra_lib_dir=${3:-}
     env \
         SEARCHKERNEL_BUILD_ENV=regression \
         CXX="$1" \
         CXXFLAGS="${2:-}" \
+        VESPA_EXTRA_LIB_DIR="$extra_lib_dir" \
         python3 "$root/tools/native-build-fingerprint.py" \
             --root "$root" \
             --target x86_64-unknown-linux-gnu \
@@ -40,6 +42,15 @@ echo 'native fingerprint: compiler identity changes the fingerprint'
 changed_flags=$(fingerprint "$temporary/compiler-a" '-DSEARCHKERNEL_NATIVE_FINGERPRINT_REGRESSION=1')
 [[ "$first" != "$changed_flags" ]]
 echo 'native fingerprint: relevant flags change the fingerprint'
+
+runtime_dir="$temporary/runtime"
+mkdir -p "$runtime_dir"
+printf 'llvm-runtime-a\n' >"$runtime_dir/libLLVM.so.21.1"
+runtime_a=$(fingerprint "$temporary/compiler-a" '' "$runtime_dir")
+printf 'llvm-runtime-b\n' >"$runtime_dir/libLLVM.so.21.1"
+runtime_b=$(fingerprint "$temporary/compiler-a" '' "$runtime_dir")
+[[ "$runtime_a" != "$runtime_b" ]]
+echo 'native fingerprint: selected runtime library content changes the fingerprint'
 
 [[ "$(grep -o 'target/host' "$root/.cargo/config.toml" | head -1)" == target/host ]]
 grep -q 'ENV CARGO_TARGET_DIR=target/devcontainer' "$root/.yolobox.Dockerfile"

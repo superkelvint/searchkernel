@@ -88,13 +88,14 @@ OBJECT=$CACHE_ROOT/objects/$DIGEST
 validate_link_closure() {
     local sdk=$1
     local library="$sdk/lib/libsearchkernel_vespa.so"
-    local output missing
+    local sdk_lib output missing external line name path resolved
 
     command -v ldd >/dev/null 2>&1 || {
         echo "native SDK runtime dependency closure validation requires ldd" >&2
         return 1
     }
 
+    sdk_lib=$(cd -- "$sdk/lib" && pwd -P)
     if ! output=$(env -u LD_LIBRARY_PATH -u LD_PRELOAD ldd "$library" 2>&1); then
         echo "native SDK '$sdk' runtime dependency closure probe failed" >&2
         printf '%s\n' "$output" >&2
@@ -105,6 +106,28 @@ validate_link_closure() {
     if [[ -n "$missing" ]]; then
         echo "native SDK '$sdk' has incomplete runtime dependency closure:" >&2
         printf '%s\n' "$missing" >&2
+        return 1
+    fi
+
+    external=
+    while IFS= read -r line; do
+        name=$(printf '%s\n' "$line" | awk '{print $1}')
+        case "$name" in
+            libvespa*.so*|libLLVM*.so*|libffi.so*|libxxhash.so*|libsearchkernel_*.so*)
+                path=$(printf '%s\n' "$line" | awk '$2 == "=>" {print $3}')
+                [[ -n "$path" && "$path" != "not" ]] || continue
+                resolved=$(readlink -f "$path" 2>/dev/null || true)
+                case "$resolved" in
+                    "$sdk_lib"/*) ;;
+                    *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
+                esac
+                ;;
+        esac
+    done <<<"$output"
+
+    if [[ -n "$external" ]]; then
+        echo "native SDK '$sdk' resolved private runtime dependencies outside its bundled lib directory:" >&2
+        printf '%s\n' "$external" >&2
         return 1
     fi
 }
@@ -147,9 +170,16 @@ if valid_object; then
 fi
 
 if [[ -e "$OBJECT" ]]; then
-    echo "immutable native SDK cache object '$OBJECT' exists but failed validation" >&2
-    echo "refusing to replace a published object; remove it explicitly after investigating cache integrity" >&2
-    exit 1
+    QUARANTINE_ROOT="$CACHE_ROOT/quarantine"
+    mkdir -p "$QUARANTINE_ROOT"
+    QUARANTINED="$QUARANTINE_ROOT/$DIGEST.$(date +%s).$BASHPID"
+    echo "native SDK cache object '$OBJECT' failed validation; quarantining and rebuilding under the cache lock" >&2
+    # Published objects are mode-locked read-only. Once validation has failed
+    # and this digest lock is held, make only the object directory itself
+    # owner-writable so it can be retired from the published namespace. Do not
+    # modify any packaged contents in place.
+    chmod u+w "$OBJECT"
+    mv "$OBJECT" "$QUARANTINED"
 fi
 
 rm -rf "$TMP" "$BUILD"
