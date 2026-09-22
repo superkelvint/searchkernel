@@ -29,9 +29,12 @@ pub(crate) struct SearchPreflight {
 
 pub(crate) fn preflight_search_request(request: &SearchRequestIr) -> Result<SearchPreflight> {
     validate_request_controls(request)?;
+    // Validate grouping topology before lowering the query. A malformed
+    // grouping request has a stable structured error that must not be masked
+    // by an unrelated query-lowering failure.
+    let groupings = lower_groupings(request.grouping())?;
     let language = analysis_options(request.language())?;
     let query = lower_search_query(request, language)?;
-    let groupings = lower_groupings(request.grouping())?;
     let facets = groupings
         .iter()
         .filter_map(|grouping| match grouping {
