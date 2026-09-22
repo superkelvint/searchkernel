@@ -179,6 +179,12 @@ pub struct RankProfile {
     pub strict: Option<bool>,
     /// Generic rank-profile properties not covered by dedicated fields.
     pub properties: searchkernel_ir::SchemaPropertiesIr,
+    /// Canonical rank-profile inputs exposed by Index::describe().
+    pub inputs: Vec<searchkernel_ir::RankProfileInputIr>,
+    /// Canonical rank-profile scoped constants.
+    pub constants: Vec<searchkernel_ir::RankProfileConstantIr>,
+    /// Canonical rank-profile scoped ONNX models.
+    pub onnx_models: Vec<searchkernel_ir::RankProfileOnnxModelIr>,
     pub(crate) query_inputs: Vec<(String, String)>,
     /// Canonical profile inheritance exposed by Index::describe().
     pub inherits: Vec<String>,
@@ -202,6 +208,9 @@ impl RankProfile {
             rank_properties: BTreeMap::new(),
             strict: None,
             properties: BTreeMap::new(),
+            inputs: Vec::new(),
+            constants: Vec::new(),
+            onnx_models: Vec::new(),
             query_inputs: Vec::new(),
             inherits: Vec::new(),
             functions: Vec::new(),
@@ -1230,7 +1239,7 @@ fn distance_metric_to_ir(value: DistanceMetric) -> searchkernel_ir::DistanceMetr
 
 #[cfg(test)]
 mod tests {
-    use super::{IndexDefinition, SearchField};
+    use super::{IndexDefinition, RankProfile, SearchField};
 
     #[test]
     fn search_field_names_convert_to_unweighted_fields() {
@@ -1241,6 +1250,16 @@ mod tests {
         assert_eq!(borrowed.weight, None);
         assert_eq!(owned.field, "description");
         assert_eq!(owned.weight, None);
+    }
+
+    #[test]
+    fn rank_profile_query_input_populates_public_canonical_state() {
+        let profile = RankProfile::new("semantic")
+            .query_input("query_embedding", "tensor<float>(x[3])");
+        assert_eq!(profile.inputs.len(), 1);
+        assert_eq!(profile.inputs[0].name, "query_embedding");
+        assert!(profile.constants.is_empty());
+        assert!(profile.onnx_models.is_empty());
     }
 
     #[test]
