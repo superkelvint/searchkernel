@@ -73,7 +73,7 @@ jobs:
           echo "EXACT_HEAD_TEST=$regression_dir/test_exact_head.py" >> "$GITHUB_ENV"
 
       - name: Verify exact-head CI regressions
-        run: python3 "$EXACT_HEAD_TEST"
+        run: "$CI_PYTHON" "$EXACT_HEAD_TEST"
 
       - name: Classify changed behavior
         id: changes
@@ -82,7 +82,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" -- \
-            | python3 "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
+            | "$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
 
   rust:
     name: Rust behavior
@@ -164,10 +164,10 @@ jobs:
           echo "Verified exact PR head $actual."
 
       - name: Install Python client
-        run: python -m pip install -e clients/python
+        run: "$CI_PYTHON" -m pip install -e clients/python
 
       - name: Run Python behavioral tests
-        run: python -m unittest discover -s clients/python/tests -p 'test_*.py'
+        run: "$CI_PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
 
   typescript:
     name: TypeScript behavior
