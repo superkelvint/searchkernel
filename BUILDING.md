@@ -65,6 +65,11 @@ The normal host workflow uses `target/host` automatically through
 matching shared SDK automatically; `./dev native-sdk ensure` may be used to
 populate it explicitly:
 
+A fresh or isolated worktree is not expected to already contain a built
+`searchkerneld` binary. If `./dev doctor` reports it as informational,
+build it with `cargo build -p searchkerneld`.
+
+
 ```bash
 cargo build -p searchkerneld
 cargo test --workspace --all-targets --no-default-features
