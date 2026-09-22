@@ -54,11 +54,10 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: clients/python/pyproject.toml
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
+      - name: Enforce runner-Python workflow policy
+        run: bash .github/ci/check-python-workflows.sh
 
       - name: Install Python client/codegen dependencies
         run: python -m pip install -e 'clients/python[codegen]'
@@ -110,9 +109,8 @@ jobs:
         with:
           workspaces: ". -> target/ci-nightly-e2e"
           shared-key: nightly-e2e
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

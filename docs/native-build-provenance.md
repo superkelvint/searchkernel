@@ -93,8 +93,15 @@ provenance so stale adapter implementations remain detectable.
 The configured Vespa CMake outputs themselves remain intentionally untracked.
 When the current worktree does not contain them, the resolver scans sibling Git
 worktrees and may use a configured `upstream/vespa` only when its pinned Vespa
-identity matches the requesting worktree. Thus ordinary Rust-only agent
-worktrees do not need their own Vespa build tree.
+identity matches the requesting worktree. CMake metadata is not treated as proof
+that the corresponding Vespa DSOs still exist. During migration from the
+pre-split full-SDK layout, a compatible existing full SDK may supply the
+`libvespa*.so*` bytes only when its recorded Vespa commit and config identity
+match the selected tree; those selected bytes then participate in the base
+fingerprint. If neither the configured tree nor a compatible full SDK contains
+the libraries, base bootstrap fails before publication. Thus ordinary Rust-only
+agent worktrees do not need their own Vespa build tree, while provenance cannot
+silently relabel stale runtime bytes.
 
 Neither native path runs `cargo clean` or deletes the entire target directory.
 If no matching sibling contains configured Vespa outputs and no cache object can
