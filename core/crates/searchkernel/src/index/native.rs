@@ -46,11 +46,25 @@ pub(super) fn publish_staging_directory(
         }
     })?;
     let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
-    // The rename is the publication point. A failure to sync the parent is a
-    // durability warning, not a failed create: the index is already visible
-    // at `root` and must not be reported as though publication was rolled
-    // back.
-    let _ = sync_published_parent(parent);
+    // The rename is the publication point, but create success also promises
+    // that the new directory entry has reached the filesystem durability
+    // boundary. If syncing the parent fails, the published root must remain
+    // visible for recovery and the caller must be told that durability is
+    // uncertain rather than being given ordinary success.
+    sync_published_parent(parent).map_err(|error| {
+        Error::search(
+            crate::ErrorCode::Unavailable,
+            format!(
+                "index was published at '{}' but parent directory sync failed: {error}",
+                root.display()
+            ),
+        )
+        .with_detail(
+            "index_published_durability_uncertain",
+            Some(root.display().to_string()),
+            "published index remains available for recovery but crash durability is uncertain",
+        )
+    })?;
     Ok(())
 }
 
@@ -311,7 +325,7 @@ impl Index {
             ));
         }
         manifest.validate_config(&config)?;
-        let backend = searchkernel_ir_adapter::VespaBackend::open(root.join("data"), &config)
+        let backend = open_native_backend(&root.join("data"), &config)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
         Self::from_owned_backend(
             resolved_context,

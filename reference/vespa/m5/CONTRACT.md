@@ -36,6 +36,17 @@ promise of survival through power loss or an ungraceful process termination.
 The bounded crash probe accepts the documented single-update prefix/post-state
 outcomes and does not strengthen this guarantee.
 
+Index-directory publication is a separate durability boundary. The product
+facade assembles a complete index in a staging directory, renames that directory
+to the requested root, and then fsyncs the parent directory. `Index::create`
+returns success only after that parent sync succeeds. If the sync fails after
+the rename, the call returns `Unavailable` with detail code
+`index_published_durability_uncertain` and the published root path. The root is
+intentionally retained: callers recover with `Index::open`, while another
+`Index::create` for the same path returns `AlreadyExists` rather than
+overwriting the published state. A failed recovery open likewise leaves the
+published root intact for a later retry.
+
 ## Errors and identity
 
 Opening a new directory is valid. Reopening the same directory refers to the

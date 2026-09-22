@@ -16,3 +16,19 @@ readable for as long as their support is advertised.
 New manifests store the canonical Portable API `IndexDefinition` FlatBuffers
 payload in `manifest/index-definition.bfbs`. Manifest v2 is read as a legacy
 format only; new indexes never write the handwritten JSON definition format.
+
+## Creation publication durability
+
+A successful `Index::create` means the complete staged index directory was
+atomically renamed to its final root and the containing directory was
+successfully fsynced. This guarantee concerns publication of the index
+directory entry; it does not strengthen Vespa's separately documented mutation
+durability semantics.
+
+If the parent-directory fsync fails after the rename, creation returns
+`Unavailable` with error detail `index_published_durability_uncertain` and
+the published root path. The root is not rolled back or deleted, because
+publication has already occurred. Callers should reconcile it with
+`Index::open`. Repeating `Index::create` against that root is non-destructive
+and returns `AlreadyExists`. A failed recovery open also leaves the published
+root available for a later retry.

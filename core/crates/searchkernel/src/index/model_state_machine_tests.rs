@@ -1,10 +1,20 @@
 //! Deterministic model coverage for the shared index/session lifecycle.
+
 //!
 //! The non-native suite deliberately keeps the backend stateless.  A recording
 //! pass captures the exact IR produced by the public facade, then a scripted
 //! pass replays those calls with results computed by the small model below.
 //! This keeps the test focused on admission, lifecycle, and result propagation
 //! rather than accidentally implementing a second search engine.
+
+#[test]
+fn parent_directory_fsync_result_must_not_be_discarded() {
+    let source = include_str!("native.rs");
+    assert!(
+        !source.contains("let _ = sync_published_parent(parent);"),
+        "post-rename parent fsync failure must remain observable"
+    );
+}
 
 #[cfg(not(feature = "native"))]
 mod scripted_model {
