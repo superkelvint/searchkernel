@@ -37,6 +37,9 @@ jobs:
         run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
       - name: Test every non-native target
+        env:
+          SEARCHKERNEL_MODEL_STEPS: 250
+          SEARCHKERNEL_MODEL_SEEDS: 0x517a11,0x9e3779,0xd1ce42,0x4f1ab7,0xa50933,0xe2710d,0x6c8824,0xb342f0
         run: cargo test --workspace --all-targets --no-default-features
 
   contracts:
