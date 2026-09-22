@@ -152,6 +152,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / ".githooks").mkdir(parents=True)
                 (repo / ".github" / "ci").mkdir(parents=True)
                 (repo / "reference" / "vespa").mkdir(parents=True)
+                (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
                 (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
@@ -171,8 +172,15 @@ class ExactHeadTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 native_gate.chmod(0o755)
+                python_e2e = repo / "tools" / "run-python-native-e2e.sh"
+                python_e2e.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'python-native-e2e\\n' >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                python_e2e.chmod(0o755)
 
-                git(repo, "add", ".githooks", ".github", "reference", "fakebin")
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin")
                 git(repo, "commit", "-q", "-m", "fixture")
 
                 staged = repo / staged_path
@@ -287,6 +295,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / ".githooks").mkdir(parents=True)
         (repo / ".github" / "ci").mkdir(parents=True)
         (repo / "reference" / "vespa").mkdir(parents=True)
+        (repo / "tools").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
         (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
@@ -306,6 +315,13 @@ class ExactHeadTests(unittest.TestCase):
             encoding="utf-8",
         )
         native_gate.chmod(0o755)
+        python_e2e = repo / "tools" / "run-python-native-e2e.sh"
+        python_e2e.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'python-native-e2e\\n' >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        python_e2e.chmod(0o755)
 
         source = repo / "core" / "native" / "vespa" / "moved.cc"
         source.parent.mkdir(parents=True)
