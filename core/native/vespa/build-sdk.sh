@@ -290,7 +290,7 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
         cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
     fi
 
-    SDK_BACKUP="${SDK_PACKAGE}.old.$"
+    SDK_BACKUP="${SDK_PACKAGE}.old.$$"
     if [ -e "$SDK_BACKUP" ]; then
         echo "adapter backup path already exists: $SDK_BACKUP" >&2
         exit 1
