@@ -40,10 +40,7 @@ fn context() -> IndexContext {
             field("rating", FieldKind::Float64),
             field("in_stock", FieldKind::Bool),
         ],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let document_fields = definition
@@ -109,10 +106,7 @@ fn highlighting_resolution_preserves_multi_valued_field_shape_for_the_adapter() 
     let definition = IndexDefinitionIr::new(
         None,
         vec![tags],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let context = IndexContext {
@@ -2318,10 +2312,7 @@ fn tensor_patch_resolution_preserves_tensor_values_and_rejects_scalars() {
             None,
             FieldCapabilities::new(false, false, true, false, false),
         )],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let context = IndexContext::from_definition_ir(definition);
@@ -2371,10 +2362,7 @@ fn schema_only_fields_are_query_visible_but_not_feedable() {
             None,
             FieldCapabilities::new(true, true, false, false, false),
         )],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     definition.set_schema_fields(vec![FieldIr::new(
@@ -2437,10 +2425,7 @@ fn imported_aliases_are_preserved_but_explicitly_not_query_bound() {
             None,
             FieldCapabilities::new(false, false, false, false, false),
         )],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     definition.set_imported_fields(vec![ImportedFieldDefinitionIr {
@@ -2469,10 +2454,7 @@ fn imported_aliases_are_preserved_but_explicitly_not_query_bound() {
             None,
             FieldCapabilities::new(true, true, false, false, false),
         )],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     invalid.set_schema_fields(vec![FieldIr::new(
