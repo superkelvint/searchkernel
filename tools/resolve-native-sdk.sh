@@ -119,7 +119,19 @@ validate_link_closure() {
                 resolved=$(readlink -f "$path" 2>/dev/null || true)
                 case "$resolved" in
                     "$sdk_lib"/*) ;;
-                    *) external+="$name => $path"
+                    *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
+                esac
+                ;;
+        esac
+    done <<<"$output"
+
+    if [[ -n "$external" ]]; then
+        echo "native SDK '$sdk' resolved private runtime dependencies outside its bundled lib directory:" >&2
+        printf '%s\n' "$external" >&2
+        return 1
+    fi
+}
+
 valid_object() {
     [[ -f "$OBJECT/include/searchkernel_vespa.h" &&
        -f "$OBJECT/manifest.json" &&
@@ -163,88 +175,6 @@ if [[ -e "$OBJECT" ]]; then
     QUARANTINED="$QUARANTINE_ROOT/$DIGEST.$(date +%s).$BASHPID"
     echo "native SDK cache object '$OBJECT' failed validation; quarantining and rebuilding under the cache lock" >&2
     mv "$OBJECT" "$QUARANTINED"
-fi
-
-rm -rf "$TMP" "$BUILD"
-BUILDER=${SK_NATIVE_CACHE_BUILDER:-$ROOT/core/native/vespa/build-sdk.sh}
-VESPA_ROOT="$VESPA_BUILD_ROOT" \
-SK_NATIVE_SDK="$TMP" \
-SK_NATIVE_BUILD_DIR="$BUILD" \
-SK_NATIVE_TARGET="$TARGET" \
-SK_NATIVE_REGENERATE_BINDINGS=0 \
-SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
-    "$BUILDER"
-
-grep -q "^sha256=$DIGEST$" "$TMP/native-build-fingerprint-v2.txt" || {
-    echo "built SDK fingerprint does not match requested cache key $DIGEST" >&2
-    exit 1
-}
-
-validate_link_closure "$TMP" || {
-    echo "refusing to publish native SDK with incomplete runtime dependency closure" >&2
-    exit 1
-}
-
-# Cache objects are immutable after publication. Build into private staging and
-# publish only into a previously absent fingerprint key; no process ever builds
-# directly inside a published object.
-chmod -R a-w "$TMP"
-mv "$TMP" "$OBJECT"
-printf '%s\n' "$OBJECT"
-\n' ;;
-                esac
-                ;;
-        esac
-    done <<<"$output"
-
-    if [[ -n "$external" ]]; then
-        echo "native SDK '$sdk' resolved private runtime dependencies outside its bundled lib directory:" >&2
-        printf '%s' "$external" >&2
-        return 1
-    fi
-}
-
-valid_object() {
-    [[ -f "$OBJECT/include/searchkernel_vespa.h" &&
-       -f "$OBJECT/manifest.json" &&
-       -f "$OBJECT/native-build-fingerprint-v2.txt" &&
-       -f "$OBJECT/lib/libsearchkernel_vespa.so" ]] || return 1
-    grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
-    validate_link_closure "$OBJECT"
-}
-
-if valid_object; then
-    printf '%s\n' "$OBJECT"
-    exit 0
-fi
-
-LOCK=$CACHE_ROOT/locks/$DIGEST.lock
-command -v flock >/dev/null 2>&1 || {
-    echo "native SDK cache requires flock for cross-worktree build serialization" >&2
-    exit 1
-}
-exec 9>"$LOCK"
-flock -w 300 9 || {
-    echo "timed out waiting for native SDK cache lock '$LOCK'" >&2
-    exit 1
-}
-
-TMP=$CACHE_ROOT/objects/.tmp-$DIGEST-$
-BUILD=$CACHE_ROOT/build/$DIGEST-$
-cleanup() {
-    rm -rf "$TMP" "$BUILD"
-}
-trap cleanup EXIT INT TERM
-
-if valid_object; then
-    printf '%s\n' "$OBJECT"
-    exit 0
-fi
-
-if [[ -e "$OBJECT" ]]; then
-    echo "immutable native SDK cache object '$OBJECT' exists but failed validation" >&2
-    echo "refusing to replace a published object; remove it explicitly after investigating cache integrity" >&2
-    exit 1
 fi
 
 rm -rf "$TMP" "$BUILD"
