@@ -157,7 +157,7 @@ impl BackendSession {
         drop(state);
         Ok(Operation {
             session: self,
-            backend,
+            backend: Some(backend),
         })
     }
 
@@ -176,17 +176,26 @@ impl Drop for BackendSession {
 
 struct Operation<'a> {
     session: &'a BackendSession,
-    backend: Arc<BackendHolder>,
+    backend: Option<Arc<BackendHolder>>,
 }
 
 impl Operation<'_> {
     fn backend(&self) -> &dyn Backend {
-        self.backend.backend.as_ref()
+        self.backend
+            .as_ref()
+            .expect("operation backend is present until drop")
+            .backend
+            .as_ref()
     }
 }
 
 impl Drop for Operation<'_> {
     fn drop(&mut self) {
+        // Release the operation's backend owner before publishing active == 0.
+        // Otherwise a closer can wake, take the session's owner, and race
+        // Arc::try_unwrap against this Operation's still-live backend field.
+        drop(self.backend.take());
+
         let mut state = self.session.lock_state();
         state.active = state
             .active
