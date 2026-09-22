@@ -63,9 +63,6 @@ pub fn index_definition(value: &IndexDefinitionIr) -> Value {
         name,
         fields,
         default_search_fields,
-        default_ranking,
-        default_prefix_policy,
-        default_typo_policy,
         properties,
         document_type,
         schema_inherits,
@@ -84,9 +81,6 @@ pub fn index_definition(value: &IndexDefinitionIr) -> Value {
         "name": name.as_ref().map(IndexName::as_str),
         "fields": fields.iter().map(field_json).collect::<Vec<_>>(),
         "default_search_fields": default_search_fields.iter().map(search_field_json).collect::<Vec<_>>(),
-        "default_ranking": ranking_policy_json(*default_ranking),
-        "default_prefix_policy": prefix_policy_json(*default_prefix_policy),
-        "default_typo_policy": typo_policy_json(*default_typo_policy),
         "properties": request_map_json(properties),
         "document_type": document_type,
         "schema_inherits": schema_inherits,
@@ -148,13 +142,6 @@ fn prefix_policy_json(value: PrefixPolicy) -> &'static str {
 fn typo_policy_json(value: TypoPolicy) -> &'static str {
     match value {
         TypoPolicy::Disabled => "disabled",
-    }
-}
-
-fn ranking_policy_json(value: RankingPolicyIr) -> &'static str {
-    match value {
-        RankingPolicyIr::DefaultRelevanceV1 => "default_relevance_v1",
-        RankingPolicyIr::Bm25 => "bm25",
     }
 }
 
@@ -1090,10 +1077,7 @@ mod tests {
         let mut index = IndexDefinitionIr::new(
             Some(IndexName::parse("products").unwrap()),
             vec![field.clone()],
-            Vec::new(),
-            RankingPolicyIr::DefaultRelevanceV1,
-            PrefixPolicy::Disabled,
-            TypoPolicy::Disabled,
+            Vec::new()
         )
         .unwrap();
         let base = index_definition(&index);
