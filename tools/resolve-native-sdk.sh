@@ -211,7 +211,7 @@ validate_link_closure() {
 
     while IFS= read -r library; do
         found=1
-        if ! output=$(env -u LD_LIBRARY_PATH -u LD_PRELOAD ldd "$library" 2>&1); then
+        if ! output=$(env -u LD_PRELOAD LD_LIBRARY_PATH="$sdk_lib" ldd "$library" 2>&1); then
             echo "native Vespa base '$sdk' runtime dependency closure probe failed for '$(basename "$library")'" >&2
             printf '%s\n' "$output" >&2
             return 1
