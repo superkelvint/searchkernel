@@ -7,8 +7,8 @@ BUILD_ENV=${SEARCHKERNEL_BUILD_ENV:-host}
 MODE=${1:-ensure}
 
 case "$MODE" in
-    ensure|path) ;;
-    *) echo "usage: tools/resolve-native-sdk.sh [ensure|path]" >&2; exit 2 ;;
+    ensure|path|vespa-root) ;;
+    *) echo "usage: tools/resolve-native-sdk.sh [ensure|path|vespa-root]" >&2; exit 2 ;;
 esac
 
 [[ -n "$TARGET" ]] || { echo "could not determine Rust target; set SK_NATIVE_TARGET" >&2; exit 1; }
@@ -77,6 +77,10 @@ CACHE_ROOT=$CACHE_BASE/$BUILD_ENV/$TARGET
 mkdir -p "$CACHE_ROOT/objects" "$CACHE_ROOT/locks" "$CACHE_ROOT/build"
 
 VESPA_BUILD_ROOT=$(resolve_vespa_root)
+if [[ "$MODE" == vespa-root ]]; then
+    printf '%s\n' "$VESPA_BUILD_ROOT"
+    exit 0
+fi
 FINGERPRINT=$(python3 "$ROOT/tools/native-build-fingerprint.py" \
     --root "$ROOT" \
     --vespa-root "$VESPA_BUILD_ROOT" \
