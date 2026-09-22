@@ -105,18 +105,18 @@ third=$(run_resolver "$worktree")
 [[ -z "$(find "$third" -perm /222 -print -quit)" ]]
 echo 'native SDK cache: native input change selected a distinct read-only object'
 
-# A published object whose required runtime dependency disappears must not be
-# treated as valid merely because its manifest, fingerprint, header, and adapter
-# library still exist.
+# A published object whose required runtime dependency disappears must be
+# quarantined and rebuilt automatically under the per-digest lock. Normal
+# consumers never mutate the published object in place and need no cache surgery.
 chmod u+w "$third/lib"
 rm "$third/lib/libsearchkernel_cache_fixture_dep.so"
 chmod a-w "$third/lib"
-if run_resolver "$worktree" >"$fixture/incomplete.out" 2>"$fixture/incomplete.err"; then
-    echo 'native SDK cache unexpectedly accepted an object with incomplete link closure' >&2
-    exit 1
-fi
-grep -q 'runtime dependency closure' "$fixture/incomplete.err"
-grep -q 'libsearchkernel_cache_fixture_dep.so.*not found' "$fixture/incomplete.err"
-echo 'native SDK cache: incomplete published runtime closure is rejected'
+healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err")
+[[ "$healed" == "$third" ]]
+[[ -f "$third/lib/libsearchkernel_cache_fixture_dep.so" ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
+grep -q 'quarantining and rebuilding under the cache lock' "$fixture/incomplete.err"
+[[ -n "$(find "$(dirname "$third")/../quarantine" -maxdepth 1 -type d -name "$(basename "$third").*" -print -quit 2>/dev/null)" ]]
+echo 'native SDK cache: incomplete published runtime closure self-healed automatically'
 
 echo 'native SDK cache regression PASS'
