@@ -628,40 +628,40 @@ pub(crate) fn validate_search_ranking_inputs(request: &SearchRequest) -> Result<
     let mut query_feature_names = BTreeSet::new();
     for (name, value) in &request.query_features {
         if name.is_empty() {
-            return Err(Error::message("query feature name must not be empty"));
+            return Err(Error::invalid("query feature name must not be empty"));
         }
         if name.len() > 256 {
-            return Err(Error::message("query feature name is too long"));
+            return Err(Error::invalid("query feature name is too long"));
         }
         if RESERVED_RANK_PROPERTIES.contains(&name.as_str()) {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "query feature '{name}' is reserved by Search Kernel"
             )));
         }
         if !value.is_finite() {
-            return Err(Error::message("query feature value must be finite"));
+            return Err(Error::invalid("query feature value must be finite"));
         }
         if !query_feature_names.insert(name) {
-            return Err(Error::message(format!("duplicate query feature '{name}'")));
+            return Err(Error::invalid(format!("duplicate query feature '{name}'")));
         }
     }
     let mut query_input_names = BTreeSet::new();
     for (name, input) in &request.query_inputs {
         if name.is_empty() {
-            return Err(Error::message("query input name must not be empty"));
+            return Err(Error::invalid("query input name must not be empty"));
         }
         if !query_input_names.insert(name) {
-            return Err(Error::message("duplicate query input"));
+            return Err(Error::invalid("duplicate query input"));
         }
         if query_feature_names.contains(name) {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "query input collision for key '{name}'"
             )));
         }
         match input {
-            QueryInput::Literal(tensor) => tensor.validate().map_err(Error::message)?,
+            QueryInput::Literal(tensor) => tensor.validate().map_err(Error::invalid)?,
             QueryInput::Expression(expression) if expression.trim().is_empty() => {
-                return Err(Error::message("query input expression must not be empty"));
+                return Err(Error::invalid("query input expression must not be empty"));
             }
             QueryInput::Expression(_) => {}
         }
@@ -670,23 +670,23 @@ pub(crate) fn validate_search_ranking_inputs(request: &SearchRequest) -> Result<
     let mut rank_property_names = BTreeSet::new();
     for (name, value) in &request.rank_properties {
         if name.is_empty() || name.len() > 256 {
-            return Err(Error::message(
+            return Err(Error::invalid(
                 "rank property name must not be empty or too long",
             ));
         }
         if RESERVED_RANK_PROPERTIES.contains(&name.as_str()) {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "rank property '{name}' is reserved by Search Kernel"
             )));
         }
         if value.is_empty() {
-            return Err(Error::message("rank property value must not be empty"));
+            return Err(Error::invalid("rank property value must not be empty"));
         }
         if !rank_property_names.insert(name) {
-            return Err(Error::message(format!("duplicate rank property '{name}'")));
+            return Err(Error::invalid(format!("duplicate rank property '{name}'")));
         }
         if query_feature_names.contains(name) || query_input_names.contains(name) {
-            return Err(Error::message(format!(
+            return Err(Error::invalid(format!(
                 "rank property collision for key '{name}'"
             )));
         }
