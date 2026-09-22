@@ -442,6 +442,64 @@ fn struct_fields(
         .collect()
 }
 
+fn lower_rank_profile_input_default(
+    profile: &searchkernel_ir::RankProfileDefinitionIr,
+    input: &searchkernel_ir::RankProfileInputIr,
+    type_spec: &str,
+) -> Result<Option<String>> {
+    let path = format!(
+        "rank_profiles.{}.inputs.{}.default_value",
+        profile.name, input.name
+    );
+    let searchkernel_ir::RequestValueIr::Tensor(tensor) = &input.default_value else {
+        return Err(PortableError::unsupported(
+            "rank_profile_input_default_not_supported",
+            Some(path),
+            "rank-profile input defaults must be tensor values",
+        ));
+    };
+    if tensor.type_spec != type_spec {
+        return Err(PortableError::invalid(
+            "rank_profile_input_default_type_mismatch",
+            Some(path),
+            format!(
+                "rank-profile input type is `{type_spec}` but the default is `{}`",
+                tensor.type_spec
+            ),
+        ));
+    }
+    let searchkernel_ir::RequestTensorPayloadIr::Dense(values) = &tensor.payload else {
+        return Err(PortableError::unsupported(
+            "rank_profile_input_default_not_supported",
+            Some(path),
+            "only dense tensor rank-profile input defaults are representable by the native schema model",
+        ));
+    };
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(PortableError::invalid(
+            "invalid_rank_profile_input_default",
+            Some(path),
+            "rank-profile input defaults must contain only finite tensor values",
+        ));
+    }
+    // The ergonomic Rust facade uses an empty dense tensor as its internal
+    // declaration-only placeholder. It means "no explicit default", not a
+    // Vespa tensor literal with zero cells; emitting the latter would change
+    // the established query_input() behavior.
+    if values.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "{}:[{}]",
+        tensor.type_spec,
+        values
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    )))
+}
+
 /// Lower the deliberately small portable rank-profile subset understood by
 /// the current native configuration compiler.  Ranking expressions remain
 /// opaque Vespa expressions; this function only wires their declared shape
@@ -571,19 +629,99 @@ fn lower_rank_profile(profile: &searchkernel_ir::RankProfileDefinitionIr) -> Res
                 "only dense tensor rank-profile inputs are representable by the native schema model",
             );
         };
-        if !matches!(
-            input.default_value,
-            searchkernel_ir::RequestValueIr::Tensor(_)
-        ) {
-            return unsupported(
-                "inputs",
-                "tensor rank-profile inputs require tensor default values",
-            );
-        }
-        native = native.query_input(input.name.clone(), type_spec.clone());
+        native = match lower_rank_profile_input_default(profile, input, type_spec)? {
+            Some(default_value) => native.query_input_with_default(
+                input.name.clone(),
+                type_spec.clone(),
+                default_value,
+            ),
+            None => native.query_input(input.name.clone(), type_spec.clone()),
+        };
     }
     for feature in &profile.match_features {
         native = native.match_feature(feature);
     }
     Ok(native)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compile_index_definition;
+    use searchkernel_ir::{
+        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr, PrimitiveDataTypeIr,
+        RankPhaseDefinitionIr, RankProfileDefinitionIr, RankProfileInputIr, RequestTensorIr,
+        RequestTensorPayloadIr, RequestValueIr,
+    };
+
+    fn field(name: &str) -> FieldName {
+        FieldName::parse(name).unwrap()
+    }
+
+    #[test]
+    fn rank_profile_input_defaults_reach_native_config_compilation() {
+        let mut configs = Vec::new();
+        for values in [vec![1.0, 0.0], vec![0.0, 1.0]] {
+            let mut definition = IndexDefinitionIr::new(
+                None,
+                vec![FieldIr::new(
+                    field("title"),
+                    DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                    None,
+                    FieldCapabilities::new(true, true, false, false, false),
+                )],
+                Vec::new(),
+            )
+            .unwrap();
+            definition.set_rank_profiles(vec![RankProfileDefinitionIr {
+                name: "with_default".to_owned(),
+                inherits: Vec::new(),
+                inputs: vec![RankProfileInputIr {
+                    name: "embedding".to_owned(),
+                    data_type: DataTypeIr::Tensor {
+                        type_spec: "tensor<float>(x[2])".to_owned(),
+                    },
+                    default_value: RequestValueIr::Tensor(RequestTensorIr {
+                        type_spec: "tensor<float>(x[2])".to_owned(),
+                        payload: RequestTensorPayloadIr::Dense(values),
+                    }),
+                }],
+                functions: Vec::new(),
+                first_phase: Some(RankPhaseDefinitionIr {
+                    expression: Some("query(embedding)".to_owned()),
+                    rerank_count: None,
+                    rank_score_drop_limit: None,
+                    properties: std::collections::BTreeMap::new(),
+                    total_rerank_count: None,
+                    keep_rank_count: None,
+                    total_keep_rank_count: None,
+                }),
+                second_phase: None,
+                global_phase: None,
+                rank_features: Vec::new(),
+                match_features: Vec::new(),
+                summary_features: Vec::new(),
+                sort_features: Vec::new(),
+                constants: Vec::new(),
+                onnx_models: Vec::new(),
+                rank_properties: std::collections::BTreeMap::new(),
+                strict: None,
+                properties: std::collections::BTreeMap::new(),
+            }]);
+
+            let root = std::env::temp_dir().join(format!(
+                "searchkernel-adapter-rank-profile-default-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&root);
+            compile_index_definition(&definition, &root)
+                .expect("dense rank-profile input default should be lowered");
+            let config = std::fs::read_to_string(root.join("rank-profiles.cfg")).unwrap();
+            assert!(config.contains("query(embedding)"));
+            configs.push(config);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+        assert_ne!(configs[0], configs[1]);
+        assert!(configs[0].contains("tensor<float>(x[2]):[1,0]"));
+        assert!(configs[1].contains("tensor<float>(x[2]):[0,1]"));
+    }
 }

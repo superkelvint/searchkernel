@@ -2733,6 +2733,13 @@ fn canonical_fixture_covers_the_complete_schema_surface() {
         complete.inputs[1].default_value,
         searchkernel_ir::RequestValueIr::Tensor(_)
     ));
+    assert_eq!(
+        complete.inputs[1].default_value,
+        searchkernel_ir::RequestValueIr::Tensor(searchkernel_ir::RequestTensorIr {
+            type_spec: "tensor<float>(x[3])".to_owned(),
+            payload: searchkernel_ir::RequestTensorPayloadIr::Dense(vec![1.0, 2.0, 3.0]),
+        })
+    );
     assert_eq!(complete.functions[0].inline, Some(true));
     assert_eq!(complete.functions[1].inline, Some(false));
     assert_eq!(complete.functions[2].inline, None);

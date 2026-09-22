@@ -204,7 +204,14 @@ pub struct RankProfile {
     second_phase: Option<String>,
     rerank_count: Option<u32>,
     match_features: Vec<String>,
-    query_inputs: Vec<(String, String)>,
+    query_inputs: Vec<RankProfileQueryInput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RankProfileQueryInput {
+    name: String,
+    type_spec: String,
+    default_value: Option<String>,
 }
 
 impl RankProfile {
@@ -243,7 +250,26 @@ impl RankProfile {
 
     /// Declare the tensor type of a query input used by this rank profile.
     pub fn query_input(mut self, name: impl Into<String>, type_spec: impl Into<String>) -> Self {
-        self.query_inputs.push((name.into(), type_spec.into()));
+        self.query_inputs.push(RankProfileQueryInput {
+            name: name.into(),
+            type_spec: type_spec.into(),
+            default_value: None,
+        });
+        self
+    }
+
+    /// Declare a tensor query input and its Vespa rank-profile default.
+    pub fn query_input_with_default(
+        mut self,
+        name: impl Into<String>,
+        type_spec: impl Into<String>,
+        default_value: impl Into<String>,
+    ) -> Self {
+        self.query_inputs.push(RankProfileQueryInput {
+            name: name.into(),
+            type_spec: type_spec.into(),
+            default_value: Some(default_value.into()),
+        });
         self
     }
 }
@@ -940,20 +966,34 @@ fn validate_schema(schema: &Schema) -> Result<()> {
             validate_rank_expression(expression, "second-phase ranking expression")?;
         }
         let mut query_inputs: Vec<&String> = Vec::with_capacity(profile.query_inputs.len());
-        for (name, type_spec) in &profile.query_inputs {
-            validate_name(name, "query input")?;
-            if type_spec.trim().is_empty() {
+        for input in &profile.query_inputs {
+            validate_name(&input.name, "query input")?;
+            if input.type_spec.trim().is_empty() {
                 return Err(Error::message(format!(
-                    "query input '{name}' must have a type spec"
+                    "query input '{}' must have a type spec",
+                    input.name
                 )));
             }
             if query_inputs
                 .iter()
-                .any(|input| input.as_str() == name.as_str())
+                .any(|name| name.as_str() == input.name.as_str())
             {
-                return Err(Error::message(format!("duplicate query input '{name}'")));
+                return Err(Error::message(format!(
+                    "duplicate query input '{}'",
+                    input.name
+                )));
             }
-            query_inputs.push(name);
+            if input
+                .default_value
+                .as_ref()
+                .is_some_and(|value| value.trim().is_empty())
+            {
+                return Err(Error::message(format!(
+                    "query input '{}' default value must not be empty",
+                    input.name
+                )));
+            }
+            query_inputs.push(&input.name);
         }
         let mut match_features: Vec<&String> = Vec::with_capacity(profile.match_features.len());
         for expression in &profile.match_features {
@@ -1071,10 +1111,15 @@ fn rank_profiles(schema: &Schema) -> String {
                 && is_simple_rank_expression(&profile.first_phase);
             let phase_property_count = profile.second_phase.as_ref().map_or(0, |_| 2)
                 + usize::from(profile.rerank_count.is_some());
+            let query_input_property_count = profile
+                .query_inputs
+                .iter()
+                .map(|input| 1 + usize::from(input.default_value.is_some()))
+                .sum::<usize>();
             let property_count = 1
                 + phase_property_count
                 + profile.match_features.len()
-                + profile.query_inputs.len()
+                + query_input_property_count
                 + usize::from(!direct_first_phase);
             output.push_str(&format!(
                 "rankprofile[{index}].name {}\nrankprofile[{index}].fef.property[{property_count}]\n",
@@ -1110,13 +1155,24 @@ fn rank_profiles(schema: &Schema) -> String {
                     quoted(feature)
                 ));
             }
-            for (query_index, (name, type_spec)) in profile.query_inputs.iter().enumerate() {
-                let property_index = feature_start + profile.match_features.len() + query_index;
+            let mut query_property_index = feature_start + profile.match_features.len();
+            for input in &profile.query_inputs {
+                let property_index = query_property_index;
                 output.push_str(&format!(
                     "rankprofile[{index}].fef.property[{property_index}].name \"vespa.type.query.{}\"\nrankprofile[{index}].fef.property[{property_index}].value {}\n",
-                    name,
-                    quoted(type_spec)
+                    input.name,
+                    quoted(&input.type_spec)
                 ));
+                query_property_index += 1;
+                if let Some(default_value) = &input.default_value {
+                    let property_index = query_property_index;
+                    output.push_str(&format!(
+                        "rankprofile[{index}].fef.property[{property_index}].name \"query({})\"\nrankprofile[{index}].fef.property[{property_index}].value {}\n",
+                        input.name,
+                        quoted(default_value)
+                    ));
+                    query_property_index += 1;
+                }
             }
             if !direct_first_phase {
                 let script_index = property_count - 1;
