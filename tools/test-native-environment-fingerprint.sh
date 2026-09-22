@@ -20,15 +20,19 @@ chmod +x "$temporary/compiler-a" "$temporary/compiler-b"
 fingerprint() {
     local extra_lib_dir=${3:-}
     local deps_root=${4:-}
+    local scope=${5:-full}
+    local adapter_flags=${6:-}
     env \
         SEARCHKERNEL_BUILD_ENV=regression \
         CXX="$1" \
         CXXFLAGS="${2:-}" \
+        SK_NATIVE_EXTRA_CXX_FLAGS="$adapter_flags" \
         VESPA_EXTRA_LIB_DIR="$extra_lib_dir" \
         VESPA_DEPS="$deps_root" \
         python3 "$root/tools/native-build-fingerprint.py" \
             --root "$root" \
             --target x86_64-unknown-linux-gnu \
+            --scope "$scope" \
             | sed -n '2p'
 }
 
@@ -43,7 +47,17 @@ echo 'native fingerprint: compiler identity changes the fingerprint'
 
 changed_flags=$(fingerprint "$temporary/compiler-a" '-DSEARCHKERNEL_NATIVE_FINGERPRINT_REGRESSION=1')
 [[ "$first" != "$changed_flags" ]]
-echo 'native fingerprint: relevant flags change the fingerprint'
+echo 'native fingerprint: relevant base/toolchain flags change the fingerprint'
+
+base_plain=$(fingerprint "$temporary/compiler-a" '' '' '' base '')
+base_adapter_flags=$(fingerprint "$temporary/compiler-a" '' '' '' base '-DADAPTER_ONLY_CHANGE=1')
+[[ "$base_plain" == "$base_adapter_flags" ]]
+echo 'native fingerprint: adapter-only flags do not perturb Vespa base identity'
+
+full_plain=$(fingerprint "$temporary/compiler-a" '' '' '' full '')
+full_adapter_flags=$(fingerprint "$temporary/compiler-a" '' '' '' full '-DADAPTER_ONLY_CHANGE=1')
+[[ "$full_plain" != "$full_adapter_flags" ]]
+echo 'native fingerprint: full-package provenance still tracks adapter-only flags'
 
 runtime_dir="$temporary/runtime"
 mkdir -p "$runtime_dir"
