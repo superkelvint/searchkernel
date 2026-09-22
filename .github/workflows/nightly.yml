@@ -60,7 +60,7 @@ jobs:
         run: bash .github/ci/check-python-workflows.sh
 
       - name: Install Python client/codegen dependencies
-        run: "$CI_PYTHON" -m pip install -e 'clients/python[codegen]'
+        run: $CI_PYTHON -m pip install -e 'clients/python[codegen]'
 
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4
@@ -93,7 +93,7 @@ jobs:
           "$CI_PYTHON" tools/test_check_client_contracts.py
 
       - name: Python client tests
-        run: "$CI_PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
+        run: $CI_PYTHON -m unittest discover -s clients/python/tests -p 'test_*.py'
 
   client-e2e:
     name: Client executable E2E evidence
@@ -130,7 +130,7 @@ jobs:
           npm ci --prefix clients/typescript
 
       - name: Run executable client contract evidence
-        run: "$CI_PYTHON" tools/check-client-contracts.py --run-e2e
+        run: $CI_PYTHON tools/check-client-contracts.py --run-e2e
 
   abi:
     name: ABI and native-cache regression tests
