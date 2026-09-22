@@ -71,13 +71,18 @@ read-only only after their runtime dependency closure validates. Cargo builds
 Search Kernel's adapter separately in `OUT_DIR` and probes the adapter against
 the immutable base.
 
-A cache miss acquires a per-digest lock, invokes
-`core/native/vespa/build-sdk.sh` into private staging, validates the resulting
-digest and runtime closure, marks the package read-only, and atomically
-publishes it. If a previously published object fails validation, the resolver
-rechecks it under the same lock, moves it to quarantine, rebuilds privately, and
-republishes a valid object at that key. No consumer mutates or recompiles inside
-a published object.
+Ordinary Cargo invokes only the resolver's read-only `path` mode. A missing,
+stale, or invalid base is therefore a prerequisite failure with the explicit
+`./dev native-sdk ensure` remediation; Cargo never populates or repairs the
+shared base.
+
+The explicit `ensure` bootstrap owns mutation. On a cache miss it acquires a
+per-digest lock, invokes `core/native/vespa/build-sdk.sh` into private staging,
+validates the resulting digest and runtime closure, marks the package read-only,
+and atomically publishes it. If a previously published object fails validation,
+`ensure` rechecks it under the same lock, quarantines it, rebuilds privately,
+and republishes a valid object at that key. No consumer mutates or recompiles
+inside a published object.
 
 The Rust bindings compile/link a probe that calls `sk_native_abi_version()`
 through the local adapter while resolving its dependencies from the shared base.

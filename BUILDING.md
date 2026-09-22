@@ -63,12 +63,13 @@ environment failure:
 The normal host workflow uses `target/host` automatically through
 `.cargo/config.toml`. Ordinary `./dev check-fast`, standalone Rust API
 tests, and non-native workspace checks do not populate the Vespa SDK cache.
-Before linking a native target, Cargo resolves the matching immutable Vespa
-base automatically, then builds only Search Kernel's `abi.cc` adapter into that
-Cargo target's `OUT_DIR`. `./dev native-sdk ensure` may be used to populate
-the shared Vespa base explicitly. `./dev native-sdk path` is diagnostic-only:
-it prints an existing matching base object and reports a cache miss without
-building one.
+Before the first native link (and after a declared Vespa-base input changes),
+bootstrap or repair the immutable base explicitly with `./dev native-sdk ensure`.
+Ordinary Cargo builds resolve that base through the read-only `path` lookup and
+build only Search Kernel's `abi.cc` adapter into the Cargo target's `OUT_DIR`.
+If the base is missing or incompatible, Cargo fails with the
+`./dev native-sdk ensure` remediation; Cargo never builds or repairs the shared
+Vespa base. `./dev native-sdk path` is diagnostic-only and never mutates it.
 
 A fresh or isolated worktree is not expected to already contain a built
 `searchkerneld` binary. If `./dev doctor` reports it as informational,
@@ -189,8 +190,8 @@ python3 -m pip install -e 'clients/python[codegen]'
 
 ## Vespa base and adapter builds
 
-Normal `cargo build -p searchkerneld` is the preferred entry point. The
-equivalent explicit cache commands are:
+Bootstrap or repair the immutable Vespa base explicitly before the first native
+build (or after a declared base-input change):
 
 ```bash
 ./dev native-sdk ensure
@@ -215,7 +216,7 @@ SK_NATIVE_BUILD_DIR="$PWD/target/host/native-sdk-build" \
 ```
 
 The selected Vespa checkout must have the configured CMake outputs and
-dependency installation expected by `build-sdk.sh`. The shared resolver builds
+dependency installation expected by `build-sdk.sh`. The explicit `./dev native-sdk ensure` bootstrap builds
 only the immutable Vespa/runtime base, serializes builders per base fingerprint,
 validates runtime closure, marks the completed base read-only, and publishes it
 atomically. Ordinary Cargo then compiles/relinks only Search Kernel's adapter
