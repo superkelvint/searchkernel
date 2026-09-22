@@ -356,7 +356,7 @@ pub(super) fn presentation_offset<'a>(
     let projection = projection_offset(builder, &request.projection);
     let highlighting = match &request.highlighting {
         ir::HighlightingIr::Disabled => None,
-        ir::HighlightingIr::Requested { fields } => Some(highlighting_offset(builder, fields)),
+        ir::HighlightingIr::Requested { fields, .. } => Some(highlighting_offset(builder, fields)),
     };
     let summary = request
         .presentation
