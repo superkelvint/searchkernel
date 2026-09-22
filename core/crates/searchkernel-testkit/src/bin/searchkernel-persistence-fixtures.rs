@@ -209,7 +209,7 @@ fn legacy_definition() -> serde_json::Value {
         "fields": [{
             "name": "attr1",
             "kind": "Int64",
-            "stored": true,
+            "stored": false,
             "searchable": false,
             "filterable": true,
             "sortable": true,
