@@ -923,7 +923,6 @@ mod scripted_model {
 
 #[cfg(feature = "native")]
 mod native_model {
-    use super::super::*;
     use crate::{ErrorCode, Field, Index, IndexDefinition};
     use serde_json::json;
 
