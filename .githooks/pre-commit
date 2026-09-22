@@ -28,26 +28,7 @@ if grep -qx 'native=true' "$native_selection"; then
 fi
 
 python_native_e2e_required=false
-if grep -Eq '^(rust|python|native)=true
-echo "pre-commit: checking rustfmt"
-cargo fmt --all --check
-
-echo "pre-commit: running clippy"
-cargo clippy --workspace --all-targets --no-default-features -- -D warnings
-
-echo "pre-commit: running workspace unit tests"
-cargo test --workspace --all-targets --no-default-features
-
-if [[ "$native_required" == true ]]; then
-    echo "pre-commit: native-sensitive changes detected; running local real-Vespa verification"
-    ./reference/vespa/verify-through.sh i
-fi
-
-if [[ "$python_native_e2e_required" == true ]]; then
-    echo "pre-commit: code-sensitive changes detected; running Python native gRPC E2E"
-    bash tools/run-python-native-e2e.sh
-fi
- "$native_selection"; then
+if grep -Eq '^(rust|python|native)=true$' "$native_selection"; then
     # The real Python gRPC E2E crosses the public Python client, daemon,
     # dispatcher/IR, and native engine. Keep this deliberately broader than the
     # native-only lane so backend and client changes cannot bypass end-to-end
@@ -75,4 +56,9 @@ cargo test --workspace --all-targets --no-default-features
 if [[ "$native_required" == true ]]; then
     echo "pre-commit: native-sensitive changes detected; running local real-Vespa verification"
     ./reference/vespa/verify-through.sh i
+fi
+
+if [[ "$python_native_e2e_required" == true ]]; then
+    echo "pre-commit: code-sensitive changes detected; running Python native gRPC E2E"
+    bash tools/run-python-native-e2e.sh
 fi
