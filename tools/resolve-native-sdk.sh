@@ -92,13 +92,8 @@ OBJECT=$CACHE_ROOT/objects/$DIGEST
 
 validate_link_closure() {
     local sdk=$1
-    local library
-    local sdk_lib output missing external line name path resolved
-    library=$(find "$sdk/lib" -maxdepth 1 -type f -name 'libvespalib.so*' -print -quit)
-    [[ -n "$library" ]] || {
-        echo "native Vespa base '$sdk' does not contain libvespalib" >&2
-        return 1
-    }
+    local sdk_lib library output missing external line name path resolved
+    local found=0
 
     command -v ldd >/dev/null 2>&1 || {
         echo "native SDK runtime dependency closure validation requires ldd" >&2
@@ -106,20 +101,8 @@ validate_link_closure() {
     }
 
     sdk_lib=$(cd -- "$sdk/lib" && pwd -P)
-    if ! output=$(env -u LD_LIBRARY_PATH -u LD_PRELOAD ldd "$library" 2>&1); then
-        echo "native SDK '$sdk' runtime dependency closure probe failed" >&2
-        printf '%s\n' "$output" >&2
-        return 1
-    fi
-
-    missing=$(printf '%s\n' "$output" | sed -n '/=> not found/p')
-    if [[ -n "$missing" ]]; then
-        echo "native SDK '$sdk' has incomplete runtime dependency closure:" >&2
-        printf '%s\n' "$missing" >&2
-        return 1
-    fi
-
     external=
+
     while IFS= read -r path; do
         resolved=$(readlink -f "$path" 2>/dev/null || true)
         case "$resolved" in
@@ -128,33 +111,54 @@ validate_link_closure() {
         esac
     done < <(find "$sdk_lib" -maxdepth 1 -type l -print)
 
-    while IFS= read -r line; do
-        name=$(printf '%s\n' "$line" | awk '{print $1}')
-        path=$(printf '%s\n' "$line" | awk '$2 == "=>" {print $3}')
-        [[ -n "$path" && "$path" != "not" ]] || continue
-
-        if [[ -e "$sdk_lib/$name" || -L "$sdk_lib/$name" ]]; then
-            resolved=$(readlink -f "$path" 2>/dev/null || true)
-            case "$resolved" in
-                "$sdk_lib"/*) ;;
-                *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
-            esac
-            continue
+    while IFS= read -r library; do
+        found=1
+        if ! output=$(env -u LD_LIBRARY_PATH -u LD_PRELOAD ldd "$library" 2>&1); then
+            echo "native Vespa base '$sdk' runtime dependency closure probe failed for '$(basename "$library")'" >&2
+            printf '%s\n' "$output" >&2
+            return 1
         fi
 
-        case "$name" in
-            libvespa*.so*|libLLVM*.so*|libffi.so*|libxxhash.so*|libsearchkernel_*.so*)
+        missing=$(printf '%s\n' "$output" | sed -n '/=> not found/p')
+        if [[ -n "$missing" ]]; then
+            echo "native Vespa base '$sdk' has incomplete runtime dependency closure for '$(basename "$library")':" >&2
+            printf '%s\n' "$missing" >&2
+            return 1
+        fi
+
+        while IFS= read -r line; do
+            name=$(printf '%s\n' "$line" | awk '{print $1}')
+            path=$(printf '%s\n' "$line" | awk '$2 == "=>" {print $3}')
+            [[ -n "$path" && "$path" != "not" ]] || continue
+
+            if [[ -e "$sdk_lib/$name" || -L "$sdk_lib/$name" ]]; then
                 resolved=$(readlink -f "$path" 2>/dev/null || true)
                 case "$resolved" in
                     "$sdk_lib"/*) ;;
                     *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
                 esac
-                ;;
-        esac
-    done <<<"$output"
+                continue
+            fi
+
+            case "$name" in
+                libvespa*.so*|libLLVM*.so*|libffi.so*|libxxhash.so*)
+                    resolved=$(readlink -f "$path" 2>/dev/null || true)
+                    case "$resolved" in
+                        "$sdk_lib"/*) ;;
+                        *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
+                    esac
+                    ;;
+            esac
+        done <<<"$output"
+    done < <(find "$sdk_lib" -maxdepth 1 -type f -name 'libvespa*.so*' -print)
+
+    if [[ "$found" != 1 ]]; then
+        echo "native Vespa base '$sdk' does not contain Vespa shared libraries" >&2
+        return 1
+    fi
 
     if [[ -n "$external" ]]; then
-        echo "native SDK '$sdk' resolved private runtime dependencies outside its bundled lib directory:" >&2
+        echo "native Vespa base '$sdk' resolved private runtime dependencies outside its bundled lib directory:" >&2
         printf '%s\n' "$external" >&2
         return 1
     fi
