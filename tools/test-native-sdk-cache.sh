@@ -155,7 +155,11 @@ grep -q 'no compatible full SDK was available' "$fixture/stale.err"
 [[ ! -e "$common/sdk-cache-build-count" ]]
 mv "$fixture/legacy-manifest.good" "$legacy_sdk/manifest.json"
 
-first=$(run_resolver "$repo" 2>"$fixture/bootstrap.err")
+if ! first=$(run_resolver "$repo" 2>"$fixture/bootstrap.err"); then
+    echo 'native SDK cache bootstrap failed:' >&2
+    cat "$fixture/bootstrap.err" >&2
+    exit 1
+fi
 [[ -d "$first" ]]
 grep -q 'using Vespa shared libraries from compatible full SDK' "$fixture/bootstrap.err"
 [[ -s "$first/lib/libvespalib.so" ]]
