@@ -26,9 +26,22 @@ cat >"$repo/tools/fake-sdk-builder.sh" <<'EOF'
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 sdk=$SK_NATIVE_SDK
-mkdir -p "$sdk/include" "$sdk/lib" "$sdk/share"
+mkdir -p "$sdk/include" "$sdk/lib" "$sdk/share" "$SK_NATIVE_BUILD_DIR"
 cp "$root/core/native/vespa/searchkernel_vespa.h" "$sdk/include/"
-printf 'fake-sdk\n' >"$sdk/lib/libsearchkernel_vespa.so"
+cat >"$SK_NATIVE_BUILD_DIR/cache_fixture_dep.c" <<'C'
+int searchkernel_cache_fixture_dep(void) { return 1; }
+C
+cat >"$SK_NATIVE_BUILD_DIR/cache_fixture_adapter.c" <<'C'
+extern int searchkernel_cache_fixture_dep(void);
+int sk_native_abi_version(void) { return searchkernel_cache_fixture_dep(); }
+C
+cc -shared -fPIC "$SK_NATIVE_BUILD_DIR/cache_fixture_dep.c" \
+    -Wl,-soname,libsearchkernel_cache_fixture_dep.so \
+    -o "$sdk/lib/libsearchkernel_cache_fixture_dep.so"
+cc -shared -fPIC "$SK_NATIVE_BUILD_DIR/cache_fixture_adapter.c" \
+    -L"$sdk/lib" -Wl,-rpath,'$ORIGIN' \
+    -lsearchkernel_cache_fixture_dep \
+    -o "$sdk/lib/libsearchkernel_vespa.so"
 printf '{}\n' >"$sdk/manifest.json"
 python3 "$root/tools/native-build-fingerprint.py" \
     --root "$root" \
@@ -91,5 +104,19 @@ third=$(run_resolver "$worktree")
 [[ -z "$(find "$first" -perm /222 -print -quit)" ]]
 [[ -z "$(find "$third" -perm /222 -print -quit)" ]]
 echo 'native SDK cache: native input change selected a distinct read-only object'
+
+# A published object whose required runtime dependency disappears must not be
+# treated as valid merely because its manifest, fingerprint, header, and adapter
+# library still exist.
+chmod u+w "$third/lib"
+rm "$third/lib/libsearchkernel_cache_fixture_dep.so"
+chmod a-w "$third/lib"
+if run_resolver "$worktree" >"$fixture/incomplete.out" 2>"$fixture/incomplete.err"; then
+    echo 'native SDK cache unexpectedly accepted an object with incomplete link closure' >&2
+    exit 1
+fi
+grep -q 'runtime dependency closure' "$fixture/incomplete.err"
+grep -q 'libsearchkernel_cache_fixture_dep.so.*not found' "$fixture/incomplete.err"
+echo 'native SDK cache: incomplete published runtime closure is rejected'
 
 echo 'native SDK cache regression PASS'

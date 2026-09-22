@@ -280,15 +280,17 @@ The important distinction is:
     proves prerequisites, SDK presence, and ABI/provenance checks
 
 ./dev native-sdk ensure
-    resolves or builds the content-addressed SDK object
+    resolves or builds the content-addressed SDK object and rejects unresolved
+    bundled runtime dependencies before publishing or reusing it
 
 Cargo searchkernel-vespa-bindings link probe
-    proves that the published SDK is actually linkable by a consumer
+    independently proves that the published SDK can satisfy a real consumer link
 ```
 
-A cache object may therefore exist and pass its identity checks while still
-being unusable if its `lib/` directory is missing transitive Vespa shared
-libraries. A correctly published SDK is expected to bundle the production
+Older cache objects created before link-closure validation may exist with valid
+identity metadata while still being unusable if their `lib/` directory is
+missing transitive Vespa shared libraries. The resolver now rejects such objects
+before returning them. A correctly published SDK is expected to bundle the production
 Vespa and third-party `.so` closure required by
 `libsearchkernel_vespa.so`; consumers should not need a Vespa source-tree
 library path at runtime.
