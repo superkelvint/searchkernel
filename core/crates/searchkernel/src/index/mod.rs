@@ -4,8 +4,9 @@ use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
 use crate::result;
 use crate::schema::{
-    analyzer_to_ir, field_to_rust_input, Analyzer, ConstantDefinition, Field, FieldCapabilities,
-    IndexDefinition, RankProfile, SearchField,
+    analyzer_to_ir, field_to_rust_input, Analyzer, ConstantDefinition, DocumentSummary, Field,
+    FieldCapabilities, FieldSet, ImportedField, IndexDefinition, NamedStruct, OnnxModel,
+    RankFunction, RankPhase, RankProfile, RankProfileInput, SearchField, StructFieldConfig,
 };
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
@@ -583,6 +584,9 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                 facetable: field.facetable,
                 analyzer,
                 distance_metric: field.distance_metric.map(|value| match value {
+                    crate::schema::DistanceMetric::Unspecified => {
+                        searchkernel_ir::DistanceMetricIr::Unspecified
+                    }
                     crate::schema::DistanceMetric::Euclidean => {
                         searchkernel_ir::DistanceMetricIr::Euclidean
                     }
@@ -654,22 +658,19 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
     )
     .map_err(Error::from_ir)?;
 
-    // A described definition retains the complete canonical IR publicly on the
-    // definition and on each nested value. Resolve the ergonomic projection
-    // as a validation/fallback path, then restore those public canonical
-    // values so cloning a described Field or RankProfile cannot discard
-    // schema members that the builders do not model individually.
-    if let Some(canonical) = &definition.canonical {
-        resolved = canonical.clone();
-    }
-
     resolved.set_document_metadata(
         definition.document_type.clone(),
         definition.schema_inherits.clone(),
         definition.document_inherits.clone(),
     );
-    resolved.set_structs(definition.structs.clone());
-    resolved.set_properties(definition.properties.clone());
+    resolved.set_structs(definition.structs.iter().map(NamedStruct::to_ir).collect());
+    resolved.set_properties(
+        definition
+            .properties
+            .iter()
+            .map(|(key, value)| (key.clone(), value.to_ir()))
+            .collect(),
+    );
 
     let canonical_fields = definition
         .fields
@@ -691,31 +692,39 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         .iter()
         .enumerate()
         .map(|(index, profile)| {
-            // Public phase and metadata members are authoritative. Overlay
-            // them on the canonical profile while retaining richer,
-            // out-of-scope state from the resolver.
-            let mut canonical = profile
-                .canonical
-                .clone()
-                .or_else(|| resolved.rank_profiles().get(index).cloned())
+            // Public rank-profile state is authoritative. The resolver still
+            // supplies validation and defaults for ergonomic builders, but it
+            // must not recover omitted members from a retained sidecar.
+            let mut canonical = resolved
+                .rank_profiles()
+                .get(index)
+                .cloned()
                 .ok_or_else(|| {
                     Error::infrastructure("resolved definition lost a public rank profile")
                 })?;
-            canonical.first_phase = profile.first_phase.clone();
-            canonical.second_phase = profile.second_phase.clone();
-            canonical.global_phase = profile.global_phase.clone();
+            canonical.first_phase = profile.first_phase.as_ref().map(RankPhase::to_ir);
+            canonical.second_phase = profile.second_phase.as_ref().map(RankPhase::to_ir);
+            canonical.global_phase = profile.global_phase.as_ref().map(RankPhase::to_ir);
             canonical.rank_features = profile.rank_features.clone();
             canonical.match_features = profile.match_features.clone();
             canonical.summary_features = profile.summary_features.clone();
             canonical.sort_features = profile.sort_features.clone();
             canonical.rank_properties = profile.rank_properties.clone();
             canonical.strict = profile.strict;
-            canonical.properties = profile.properties.clone();
+            canonical.properties = profile
+                .properties
+                .iter()
+                .map(|(key, value)| (key.clone(), value.to_ir()))
+                .collect();
             canonical.inherits = profile.inherits.clone();
-            canonical.functions = profile.functions.clone();
-            canonical.inputs = profile.inputs.clone();
-            canonical.constants = profile.constants.clone();
-            canonical.onnx_models = profile.onnx_models.clone();
+            canonical.functions = profile.functions.iter().map(RankFunction::to_ir).collect();
+            canonical.inputs = profile.inputs.iter().map(RankProfileInput::to_ir).collect();
+            canonical.constants = profile
+                .constants
+                .iter()
+                .map(ConstantDefinition::to_ir)
+                .collect();
+            canonical.onnx_models = profile.onnx_models.iter().map(OnnxModel::to_ir).collect();
             Ok(canonical)
         })
         .collect::<Result<Vec<_>>>()?;
@@ -730,24 +739,47 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             .map(ConstantDefinition::to_ir)
             .collect(),
     );
-    resolved.set_fieldsets(definition.fieldsets.clone());
-    resolved.set_onnx_models(definition.onnx_models.clone());
-    resolved.set_imported_fields(definition.imported_fields.clone());
-    resolved.set_document_summaries(definition.document_summaries.clone());
+    resolved.set_fieldsets(
+        definition
+            .fieldsets
+            .iter()
+            .map(FieldSet::to_ir)
+            .collect::<Result<Vec<_>>>()?,
+    );
+    resolved.set_onnx_models(
+        definition
+            .onnx_models
+            .iter()
+            .map(OnnxModel::to_ir)
+            .collect(),
+    );
+    resolved.set_imported_fields(
+        definition
+            .imported_fields
+            .iter()
+            .map(ImportedField::to_ir)
+            .collect::<Result<Vec<_>>>()?,
+    );
+    resolved.set_document_summaries(
+        definition
+            .document_summaries
+            .iter()
+            .map(DocumentSummary::to_ir)
+            .collect(),
+    );
 
     Ok(resolved)
 }
 
 fn field_to_ir_from_public(field: &Field) -> Result<searchkernel_ir::FieldIr> {
     let input = field_to_rust_input(field)?;
-    let definition = searchkernel_ir::resolve_rust_index_definition(
-        searchkernel_ir::RustIndexDefinitionInput {
+    let definition =
+        searchkernel_ir::resolve_rust_index_definition(searchkernel_ir::RustIndexDefinitionInput {
             name: None,
             fields: vec![input],
             default_search_fields: None,
-        },
-    )
-    .map_err(Error::from_ir)?;
+        })
+        .map_err(Error::from_ir)?;
     let mut resolved = definition
         .fields()
         .first()
@@ -765,8 +797,14 @@ fn field_to_ir_from_public(field: &Field) -> Result<searchkernel_ir::FieldIr> {
     // fields then overlay their complete, already-resolved public members.
     resolved.set_index_config(field.index_config.clone());
     resolved.set_attribute_config(field.attribute_config.clone());
-    resolved.set_data_type(field.data_type.clone());
-    resolved.set_struct_fields(field.struct_fields.clone());
+    resolved.set_data_type(field.data_type.to_ir());
+    resolved.set_struct_fields(
+        field
+            .struct_fields
+            .iter()
+            .map(StructFieldConfig::to_ir)
+            .collect(),
+    );
     resolved.set_summary_config(field.summary_config.clone());
     resolved.set_indexing_script(field.indexing_script.clone());
     resolved.set_properties(field.properties.clone());
@@ -807,8 +845,12 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
     }
     value.analyzer_config = field.analyzer().cloned();
     value.matching_config = field.matching().cloned();
-    value.data_type = field.data_type().clone();
-    value.struct_fields = field.struct_fields().to_vec();
+    value.data_type = crate::schema::DataType::from_ir(field.data_type());
+    value.struct_fields = field
+        .struct_fields()
+        .iter()
+        .map(StructFieldConfig::from_ir)
+        .collect();
     value.summary_config = field.summary().cloned();
     value.indexing_script = field.indexing_script().map(ToOwned::to_owned);
     value.properties = field.properties().clone();
@@ -871,7 +913,11 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
 
 fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {
     let mut result = IndexDefinition::new();
-    result.properties = definition.properties().clone();
+    result.properties = definition
+        .properties()
+        .iter()
+        .map(|(key, value)| (key.clone(), crate::schema::SchemaValue::from_ir(value)))
+        .collect();
     if let Some(name) = definition.name() {
         result = result.name(name.as_str());
     }
@@ -881,13 +927,11 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         let described = result.fields.last_mut().expect("field was just appended");
         described.index_config = field.index().cloned();
         described.attribute_config = field.attribute().cloned();
-        described.canonical = Some(field.clone());
     }
     for field in definition.schema_fields() {
         let mut value = field_from_ir(field);
         value.index_config = field.index().cloned();
         value.attribute_config = field.attribute().cloned();
-        value.canonical = Some(field.clone());
         result.schema_fields.push(value);
     }
     result = result.default_search_fields(
@@ -913,9 +957,9 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
                 value = value.rerank_count(rerank_count);
             }
         }
-        value.first_phase = profile.first_phase.clone();
-        value.second_phase = profile.second_phase.clone();
-        value.global_phase = profile.global_phase.clone();
+        value.first_phase = profile.first_phase.as_ref().map(RankPhase::from_ir);
+        value.second_phase = profile.second_phase.as_ref().map(RankPhase::from_ir);
+        value.global_phase = profile.global_phase.as_ref().map(RankPhase::from_ir);
         for feature in &profile.match_features {
             value = value.match_feature(feature.clone());
         }
@@ -929,32 +973,66 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         value.sort_features = profile.sort_features.clone();
         value.rank_properties = profile.rank_properties.clone();
         value.strict = profile.strict;
-        value.properties = profile.properties.clone();
+        value.properties = profile
+            .properties
+            .iter()
+            .map(|(key, value)| (key.clone(), crate::schema::SchemaValue::from_ir(value)))
+            .collect();
         result = result.rank_profile(value);
         let described = result
             .rank_profiles
             .last_mut()
             .expect("rank profile was just appended");
         described.inherits = profile.inherits.clone();
-        described.functions = profile.functions.clone();
-        described.inputs = profile.inputs.clone();
-        described.constants = profile.constants.clone();
-        described.onnx_models = profile.onnx_models.clone();
-        described.canonical = Some(profile.clone());
+        described.functions = profile
+            .functions
+            .iter()
+            .map(RankFunction::from_ir)
+            .collect();
+        described.inputs = profile
+            .inputs
+            .iter()
+            .map(RankProfileInput::from_ir)
+            .collect();
+        described.constants = profile
+            .constants
+            .iter()
+            .map(ConstantDefinition::from_ir)
+            .collect();
+        described.onnx_models = profile.onnx_models.iter().map(OnnxModel::from_ir).collect();
     }
     result.constants = definition
         .constants()
         .iter()
         .map(ConstantDefinition::from_ir)
         .collect();
-    result.fieldsets = definition.fieldsets().to_vec();
-    result.onnx_models = definition.onnx_models().to_vec();
-    result.imported_fields = definition.imported_fields().to_vec();
-    result.document_summaries = definition.document_summaries().to_vec();
+    result.fieldsets = definition
+        .fieldsets()
+        .iter()
+        .map(FieldSet::from_ir)
+        .collect();
+    result.onnx_models = definition
+        .onnx_models()
+        .iter()
+        .map(OnnxModel::from_ir)
+        .collect();
+    result.imported_fields = definition
+        .imported_fields()
+        .iter()
+        .map(ImportedField::from_ir)
+        .collect();
+    result.document_summaries = definition
+        .document_summaries()
+        .iter()
+        .map(DocumentSummary::from_ir)
+        .collect();
     result.document_type = definition.document_type().map(str::to_owned);
     result.schema_inherits = definition.schema_inherits().to_vec();
     result.document_inherits = definition.document_inherits().to_vec();
-    result.structs = definition.structs().to_vec();
-    result.canonical = Some(definition.clone());
+    result.structs = definition
+        .structs()
+        .iter()
+        .map(NamedStruct::from_ir)
+        .collect();
     result
 }

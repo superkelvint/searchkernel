@@ -3,9 +3,834 @@ use std::fmt;
 
 use crate::error::{Error, Result};
 
+/// Portable schema values owned by the product-facing Rust API.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SchemaValue {
+    Null,
+    Bool(bool),
+    Int64(i64),
+    UInt64(u64),
+    Float64(f64),
+    NonFiniteFloat(SchemaNonFiniteFloat),
+    String(String),
+    Bytes(Vec<u8>),
+    List(Vec<SchemaValue>),
+    Object(BTreeMap<String, SchemaValue>),
+    Tensor(SchemaTensor),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SchemaNonFiniteFloat {
+    NaN,
+    PositiveInfinity,
+    NegativeInfinity,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SchemaTensor {
+    pub type_spec: String,
+    pub payload: SchemaTensorPayload,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SchemaTensorPayload {
+    Dense(Vec<f64>),
+    Sparse(Vec<SchemaTensorCell>),
+    Mixed(Vec<SchemaTensorBlock>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SchemaTensorCell {
+    pub address: BTreeMap<String, String>,
+    pub value: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SchemaTensorBlock {
+    pub address: BTreeMap<String, String>,
+    pub values: Vec<f64>,
+}
+
+pub type SchemaProperties = BTreeMap<String, SchemaValue>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PrimitiveDataType {
+    String,
+    Bool,
+    Byte,
+    Int32,
+    Int64,
+    Float32,
+    Float64,
+    Raw,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DataType {
+    Primitive(PrimitiveDataType),
+    Tensor {
+        type_spec: String,
+    },
+    Array(Box<DataType>),
+    Map {
+        key_type: Box<DataType>,
+        value_type: Box<DataType>,
+    },
+    WeightedSet(Box<DataType>),
+    Struct {
+        fields: Vec<SchemaStructField>,
+    },
+    StructReference {
+        name: String,
+    },
+    Predicate,
+    Position,
+    Reference {
+        document_type: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SchemaStructField {
+    pub name: String,
+    pub data_type: DataType,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatchingMode {
+    Unspecified,
+    Text,
+    Word,
+    Exact,
+    Gram,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnalyzerConfig {
+    pub name: String,
+    pub version: u32,
+    pub options: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchingConfig {
+    pub mode: MatchingMode,
+    pub options: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexConfig {
+    pub enabled: Option<bool>,
+    pub hnsw: Option<HnswConfig>,
+    pub options: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HnswConfig {
+    pub max_links_per_node: Option<u32>,
+    pub neighbors_to_explore_at_insert: Option<u32>,
+    pub options: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttributeConfig {
+    pub enabled: Option<bool>,
+    pub fast_search: Option<bool>,
+    pub fast_access: Option<bool>,
+    pub distance_metric: DistanceMetric,
+    pub options: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SummaryConfig {
+    pub enabled: Option<bool>,
+    pub options: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructFieldConfig {
+    pub path: String,
+    pub indexing_script: Option<String>,
+    pub matching: Option<MatchingConfig>,
+    pub index: Option<IndexConfig>,
+    pub attribute: Option<AttributeConfig>,
+    pub summary: Option<SummaryConfig>,
+    pub rank: Option<String>,
+    pub query_commands: Vec<String>,
+    pub properties: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankPhase {
+    pub expression: Option<String>,
+    pub rerank_count: Option<u32>,
+    pub rank_score_drop_limit: Option<f64>,
+    pub properties: SchemaProperties,
+    pub total_rerank_count: Option<u32>,
+    pub keep_rank_count: Option<u32>,
+    pub total_keep_rank_count: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankProfileInput {
+    pub name: String,
+    pub data_type: DataType,
+    pub default_value: SchemaValue,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankFunction {
+    pub name: String,
+    pub arguments: Vec<String>,
+    pub expression: String,
+    pub inline: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OnnxModel {
+    pub name: String,
+    pub file: String,
+    pub inputs: BTreeMap<String, String>,
+    pub outputs: BTreeMap<String, String>,
+    pub gpu_device: Option<u32>,
+    pub intraop_threads: Option<u32>,
+    pub interop_threads: Option<u32>,
+    pub properties: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NamedStruct {
+    pub name: String,
+    pub fields: Vec<SchemaStructField>,
+    pub properties: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldSet {
+    pub name: String,
+    pub fields: Vec<String>,
+    pub matching: Option<MatchingConfig>,
+    pub query_commands: Vec<String>,
+    pub properties: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImportedField {
+    pub reference_field: String,
+    pub target_field: String,
+    pub alias: String,
+    pub properties: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentSummaryField {
+    pub name: String,
+    pub source: String,
+    pub data_type: DataType,
+    pub struct_fields: Vec<String>,
+    pub properties: SchemaProperties,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentSummary {
+    pub name: String,
+    pub inherits: Vec<String>,
+    pub fields: Vec<DocumentSummaryField>,
+    pub from_disk: Option<bool>,
+    pub omit_summary_features: Option<bool>,
+    pub properties: SchemaProperties,
+}
+
+impl SchemaValue {
+    pub(crate) fn from_ir(value: &searchkernel_ir::RequestValueIr) -> Self {
+        use searchkernel_ir::{RequestNonFiniteFloatIr, RequestValueIr};
+        match value {
+            RequestValueIr::Null => Self::Null,
+            RequestValueIr::Bool(value) => Self::Bool(*value),
+            RequestValueIr::Int64(value) => Self::Int64(*value),
+            RequestValueIr::UInt64(value) => Self::UInt64(*value),
+            RequestValueIr::Float64(value) => Self::Float64(*value),
+            RequestValueIr::NonFiniteFloat(value) => Self::NonFiniteFloat(match value {
+                RequestNonFiniteFloatIr::NaN => SchemaNonFiniteFloat::NaN,
+                RequestNonFiniteFloatIr::PositiveInfinity => SchemaNonFiniteFloat::PositiveInfinity,
+                RequestNonFiniteFloatIr::NegativeInfinity => SchemaNonFiniteFloat::NegativeInfinity,
+            }),
+            RequestValueIr::String(value) => Self::String(value.clone()),
+            RequestValueIr::Bytes(value) => Self::Bytes(value.clone()),
+            RequestValueIr::List(values) => Self::List(values.iter().map(Self::from_ir).collect()),
+            RequestValueIr::Object(values) => Self::Object(
+                values
+                    .iter()
+                    .map(|(key, value)| (key.clone(), Self::from_ir(value)))
+                    .collect(),
+            ),
+            RequestValueIr::Tensor(value) => Self::Tensor(SchemaTensor::from_ir(value)),
+        }
+    }
+
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::RequestValueIr {
+        use searchkernel_ir::{RequestNonFiniteFloatIr, RequestValueIr};
+        match self {
+            Self::Null => RequestValueIr::Null,
+            Self::Bool(value) => RequestValueIr::Bool(*value),
+            Self::Int64(value) => RequestValueIr::Int64(*value),
+            Self::UInt64(value) => RequestValueIr::UInt64(*value),
+            Self::Float64(value) => RequestValueIr::Float64(*value),
+            Self::NonFiniteFloat(value) => RequestValueIr::NonFiniteFloat(match value {
+                SchemaNonFiniteFloat::NaN => RequestNonFiniteFloatIr::NaN,
+                SchemaNonFiniteFloat::PositiveInfinity => RequestNonFiniteFloatIr::PositiveInfinity,
+                SchemaNonFiniteFloat::NegativeInfinity => RequestNonFiniteFloatIr::NegativeInfinity,
+            }),
+            Self::String(value) => RequestValueIr::String(value.clone()),
+            Self::Bytes(value) => RequestValueIr::Bytes(value.clone()),
+            Self::List(values) => RequestValueIr::List(values.iter().map(Self::to_ir).collect()),
+            Self::Object(values) => RequestValueIr::Object(
+                values
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.to_ir()))
+                    .collect(),
+            ),
+            Self::Tensor(value) => RequestValueIr::Tensor(value.to_ir()),
+        }
+    }
+}
+
+impl SchemaTensor {
+    pub(crate) fn from_ir(value: &searchkernel_ir::RequestTensorIr) -> Self {
+        let payload = match &value.payload {
+            searchkernel_ir::RequestTensorPayloadIr::Dense(values) => {
+                SchemaTensorPayload::Dense(values.clone())
+            }
+            searchkernel_ir::RequestTensorPayloadIr::Sparse(values) => SchemaTensorPayload::Sparse(
+                values
+                    .iter()
+                    .map(|value| SchemaTensorCell {
+                        address: value.address.clone(),
+                        value: value.value,
+                    })
+                    .collect(),
+            ),
+            searchkernel_ir::RequestTensorPayloadIr::Mixed(values) => SchemaTensorPayload::Mixed(
+                values
+                    .iter()
+                    .map(|value| SchemaTensorBlock {
+                        address: value.address.clone(),
+                        values: value.values.clone(),
+                    })
+                    .collect(),
+            ),
+        };
+        Self {
+            type_spec: value.type_spec.clone(),
+            payload,
+        }
+    }
+
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::RequestTensorIr {
+        let payload = match &self.payload {
+            SchemaTensorPayload::Dense(values) => {
+                searchkernel_ir::RequestTensorPayloadIr::Dense(values.clone())
+            }
+            SchemaTensorPayload::Sparse(values) => searchkernel_ir::RequestTensorPayloadIr::Sparse(
+                values
+                    .iter()
+                    .map(|value| searchkernel_ir::RequestTensorCellIr {
+                        address: value.address.clone(),
+                        value: value.value,
+                    })
+                    .collect(),
+            ),
+            SchemaTensorPayload::Mixed(values) => searchkernel_ir::RequestTensorPayloadIr::Mixed(
+                values
+                    .iter()
+                    .map(|value| searchkernel_ir::RequestTensorBlockIr {
+                        address: value.address.clone(),
+                        values: value.values.clone(),
+                    })
+                    .collect(),
+            ),
+        };
+        searchkernel_ir::RequestTensorIr {
+            type_spec: self.type_spec.clone(),
+            payload,
+        }
+    }
+}
+
+impl DataType {
+    pub(crate) fn from_ir(value: &searchkernel_ir::DataTypeIr) -> Self {
+        use searchkernel_ir::{DataTypeIr, PrimitiveDataTypeIr};
+        match value {
+            DataTypeIr::Primitive(value) => Self::Primitive(match value {
+                PrimitiveDataTypeIr::String => PrimitiveDataType::String,
+                PrimitiveDataTypeIr::Bool => PrimitiveDataType::Bool,
+                PrimitiveDataTypeIr::Byte => PrimitiveDataType::Byte,
+                PrimitiveDataTypeIr::Int32 => PrimitiveDataType::Int32,
+                PrimitiveDataTypeIr::Int64 => PrimitiveDataType::Int64,
+                PrimitiveDataTypeIr::Float32 => PrimitiveDataType::Float32,
+                PrimitiveDataTypeIr::Float64 => PrimitiveDataType::Float64,
+                PrimitiveDataTypeIr::Raw => PrimitiveDataType::Raw,
+            }),
+            DataTypeIr::Tensor { type_spec } => Self::Tensor {
+                type_spec: type_spec.clone(),
+            },
+            DataTypeIr::Array(value) => Self::Array(Box::new(Self::from_ir(value))),
+            DataTypeIr::Map {
+                key_type,
+                value_type,
+            } => Self::Map {
+                key_type: Box::new(Self::from_ir(key_type)),
+                value_type: Box::new(Self::from_ir(value_type)),
+            },
+            DataTypeIr::WeightedSet(value) => Self::WeightedSet(Box::new(Self::from_ir(value))),
+            DataTypeIr::Struct { fields } => Self::Struct {
+                fields: fields
+                    .iter()
+                    .map(|field| SchemaStructField {
+                        name: field.name.clone(),
+                        data_type: Self::from_ir(&field.data_type),
+                    })
+                    .collect(),
+            },
+            DataTypeIr::StructReference { name } => Self::StructReference { name: name.clone() },
+            DataTypeIr::Predicate => Self::Predicate,
+            DataTypeIr::Position => Self::Position,
+            DataTypeIr::Reference { document_type } => Self::Reference {
+                document_type: document_type.clone(),
+            },
+        }
+    }
+
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::DataTypeIr {
+        use searchkernel_ir::{DataTypeIr, PrimitiveDataTypeIr};
+        match self {
+            Self::Primitive(value) => DataTypeIr::Primitive(match value {
+                PrimitiveDataType::String => PrimitiveDataTypeIr::String,
+                PrimitiveDataType::Bool => PrimitiveDataTypeIr::Bool,
+                PrimitiveDataType::Byte => PrimitiveDataTypeIr::Byte,
+                PrimitiveDataType::Int32 => PrimitiveDataTypeIr::Int32,
+                PrimitiveDataType::Int64 => PrimitiveDataTypeIr::Int64,
+                PrimitiveDataType::Float32 => PrimitiveDataTypeIr::Float32,
+                PrimitiveDataType::Float64 => PrimitiveDataTypeIr::Float64,
+                PrimitiveDataType::Raw => PrimitiveDataTypeIr::Raw,
+            }),
+            Self::Tensor { type_spec } => DataTypeIr::Tensor {
+                type_spec: type_spec.clone(),
+            },
+            Self::Array(value) => DataTypeIr::Array(Box::new(value.to_ir())),
+            Self::Map {
+                key_type,
+                value_type,
+            } => DataTypeIr::Map {
+                key_type: Box::new(key_type.to_ir()),
+                value_type: Box::new(value_type.to_ir()),
+            },
+            Self::WeightedSet(value) => DataTypeIr::WeightedSet(Box::new(value.to_ir())),
+            Self::Struct { fields } => DataTypeIr::Struct {
+                fields: fields
+                    .iter()
+                    .map(|field| searchkernel_ir::StructFieldIr {
+                        name: field.name.clone(),
+                        data_type: field.data_type.to_ir(),
+                    })
+                    .collect(),
+            },
+            Self::StructReference { name } => DataTypeIr::StructReference { name: name.clone() },
+            Self::Predicate => DataTypeIr::Predicate,
+            Self::Position => DataTypeIr::Position,
+            Self::Reference { document_type } => DataTypeIr::Reference {
+                document_type: document_type.clone(),
+            },
+        }
+    }
+}
+
+fn properties_from_ir(value: &searchkernel_ir::SchemaPropertiesIr) -> SchemaProperties {
+    value
+        .iter()
+        .map(|(key, value)| (key.clone(), SchemaValue::from_ir(value)))
+        .collect()
+}
+
+pub(crate) fn properties_to_ir(value: &SchemaProperties) -> searchkernel_ir::SchemaPropertiesIr {
+    value
+        .iter()
+        .map(|(key, value)| (key.clone(), value.to_ir()))
+        .collect()
+}
+
+impl AnalyzerConfig {
+    pub(crate) fn from_ir(value: &searchkernel_ir::AnalyzerIr) -> Self {
+        Self {
+            name: value.name.clone(),
+            version: value.version,
+            options: properties_from_ir(&value.options),
+        }
+    }
+}
+
+impl MatchingConfig {
+    pub(crate) fn from_ir(value: &searchkernel_ir::MatchingConfigIr) -> Self {
+        Self {
+            mode: match value.mode {
+                searchkernel_ir::MatchingModeIr::Unspecified => MatchingMode::Unspecified,
+                searchkernel_ir::MatchingModeIr::Text => MatchingMode::Text,
+                searchkernel_ir::MatchingModeIr::Word => MatchingMode::Word,
+                searchkernel_ir::MatchingModeIr::Exact => MatchingMode::Exact,
+                searchkernel_ir::MatchingModeIr::Gram => MatchingMode::Gram,
+            },
+            options: properties_from_ir(&value.options),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::MatchingConfigIr {
+        searchkernel_ir::MatchingConfigIr {
+            mode: match self.mode {
+                MatchingMode::Unspecified => searchkernel_ir::MatchingModeIr::Unspecified,
+                MatchingMode::Text => searchkernel_ir::MatchingModeIr::Text,
+                MatchingMode::Word => searchkernel_ir::MatchingModeIr::Word,
+                MatchingMode::Exact => searchkernel_ir::MatchingModeIr::Exact,
+                MatchingMode::Gram => searchkernel_ir::MatchingModeIr::Gram,
+            },
+            options: properties_to_ir(&self.options),
+        }
+    }
+}
+
+impl IndexConfig {
+    pub(crate) fn from_ir(value: &searchkernel_ir::IndexConfigIr) -> Self {
+        Self {
+            enabled: value.enabled,
+            hnsw: value.hnsw.as_ref().map(HnswConfig::from_ir),
+            options: properties_from_ir(&value.options),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::IndexConfigIr {
+        searchkernel_ir::IndexConfigIr {
+            enabled: self.enabled,
+            hnsw: self.hnsw.as_ref().map(HnswConfig::to_ir),
+            options: properties_to_ir(&self.options),
+        }
+    }
+}
+
+impl HnswConfig {
+    pub(crate) fn from_ir(value: &searchkernel_ir::HnswIndexConfigIr) -> Self {
+        Self {
+            max_links_per_node: value.max_links_per_node,
+            neighbors_to_explore_at_insert: value.neighbors_to_explore_at_insert,
+            options: properties_from_ir(&value.options),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::HnswIndexConfigIr {
+        searchkernel_ir::HnswIndexConfigIr {
+            max_links_per_node: self.max_links_per_node,
+            neighbors_to_explore_at_insert: self.neighbors_to_explore_at_insert,
+            options: properties_to_ir(&self.options),
+        }
+    }
+}
+
+impl AttributeConfig {
+    pub(crate) fn from_ir(value: &searchkernel_ir::AttributeConfigIr) -> Self {
+        Self {
+            enabled: value.enabled,
+            fast_search: value.fast_search,
+            fast_access: value.fast_access,
+            distance_metric: match value.distance_metric {
+                searchkernel_ir::DistanceMetricIr::Unspecified => DistanceMetric::Unspecified,
+                searchkernel_ir::DistanceMetricIr::Euclidean => DistanceMetric::Euclidean,
+                searchkernel_ir::DistanceMetricIr::Angular => DistanceMetric::Angular,
+                searchkernel_ir::DistanceMetricIr::DotProduct => DistanceMetric::DotProduct,
+                searchkernel_ir::DistanceMetricIr::PrenormalizedAngular => {
+                    DistanceMetric::PrenormalizedAngular
+                }
+                searchkernel_ir::DistanceMetricIr::GeoDegrees => DistanceMetric::GeoDegrees,
+                searchkernel_ir::DistanceMetricIr::Hamming => DistanceMetric::Hamming,
+            },
+            options: properties_from_ir(&value.options),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::AttributeConfigIr {
+        searchkernel_ir::AttributeConfigIr {
+            enabled: self.enabled,
+            fast_search: self.fast_search,
+            fast_access: self.fast_access,
+            distance_metric: distance_metric_to_ir(self.distance_metric),
+            options: properties_to_ir(&self.options),
+        }
+    }
+}
+
+impl SummaryConfig {
+    pub(crate) fn from_ir(value: &searchkernel_ir::SummaryConfigIr) -> Self {
+        Self {
+            enabled: value.enabled,
+            options: properties_from_ir(&value.options),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::SummaryConfigIr {
+        searchkernel_ir::SummaryConfigIr {
+            enabled: self.enabled,
+            options: properties_to_ir(&self.options),
+        }
+    }
+}
+
+impl StructFieldConfig {
+    pub(crate) fn from_ir(value: &searchkernel_ir::StructFieldConfigIr) -> Self {
+        Self {
+            path: value.path.clone(),
+            indexing_script: value.indexing_script.clone(),
+            matching: value.matching.as_ref().map(MatchingConfig::from_ir),
+            index: value.index.as_ref().map(IndexConfig::from_ir),
+            attribute: value.attribute.as_ref().map(AttributeConfig::from_ir),
+            summary: value.summary.as_ref().map(SummaryConfig::from_ir),
+            rank: value.rank.clone(),
+            query_commands: value.query_commands.clone(),
+            properties: properties_from_ir(&value.properties),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::StructFieldConfigIr {
+        searchkernel_ir::StructFieldConfigIr {
+            path: self.path.clone(),
+            indexing_script: self.indexing_script.clone(),
+            matching: self.matching.as_ref().map(MatchingConfig::to_ir),
+            index: self.index.as_ref().map(IndexConfig::to_ir),
+            attribute: self.attribute.as_ref().map(AttributeConfig::to_ir),
+            summary: self.summary.as_ref().map(SummaryConfig::to_ir),
+            rank: self.rank.clone(),
+            query_commands: self.query_commands.clone(),
+            properties: properties_to_ir(&self.properties),
+        }
+    }
+}
+
+impl RankPhase {
+    pub(crate) fn from_ir(value: &searchkernel_ir::RankPhaseDefinitionIr) -> Self {
+        Self {
+            expression: value.expression.clone(),
+            rerank_count: value.rerank_count,
+            rank_score_drop_limit: value.rank_score_drop_limit,
+            properties: properties_from_ir(&value.properties),
+            total_rerank_count: value.total_rerank_count,
+            keep_rank_count: value.keep_rank_count,
+            total_keep_rank_count: value.total_keep_rank_count,
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::RankPhaseDefinitionIr {
+        searchkernel_ir::RankPhaseDefinitionIr {
+            expression: self.expression.clone(),
+            rerank_count: self.rerank_count,
+            rank_score_drop_limit: self.rank_score_drop_limit,
+            properties: properties_to_ir(&self.properties),
+            total_rerank_count: self.total_rerank_count,
+            keep_rank_count: self.keep_rank_count,
+            total_keep_rank_count: self.total_keep_rank_count,
+        }
+    }
+}
+
+impl RankProfileInput {
+    pub(crate) fn from_ir(value: &searchkernel_ir::RankProfileInputIr) -> Self {
+        Self {
+            name: value.name.clone(),
+            data_type: DataType::from_ir(&value.data_type),
+            default_value: SchemaValue::from_ir(&value.default_value),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::RankProfileInputIr {
+        searchkernel_ir::RankProfileInputIr {
+            name: self.name.clone(),
+            data_type: self.data_type.to_ir(),
+            default_value: self.default_value.to_ir(),
+        }
+    }
+}
+
+impl RankFunction {
+    pub(crate) fn from_ir(value: &searchkernel_ir::RankFunctionDefinitionIr) -> Self {
+        Self {
+            name: value.name.clone(),
+            arguments: value.arguments.clone(),
+            expression: value.expression.clone(),
+            inline: value.inline,
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::RankFunctionDefinitionIr {
+        searchkernel_ir::RankFunctionDefinitionIr {
+            name: self.name.clone(),
+            arguments: self.arguments.clone(),
+            expression: self.expression.clone(),
+            inline: self.inline,
+        }
+    }
+}
+
+impl OnnxModel {
+    pub(crate) fn from_ir(value: &searchkernel_ir::OnnxModelDefinitionIr) -> Self {
+        Self {
+            name: value.name.clone(),
+            file: value.file.clone(),
+            inputs: value.inputs.clone(),
+            outputs: value.outputs.clone(),
+            gpu_device: value.gpu_device,
+            intraop_threads: value.intraop_threads,
+            interop_threads: value.interop_threads,
+            properties: properties_from_ir(&value.properties),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::OnnxModelDefinitionIr {
+        searchkernel_ir::OnnxModelDefinitionIr {
+            name: self.name.clone(),
+            file: self.file.clone(),
+            inputs: self.inputs.clone(),
+            outputs: self.outputs.clone(),
+            gpu_device: self.gpu_device,
+            intraop_threads: self.intraop_threads,
+            interop_threads: self.interop_threads,
+            properties: properties_to_ir(&self.properties),
+        }
+    }
+}
+
+impl NamedStruct {
+    pub(crate) fn from_ir(value: &searchkernel_ir::NamedStructDefinitionIr) -> Self {
+        Self {
+            name: value.name.clone(),
+            fields: value
+                .fields
+                .iter()
+                .map(|field| SchemaStructField {
+                    name: field.name.clone(),
+                    data_type: DataType::from_ir(&field.data_type),
+                })
+                .collect(),
+            properties: properties_from_ir(&value.properties),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::NamedStructDefinitionIr {
+        searchkernel_ir::NamedStructDefinitionIr {
+            name: self.name.clone(),
+            fields: self
+                .fields
+                .iter()
+                .map(|field| searchkernel_ir::StructFieldIr {
+                    name: field.name.clone(),
+                    data_type: field.data_type.to_ir(),
+                })
+                .collect(),
+            properties: properties_to_ir(&self.properties),
+        }
+    }
+}
+
+impl FieldSet {
+    pub(crate) fn from_ir(value: &searchkernel_ir::FieldSetDefinitionIr) -> Self {
+        Self {
+            name: value.name.clone(),
+            fields: value
+                .fields
+                .iter()
+                .map(|field| field.as_str().to_owned())
+                .collect(),
+            matching: value.matching.as_ref().map(MatchingConfig::from_ir),
+            query_commands: value.query_commands.clone(),
+            properties: properties_from_ir(&value.properties),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> Result<searchkernel_ir::FieldSetDefinitionIr> {
+        Ok(searchkernel_ir::FieldSetDefinitionIr {
+            name: self.name.clone(),
+            fields: self
+                .fields
+                .iter()
+                .map(|field| {
+                    searchkernel_ir::FieldName::parse(field.clone()).map_err(Error::from_ir)
+                })
+                .collect::<Result<Vec<_>>>()?,
+            matching: self.matching.as_ref().map(MatchingConfig::to_ir),
+            query_commands: self.query_commands.clone(),
+            properties: properties_to_ir(&self.properties),
+        })
+    }
+}
+
+impl ImportedField {
+    pub(crate) fn from_ir(value: &searchkernel_ir::ImportedFieldDefinitionIr) -> Self {
+        Self {
+            reference_field: value.reference_field.as_str().to_owned(),
+            target_field: value.target_field.clone(),
+            alias: value.alias.as_str().to_owned(),
+            properties: properties_from_ir(&value.properties),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> Result<searchkernel_ir::ImportedFieldDefinitionIr> {
+        Ok(searchkernel_ir::ImportedFieldDefinitionIr {
+            reference_field: searchkernel_ir::FieldName::parse(self.reference_field.clone())
+                .map_err(Error::from_ir)?,
+            target_field: self.target_field.clone(),
+            alias: searchkernel_ir::FieldName::parse(self.alias.clone()).map_err(Error::from_ir)?,
+            properties: properties_to_ir(&self.properties),
+        })
+    }
+}
+
+impl DocumentSummaryField {
+    pub(crate) fn from_ir(value: &searchkernel_ir::DocumentSummaryFieldDefinitionIr) -> Self {
+        Self {
+            name: value.name.clone(),
+            source: value.source.clone(),
+            data_type: DataType::from_ir(&value.data_type),
+            struct_fields: value.struct_fields.clone(),
+            properties: properties_from_ir(&value.properties),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::DocumentSummaryFieldDefinitionIr {
+        searchkernel_ir::DocumentSummaryFieldDefinitionIr {
+            name: self.name.clone(),
+            source: self.source.clone(),
+            data_type: self.data_type.to_ir(),
+            struct_fields: self.struct_fields.clone(),
+            properties: properties_to_ir(&self.properties),
+        }
+    }
+}
+
+impl DocumentSummary {
+    pub(crate) fn from_ir(value: &searchkernel_ir::DocumentSummaryDefinitionIr) -> Self {
+        Self {
+            name: value.name.clone(),
+            inherits: value.inherits.clone(),
+            fields: value
+                .fields
+                .iter()
+                .map(DocumentSummaryField::from_ir)
+                .collect(),
+            from_disk: value.from_disk,
+            omit_summary_features: value.omit_summary_features,
+            properties: properties_from_ir(&value.properties),
+        }
+    }
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::DocumentSummaryDefinitionIr {
+        searchkernel_ir::DocumentSummaryDefinitionIr {
+            name: self.name.clone(),
+            inherits: self.inherits.clone(),
+            fields: self
+                .fields
+                .iter()
+                .map(DocumentSummaryField::to_ir)
+                .collect(),
+            from_disk: self.from_disk,
+            omit_summary_features: self.omit_summary_features,
+            properties: properties_to_ir(&self.properties),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Distance metric used by a tensor attribute.
 pub enum DistanceMetric {
+    Unspecified,
     Euclidean,
     Angular,
     DotProduct,
@@ -130,7 +955,7 @@ impl FieldCapabilities {
 pub struct Field {
     pub(crate) name: String,
     pub(crate) kind: FieldKind,
-    pub data_type: searchkernel_ir::DataTypeIr,
+    pub data_type: DataType,
     pub(crate) multi: bool,
     pub(crate) stored: Option<bool>,
     pub(crate) searchable: Option<bool>,
@@ -143,15 +968,14 @@ pub struct Field {
     pub(crate) matching_config: Option<searchkernel_ir::MatchingConfigIr>,
     pub(crate) distance_metric: Option<DistanceMetric>,
     pub(crate) hnsw: Option<HnswIndexConfig>,
-    pub(crate) struct_fields: Vec<searchkernel_ir::StructFieldConfigIr>,
-    pub summary_config: Option<searchkernel_ir::SummaryConfigIr>,
+    pub(crate) struct_fields: Vec<StructFieldConfig>,
+    pub(crate) summary_config: Option<searchkernel_ir::SummaryConfigIr>,
     pub indexing_script: Option<String>,
-    pub properties: searchkernel_ir::SchemaPropertiesIr,
+    pub(crate) properties: searchkernel_ir::SchemaPropertiesIr,
     /// Complete native index configuration returned by `Index::describe`.
-    pub index_config: Option<searchkernel_ir::IndexConfigIr>,
+    pub(crate) index_config: Option<searchkernel_ir::IndexConfigIr>,
     /// Complete native attribute configuration returned by `Index::describe`.
-    pub attribute_config: Option<searchkernel_ir::AttributeConfigIr>,
-    pub(crate) canonical: Option<searchkernel_ir::FieldIr>,
+    pub(crate) attribute_config: Option<searchkernel_ir::AttributeConfigIr>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -159,11 +983,11 @@ pub struct Field {
 pub struct RankProfile {
     pub(crate) name: String,
     /// The complete first-phase configuration, when one is declared.
-    pub first_phase: Option<searchkernel_ir::RankPhaseDefinitionIr>,
+    pub first_phase: Option<RankPhase>,
     /// The complete second-phase configuration, when one is declared.
-    pub second_phase: Option<searchkernel_ir::RankPhaseDefinitionIr>,
+    pub second_phase: Option<RankPhase>,
     /// The complete global-phase configuration, when one is declared.
-    pub global_phase: Option<searchkernel_ir::RankPhaseDefinitionIr>,
+    pub global_phase: Option<RankPhase>,
     pub(crate) rerank_count: Option<u32>,
     /// Rank features exposed by this profile, in Vespa's declared order.
     pub rank_features: Vec<String>,
@@ -178,19 +1002,18 @@ pub struct RankProfile {
     /// Whether strict rank-profile validation is enabled.
     pub strict: Option<bool>,
     /// Generic rank-profile properties not covered by dedicated fields.
-    pub properties: searchkernel_ir::SchemaPropertiesIr,
+    pub properties: SchemaProperties,
     /// Canonical rank-profile inputs exposed by Index::describe().
-    pub inputs: Vec<searchkernel_ir::RankProfileInputIr>,
+    pub inputs: Vec<RankProfileInput>,
     /// Canonical rank-profile scoped constants.
-    pub constants: Vec<searchkernel_ir::ConstantDefinitionIr>,
+    pub constants: Vec<ConstantDefinition>,
     /// Canonical rank-profile scoped ONNX models.
-    pub onnx_models: Vec<searchkernel_ir::OnnxModelDefinitionIr>,
+    pub onnx_models: Vec<OnnxModel>,
     pub(crate) query_inputs: Vec<(String, String)>,
     /// Canonical profile inheritance exposed by Index::describe().
     pub inherits: Vec<String>,
     /// Canonical Vespa rank functions exposed by Index::describe().
-    pub functions: Vec<searchkernel_ir::RankFunctionDefinitionIr>,
-    pub(crate) canonical: Option<searchkernel_ir::RankProfileDefinitionIr>,
+    pub functions: Vec<RankFunction>,
 }
 
 impl RankProfile {
@@ -214,7 +1037,6 @@ impl RankProfile {
             query_inputs: Vec::new(),
             inherits: Vec::new(),
             functions: Vec::new(),
-            canonical: None,
         }
     }
 
@@ -223,12 +1045,6 @@ impl RankProfile {
         self.first_phase
             .get_or_insert_with(empty_rank_phase)
             .expression = Some(expression.clone());
-        if let Some(profile) = self.canonical.as_mut() {
-            profile
-                .first_phase
-                .get_or_insert_with(empty_rank_phase)
-                .expression = Some(expression);
-        }
         self
     }
 
@@ -238,12 +1054,6 @@ impl RankProfile {
         self.second_phase
             .get_or_insert_with(empty_rank_phase)
             .expression = Some(expression.clone());
-        if let Some(profile) = self.canonical.as_mut() {
-            profile
-                .second_phase
-                .get_or_insert_with(empty_rank_phase)
-                .expression = Some(expression);
-        }
         self
     }
 
@@ -253,21 +1063,12 @@ impl RankProfile {
         self.second_phase
             .get_or_insert_with(empty_rank_phase)
             .rerank_count = Some(count);
-        if let Some(profile) = self.canonical.as_mut() {
-            profile
-                .second_phase
-                .get_or_insert_with(empty_rank_phase)
-                .rerank_count = Some(count);
-        }
         self
     }
 
     pub fn match_feature(mut self, expression: impl Into<String>) -> Self {
         let expression = expression.into();
         self.match_features.push(expression.clone());
-        if let Some(profile) = self.canonical.as_mut() {
-            profile.match_features.push(expression);
-        }
         self
     }
 
@@ -276,27 +1077,22 @@ impl RankProfile {
         let name = name.into();
         let type_spec = type_spec.into();
         self.query_inputs.push((name.clone(), type_spec.clone()));
-        let input = searchkernel_ir::RankProfileInputIr {
+        let input = RankProfileInput {
             name,
-            data_type: searchkernel_ir::DataTypeIr::Tensor { type_spec: type_spec.clone() },
-            default_value: searchkernel_ir::RequestValueIr::Tensor(searchkernel_ir::RequestTensorIr {
+            data_type: DataType::Tensor {
+                type_spec: type_spec.clone(),
+            },
+            default_value: SchemaValue::Tensor(SchemaTensor {
                 type_spec,
-                payload: searchkernel_ir::RequestTensorPayloadIr::Dense(Vec::new()),
+                payload: SchemaTensorPayload::Dense(Vec::new()),
             }),
         };
         self.inputs.push(input.clone());
-        if let Some(profile) = self.canonical.as_mut() { profile.inputs.push(input); }
         self
     }
 
     pub fn name(&self) -> &str {
         &self.name
-    }
-
-    /// Return the complete canonical rank-profile state represented by this
-    /// public value, when it originated from `Index::describe()`.
-    pub fn canonical_definition(&self) -> Option<&searchkernel_ir::RankProfileDefinitionIr> {
-        self.canonical.as_ref()
     }
 }
 
@@ -325,7 +1121,6 @@ impl Field {
             properties: BTreeMap::new(),
             index_config: None,
             attribute_config: None,
-            canonical: None,
         }
     }
 
@@ -366,7 +1161,7 @@ impl Field {
         Self {
             name: name.into(),
             kind: FieldKind::Tensor(type_spec.clone()),
-            data_type: searchkernel_ir::DataTypeIr::Tensor { type_spec },
+            data_type: DataType::Tensor { type_spec },
             multi: false,
             stored: None,
             searchable: None,
@@ -385,7 +1180,6 @@ impl Field {
             properties: BTreeMap::new(),
             index_config: None,
             attribute_config: None,
-            canonical: None,
         }
     }
 
@@ -394,12 +1188,9 @@ impl Field {
         self.multi = true;
         if !matches!(
             &self.data_type,
-            searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
+            DataType::Array(_) | DataType::WeightedSet(_)
         ) {
-            self.data_type = searchkernel_ir::DataTypeIr::Array(Box::new(self.data_type));
-        }
-        if let Some(field) = self.canonical.as_mut() {
-            field.set_multi(true);
+            self.data_type = DataType::Array(Box::new(self.data_type));
         }
         self
     }
@@ -409,16 +1200,6 @@ impl Field {
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.stored = value;
         }
-        if let Some(field) = self.canonical.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                value,
-                capabilities.searchable(),
-                capabilities.filterable(),
-                capabilities.sortable(),
-                capabilities.groupable(),
-            );
-        }
         self
     }
     /// Explicitly set whether this field can be searched with text queries.
@@ -426,16 +1207,6 @@ impl Field {
         self.searchable = Some(value);
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.searchable = value;
-        }
-        if let Some(field) = self.canonical.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                capabilities.stored(),
-                value,
-                capabilities.filterable(),
-                capabilities.sortable(),
-                capabilities.groupable(),
-            );
         }
         self
     }
@@ -445,16 +1216,6 @@ impl Field {
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.filterable = value;
         }
-        if let Some(field) = self.canonical.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                capabilities.stored(),
-                capabilities.searchable(),
-                value,
-                capabilities.sortable(),
-                capabilities.groupable(),
-            );
-        }
         self
     }
     /// Explicitly set whether this field can be used for sorting.
@@ -462,16 +1223,6 @@ impl Field {
         self.sortable = Some(value);
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.sortable = value;
-        }
-        if let Some(field) = self.canonical.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                capabilities.stored(),
-                capabilities.searchable(),
-                capabilities.filterable(),
-                value,
-                capabilities.groupable(),
-            );
         }
         self
     }
@@ -481,16 +1232,6 @@ impl Field {
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.groupable = value;
         }
-        if let Some(field) = self.canonical.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                capabilities.stored(),
-                capabilities.searchable(),
-                capabilities.filterable(),
-                capabilities.sortable(),
-                value,
-            );
-        }
         self
     }
     /// Select the analyzer used for this field.
@@ -498,22 +1239,12 @@ impl Field {
         let canonical = analyzer_to_ir(&value).ok();
         self.analyzer_config = canonical.clone();
         self.analyzer = Some(value);
-        if let Some(field) = self.canonical.as_mut() {
-            if let Some(analyzer) = canonical {
-                field.set_analyzer(Some(analyzer));
-            } else {
-                self.canonical = None;
-            }
-        }
         self
     }
 
     /// Set the canonical matching configuration for this field.
-    pub fn matching_config(mut self, value: searchkernel_ir::MatchingConfigIr) -> Self {
-        self.matching_config = Some(value.clone());
-        if let Some(field) = self.canonical.as_mut() {
-            field.set_matching_config(Some(value));
-        }
+    pub fn matching_config(mut self, value: MatchingConfig) -> Self {
+        self.matching_config = Some(value.to_ir());
         self
     }
 
@@ -530,9 +1261,6 @@ impl Field {
                     options: BTreeMap::new(),
                 });
         attribute.distance_metric = distance_metric_to_ir(value);
-        if let Some(field) = self.canonical.as_mut() {
-            field.set_distance_metric(distance_metric_to_ir(value));
-        }
         self
     }
 
@@ -549,9 +1277,6 @@ impl Field {
             });
         index.enabled = Some(true);
         index.hnsw = Some(hnsw.clone());
-        if let Some(field) = self.canonical.as_mut() {
-            field.set_hnsw(hnsw);
-        }
         self
     }
 
@@ -561,7 +1286,7 @@ impl Field {
     }
 
     /// Return the complete canonical data type of this field.
-    pub fn data_type(&self) -> &searchkernel_ir::DataTypeIr {
+    pub fn data_type(&self) -> &DataType {
         &self.data_type
     }
 
@@ -569,7 +1294,7 @@ impl Field {
     pub fn is_multi(&self) -> bool {
         matches!(
             &self.data_type,
-            searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
+            DataType::Array(_) | DataType::WeightedSet(_)
         )
     }
 
@@ -610,42 +1335,28 @@ impl Field {
     }
 
     /// Return the complete analyzer configuration, including arbitrary options.
-    pub fn analyzer_config(&self) -> Option<&searchkernel_ir::AnalyzerIr> {
-        self.analyzer_config.as_ref()
+    pub fn analyzer_config(&self) -> Option<AnalyzerConfig> {
+        self.analyzer_config.as_ref().map(AnalyzerConfig::from_ir)
     }
 
     /// Return the complete matching configuration, including arbitrary options.
-    pub fn matching(&self) -> Option<&searchkernel_ir::MatchingConfigIr> {
-        self.matching_config.as_ref()
+    pub fn matching(&self) -> Option<MatchingConfig> {
+        self.matching_config.as_ref().map(MatchingConfig::from_ir)
     }
 
-    pub fn struct_fields(&self) -> &[searchkernel_ir::StructFieldConfigIr] {
-        &self.struct_fields
-    }
-
-    /// Return the complete canonical field state represented by this public
-    /// value, when it originated from `Index::describe()`.
-    pub fn canonical_definition(&self) -> Option<&searchkernel_ir::FieldIr> {
-        self.canonical.as_ref()
+    pub fn struct_fields(&self) -> Vec<StructFieldConfig> {
+        self.struct_fields.clone()
     }
 }
 
-fn data_type_from_kind(kind: &FieldKind) -> searchkernel_ir::DataTypeIr {
+fn data_type_from_kind(kind: &FieldKind) -> DataType {
     match kind {
-        FieldKind::Text | FieldKind::Keyword => {
-            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::String)
-        }
-        FieldKind::Int64 => {
-            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Int64)
-        }
-        FieldKind::Float64 => {
-            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Float64)
-        }
-        FieldKind::Bool => {
-            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Bool)
-        }
-        FieldKind::Position => searchkernel_ir::DataTypeIr::Position,
-        FieldKind::Tensor(type_spec) => searchkernel_ir::DataTypeIr::Tensor {
+        FieldKind::Text | FieldKind::Keyword => DataType::Primitive(PrimitiveDataType::String),
+        FieldKind::Int64 => DataType::Primitive(PrimitiveDataType::Int64),
+        FieldKind::Float64 => DataType::Primitive(PrimitiveDataType::Float64),
+        FieldKind::Bool => DataType::Primitive(PrimitiveDataType::Bool),
+        FieldKind::Position => DataType::Position,
+        FieldKind::Tensor(type_spec) => DataType::Tensor {
             type_spec: type_spec.clone(),
         },
     }
@@ -698,32 +1409,26 @@ impl From<String> for SearchField {
 /// The source of a schema constant.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConstantSource {
-    Literal(searchkernel_ir::RequestValueIr),
+    Literal(SchemaValue),
     File { path: String },
 }
 
 /// A schema constant exposed by `Index::describe()`.
 ///
-/// Constants use the IR value and data-type domains directly because those
-/// domains are already the canonical, lossless representation. Keeping these
-/// members on the public value lets Rust-to-IR conversion consume the same
-/// state that callers inspect, rather than recovering it from a hidden parent
-/// definition.
+/// Constants use owned schema value and data-type domains so Rust-to-IR
+/// conversion consumes the same state that callers inspect, rather than
+/// recovering it from a hidden parent definition.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConstantDefinition {
     name: String,
-    data_type: searchkernel_ir::DataTypeIr,
+    data_type: DataType,
     source: ConstantSource,
-    properties: searchkernel_ir::SchemaPropertiesIr,
+    properties: SchemaProperties,
 }
 
 impl ConstantDefinition {
     /// Construct a schema constant from its complete canonical members.
-    pub fn new(
-        name: impl Into<String>,
-        data_type: searchkernel_ir::DataTypeIr,
-        source: ConstantSource,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, data_type: DataType, source: ConstantSource) -> Self {
         Self {
             name: name.into(),
             data_type,
@@ -735,7 +1440,7 @@ impl ConstantDefinition {
     pub(crate) fn from_ir(value: &searchkernel_ir::ConstantDefinitionIr) -> Self {
         let source = match &value.source {
             searchkernel_ir::ConstantSourceIr::Literal(value) => {
-                ConstantSource::Literal(value.clone())
+                ConstantSource::Literal(SchemaValue::from_ir(value))
             }
             searchkernel_ir::ConstantSourceIr::File { path } => {
                 ConstantSource::File { path: path.clone() }
@@ -743,16 +1448,16 @@ impl ConstantDefinition {
         };
         Self {
             name: value.name.clone(),
-            data_type: value.data_type.clone(),
+            data_type: DataType::from_ir(&value.data_type),
             source,
-            properties: value.properties.clone(),
+            properties: properties_from_ir(&value.properties),
         }
     }
 
     pub(crate) fn to_ir(&self) -> searchkernel_ir::ConstantDefinitionIr {
         let source = match &self.source {
             ConstantSource::Literal(value) => {
-                searchkernel_ir::ConstantSourceIr::Literal(value.clone())
+                searchkernel_ir::ConstantSourceIr::Literal(value.to_ir())
             }
             ConstantSource::File { path } => {
                 searchkernel_ir::ConstantSourceIr::File { path: path.clone() }
@@ -760,9 +1465,9 @@ impl ConstantDefinition {
         };
         searchkernel_ir::ConstantDefinitionIr {
             name: self.name.clone(),
-            data_type: self.data_type.clone(),
+            data_type: self.data_type.to_ir(),
             source,
-            properties: self.properties.clone(),
+            properties: properties_to_ir(&self.properties),
         }
     }
 
@@ -772,7 +1477,7 @@ impl ConstantDefinition {
     }
 
     /// Return the canonical constant data type.
-    pub fn data_type(&self) -> &searchkernel_ir::DataTypeIr {
+    pub fn data_type(&self) -> &DataType {
         &self.data_type
     }
 
@@ -782,7 +1487,7 @@ impl ConstantDefinition {
     }
 
     /// Return the canonical constant properties.
-    pub fn properties(&self) -> &searchkernel_ir::SchemaPropertiesIr {
+    pub fn properties(&self) -> &SchemaProperties {
         &self.properties
     }
 }
@@ -796,20 +1501,15 @@ pub struct IndexDefinition {
     pub document_type: Option<String>,
     pub schema_inherits: Vec<String>,
     pub document_inherits: Vec<String>,
-    pub(crate) document_summaries: Vec<searchkernel_ir::DocumentSummaryDefinitionIr>,
+    pub(crate) document_summaries: Vec<DocumentSummary>,
     pub(crate) rank_profiles: Vec<RankProfile>,
     pub(crate) constants: Vec<ConstantDefinition>,
-    pub(crate) fieldsets: Vec<searchkernel_ir::FieldSetDefinitionIr>,
-    pub(crate) onnx_models: Vec<searchkernel_ir::OnnxModelDefinitionIr>,
-    pub(crate) imported_fields: Vec<searchkernel_ir::ImportedFieldDefinitionIr>,
-    pub(crate) structs: Vec<searchkernel_ir::NamedStructDefinitionIr>,
+    pub(crate) fieldsets: Vec<FieldSet>,
+    pub(crate) onnx_models: Vec<OnnxModel>,
+    pub(crate) imported_fields: Vec<ImportedField>,
+    pub(crate) structs: Vec<NamedStruct>,
     pub(crate) schema_fields: Vec<Field>,
-    pub(crate) properties: searchkernel_ir::SchemaPropertiesIr,
-    // For values returned by Index::describe(), this is the authoritative
-    // canonical schema state. The ergonomic members above are projections for
-    // the common builder path; canonical_definition() makes the complete
-    // state observable instead of silently narrowing it at the Rust boundary.
-    pub(crate) canonical: Option<searchkernel_ir::IndexDefinitionIr>,
+    pub(crate) properties: SchemaProperties,
 }
 
 impl fmt::Debug for IndexDefinition {
@@ -840,86 +1540,17 @@ impl IndexDefinition {
     /// Set the optional index name.
     pub fn name(mut self, value: impl Into<String>) -> Self {
         let value = value.into();
-        if self.canonical.is_some() {
-            let canonical_name = searchkernel_ir::IndexName::parse(value.clone()).ok();
-            apply_canonical_mutation(&mut self.canonical, |canonical| {
-                let Some(name) = canonical_name else {
-                    return false;
-                };
-                canonical.set_name(Some(name));
-                true
-            });
-        }
         self.name = Some(value);
         self
     }
     /// Add one field to the definition.
     pub fn field(mut self, value: Field) -> Self {
-        if self.canonical.is_some() {
-            let canonical_field = value.canonical.clone().or_else(|| {
-                field_to_rust_input(&value)
-                    .and_then(|field| {
-                        searchkernel_ir::resolve_rust_index_definition(
-                            searchkernel_ir::RustIndexDefinitionInput {
-                                name: None,
-                                fields: vec![field],
-                                default_search_fields: None,
-                            },
-                        )
-                        .map_err(Error::from_ir)
-                    })
-                    .ok()
-                    .and_then(|definition| definition.fields().first().cloned())
-            });
-            if let Some(canonical_field) = canonical_field {
-                apply_canonical_mutation(&mut self.canonical, |canonical| {
-                    canonical.push_field(canonical_field)
-                });
-            } else {
-                self.canonical = None;
-            }
-        }
         self.fields.push(value);
         self
     }
 
     /// Add a schema-only field derived by an indexing expression.
     pub fn schema_field(mut self, value: Field) -> Self {
-        if self.canonical.is_some() {
-            let canonical_field = value.canonical.clone().or_else(|| {
-                field_to_rust_input(&value)
-                    .and_then(|field| {
-                        searchkernel_ir::resolve_rust_index_definition(
-                            searchkernel_ir::RustIndexDefinitionInput {
-                                name: None,
-                                fields: vec![field],
-                                default_search_fields: None,
-                            },
-                        )
-                        .map_err(Error::from_ir)
-                    })
-                    .ok()
-                    .and_then(|definition| definition.fields().first().cloned())
-            });
-            if let Some(canonical_field) = canonical_field {
-                apply_canonical_mutation(&mut self.canonical, |canonical| {
-                    let duplicate = canonical
-                        .fields()
-                        .iter()
-                        .chain(canonical.schema_fields().iter())
-                        .any(|field| field.name() == canonical_field.name());
-                    if duplicate {
-                        return false;
-                    }
-                    let mut schema_fields = canonical.schema_fields().to_vec();
-                    schema_fields.push(canonical_field);
-                    canonical.set_schema_fields(schema_fields);
-                    true
-                });
-            } else {
-                self.canonical = None;
-            }
-        }
         self.schema_fields.push(value);
         self
     }
@@ -930,64 +1561,12 @@ impl IndexDefinition {
         I::Item: Into<SearchField>,
     {
         let fields = fields.into_iter().map(Into::into).collect::<Vec<_>>();
-        if self.canonical.is_some() {
-            let canonical_fields = self
-                .canonical
-                .as_ref()
-                .and_then(|canonical| canonical_search_fields(canonical, &fields));
-            if let Some(canonical_fields) = canonical_fields {
-                apply_canonical_mutation(&mut self.canonical, |canonical| {
-                    canonical.set_default_search_fields(canonical_fields);
-                    true
-                });
-            } else {
-                self.canonical = None;
-            }
-        }
         self.default_search_fields = Some(fields);
         self
     }
 
     /// Add a native first-phase rank profile to the generated schema.
     pub fn rank_profile(mut self, profile: RankProfile) -> Self {
-        if self.canonical.is_some() {
-            let canonical_profile = profile.canonical.clone().or_else(|| {
-                let rust_profile = rank_profile_to_rust_input(&profile);
-                let placeholder = searchkernel_ir::RustFieldInput {
-                    name: "rank_profile_placeholder".to_owned(),
-                    kind: searchkernel_ir::RustFieldKind::Keyword,
-                    multi: false,
-                    stored: None,
-                    searchable: None,
-                    filterable: None,
-                    sortable: None,
-                    facetable: None,
-                    analyzer: None,
-                    distance_metric: None,
-                    hnsw: None,
-                };
-                let canonical_profile =
-                    searchkernel_ir::resolve_rust_index_definition_with_profiles(
-                        searchkernel_ir::RustIndexDefinitionInput {
-                            name: None,
-                            fields: vec![placeholder],
-                            default_search_fields: None,
-                        },
-                        vec![rust_profile],
-                    )
-                    .map_err(Error::from_ir)
-                    .ok()
-                    .and_then(|definition| definition.rank_profiles().first().cloned());
-                canonical_profile
-            });
-            if let Some(canonical_profile) = canonical_profile {
-                apply_canonical_mutation(&mut self.canonical, |canonical| {
-                    canonical.push_rank_profile(canonical_profile)
-                });
-            } else {
-                self.canonical = None;
-            }
-        }
         self.rank_profiles.push(profile);
         self
     }
@@ -1013,7 +1592,7 @@ impl IndexDefinition {
     }
 
     /// Return the complete document-summary definitions represented by this public schema value.
-    pub fn document_summaries(&self) -> &[searchkernel_ir::DocumentSummaryDefinitionIr] {
+    pub fn document_summaries(&self) -> &[DocumentSummary] {
         &self.document_summaries
     }
 
@@ -1027,54 +1606,39 @@ impl IndexDefinition {
     }
 
     /// Return the top-level fieldset definitions declared by the schema.
-    pub fn fieldsets(&self) -> &[searchkernel_ir::FieldSetDefinitionIr] {
+    pub fn fieldsets(&self) -> &[FieldSet] {
         &self.fieldsets
     }
 
     /// Return the top-level ONNX model definitions declared by the schema.
-    pub fn onnx_models(&self) -> &[searchkernel_ir::OnnxModelDefinitionIr] {
+    pub fn onnx_models(&self) -> &[OnnxModel] {
         &self.onnx_models
     }
 
     /// Return the imported-field definitions declared by the schema.
-    pub fn imported_fields(&self) -> &[searchkernel_ir::ImportedFieldDefinitionIr] {
+    pub fn imported_fields(&self) -> &[ImportedField] {
         &self.imported_fields
     }
 
     /// Return the top-level named struct definitions declared by the schema.
-    pub fn structs(&self) -> &[searchkernel_ir::NamedStructDefinitionIr] {
+    pub fn structs(&self) -> &[NamedStruct] {
         &self.structs
     }
 
     /// Return the top-level properties declared by the schema.
-    pub fn properties(&self) -> &searchkernel_ir::SchemaPropertiesIr {
+    pub fn properties(&self) -> &SchemaProperties {
         &self.properties
     }
 
     /// Add a schema constant to this definition.
     pub fn constant(mut self, value: ConstantDefinition) -> Self {
-        if self.canonical.is_some() {
-            let constant = value.to_ir();
-            apply_canonical_mutation(&mut self.canonical, |canonical| {
-                let mut constants = canonical.constants().to_vec();
-                constants.push(constant);
-                canonical.set_constants(constants);
-                true
-            });
-        }
         self.constants.push(value);
         self
     }
-
-    /// Return the complete canonical schema state represented by this public
-    /// value, when it originated from `Index::describe()`.
-    pub fn canonical_definition(&self) -> Option<&searchkernel_ir::IndexDefinitionIr> {
-        self.canonical.as_ref()
-    }
 }
 
-fn empty_rank_phase() -> searchkernel_ir::RankPhaseDefinitionIr {
-    searchkernel_ir::RankPhaseDefinitionIr {
+fn empty_rank_phase() -> RankPhase {
+    RankPhase {
         expression: None,
         rerank_count: None,
         rank_score_drop_limit: None,
@@ -1108,40 +1672,6 @@ fn hnsw_to_ir(value: &HnswIndexConfig) -> searchkernel_ir::HnswIndexConfigIr {
         neighbors_to_explore_at_insert: value.neighbors_to_explore_at_insert,
         options: BTreeMap::new(),
     }
-}
-
-fn apply_canonical_mutation(
-    canonical: &mut Option<searchkernel_ir::IndexDefinitionIr>,
-    mutation: impl FnOnce(&mut searchkernel_ir::IndexDefinitionIr) -> bool,
-) {
-    let Some(mut value) = canonical.take() else {
-        return;
-    };
-    if mutation(&mut value) {
-        *canonical = Some(value);
-    }
-}
-
-fn canonical_search_fields(
-    canonical: &searchkernel_ir::IndexDefinitionIr,
-    fields: &[SearchField],
-) -> Option<Vec<searchkernel_ir::SearchFieldIr>> {
-    fields
-        .iter()
-        .map(|field| {
-            let field_name = searchkernel_ir::FieldName::parse(field.field.clone()).ok()?;
-            let resolved_field = canonical
-                .fields()
-                .iter()
-                .find(|value| value.name() == &field_name)?;
-            if !resolved_field.capabilities().searchable() {
-                return None;
-            }
-            let weight =
-                searchkernel_ir::SearchFieldWeight::new(field.weight.unwrap_or(1.0)).ok()?;
-            Some(searchkernel_ir::SearchFieldIr::new(field_name, weight))
-        })
-        .collect()
 }
 
 pub(crate) fn field_to_rust_input(field: &Field) -> Result<searchkernel_ir::RustFieldInput> {
@@ -1200,32 +1730,9 @@ pub(crate) fn field_to_rust_input(field: &Field) -> Result<searchkernel_ir::Rust
     })
 }
 
-pub(crate) fn rank_profile_to_rust_input(
-    profile: &RankProfile,
-) -> searchkernel_ir::RustRankProfileInput {
-    searchkernel_ir::RustRankProfileInput {
-        name: profile.name.clone(),
-        first_phase: profile
-            .first_phase
-            .as_ref()
-            .and_then(|phase| phase.expression.clone()),
-        second_phase: profile
-            .second_phase
-            .as_ref()
-            .and_then(|phase| phase.expression.clone()),
-        rerank_count: profile.rerank_count.or_else(|| {
-            profile
-                .second_phase
-                .as_ref()
-                .and_then(|phase| phase.rerank_count)
-        }),
-        match_features: profile.match_features.clone(),
-        query_inputs: profile.query_inputs.clone(),
-    }
-}
-
 fn distance_metric_to_ir(value: DistanceMetric) -> searchkernel_ir::DistanceMetricIr {
     match value {
+        DistanceMetric::Unspecified => searchkernel_ir::DistanceMetricIr::Unspecified,
         DistanceMetric::Euclidean => searchkernel_ir::DistanceMetricIr::Euclidean,
         DistanceMetric::Angular => searchkernel_ir::DistanceMetricIr::Angular,
         DistanceMetric::DotProduct => searchkernel_ir::DistanceMetricIr::DotProduct,
@@ -1254,8 +1761,8 @@ mod tests {
 
     #[test]
     fn rank_profile_query_input_populates_public_canonical_state() {
-        let profile = RankProfile::new("semantic")
-            .query_input("query_embedding", "tensor<float>(x[3])");
+        let profile =
+            RankProfile::new("semantic").query_input("query_embedding", "tensor<float>(x[3])");
 
         assert_eq!(profile.inputs.len(), 1);
         assert_eq!(profile.inputs[0].name, "query_embedding");

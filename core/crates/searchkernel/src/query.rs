@@ -1305,6 +1305,7 @@ mod tests {
         assert_eq!(pattern, r"A\.c\+.*");
     }
 
+    #[allow(clippy::type_complexity)]
     #[test]
     fn typed_query_facade_covers_every_canonical_expression_kind() {
         let cases: Vec<(&str, Query, fn(QueryExprIr) -> bool)> = vec![
