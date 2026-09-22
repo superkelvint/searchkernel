@@ -190,12 +190,20 @@ fn rich_v2_index_definition_round_trips_through_ir() {
                     value_type: Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::Float32)),
                 },
             ),
-            field(
-                "weighted",
-                DataTypeIr::WeightedSet(Box::new(DataTypeIr::Primitive(
-                    PrimitiveDataTypeIr::String,
-                ))),
-            ),
+            {
+                let mut weighted = field(
+                    "weighted",
+                    DataTypeIr::WeightedSet(Box::new(DataTypeIr::Primitive(
+                        PrimitiveDataTypeIr::String,
+                    ))),
+                );
+                weighted.analyzer = Some(crate::AnalyzerIr {
+                    name: "standard".to_owned(),
+                    version: 1,
+                    options: BTreeMap::new(),
+                });
+                weighted
+            },
             field(
                 "inline",
                 DataTypeIr::Struct {
@@ -245,6 +253,11 @@ fn rich_v2_index_definition_round_trips_through_ir() {
         DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
     );
     derived.capabilities.filterable = false;
+    derived.analyzer = Some(crate::AnalyzerIr {
+        name: "standard".to_owned(),
+        version: 1,
+        options: BTreeMap::new(),
+    });
     definition.schema_fields = vec![derived];
     definition.imported_fields = vec![ImportedFieldDefinitionIr {
         reference_field: FieldName::parse("parent").unwrap(),
