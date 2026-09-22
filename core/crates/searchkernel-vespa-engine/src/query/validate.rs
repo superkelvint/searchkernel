@@ -347,5 +347,5 @@ fn validate_value(value: &Value) -> Result<()> {
 }
 
 pub(crate) fn invalid_query(message: impl Into<String>) -> Error {
-    Error::message(format!("invalid_query: {}", message.into()))
+    Error::invalid(format!("invalid_query: {}", message.into()))
 }
