@@ -73,6 +73,86 @@ def source_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def shared_library_tree_identity(root: Path) -> str:
+    """Cheap identity for packaged shared-library inputs.
+
+    Native SDK packaging copies shared libraries from configured Vespa/dependency
+    trees. Hashing every large DSO on every resolver invocation would make cache
+    lookup unnecessarily expensive, so use stable path/symlink/size/mtime
+    metadata. A rebuilt or replaced library changes this identity in normal build
+    workflows while keeping warm-cache lookup cheap.
+    """
+    if not root.is_dir():
+        return "missing"
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.so*")):
+        try:
+            stat = path.stat()
+        except OSError as error:
+            digest.update(f"{path.relative_to(root)}:error={error}\n".encode())
+            continue
+        relative = path.relative_to(root).as_posix()
+        target = os.readlink(path) if path.is_symlink() else ""
+        digest.update(
+            f"{relative}\0{target}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode()
+        )
+    return digest.hexdigest()
+
+
+def configured_deps_root(root: Path, vespa_root: Path) -> Path | None:
+    explicit = os.environ.get("VESPA_DEPS")
+    if explicit:
+        candidate = Path(explicit)
+        return candidate.resolve(strict=False) if candidate.is_dir() else None
+
+    local = root / "vespa-deps"
+    if local.is_dir():
+        return local.resolve()
+
+    flags = (
+        vespa_root
+        / "searchcore/src/tests/proton/documentdb/CMakeFiles/"
+        "searchcore_embedded_crud_spike_app.dir/flags.make"
+    )
+    if flags.is_file():
+        text = flags.read_text(encoding="utf-8", errors="replace")
+        marker = "-isystem "
+        for token in text.split():
+            if token.startswith(marker):
+                token = token[len(marker):]
+            if token.endswith("/include"):
+                candidate = Path(token).parent
+                if candidate.is_dir():
+                    return candidate.resolve()
+
+    try:
+        worktrees = subprocess.run(
+            ["git", "-C", str(root), "worktree", "list", "--porcelain"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    for line in worktrees.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        candidate = Path(line.removeprefix("worktree ")) / "vespa-deps"
+        if candidate.is_dir():
+            return candidate.resolve()
+    return None
+
+
+def dependency_bundle_identity(root: Path, vespa_root: Path) -> str:
+    deps = configured_deps_root(root, vespa_root)
+    if deps is None:
+        return "unresolved"
+    lib_dir = Path(os.environ["VESPA_DEPS_LIB_DIR"]) if os.environ.get("VESPA_DEPS_LIB_DIR") else (
+        deps / "lib64" if (deps / "lib64").is_dir() else deps / "lib"
+    )
+    return shared_library_tree_identity(lib_dir)
+
+
 def vespa_config_digest(vespa_root: Path) -> str:
     digest = hashlib.sha256()
     for relative in (
@@ -158,7 +238,9 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
         "flatbuffers.version": os.environ.get("FLATBUFFERS_VERSION", "25.12.19"),
         "vespa.commit": git_tree_identity(vespa_root),
         "vespa.config": vespa_config_digest(vespa_root),
+        "vespa.shared_libraries": shared_library_tree_identity(vespa_root),
         "native.source": source_digest(root),
+        "native.dependency_bundle": dependency_bundle_identity(root, vespa_root),
     }
 
     tracked = (
