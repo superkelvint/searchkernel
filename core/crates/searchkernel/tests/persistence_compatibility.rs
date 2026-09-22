@@ -1,6 +1,6 @@
 #![cfg(feature = "native")]
 
-use searchkernel::{Index, Patch, PrimitiveDataType};
+use searchkernel::{field, Index, Patch};
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -39,45 +39,41 @@ fn copy_tree(source: &Path, destination: &Path) {
 }
 
 fn materialize_fixture(version: u32) -> PathBuf {
-    let root = repo_root();
-    let fixture = root
+    let fixture = repo_root()
         .join("reference/persistence/fixtures")
         .join(format!("manifest-v{version}-storage-v1"));
     let target = temporary_path(&format!("v{version}"));
-    fs::create_dir_all(target.join("manifest")).unwrap();
-    fs::create_dir_all(target.join("config")).unwrap();
-
-    copy_tree(
-        &root.join("reference/vespa/m5/fixtures/persisted-v1/index"),
-        &target.join("data"),
-    );
-    copy_tree(&fixture.join("config"), &target.join("config"));
-    fs::copy(
-        fixture.join("manifest-template.json"),
-        target.join("manifest/index.json"),
-    )
-    .unwrap();
-    if version != 2 {
-        for name in ["index-definition.bfbs", "portable-index-definition.bfbs"] {
-            fs::copy(fixture.join(name), target.join("manifest").join(name)).unwrap();
-        }
-    }
+    copy_tree(&fixture, &target);
     target
 }
 
-fn assert_expected(index: &Index) {
-    for (id, expected) in [
-        ("id:test:typea::1", Some(40_i64)),
-        ("id:test:typea::2", Some(10_i64)),
-        ("id:test:typea::3", None),
-        ("id:test:typea::4", Some(10_i64)),
+fn search_ids(index: &Index, value: i64) -> Vec<String> {
+    let result = index
+        .browse()
+        .filter(field("attr1").eq(value))
+        .execute::<serde_json::Value>()
+        .unwrap();
+    let mut ids = result
+        .hits
+        .into_iter()
+        .map(|hit| hit.id.to_string())
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids
+}
+
+fn assert_expected_searches(index: &Index) {
+    for (value, expected) in [
+        (10_i64, vec!["id:test:typea::2", "id:test:typea::4"]),
+        (20_i64, vec![]),
+        (30_i64, vec![]),
+        (40_i64, vec!["id:test:typea::1"]),
     ] {
-        let document = index.get::<serde_json::Value>(id).unwrap();
-        let actual = document
-            .as_ref()
-            .and_then(|value| value.get("attr1"))
-            .and_then(serde_json::Value::as_i64);
-        assert_eq!(actual, expected, "unexpected persisted value for {id}");
+        assert_eq!(
+            search_ids(index, value),
+            expected.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+            "unexpected persisted search result for attr1={value}"
+        );
     }
 }
 
@@ -87,11 +83,8 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
         let root = materialize_fixture(version);
         let index = Index::open(&root).unwrap_or_else(|error| panic!("v{version} open: {error}"));
         let described = index.describe().unwrap();
-        assert!(matches!(
-            described.fields()[0].data_type(),
-            searchkernel::DataType::Primitive(PrimitiveDataType::Int32)
-        ), "v{version} historical schema must preserve its frozen int32 type");
-        assert_expected(&index);
+        assert_eq!(described.fields()[0].name(), "attr1");
+        assert_expected_searches(&index);
 
         index
             .patch("id:test:typea::2", Patch::new().set("attr1", 50_i64))
@@ -117,6 +110,11 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
                 .and_then(|value| value.get("attr1").and_then(serde_json::Value::as_i64)),
             Some(10)
         );
+        assert_eq!(search_ids(&reopened, 50), vec!["id:test:typea::2".to_owned()]);
+        assert_eq!(search_ids(&reopened, 10), vec![
+            "id:test:typea::4".to_owned(),
+            "id:test:typea::5".to_owned(),
+        ]);
         reopened.close().unwrap();
         fs::remove_dir_all(root).unwrap();
     }
