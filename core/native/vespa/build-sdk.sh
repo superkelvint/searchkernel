@@ -198,7 +198,7 @@ if [ "$ENABLE_FAILPOINTS" = 1 ]; then
     # enables section garbage collection, and explicitly place them in the
     # dynamic symbol table instead of relying on linker heuristics.
     TEST_SYMBOLS=$(sed -nE \
-        's/^SK_API (int32_t|uint32_t) (sk_test_[a-zA-Z0-9_]+)\(.*/\2/p' \
+        's/^SK_API ([A-Za-z0-9_]+) (sk_test_[a-zA-Z0-9_]+)\(.*/\2/p' \
         "$ROOT/core/native/vespa/searchkernel_vespa_test.h")
     for symbol in $TEST_SYMBOLS; do
         LINK_ARGS="$LINK_ARGS -Wl,--undefined=$symbol -Wl,--export-dynamic-symbol=$symbol"
