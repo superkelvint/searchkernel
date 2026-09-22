@@ -48,7 +48,7 @@ jobs:
           fi
 
       - name: Run ABI surface regression tests
-        run: "$ABI_PYTHON" tools/test_check_abi_surface.py
+        run: $ABI_PYTHON tools/test_check_abi_surface.py
 
       - name: Check repository layout
         run: bash tools/check-layout.sh
@@ -57,4 +57,4 @@ jobs:
         run: bash tools/test-native-sdk-cache.sh
 
       - name: Check public Vespa ABI header
-        run: "$ABI_PYTHON" tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
+        run: $ABI_PYTHON tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
