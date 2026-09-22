@@ -146,6 +146,12 @@ if valid_object; then
     exit 0
 fi
 
+if [[ "$MODE" == path ]]; then
+    echo "native SDK cache miss for fingerprint $DIGEST" >&2
+    echo "run './dev native-sdk ensure' only when native verification is required" >&2
+    exit 1
+fi
+
 LOCK=$CACHE_ROOT/locks/$DIGEST.lock
 command -v flock >/dev/null 2>&1 || {
     echo "native SDK cache requires flock for cross-worktree build serialization" >&2
