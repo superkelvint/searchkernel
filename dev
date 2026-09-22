@@ -378,28 +378,7 @@ doctor_vespa() {
 }
 
 doctor_python() {
-    "$PYTHON" - <<'PY'
-expected = {
-    "flatbuffers": "25.12.19",
-    "grpcio": "1.84.0",
-    "protobuf": "7.35.1",
-}
-try:
-    import flatbuffers
-    import google.protobuf
-    import grpc
-except ModuleNotFoundError as error:
-    raise SystemExit(f"missing Python module: {error.name}") from None
-
-actual = {
-    "flatbuffers": getattr(flatbuffers, "__version__", None),
-    "grpcio": grpc.__version__,
-    "protobuf": google.protobuf.__version__,
-}
-for package, wanted in expected.items():
-    if actual[package] != wanted:
-        raise SystemExit(f"{package} {actual[package]} (expected {wanted})")
-PY
+    "$PYTHON" "$ROOT/tools/check-python-dependencies.py"
 }
 
 doctor_searchkerneld() {
