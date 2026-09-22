@@ -649,9 +649,9 @@ fn is_unsupported_clause(name: &str) -> bool {
 }
 
 fn invalid_yql_error(message: impl Into<String>) -> Error {
-    Error::message(format!("invalid_yql: {}", message.into()))
+    Error::invalid(format!("invalid_yql: {}", message.into()))
 }
 
 fn unsupported(message: impl Into<String>) -> Error {
-    Error::message(format!("unsupported_yql: {}", message.into()))
+    Error::invalid(format!("unsupported_yql: {}", message.into()))
 }
