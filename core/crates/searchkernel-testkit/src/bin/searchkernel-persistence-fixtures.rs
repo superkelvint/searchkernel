@@ -42,10 +42,12 @@ fn main() {
     ] {
         let directory = output.join(format!("manifest-v{version}-storage-v1"));
         fs::create_dir_all(&directory).expect("create version fixture");
-        fs::write(directory.join("index-definition.bfbs"), &canonical)
-            .expect("write canonical definition");
-        fs::write(directory.join("portable-index-definition.bfbs"), &canonical)
-            .expect("write portable definition");
+        if version != 2 {
+            fs::write(directory.join("index-definition.bfbs"), &canonical)
+                .expect("write canonical definition");
+            fs::write(directory.join("portable-index-definition.bfbs"), &canonical)
+                .expect("write portable definition");
+        }
 
         let manifest = match version {
             2 => serde_json::json!({
@@ -102,7 +104,8 @@ fn main() {
                     "created_by_vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
                 },
                 "portable_index_definition": "portable-index-definition.bfbs",
-                "canonical_index_definition": "index-definition.bfbs"
+                "canonical_index_definition": "index-definition.bfbs",
+                "resolved_engine_config_identity": config_identity.clone()
             }),
             _ => unreachable!(),
         };
