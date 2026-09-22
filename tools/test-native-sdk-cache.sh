@@ -131,7 +131,11 @@ echo 'native SDK cache: Vespa-affined dependency-library change selected a disti
 chmod u+w "$fourth/lib"
 rm "$fourth/lib/libsearchkernel_cache_fixture_dep.so"
 chmod a-w "$fourth/lib"
-healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err")
+if ! healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err"); then
+    echo 'native SDK cache self-heal failed:' >&2
+    cat "$fixture/incomplete.err" >&2
+    exit 1
+fi
 [[ "$healed" == "$fourth" ]]
 [[ -f "$fourth/lib/libsearchkernel_cache_fixture_dep.so" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
@@ -155,7 +159,11 @@ cc -shared -fPIC "$fixture/external_adapter.c" \
     -o "$fourth/lib/libsearchkernel_vespa.so"
 rm "$fourth/lib/libsearchkernel_cache_fixture_dep.so"
 chmod a-w "$fourth/lib"
-external_healed=$(run_resolver "$worktree" 2>"$fixture/external.err")
+if ! external_healed=$(run_resolver "$worktree" 2>"$fixture/external.err"); then
+    echo 'native SDK cache external-resolution repair failed:' >&2
+    cat "$fixture/external.err" >&2
+    exit 1
+fi
 [[ "$external_healed" == "$fourth" ]]
 [[ -f "$fourth/lib/libsearchkernel_cache_fixture_dep.so" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 5 ]]
