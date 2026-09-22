@@ -129,4 +129,46 @@ grep -q 'quarantining and rebuilding under the cache lock' "$fixture/incomplete.
 [[ -n "$(find "$(dirname "$fourth")/../quarantine" -maxdepth 1 -type d -name "$(basename "$fourth").*" -print -quit 2>/dev/null)" ]]
 echo 'native SDK cache: incomplete published runtime closure self-healed automatically'
 
+# A private dependency resolving from an external RPATH is still an incomplete
+# SDK package. The validator must reject it even though plain ldd is green.
+external="$fixture/external-runtime"
+mkdir -p "$external"
+cp "$fourth/lib/libsearchkernel_cache_fixture_dep.so" "$external/"
+chmod u+w "$fourth/lib"
+cat >"$fixture/external_adapter.c" <<'C'
+extern int searchkernel_cache_fixture_dep(void);
+int sk_native_abi_version(void) { return searchkernel_cache_fixture_dep(); }
+C
+cc -shared -fPIC "$fixture/external_adapter.c" \
+    -L"$external" -Wl,-rpath,"$external" \
+    -lsearchkernel_cache_fixture_dep \
+    -o "$fourth/lib/libsearchkernel_vespa.so"
+rm "$fourth/lib/libsearchkernel_cache_fixture_dep.so"
+chmod a-w "$fourth/lib"
+external_healed=$(run_resolver "$worktree" 2>"$fixture/external.err")
+[[ "$external_healed" == "$fourth" ]]
+[[ -f "$fourth/lib/libsearchkernel_cache_fixture_dep.so" ]]
+[[ $(wc -l <"$common/sdk-cache-build-count") -eq 5 ]]
+grep -q 'resolved private runtime dependencies outside its bundled lib directory' "$fixture/external.err"
+echo 'native SDK cache: externally resolved private dependency is rejected and healed'
+
+# Two consumers racing on the same poisoned key must serialize and perform
+# exactly one repair build.
+chmod u+w "$fourth/lib"
+rm "$fourth/lib/libsearchkernel_cache_fixture_dep.so"
+chmod a-w "$fourth/lib"
+before=$(wc -l <"$common/sdk-cache-build-count")
+run_resolver "$worktree" >"$fixture/race-a.out" 2>"$fixture/race-a.err" &
+pid_a=$!
+run_resolver "$worktree" >"$fixture/race-b.out" 2>"$fixture/race-b.err" &
+pid_b=$!
+wait "$pid_a"
+wait "$pid_b"
+[[ "$(cat "$fixture/race-a.out")" == "$fourth" ]]
+[[ "$(cat "$fixture/race-b.out")" == "$fourth" ]]
+after=$(wc -l <"$common/sdk-cache-build-count")
+[[ $((after - before)) -eq 1 ]]
+[[ -f "$fourth/lib/libsearchkernel_cache_fixture_dep.so" ]]
+echo 'native SDK cache: concurrent repair serialized to one rebuild'
+
 echo 'native SDK cache regression PASS'
