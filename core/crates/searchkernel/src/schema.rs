@@ -1761,7 +1761,6 @@ pub(crate) fn field_to_rust_input(field: &Field) -> Result<searchkernel_ir::Rust
     })
 }
 
-
 pub(crate) fn field_to_unresolved_input(
     field: &Field,
     path: &str,
@@ -1781,7 +1780,9 @@ pub(crate) fn field_to_unresolved_input(
         None => None,
     };
     let matching = field.matching_config.clone().or_else(|| {
-        if described { return None; }
+        if described {
+            return None;
+        }
         match field.kind {
             FieldKind::Text => Some(searchkernel_ir::MatchingConfigIr {
                 mode: searchkernel_ir::MatchingModeIr::Text,
@@ -1795,31 +1796,35 @@ pub(crate) fn field_to_unresolved_input(
         }
     });
     let index = field.index_config.clone().or_else(|| {
-        if described { return None; }
-        field.hnsw.as_ref().map(|value| searchkernel_ir::IndexConfigIr {
-            enabled: Some(true),
-            hnsw: Some(hnsw_to_ir(value)),
-            options: BTreeMap::new(),
-        })
+        if described {
+            return None;
+        }
+        field
+            .hnsw
+            .as_ref()
+            .map(|value| searchkernel_ir::IndexConfigIr {
+                enabled: Some(true),
+                hnsw: Some(hnsw_to_ir(value)),
+                options: BTreeMap::new(),
+            })
     });
     let attribute = field.attribute_config.clone().or_else(|| {
-        if described { return None; }
-        field.distance_metric.map(|value| searchkernel_ir::AttributeConfigIr {
-            enabled: Some(true),
-            fast_search: None,
-            fast_access: None,
-            distance_metric: distance_metric_to_ir(value),
-            options: BTreeMap::new(),
-        })
+        if described {
+            return None;
+        }
+        field
+            .distance_metric
+            .map(|value| searchkernel_ir::AttributeConfigIr {
+                enabled: Some(true),
+                fast_search: None,
+                fast_access: None,
+                distance_metric: distance_metric_to_ir(value),
+                options: BTreeMap::new(),
+            })
     });
     let indexing_script = field.indexing_script.clone();
     let script_defaults = indexing_script.is_some() && described;
-    let stored = omit_script_default(
-        field.stored,
-        script_defaults,
-        field.stored_explicit,
-        true,
-    );
+    let stored = omit_script_default(field.stored, script_defaults, field.stored_explicit, true);
     let searchable = omit_script_default(
         field.searchable,
         script_defaults,
@@ -1859,7 +1864,11 @@ pub(crate) fn field_to_unresolved_input(
         summary: field.summary_config.clone(),
         indexing_script,
         properties: field.properties.clone(),
-        struct_fields: field.struct_fields.iter().map(StructFieldConfig::to_ir).collect(),
+        struct_fields: field
+            .struct_fields
+            .iter()
+            .map(StructFieldConfig::to_ir)
+            .collect(),
     })
 }
 
@@ -1882,10 +1891,7 @@ fn validate_public_field_data_type(field: &Field, path: &str) -> Result<()> {
         value => value,
     };
     let matches_kind = match (&field.kind, data_type) {
-        (
-            FieldKind::Text | FieldKind::Keyword,
-            DataType::Primitive(PrimitiveDataType::String),
-        )
+        (FieldKind::Text | FieldKind::Keyword, DataType::Primitive(PrimitiveDataType::String))
         | (FieldKind::Int64, DataType::Primitive(PrimitiveDataType::Int64))
         | (FieldKind::Float64, DataType::Primitive(PrimitiveDataType::Float64))
         | (FieldKind::Bool, DataType::Primitive(PrimitiveDataType::Bool))
@@ -1972,22 +1978,49 @@ pub(crate) fn index_definition_to_input(
             })
             .collect::<Result<Vec<_>>>()?,
         default_search_fields: definition.default_search_fields.as_ref().map(|fields| {
-            fields.iter().map(|field| searchkernel_ir::RustSearchFieldInput {
-                field: field.field.clone(),
-                weight: field.weight,
-            }).collect()
+            fields
+                .iter()
+                .map(|field| searchkernel_ir::RustSearchFieldInput {
+                    field: field.field.clone(),
+                    weight: field.weight,
+                })
+                .collect()
         }),
         properties: properties_to_ir(&definition.properties),
         document_type: definition.document_type.clone(),
         schema_inherits: definition.schema_inherits.clone(),
         document_inherits: definition.document_inherits.clone(),
         structs: definition.structs.iter().map(NamedStruct::to_ir).collect(),
-        fieldsets: definition.fieldsets.iter().map(FieldSet::to_ir).collect::<Result<Vec<_>>>()?,
-        imported_fields: definition.imported_fields.iter().map(ImportedField::to_ir).collect::<Result<Vec<_>>>()?,
-        document_summaries: definition.document_summaries.iter().map(DocumentSummary::to_ir).collect(),
-        rank_profiles: definition.rank_profiles.iter().map(rank_profile_to_unresolved_input).collect(),
-        constants: definition.constants.iter().map(ConstantDefinition::to_ir).collect(),
-        onnx_models: definition.onnx_models.iter().map(OnnxModel::to_ir).collect(),
+        fieldsets: definition
+            .fieldsets
+            .iter()
+            .map(FieldSet::to_ir)
+            .collect::<Result<Vec<_>>>()?,
+        imported_fields: definition
+            .imported_fields
+            .iter()
+            .map(ImportedField::to_ir)
+            .collect::<Result<Vec<_>>>()?,
+        document_summaries: definition
+            .document_summaries
+            .iter()
+            .map(DocumentSummary::to_ir)
+            .collect(),
+        rank_profiles: definition
+            .rank_profiles
+            .iter()
+            .map(rank_profile_to_unresolved_input)
+            .collect(),
+        constants: definition
+            .constants
+            .iter()
+            .map(ConstantDefinition::to_ir)
+            .collect(),
+        onnx_models: definition
+            .onnx_models
+            .iter()
+            .map(OnnxModel::to_ir)
+            .collect(),
     })
 }
 
@@ -1995,14 +2028,22 @@ fn rank_profile_to_unresolved_input(
     profile: &RankProfile,
 ) -> searchkernel_ir::UnresolvedRankProfileInput {
     let inputs = if profile.inputs.is_empty() {
-        profile.query_inputs.iter().map(|(name, type_spec)| searchkernel_ir::RankProfileInputIr {
-            name: name.clone(),
-            data_type: searchkernel_ir::DataTypeIr::Tensor { type_spec: type_spec.clone() },
-            default_value: searchkernel_ir::RequestValueIr::Tensor(searchkernel_ir::RequestTensorIr {
-                type_spec: type_spec.clone(),
-                payload: searchkernel_ir::RequestTensorPayloadIr::Dense(Vec::new()),
-            }),
-        }).collect()
+        profile
+            .query_inputs
+            .iter()
+            .map(|(name, type_spec)| searchkernel_ir::RankProfileInputIr {
+                name: name.clone(),
+                data_type: searchkernel_ir::DataTypeIr::Tensor {
+                    type_spec: type_spec.clone(),
+                },
+                default_value: searchkernel_ir::RequestValueIr::Tensor(
+                    searchkernel_ir::RequestTensorIr {
+                        type_spec: type_spec.clone(),
+                        payload: searchkernel_ir::RequestTensorPayloadIr::Dense(Vec::new()),
+                    },
+                ),
+            })
+            .collect()
     } else {
         profile.inputs.iter().map(RankProfileInput::to_ir).collect()
     };
@@ -2012,23 +2053,33 @@ fn rank_profile_to_unresolved_input(
         inputs,
         functions: profile.functions.iter().map(RankFunction::to_ir).collect(),
         first_phase: profile.first_phase.as_ref().map(RankPhase::to_ir),
-        second_phase: profile.second_phase.as_ref().map(RankPhase::to_ir).or_else(|| {
-            profile.rerank_count.map(|rerank_count| searchkernel_ir::RankPhaseDefinitionIr {
-                expression: None,
-                rerank_count: Some(rerank_count),
-                rank_score_drop_limit: None,
-                properties: BTreeMap::new(),
-                total_rerank_count: None,
-                keep_rank_count: None,
-                total_keep_rank_count: None,
-            })
-        }),
+        second_phase: profile
+            .second_phase
+            .as_ref()
+            .map(RankPhase::to_ir)
+            .or_else(|| {
+                profile
+                    .rerank_count
+                    .map(|rerank_count| searchkernel_ir::RankPhaseDefinitionIr {
+                        expression: None,
+                        rerank_count: Some(rerank_count),
+                        rank_score_drop_limit: None,
+                        properties: BTreeMap::new(),
+                        total_rerank_count: None,
+                        keep_rank_count: None,
+                        total_keep_rank_count: None,
+                    })
+            }),
         global_phase: profile.global_phase.as_ref().map(RankPhase::to_ir),
         rank_features: profile.rank_features.clone(),
         match_features: profile.match_features.clone(),
         summary_features: profile.summary_features.clone(),
         sort_features: profile.sort_features.clone(),
-        constants: profile.constants.iter().map(ConstantDefinition::to_ir).collect(),
+        constants: profile
+            .constants
+            .iter()
+            .map(ConstantDefinition::to_ir)
+            .collect(),
         onnx_models: profile.onnx_models.iter().map(OnnxModel::to_ir).collect(),
         rank_properties: profile.rank_properties.clone(),
         strict: profile.strict,

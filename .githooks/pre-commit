@@ -17,5 +17,11 @@ if ! git diff --cached --quiet -- docs/capabilities.json; then
     git add docs/CAPABILITIES.md LIMITATIONS.md
 fi
 
+echo "pre-commit: checking rustfmt"
+cargo fmt --all --check
+
+echo "pre-commit: running clippy"
+cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+
 echo "pre-commit: running workspace unit tests"
 cargo test --workspace --all-targets --no-default-features

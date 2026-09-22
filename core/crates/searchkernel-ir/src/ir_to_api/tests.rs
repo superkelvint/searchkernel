@@ -228,7 +228,7 @@ fn rich_v2_index_definition_round_trips_through_ir() {
                 },
             ),
         ],
-        Vec::new()
+        Vec::new(),
     )
     .unwrap();
     definition.document_type = Some("doc".to_owned());
@@ -315,15 +315,30 @@ fn rich_v2_index_definition_round_trips_through_ir() {
     }];
 
     let IndexDefinitionIr {
-        name: _, fields: _, default_search_fields: _, properties: _, document_type: _,
-        schema_inherits: _, document_inherits: _, structs: _, fieldsets: _, schema_fields: _,
-        imported_fields: _, document_summaries: _, rank_profiles: _, constants: _, onnx_models: _,
+        name: _,
+        fields: _,
+        default_search_fields: _,
+        properties: _,
+        document_type: _,
+        schema_inherits: _,
+        document_inherits: _,
+        structs: _,
+        fieldsets: _,
+        schema_fields: _,
+        imported_fields: _,
+        document_summaries: _,
+        rank_profiles: _,
+        constants: _,
+        onnx_models: _,
     } = &definition;
 
     let bytes = index_definition_ir_to_api(&definition);
     let api = flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap();
     let first = crate::index_definition_to_ir(api).unwrap();
-    assert_eq!(definition, first, "independently constructed canonical IR must survive its first FlatBuffers round trip");
+    assert_eq!(
+        definition, first,
+        "independently constructed canonical IR must survive its first FlatBuffers round trip"
+    );
     let bytes = index_definition_ir_to_api(&first);
     let api = flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap();
     let second = crate::index_definition_to_ir(api).unwrap();
@@ -476,12 +491,7 @@ fn rank_phase_controls_are_validated_against_their_phase() {
         None,
         FieldCapabilities::new(true, true, false, false, false),
     );
-    let mut definition = IndexDefinitionIr::new(
-        None,
-        vec![field],
-        Vec::new()
-    )
-    .unwrap();
+    let mut definition = IndexDefinitionIr::new(None, vec![field], Vec::new()).unwrap();
     definition.rank_profiles = vec![RankProfileDefinitionIr {
         name: "invalid".to_owned(),
         inherits: Vec::new(),

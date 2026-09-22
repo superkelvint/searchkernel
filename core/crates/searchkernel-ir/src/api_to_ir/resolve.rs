@@ -626,15 +626,16 @@ fn resolve_grouping_at(
                 GroupingInput::Structured(value) => {
                     let path = format!("grouping[{index}]");
                     validate_grouping_request(context, value, &path)?;
-                    (value.clone(), format!("{path}.root.operations[0].expression"))
+                    (
+                        value.clone(),
+                        format!("{path}.root.operations[0].expression"),
+                    )
                 }
-                GroupingInput::Raw(_) => {
-                    return Err(PortableError::unsupported(
-                        "raw_grouping_not_supported",
-                        Some(format!("grouping[{index}].source")),
-                        "raw grouping text requires a grouping parser before it can enter canonical IR",
-                    ))
-                }
+                GroupingInput::Raw(_) => return Err(PortableError::unsupported(
+                    "raw_grouping_not_supported",
+                    Some(format!("grouping[{index}].source")),
+                    "raw grouping text requires a grouping parser before it can enter canonical IR",
+                )),
             };
             if let Some(field) = canonical_facet_field(&resolved) {
                 if !facet_fields.insert(field.to_owned()) {
@@ -1943,10 +1944,11 @@ fn canonical_facet_field(value: &GroupingRequestIr) -> Option<&str> {
     };
     let valid_order = match order {
         GroupingExpressionIr::Negative(expression) => {
-            count(expression) || matches!(
-                expression.as_ref(),
-                GroupingExpressionIr::Attribute(value) if value == field
-            )
+            count(expression)
+                || matches!(
+                    expression.as_ref(),
+                    GroupingExpressionIr::Attribute(value) if value == field
+                )
         }
         expression => {
             count(expression)
