@@ -386,7 +386,7 @@ fn manifest_preserves_rich_described_schema_provenance() {
     manifest.write(&root).unwrap();
     let loaded = IndexManifest::read(&root).unwrap();
 
-    assert_eq!(loaded.portable_definition_bytes, canonical_bytes);
+    assert_eq!(loaded.portable_definition_bytes, portable_bytes);
     assert_eq!(loaded.resolved_definition_bytes, canonical_bytes);
     assert_eq!(loaded.definition().unwrap(), described);
     let _ = std::fs::remove_dir_all(root);
