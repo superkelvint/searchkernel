@@ -578,6 +578,11 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
         .filterable(capabilities.filterable())
         .sortable(capabilities.sortable())
         .facetable(capabilities.facetable());
+    // The capability setters are also public mutation APIs and synchronize an
+    // already-described summary. Restore the canonical summary projection
+    // here because this function is constructing that projection in the first
+    // place, before the field receives its canonical sidecar.
+    value.summary_config = field.summary().cloned();
     value.capabilities = Some(FieldCapabilities::from_ir(capabilities));
     if field.analyzer().is_some_and(|analyzer| {
         analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty()
