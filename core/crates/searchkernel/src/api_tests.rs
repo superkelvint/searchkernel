@@ -3289,6 +3289,25 @@ fn field_to_ir_preserves_struct_field_configuration_without_canonical_sidecar() 
 }
 
 #[test]
+fn described_rank_profile_exposes_inheritance_and_functions_publicly() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let actual = &described.rank_profiles()[0];
+    let expected = &canonical.rank_profiles()[0];
+    assert_eq!(actual.inherits, expected.inherits);
+    assert_eq!(actual.functions, expected.functions);
+}
+
+#[test]
+fn public_rank_profile_configuration_round_trips_without_canonical_sidecar() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let mut profile = described.rank_profiles()[0].clone();
+    profile.canonical = None;
+    let resolved = definition_to_ir(&IndexDefinition::new().field(Field::text("title")).rank_profile(profile)).expect("profile should resolve");
+    assert_eq!(resolved.rank_profiles()[0].inherits, canonical.rank_profiles()[0].inherits);
+    assert_eq!(resolved.rank_profiles()[0].functions, canonical.rank_profiles()[0].functions);
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();

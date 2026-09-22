@@ -177,6 +177,10 @@ pub struct RankProfile {
     /// Generic rank-profile properties not covered by dedicated fields.
     pub properties: searchkernel_ir::SchemaPropertiesIr,
     pub(crate) query_inputs: Vec<(String, String)>,
+    /// Canonical profile inheritance exposed by Index::describe().
+    pub inherits: Vec<String>,
+    /// Canonical Vespa rank functions exposed by Index::describe().
+    pub functions: Vec<searchkernel_ir::RankFunctionDefinitionIr>,
     pub(crate) canonical: Option<searchkernel_ir::RankProfileDefinitionIr>,
 }
 
@@ -196,6 +200,8 @@ impl RankProfile {
             strict: None,
             properties: BTreeMap::new(),
             query_inputs: Vec::new(),
+            inherits: Vec::new(),
+            functions: Vec::new(),
             canonical: None,
         }
     }
