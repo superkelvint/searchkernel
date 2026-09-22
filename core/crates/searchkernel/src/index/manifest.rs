@@ -13,7 +13,7 @@ use std::io::Write;
 #[cfg(feature = "native")]
 pub(crate) const MANIFEST_FORMAT_VERSION: u32 = 4;
 #[cfg(feature = "native")]
-pub(crate) const PREVIOUS_MANIFEST_FORMAT_VERSION: u32 = 99;
+pub(crate) const PREVIOUS_MANIFEST_FORMAT_VERSION: u32 = 3;
 #[cfg(feature = "native")]
 pub(crate) const LEGACY_MANIFEST_FORMAT_VERSION: u32 = 2;
 #[cfg(feature = "native")]
