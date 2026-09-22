@@ -41,16 +41,18 @@ inputs that can change the pinned third-party prerequisite. Full/package
 provenance additionally records Search Kernel adapter source and adapter-only
 flags.
 
-- Rust host/toolchain and Cargo target;
-- canonical C/C++ compiler paths, versions, and target/dumpmachine output;
-- archiver, ranlib, linker, libc, and C++ runtime identities;
-- relevant compiler, linker, CMake, and standard-library configuration for the
-  base;
-- for full/package scope only: Search Kernel adapter source plus failpoint,
-  sanitizer, coverage, and adapter-only compiler/linker flags;
-- the pinned FlatBuffers version consumed by native packaging where relevant;
-- the pinned Vespa revision and configured Vespa build inputs; and
+Base scope records:
+- the build environment partition and Cargo target;
+- the pinned Vespa revision and configured Vespa build identity;
+- the content identity of the already-built Vespa shared libraries; and
 - the selected dependency/runtime library content bundled into the base.
+
+Full/package scope additionally records:
+- Rust, C/C++, archiver, linker, libc, and C++ runtime identities;
+- compiler/linker/CMake/standard-library configuration;
+- Search Kernel adapter source plus failpoint, sanitizer, coverage, and
+  adapter-only compiler/linker flags; and
+- the pinned FlatBuffers version where relevant to the full native package.
 
 The record contains no timestamps, process IDs, temporary paths, or random
 values. The native SDK also stores its fingerprint digest in `manifest.json`.
@@ -127,5 +129,6 @@ different native provenance
 In particular, edits outside the native fingerprint (for example IR, protocol,
 client, or filter changes) do not force a Vespa rebuild. Edits to Search Kernel adapter sources do not change the shared base key; they
 rebuild only the local adapter. A different pinned/configured Vespa tree,
-base-relevant toolchain/runtime change, target change, or packaged dependency
-change selects a different base object.
+changed Vespa library bytes, target/environment partition, or packaged
+dependency/runtime bytes select a different base object. Merely changing the
+active Rust/C++ compiler or adapter flags does not.
