@@ -12,6 +12,7 @@ jobs:
     env:
       CARGO_TARGET_DIR: target/ci
       SEARCHKERNEL_BUILD_ENV: ci
+      CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -19,5 +20,10 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/ci"
+
       - name: Run workspace unit tests
-        run: cargo test --workspace --all-targets --no-default-features
+        run: cargo test --workspace --no-default-features
