@@ -318,7 +318,8 @@ class ExactHeadTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("tracked unstaged changes also exist", result.stdout)
-        logged = log.read_text(encoding="utf-8")
+        logged = log.read_text(encoding="utf-8") if log.exists() else ""
+        self.assertNotIn("cargo ", logged)
         self.assertNotIn("native i", logged)
 
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
