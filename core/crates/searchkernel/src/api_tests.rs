@@ -2558,6 +2558,28 @@ fn canonical_index_definition_round_trips_through_flatbuffers_without_loss() {
 }
 
 #[test]
+fn rank_profile_input_default_converges_across_rust_and_flatbuffers_ingress() {
+    let canonical = canonical_fixture_ir();
+    let expected = canonical.rank_profiles()[0].inputs[1].default_value.clone();
+
+    let rust_definition = definition_from_ir(&canonical);
+    let rust_ir = definition_to_ir(&rust_definition)
+        .expect("Rust schema ingress should preserve canonical rank-profile defaults");
+
+    let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+        .expect("portable schema should decode");
+    let portable_ir = searchkernel_ir::index_definition_to_ir(root)
+        .expect("portable schema ingress should preserve canonical rank-profile defaults");
+
+    assert_eq!(rust_ir.rank_profiles()[0].inputs[1].default_value, expected);
+    assert_eq!(
+        portable_ir.rank_profiles()[0].inputs[1].default_value,
+        rust_ir.rank_profiles()[0].inputs[1].default_value
+    );
+}
+
+#[test]
 fn canonical_fixture_covers_the_complete_schema_surface() {
     let definition = canonical_fixture_ir();
     assert_eq!(

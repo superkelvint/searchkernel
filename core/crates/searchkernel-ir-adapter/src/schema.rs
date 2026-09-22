@@ -701,7 +701,10 @@ mod tests {
     #[test]
     fn explicit_rank_profile_input_defaults_fail_closed_before_native_config() {
         let cases = [
+            // Same declared tensor type, distinct explicit defaults: neither
+            // may be silently collapsed into the declaration-only path.
             ("tensor<float>(x[2])", vec![1.0, 0.0]),
+            ("tensor<float>(x[2])", vec![0.0, 1.0]),
             ("tensor<float>(a[1],b[4])", vec![1.0, 2.0, 3.0, 4.0]),
             // Deliberately malformed cell count. The adapter rejects all
             // explicit defaults before native config, so malformed dense
