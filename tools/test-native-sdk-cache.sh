@@ -223,9 +223,9 @@ healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err")
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/incomplete.err"
 
-chmod u+w "$fourth/lib"
+chmod u+w "$fourth/lib" "$fourth/lib/libvespalib.so"
 truncate -s 1 "$fourth/lib/libvespalib.so"
-chmod a-w "$fourth/lib"
+chmod a-w "$fourth/lib/libvespalib.so" "$fourth/lib"
 corrupted_healed=$(run_resolver "$worktree" 2>"$fixture/corrupt.err")
 [[ "$corrupted_healed" == "$fourth" ]]
 [[ -s "$fourth/lib/libvespalib.so" ]]
