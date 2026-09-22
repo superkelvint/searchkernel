@@ -85,12 +85,37 @@ DIGEST=$(printf '%s' "$FINGERPRINT" | sed -n 's/^sha256=//p' | head -1)
 [[ ${#DIGEST} -eq 64 ]] || { echo "native fingerprint did not produce a SHA-256 digest" >&2; exit 1; }
 OBJECT=$CACHE_ROOT/objects/$DIGEST
 
+validate_link_closure() {
+    local sdk=$1
+    local library="$sdk/lib/libsearchkernel_vespa.so"
+    local output missing
+
+    command -v ldd >/dev/null 2>&1 || {
+        echo "native SDK runtime dependency closure validation requires ldd" >&2
+        return 1
+    }
+
+    if ! output=$(env -u LD_LIBRARY_PATH -u LD_PRELOAD ldd "$library" 2>&1); then
+        echo "native SDK '$sdk' runtime dependency closure probe failed" >&2
+        printf '%s\n' "$output" >&2
+        return 1
+    fi
+
+    missing=$(printf '%s\n' "$output" | sed -n '/=> not found/p')
+    if [[ -n "$missing" ]]; then
+        echo "native SDK '$sdk' has incomplete runtime dependency closure:" >&2
+        printf '%s\n' "$missing" >&2
+        return 1
+    fi
+}
+
 valid_object() {
     [[ -f "$OBJECT/include/searchkernel_vespa.h" &&
        -f "$OBJECT/manifest.json" &&
        -f "$OBJECT/native-build-fingerprint-v2.txt" &&
        -f "$OBJECT/lib/libsearchkernel_vespa.so" ]] || return 1
-    grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt"
+    grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
+    validate_link_closure "$OBJECT"
 }
 
 if valid_object; then
@@ -139,6 +164,11 @@ SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
 
 grep -q "^sha256=$DIGEST$" "$TMP/native-build-fingerprint-v2.txt" || {
     echo "built SDK fingerprint does not match requested cache key $DIGEST" >&2
+    exit 1
+}
+
+validate_link_closure "$TMP" || {
+    echo "refusing to publish native SDK with incomplete runtime dependency closure" >&2
     exit 1
 }
 
