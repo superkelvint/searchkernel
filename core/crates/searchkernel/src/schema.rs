@@ -143,6 +143,7 @@ pub struct Field {
     pub(crate) matching_config: Option<searchkernel_ir::MatchingConfigIr>,
     pub(crate) distance_metric: Option<DistanceMetric>,
     pub(crate) hnsw: Option<HnswIndexConfig>,
+    pub(crate) struct_fields: Vec<searchkernel_ir::StructFieldConfigIr>,
     /// Complete native index configuration returned by `Index::describe`.
     pub index_config: Option<searchkernel_ir::IndexConfigIr>,
     /// Complete native attribute configuration returned by `Index::describe`.
@@ -304,6 +305,7 @@ impl Field {
             matching_config: None,
             distance_metric: None,
             hnsw: None,
+            struct_fields: Vec::new(),
             index_config: None,
             attribute_config: None,
             canonical: None,
@@ -360,6 +362,7 @@ impl Field {
             matching_config: None,
             distance_metric: None,
             hnsw: None,
+            struct_fields: Vec::new(),
             index_config: None,
             attribute_config: None,
             canonical: None,
@@ -594,6 +597,10 @@ impl Field {
     /// Return the complete matching configuration, including arbitrary options.
     pub fn matching(&self) -> Option<&searchkernel_ir::MatchingConfigIr> {
         self.matching_config.as_ref()
+    }
+
+    pub fn struct_fields(&self) -> &[searchkernel_ir::StructFieldConfigIr] {
+        &self.struct_fields
     }
 
     /// Return the complete canonical field state represented by this public
