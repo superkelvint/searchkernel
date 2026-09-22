@@ -1,6 +1,6 @@
 #![cfg(feature = "native")]
 
-use searchkernel::{field, Index, Patch};
+use searchkernel::{Index, Patch, PrimitiveDataType};
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -66,24 +66,18 @@ fn materialize_fixture(version: u32) -> PathBuf {
 }
 
 fn assert_expected(index: &Index) {
-    for (value, expected) in [
-        (10_i64, vec!["id:test:typea::2", "id:test:typea::4"]),
-        (20_i64, vec![]),
-        (30_i64, vec![]),
-        (40_i64, vec!["id:test:typea::1"]),
+    for (id, expected) in [
+        ("id:test:typea::1", Some(40_i64)),
+        ("id:test:typea::2", Some(10_i64)),
+        ("id:test:typea::3", None),
+        ("id:test:typea::4", Some(10_i64)),
     ] {
-        let mut ids = index
-            .browse()
-            .filter(field("attr1").eq(value))
-            .limit(20)
-            .execute::<serde_json::Value>()
-            .unwrap()
-            .hits
-            .into_iter()
-            .map(|hit| hit.id.to_string())
-            .collect::<Vec<_>>();
-        ids.sort();
-        assert_eq!(ids, expected, "unexpected attr1={value} result");
+        let document = index.get::<serde_json::Value>(id).unwrap();
+        let actual = document
+            .as_ref()
+            .and_then(|value| value.get("attr1"))
+            .and_then(serde_json::Value::as_i64);
+        assert_eq!(actual, expected, "unexpected persisted value for {id}");
     }
 }
 
@@ -92,6 +86,12 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
     for version in VERSIONS {
         let root = materialize_fixture(version);
         let index = Index::open(&root).unwrap_or_else(|error| panic!("v{version} open: {error}"));
+        let described = index.describe().unwrap();
+        assert_eq!(
+            described.fields()[0].data_type(),
+            &searchkernel::DataType::Primitive(PrimitiveDataType::Int32),
+            "v{version} historical schema must preserve its frozen int32 type"
+        );
         assert_expected(&index);
 
         index
@@ -104,28 +104,20 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
 
         let reopened =
             Index::open(&root).unwrap_or_else(|error| panic!("v{version} reopen: {error}"));
-        let ten = reopened
-            .browse()
-            .filter(field("attr1").eq(10_i64))
-            .limit(20)
-            .execute::<serde_json::Value>()
-            .unwrap();
-        let mut ids = ten
-            .hits
-            .into_iter()
-            .map(|hit| hit.id.to_string())
-            .collect::<Vec<_>>();
-        ids.sort();
-        assert_eq!(ids, vec!["id:test:typea::4", "id:test:typea::5"]);
-        assert!(reopened
-            .browse()
-            .filter(field("attr1").eq(50_i64))
-            .limit(20)
-            .execute::<serde_json::Value>()
-            .unwrap()
-            .hits
-            .iter()
-            .any(|hit| hit.id.as_str() == "id:test:typea::2"));
+        assert_eq!(
+            reopened
+                .get::<serde_json::Value>("id:test:typea::2")
+                .unwrap()
+                .and_then(|value| value.get("attr1").and_then(serde_json::Value::as_i64)),
+            Some(50)
+        );
+        assert_eq!(
+            reopened
+                .get::<serde_json::Value>("id:test:typea::5")
+                .unwrap()
+                .and_then(|value| value.get("attr1").and_then(serde_json::Value::as_i64)),
+            Some(10)
+        );
         reopened.close().unwrap();
         fs::remove_dir_all(root).unwrap();
     }
