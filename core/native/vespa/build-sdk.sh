@@ -42,6 +42,15 @@ ENABLE_COVERAGE=${SK_NATIVE_COVERAGE:-0}
 EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
 SANITIZER=${SK_NATIVE_SANITIZER:-none}
 REGENERATE_BINDINGS=${SK_NATIVE_REGENERATE_BINDINGS:-1}
+ADAPTER_ONLY=${SK_NATIVE_ADAPTER_ONLY:-0}
+BASE_SDK=${SK_NATIVE_BASE_SDK:-}
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    if [ -z "$BASE_SDK" ] || [ ! -d "$BASE_SDK/lib" ]; then
+        echo "SK_NATIVE_ADAPTER_ONLY=1 requires SK_NATIVE_BASE_SDK with a lib directory" >&2
+        exit 1
+    fi
+    BASE_SDK=$(CDPATH= cd -- "$BASE_SDK" && pwd)
+fi
 FAILPOINT_DEFINES=
 COVERAGE_FLAGS=
 COVERAGE_LINK_FLAGS=
@@ -122,7 +131,9 @@ else
 fi
 DEPS_INCLUDE_DIR=${VESPA_DEPS_INCLUDE_DIR:-$VESPA_DEPS/include}
 if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
-    if [ -f "$SDK_PACKAGE/lib/libLLVM.so.21.1" ]; then
+    if [ "$ADAPTER_ONLY" = 1 ] && [ -f "$BASE_SDK/lib/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$BASE_SDK/lib
+    elif [ -f "$SDK_PACKAGE/lib/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
     elif [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
@@ -252,6 +263,36 @@ if [ -n "$UNEXPECTED_SYMBOLS" ]; then
     echo "unexpected global symbols in Search Kernel ABI library:" >&2
     printf '%s\n' "$UNEXPECTED_SYMBOLS" >&2
     exit 1
+fi
+
+# Development builds treat the pinned Vespa/runtime closure as an immutable
+# prerequisite. Rebuild only Search Kernel's adapter into Cargo OUT_DIR and
+# point its RPATH at that shared base. Do not copy or mutate the Vespa base.
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    if command -v patchelf >/dev/null 2>&1; then
+        patchelf --force-rpath --set-rpath "$BASE_SDK/lib" "$SDK/lib/libsearchkernel_vespa.so.2"
+        cp -f "$SDK/lib/libsearchkernel_vespa.so.2" "$SDK/lib/libsearchkernel_vespa.so"
+    fi
+    cp "$ROOT/core/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
+    if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+        cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
+    fi
+
+    SDK_BACKUP="${SDK_PACKAGE}.old.$"
+    if [ -e "$SDK_BACKUP" ]; then
+        echo "adapter backup path already exists: $SDK_BACKUP" >&2
+        exit 1
+    fi
+    if [ -e "$SDK_PACKAGE" ]; then
+        mv "$SDK_PACKAGE" "$SDK_BACKUP"
+    fi
+    mv "$SDK" "$SDK_PACKAGE"
+    if [ -e "$SDK_BACKUP" ]; then
+        rm -rf "$SDK_BACKUP"
+    fi
+    trap - EXIT
+    echo "built Search Kernel adapter at $SDK_PACKAGE"
+    exit 0
 fi
 
 cp "$ROOT/core/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
