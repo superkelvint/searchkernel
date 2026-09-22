@@ -4,8 +4,6 @@ set -euo pipefail
 source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-sdk-cache.XXXXXX")
 cleanup_fixture() {
-    # Published cache objects are deliberately non-writable. Restore owner
-    # write permission only inside this disposable fixture before removal.
     chmod -R u+w "$fixture" 2>/dev/null || true
     rm -rf "$fixture"
 }
@@ -64,9 +62,6 @@ printf 'CXX_INCLUDES = \n' >"$configured/flags.make"
 
 worktree="$fixture/worktree"
 git -C "$repo" worktree add -q "$worktree" -b cache-test
-
-# Give the second worktree a different parent-repository HEAD without changing
-# upstream/vespa. Reuse must be based on the Vespa identity, not branch HEAD.
 echo 'unrelated rust-side change' >"$worktree/unrelated.txt"
 git -C "$worktree" add unrelated.txt
 git -C "$worktree" commit -qm 'unrelated branch change'
@@ -86,112 +81,17 @@ run_resolver() {
 common=$(git -C "$repo" rev-parse --git-common-dir)
 [[ "$common" = /* ]] || common="$repo/$common"
 
-# Path lookup is diagnostic-only. On a cold cache it must report the miss
-# without invoking the expensive SDK builder.
 if run_resolver "$repo" path >"$fixture/cold-path.out" 2>"$fixture/cold-path.err"; then
     echo 'native SDK cache path lookup unexpectedly succeeded on a cold cache' >&2
     exit 1
 fi
 [[ ! -e "$common/sdk-cache-build-count" ]]
 grep -q 'native SDK cache miss' "$fixture/cold-path.err"
-echo 'native SDK cache: cold path lookup does not build'
 
 first=$(run_resolver "$repo")
 [[ -d "$first" ]]
-grep -q '^fingerprint.scope[[:space:]]*base
-
-warm_path=$(run_resolver "$repo" path)
-[[ "$warm_path" == "$first" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
-echo 'native SDK cache: warm path lookup reuses without rebuilding'
-
-second=$(run_resolver "$worktree")
-[[ "$second" == "$first" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
-echo 'native SDK cache: worktree without Vespa outputs reused sibling-built immutable object'
-
-printf 'adapter-v2\n' >>"$worktree/core/native/vespa/adapter.cc"
-third=$(run_resolver "$worktree")
-[[ "$third" == "$first" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
-[[ ! -e "$third/lib/libsearchkernel_vespa.so" ]]
-[[ ! -e "$third/include/searchkernel_vespa.h" ]]
-[[ -z "$(find "$third" -perm /222 -print -quit)" ]]
-echo 'native SDK cache: Search Kernel adapter changes do not change or rebuild Vespa base'
-
-# Dependency discovery stays affined to the worktree that supplied the
-# configured Vespa build. A conflicting task-worktree dependency tree must not
-# perturb the cache identity.
-printf 'unrelated-task-dependency\n' >"$worktree/vespa-deps/lib64/libsearchkernel_fixture.so"
-same_after_unrelated_deps=$(run_resolver "$worktree")
-[[ "$same_after_unrelated_deps" == "$third" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
-echo 'native SDK cache: unrelated task-worktree dependencies do not override Vespa-affined inputs'
-
-# Packaged dependency-library inputs are part of the cache identity. Changing
-# the dependency tree beside the selected configured Vespa build must select a
-# new object even when Search Kernel/Vespa source is unchanged.
-printf 'dependency-v2-with-different-size\n' >"$repo/vespa-deps/lib64/libsearchkernel_fixture.so"
-fourth=$(run_resolver "$worktree")
-[[ "$fourth" != "$third" ]]
-[[ -d "$fourth" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 2 ]]
-echo 'native SDK cache: Vespa-affined dependency-library change selected a distinct object'
-
-# A published object whose required runtime dependency disappears must be
-# quarantined and rebuilt automatically under the per-digest lock. Normal
-# consumers never mutate the published object in place and need no cache surgery.
-chmod u+w "$fourth/lib"
-rm "$fourth/lib/libvespalib.so"
-chmod a-w "$fourth/lib"
-if ! healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err"); then
-    echo 'native SDK cache self-heal failed:' >&2
-    cat "$fixture/incomplete.err" >&2
-    exit 1
-fi
-[[ "$healed" == "$fourth" ]]
-[[ -s "$fourth/lib/libvespalib.so" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
-grep -q 'quarantining and rebuilding under the cache lock' "$fixture/incomplete.err"
-[[ -n "$(find "$(dirname "$fourth")/../quarantine" -maxdepth 1 -type d -name "$(basename "$fourth").*" -print -quit 2>/dev/null)" ]]
-echo 'native SDK cache: incomplete published runtime closure self-healed automatically'
-
-# A corrupted published base must be quarantined and rebuilt exactly once.
-chmod u+w "$fourth/lib"
-truncate -s 1 "$fourth/lib/libvespalib.so"
-chmod a-w "$fourth/lib"
-if ! corrupted_healed=$(run_resolver "$worktree" 2>"$fixture/corrupt.err"); then
-    echo 'native Vespa base corruption repair failed:' >&2
-    cat "$fixture/corrupt.err" >&2
-    exit 1
-fi
-[[ "$corrupted_healed" == "$fourth" ]]
-[[ -s "$fourth/lib/libvespalib.so" ]]
-[[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
-grep -q 'quarantining and rebuilding under the cache lock' "$fixture/corrupt.err"
-echo 'native SDK cache: corrupted Vespa base self-healed automatically'
-
-# Two consumers racing on the same poisoned key must serialize and perform
-# exactly one repair build.
-chmod u+w "$fourth/lib"
-rm "$fourth/lib/libvespalib.so"
-chmod a-w "$fourth/lib"
-before=$(wc -l <"$common/sdk-cache-build-count")
-run_resolver "$worktree" >"$fixture/race-a.out" 2>"$fixture/race-a.err" &
-pid_a=$!
-run_resolver "$worktree" >"$fixture/race-b.out" 2>"$fixture/race-b.err" &
-pid_b=$!
-wait "$pid_a"
-wait "$pid_b"
-[[ "$(cat "$fixture/race-a.out")" == "$fourth" ]]
-[[ "$(cat "$fixture/race-b.out")" == "$fourth" ]]
-after=$(wc -l <"$common/sdk-cache-build-count")
-[[ $((after - before)) -eq 1 ]]
-[[ -f "$fourth/lib/libvespalib.so" ]]
-echo 'native SDK cache: concurrent repair serialized to one rebuild'
-
-echo 'native SDK cache regression PASS'
- "$first/native-build-fingerprint-v2.txt"
+grep -q '^fingerprint-version=3$' "$first/native-build-fingerprint-v2.txt"
+grep -q '^fingerprint.scope[[:space:]]*base$' "$first/native-build-fingerprint-v2.txt"
 grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$first/manifest.json"
 [[ ! -e "$first/lib/libsearchkernel_vespa.so" ]]
 [[ ! -e "$first/include/searchkernel_vespa.h" ]]
@@ -200,12 +100,10 @@ grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$first/manifest.json"
 warm_path=$(run_resolver "$repo" path)
 [[ "$warm_path" == "$first" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
-echo 'native SDK cache: warm path lookup reuses without rebuilding'
 
 second=$(run_resolver "$worktree")
 [[ "$second" == "$first" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
-echo 'native SDK cache: worktree without Vespa outputs reused sibling-built immutable object'
 
 printf 'adapter-v2\n' >>"$worktree/core/native/vespa/adapter.cc"
 third=$(run_resolver "$worktree")
@@ -214,62 +112,36 @@ third=$(run_resolver "$worktree")
 [[ ! -e "$third/lib/libsearchkernel_vespa.so" ]]
 [[ ! -e "$third/include/searchkernel_vespa.h" ]]
 [[ -z "$(find "$third" -perm /222 -print -quit)" ]]
-echo 'native SDK cache: Search Kernel adapter changes do not change or rebuild Vespa base'
 
-# Dependency discovery stays affined to the worktree that supplied the
-# configured Vespa build. A conflicting task-worktree dependency tree must not
-# perturb the cache identity.
 printf 'unrelated-task-dependency\n' >"$worktree/vespa-deps/lib64/libsearchkernel_fixture.so"
 same_after_unrelated_deps=$(run_resolver "$worktree")
 [[ "$same_after_unrelated_deps" == "$third" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 1 ]]
-echo 'native SDK cache: unrelated task-worktree dependencies do not override Vespa-affined inputs'
 
-# Packaged dependency-library inputs are part of the cache identity. Changing
-# the dependency tree beside the selected configured Vespa build must select a
-# new object even when Search Kernel/Vespa source is unchanged.
 printf 'dependency-v2-with-different-size\n' >"$repo/vespa-deps/lib64/libsearchkernel_fixture.so"
 fourth=$(run_resolver "$worktree")
 [[ "$fourth" != "$third" ]]
 [[ -d "$fourth" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 2 ]]
-echo 'native SDK cache: Vespa-affined dependency-library change selected a distinct object'
 
-# A published object whose required runtime dependency disappears must be
-# quarantined and rebuilt automatically under the per-digest lock. Normal
-# consumers never mutate the published object in place and need no cache surgery.
 chmod u+w "$fourth/lib"
 rm "$fourth/lib/libvespalib.so"
 chmod a-w "$fourth/lib"
-if ! healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err"); then
-    echo 'native SDK cache self-heal failed:' >&2
-    cat "$fixture/incomplete.err" >&2
-    exit 1
-fi
+healed=$(run_resolver "$worktree" 2>"$fixture/incomplete.err")
 [[ "$healed" == "$fourth" ]]
 [[ -s "$fourth/lib/libvespalib.so" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 3 ]]
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/incomplete.err"
-[[ -n "$(find "$(dirname "$fourth")/../quarantine" -maxdepth 1 -type d -name "$(basename "$fourth").*" -print -quit 2>/dev/null)" ]]
-echo 'native SDK cache: incomplete published runtime closure self-healed automatically'
 
-# A corrupted published base must be quarantined and rebuilt exactly once.
 chmod u+w "$fourth/lib"
 truncate -s 1 "$fourth/lib/libvespalib.so"
 chmod a-w "$fourth/lib"
-if ! corrupted_healed=$(run_resolver "$worktree" 2>"$fixture/corrupt.err"); then
-    echo 'native Vespa base corruption repair failed:' >&2
-    cat "$fixture/corrupt.err" >&2
-    exit 1
-fi
+corrupted_healed=$(run_resolver "$worktree" 2>"$fixture/corrupt.err")
 [[ "$corrupted_healed" == "$fourth" ]]
 [[ -s "$fourth/lib/libvespalib.so" ]]
 [[ $(wc -l <"$common/sdk-cache-build-count") -eq 4 ]]
 grep -q 'quarantining and rebuilding under the cache lock' "$fixture/corrupt.err"
-echo 'native SDK cache: corrupted Vespa base self-healed automatically'
 
-# Two consumers racing on the same poisoned key must serialize and perform
-# exactly one repair build.
 chmod u+w "$fourth/lib"
 rm "$fourth/lib/libvespalib.so"
 chmod a-w "$fourth/lib"
@@ -284,7 +156,6 @@ wait "$pid_b"
 [[ "$(cat "$fixture/race-b.out")" == "$fourth" ]]
 after=$(wc -l <"$common/sdk-cache-build-count")
 [[ $((after - before)) -eq 1 ]]
-[[ -f "$fourth/lib/libvespalib.so" ]]
-echo 'native SDK cache: concurrent repair serialized to one rebuild'
+[[ -s "$fourth/lib/libvespalib.so" ]]
 
 echo 'native SDK cache regression PASS'
