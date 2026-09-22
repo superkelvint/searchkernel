@@ -1,0 +1,126 @@
+name: Nightly comprehensive verification
+
+on:
+  schedule:
+    - cron: "23 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-comprehensive
+  cancel-in-progress: false
+
+jobs:
+  rust:
+    name: Rust all-target verification
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_TARGET_DIR: target/ci-nightly
+      SEARCHKERNEL_BUILD_ENV: ci
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/ci-nightly"
+          shared-key: nightly
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Compile every non-native target
+        run: cargo check --workspace --all-targets --no-default-features
+
+      - name: Clippy every non-native target
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+
+      - name: Test every non-native target
+        run: cargo test --workspace --all-targets --no-default-features
+
+  contracts:
+    name: Contracts and generated artifacts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: clients/python/pyproject.toml
+
+      - name: Install Python client/codegen dependencies
+        run: python -m pip install -e 'clients/python[codegen]'
+
+      - name: Install pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
+
+      - name: Repository and semantic boundaries
+        run: |
+          bash tools/check-layout.sh
+          bash tools/check-ir-boundary.sh
+          python tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
+          python tools/check-python-flatbuffers-boundary.py
+
+      - name: Generated protocol and RPC artifacts
+        run: |
+          bash tools/check-flatbuffers-bfbs.sh
+          bash tools/check-searchkernel-rpc.sh
+          bash tools/check-python-grpc.sh
+
+      - name: Client capability contracts
+        run: |
+          python tools/check-capabilities.py --check
+          python tools/check-client-contracts.py --check
+          python tools/test_check_capabilities.py
+          python tools/test_check_client_contracts.py
+
+      - name: Python client tests
+        run: python -m unittest discover -s clients/python/tests -p 'test_*.py'
+
+  client-e2e:
+    name: Client executable E2E evidence
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_TARGET_DIR: target/ci-nightly-e2e
+      SEARCHKERNEL_BUILD_ENV: ci
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/ci-nightly-e2e"
+          shared-key: nightly-e2e
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
+
+      - name: Install clients
+        run: |
+          python -m pip install -e clients/python
+          npm ci --prefix clients/typescript
+
+      - name: Run executable client contract evidence
+        run: python tools/check-client-contracts.py --run-e2e
+
+  abi:
+    name: ABI and native-cache regression tests
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_TARGET_DIR: target/ci-nightly-abi
+      SEARCHKERNEL_BUILD_ENV: ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install libclang Python bindings
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libclang-dev python3-clang
+      - run: python3 tools/test_check_abi_surface.py
+      - run: bash tools/test-native-sdk-cache.sh
