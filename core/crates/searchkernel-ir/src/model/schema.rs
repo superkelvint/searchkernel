@@ -536,9 +536,6 @@ pub struct IndexDefinitionIr {
     pub(crate) name: Option<IndexName>,
     pub(crate) fields: Vec<FieldIr>,
     pub(crate) default_search_fields: Vec<SearchFieldIr>,
-    pub(crate) default_ranking: RankingPolicyIr,
-    pub(crate) default_prefix_policy: PrefixPolicy,
-    pub(crate) default_typo_policy: TypoPolicy,
     pub(crate) properties: SchemaPropertiesIr,
     pub(crate) document_type: Option<String>,
     pub(crate) schema_inherits: Vec<String>,
@@ -559,9 +556,6 @@ impl IndexDefinitionIr {
         name: Option<IndexName>,
         fields: Vec<FieldIr>,
         default_search_fields: Vec<SearchFieldIr>,
-        default_ranking: RankingPolicyIr,
-        default_prefix_policy: PrefixPolicy,
-        default_typo_policy: TypoPolicy,
     ) -> Result<Self> {
         if fields.is_empty() {
             return Err(PortableError::invalid(
@@ -574,9 +568,6 @@ impl IndexDefinitionIr {
             name,
             fields,
             default_search_fields,
-            default_ranking,
-            default_prefix_policy,
-            default_typo_policy,
             properties: SchemaPropertiesIr::new(),
             document_type: None,
             schema_inherits: Vec::new(),
@@ -730,18 +721,6 @@ impl IndexDefinitionIr {
 
     pub fn default_search_fields(&self) -> &[SearchFieldIr] {
         &self.default_search_fields
-    }
-
-    pub fn default_ranking(&self) -> RankingPolicyIr {
-        self.default_ranking
-    }
-
-    pub fn default_prefix_policy(&self) -> PrefixPolicy {
-        self.default_prefix_policy
-    }
-
-    pub fn default_typo_policy(&self) -> TypoPolicy {
-        self.default_typo_policy
     }
 
     pub fn properties(&self) -> &SchemaPropertiesIr {
