@@ -634,6 +634,12 @@ impl IndexDefinitionIr {
         self.imported_fields = fields;
     }
 
+    /// Replace document-summary definitions while retaining the rest of the canonical schema state.
+    #[doc(hidden)]
+    pub fn set_document_summaries(&mut self, summaries: Vec<DocumentSummaryDefinitionIr>) {
+        self.document_summaries = summaries;
+    }
+
     /// Replace the name while retaining every other canonical schema member.
     #[doc(hidden)]
     pub fn set_name(&mut self, name: Option<IndexName>) {

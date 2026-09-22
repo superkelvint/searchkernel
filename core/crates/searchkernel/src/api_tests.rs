@@ -3266,6 +3266,20 @@ fn public_imported_fields_round_trip_without_canonical_sidecar() {
 }
 
 #[test]
+fn described_public_index_definition_exposes_document_summaries() {
+    let (canonical, described) = public_described_canonical_fixture();
+    assert_eq!(described.document_summaries(), canonical.document_summaries());
+}
+
+#[test]
+fn public_document_summaries_round_trip_without_canonical_sidecar() {
+    let (canonical, mut described) = public_described_canonical_fixture();
+    described.canonical = None;
+    let resolved = definition_to_ir(&described).expect("public document summaries should resolve");
+    assert_eq!(resolved.document_summaries(), canonical.document_summaries());
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();
