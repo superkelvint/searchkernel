@@ -88,7 +88,8 @@ fn main() {
                     "created_by_vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
                 },
                 "portable_index_definition": "portable-index-definition.bfbs",
-                "canonical_index_definition": "index-definition.bfbs"
+                "canonical_index_definition": "index-definition.bfbs",
+                "resolved_engine_config_identity": config_identity.clone()
             }),
             4 => serde_json::json!({
                 "manifest_format_version": 4,
