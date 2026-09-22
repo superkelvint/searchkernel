@@ -12,9 +12,10 @@ grep -q 'CARGO_TARGET_DIR: target/ci' "$root/.github/workflows/abi-surface.yml"
 grep -q 'git -C "\$ROOT" worktree list' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'SDK_PACKAGE/lib/libLLVM.so.21.1' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'libffi.so.6 required by the bundled LLVM runtime' "$root/core/native/vespa/build-sdk.sh"
-grep -Fq 'cp -L -f -t "$SDK/lib"' "$root/core/native/vespa/build-sdk.sh"
+grep -q 'copy-shared-library-into-sdk.sh' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'refusing to publish native SDK containing shared-library symlinks' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'rpath-link' "$root/core/crates/searchkernel-vespa-bindings/build.rs"
+bash "$root/tools/test-native-sdk-packaging.sh"
 echo 'native build hardening: host, devcontainer, and CI target directories are distinct'
 
 native_target="$test_target/cargo"
