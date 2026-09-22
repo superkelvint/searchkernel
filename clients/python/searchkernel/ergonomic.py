@@ -843,7 +843,7 @@ class SearchBuilder:
         request = SearchRequestT(query=query, filters=filters, sort=self._sort, grouping=groups, ranking=ranking, inputs=inputs, limit=OptionalUInt32T(value=self._limit) if self._limit is not None else None, offset=OptionalUInt32T(value=self._offset) if self._offset is not None else None, presentation=presentation, properties=[ValueEntryT(key=k, value=v) for k, v in sorted(self._properties.items())])
         results = SearchResults(self.index.client.search(request))
         for _field, name, _limit, _sort in self._facets:
-            results._project_facet(name, name)
+            results._project_facet(name, name, _field)
         return results
 
 
@@ -1086,8 +1086,15 @@ class SearchResults:
     def __init__(self, result):
         self._result = result
         self.root = _node(result.root) if result.root is not None else None
-        children = self.root.children if isinstance(self.root, ResultGroup) else []
-        self.hits = [child for child in children if isinstance(child, Hit)]
+        if isinstance(self.root, ResultGroup):
+            children = self.root.children
+            self.hits = [child for child in children if isinstance(child, Hit)]
+        elif isinstance(self.root, Hit):
+            children = []
+            self.hits = [self.root]
+        else:
+            children = []
+            self.hits = []
         # Convenience groups are exactly the direct ResultGroup children of
         # the canonical root. Do not infer wrapper semantics from response
         # shape; request-derived conveniences (such as facets) are projected
@@ -1104,16 +1111,28 @@ class SearchResults:
         self.trace = _python_value(getattr(result, "trace", None))
         self.metadata = _value_entries(getattr(result, "metadata", None))
         self.aggregations = dict(self.root) if isinstance(self.root, ResultGroup) else {}
-        self.continuations = list(getattr(self.root, "continuations", []) or []) if self.root else []
+        self.continuations = (
+            list(getattr(self.root, "continuations", []) or [])
+            if self.root is not None
+            else []
+        )
         self.facets = {}
 
-    def _project_facet(self, expected_label, result_name):
+    def _project_facet(self, expected_label, result_name, expected_field=None):
+        expected_field = expected_label if expected_field is None else expected_field
         candidates = [
             group
             for group in self.groups
-            if group.value is None
+            if (group.id == expected_field or group.id is None)
             and group.label == expected_label
-            and group.children
+            and group.value is None
+            and not group._field_entries
+            and not group.continuations
+            and group.source is None
+            and not group.types
+            and group.relevance is None
+            and group.limits is None
+            and not group.metadata
             and len(group.groups) == len(group.children)
         ]
         if len(candidates) != 1:
@@ -1121,7 +1140,15 @@ class SearchResults:
 
         buckets = []
         for child in candidates[0].groups:
-            if child.children:
+            optimized_child = child.id is None and child.label is None
+            generic_child = child.id == "grouping-0" and child.label == expected_label
+            if not (optimized_child or generic_child):
+                return
+            if child.children or child.continuations:
+                return
+            if child.source is not None or child.types or child.relevance is not None:
+                return
+            if child.limits is not None or child.metadata:
                 return
             fields = child._field_entries
             if len(fields) != 1:

@@ -1,10 +1,16 @@
+import math
 import unittest
 from types import SimpleNamespace
+from pathlib import Path
 
 from searchkernel.client import value
 from searchkernel.ergonomic import Hit, SearchBuilder, SearchResults
+from searchkernel.protocol import unpack_response
+from SearchKernel.V2.Hit import HitT
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind
 from SearchKernel.V2.RelevanceKind import RelevanceKind
+from SearchKernel.V2.ResultGroup import ResultGroupT
+from SearchKernel.V2.ResultNode import ResultNodeT
 from SearchKernel.V2.UInt64Value import UInt64ValueT
 from SearchKernel.V2.Value import ValueT
 from SearchKernel.V2.ValueEntry import ValueEntryT
@@ -12,11 +18,12 @@ from SearchKernel.V2.ValueKind import ValueKind
 
 
 def result_node(node):
-    return SimpleNamespace(nodeType=ResultNodeKind.ResultGroup, node=node)
+    node_type = ResultNodeKind.Hit if isinstance(node, HitT) else ResultNodeKind.ResultGroup
+    return ResultNodeT(node_type, node)
 
 
 def group(*, label=None, value_=None, fields=None, children=None):
-    return SimpleNamespace(
+    return ResultGroupT(
         id=None,
         label=label,
         value=value_,
@@ -48,7 +55,7 @@ class SearchResultFacetProjectionTest(unittest.TestCase):
         bucket = group(value_=value("Acme"), fields=[count])
         children = [result_node(bucket)]
         if mixed:
-            hit = SimpleNamespace(
+            hit = HitT(
                 id="doc-1",
                 fields=[],
                 relevance=None,
@@ -58,10 +65,9 @@ class SearchResultFacetProjectionTest(unittest.TestCase):
                 sortValues=[],
                 highlights=[],
             )
-            children.append(SimpleNamespace(nodeType=ResultNodeKind.Hit, node=hit))
+            children.append(ResultNodeT(ResultNodeKind.Hit, hit))
         facet = group(label=label, children=children)
-        wrapper = group(children=[result_node(facet)])
-        root = group(children=[result_node(wrapper)])
+        root = group(children=[result_node(facet)])
         return search_result(root)
 
     def test_unlabeled_group_wrapper_is_not_flattened(self):
@@ -80,7 +86,7 @@ class SearchResultFacetProjectionTest(unittest.TestCase):
         result = SearchResults(self.exact_facet_result())
         self.assertEqual(result.facets, {})
         self.assertEqual(result.groups[0].label, "brand")
-        self.assertEqual(result.root.children[0].children[0].label, "brand")
+        self.assertEqual(result.root.children[0].label, "brand")
 
     def test_requested_exact_facet_projects_uint64_count(self):
         raw = self.exact_facet_result()
@@ -118,6 +124,16 @@ class SearchResultFacetProjectionTest(unittest.TestCase):
         results._project_facet("brand", "brand")
         self.assertEqual(results.facets, {})
 
+    def test_facet_with_extra_metadata_does_not_project(self):
+        bucket = group(value_=value("Acme"), fields=[uint64_count(3)])
+        facet = group(label="brand", children=[result_node(bucket)])
+        facet.metadata = [ValueEntryT("unexpected", value(True))]
+        raw = search_result(group(children=[result_node(facet)]))
+
+        results = SearchResults(raw)
+        results._project_facet("brand", "brand")
+        self.assertEqual(results.facets, {})
+
 
 class RelevanceDecodeTest(unittest.TestCase):
     def _hit(self, relevance):
@@ -148,6 +164,96 @@ class RelevanceDecodeTest(unittest.TestCase):
                             )
                         )
                     )
+
+
+class SharedResultFixtureTest(unittest.TestCase):
+    fixture_root = (
+        Path(__file__).resolve().parents[3]
+        / "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses"
+    )
+
+    def load(self, name):
+        envelope = unpack_response(
+            (self.fixture_root / f"result-{name}.skrs").read_bytes(), "search"
+        )
+        return SearchResults(envelope.payload)
+
+    # SKC: result.highlighting/basic kinds=conformance runtime=shared
+    def test_canonical_fixture_preserves_tree_and_envelope(self):
+        result = self.load("canonical")
+        root = result.root
+
+        self.assertEqual(root.id, "root")
+        self.assertEqual([type(child).__name__ for child in root.children], ["Hit", "ResultGroup"])
+        self.assertEqual([hit.id for hit in result.hits], ["doc-1"])
+        self.assertEqual([group.id for group in result.groups], ["nested"])
+        self.assertEqual([hit.id for hit in result.groups[0].hits], ["doc-2"])
+        self.assertEqual(result.aggregations, {"count": 2})
+        self.assertEqual(result.groups[0].fields, {"count": 1})
+        self.assertEqual([(item.key, item.value) for item in root.continuations], [("page", "token-1")])
+        self.assertEqual([(item.key, item.value) for item in result.groups[0].continuations], [("next", "token")])
+        self.assertEqual(root.limits.from_, 0)
+        self.assertEqual(root.limits.to, 20)
+        self.assertEqual(root.metadata, {"trace_id": "r-1"})
+
+        hit = result.hits[0]
+        self.assertEqual(hit.relevance, 4.5)
+        self.assertEqual(hit.highlights[0]["fragments"][0]["matches"], [(0, 5)])
+        self.assertEqual(hit.match_features, {"bm25": 2.0})
+        self.assertEqual(hit.summary_features, {"summary": "ready"})
+        self.assertEqual(hit.rank_features, {"rank": 8.0})
+        self.assertEqual(hit.sort_values, [1])
+        self.assertEqual(result.total_hits, 12)
+        self.assertEqual(result.coverage.coverage_percent, 99.0)
+        self.assertEqual(result.coverage.metadata, {"region": "west"})
+        self.assertEqual(result.timing.search_time_seconds, 0.002)
+        self.assertEqual(result.timing.metadata, {"phase": "done"})
+        self.assertEqual(result.errors[0].code, 503)
+        self.assertEqual(result.errors[0].metadata, {"node": "2"})
+        self.assertEqual(result.trace, {"level": 3})
+        self.assertEqual(result.metadata, {"request_id": "r1"})
+
+    def test_shared_fixture_preserves_infinite_relevance_and_empty_state(self):
+        result = self.load("infinite-relevance")
+        self.assertTrue(math.isinf(result.hits[1].relevance))
+        self.assertGreater(result.hits[1].relevance, 0)
+        self.assertTrue(math.isinf(result.hits[2].relevance))
+        self.assertLess(result.hits[2].relevance, 0)
+
+        empty = self.load("empty")
+        self.assertEqual(empty.hits, [])
+        self.assertEqual(empty.groups, [])
+        self.assertIsNone(empty.coverage)
+        self.assertIsNone(empty.timing)
+        self.assertEqual(empty.metadata, {})
+
+        root_hit = self.load("root-hit")
+        self.assertEqual([hit.id for hit in root_hit.hits], ["root-hit"])
+        self.assertEqual(root_hit.groups, [])
+
+        state_only = self.load("root-state-only")
+        self.assertEqual(
+            [(entry.key, entry.value) for entry in state_only.continuations],
+            [("page", "token")],
+        )
+        self.assertEqual(state_only.root.limits.from_, 1)
+        self.assertEqual(state_only.root.metadata, {"state": "present"})
+
+    def test_shared_facet_corpus_matches_strict_rust_shape(self):
+        valid = self.load("facet-valid")
+        valid._project_facet("brand", "brand")
+        self.assertEqual(valid.facets, {"brand": [{"value": "Acme", "count": 3}]})
+
+        named = self.load("facet-valid-named")
+        named._project_facet("brands", "brands", "brand")
+        self.assertEqual(named.facets, {"brands": [{"value": "Acme", "count": 3}]})
+
+        for path in self.fixture_root.glob("result-facet-*.skrs"):
+            if path.stem in {"result-facet-valid", "result-facet-valid-named"}:
+                continue
+            result = self.load(path.stem.removeprefix("result-"))
+            result._project_facet("brand", "brand")
+            self.assertEqual(result.facets, {}, path.name)
 
 
 if __name__ == "__main__":
