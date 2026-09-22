@@ -5,6 +5,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 TARGET=${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}
 BUILD_ENV=${SEARCHKERNEL_BUILD_ENV:-host}
 MODE=${1:-ensure}
+unset VESPA_LIBRARY_ROOT
 
 case "$MODE" in
     ensure|path|vespa-root) ;;
@@ -34,12 +35,13 @@ compatible_full_sdk() {
     local sdk=$1
     local wanted_commit=$2
     local wanted_config=$3
+    local pinned_commit=$4
     local fingerprint="$sdk/native-build-fingerprint-v2.txt"
     local manifest="$sdk/manifest.json"
 
     [[ -f "$fingerprint" && -f "$manifest" && -d "$sdk/lib" ]] || return 1
     grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$manifest" && return 1
-    grep -Eq '"vespa_commit"[[:space:]]*:[[:space:]]*"'"$wanted_commit"'"' "$manifest" || return 1
+    grep -Eq '"vespa_commit"[[:space:]]*:[[:space:]]*"'"$pinned_commit"'"' "$manifest" || return 1
     has_vespa_libraries "$sdk/lib" || return 1
     [[ "$(fingerprint_field "$fingerprint" vespa.commit)" == "$wanted_commit" ]] || return 1
     [[ "$(fingerprint_field "$fingerprint" vespa.config)" == "$wanted_config" ]] || return 1
@@ -49,16 +51,8 @@ resolve_vespa_library_root() {
     local vespa_root=$1
     local wanted_commit=$2
     local wanted_config=$3
+    local pinned_commit=$4
     local worktree_root candidate worktree
-
-    if [[ -n "${VESPA_LIBRARY_ROOT:-}" ]]; then
-        has_vespa_libraries "$VESPA_LIBRARY_ROOT" || {
-            echo "VESPA_LIBRARY_ROOT '$VESPA_LIBRARY_ROOT' does not contain Vespa shared libraries" >&2
-            return 1
-        }
-        printf '%s\n' "$VESPA_LIBRARY_ROOT"
-        return
-    fi
 
     if has_vespa_libraries "$vespa_root"; then
         printf '%s\n' "$vespa_root"
@@ -72,7 +66,7 @@ resolve_vespa_library_root() {
                 "$worktree_root/core/native/sdk/linux-x86_64" \
                 "$worktree_root/target/host/native-sdk/linux-x86_64" \
                 "$worktree_root/target/native-sdk-package"; do
-                if compatible_full_sdk "$candidate" "$wanted_commit" "$wanted_config"; then
+                if compatible_full_sdk "$candidate" "$wanted_commit" "$wanted_config" "$pinned_commit"; then
                     echo "using Vespa shared libraries from compatible full SDK: $candidate/lib" >&2
                     printf '%s\n' "$candidate/lib"
                     return
@@ -86,7 +80,7 @@ resolve_vespa_library_root() {
             "$worktree/core/native/sdk/linux-x86_64" \
             "$worktree/target/host/native-sdk/linux-x86_64" \
             "$worktree/target/native-sdk-package"; do
-            if compatible_full_sdk "$candidate" "$wanted_commit" "$wanted_config"; then
+            if compatible_full_sdk "$candidate" "$wanted_commit" "$wanted_config" "$pinned_commit"; then
                 echo "using Vespa shared libraries from compatible sibling full SDK: $candidate/lib" >&2
                 printf '%s\n' "$candidate/lib"
                 return
@@ -170,11 +164,19 @@ VESPA_METADATA=$(python3 "$ROOT/tools/native-build-fingerprint.py" \
     --scope base)
 WANTED_VESPA_COMMIT=$(printf '%s' "$VESPA_METADATA" | awk -F '\t' '$1 == "vespa.commit" { print $2; exit }')
 WANTED_VESPA_CONFIG=$(printf '%s' "$VESPA_METADATA" | awk -F '\t' '$1 == "vespa.config" { print $2; exit }')
-[[ -n "$WANTED_VESPA_COMMIT" && -n "$WANTED_VESPA_CONFIG" ]] || {
-    echo "native fingerprint did not expose Vespa commit/config identity" >&2
+PINNED_VESPA_COMMIT=$(python3 - "$ROOT/core/native/vespa/manifest.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    print(json.load(stream)["vespa_commit"])
+PY
+)
+[[ -n "$WANTED_VESPA_COMMIT" && -n "$WANTED_VESPA_CONFIG" && -n "$PINNED_VESPA_COMMIT" ]] || {
+    echo "native provenance did not expose Vespa commit/config identity" >&2
     exit 1
 }
-VESPA_LIBRARY_ROOT=$(resolve_vespa_library_root "$VESPA_BUILD_ROOT" "$WANTED_VESPA_COMMIT" "$WANTED_VESPA_CONFIG")
+VESPA_LIBRARY_ROOT=$(resolve_vespa_library_root \
+    "$VESPA_BUILD_ROOT" "$WANTED_VESPA_COMMIT" "$WANTED_VESPA_CONFIG" "$PINNED_VESPA_COMMIT")
 
 FINGERPRINT=$(VESPA_LIBRARY_ROOT="$VESPA_LIBRARY_ROOT" \
     python3 "$ROOT/tools/native-build-fingerprint.py" \
