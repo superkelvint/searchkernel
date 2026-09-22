@@ -12,6 +12,7 @@ fn print_native_inputs() {
     println!("cargo:rerun-if-changed=bfbs/searchkernel_response.bfbs");
     println!("cargo:rerun-if-env-changed=FLATBUFFERS_CPP_ROOT");
     println!("cargo:rerun-if-env-changed=FLATC_PATH");
+    println!("cargo:rerun-if-env-changed=SEARCHKERNEL_BUILD_ENV");
 
     for name in [
         "PATH",
@@ -113,9 +114,11 @@ fn resolve_flatbuffers_root() -> Result<PathBuf, String> {
         .ok_or_else(|| format!("cannot derive repository root from '{}'", manifest_dir.display()))?;
 
     if let Some(common) = git_common_dir(repository_root) {
+        let build_env = env::var("SEARCHKERNEL_BUILD_ENV").unwrap_or_else(|_| "host".to_owned());
         let shared = common
             .join("searchkernel/toolchains/flatbuffers")
-            .join(FLATBUFFERS_VERSION);
+            .join(FLATBUFFERS_VERSION)
+            .join(build_env);
         if root_is_usable(&shared) {
             return Ok(shared);
         }

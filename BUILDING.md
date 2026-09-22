@@ -141,17 +141,27 @@ for standalone schema tooling and doctor checks. The pinned version is
 common directory:
 
 ```text
-<git-common-dir>/searchkernel/toolchains/flatbuffers/25.12.19/
+<git-common-dir>/searchkernel/toolchains/flatbuffers/25.12.19/<build-environment>/
 ```
 
-All worktrees in the clone resolve that installation automatically, so an
-agent worktree must not download or rebuild its own `flatc` merely because its
-local `target/` is empty. The resolver also reuses a matching `flatc` already
-built in a sibling worktree before falling back to `/usr/local`.
+All worktrees in the clone resolve the installation for their build environment
+automatically, so an agent worktree must not download or rebuild its own
+`flatc` merely because its local `target/` is empty. Host, project-container,
+and other explicitly named `SEARCHKERNEL_BUILD_ENV` environments are kept
+separate because the installed C++ static library is ABI-sensitive. The resolver
+also reuses a matching `flatc` already built in the same environment before
+falling back to `/usr/local`.
 
-Run `./dev install flatbuffers` once per clone/version when no matching toolchain
-exists. Concurrent installs are serialized and a healthy existing install is
-reused without rebuilding. For a deliberate custom prefix, set
+Run `./dev install flatbuffers` once per clone/version/build-environment when
+no matching toolchain exists. Concurrent installs are serialized and a healthy
+existing install is reused without rebuilding. Reuse requires an actual C++
+compile/link/runtime probe against the installed headers and
+`libflatbuffers.a`; version-correct files that were built against an
+incompatible libc/C++ environment are rejected and rebuilt for the current
+environment instead of being allowed to fail later during Cargo linking.
+`./dev doctor` runs the same probe, so a FlatBuffers C++ prerequisite is green
+only when it is usable by the active compiler/runtime. For a deliberate custom
+prefix, set
 `FLATBUFFERS_INSTALL_PREFIX`; explicit `FLATBUFFERS_CPP_ROOT` and `FLATC_PATH`
 overrides remain supported.
 
