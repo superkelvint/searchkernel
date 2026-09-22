@@ -36,6 +36,9 @@ C
 cc -shared -fPIC "$SK_NATIVE_BUILD_DIR/cache_fixture_base.c" \
     -Wl,-soname,libvespalib.so \
     -o "$sdk/lib/libvespalib.so"
+if [[ -f "$VESPA_ROOT/cache-fixture.so" ]]; then
+    cp "$VESPA_ROOT/cache-fixture.so" "$sdk/lib/cache-fixture.so"
+fi
 printf '{"kind":"vespa-base"}\n' >"$sdk/manifest.json"
 python3 "$root/tools/native-build-fingerprint.py" \
     --root "$root" \
