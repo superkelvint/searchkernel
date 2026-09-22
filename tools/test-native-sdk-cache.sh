@@ -84,13 +84,32 @@ printf 'CXX_INCLUDES = \n' >"$configured/flags.make"
 # already contains a self-contained Vespa runtime closure.
 legacy_sdk="$repo/core/native/sdk/linux-x86_64"
 mkdir -p "$legacy_sdk/lib"
+legacy_dependency_source="$fixture/legacy-vespa-defaults.c"
+cat >"$legacy_dependency_source" <<'C'
+int searchkernel_cache_fixture_dependency(void) { return 3; }
+C
+cc -shared -fPIC "$legacy_dependency_source" \
+    -Wl,-soname,libvespadefaults.so \
+    -o "$legacy_sdk/lib/libvespadefaults.so"
+
 legacy_source="$fixture/legacy-vespa.c"
 cat >"$legacy_source" <<'C'
-int searchkernel_cache_fixture_base(void) { return 1; }
+extern int searchkernel_cache_fixture_dependency(void);
+int searchkernel_cache_fixture_base(void) {
+    return searchkernel_cache_fixture_dependency();
+}
 C
 cc -shared -fPIC "$legacy_source" \
+    -L"$legacy_sdk/lib" -Wl,--no-as-needed -lvespadefaults \
     -Wl,-soname,libvespalib.so \
     -o "$legacy_sdk/lib/libvespalib.so"
+
+# A flattened base must resolve sibling DSOs from its own lib directory even
+# when the producer library did not encode an RPATH/RUNPATH.
+if readelf -d "$legacy_sdk/lib/libvespalib.so" | grep -Eq '(RPATH|RUNPATH)'; then
+    echo 'cache fixture unexpectedly encoded an RPATH/RUNPATH' >&2
+    exit 1
+fi
 
 refresh_legacy_fingerprint() {
     VESPA_LIBRARY_ROOT="$legacy_sdk/lib" \
