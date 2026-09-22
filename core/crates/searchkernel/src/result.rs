@@ -236,7 +236,7 @@ pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
         facets,
         groups,
         aggregations,
-        coverage: result.coverage.map(coverage),
+        coverage: result.coverage.map(coverage).transpose()?,
         timing: result.timing.map(search_timing).transpose()?,
         issues: result
             .errors
@@ -405,26 +405,29 @@ fn convert_group<T: serde::de::DeserializeOwned>(
     })
 }
 
-fn coverage(value: core::Coverage) -> Coverage {
-    Coverage {
+fn coverage(value: core::Coverage) -> Result<Coverage> {
+    Ok(Coverage {
         coverage_percent: value.coverage_percent,
         documents: value.documents,
         full: value.full,
         nodes: value.nodes,
         results: value.results,
         results_full: value.results_full,
-        degraded: value.degraded.map(|value| CoverageDegraded {
-            match_phase: value.match_phase,
-            timeout: value.timeout,
-            adaptive_timeout: value.adaptive_timeout,
-            ann_timeout: value.ann_timeout,
-            non_ideal_state: value.non_ideal_state,
-            metadata: json_map(value.metadata)
-                .expect("coverage degradation metadata already passed backend decoding"),
-        }),
-        metadata: json_map(value.metadata)
-            .expect("coverage metadata already passed backend decoding"),
-    }
+        degraded: value
+            .degraded
+            .map(|value| {
+                Ok(CoverageDegraded {
+                    match_phase: value.match_phase,
+                    timeout: value.timeout,
+                    adaptive_timeout: value.adaptive_timeout,
+                    ann_timeout: value.ann_timeout,
+                    non_ideal_state: value.non_ideal_state,
+                    metadata: json_map(value.metadata)?,
+                })
+            })
+            .transpose()?,
+        metadata: json_map(value.metadata)?,
+    })
 }
 
 fn result_issue(value: core::SearchResultError) -> Result<ResultIssue> {
@@ -789,7 +792,8 @@ mod tests {
                 "coverage_source".into(),
                 Value::String("native".into()),
             )]),
-        });
+        })
+        .unwrap();
         assert_eq!(converted.metadata["coverage_source"], "native");
         assert_eq!(
             converted.degraded.as_ref().unwrap().metadata["degraded_reason"],
