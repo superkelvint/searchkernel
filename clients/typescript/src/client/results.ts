@@ -253,20 +253,11 @@ export class SearchResults {
     const rootChildren = this.root instanceof ResultGroup ? this.root.children : [];
     this.hits = rootChildren.filter((child): child is Hit => child instanceof Hit);
 
-    const projectedGroups: ResultGroup[] = [];
-    for (const child of rootChildren) {
-      if (
-        child instanceof ResultGroup
-        && child.value == null
-        && child.label == null
-        && child.groups.length
-      ) {
-        projectedGroups.push(...child.groups);
-      } else if (child instanceof ResultGroup) {
-        projectedGroups.push(child);
-      }
-    }
-    this.groups = projectedGroups;
+    // Convenience groups are exactly the direct ResultGroup children of
+    // the canonical root. Do not infer wrapper semantics from response shape;
+    // request-derived conveniences (such as facets) are projected separately
+    // by the builder that knows the request.
+    this.groups = rootChildren.filter((child): child is ResultGroup => child instanceof ResultGroup);
 
     this.totalHits = result.totalHits?.value ?? 0n;
     this.totalHitsRelation = totalHitsRelationName(result.totalHits?.relation);
