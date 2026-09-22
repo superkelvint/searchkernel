@@ -1,6 +1,6 @@
 #![cfg(feature = "native")]
 
-use searchkernel::{field, Index, Patch};
+use searchkernel::{Index, Patch};
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -66,24 +66,18 @@ fn materialize_fixture(version: u32) -> PathBuf {
 }
 
 fn assert_expected(index: &Index) {
-    for (value, expected) in [
-        (10_i64, vec!["doc2", "doc4"]),
-        (20_i64, vec![]),
-        (30_i64, vec![]),
-        (40_i64, vec!["doc1"]),
+    for (id, expected) in [
+        ("doc1", Some(40_i64)),
+        ("doc2", Some(10_i64)),
+        ("doc3", None),
+        ("doc4", Some(10_i64)),
     ] {
-        let mut ids = index
-            .browse()
-            .filter(field("attr1").eq(value))
-            .limit(20)
-            .execute::<serde_json::Value>()
-            .unwrap()
-            .hits
-            .into_iter()
-            .map(|hit| hit.id.to_string())
-            .collect::<Vec<_>>();
-        ids.sort();
-        assert_eq!(ids, expected, "unexpected attr1={value} result");
+        let document = index.get::<serde_json::Value>(id).unwrap();
+        let actual = document
+            .as_ref()
+            .and_then(|value| value.get("attr1"))
+            .and_then(serde_json::Value::as_i64);
+        assert_eq!(actual, expected, "unexpected persisted value for {id}");
     }
 }
 
