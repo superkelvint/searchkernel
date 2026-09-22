@@ -34,10 +34,45 @@ jobs:
       - name: Reject stale verification checkout
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            exit 1
+          fi
+          echo "Verified exact PR head $actual."
+
+      - name: Resolve exact-head CI helpers
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          trusted_dir="$RUNNER_TEMP/searchkernel-trusted-exact-head-ci"
+          rm -rf "$trusted_dir"
+          mkdir -p "$trusted_dir"
+          git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"
+          echo "TRUSTED_EXACT_HEAD_HELPER=$trusted_dir/exact_head.py" >> "$GITHUB_ENV"
+
+          if [[ -f .github/ci/exact_head.py && -f .github/ci/test_exact_head.py ]]; then
+            regression_dir="$PWD/.github/ci"
+          else
+            regression_dir="$RUNNER_TEMP/searchkernel-exact-head-ci"
+            rm -rf "$regression_dir"
+            mkdir -p "$regression_dir"
+            for name in exact_head.py test_exact_head.py; do
+              if [[ -f ".github/ci/$name" ]]; then
+                cp ".github/ci/$name" "$regression_dir/$name"
+              else
+                git show "$BASE_SHA:.github/ci/$name" > "$regression_dir/$name"
+              fi
+            done
+          fi
+          echo "EXACT_HEAD_TEST=$regression_dir/test_exact_head.py" >> "$GITHUB_ENV"
 
       - name: Verify exact-head CI regressions
-        run: python3 .github/ci/test_exact_head.py
+        run: python3 "$EXACT_HEAD_TEST"
 
       - name: Classify changed behavior
         id: changes
@@ -45,9 +80,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
           git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" -- \
-            | python3 .github/ci/exact_head.py classify --github-output "$GITHUB_OUTPUT"
+            | python3 "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
 
   rust:
     name: Rust behavior
@@ -73,7 +107,14 @@ jobs:
       - name: Reject stale verification checkout
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            exit 1
+          fi
+          echo "Verified exact PR head $actual."
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -118,7 +159,14 @@ jobs:
       - name: Reject stale verification checkout
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            exit 1
+          fi
+          echo "Verified exact PR head $actual."
 
       - name: Install Python client
         run: python -m pip install -e clients/python
@@ -146,7 +194,14 @@ jobs:
       - name: Reject stale verification checkout
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            exit 1
+          fi
+          echo "Verified exact PR head $actual."
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -188,7 +243,14 @@ jobs:
       - name: Reject stale verification checkout
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 .github/ci/exact_head.py assert-head --expected "$EXPECTED_HEAD"
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            exit 1
+          fi
+          echo "Verified exact PR head $actual."
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
