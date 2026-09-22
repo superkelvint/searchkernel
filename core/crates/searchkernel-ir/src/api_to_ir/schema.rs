@@ -1054,10 +1054,7 @@ pub(crate) fn field_to_input_at(
         analyzer: analyzer_config_to_ir(definition.analyzer(), &format!("{path}.analyzer"))?,
         matching: matching_to_ir(definition.matching(), &format!("{path}.matching"))?,
         index: index_config_to_ir(definition.index(), &format!("{path}.index"))?,
-        attribute: attribute_config_to_ir(
-            definition.attribute(),
-            &format!("{path}.attribute"),
-        )?,
+        attribute: attribute_config_to_ir(definition.attribute(), &format!("{path}.attribute"))?,
         summary: summary_config_to_ir(definition.summary(), &format!("{path}.summary"))?,
         indexing_script,
         properties: schema_properties_to_ir(
@@ -1106,13 +1103,16 @@ pub(crate) fn analyzer_config_to_ir(
 ) -> Result<Option<AnalyzerIr>> {
     analyzer
         .map(|analyzer| {
-            let name = analyzer.name().filter(|value| !value.is_empty()).ok_or_else(|| {
-                invalid(
-                    "invalid_analyzer",
-                    Some(path.to_owned()),
-                    "analyzer name is required",
-                )
-            })?;
+            let name = analyzer
+                .name()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    invalid(
+                        "invalid_analyzer",
+                        Some(path.to_owned()),
+                        "analyzer name is required",
+                    )
+                })?;
             let analyzer = AnalyzerIr {
                 name: name.to_owned(),
                 version: analyzer.version(),

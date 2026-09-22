@@ -1603,7 +1603,9 @@ fn custom_analyzer_configuration_is_shared_portable_schema_state() {
         .expect("rich analyzer is valid portable schema state");
 
     let index = index_from_canonical_ir(canonical.clone());
-    let described = index.describe().expect("describe should preserve rich analyzer state");
+    let described = index
+        .describe()
+        .expect("describe should preserve rich analyzer state");
     let rust = definition_to_ir(&described).expect("Rust ingress should preserve rich analyzer");
 
     let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
@@ -1612,7 +1614,10 @@ fn custom_analyzer_configuration_is_shared_portable_schema_state() {
     let portable = searchkernel_ir::index_definition_to_ir(portable)
         .expect("portable ingress should preserve rich analyzer");
 
-    assert_eq!(rust.fields()[0].analyzer(), canonical.fields()[0].analyzer());
+    assert_eq!(
+        rust.fields()[0].analyzer(),
+        canonical.fields()[0].analyzer()
+    );
     assert_eq!(
         portable.fields()[0].analyzer(),
         canonical.fields()[0].analyzer()
@@ -2941,7 +2946,11 @@ fn describe_exposes_canonical_field_data_types_publicly() {
             .iter()
             .find(|field| field.name() == name)
             .expect("described field should exist");
-        assert_eq!(actual.data_type().to_ir(), *expected.data_type(), "field {name}");
+        assert_eq!(
+            actual.data_type().to_ir(),
+            *expected.data_type(),
+            "field {name}"
+        );
     }
 }
 
@@ -4869,7 +4878,6 @@ fn backend_errors_are_returned_without_being_rewritten() {
     assert_eq!(backend.calls().len(), 2);
 }
 
-
 #[test]
 fn rich_public_field_state_is_validated_by_shared_resolver() {
     let (_, mut described) = public_described_canonical_fixture();
@@ -4909,7 +4917,6 @@ fn fresh_indexing_script_preserves_explicit_capability_for_validation() {
     );
 }
 
-
 #[test]
 fn derived_default_search_fields_include_schema_only_fields() {
     let definition = IndexDefinition::new()
@@ -4927,7 +4934,6 @@ fn derived_default_search_fields_include_schema_only_fields() {
     );
 }
 
-
 #[test]
 fn rich_public_definition_matches_portable_without_canonical_sidecar() {
     let (canonical, described) = public_described_canonical_fixture();
@@ -4936,7 +4942,6 @@ fn rich_public_definition_matches_portable_without_canonical_sidecar() {
         .expect("complete public schema state should use the shared resolver");
     assert_eq!(canonical, resolved);
 }
-
 
 #[test]
 fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
@@ -4980,13 +4985,14 @@ fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
     );
 }
 
-
 fn assert_rust_and_portable_schema_error_match(
     definition: searchkernel_ir::IndexDefinitionIr,
     expected_detail_code: &str,
 ) {
     let index = index_from_canonical_ir(definition.clone());
-    let described = index.describe().expect("invalid fixture should still describe structurally");
+    let described = index
+        .describe()
+        .expect("invalid fixture should still describe structurally");
 
     let rust_error = definition_to_ir(&described)
         .expect_err("Rust schema ingress should reject invalid semantic state");
@@ -5002,14 +5008,12 @@ fn assert_rust_and_portable_schema_error_match(
     assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
 }
 
-
 fn invalid_schema_with_field(
     field: searchkernel_ir::FieldIr,
 ) -> searchkernel_ir::IndexDefinitionIr {
     searchkernel_ir::IndexDefinitionIr::new(None, vec![field], Vec::new())
         .expect("invalid field semantics are intentionally injected after construction")
 }
-
 
 #[test]
 fn rich_schema_negative_semantics_match_portable_ingress() {

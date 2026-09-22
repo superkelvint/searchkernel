@@ -400,7 +400,9 @@ fn validate_highlighting_execution_boundary(request: &SearchRequestIr) -> Result
     };
 
     if let Some(field) = fields.iter().find(|field| {
-        multi_valued_fields.iter().any(|candidate| candidate == *field)
+        multi_valued_fields
+            .iter()
+            .any(|candidate| candidate == *field)
     }) {
         return Err(PortableError::unsupported(
             "highlighting_multi_valued_field_not_supported",
