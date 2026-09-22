@@ -112,11 +112,11 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
         self.assertIn(
-            'python3 "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
+            '"$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
             workflow,
         )
         self.assertNotIn(
-            'python3 "$EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
+            '"$CI_PYTHON" "$EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
             workflow,
         )
 
