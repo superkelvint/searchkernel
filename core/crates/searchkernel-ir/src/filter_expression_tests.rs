@@ -43,10 +43,7 @@ fn schema() -> IndexDefinitionIr {
             field("title", FieldKind::Text, true),
             field("hidden", FieldKind::Keyword, false),
         ],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap()
 }
