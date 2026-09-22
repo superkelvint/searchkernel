@@ -12,6 +12,7 @@ on:
       - "tools/native-build-fingerprint.py"
       - "tools/*native-sdk*.sh"
       - "dev"
+      - ".github/workflows/abi-surface.yml"
   pull_request:
     paths:
       - "core/native/**"
@@ -22,6 +23,7 @@ on:
       - "tools/native-build-fingerprint.py"
       - "tools/*native-sdk*.sh"
       - "dev"
+      - ".github/workflows/abi-surface.yml"
   workflow_dispatch:
 
 concurrency:
