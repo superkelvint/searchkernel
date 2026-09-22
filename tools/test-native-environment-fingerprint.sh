@@ -39,20 +39,24 @@ fingerprint() {
 first=$(fingerprint "$temporary/compiler-a")
 second=$(fingerprint "$temporary/compiler-a")
 [[ "$first" == "$second" ]]
-echo 'native fingerprint: unchanged compiler/configuration is stable'
+echo 'native fingerprint: unchanged full-package environment is stable'
 
 changed_compiler=$(fingerprint "$temporary/compiler-b")
 [[ "$first" != "$changed_compiler" ]]
-echo 'native fingerprint: compiler identity changes the fingerprint'
+echo 'native fingerprint: full-package compiler identity changes the fingerprint'
 
 changed_flags=$(fingerprint "$temporary/compiler-a" '-DSEARCHKERNEL_NATIVE_FINGERPRINT_REGRESSION=1')
 [[ "$first" != "$changed_flags" ]]
-echo 'native fingerprint: relevant base/toolchain flags change the fingerprint'
+echo 'native fingerprint: full-package compiler flags change the fingerprint'
 
 base_plain=$(fingerprint "$temporary/compiler-a" '' '' '' base '')
+base_other_compiler=$(fingerprint "$temporary/compiler-b" '' '' '' base '')
+base_other_flags=$(fingerprint "$temporary/compiler-a" '-DIGNORED_FOR_BASE=1' '' '' base '')
 base_adapter_flags=$(fingerprint "$temporary/compiler-a" '' '' '' base '-DADAPTER_ONLY_CHANGE=1')
+[[ "$base_plain" == "$base_other_compiler" ]]
+[[ "$base_plain" == "$base_other_flags" ]]
 [[ "$base_plain" == "$base_adapter_flags" ]]
-echo 'native fingerprint: adapter-only flags do not perturb Vespa base identity'
+echo 'native fingerprint: active compiler and adapter flags do not perturb Vespa base identity'
 
 full_plain=$(fingerprint "$temporary/compiler-a" '' '' '' full '')
 full_adapter_flags=$(fingerprint "$temporary/compiler-a" '' '' '' full '-DADAPTER_ONLY_CHANGE=1')
