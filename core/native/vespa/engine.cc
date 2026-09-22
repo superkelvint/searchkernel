@@ -2249,11 +2249,6 @@ class EmbeddedEngine {
                     if (property_value.empty()) {
                         throw std::invalid_argument("rank profile query input type is empty");
                     }
-                } else if (property_name.rfind("query(", 0) == 0 &&
-                           property_name.size() > 7 && property_name.back() == ')') {
-                    if (property_value.empty()) {
-                        throw std::invalid_argument("rank profile query input default is empty");
-                    }
                 } else if (property_name == "vespa.match.feature") {
                     if (property_value.empty()) {
                         throw std::invalid_argument("rank profile match feature expression is empty");
