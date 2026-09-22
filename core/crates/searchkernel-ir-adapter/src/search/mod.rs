@@ -326,6 +326,7 @@ pub(crate) fn lower_sort(sort: &searchkernel_ir::SortIr) -> Result<SortField> {
 pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
     grouping::lower_groupings(request.grouping())?;
     validate_ranking_inputs(request)?;
+    validate_highlighting_query_compatibility(request)?;
     validate_yql_controls(request)?;
     if !request.properties().is_empty() && !matches!(request.query(), QueryIr::Yql { .. }) {
         return Err(PortableError::unsupported(
@@ -386,6 +387,97 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
     }
     analysis_options(request.language())?;
     Ok(())
+}
+
+fn validate_highlighting_query_compatibility(request: &SearchRequestIr) -> Result<()> {
+    let searchkernel_ir::HighlightingIr::Requested { fields } = request.highlighting() else {
+        return Ok(());
+    };
+
+    let Some(expression) = (match request.query() {
+        QueryIr::Typed(expression) => Some(expression.as_ref()),
+        _ => None,
+    }) else {
+        return Ok(());
+    };
+
+    let highlighted_fields: BTreeSet<&str> = fields.iter().map(|field| field.as_str()).collect();
+    if let Some(shape) = unsupported_highlighting_query_shape(expression, &highlighted_fields, None)
+    {
+        return Err(PortableError::unsupported(
+            "highlighting_query_not_supported",
+            Some("query"),
+            format!(
+                "Vespa Juniper cannot faithfully expose highlight terms for the {shape} query shape"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn unsupported_highlighting_query_shape<'a>(
+    expression: &'a searchkernel_ir::QueryExprIr,
+    highlighted_fields: &BTreeSet<&str>,
+    field_context: Option<&'a searchkernel_ir::QueryFieldRefIr>,
+) -> Option<&'static str> {
+    use searchkernel_ir::QueryExprKindIr;
+
+    let field_is_highlighted =
+        |field: &searchkernel_ir::QueryFieldRefIr| highlighted_fields.contains(field.path.as_str());
+    let children = |children: &[searchkernel_ir::QueryExprIr], context| {
+        children.iter().find_map(|child| {
+            unsupported_highlighting_query_shape(child, highlighted_fields, context)
+        })
+    };
+
+    match &expression.kind {
+        QueryExprKindIr::Fuzzy { .. } => field_context
+            .is_some_and(field_is_highlighted)
+            .then_some("fuzzy"),
+        QueryExprKindIr::Matches { field, .. } => {
+            field_is_highlighted(field).then_some("regexp/prefix/substring/suffix")
+        }
+        QueryExprKindIr::Contains { field, item } => {
+            unsupported_highlighting_query_shape(item, highlighted_fields, Some(field))
+        }
+        QueryExprKindIr::And(values)
+        | QueryExprKindIr::Or(values)
+        | QueryExprKindIr::Phrase(values)
+        | QueryExprKindIr::Near {
+            children: values, ..
+        }
+        | QueryExprKindIr::ONear {
+            children: values, ..
+        }
+        | QueryExprKindIr::SameElement(values)
+        | QueryExprKindIr::Equiv(values)
+        | QueryExprKindIr::WeakAnd {
+            children: values, ..
+        } => children(values, field_context),
+        QueryExprKindIr::Alternatives(values) => values.iter().find_map(|value| {
+            unsupported_highlighting_query_shape(&value.query, highlighted_fields, field_context)
+        }),
+        QueryExprKindIr::Rank { matching, ranking } => {
+            unsupported_highlighting_query_shape(matching, highlighted_fields, field_context)
+                .or_else(|| children(ranking, field_context))
+        }
+        QueryExprKindIr::Labeled { query, .. }
+        | QueryExprKindIr::Not(query)
+        | QueryExprKindIr::NonEmpty(query) => {
+            unsupported_highlighting_query_shape(query, highlighted_fields, field_context)
+        }
+        QueryExprKindIr::WeightedSet { field, .. }
+        | QueryExprKindIr::Wand { field, .. }
+        | QueryExprKindIr::DotProduct { field, .. } => {
+            field_is_highlighted(field).then_some(match &expression.kind {
+                QueryExprKindIr::WeightedSet { .. } => "weighted_set",
+                QueryExprKindIr::Wand { .. } => "wand",
+                QueryExprKindIr::DotProduct { .. } => "dot_product",
+                _ => unreachable!(),
+            })
+        }
+        _ => None,
+    }
 }
 
 fn validate_yql_controls(request: &SearchRequestIr) -> Result<()> {
