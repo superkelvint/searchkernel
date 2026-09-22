@@ -150,7 +150,14 @@ else
     exit 1
 fi
 DEPS_INCLUDE_DIR=${VESPA_DEPS_INCLUDE_DIR:-$VESPA_DEPS/include}
-VESPA_LIBRARY_ROOT=${VESPA_LIBRARY_ROOT:-$VESPA_ROOT}
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    # Adapter-only builds consume the already-validated immutable base. The
+    # configured Vespa tree is needed for compile/link metadata only and may no
+    # longer contain its original shared-library outputs.
+    VESPA_LIBRARY_ROOT=${VESPA_LIBRARY_ROOT:-$BASE_SDK/lib}
+else
+    VESPA_LIBRARY_ROOT=${VESPA_LIBRARY_ROOT:-$VESPA_ROOT}
+fi
 if ! find "$VESPA_LIBRARY_ROOT" -name 'libvespa*.so*' -print -quit 2>/dev/null | grep -q .; then
     echo "Vespa shared libraries were not found below $VESPA_LIBRARY_ROOT" >&2
     echo "run './dev native-sdk ensure' from a clone with the pinned Vespa prerequisite or provide VESPA_LIBRARY_ROOT" >&2
