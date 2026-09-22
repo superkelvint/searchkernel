@@ -11,6 +11,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
+PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -409,6 +410,54 @@ class ExactHeadTests(unittest.TestCase):
         self.assertNotIn("cargo ", logged)
         self.assertNotIn("native i", logged)
 
+    def test_python_native_e2e_runner_bootstraps_and_opts_in(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+
+        (repo / "tools").mkdir(parents=True)
+        (repo / "fakebin").mkdir(parents=True)
+        (repo / "tools" / "run-python-native-e2e.sh").write_bytes(
+            PYTHON_NATIVE_E2E_RUNNER.read_bytes()
+        )
+
+        log = repo / "runner.log"
+        dev = repo / "dev"
+        dev.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'dev %s\\n' \"$*\" >> \"$RUNNER_LOG\"\n",
+            encoding="utf-8",
+        )
+        dev.chmod(0o755)
+        fake_python = repo / "fakebin" / "python"
+        fake_python.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'opt_in=%s args=%s\\n' \"${SEARCHKERNEL_RUN_NATIVE_E2E:-}\" \"$*\" >> \"$RUNNER_LOG\"\n",
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+
+        env = os.environ.copy()
+        env["CI_PYTHON"] = str(fake_python)
+        env["RUNNER_LOG"] = str(log)
+        result = subprocess.run(
+            ["bash", str(repo / "tools" / "run-python-native-e2e.sh")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        logged = log.read_text(encoding="utf-8")
+        self.assertIn("dev native-sdk ensure", logged)
+        self.assertIn("opt_in=1 args=-m unittest discover", logged)
+        self.assertIn("-p test_grpc_e2e.py", logged)
+
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
             b"core/crates/searchkernel-ir/src/model.rs\0": {
@@ -446,6 +495,12 @@ class ExactHeadTests(unittest.TestCase):
                 "python=false",
                 "typescript=false",
                 "native=false",
+            },
+            b".githooks/pre-commit\0": {
+                "rust=false",
+                "python=false",
+                "typescript=false",
+                "native=true",
             },
         }
         for changed, expected in cases.items():
