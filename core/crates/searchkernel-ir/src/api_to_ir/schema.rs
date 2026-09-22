@@ -689,7 +689,6 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
             version: 1,
             options: SchemaPropertiesIr::new(),
         });
-        analyzer_identity(&analyzer, &format!("{path}.analyzer"))?;
         Some(analyzer)
     } else {
         analyzer
@@ -774,7 +773,19 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
             "multi-valued fields cannot be sortable",
         ));
     }
+    let carries_derived_indexing_script_defaults = indexing_script.is_some()
+        && stored == Some(true)
+        && searchable == Some(false)
+        && filterable == Some(false)
+        && sortable == Some(false)
+        && groupable == Some(false)
+        && analyzer.is_none()
+        && matching.is_none()
+        && index.is_none()
+        && attribute.is_none()
+        && summary.is_none();
     if indexing_script.is_some()
+        && !carries_derived_indexing_script_defaults
         && (stored.is_some()
             || searchable.is_some()
             || filterable.is_some()

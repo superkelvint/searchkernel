@@ -416,6 +416,9 @@ impl Field {
             capabilities.stored = value;
         }
         if let Some(field) = self.canonical.as_mut() {
+            if let Some(summary) = self.summary_config.as_mut() {
+                summary.enabled = Some(value);
+            }
             let capabilities = field.capabilities();
             field.set_capabilities(
                 value,
@@ -424,6 +427,12 @@ impl Field {
                 capabilities.sortable(),
                 capabilities.groupable(),
             );
+            if let Some(summary) = field.summary().cloned() {
+                field.set_summary_config(Some(searchkernel_ir::SummaryConfigIr {
+                    enabled: Some(value),
+                    options: summary.options,
+                }));
+            }
         }
         self
     }
