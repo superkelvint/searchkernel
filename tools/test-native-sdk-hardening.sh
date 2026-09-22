@@ -16,7 +16,7 @@ trap cleanup EXIT
 mkdir -p "$FIXTURE/sdk/lib"
 
 mapfile -t required_symbols < <(
-    sed -nE 's/^SK_API (int32_t|uint32_t) (sk_test_[a-zA-Z0-9_]+)\(.*/\2/p' \
+    sed -nE 's/^SK_API ([A-Za-z0-9_]+) (sk_test_[a-zA-Z0-9_]+)\(.*/\2/p' \
         "$ROOT/core/native/vespa/searchkernel_vespa_test.h"
 )
 [[ "${#required_symbols[@]}" -gt 0 ]]
