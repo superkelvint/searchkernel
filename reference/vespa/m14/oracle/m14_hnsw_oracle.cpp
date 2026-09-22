@@ -207,7 +207,9 @@ std::string json_escape(std::string_view value) {
         switch (c) {
         case '"': out << "\\\""; break;
         case '\\': out << "\\\\"; break;
-        case '\n': out << "\\n"; break;
+        case '
+': out << "\
+"; break;
         case '\r': out << "\\r"; break;
         case '\t': out << "\\t"; break;
         default:
@@ -296,41 +298,76 @@ void write_fixture_config(const std::filesystem::path& config_dir, const Fixture
     std::filesystem::create_directories(config_dir);
 
     std::ostringstream attributes;
-    attributes << "attribute[2]\n"
-               << "attribute[0].name " << quote_cfg(spec.tensor_field) << "\n"
-               << "attribute[0].datatype TENSOR\n"
-               << "attribute[0].collectiontype SINGLE\n"
-               << "attribute[0].tensortype " << quote_cfg(spec.tensor_type) << "\n"
-               << "attribute[0].distancemetric EUCLIDEAN\n"
-               << "attribute[0].index.hnsw.enabled true\n"
-               << "attribute[0].index.hnsw.maxlinkspernode " << spec.max_links_per_node << "\n"
-               << "attribute[0].index.hnsw.neighborstoexploreatinsert " << spec.neighbors_to_explore_at_insert << "\n"
-               << "attribute[1].name " << quote_cfg(ORDINAL_FIELD) << "\n"
-               << "attribute[1].datatype INT32\n"
-               << "attribute[1].collectiontype SINGLE\n";
+    attributes << "attribute[2]
+"
+               << "attribute[0].name " << quote_cfg(spec.tensor_field) << "
+"
+               << "attribute[0].datatype TENSOR
+"
+               << "attribute[0].collectiontype SINGLE
+"
+               << "attribute[0].tensortype " << quote_cfg(spec.tensor_type) << "
+"
+               << "attribute[0].distancemetric EUCLIDEAN
+"
+               << "attribute[0].index.hnsw.enabled true
+"
+               << "attribute[0].index.hnsw.maxlinkspernode " << spec.max_links_per_node << "
+"
+               << "attribute[0].index.hnsw.neighborstoexploreatinsert " << spec.neighbors_to_explore_at_insert << "
+"
+               << "attribute[1].name " << quote_cfg(ORDINAL_FIELD) << "
+"
+               << "attribute[1].datatype INT32
+"
+               << "attribute[1].collectiontype SINGLE
+";
     write_text(config_dir / "attributes.cfg", attributes.str());
-    write_text(config_dir / "indexschema.cfg", "indexfield[0]\n");
+    write_text(config_dir / "indexschema.cfg", "indexfield[0]
+");
     write_text(config_dir / "juniperrc.cfg", "");
 
     std::ostringstream ranking;
-    ranking << "rankprofile[2]\n"
-            << "rankprofile[0].name \"default\"\n\n"
-            << "rankprofile[1].name " << quote_cfg(RANK_PROFILE) << "\n"
-            << "rankprofile[1].fef.property[2]\n"
-            << "rankprofile[1].fef.property[0].name \"vespa.rank.firstphase\"\n"
-            << "rankprofile[1].fef.property[0].value " << quote_cfg("closeness(field," + spec.tensor_field + ")") << "\n"
-            << "rankprofile[1].fef.property[1].name \"vespa.type.query.query_embedding\"\n"
-            << "rankprofile[1].fef.property[1].value " << quote_cfg(spec.tensor_type) << "\n";
+    ranking << "rankprofile[2]
+"
+            << "rankprofile[0].name \"default\"
+
+"
+            << "rankprofile[1].name " << quote_cfg(RANK_PROFILE) << "
+"
+            << "rankprofile[1].fef.property[2]
+"
+            << "rankprofile[1].fef.property[0].name \"vespa.rank.firstphase\"
+"
+            << "rankprofile[1].fef.property[0].value " << quote_cfg("closeness(field," + spec.tensor_field + ")") << "
+"
+            << "rankprofile[1].fef.property[1].name \"vespa.type.query.query_embedding\"
+"
+            << "rankprofile[1].fef.property[1].value " << quote_cfg(spec.tensor_type) << "
+";
     write_text(config_dir / "rank-profiles.cfg", ranking.str());
 
     std::ostringstream summary;
-    summary << "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\n"
-            << "classes[0].fields[2]\n"
-            << "classes[0].fields[0].name \"documentid\"\nclasses[0].fields[0].type \"longstring\"\n"
-            << "classes[0].fields[0].command \"documentid\"\nclasses[0].fields[0].source \"\"\n"
-            << "classes[0].fields[1].name " << quote_cfg(ORDINAL_FIELD) << "\n"
-            << "classes[0].fields[1].type \"integer\"\nclasses[0].fields[1].command \"attribute\"\n"
-            << "classes[0].fields[1].source " << quote_cfg(ORDINAL_FIELD) << "\n";
+    summary << "defaultsummaryid 1
+classes[1]
+classes[0].id 1
+classes[0].name \"default\"
+"
+            << "classes[0].fields[2]
+"
+            << "classes[0].fields[0].name \"documentid\"
+classes[0].fields[0].type \"longstring\"
+"
+            << "classes[0].fields[0].command \"documentid\"
+classes[0].fields[0].source \"\"
+"
+            << "classes[0].fields[1].name " << quote_cfg(ORDINAL_FIELD) << "
+"
+            << "classes[0].fields[1].type \"integer\"
+classes[0].fields[1].command \"attribute\"
+"
+            << "classes[0].fields[1].source " << quote_cfg(ORDINAL_FIELD) << "
+";
     write_text(config_dir / "summary.cfg", summary.str());
 
     std::ostringstream schema;
@@ -338,7 +375,8 @@ void write_fixture_config(const std::filesystem::path& config_dir, const Fixture
            << "{\"name\":" << json_escape(spec.tensor_field)
            << ",\"type\":\"tensor\",\"tensor_type\":" << json_escape(spec.tensor_type)
            << ",\"index\":false,\"attribute\":true,\"summary\":false},"
-           << "{\"name\":\"ordinal\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":true}]}\n";
+           << "{\"name\":\"ordinal\",\"type\":\"integer\",\"index\":false,\"attribute\":true,\"summary\":true}]}
+";
     write_text(config_dir / "searchkernel-schema.json", schema.str());
 }
 
@@ -432,11 +470,14 @@ class Fixture {
     std::shared_ptr<PersistenceHandlerProxy> _handler;
     std::unordered_set<uint64_t> _prepared;
     std::vector<std::pair<document::GlobalId, std::string>> _ids;
-    // Persistence timestamps must stay monotonic across Fixture instances; Vespa ignores stale mutations.\n    uint64_t& _timestamp;\n    std::string _tensor_field;
+    // Persistence timestamps must stay monotonic across Fixture instances; Vespa ignores stale mutations.
+    uint64_t& _timestamp;
+    std::string _tensor_field;
     std::string _tensor_type_spec;
 
 public:
-    Fixture(const std::filesystem::path& config_dir, const FixtureSpec& spec, uint64_t& timestamp)\n        : _wire(),
+    Fixture(const std::filesystem::path& config_dir, const FixtureSpec& spec, uint64_t& timestamp)
+        : _wire(),
           _owner(),
           _summary_executor(8),
           _shared(_summary_executor),
@@ -452,7 +493,9 @@ public:
           _write_filter(),
           _resource_usage(),
           _persistence(_persistence_owner, _write_filter, _resource_usage, -1, false),
-          _handler(),\n          _timestamp(timestamp),\n          _tensor_field(spec.tensor_field),
+          _handler(),
+          _timestamp(timestamp),
+          _tensor_field(spec.tensor_field),
           _tensor_type_spec(spec.tensor_type) {
         require(static_cast<bool>(_tensor_type), "could not create Vespa tensor data type");
         _type.addField(document::Field(_tensor_field, 1, *_tensor_type));
@@ -477,7 +520,9 @@ public:
         _db = DocumentDB::create(".", config.getConfig(), tls_spec(), _limiter, DocTypeName(DOC_TYPE),
                                  makeBucketSpace(), *proton_config, _owner, _shared, _tls, _wire, _header,
                                  std::make_shared<search::attribute::Interlock>(),
-                                 // Config snapshots participate in reopen recovery. A fresh in-memory store\n                                 // makes the replayed config advance past the persisted attribute state.\n                                 std::make_unique<proton::FileConfigManager>(_shared.transport(), "config", "", DOC_TYPE),
+                                 // Config snapshots participate in reopen recovery. A fresh in-memory store
+                                 // makes the replayed config advance past the persisted attribute state.
+                                 std::make_unique<proton::FileConfigManager>(_shared.transport(), "config", "", DOC_TYPE),
                                  std::make_shared<vespalib::ThreadStackExecutor>(16), _hw,
                                  std::shared_ptr<search::diskindex::IPostingListCache>());
         _db->start();
@@ -485,22 +530,31 @@ public:
         _handler = std::make_shared<PersistenceHandlerProxy>(_db);
         _persistence.putHandler(_persistence.getWLock(), makeBucketSpace(), DocTypeName(DOC_TYPE), _handler);
         require(!_persistence.initialize().hasError(), "persistence initialization failed");
-        require(!_persistence.setClusterState(makeBucketSpace(), cluster_state()).hasError(), "cluster state failed");\n        for (const auto& id : spec.document_ids) {\n            // The embedded persistence fixture does not restore active bucket state from cluster state;\n            // reactivate known buckets before matching and mutation after every reopen.\n            prepare_bucket(proton::BucketFactory::getBucket(DocumentId(id)));\n        }\n    }
+        require(!_persistence.setClusterState(makeBucketSpace(), cluster_state()).hasError(), "cluster state failed");
+        for (const auto& id : spec.document_ids) {
+            // The embedded persistence fixture does not restore active bucket state from cluster state;
+            // reactivate known buckets before matching and mutation after every reopen.
+            prepare_bucket(proton::BucketFactory::getBucket(DocumentId(id)));
+        }
+    }
 
     ~Fixture() {
-        std::cerr << "M14_ORACLE shutdown removeHandler begin\n" << std::flush;
+        std::cerr << "M14_ORACLE shutdown removeHandler begin
+" << std::flush;
         {
             auto removed = _persistence.removeHandler(_persistence.getWLock(), makeBucketSpace(), DocTypeName(DOC_TYPE));
             require(static_cast<bool>(removed), "persistence handler removal failed");
         }
         _handler.reset();
         if (_db) {
-            std::cerr << "M14_ORACLE shutdown DocumentDB close begin\n" << std::flush;
+            std::cerr << "M14_ORACLE shutdown DocumentDB close begin
+" << std::flush;
             _db->close();
             _db.reset();
         }
         _shared.transport().ShutDown(true);
-        std::cerr << "M14_ORACLE shutdown complete\n" << std::flush;
+        std::cerr << "M14_ORACLE shutdown complete
+" << std::flush;
     }
 
     void prepare_bucket(const Bucket& bucket) {
@@ -633,7 +687,8 @@ void execute_query_controls(const Inspector& root, Fixture& fixture) {
         auto reply=fixture.search(query,approximate,target,explore,threshold,limit);
         std::cout << "{\"id\":" << json_escape(id) << ",\"hits\":"; emit_hits(hit_ids(*reply,fixture)); std::cout << '}';
     }
-    std::cout << "]}\n";
+    std::cout << "]}
+";
 }
 
 std::vector<float> mutation_values(const Inspector& root) {
@@ -661,7 +716,9 @@ int run_mode(const std::filesystem::path& scenario_path) {
     const auto id = string_value(object_field(root,"id"),"scenario id");
     auto work = unique_work_dir(); auto config_dir=work/"config"; auto data_dir=work/"data";
     prepare_data_dir(data_dir); write_fixture_config(config_dir,spec);
-    DummyFileHeaderContext::setCreator("searchkernel_m14_cpp_oracle");\n    uint64_t timestamp = 1;\n    try {
+    DummyFileHeaderContext::setCreator("searchkernel_m14_cpp_oracle");
+    uint64_t timestamp = 1;
+    try {
         if (id == "hnsw-query-controls") {
             CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); feed_documents(fixture,root); execute_query_controls(root,fixture);
         } else if (id == "hnsw-mutation-reopen") {
@@ -675,7 +732,8 @@ int run_mode(const std::filesystem::path& scenario_path) {
             { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); feed_documents(fixture,root); before=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); fixture.update_tensor(update_id,mutation_values(root)); after=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
             { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); after_reopen=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); fixture.remove_document(delete_id); after_delete=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
             { CurrentDirectoryGuard cwd(data_dir); Fixture fixture(std::filesystem::absolute(config_dir),spec,timestamp); after_delete_reopen=hit_ids(*fixture.search(query,approx,target,explore,std::nullopt,limit),fixture); }
-            std::cout << "{\"id\":\"hnsw-mutation-reopen\",\"before_update\":"; emit_hits(before); std::cout << ",\"after_update\":"; emit_hits(after); std::cout << ",\"after_reopen\":"; emit_hits(after_reopen); std::cout << ",\"after_delete\":"; emit_hits(after_delete); std::cout << ",\"after_delete_reopen\":"; emit_hits(after_delete_reopen); std::cout << "}\n";
+            std::cout << "{\"id\":\"hnsw-mutation-reopen\",\"before_update\":"; emit_hits(before); std::cout << ",\"after_update\":"; emit_hits(after); std::cout << ",\"after_reopen\":"; emit_hits(after_reopen); std::cout << ",\"after_delete\":"; emit_hits(after_delete); std::cout << ",\"after_delete_reopen\":"; emit_hits(after_delete_reopen); std::cout << "}
+";
         } else { fail("unknown M14 scenario id"); }
         std::filesystem::remove_all(work);
     } catch (...) { std::error_code ignored; std::filesystem::remove_all(work,ignored); throw; }
@@ -695,7 +753,11 @@ int prepare_mode(const std::filesystem::path& scenario_path,
     prepare_data_dir(data_dir);
     write_fixture_config(config_dir, spec);
 
-    DummyFileHeaderContext::setCreator("searchkernel_m14_cpp_oracle_prepare");\n    uint64_t timestamp = 1;\n    {\n        CurrentDirectoryGuard cwd(data_dir);\n        Fixture fixture(config_dir, spec, timestamp);
+    DummyFileHeaderContext::setCreator("searchkernel_m14_cpp_oracle_prepare");
+    uint64_t timestamp = 1;
+    {
+        CurrentDirectoryGuard cwd(data_dir);
+        Fixture fixture(config_dir, spec, timestamp);
         feed_documents(fixture, root);
     }
     return 0;
@@ -717,7 +779,8 @@ int main(int argc, char** argv) {
         }
         fail("unknown mode; expected run or prepare");
     } catch (const std::exception& error) {
-        std::cerr << "m14_tensor_oracle: " << error.what() << '\n';
+        std::cerr << "m14_tensor_oracle: " << error.what() << '
+';
         return 2;
     }
 }
