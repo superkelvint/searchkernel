@@ -53,7 +53,7 @@ EOF
 "${CXX:-c++}" -std=c++17 -I"$prefix/include" -c "$tmp/build/parser.cc" -o "$tmp/build/parser.o"
 "${AR:-ar}" rcs "$prefix/lib/libflatbuffers.a" "$tmp/build/parser.o"
 
-if "$CHECK" "$prefix" 25.12.19 >"$tmp/check.out" 2>"$tmp/check.err"; then
+if bash "$CHECK" "$prefix" 25.12.19 >"$tmp/check.out" 2>"$tmp/check.err"; then
     echo "expected ABI-incompatible FlatBuffers archive to be rejected" >&2
     cat "$tmp/check.out" >&2
     cat "$tmp/check.err" >&2
@@ -68,6 +68,6 @@ EOF
 "${CXX:-c++}" -std=c++17 -c "$tmp/build/abi.cc" -o "$tmp/build/abi.o"
 "${AR:-ar}" rcs "$prefix/lib/libflatbuffers.a" "$tmp/build/abi.o"
 
-"$CHECK" "$prefix" 25.12.19
+bash "$CHECK" "$prefix" 25.12.19
 
 echo "PASS incompatible FlatBuffers C++ archive is rejected and compatible archive is accepted"
