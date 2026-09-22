@@ -91,8 +91,13 @@ OBJECT=$CACHE_ROOT/objects/$DIGEST
 
 validate_link_closure() {
     local sdk=$1
-    local library="$sdk/lib/libsearchkernel_vespa.so"
+    local library
     local sdk_lib output missing external line name path resolved
+    library=$(find "$sdk/lib" -maxdepth 1 -type f -name 'libvespalib.so*' -print -quit)
+    [[ -n "$library" ]] || {
+        echo "native Vespa base '$sdk' does not contain libvespalib" >&2
+        return 1
+    }
 
     command -v ldd >/dev/null 2>&1 || {
         echo "native SDK runtime dependency closure validation requires ldd" >&2
@@ -155,10 +160,10 @@ validate_link_closure() {
 }
 
 valid_object() {
-    [[ -f "$OBJECT/include/searchkernel_vespa.h" &&
-       -f "$OBJECT/manifest.json" &&
-       -f "$OBJECT/native-build-fingerprint-v2.txt" &&
-       -f "$OBJECT/lib/libsearchkernel_vespa.so" ]] || return 1
+    [[ -f "$OBJECT/manifest.json" &&
+       -f "$OBJECT/native-build-fingerprint-v2.txt" ]] || return 1
+    [[ ! -e "$OBJECT/lib/libsearchkernel_vespa.so" &&
+       ! -e "$OBJECT/include/searchkernel_vespa.h" ]] || return 1
     grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
     validate_link_closure "$OBJECT"
 }
@@ -224,6 +229,31 @@ grep -q "^sha256=$DIGEST$" "$TMP/native-build-fingerprint-v2.txt" || {
     echo "built SDK fingerprint does not match requested cache key $DIGEST" >&2
     exit 1
 }
+
+# The builder also emits the Search Kernel adapter for release packaging.
+# The shared development cache is deliberately Vespa/runtime-only so its bytes
+# are independent of Search Kernel source. Strip all adapter-owned artifacts
+# before validation/publication and normalize the manifest as a base object.
+rm -f "$TMP"/lib/libsearchkernel_vespa.so*
+rm -f "$TMP"/include/searchkernel_vespa*.h
+python3 - "$TMP/manifest.json" "$DIGEST" <<'PY'
+import json
+import sys
+path, digest = sys.argv[1:]
+try:
+    with open(path, encoding="utf-8") as stream:
+        manifest = json.load(stream)
+except (FileNotFoundError, json.JSONDecodeError):
+    manifest = {}
+manifest.pop("native_abi_version", None)
+manifest.pop("hardening_failpoints", None)
+manifest.pop("sanitizer", None)
+manifest["kind"] = "vespa-base"
+manifest["native_build_fingerprint"] = digest
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(manifest, stream, indent=2, sort_keys=True)
+    stream.write("\n")
+PY
 
 validate_link_closure "$TMP" || {
     echo "refusing to publish native SDK with incomplete runtime dependency closure" >&2
