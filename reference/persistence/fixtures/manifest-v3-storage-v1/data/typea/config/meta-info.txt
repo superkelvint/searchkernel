@@ -1,0 +1,9 @@
+snapshot.0.valid=true
+snapshot.0.syncToken=1
+snapshot.0.dirName=config-1
+snapshot.1.valid=true
+snapshot.1.syncToken=3
+snapshot.1.dirName=config-3
+snapshot.2.valid=true
+snapshot.2.syncToken=12
+snapshot.2.dirName=config-12

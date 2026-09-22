@@ -64,6 +64,11 @@ coordination:
 - If a newly-created issue will be claimed immediately, it is still created as
   `status:ready` first; the race-safe claim operation then transitions it to
   `status:in-progress`. Issue creation itself is not a claim.
+- Validate the live queue locally with
+  `python3 tools/check-issue-queue.py --repo superkelvint/searchkernel`.
+  The verifier checks the label-only discovery invariant and uses canonical
+  claim branches only to detect ownership drift (`status:ready` with a claim
+  branch or `status:in-progress` without one).
 - Search or browse the issue queue only when the user asks to find/select/claim
   work, explicitly invokes an issue-discovery workflow, or the task itself
   requires broader issue context.
