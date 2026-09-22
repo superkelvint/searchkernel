@@ -161,14 +161,20 @@ outputs and unrelated native components remain intact.
 ## Python runtime vs code-generation dependencies
 
 Baseline Python runtime checks require the dependencies needed to import and
-use the checked-in client/runtime code: pinned `flatbuffers`, `grpcio`, and
-`protobuf`.
+use the checked-in client/runtime code. `flatbuffers==25.12.19` and
+`grpcio==1.84.0` are exact runtime pins. Protobuf follows the package's
+declared compatibility range, `protobuf>=7.35.1,<8`; a newer compatible 7.x
+runtime such as 7.36.2 is healthy and must not fail `./dev doctor`.
 
-`grpcio-tools` (`grpc_tools`) is a code-generation dependency only. It is
-required by `./dev regen protocol` and `tools/check-python-grpc.sh`, but its
-absence does not make ordinary `./dev doctor`, Rust builds, or SDK-independent
-verification unhealthy. Install the Python `codegen` extra only when changing
-or verifying generated gRPC sources:
+`grpcio-tools` (`grpc_tools`) is a code-generation dependency only. Generated
+gRPC sources remain reproducible by requiring the exact codegen stack:
+`grpcio-tools==1.84.0` and `protobuf==7.35.1`. These exact codegen pins do
+not narrow the Python client's runtime protobuf compatibility range.
+`grpcio-tools` is required by `./dev regen protocol` and
+`tools/check-python-grpc.sh`, but its absence does not make ordinary
+`./dev doctor`, Rust builds, or SDK-independent verification unhealthy.
+Install the Python `codegen` extra only when changing or verifying generated
+gRPC sources:
 
 ```bash
 python3 -m pip install -e 'clients/python[codegen]'
