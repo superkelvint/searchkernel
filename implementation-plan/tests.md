@@ -3,7 +3,9 @@
 **Status:** Active implementation plan  
 **Purpose:** Reduce Search Kernel fragility by strengthening tests around persistence, lifecycle/concurrency, native execution, cross-layer semantics, malformed input, result fidelity, and compatibility.
 
-A checkbox is complete only when the corresponding test or CI gate exists on `main` and has been verified to fail when the protected behavior is deliberately broken.
+An ordinary checklist checkbox means the corresponding test, corpus case, or CI gate is implemented and reachable on `main`.
+
+For hardened sections with implemented work, a separate **Sensitivity verification** gate tracks deliberate-break evidence. That gate is complete only when the CTO has independently demonstrated that a deliberate regression in the protected behavior makes the relevant test/gate fail. A section is not VERIFIED/CLOSED until its implementation checklist and applicable sensitivity gate are satisfied.
 
 ## CTO acceptance ledger
 
@@ -13,9 +15,38 @@ For any pull request implementing a checklist item here:
 
 - the CTO review must cite the applicable section of `implementation-plan/tests.md`;
 - PR descriptions, agent claims, and green CI are evidence, not completion;
-- checklist items stay unchecked until the CTO independently verifies the exact accepted head, confirms the implementation is reachable from `main`, and satisfies the deliberate-regression requirement above;
-- after verification and merge/reconciliation, the CTO updates the corresponding checkbox(es) in this file as part of closure;
-- partial implementations must leave unmet checklist items unchecked.
+- ordinary checklist items are checked when the CTO confirms the implementation is reachable from `main` and the item itself is satisfied;
+- deliberate-regression proof is tracked separately by each section's **Sensitivity verification** checkbox;
+- a section is not VERIFIED/CLOSED until the CTO has independently verified the accepted implementation and completed its sensitivity gate;
+- partial implementations must leave genuinely unmet checklist items unchecked.
+
+## Recent merged implementation status — 2026-09-22
+
+The following hardening work is now reachable from `main` and has received CTO
+implementation acceptance against this plan. These entries record implementation state. Ordinary checklist boxes below now show
+that state directly. Deliberate-regression proof is tracked separately by each
+section's **Sensitivity verification** gate.
+
+- PR #203 — deterministic lifecycle/state-machine hardening for the P0 lifecycle
+  sequence requirements.
+- PR #204 — deterministic seeded lifecycle/document model tests, bounded PR budget,
+  larger nightly budget, injected failures, and native reopen coverage.
+- PR #206 — expanded named canonical result-fidelity corpus, recursive production
+  FlatBuffer assertions, Dispatcher traversal, and Rust public projection checks.
+- PR #227 — cross-facade semantic differential tests at the canonical IR/snapshot
+  boundary, including Rust/portable, dispatcher/gRPC, Python, TypeScript,
+  pagination, grouping/facets, persisted schema, round trips, and negative cases.
+- PR #230 — canonical result projection invariants plus one generated shared encoded
+  result corpus consumed by Rust/Python/TypeScript, strict facet negatives, and
+  fixture-drift checking.
+- PR #190 — fast PR/main Rust unit lane plus a larger scheduled/manual nightly
+  verification lane.
+- PR #221 — supplemental structural guard preventing new production SearchRequest
+  semantic entry points outside the canonical resolver path.
+
+GitHub-hosted runner allocation is currently failing before checkout for some exact
+heads (`steps=[]`, `runner_id=0`). That is not treated as passing evidence and does
+not relax the acceptance rule above.
 
 
 ---
@@ -69,21 +100,32 @@ Lifecycle correctness must be tested over transitions and operation sequences, n
 
 ## Deterministic lifecycle tests
 
-- [ ] Closing a runtime invalidates every cloned handle.
-- [ ] Close waits for one in-flight operation.
-- [ ] Close waits for multiple simultaneous in-flight operations.
-- [ ] Operations beginning after close starts are rejected deterministically.
-- [ ] Double close has defined and tested behavior.
-- [ ] Drop without explicit close has defined and tested behavior.
-- [ ] Backend operation failure releases lifecycle accounting.
-- [ ] Backend panic/unwind cannot permanently wedge close where unwind is supported.
-- [ ] Failed open leaves no usable partial runtime.
-- [ ] Failed create leaves no usable partial runtime.
-- [ ] Repeated open/close cycles do not leak runtime state.
-- [ ] Concurrent cloned-handle reads remain valid until close.
-- [ ] Mutations racing with close obey one documented outcome.
+> **Implemented on main:** PR #203. CTO review accepted the architecture and mapped
+> the merged tests to this deterministic lifecycle section.
+
+- [x] Closing a runtime invalidates every cloned handle.
+- [x] Close waits for one in-flight operation.
+- [x] Close waits for multiple simultaneous in-flight operations.
+- [x] Operations beginning after close starts are rejected deterministically.
+- [x] Double close has defined and tested behavior.
+- [x] Drop without explicit close has defined and tested behavior.
+- [x] Backend operation failure releases lifecycle accounting.
+- [x] Backend panic/unwind cannot permanently wedge close where unwind is supported.
+- [x] Failed open leaves no usable partial runtime.
+- [x] Failed create leaves no usable partial runtime.
+- [x] Repeated open/close cycles do not leak runtime state.
+- [x] Concurrent cloned-handle reads remain valid until close.
+- [x] Mutations racing with close obey one documented outcome.
+
+**Sensitivity verification**
+
+- [ ] Deliberately breaking lifecycle admission/drain/close semantics makes the deterministic lifecycle gate fail.
 
 ## Model/state-machine tests
+
+> **Implemented on main:** PR #204. The merged model covers deterministic seeded
+> lifecycle/document sequences with Recording/Scripted backends, injected failures,
+> native reopen coverage, a bounded PR budget, and a larger nightly budget.
 
 Build a small reference model for lifecycle/document state. It should model API state and document existence, not Vespa ranking.
 
@@ -106,15 +148,19 @@ reopen
 attempt operation on closed handle
 ```
 
-- [ ] Implement a deterministic seeded state-machine test.
-- [ ] Generate long operation sequences against Recording/Scripted backends.
-- [ ] Compare every operation outcome with the reference model.
+- [x] Implement a deterministic seeded state-machine test.
+- [x] Generate long operation sequences against Recording/Scripted backends.
+- [x] Compare every operation outcome with the reference model.
 - [ ] Persist failing seeds as regression tests.
-- [ ] Add native-backed state-machine scenarios for operations practical against real Vespa.
-- [ ] Include reopen transitions in native-backed sequences.
-- [ ] Include injected failures between lifecycle transitions.
-- [ ] Run a bounded state-machine suite on every PR.
-- [ ] Run a larger seed/sequence budget on `main` or nightly.
+- [x] Add native-backed state-machine scenarios for operations practical against real Vespa.
+- [x] Include reopen transitions in native-backed sequences.
+- [x] Include injected failures between lifecycle transitions.
+- [x] Run a bounded state-machine suite on every PR.
+- [x] Run a larger seed/sequence budget on `main` or nightly.
+
+**Sensitivity verification**
+
+- [ ] Deliberately breaking a modeled lifecycle/document transition makes the seeded model gate fail.
 
 **Exit criterion:** lifecycle regressions are caught through invariant checking across sequences.
 
@@ -126,45 +172,61 @@ attempt operation on closed handle
 
 ## Shared canonical result corpus
 
+> **Implemented on main:** PR #206 supplies the expanded named Rust/dispatcher
+> corpus; PR #230 supplies the generated shared encoded corpus consumed by first-class
+> Python and TypeScript decode paths. CTO review accepted both implementations against
+> this section.
+
 Create immutable result fixtures covering:
 
-- [ ] root hits only;
-- [ ] one group containing hits;
-- [ ] nested groups;
-- [ ] groups containing both hit and group children;
-- [ ] multiple sibling groups preserving order;
-- [ ] group fields and labeled aggregations;
-- [ ] canonical facet-shaped grouping;
-- [ ] non-facet grouping that must not be exposed as a facet;
-- [ ] continuation tokens;
-- [ ] group limits and metadata;
-- [ ] coverage;
-- [ ] timing;
-- [ ] search-result errors;
-- [ ] highlights;
-- [ ] match features;
-- [ ] summary features;
-- [ ] rank features;
-- [ ] sort values;
-- [ ] finite relevance;
-- [ ] positive infinity relevance;
-- [ ] negative infinity relevance;
-- [ ] absent optional fields;
-- [ ] present-but-empty optional fields.
+- [x] root hits only;
+- [x] one group containing hits;
+- [x] nested groups;
+- [x] groups containing both hit and group children;
+- [x] multiple sibling groups preserving order;
+- [x] group fields and labeled aggregations;
+- [x] canonical facet-shaped grouping;
+- [x] non-facet grouping that must not be exposed as a facet;
+- [x] continuation tokens;
+- [x] group limits and metadata;
+- [x] coverage;
+- [x] timing;
+- [x] search-result errors;
+- [x] highlights;
+- [x] match features;
+- [x] summary features;
+- [x] rank features;
+- [x] sort values;
+- [x] finite relevance;
+- [x] positive infinity relevance;
+- [x] negative infinity relevance;
+- [x] absent optional fields;
+- [x] present-but-empty optional fields.
 
 ## Projection invariants
 
-- [ ] Rust canonical tree decoding is lossless.
-- [ ] Rust `hits` is derived only from the canonical tree.
-- [ ] Rust `groups` is derived only from the canonical tree.
-- [ ] Facet projection recognizes only the exact canonical facet shape.
-- [ ] Aggregation projection recognizes only defined canonical aggregation shapes.
-- [ ] Convenience projection never reorders children.
-- [ ] Convenience projection never drops canonical nodes.
-- [ ] Convenience projection never alters relevance, features, errors, or metadata.
-- [ ] Python decodes the shared fixtures with equivalent meaning.
-- [ ] TypeScript decodes the shared fixtures with equivalent meaning when first-class.
-- [ ] All first-class clients consume the same shared fixtures rather than re-authoring them independently.
+> **Implemented on main:** PR #230 makes `SearchResult.root` the canonical source
+> for Rust/Python/TypeScript projections, adds strict positive/negative facet-shape
+> coverage, preserves recursive ordering/state and result metadata, and makes the
+> first-class clients consume the same generated fixture bytes. PR #206 adds
+> complementary explicit Rust corpus cases.
+
+- [x] Rust canonical tree decoding is lossless.
+- [x] Rust `hits` is derived only from the canonical tree.
+- [x] Rust `groups` is derived only from the canonical tree.
+- [x] Facet projection recognizes only the exact canonical facet shape.
+- [x] Aggregation projection recognizes only defined canonical aggregation shapes.
+- [x] Convenience projection never reorders children.
+- [x] Convenience projection never drops canonical nodes.
+- [x] Convenience projection never alters relevance, features, errors, or metadata.
+- [x] Python decodes the shared fixtures with equivalent meaning.
+- [x] TypeScript decodes the shared fixtures with equivalent meaning when first-class.
+- [x] All first-class clients consume the same shared fixtures rather than re-authoring them independently.
+
+**Sensitivity verification**
+
+- [ ] Deliberately loosening facet projection heuristics is detected by the shared result-fidelity tests.
+- [ ] Deliberately breaking another canonical projection invariant (ordering/root preservation/metadata) makes the shared result-fidelity gate fail.
 
 **Exit criterion:** changing result projection heuristics incorrectly causes shared result-fidelity tests to fail.
 
@@ -174,28 +236,37 @@ Create immutable result fixtures covering:
 
 Whenever two public paths express the same semantics, compare them at the canonical IR boundary.
 
+> **Implemented on main:** PR #227 adds the required cross-facade comparisons at the
+> canonical owned-IR/snapshot boundary; PR #221 adds a structural guard against new
+> duplicate SearchRequest semantic entry points. CTO review accepted #227 against the
+> equivalence matrix below.
+
 ## Required equivalence pairs
 
-- [ ] Textual filter vs structured filter.
-- [ ] Repeated filter clauses vs canonical logical `All`.
-- [ ] Facet helper vs canonical grouping tree.
-- [ ] Root aggregation helper vs canonical grouping output.
-- [ ] `Group.by(...)` convenience vs canonical grouping tree.
-- [ ] `page(n, size)` vs equivalent offset/limit.
-- [ ] Rust fluent builder vs equivalent portable FlatBuffer request.
-- [ ] Direct portable request vs gRPC-carried portable request.
-- [ ] Python facade request vs canonical expected IR.
-- [ ] TypeScript facade request vs canonical expected IR when first-class.
-- [ ] Persisted resolved schema decode vs expected schema snapshot.
-- [ ] API → IR → API → IR preserves canonical meaning for round-trippable values.
+- [x] Textual filter vs structured filter.
+- [x] Repeated filter clauses vs canonical logical `All`.
+- [x] Facet helper vs canonical grouping tree.
+- [x] Root aggregation helper vs canonical grouping output.
+- [x] `Group.by(...)` convenience vs canonical grouping tree.
+- [x] `page(n, size)` vs equivalent offset/limit.
+- [x] Rust fluent builder vs equivalent portable FlatBuffer request.
+- [x] Direct portable request vs gRPC-carried portable request.
+- [x] Python facade request vs canonical expected IR.
+- [x] TypeScript facade request vs canonical expected IR when first-class.
+- [x] Persisted resolved schema decode vs expected schema snapshot.
+- [x] API → IR → API → IR preserves canonical meaning for round-trippable values.
 
 ## Negative equivalence
 
-- [ ] Equivalent invalid forms return equivalent portable error codes.
-- [ ] Presence-sensitive absent vs present-empty values remain distinguishable where required.
+- [x] Equivalent invalid forms return equivalent portable error codes.
+- [x] Presence-sensitive absent vs present-empty values remain distinguishable where required.
 - [ ] Unknown/unsupported capabilities fail at the same semantic boundary regardless of facade/transport.
-- [ ] No transport-specific defaults are observable.
+- [x] No transport-specific defaults are observable.
 - [ ] No language-specific semantic defaults are observable.
+
+**Sensitivity verification**
+
+- [ ] Deliberately diverging one alternate representation from canonical IR makes the differential semantic gate fail.
 
 **Exit criterion:** every alternate representation is proven equivalent rather than locally tested in isolation.
 
@@ -459,16 +530,21 @@ Run expensive stress checks outside the fast PR loop but continuously on `main`.
 
 # CI structure
 
+> **Current implementation note:** PR #190 split the ordinary Rust unit lane from a
+> larger scheduled/manual nightly lane, including broader all-target, contract,
+> generated-artifact, client, ABI, and native-cache checks. This is partial progress
+> against the CI structure below; unchecked items are not implied complete.
+
 ## Fast mandatory PR gate
 
 - [ ] Formatting.
 - [ ] Compile/check all targets needed for ordinary development.
-- [ ] Workspace unit tests.
-- [ ] Pure semantic differential tests.
-- [ ] Bounded state-machine tests.
-- [ ] Shared result-fidelity corpus.
+- [x] Workspace unit tests.
+- [x] Pure semantic differential tests.
+- [x] Bounded state-machine tests.
+- [x] Shared result-fidelity corpus.
 - [ ] Portable request/response conformance.
-- [ ] Python/client contract checks.
+- [x] Python/client contract checks.
 - [ ] Short deterministic fuzz/replay corpus.
 - [ ] Critical persistence compatibility smoke set.
 
@@ -484,7 +560,7 @@ Trigger for native, persistence, schema/config, adapter, result-decoding, or dae
 ## Main/nightly hardening
 
 - [ ] Full historical persistence corpus.
-- [ ] Large state-machine seed budget.
+- [x] Large state-machine seed budget.
 - [ ] Fuzzing campaigns.
 - [ ] ASan.
 - [ ] UBSan.
@@ -500,14 +576,14 @@ Trigger for native, persistence, schema/config, adapter, result-decoding, or dae
 This hardening plan is complete when:
 
 - [ ] Every claimed persisted format is protected by a historical reopen fixture.
-- [ ] Lifecycle correctness is tested through generated operation sequences.
+- [x] Lifecycle correctness is tested through generated operation sequences.
 - [ ] Every alternate semantic representation has a differential-equivalence test.
-- [ ] The canonical result tree has a shared recursive cross-language corpus.
+- [x] The canonical result tree has a shared recursive cross-language corpus.
 - [ ] All untrusted parser/decoder boundaries have fuzz coverage.
 - [ ] High-dimensional pure semantics have property tests.
 - [ ] Native ownership/error/decoding paths have direct negative-path coverage.
 - [ ] Sanitizers run continuously.
 - [ ] Rust direct and gRPC real-engine behavior share representative E2E scenarios.
 - [ ] Coverage and mutation testing are used to expose weak tests.
-- [ ] Fast PR checks and expensive scheduled hardening are clearly separated.
+- [x] Fast PR checks and expensive scheduled hardening are clearly separated.
 - [ ] A deliberate regression in each critical boundary has been shown to make the relevant gate fail.

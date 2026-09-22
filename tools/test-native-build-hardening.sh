@@ -19,6 +19,11 @@ grep -q 'libffi.so.6 required by the bundled LLVM runtime' "$root/core/native/ve
 grep -q 'copy-shared-library-into-sdk.sh' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'refusing to publish native SDK containing shared-library symlinks' "$root/core/native/vespa/build-sdk.sh"
 grep -q 'rpath-link' "$root/core/crates/searchkernel-vespa-bindings/build.rs"
+grep -q 'SK_NATIVE_BASE_ONLY' "$root/core/native/vespa/build-sdk.sh"
+grep -Fq 'LINK_ARGS="-L$BASE_SDK/lib $LINK_ARGS"' "$root/core/native/vespa/build-sdk.sh"
+grep -Fq 's#[^ ]*/$LIB_NAME#$BASE_LIBRARY#g' "$root/core/native/vespa/build-sdk.sh"
+grep -q "refusing to overwrite Vespa base" "$root/core/native/vespa/build-sdk.sh"
+grep -q -- '--scope base' "$root/tools/resolve-native-sdk.sh"
 bash "$root/tools/test-native-sdk-packaging.sh"
 echo 'native build hardening: host, devcontainer, and CI target directories are distinct'
 
