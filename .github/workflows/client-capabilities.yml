@@ -17,6 +17,8 @@ on:
       - "tools/check-client-contracts.py"
       - "tools/test_check_capabilities.py"
       - "tools/test_check_client_contracts.py"
+      - "tools/check-python-dependencies.py"
+      - "tools/test_python_dependency_contract.py"
       - ".github/workflows/client-capabilities.yml"
   push:
     branches: [main]
@@ -35,6 +37,8 @@ on:
       - "tools/check-client-contracts.py"
       - "tools/test_check_capabilities.py"
       - "tools/test_check_client_contracts.py"
+      - "tools/check-python-dependencies.py"
+      - "tools/test_python_dependency_contract.py"
       - ".github/workflows/client-capabilities.yml"
 
 jobs:
@@ -52,6 +56,7 @@ jobs:
       - run: python tools/check-client-contracts.py --check
       - run: python tools/test_check_capabilities.py
       - run: python tools/test_check_client_contracts.py
+      - run: python tools/test_python_dependency_contract.py
 
   e2e:
     name: Executable E2E evidence
