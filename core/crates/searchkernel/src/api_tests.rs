@@ -4833,7 +4833,6 @@ fn backend_errors_are_returned_without_being_rewritten() {
 #[test]
 fn rich_public_field_state_is_validated_by_shared_resolver() {
     let (_, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
     described.fields[0]
         .attribute_config
         .as_mut()
@@ -4866,8 +4865,7 @@ fn derived_default_search_fields_include_schema_only_fields() {
 
 #[test]
 fn rich_public_definition_matches_portable_without_canonical_sidecar() {
-    let (canonical, mut described) = public_described_canonical_fixture();
-    described.canonical = None;
+    let (canonical, described) = public_described_canonical_fixture();
 
     let resolved = definition_to_ir(&described)
         .expect("complete public schema state should use the shared resolver");
@@ -4923,14 +4921,7 @@ fn assert_rust_and_portable_schema_error_match(
     expected_detail_code: &str,
 ) {
     let index = index_from_canonical_ir(definition.clone());
-    let mut described = index.describe().expect("invalid fixture should still describe structurally");
-    // Whole-definition and field sidecars must not participate in this check.
-    // Resolved public capabilities remain present, reproducing the exact path
-    // that previously set the Rust-only `canonical` resolver provenance bit.
-    described.canonical = None;
-    for field in &mut described.fields {
-        field.canonical = None;
-    }
+    let described = index.describe().expect("invalid fixture should still describe structurally");
 
     let rust_error = definition_to_ir(&described)
         .expect_err("Rust schema ingress should reject invalid semantic state");
