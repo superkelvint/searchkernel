@@ -246,6 +246,127 @@ runtime under `core/native/sdk`. If the checkout path differs, use
 `readlink -f vespa-deps/lib64/libLLVM-21.so` and set
 `VESPA_EXTRA_LIB_DIR` to its containing directory.
 
+### Native SDK link-closure failures
+
+A native SDK is healthy only if its adapter library **and its complete runtime
+dependency closure** can be linked from the published SDK object. Presence,
+fingerprint, manifest, and ABI-version checks are necessary but are not
+sufficient.
+
+In particular, these messages are a different failure mode from the LLVM-only
+recovery above:
+
+```text
+immutable shared native Vespa SDK '.../native-sdk-cache/.../<fingerprint>'
+failed its link probe
+
+cannot find -lvespa_persistence
+cannot find -lvespa_vdslib
+cannot find -lvespa_searchsummary
+cannot find -lvespa_searchlib
+cannot find -lvespa_document
+cannot find -lvespaeval
+cannot find -lvespa_messagebus
+cannot find -lvespalib
+cannot find -lvespalog
+
+refusing to rebuild a published cache object in place
+```
+
+The important distinction is:
+
+```text
+./dev doctor
+    proves prerequisites, SDK presence, and ABI/provenance checks
+
+./dev native-sdk ensure
+    resolves or builds the content-addressed SDK object
+
+Cargo searchkernel-vespa-bindings link probe
+    proves that the published SDK is actually linkable by a consumer
+```
+
+A cache object may therefore exist and pass its identity checks while still
+being unusable if its `lib/` directory is missing transitive Vespa shared
+libraries. A correctly published SDK is expected to bundle the production
+Vespa and third-party `.so` closure required by
+`libsearchkernel_vespa.so`; consumers should not need a Vespa source-tree
+library path at runtime.
+
+When the link probe reports missing `libvespa_*.so` libraries:
+
+1. Resolve the SDK object Cargo is actually using:
+
+   ```bash
+   ./dev native-sdk path
+   ```
+
+2. Inspect the published package rather than guessing at linker flags:
+
+   ```bash
+   SDK="$(./dev native-sdk path)"
+   ls "$SDK/lib"/libsearchkernel_vespa.so*
+   ls "$SDK/lib"/libvespa*.so* 2>/dev/null || true
+   ldd "$SDK/lib/libsearchkernel_vespa.so" | grep 'not found' || true
+   ```
+
+   If `ldd` reports Vespa libraries as `not found`, or the SDK contains the
+   adapter but no corresponding `libvespa*.so*` files, treat the SDK package
+   as incomplete. Do not work around that by changing Rust code.
+
+3. Verify that a configured Vespa build and its dependency installation are
+   available to the resolver:
+
+   ```bash
+   ./dev doctor
+   test -f upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt
+   test -f upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make
+   ```
+
+   In a task worktree, the resolver may use a configured sibling Vespa worktree.
+   If dependency discovery is ambiguous, point it at the dependency installation
+   used by that configured Vespa build:
+
+   ```bash
+   VESPA_DEPS=/path/to/vespa-deps ./dev native-sdk ensure
+   ```
+
+   If the dependencies use a non-standard library directory, also set:
+
+   ```bash
+   VESPA_DEPS=/path/to/vespa-deps \
+   VESPA_DEPS_LIB_DIR=/path/to/vespa-deps/lib64 \
+     ./dev native-sdk ensure
+   ```
+
+4. Treat `VESPA_EXTRA_LIB_DIR` narrowly. It is for extra runtime libraries
+   such as the pinned LLVM runtime; it is **not** a replacement for
+   `VESPA_DEPS`, and pointing it only at
+   `core/native/sdk/linux-x86_64/lib` does not repair missing Vespa
+   `libvespa_*.so` dependencies.
+
+5. Never mutate or rebuild an immutable published cache object in place. If the
+   object at the current fingerprint is incomplete, preserve the failing path
+   and diagnostics for investigation. Repair the build inputs/tooling so the
+   resolver can publish a valid object. If cache-integrity investigation
+   determines that an invalid published object must be removed, remove that
+   exact object explicitly; do not use `cargo clean`, delete all of
+   `target/`, or wipe the native SDK cache wholesale.
+
+6. Rerun the **original failing Cargo command** after recovery. This final step
+   matters because the Cargo link probe is stronger than the prerequisite and
+   fingerprint checks. For example:
+
+   ```bash
+   cargo test -p searchkernel --lib --all-features \
+     native_model_persists_state_and_keeps_old_generation_closed
+   ```
+
+If `./dev doctor` is green but this Cargo link probe still fails, report the
+SDK path, the exact `ldd ... | grep 'not found'` output, the values or resolved
+locations of `VESPA_ROOT` and `VESPA_DEPS`, and the original Cargo error.
+Do not summarize this state merely as "native tests could not run."
+
 ## Task worktrees and native prerequisites
 
 `./dev worktree create <task-name>` creates a temporary worktree at
