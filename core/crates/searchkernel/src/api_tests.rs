@@ -1607,10 +1607,7 @@ fn described_field_preserves_custom_analyzer_options() {
     let definition = searchkernel_ir::IndexDefinitionIr::new(
         None,
         vec![field],
-        Vec::new(),
-        searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1,
-        searchkernel_ir::PrefixPolicy::Disabled,
-        searchkernel_ir::TypoPolicy::Disabled,
+        Vec::new()
     )
     .expect("valid analyzer definition");
 
@@ -2522,18 +2519,6 @@ fn canonical_fixture_covers_the_complete_schema_surface() {
         "tags"
     );
     assert_eq!(definition.default_search_fields()[1].weight().get(), 0.25);
-    assert_eq!(
-        definition.default_ranking(),
-        searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1
-    );
-    assert_eq!(
-        definition.default_prefix_policy(),
-        searchkernel_ir::PrefixPolicy::Disabled
-    );
-    assert_eq!(
-        definition.default_typo_policy(),
-        searchkernel_ir::TypoPolicy::Disabled
-    );
     assert_eq!(definition.properties().len(), 2);
     assert_eq!(definition.document_type(), Some("complete_document"));
     assert_eq!(
