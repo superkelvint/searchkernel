@@ -75,6 +75,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
+      - name: Create isolated Python environment
+        run: |
+          python -m venv "$RUNNER_TEMP/searchkernel-client-venv"
+          echo "$RUNNER_TEMP/searchkernel-client-venv/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
