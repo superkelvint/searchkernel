@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from searchkernel.client import value
 from searchkernel.ergonomic import Hit, SearchBuilder, SearchResults
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind
+from SearchKernel.V2.RelevanceKind import RelevanceKind
 from SearchKernel.V2.UInt64Value import UInt64ValueT
 from SearchKernel.V2.Value import ValueT
 from SearchKernel.V2.ValueEntry import ValueEntryT
@@ -116,6 +117,37 @@ class SearchResultFacetProjectionTest(unittest.TestCase):
         results = SearchResults(self.exact_facet_result(mixed=True))
         results._project_facet("brand", "brand")
         self.assertEqual(results.facets, {})
+
+
+class RelevanceDecodeTest(unittest.TestCase):
+    def _hit(self, relevance):
+        return SimpleNamespace(
+            id="doc-1",
+            fields=[],
+            relevance=relevance,
+            matchFeatures=[],
+            summaryFeatures=[],
+            rankFeatures=[],
+            sortValues=[],
+            highlights=[],
+        )
+
+    def test_relevance_discriminator_requires_matching_payload(self):
+        for kind in (
+            RelevanceKind.FiniteRelevance,
+            RelevanceKind.PositiveInfinityRelevance,
+            RelevanceKind.NegativeInfinityRelevance,
+        ):
+            with self.subTest(kind=kind):
+                with self.assertRaisesRegex(ValueError, "missing or mismatched payload"):
+                    Hit(
+                        self._hit(
+                            SimpleNamespace(
+                                valueType=kind,
+                                value=None,
+                            )
+                        )
+                    )
 
 
 if __name__ == "__main__":

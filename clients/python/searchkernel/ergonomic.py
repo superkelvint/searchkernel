@@ -92,6 +92,9 @@ from SearchKernel.V2.QueryWeakAnd import QueryWeakAndT
 from SearchKernel.V2.WeightedQueryItem import WeightedQueryItemT
 from SearchKernel.V2.RankingRequest import RankingRequestT
 from SearchKernel.V2.RelevanceKind import RelevanceKind
+from SearchKernel.V2.FiniteRelevance import FiniteRelevanceT
+from SearchKernel.V2.PositiveInfinityRelevance import PositiveInfinityRelevanceT
+from SearchKernel.V2.NegativeInfinityRelevance import NegativeInfinityRelevanceT
 from SearchKernel.V2.SearchRequest import SearchRequestT
 from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T
 from SearchKernel.V2.SortDirection import SortDirection
@@ -993,10 +996,16 @@ def _relevance_value(node):
     if node is None or node.valueType == RelevanceKind.NONE:
         return None
     if node.valueType == RelevanceKind.FiniteRelevance:
+        if not isinstance(node.value, FiniteRelevanceT):
+            raise ValueError("finite relevance has a missing or mismatched payload")
         return node.value.value
     if node.valueType == RelevanceKind.PositiveInfinityRelevance:
+        if not isinstance(node.value, PositiveInfinityRelevanceT):
+            raise ValueError("positive-infinity relevance has a missing or mismatched payload")
         return float("inf")
     if node.valueType == RelevanceKind.NegativeInfinityRelevance:
+        if not isinstance(node.value, NegativeInfinityRelevanceT):
+            raise ValueError("negative-infinity relevance has a missing or mismatched payload")
         return float("-inf")
     raise ValueError(f"unsupported relevance kind: {node.valueType}")
 
