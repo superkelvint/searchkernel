@@ -1200,6 +1200,9 @@ impl Field {
         if let Some(capabilities) = self.capabilities.as_mut() {
             capabilities.stored = value;
         }
+        if let Some(summary) = self.summary_config.as_mut() {
+            summary.enabled = Some(value);
+        }
         self
     }
     /// Explicitly set whether this field can be searched with text queries.
@@ -1673,63 +1676,6 @@ fn hnsw_to_ir(value: &HnswIndexConfig) -> searchkernel_ir::HnswIndexConfigIr {
         options: BTreeMap::new(),
     }
 }
-
-pub(crate) fn field_to_rust_input(field: &Field) -> Result<searchkernel_ir::RustFieldInput> {
-    let analyzer = field
-        .analyzer
-        .as_ref()
-        .map(|analyzer| {
-            analyzer
-                .options
-                .iter()
-                .map(|(key, value)| {
-                    searchkernel_ir::request_value_from_json(
-                        value,
-                        format!("fields.{}.analyzer.options.{key}", field.name),
-                    )
-                    .map(|value| (key.clone(), value))
-                    .map_err(Error::from_ir)
-                })
-                .collect::<Result<searchkernel_ir::SchemaPropertiesIr>>()
-                .map(|options| searchkernel_ir::RustAnalyzerInput {
-                    name: analyzer.name.clone(),
-                    version: analyzer.version,
-                    options,
-                })
-        })
-        .transpose()?;
-    Ok(searchkernel_ir::RustFieldInput {
-        name: field.name.clone(),
-        kind: match &field.kind {
-            FieldKind::Text => searchkernel_ir::RustFieldKind::Text,
-            FieldKind::Keyword => searchkernel_ir::RustFieldKind::Keyword,
-            FieldKind::Int64 => searchkernel_ir::RustFieldKind::Int64,
-            FieldKind::Float64 => searchkernel_ir::RustFieldKind::Float64,
-            FieldKind::Bool => searchkernel_ir::RustFieldKind::Bool,
-            FieldKind::Position => searchkernel_ir::RustFieldKind::Position,
-            FieldKind::Tensor(type_spec) => {
-                searchkernel_ir::RustFieldKind::Tensor(type_spec.clone())
-            }
-        },
-        multi: field.multi,
-        stored: field.stored,
-        searchable: field.searchable,
-        filterable: field.filterable,
-        sortable: field.sortable,
-        facetable: field.facetable,
-        analyzer,
-        distance_metric: field.distance_metric.map(distance_metric_to_ir),
-        hnsw: field
-            .hnsw
-            .as_ref()
-            .map(|value| searchkernel_ir::HnswIndexConfigIr {
-                max_links_per_node: value.max_links_per_node,
-                neighbors_to_explore_at_insert: value.neighbors_to_explore_at_insert,
-                options: BTreeMap::new(),
-            }),
-    })
-}
-
 
 pub(crate) fn field_to_unresolved_input(
     field: &Field,

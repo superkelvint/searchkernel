@@ -567,7 +567,6 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
         .iter()
         .map(StructFieldConfig::from_ir)
         .collect();
-    value.summary_config = field.summary().cloned();
     value.indexing_script = field.indexing_script().map(ToOwned::to_owned);
     value.properties = field.properties().clone();
     if matches!(
@@ -583,6 +582,9 @@ fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
         .filterable(capabilities.filterable())
         .sortable(capabilities.sortable())
         .facetable(capabilities.facetable());
+    // Restore summary after capability setters so the resolver sees the
+    // original public state and owns any stored/summary conflict validation.
+    value.summary_config = field.summary().cloned();
     value.capabilities = Some(FieldCapabilities::from_ir(capabilities));
     if field.analyzer().is_some_and(|analyzer| {
         analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty()

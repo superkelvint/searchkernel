@@ -1561,6 +1561,16 @@ fn public_schema_fields_round_trip_to_ir() {
 }
 
 #[test]
+fn described_indexing_script_defaults_round_trip_without_ambiguity() {
+    let (canonical, described) = public_described_canonical_fixture();
+
+    let resolved = definition_to_ir(&described)
+        .expect("resolved defaults derived from an indexing script should be accepted");
+
+    assert_eq!(resolved.schema_fields(), canonical.schema_fields());
+}
+
+#[test]
 fn schema_field_builder_adds_schema_only_field_to_ir() {
     let definition = IndexDefinition::new()
         .field(Field::text("title"))
@@ -3460,6 +3470,15 @@ fn described_fields_round_trip_from_public_state_without_field_sidecars() {
     let (canonical, described) = public_described_canonical_fixture();
 
     for (index, expected) in canonical.fields().iter().enumerate() {
+        if matches!(
+            expected.data_type(),
+            searchkernel_ir::DataTypeIr::StructReference { .. }
+        ) {
+            // A named struct reference needs its top-level declaration. The
+            // standalone-field path intentionally has no way to carry that
+            // declaration; the complete-definition tests cover this case.
+            continue;
+        }
         let public = described.fields()[index].clone();
 
         let resolved = definition_to_ir(&IndexDefinition::new().field(public))
@@ -4988,6 +5007,7 @@ fn rich_schema_negative_semantics_match_portable_ingress() {
     );
 
     let mut invalid_analyzer = text_field();
+    invalid_analyzer.set_data_type(DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool));
     invalid_analyzer.set_analyzer(Some(AnalyzerIr {
         name: "unknown".to_owned(),
         version: 99,
