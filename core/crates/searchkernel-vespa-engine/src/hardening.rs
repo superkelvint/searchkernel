@@ -140,7 +140,7 @@ pub fn search_reply_metadata(
     };
     check(status, &error)?;
     let result = std::ptr::NonNull::new(result)
-        .ok_or_else(|| crate::error::Error::message("native test result was null"))?;
+        .ok_or_else(|| crate::error::Error::internal("native_result_invariant", "native test result was null"))?;
     crate::native::read_generic_search_result(result)
 }
 
