@@ -1,4 +1,8 @@
-use std::{env, fs, path::PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 const FLATBUFFERS_VERSION: &str = "25.12.19";
 
@@ -6,7 +10,8 @@ fn print_native_inputs() {
     println!("cargo:rerun-if-changed=native");
     println!("cargo:rerun-if-changed=bfbs/searchkernel_request.bfbs");
     println!("cargo:rerun-if-changed=bfbs/searchkernel_response.bfbs");
-    println!("cargo:rerun-if-env-changed=DEP_FLATBUFFERS_BUILD_ROOT");
+    println!("cargo:rerun-if-env-changed=FLATBUFFERS_CPP_ROOT");
+    println!("cargo:rerun-if-env-changed=FLATC_PATH");
 
     for name in [
         "PATH",
@@ -42,20 +47,35 @@ fn print_native_inputs() {
 fn main() {
     print_native_inputs();
 
-    let root = PathBuf::from(
-        env::var_os("DEP_FLATBUFFERS_BUILD_ROOT")
-            .expect("flatbuffers-build did not export its native root"),
-    );
+    let root = resolve_flatbuffers_root().unwrap_or_else(|error| {
+        panic!(
+            "{error}\nInstall the pinned FlatBuffers toolchain once with './dev install flatbuffers'. \
+             Cargo does not build FlatBuffers itself."
+        )
+    });
     let include = root.join("include");
     let library = root.join("lib");
     verify_flatbuffers_version(&include)
-        .expect("FlatBuffers headers do not match the vendored library");
+        .unwrap_or_else(|error| panic!("FlatBuffers prerequisite at '{}': {error}", root.display()));
+
+    let static_library = library.join(if cfg!(target_os = "windows") {
+        "flatbuffers.lib"
+    } else {
+        "libflatbuffers.a"
+    });
+    if !static_library.is_file() {
+        panic!(
+            "FlatBuffers {FLATBUFFERS_VERSION} static library is missing at '{}'. \
+             Run './dev install flatbuffers' once; Cargo will not rebuild it.",
+            static_library.display()
+        );
+    }
 
     cc::Build::new()
         .cpp(true)
         .file("native/flatbuffers_json_bridge.cc")
         .include("native")
-        .include(include)
+        .include(&include)
         .flag_if_supported("-std=c++17")
         .warnings(true)
         .compile("searchkernel_flatbuffers_json_bridge");
@@ -69,7 +89,96 @@ fn main() {
     }
 }
 
-fn verify_flatbuffers_version(include: &std::path::Path) -> Result<(), String> {
+fn resolve_flatbuffers_root() -> Result<PathBuf, String> {
+    if let Some(explicit) = env::var_os("FLATBUFFERS_CPP_ROOT") {
+        return require_root(PathBuf::from(explicit), "FLATBUFFERS_CPP_ROOT");
+    }
+
+    if let Some(flatc) = env::var_os("FLATC_PATH") {
+        let flatc = PathBuf::from(flatc);
+        let prefix = flatc
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| format!("FLATC_PATH '{}' has no installation prefix", flatc.display()))?;
+        return require_root(prefix.to_path_buf(), "FLATC_PATH");
+    }
+
+    let manifest_dir = PathBuf::from(
+        env::var_os("CARGO_MANIFEST_DIR")
+            .ok_or_else(|| "CARGO_MANIFEST_DIR is not set".to_owned())?,
+    );
+    let repository_root = manifest_dir
+        .ancestors()
+        .nth(3)
+        .ok_or_else(|| format!("cannot derive repository root from '{}'", manifest_dir.display()))?;
+
+    if let Some(common) = git_common_dir(repository_root) {
+        let shared = common
+            .join("searchkernel/toolchains/flatbuffers")
+            .join(FLATBUFFERS_VERSION);
+        if root_is_usable(&shared) {
+            return Ok(shared);
+        }
+    }
+
+    for candidate in [PathBuf::from("/usr/local"), PathBuf::from("/usr")] {
+        if root_is_usable(&candidate) {
+            return Ok(candidate);
+        }
+    }
+
+    Err(format!(
+        "FlatBuffers {FLATBUFFERS_VERSION} C++ prerequisite was not found in the clone-wide toolchain or system prefixes"
+    ))
+}
+
+fn git_common_dir(repository_root: &Path) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repository_root)
+        .args(["rev-parse", "--git-common-dir"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8(output.stdout).ok()?;
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(raw);
+    let path = if path.is_absolute() {
+        path
+    } else {
+        repository_root.join(path)
+    };
+    fs::canonicalize(path).ok()
+}
+
+fn require_root(root: PathBuf, source: &str) -> Result<PathBuf, String> {
+    if root_is_usable(&root) {
+        Ok(root)
+    } else {
+        Err(format!(
+            "{source} points to '{}', but that prefix does not contain FlatBuffers {FLATBUFFERS_VERSION} headers and static library",
+            root.display()
+        ))
+    }
+}
+
+fn root_is_usable(root: &Path) -> bool {
+    let include = root.join("include/flatbuffers/base.h");
+    let library = root.join("lib");
+    let archive = if cfg!(target_os = "windows") {
+        library.join("flatbuffers.lib")
+    } else {
+        library.join("libflatbuffers.a")
+    };
+    include.is_file() && archive.is_file() && verify_flatbuffers_version(&root.join("include")).is_ok()
+}
+
+fn verify_flatbuffers_version(include: &Path) -> Result<(), String> {
     let header = fs::read_to_string(include.join("flatbuffers/base.h"))
         .map_err(|error| format!("read FlatBuffers version header: {error}"))?;
     let major = header

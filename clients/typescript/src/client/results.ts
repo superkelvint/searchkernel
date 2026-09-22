@@ -146,7 +146,13 @@ export class Hit {
   readonly relevance: number | null;
   readonly score: number | null;
   readonly fields: Record<string, unknown>;
-  readonly highlights: readonly unknown[];
+  readonly highlights: readonly {
+    readonly field: string;
+    readonly fragments: readonly {
+      readonly text: string;
+      readonly matches: readonly { readonly startByte: number; readonly endByte: number }[];
+    }[];
+  }[];
   readonly source: string | null;
   readonly types: readonly string[];
   readonly matchFeatures: Record<string, unknown>;
@@ -160,7 +166,16 @@ export class Hit {
     this.relevance = relevanceValue(node.relevance);
     this.score = this.relevance;
     this.fields = entries(node.fields);
-    this.highlights = node.highlights ?? [];
+    this.highlights = (node.highlights ?? []).map((highlight) => ({
+      field: text(highlight.field) ?? "",
+      fragments: (highlight.fragments ?? []).map((fragment) => ({
+        text: text(fragment.text) ?? "",
+        matches: (fragment.matches ?? []).map((match) => ({
+          startByte: match.startByte,
+          endByte: match.endByte,
+        })),
+      })),
+    }));
     this.source = text(node.source);
     this.types = (node.types ?? []).map((item) => text(item) ?? "");
     this.matchFeatures = entries(node.matchFeatures);
@@ -289,7 +304,9 @@ export class SearchResults {
     this.root = result.root ? wrapNode(result.root) : null;
 
     const rootChildren = this.root instanceof ResultGroup ? this.root.children : [];
-    this.hits = rootChildren.filter((child): child is Hit => child instanceof Hit);
+    this.hits = this.root instanceof Hit
+      ? [this.root]
+      : rootChildren.filter((child): child is Hit => child instanceof Hit);
 
     // Convenience groups are exactly the direct ResultGroup children of
     // the canonical root. Do not infer wrapper semantics from response shape;
@@ -317,18 +334,30 @@ export class SearchResults {
    * Generic grouping results are never inferred to be facets. Each bucket must
    * contain exactly one UInt64 `count` output and no nested children.
    */
-  projectFacet(expectedLabel: string, resultName: string): void {
+  projectFacet(expectedLabel: string, resultName: string, expectedField = expectedLabel): void {
     const candidates = this.groups.filter((group) =>
-      group.value == null
+      (group.id === expectedField || group.id == null)
       && group.label === expectedLabel
-      && group.children.length > 0
+      && group.value == null
+      && (group.raw.fields ?? []).length === 0
+      && group.continuations.length === 0
+      && group.source == null
+      && group.types.length === 0
+      && group.relevance == null
+      && group.limits == null
+      && Object.keys(group.metadata).length === 0
       && group.groups.length === group.children.length
     );
     if (candidates.length !== 1) return;
 
     const buckets: FacetBucket[] = [];
     for (const child of candidates[0]!.groups) {
-      if (child.children.length !== 0) return;
+      const optimizedChild = child.id == null && child.label == null;
+      const genericChild = child.id === "grouping-0" && child.label === expectedLabel;
+      if (!optimizedChild && !genericChild) return;
+      if (child.children.length !== 0 || child.continuations.length !== 0) return;
+      if (child.source != null || child.types.length !== 0 || child.relevance != null) return;
+      if (child.limits != null || Object.keys(child.metadata).length !== 0) return;
       const fields = child.raw.fields ?? [];
       if (fields.length !== 1) return;
       const count = fields[0]!;

@@ -73,6 +73,180 @@ def source_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def shared_library_tree_identity(root: Path) -> str:
+    """Content identity for packaged shared-library inputs.
+
+    Cache identity must be stable across Git worktrees, so timestamps and inode
+    metadata are deliberately excluded. Because SDK packaging dereferences
+    shared-library symlinks, valid symlinks contribute the bytes that will
+    actually be packaged under each library name.
+    """
+    if not root.is_dir():
+        return "missing"
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.so*")):
+        relative = path.relative_to(root).as_posix()
+        digest.update(relative.encode())
+        digest.update(b"\0")
+        try:
+            if path.is_file():
+                digest.update(b"file\0")
+                digest.update(file_digest(path).encode())
+            elif path.is_symlink():
+                digest.update(b"broken-symlink\0")
+                digest.update(os.readlink(path).encode())
+            else:
+                digest.update(b"other")
+        except OSError as error:
+            digest.update(f"error={error}".encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def runtime_bundle_identity(root: Path, vespa_root: Path) -> str:
+    """Identity of the runtime files the SDK builder would actually select."""
+    deps = configured_deps_root(root, vespa_root)
+    affined_root = (
+        vespa_root.parent.parent
+        if vespa_root.name == "vespa" and vespa_root.parent.name == "upstream"
+        else None
+    )
+
+    explicit_extra = os.environ.get("VESPA_EXTRA_LIB_DIR")
+    extra_candidates: list[Path] = []
+    if explicit_extra:
+        extra_candidates.append(Path(explicit_extra))
+    if deps is not None:
+        extra_candidates.append((deps / "../../usr/lib64").resolve(strict=False))
+    if affined_root is not None:
+        extra_candidates.append(affined_root / "core/native/sdk/linux-x86_64/lib")
+    extra_candidates.append(root / "core/native/sdk/linux-x86_64/lib")
+
+    try:
+        worktrees = subprocess.run(
+            ["git", "-C", str(root), "worktree", "list", "--porcelain"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        worktrees = None
+    if worktrees is not None:
+        for line in worktrees.stdout.splitlines():
+            if line.startswith("worktree "):
+                extra_candidates.append(
+                    Path(line.removeprefix("worktree "))
+                    / "core/native/sdk/linux-x86_64/lib"
+                )
+    extra_candidates.append(root / "target/native-sdk-package/lib")
+
+    selected_extra = next(
+        (directory for directory in extra_candidates if (directory / "libLLVM.so.21.1").is_file()),
+        None,
+    )
+
+    selected: list[Path] = []
+    if selected_extra is not None:
+        for name in ("libLLVM.so.21.1", "libxxhash.so"):
+            path = selected_extra / name
+            if path.is_file():
+                selected.append(path)
+
+    explicit_aws = os.environ.get("VESPA_AWS_LIB_DIR")
+    ffi_candidates: list[Path] = []
+    if explicit_aws:
+        ffi_candidates.append(Path(explicit_aws) / "libffi.so.6")
+    if selected_extra is not None:
+        ffi_candidates.append(selected_extra / "libffi.so.6")
+    if deps is not None:
+        ffi_candidates.append(
+            (deps / "../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6").resolve(
+                strict=False
+            )
+        )
+    ffi_candidates.append(root / "target/native-sdk-package/lib/libffi.so.6")
+    if deps is not None:
+        deps_lib = deps / "lib64" if (deps / "lib64").is_dir() else deps / "lib"
+        ffi_candidates.append(deps_lib / "libffi.so.6")
+
+    selected_ffi = next((path for path in ffi_candidates if path.is_file()), None)
+    if selected_ffi is not None:
+        selected.append(selected_ffi)
+
+    digest = hashlib.sha256()
+    for path in selected:
+        digest.update(path.name.encode())
+        digest.update(b"\0")
+        try:
+            digest.update(file_digest(path.resolve()).encode())
+        except OSError as error:
+            digest.update(f"error={error}".encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+def configured_deps_root(root: Path, vespa_root: Path) -> Path | None:
+    explicit = os.environ.get("VESPA_DEPS")
+    if explicit:
+        candidate = Path(explicit)
+        return candidate.resolve(strict=False) if candidate.is_dir() else None
+
+    try:
+        if vespa_root.name == "vespa" and vespa_root.parent.name == "upstream":
+            affined = vespa_root.parent.parent / "vespa-deps"
+            if affined.is_dir():
+                return affined.resolve()
+    except OSError:
+        pass
+
+    local = root / "vespa-deps"
+    if local.is_dir():
+        return local.resolve()
+
+    # Match build-sdk.sh: task worktrees prefer a sibling repository-local
+    # dependency installation before falling back to the absolute path recorded
+    # by the configured Vespa build.
+    try:
+        worktrees = subprocess.run(
+            ["git", "-C", str(root), "worktree", "list", "--porcelain"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        worktrees = None
+    if worktrees is not None:
+        for line in worktrees.stdout.splitlines():
+            if not line.startswith("worktree "):
+                continue
+            candidate = Path(line.removeprefix("worktree ")) / "vespa-deps"
+            if candidate.is_dir():
+                return candidate.resolve()
+
+    flags = (
+        vespa_root
+        / "searchcore/src/tests/proton/documentdb/CMakeFiles/"
+        "searchcore_embedded_crud_spike_app.dir/flags.make"
+    )
+    if flags.is_file():
+        text = flags.read_text(encoding="utf-8", errors="replace")
+        tokens = text.split()
+        for token in tokens:
+            if token.endswith("/include"):
+                candidate = Path(token).parent
+                if candidate.is_dir():
+                    return candidate.resolve()
+    return None
+
+def dependency_bundle_identity(root: Path, vespa_root: Path) -> str:
+    deps = configured_deps_root(root, vespa_root)
+    if deps is None:
+        return "unresolved"
+    lib_dir = Path(os.environ["VESPA_DEPS_LIB_DIR"]) if os.environ.get("VESPA_DEPS_LIB_DIR") else (
+        deps / "lib64" if (deps / "lib64").is_dir() else deps / "lib"
+    )
+    return shared_library_tree_identity(lib_dir)
+
+
 def vespa_config_digest(vespa_root: Path) -> str:
     digest = hashlib.sha256()
     for relative in (
@@ -159,6 +333,8 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
         "vespa.commit": git_tree_identity(vespa_root),
         "vespa.config": vespa_config_digest(vespa_root),
         "native.source": source_digest(root),
+        "native.dependency_bundle": dependency_bundle_identity(root, vespa_root),
+        "native.runtime_bundle": runtime_bundle_identity(root, vespa_root),
     }
 
     tracked = (

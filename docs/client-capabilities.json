@@ -643,6 +643,15 @@
               "capability": "result.highlighting",
               "scenario": "basic",
               "surface": "python",
+              "runtime": "shared",
+              "kind": "conformance",
+              "path": "clients/python/tests/test_results.py",
+              "line": 181
+            },
+            {
+              "capability": "result.highlighting",
+              "scenario": "basic",
+              "surface": "python",
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
@@ -656,6 +665,15 @@
               "kind": "ergonomic",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
               "line": 220
+            },
+            {
+              "capability": "result.highlighting",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "shared",
+              "kind": "conformance",
+              "path": "clients/typescript/tests/results.test.ts",
+              "line": 273
             }
           ],
           "overrides": []

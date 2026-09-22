@@ -85,17 +85,89 @@ DIGEST=$(printf '%s' "$FINGERPRINT" | sed -n 's/^sha256=//p' | head -1)
 [[ ${#DIGEST} -eq 64 ]] || { echo "native fingerprint did not produce a SHA-256 digest" >&2; exit 1; }
 OBJECT=$CACHE_ROOT/objects/$DIGEST
 
+validate_link_closure() {
+    local sdk=$1
+    local library="$sdk/lib/libsearchkernel_vespa.so"
+    local sdk_lib output missing external line name path resolved
+
+    command -v ldd >/dev/null 2>&1 || {
+        echo "native SDK runtime dependency closure validation requires ldd" >&2
+        return 1
+    }
+
+    sdk_lib=$(cd -- "$sdk/lib" && pwd -P)
+    if ! output=$(env -u LD_LIBRARY_PATH -u LD_PRELOAD ldd "$library" 2>&1); then
+        echo "native SDK '$sdk' runtime dependency closure probe failed" >&2
+        printf '%s\n' "$output" >&2
+        return 1
+    fi
+
+    missing=$(printf '%s\n' "$output" | sed -n '/=> not found/p')
+    if [[ -n "$missing" ]]; then
+        echo "native SDK '$sdk' has incomplete runtime dependency closure:" >&2
+        printf '%s\n' "$missing" >&2
+        return 1
+    fi
+
+    external=
+    while IFS= read -r path; do
+        resolved=$(readlink -f "$path" 2>/dev/null || true)
+        case "$resolved" in
+            "$sdk_lib"/*) ;;
+            *) external=$(printf '%s%s => %s\n' "$external" "$(basename "$path")" "${resolved:-unresolved}") ;;
+        esac
+    done < <(find "$sdk_lib" -maxdepth 1 -type l -print)
+
+    while IFS= read -r line; do
+        name=$(printf '%s\n' "$line" | awk '{print $1}')
+        path=$(printf '%s\n' "$line" | awk '$2 == "=>" {print $3}')
+        [[ -n "$path" && "$path" != "not" ]] || continue
+
+        if [[ -e "$sdk_lib/$name" || -L "$sdk_lib/$name" ]]; then
+            resolved=$(readlink -f "$path" 2>/dev/null || true)
+            case "$resolved" in
+                "$sdk_lib"/*) ;;
+                *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
+            esac
+            continue
+        fi
+
+        case "$name" in
+            libvespa*.so*|libLLVM*.so*|libffi.so*|libxxhash.so*|libsearchkernel_*.so*)
+                resolved=$(readlink -f "$path" 2>/dev/null || true)
+                case "$resolved" in
+                    "$sdk_lib"/*) ;;
+                    *) external=$(printf '%s%s => %s\n' "$external" "$name" "$path") ;;
+                esac
+                ;;
+        esac
+    done <<<"$output"
+
+    if [[ -n "$external" ]]; then
+        echo "native SDK '$sdk' resolved private runtime dependencies outside its bundled lib directory:" >&2
+        printf '%s\n' "$external" >&2
+        return 1
+    fi
+}
+
 valid_object() {
     [[ -f "$OBJECT/include/searchkernel_vespa.h" &&
        -f "$OBJECT/manifest.json" &&
        -f "$OBJECT/native-build-fingerprint-v2.txt" &&
        -f "$OBJECT/lib/libsearchkernel_vespa.so" ]] || return 1
-    grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt"
+    grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
+    validate_link_closure "$OBJECT"
 }
 
 if valid_object; then
     printf '%s\n' "$OBJECT"
     exit 0
+fi
+
+if [[ "$MODE" == path ]]; then
+    echo "native SDK cache miss for fingerprint $DIGEST" >&2
+    echo "run './dev native-sdk ensure' only when native verification is required" >&2
+    exit 1
 fi
 
 LOCK=$CACHE_ROOT/locks/$DIGEST.lock
@@ -122,9 +194,16 @@ if valid_object; then
 fi
 
 if [[ -e "$OBJECT" ]]; then
-    echo "immutable native SDK cache object '$OBJECT' exists but failed validation" >&2
-    echo "refusing to replace a published object; remove it explicitly after investigating cache integrity" >&2
-    exit 1
+    QUARANTINE_ROOT="$CACHE_ROOT/quarantine"
+    mkdir -p "$QUARANTINE_ROOT"
+    QUARANTINED="$QUARANTINE_ROOT/$DIGEST.$(date +%s).$BASHPID"
+    echo "native SDK cache object '$OBJECT' failed validation; quarantining and rebuilding under the cache lock" >&2
+    # Published objects are mode-locked read-only. Once validation has failed
+    # and this digest lock is held, make only the object directory itself
+    # owner-writable so it can be retired from the published namespace. Do not
+    # modify any packaged contents in place.
+    chmod u+w "$OBJECT"
+    mv "$OBJECT" "$QUARANTINED"
 fi
 
 rm -rf "$TMP" "$BUILD"
@@ -139,6 +218,11 @@ SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
 
 grep -q "^sha256=$DIGEST$" "$TMP/native-build-fingerprint-v2.txt" || {
     echo "built SDK fingerprint does not match requested cache key $DIGEST" >&2
+    exit 1
+}
+
+validate_link_closure "$TMP" || {
+    echo "refusing to publish native SDK with incomplete runtime dependency closure" >&2
     exit 1
 }
 

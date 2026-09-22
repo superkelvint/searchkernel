@@ -44,12 +44,14 @@ coordination:
   or coordination repository as the work queue or completion channel.
 - Do not search GitHub merely because a task is non-trivial. If the user gives a
   concrete implementation task directly, treat that task as the work
-  specification and begin with the relevant repository code, tests, contracts,
-  and documentation.
-- Do not create an issue solely to satisfy process for a directly assigned task.
-  Search or browse the issue queue only when the user asks to find/select/claim
-  work, explicitly invokes an issue-driven workflow, or the task itself requires
-  issue context.
+  specification; do not search or enumerate the wider issue queue first.
+- For a directly assigned non-trivial implementation task that is not already
+  tied to an issue, create a new GitHub issue for that exact task before code
+  changes begin. The issue is for durable tracking and PR linkage, not for
+  rediscovering or redefining the user's task.
+- Search or browse the issue queue only when the user asks to find/select/claim
+  work, explicitly invokes an issue-discovery workflow, or the task itself
+  requires broader issue context.
 - If the user names an issue or pull request, fetch that item directly. Do not
   enumerate or search the wider GitHub queue first.
 - For issue-driven work, read the full issue and recent comments, check for
@@ -73,6 +75,85 @@ coordination:
 The implementation agent may claim that a pull request is ready for review. It
 does not independently declare its own work VERIFIED or CLOSED. Final review
 and merge provide that disposition.
+
+### Definition of done for substantive work
+
+Implementation complete is **not** closure.
+
+For substantive changes, especially lifecycle/concurrency, portable semantics,
+schema conversion, persistence/reopen, result encoding, native boundaries, and
+other high-blast-radius work, the reviewer/CTO must perform all of the following
+before treating the work as done:
+
+1. independently adversarially review the implementation and try to falsify it;
+2. verify the applicable checks against the exact current head being accepted;
+3. reconcile the implementation against the issue acceptance criteria, frozen
+   contracts, and architectural invariants;
+4. confirm merged/closed work is actually reachable from `main`;
+5. reconcile issue/PR state after merge, closing stale or superseded blockers
+   only when the current tree proves their acceptance conditions;
+6. update project control-plane state when the active frontier materially
+   changes.
+
+A green happy-path test suite is evidence, not closure. Adversarial review must
+ask how the change could be falsely green: races/interleavings, malformed input,
+absence-vs-empty state, persistence/reopen, alternate ingress paths, generated
+artifact drift, error-domain mismatch, architectural bypasses, silent fallback,
+or stale/unmerged work as applicable.
+
+Scale review depth to blast radius. Trivial documentation or mechanical edits do
+not require a heavyweight audit; correctness-sensitive changes do.
+
+Work in architectural closure clusters where appropriate. The invariant being
+closed is the unit of reasoning; individual issues and pull requests are bounded
+review units within that cluster.
+
+
+### Self-unblock assigned work
+
+When the user directly assigns an issue or task, optimize for forward progress
+toward that outcome. Do not treat an unmet repository-internal dependency as a
+reason to stop when the dependency itself is actionable.
+
+If the assigned issue depends on other issues or prerequisite changes:
+
+- inspect the current state of each prerequisite before declaring a blocker;
+- if a prerequisite is open, unclaimed (or otherwise safely claimable), and can
+  be completed in the current repository/runtime, treat it as the next unit of
+  work;
+- walk the dependency chain to the nearest actionable leaf, claim and complete
+  that atomic issue, hand it off through its own pull request, then continue
+  toward the originally assigned issue without requiring the user to prompt
+  again;
+- preserve one-issue/one-PR review boundaries while doing this; self-unblocking
+  does not mean combining the dependency chain into one oversized change;
+- treat work on an explicitly required prerequisite as part of completing the
+  assigned outcome, not as unrelated scope expansion;
+- re-evaluate stale blocker comments against current GitHub state instead of
+  assuming they are still true;
+- for audit/final-verification issues whose gate requires remediation issues to
+  land first, advance the missing remediation issues rather than merely
+  reporting that the audit cannot start yet.
+
+An open prerequisite, unmet dependency gate, missing generated artifact, build
+prerequisite, or failing repository check is **not by itself a terminal
+blocker**. First attempt the repository-documented remediation and any
+actionable prerequisite work that is within the agent's permissions and scope.
+
+Stop and report a blocker only when making further progress requires something
+the agent cannot safely or legitimately resolve itself, such as:
+
+- a required user/product/specification decision;
+- credentials, permissions, or an external service the agent cannot obtain;
+- a prerequisite currently owned by another active worker where taking it would
+  duplicate or conflict with that work;
+- an unavailable runtime/toolchain prerequisite after following `BUILDING.md`
+  recovery guidance;
+- a genuine contract conflict that requires CTO/user disposition.
+
+When stopping, name the first non-self-resolvable blocker and the concrete
+action required from someone else. Do not stop merely because another issue is
+open.
 
 ### Follow-up and CTO handoff lifecycle
 
@@ -230,21 +311,22 @@ Do not silently redefine either one.
 
 Before editing:
 
-1. Determine whether the task is direct or issue-driven. For a concrete task
-   assigned directly by the user, do not search GitHub for an issue; begin from
-   the task and relevant repository context. For issue-driven work, use the
-   named issue directly, or search the queue only when the user asked you to
-   select/find work.
-2. For issue-driven work only, read the issue, its comments, and linked pull
-   requests. Confirm it is an atomic actionable issue rather than an umbrella.
-   If it contains multiple independently reviewable outcomes, split them into
-   child issues before implementation. Confirm the chosen issue is not already
-   claimed, then claim it before changing code. Skip this step for a directly
-   assigned task that is not tied to an issue.
+1. Determine whether the task is directly assigned or selected from the issue
+   queue. For a concrete task assigned directly by the user, do not search the
+   wider GitHub issue queue. If the task is a non-trivial implementation and no
+   issue was named, create a new issue describing that exact task before code
+   changes begin. If the user named an issue, fetch it directly. Search the
+   queue only when the user asked you to select/find work.
+2. Read the task's issue, its comments, and linked pull requests when they
+   exist. For a newly created direct-task issue, do not expand or reinterpret
+   the user's scope merely to fit other GitHub work. For selected issue work,
+   confirm it is an atomic actionable issue rather than an umbrella. If it
+   contains multiple independently reviewable outcomes, split them into child
+   issues before implementation. Confirm the issue is not already claimed, then
+   claim it before changing code.
 3. Start from the current `main` branch and create a dedicated task
-   branch/worktree. For issue-driven work, prefer a branch name that includes
-   the issue number, for example `agent/123-fix-grouping-order`; otherwise use
-   a concise task-oriented branch name.
+   branch/worktree. Prefer a branch name that includes the issue number, for
+   example `agent/123-fix-grouping-order`.
 4. Inspect `git status --short` and the current branch in the task worktree.
 5. Identify pre-existing changes and treat them as belonging to someone else
    unless the task explicitly says otherwise.
