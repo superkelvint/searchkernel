@@ -66,18 +66,24 @@ fn materialize_fixture(version: u32) -> PathBuf {
 }
 
 fn assert_expected(index: &Index) {
-    for (id, expected) in [
-        ("doc1", Some(40_i64)),
-        ("doc2", Some(10_i64)),
-        ("doc3", None),
-        ("doc4", Some(10_i64)),
+    for (value, expected) in [
+        (10_i64, vec!["id:test:typea::2", "id:test:typea::4"]),
+        (20_i64, vec![]),
+        (30_i64, vec![]),
+        (40_i64, vec!["id:test:typea::1"]),
     ] {
-        let document = index.get::<serde_json::Value>(id).unwrap();
-        let actual = document
-            .as_ref()
-            .and_then(|value| value.get("attr1"))
-            .and_then(serde_json::Value::as_i64);
-        assert_eq!(actual, expected, "unexpected persisted value for {id}");
+        let mut ids = index
+            .browse()
+            .filter(field("attr1").eq(value))
+            .limit(20)
+            .execute::<serde_json::Value>()
+            .unwrap()
+            .hits
+            .into_iter()
+            .map(|hit| hit.id.to_string())
+            .collect::<Vec<_>>();
+        ids.sort();
+        assert_eq!(ids, expected, "unexpected attr1={value} result");
     }
 }
 
@@ -89,10 +95,10 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
         assert_expected(&index);
 
         index
-            .patch("doc2", Patch::new().set("attr1", 50_i64))
+            .patch("id:test:typea::2", Patch::new().set("attr1", 50_i64))
             .unwrap();
         index
-            .upsert("doc5", &json!({"attr1": 10_i64}))
+            .upsert("id:test:typea::5", &json!({"attr1": 10_i64}))
             .unwrap();
         index.close().unwrap();
 
@@ -110,7 +116,7 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
             .map(|hit| hit.id.to_string())
             .collect::<Vec<_>>();
         ids.sort();
-        assert_eq!(ids, vec!["doc4", "doc5"]);
+        assert_eq!(ids, vec!["id:test:typea::4", "id:test:typea::5"]);
         assert!(reopened
             .browse()
             .filter(field("attr1").eq(50_i64))
@@ -119,7 +125,7 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
             .unwrap()
             .hits
             .iter()
-            .any(|hit| hit.id.as_str() == "doc2"));
+            .any(|hit| hit.id.as_str() == "id:test:typea::2"));
         reopened.close().unwrap();
         fs::remove_dir_all(root).unwrap();
     }
