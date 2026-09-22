@@ -70,4 +70,8 @@ EOF
 
 bash "$CHECK" "$prefix" 25.12.19
 
-echo "PASS incompatible FlatBuffers C++ archive is rejected and compatible archive is accepted"
+mkdir -p "$tmp/compiler/bin"
+mv "$prefix/bin/flatc" "$tmp/compiler/bin/flatc"
+bash "$CHECK" "$prefix" 25.12.19 "$tmp/compiler/bin/flatc"
+
+echo "PASS incompatible FlatBuffers C++ archive is rejected, compatible archive is accepted, and split overrides remain valid"
