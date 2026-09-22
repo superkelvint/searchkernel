@@ -689,7 +689,6 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
             version: 1,
             options: SchemaPropertiesIr::new(),
         });
-        analyzer_identity(&analyzer, &format!("{path}.analyzer"))?;
         Some(analyzer)
     } else {
         analyzer
