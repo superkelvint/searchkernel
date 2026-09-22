@@ -1077,7 +1077,7 @@ mod tests {
         let mut index = IndexDefinitionIr::new(
             Some(IndexName::parse("products").unwrap()),
             vec![field.clone()],
-            Vec::new()
+            Vec::new(),
         )
         .unwrap();
         let base = index_definition(&index);

@@ -56,8 +56,9 @@ fn main() {
     });
     let include = root.join("include");
     let library = root.join("lib");
-    verify_flatbuffers_version(&include)
-        .unwrap_or_else(|error| panic!("FlatBuffers prerequisite at '{}': {error}", root.display()));
+    verify_flatbuffers_version(&include).unwrap_or_else(|error| {
+        panic!("FlatBuffers prerequisite at '{}': {error}", root.display())
+    });
 
     let static_library = library.join(if cfg!(target_os = "windows") {
         "flatbuffers.lib"
@@ -97,10 +98,12 @@ fn resolve_flatbuffers_root() -> Result<PathBuf, String> {
 
     if let Some(flatc) = env::var_os("FLATC_PATH") {
         let flatc = PathBuf::from(flatc);
-        let prefix = flatc
-            .parent()
-            .and_then(Path::parent)
-            .ok_or_else(|| format!("FLATC_PATH '{}' has no installation prefix", flatc.display()))?;
+        let prefix = flatc.parent().and_then(Path::parent).ok_or_else(|| {
+            format!(
+                "FLATC_PATH '{}' has no installation prefix",
+                flatc.display()
+            )
+        })?;
         return require_root(prefix.to_path_buf(), "FLATC_PATH");
     }
 
@@ -108,10 +111,12 @@ fn resolve_flatbuffers_root() -> Result<PathBuf, String> {
         env::var_os("CARGO_MANIFEST_DIR")
             .ok_or_else(|| "CARGO_MANIFEST_DIR is not set".to_owned())?,
     );
-    let repository_root = manifest_dir
-        .ancestors()
-        .nth(3)
-        .ok_or_else(|| format!("cannot derive repository root from '{}'", manifest_dir.display()))?;
+    let repository_root = manifest_dir.ancestors().nth(3).ok_or_else(|| {
+        format!(
+            "cannot derive repository root from '{}'",
+            manifest_dir.display()
+        )
+    })?;
 
     if let Some(common) = git_common_dir(repository_root) {
         let build_env = env::var("SEARCHKERNEL_BUILD_ENV").unwrap_or_else(|_| "host".to_owned());
@@ -178,7 +183,9 @@ fn root_is_usable(root: &Path) -> bool {
     } else {
         library.join("libflatbuffers.a")
     };
-    include.is_file() && archive.is_file() && verify_flatbuffers_version(&root.join("include")).is_ok()
+    include.is_file()
+        && archive.is_file()
+        && verify_flatbuffers_version(&root.join("include")).is_ok()
 }
 
 fn verify_flatbuffers_version(include: &Path) -> Result<(), String> {
