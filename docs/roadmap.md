@@ -28,7 +28,10 @@ foundation rather than future design work:
 - HNSW schema/configuration and approximate nearest-neighbor implementation for
   the M14 slice;
 - default summary selection, scalar projected docsums, and the first real
-  Vespa-generated highlighting path.
+  Vespa-generated highlighting path;
+- exact-head Rust workspace unit-test CI, ABI-surface CI, Client Capabilities
+  verification, and automatic repository Git-hook configuration for local
+  test gating.
 
 Implementation presence is not acceptance. A newly merged capability stays open
 until its frozen verifier and required real-engine acceptance evidence pass.
@@ -36,133 +39,152 @@ until its frozen verifier and required real-engine acceptance evidence pass.
 The retired portable client FFI / `NativeTransport` architecture must not
 return.
 
-## Current frontier — close the semantic/schema correctness work
+## Current frontier — close the remaining correctness work
 
-Do not start another broad capability family until the following in-flight work
-has converged and its acceptance state is explicit.
+Do not start another broad capability family until the current tree is green on
+its exact head and the remaining semantic/schema acceptance work has converged.
 
-### 1. Schema fidelity
+### 1. Keep exact-head `main` green
 
-**Blocked after adversarial audit.**
+This is the first closure gate, not a follow-up task.
 
-Finish the work tracked in
-[`implementation-plan/schema-fidelity-plan.md`](../implementation-plan/schema-fidelity-plan.md).
+Recent reconciliation fixed:
 
-The current hidden-`IndexDefinitionIr` sidecar makes whole-definition tests
-look lossless while the public Rust schema model itself remains narrow and
-lossy. That is not sufficient for Phases 2–5 of the plan.
+- the multi-valued highlighting compile regression;
+- incomplete public `RankProfile` state;
+- stale facet result expectations;
+- stale generated capability limitations;
+- the rich V2 schema round-trip fixture;
+- a real `BackendSession` close race where an operation published
+  `active == 0` before releasing its backend owner.
 
-The required invariant is lossless canonical schema preservation through the
-actual public Rust representation. Backend executability remains separate.
+The lifecycle/schema fixes were independently proven by a green Rust unit-test
+run on commit `d9d14fd6`.
 
-Closure requires:
-
-- the comprehensive regression corpus to observe public Rust state rather than
-  bypassing it through hidden canonical IR;
-- a public `IndexDefinition`/`Field`/`RankProfile` representation capable
-  of preserving the promised canonical schema surface;
-- Rust -> IR and IR -> Rust preservation from that public state;
-- rich `describe()` mutation and clone/reuse preserving untouched semantics;
-- meaningful absence/presence semantics, including rank phases;
-- consistent Rust create persistence/provenance;
-- unsupported backend execution remaining explicit rather than silently lost.
+Any later commit that makes the exact current head red returns to the front of
+the queue before feature work continues.
 
 ### 2. Canonical semantic resolution
 
-**Blocked after adversarial audit.**
+The full SearchRequest path now converges through the shared canonical resolver,
+and the filter comparison error-domain drift has been repaired.
 
-The full SearchRequest path now genuinely converges through
-`SearchInput -> resolve_search()`; preserve that work.
+The remaining closure cluster is the structural ownership work tracked by:
 
-Two remaining architecture gaps must close:
-
-1. **Schema/ranking ingress** — Rust and FlatBuffers still independently resolve
-   field defaults and construct canonical rank-profile/rank-phase IR. Equivalent
-   Position/Tensor defaults and absent/empty two-phase ranking state can diverge.
-2. **Legacy portable component bypasses** — direct query/ranking/sort conversion
-   methods can still apply semantics outside the full canonical resolver and
-   already return different canonical shapes/errors for the same portable
-   input.
+- #43 — guard against duplicate production SearchRequest semantic entry points;
+- #143 — guard against duplicate Rust/FlatBuffers schema semantic entry points;
+- #144 — adversarially verify that the remediated tree has one semantic path.
 
 Closure requires:
 
-- one shared unresolved schema representation and resolver for Rust + portable
-  schema ingress;
-- full canonical parity for equivalent two-phase rank profiles and field
-  defaults;
-- removal/restriction/delegation of legacy component-level semantic bypasses;
-- a structural guard preventing a second production semantic path;
-- the existing shared typed-query normalizer/validator and real-engine ranking
-  behavior remaining green.
+- equivalent Rust and FlatBuffers intent to resolve through shared semantic
+  ownership;
+- no production component-level bypass that can produce a different canonical
+  shape or error domain;
+- structural regression guards that fail if a second semantic path is added;
+- existing typed-query/ranking behavior remaining green.
 
 Do not redesign the frozen typed-query model while fixing semantic ownership.
 
-### 3. Phase 9 / additive / YQL / grouping acceptance
+### 3. Schema fidelity
 
-Re-establish the current cumulative acceptance state rather than assuming the
-older audit work is closed.
+Large parts of the public schema representation are now present: complete field
+types/capabilities/configuration, named structs, fieldsets, imported fields,
+document summaries, constants, ONNX models, richer rank-profile state, and
+lossless IR -> public materialization coverage.
 
-In particular, verify:
+The remaining Phase 3/4 closure work is narrower and is tracked primarily by
+#113–#116, #39, and #110:
+
+- remove the remaining hidden canonical-sidecar recovery paths;
+- make public `IndexDefinition`, `Field`, and `RankProfile` state
+  authoritative for Rust -> IR conversion;
+- preserve all nested/top-level schema state and absence/presence semantics;
+- keep full canonical equality through describe/clone/mutate/reuse;
+- retain explicit backend Unsupported behavior rather than silently dropping
+  represented schema state.
+
+The required invariant remains lossless canonical schema preservation through
+the actual public Rust representation. Backend executability is separate.
+
+### 4. Phase 9 / additive / YQL / grouping acceptance
+
+Re-establish and record the cumulative acceptance state on the actual current
+native environment rather than inferring closure from implementation presence.
+
+Verify:
 
 - additive ABI/query behavior;
 - portable summary-hit and exact-ID semantics;
 - YQL/additive combination rules;
 - grouping interactions;
-- specialized Phase 9 checks and the cumulative verifier on the actual native
-  environment.
+- specialized Phase 9 checks and the cumulative verifier.
 
-### 4. Highlighting correctness and closure
+### 5. Highlighting closure
 
-The first real Vespa-generated dynamic-teaser path exists, but the current
-implementation is blocked on three correctness items before acceptance:
+The first real Vespa-generated dynamic-teaser path is implemented, and the
+earlier cardinality/compile regression has been repaired. Treat highlighting as
+an acceptance-hardening slice rather than as an unimplemented feature.
 
-- decode Vespa continuation framing without leaking control bytes or treating
-  literal HTML-like source text as synthetic markup;
-- align accepted highlight field shapes with the scalar-text native execution
-  boundary;
-- make highlight/query compatibility explicit for query forms that pinned
-  Juniper does not expose as highlight terms.
+Closure still requires real-engine evidence that the supported path:
 
-After those remediations, close the slice with real-engine tests that force
-long/truncated teasers, validate byte spans on non-ASCII text, and prove the
-supported query matrix.
+- handles continuation framing without leaking control bytes;
+- preserves correct byte spans for non-ASCII text;
+- exercises long/truncated teasers;
+- has explicit query/field-shape compatibility rather than silent fallback;
+- preserves multi-valued cardinality semantics at the IR boundary even where
+  the pinned native teaser path remains scalar-only.
 
-Keep these as separate future capabilities unless intentionally scheduled:
+Keep these separate unless intentionally scheduled:
 
 - custom document-summary definitions;
 - arbitrary Juniper rendering controls;
 - grouped highlights;
 - richer docsum value shapes.
 
-### 5. M14 HNSW acceptance
+### 6. M14 HNSW acceptance
 
-The M14 implementation is present. Closure still requires the frozen M14
-contract to pass against the real engine, including:
+The M14 implementation is present, and distance-threshold verification now
+checks each query stage rather than treating the control as a single aggregate
+signal.
+
+Remaining closure is verifier/evidence hardening against the real engine:
 
 - emitted HNSW tensor attribute configuration;
 - exact control on the HNSW-enabled field;
-- approximate search;
+- proof that approximate mode selects HNSW rather than exact fallback;
 - explore-additional-hits and distance-threshold controls;
 - mutable vector updates;
 - close/reopen persistence;
 - delete/reopen behavior;
+- no duplicate/stale evidence stages;
 - no Rust-side ANN fallback or shadow graph.
+
+Open M14 hardening items such as #26, #27, and #29 should close only when their
+specific frozen evidence criteria pass.
 
 ### Frontier exit criteria
 
 The closure frontier is complete only when:
 
-- previously red structural/capability checks are green;
-- all relevant unit/regression tests exist and pass;
+- the exact current `main` head is green on Rust unit tests, ABI surface, and
+  all applicable capability/client checks;
+- all relevant regression tests exist and pass;
 - Phase 9 and M14 real-engine verifier results are recorded;
-- no second search semantic path remains;
+- no second production semantic path remains;
+- public schema round-trips do not depend on hidden canonical sidecars;
 - the capability/limitations ledger matches executable reality;
-- blocker-focused review finds no remaining correctness blocker.
+- blocker-focused adversarial review finds no remaining correctness blocker.
 
-## Next — make the current release state mechanically reproducible
+## Next — finish the mechanically reproducible release gate
 
-After the closure frontier is stable, create one current-tree verification entry
-point that runs the supported release surface from a clean checkout.
+Several pieces now exist independently: Rust workspace unit-test CI, ABI-surface
+checks, Client Capabilities verification, generated-document drift checks, and
+automatic local Git-hook configuration.
+
+After the closure frontier is stable, compose these with the native/product
+verifiers into one current-tree verification entry point that runs the supported
+release surface from a clean checkout.
 
 It should cover at least:
 
