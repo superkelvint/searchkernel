@@ -18,40 +18,40 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Comparison queries (query.comparison) | query | — | — | — | — |
 | Range queries (query.range) | query | — | — | — | — |
 | Boolean query operators (query.boolean) | query | — | — | — | — |
-| Phrase queries (query.phrase) | query | — | ergonomic · E2E (native) | ergonomic · E2E (grpc) | — |
-| Near and ordered-near proximity queries (query.proximity) | query | — | — | ergonomic · E2E (grpc) | — |
-| sameElement query (query.same_element) | query | — | — | ergonomic · E2E (grpc) | — |
-| Fuzzy query (query.fuzzy) | query | — | ergonomic · E2E (native) | ergonomic · E2E (grpc) | — |
+| Phrase queries (query.phrase) | query | — | ergonomic (native) | ergonomic (grpc) | — |
+| Near and ordered-near proximity queries (query.proximity) | query | — | — | ergonomic (grpc) | — |
+| sameElement query (query.same_element) | query | — | — | ergonomic (grpc) | — |
+| Fuzzy query (query.fuzzy) | query | — | ergonomic (native) | ergonomic (grpc) | — |
 | Prefix, suffix, and substring queries (query.prefix_suffix_substring) | query | — | — | — | — |
 | Alternatives queries (query.alternatives) | query | — | — | — | — |
-| Nearest-neighbor vector search (query.nearest_neighbor) | query | — | — | — | ergonomic · E2E (node, shared) |
-| Geo-location and bounding-box queries (query.geo) | query | — | — | ergonomic · E2E (grpc) | — |
+| Nearest-neighbor vector search (query.nearest_neighbor) | query | — | — | — | ergonomic (node, shared) |
+| Geo-location and bounding-box queries (query.geo) | query | — | — | ergonomic (grpc) | — |
 | Predicate queries (query.predicate) | query | — | — | — | — |
-| WeakAnd and WAND queries (query.weighted_and_wand) | query | — | ergonomic · E2E (native) | ergonomic · E2E (grpc) | — |
+| WeakAnd and WAND queries (query.weighted_and_wand) | query | — | ergonomic (native) | ergonomic (grpc) | — |
 | Weighted-set and dot-product queries (query.weighted_set_dot_product) | query | — | — | — | — |
 | Equivalence queries (query.equivalence) | query | — | — | — | — |
 | Rank query composition (query.rank) | query | — | — | — | — |
 | userInput and userQuery text parsing (query.user_input_user_query) | query | — | — | — | — |
 | Structured filters (filter.structured) | filter | — | — | — | — |
-| Textual filter expressions (filter.textual) | filter | — | — | E2E (grpc) | ergonomic · E2E (node, shared) |
-| Field sorting (search.sorting) | search | — | ergonomic · E2E (native) | — | ergonomic · E2E (node, shared) |
+| Textual filter expressions (filter.textual) | filter | — | — | — | ergonomic (node, shared) |
+| Field sorting (search.sorting) | search | — | ergonomic (native) | — | ergonomic (node, shared) |
 | First/last missing-value sort placement (search.sort_missing_placement) | search | — | — | — | — |
-| Limit and offset pagination (search.pagination) | search | — | ergonomic · E2E (native) | — | ergonomic · E2E (node, shared) |
+| Limit and offset pagination (search.pagination) | search | — | ergonomic (native) | — | ergonomic (node, shared) |
 | Text search-field selection (search.search_fields) | search | — | — | — | — |
-| Document-summary field projection (result.docsum_field_projection) | result | — | ergonomic · E2E (native) | ergonomic · E2E (grpc) | ergonomic · E2E (node, shared) |
+| Document-summary field projection (result.docsum_field_projection) | result | — | ergonomic (native) | ergonomic (grpc) | ergonomic (node, shared) |
 | Named summary-class selection (result.named_summary_class) | result | — | — | — | — |
 | Rich document-summary values (scalar subset) (result.rich_docsum_values) | result | — | — | — | — |
 | Summary-feature readback (result.summary_features) | result | — | — | — | — |
-| Highlighting (result.highlighting) | result | E2E 3/3 (native) | ergonomic · E2E 1/3 (native) | ergonomic · E2E 1/3 (grpc) | — |
+| Highlighting (result.highlighting) | result | — | ergonomic (native) | ergonomic (grpc) | — |
 | Dense tensor document readback (result.tensor_document_readback) | result | — | — | — | — |
 | Typed tensor feature readback (result.tensor_feature_readback) | result | — | — | — | — |
-| Structured grouping and faceting (grouping.structured) | grouping | — | — | — | ergonomic · E2E (node, shared) |
+| Structured grouping and faceting (grouping.structured) | grouping | — | — | — | ergonomic (node, shared) |
 | Executable grouping expression/function subset (grouping.functions) | grouping | — | — | — | — |
-| Grouping aggregations (grouping.aggregations) | grouping | — | — | — | ergonomic · E2E (node, shared) |
+| Grouping aggregations (grouping.aggregations) | grouping | — | — | — | ergonomic (node, shared) |
 | Summary aggregation (grouping.summary_aggregation) | grouping | — | — | — | — |
 | Grouping continuations (grouping.continuations) | grouping | — | — | — | — |
 | Raw grouping source (grouping.raw_source) | grouping | — | — | — | — |
-| Document insert, upsert, patch, delete, and get (update.document_crud) | update | — | ergonomic · E2E (native) | ergonomic · E2E (grpc, managed-local) | ergonomic · E2E (node) |
+| Document insert, upsert, patch, delete, and get (update.document_crud) | update | — | ergonomic (native) | ergonomic (managed-local) | ergonomic (node) |
 | Arithmetic document updates (update.arithmetic) | update | — | — | — | — |
 | Create-if-nonexistent document updates (update.create_if_nonexistent) | update | — | — | — | — |
 | Conditional document mutations (update.conditional) | update | — | — | — | — |
@@ -82,124 +82,92 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Phrase queries (query.phrase)
 
 - **Basic behavior** (basic)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L370)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L370)
-  - rust / native / e2e — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L415)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L415)
 
 ### Near and ordered-near proximity queries (query.proximity)
 
 - **Basic behavior** (basic)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L371)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L371)
 
 ### sameElement query (query.same_element)
 
 - **Basic behavior** (basic)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L400)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L400)
 
 ### Fuzzy query (query.fuzzy)
 
 - **Basic behavior** (basic)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L372)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L372)
-  - rust / native / e2e — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L416)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L416)
 
 ### Nearest-neighbor vector search (query.nearest_neighbor)
 
 - **Basic behavior** (basic)
-  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L44)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L44)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L67)
 
 ### Geo-location and bounding-box queries (query.geo)
 
 - **Basic behavior** (basic)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L466)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L466)
 
 ### WeakAnd and WAND queries (query.weighted_and_wand)
 
 - **Basic behavior** (basic)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L373)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L373)
-  - rust / native / e2e — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L417)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L417)
 
 ### Textual filter expressions (filter.textual)
 
 - **Basic behavior** (basic)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L153)
-  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L40)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L40)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L28)
 
 ### Field sorting (search.sorting)
 
 - **Basic behavior** (basic)
-  - rust / native / e2e — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L217)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L217)
-  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L41)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L41)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L29)
 
 ### Limit and offset pagination (search.pagination)
 
 - **Basic behavior** (basic)
-  - rust / native / e2e — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L218)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L218)
-  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L42)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L42)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L30)
 
 ### Document-summary field projection (result.docsum_field_projection)
 
 - **Basic behavior** (basic)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L507)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L507)
-  - rust / native / e2e — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L219)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L219)
-  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L43)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L43)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L31)
 
 ### Highlighting (result.highlighting)
 
 - **Basic structured dynamic-teaser highlighting** (basic)
-  - core / native / e2e — [core/crates/searchkernel-vespa-engine/tests/native_crud.rs](../core/crates/searchkernel-vespa-engine/tests/native_crud.rs#L779)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L508)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L508)
-  - rust / native / e2e — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L220)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L220)
-- **Literal HTML tags remain source text** (literal-html)
-  - core / native / e2e — [core/crates/searchkernel-vespa-engine/tests/native_crud.rs](../core/crates/searchkernel-vespa-engine/tests/native_crud.rs#L780)
-- **Disjoint Juniper continuation regions become separate fragments** (continuation-fragments)
-  - core / native / e2e — [core/crates/searchkernel-vespa-engine/tests/native_crud.rs](../core/crates/searchkernel-vespa-engine/tests/native_crud.rs#L920)
 
 ### Structured grouping and faceting (grouping.structured)
 
 - **Basic behavior** (basic)
-  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L45)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L45)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L68)
 
 ### Grouping aggregations (grouping.aggregations)
 
 - **Basic behavior** (basic)
-  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L46)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L46)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L69)
 
 ### Document insert, upsert, patch, delete, and get (update.document_crud)
 
 - **Basic behavior** (basic)
-  - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L152)
-  - python / managed-local / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L257)
   - python / managed-local / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L257)
-  - rust / native / e2e — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L14)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L14)
-  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L39)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L39)
 

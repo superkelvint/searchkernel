@@ -114,27 +114,9 @@
               "scenario": "basic",
               "surface": "python",
               "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 370
-            },
-            {
-              "capability": "query.phrase",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 370
-            },
-            {
-              "capability": "query.phrase",
-              "scenario": "basic",
-              "surface": "rust",
-              "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 415
             },
             {
               "capability": "query.phrase",
@@ -164,15 +146,6 @@
               "scenario": "basic",
               "surface": "python",
               "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 371
-            },
-            {
-              "capability": "query.proximity",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 371
@@ -191,15 +164,6 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
-            {
-              "capability": "query.same_element",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 400
-            },
             {
               "capability": "query.same_element",
               "scenario": "basic",
@@ -228,27 +192,9 @@
               "scenario": "basic",
               "surface": "python",
               "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 372
-            },
-            {
-              "capability": "query.fuzzy",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 372
-            },
-            {
-              "capability": "query.fuzzy",
-              "scenario": "basic",
-              "surface": "rust",
-              "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 416
             },
             {
               "capability": "query.fuzzy",
@@ -304,15 +250,6 @@
               "scenario": "basic",
               "surface": "typescript",
               "runtime": "node",
-              "kind": "e2e",
-              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 44
-            },
-            {
-              "capability": "query.nearest_neighbor",
-              "scenario": "basic",
-              "surface": "typescript",
-              "runtime": "node",
               "kind": "ergonomic",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
               "line": 44
@@ -340,15 +277,6 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
-            {
-              "capability": "query.geo",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 466
-            },
             {
               "capability": "query.geo",
               "scenario": "basic",
@@ -390,27 +318,9 @@
               "scenario": "basic",
               "surface": "python",
               "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 373
-            },
-            {
-              "capability": "query.weighted_and_wand",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 373
-            },
-            {
-              "capability": "query.weighted_and_wand",
-              "scenario": "basic",
-              "surface": "rust",
-              "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 417
             },
             {
               "capability": "query.weighted_and_wand",
@@ -503,24 +413,6 @@
             {
               "capability": "filter.textual",
               "scenario": "basic",
-              "surface": "python",
-              "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 153
-            },
-            {
-              "capability": "filter.textual",
-              "scenario": "basic",
-              "surface": "typescript",
-              "runtime": "node",
-              "kind": "e2e",
-              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 40
-            },
-            {
-              "capability": "filter.textual",
-              "scenario": "basic",
               "surface": "typescript",
               "runtime": "node",
               "kind": "ergonomic",
@@ -555,27 +447,9 @@
               "scenario": "basic",
               "surface": "rust",
               "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 217
-            },
-            {
-              "capability": "search.sorting",
-              "scenario": "basic",
-              "surface": "rust",
-              "runtime": "native",
               "kind": "ergonomic",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
               "line": 217
-            },
-            {
-              "capability": "search.sorting",
-              "scenario": "basic",
-              "surface": "typescript",
-              "runtime": "node",
-              "kind": "e2e",
-              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 41
             },
             {
               "capability": "search.sorting",
@@ -627,27 +501,9 @@
               "scenario": "basic",
               "surface": "rust",
               "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 218
-            },
-            {
-              "capability": "search.pagination",
-              "scenario": "basic",
-              "surface": "rust",
-              "runtime": "native",
               "kind": "ergonomic",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
               "line": 218
-            },
-            {
-              "capability": "search.pagination",
-              "scenario": "basic",
-              "surface": "typescript",
-              "runtime": "node",
-              "kind": "e2e",
-              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 42
             },
             {
               "capability": "search.pagination",
@@ -699,15 +555,6 @@
               "scenario": "basic",
               "surface": "python",
               "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 507
-            },
-            {
-              "capability": "result.docsum_field_projection",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 507
@@ -717,27 +564,9 @@
               "scenario": "basic",
               "surface": "rust",
               "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 219
-            },
-            {
-              "capability": "result.docsum_field_projection",
-              "scenario": "basic",
-              "surface": "rust",
-              "runtime": "native",
               "kind": "ergonomic",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
               "line": 219
-            },
-            {
-              "capability": "result.docsum_field_projection",
-              "scenario": "basic",
-              "surface": "typescript",
-              "runtime": "node",
-              "kind": "e2e",
-              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 43
             },
             {
               "capability": "result.docsum_field_projection",
@@ -813,38 +642,11 @@
             {
               "capability": "result.highlighting",
               "scenario": "basic",
-              "surface": "core",
-              "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
-              "line": 779
-            },
-            {
-              "capability": "result.highlighting",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 508
-            },
-            {
-              "capability": "result.highlighting",
-              "scenario": "basic",
               "surface": "python",
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 508
-            },
-            {
-              "capability": "result.highlighting",
-              "scenario": "basic",
-              "surface": "rust",
-              "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 220
             },
             {
               "capability": "result.highlighting",
@@ -861,33 +663,13 @@
         {
           "id": "literal-html",
           "title": "Literal HTML tags remain source text",
-          "evidence": [
-            {
-              "capability": "result.highlighting",
-              "scenario": "literal-html",
-              "surface": "core",
-              "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
-              "line": 780
-            }
-          ],
+          "evidence": [],
           "overrides": []
         },
         {
           "id": "continuation-fragments",
           "title": "Disjoint Juniper continuation regions become separate fragments",
-          "evidence": [
-            {
-              "capability": "result.highlighting",
-              "scenario": "continuation-fragments",
-              "surface": "core",
-              "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
-              "line": 920
-            }
-          ],
+          "evidence": [],
           "overrides": []
         }
       ]
@@ -927,15 +709,6 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
-            {
-              "capability": "grouping.structured",
-              "scenario": "basic",
-              "surface": "typescript",
-              "runtime": "node",
-              "kind": "e2e",
-              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 45
-            },
             {
               "capability": "grouping.structured",
               "scenario": "basic",
@@ -981,15 +754,6 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
-            {
-              "capability": "grouping.aggregations",
-              "scenario": "basic",
-              "surface": "typescript",
-              "runtime": "node",
-              "kind": "e2e",
-              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 46
-            },
             {
               "capability": "grouping.aggregations",
               "scenario": "basic",
@@ -1065,24 +829,6 @@
               "capability": "update.document_crud",
               "scenario": "basic",
               "surface": "python",
-              "runtime": "grpc",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 152
-            },
-            {
-              "capability": "update.document_crud",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "managed-local",
-              "kind": "e2e",
-              "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 257
-            },
-            {
-              "capability": "update.document_crud",
-              "scenario": "basic",
-              "surface": "python",
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
@@ -1093,27 +839,9 @@
               "scenario": "basic",
               "surface": "rust",
               "runtime": "native",
-              "kind": "e2e",
-              "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 14
-            },
-            {
-              "capability": "update.document_crud",
-              "scenario": "basic",
-              "surface": "rust",
-              "runtime": "native",
               "kind": "ergonomic",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
               "line": 14
-            },
-            {
-              "capability": "update.document_crud",
-              "scenario": "basic",
-              "surface": "typescript",
-              "runtime": "node",
-              "kind": "e2e",
-              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 39
             },
             {
               "capability": "update.document_crud",

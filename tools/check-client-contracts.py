@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -80,6 +81,7 @@ def validate_catalog(
         title = config.get("title")
         runtimes = config.get("runtimes")
         roots = config.get("evidence_roots")
+        raw_lanes = config.get("e2e_lanes", [])
         if not isinstance(title, str) or not title.strip():
             raise RegistryError(f"surface {name}.title must be a non-empty string")
         if not isinstance(runtimes, list) or not runtimes or not all(
@@ -92,16 +94,58 @@ def validate_catalog(
             isinstance(item, str) and item for item in roots
         ):
             raise RegistryError(f"surface {name}.evidence_roots must be a non-empty string list")
+        evidence_paths = []
         for evidence_root in roots:
             path = Path(evidence_root)
             if path.is_absolute() or ".." in path.parts:
                 raise RegistryError(f"surface {name} has invalid evidence root: {evidence_root}")
             if not (root / path).exists():
                 raise RegistryError(f"surface {name} evidence root does not exist: {evidence_root}")
+            evidence_paths.append(path)
+        if not isinstance(raw_lanes, list):
+            raise RegistryError(f"surface {name}.e2e_lanes must be a list")
+        e2e_lanes: list[dict[str, Any]] = []
+        for lane_index, lane in enumerate(raw_lanes):
+            label = f"surface {name}.e2e_lanes[{lane_index}]"
+            if not isinstance(lane, dict):
+                raise RegistryError(f"{label} must be a table")
+            lane_runtimes = lane.get("runtimes")
+            lane_path = lane.get("path")
+            command = lane.get("command")
+            if not isinstance(lane_runtimes, list) or not lane_runtimes or not all(
+                isinstance(item, str) and item in runtimes for item in lane_runtimes
+            ):
+                raise RegistryError(f"{label}.runtimes must be a non-empty subset of surface runtimes")
+            if len(set(lane_runtimes)) != len(lane_runtimes):
+                raise RegistryError(f"{label}.runtimes contains duplicates")
+            if not isinstance(lane_path, str) or not lane_path:
+                raise RegistryError(f"{label}.path must be a non-empty string")
+            relative_path = Path(lane_path)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                raise RegistryError(f"{label}.path must be repository-relative")
+            if not any(
+                relative_path == evidence_path or evidence_path in relative_path.parents
+                for evidence_path in evidence_paths
+            ):
+                raise RegistryError(f"{label}.path must be inside an evidence root")
+            if not (root / relative_path).is_file():
+                raise RegistryError(f"{label}.path does not exist: {lane_path}")
+            if not isinstance(command, list) or not command or not all(
+                isinstance(item, str) and item for item in command
+            ):
+                raise RegistryError(f"{label}.command must be a non-empty string list")
+            e2e_lanes.append(
+                {
+                    "runtimes": list(lane_runtimes),
+                    "path": relative_path.as_posix(),
+                    "command": list(command),
+                }
+            )
         surfaces[name] = {
             "title": title,
             "runtimes": runtimes,
             "evidence_roots": roots,
+            "e2e_lanes": e2e_lanes,
         }
 
     scenarios = {
@@ -200,6 +244,13 @@ def collect_evidence(
                         raise RegistryError(
                             f"invalid evidence kinds at {relative}:{line_number}: {match.group('kinds')}"
                         )
+                    if "e2e" in kinds and not any(
+                        lane["path"] == relative and runtime in lane["runtimes"]
+                        for lane in config["e2e_lanes"]
+                    ):
+                        raise RegistryError(
+                            f"E2E evidence at {relative}:{line_number} is not covered by an E2E CI lane"
+                        )
                     for kind in kinds:
                         evidence.append(
                             {
@@ -224,6 +275,26 @@ def collect_evidence(
             item["line"],
         ),
     )
+
+
+def run_e2e_lanes(
+    surfaces: dict[str, dict[str, Any]],
+    root: Path = ROOT,
+) -> None:
+    seen: set[tuple[str, ...]] = set()
+    for surface, config in surfaces.items():
+        for lane in config["e2e_lanes"]:
+            command = tuple(lane["command"])
+            if command in seen:
+                continue
+            seen.add(command)
+            print(f"Running E2E lane for {surface}: {' '.join(command)}")
+            try:
+                subprocess.run(command, cwd=root, check=True)
+            except subprocess.CalledProcessError as error:
+                raise RegistryError(
+                    f"E2E lane failed with exit code {error.returncode}: {' '.join(command)}"
+                ) from error
 
 
 def build_report(
@@ -380,8 +451,19 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--write", action="store_true")
+    mode.add_argument("--run-e2e", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.run_e2e:
+            global_capabilities = load_global_capabilities()
+            catalog = load_catalog()
+            surfaces, scenarios, _overrides = validate_catalog(
+                catalog, global_capabilities
+            )
+            collect_evidence(surfaces, scenarios)
+            run_e2e_lanes(surfaces)
+            print("Client capability E2E lanes PASS.")
+            return 0
         report = build_current_report()
         documents = generated_documents(report)
         if args.write:
