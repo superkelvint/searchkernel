@@ -380,6 +380,21 @@ fn verify_shared_cache_object(sdk: &Path) -> Result<(), String> {
             fingerprint_path.display()
         )
     })?;
+    if !recorded.lines().any(|line| line == "fingerprint-version=3") {
+        return Err(format!(
+            "shared Vespa base provenance '{}' is not fingerprint schema v3",
+            fingerprint_path.display()
+        ));
+    }
+    if !recorded
+        .lines()
+        .any(|line| line == "fingerprint.scope\tbase")
+    {
+        return Err(format!(
+            "shared Vespa base provenance '{}' is not base scope",
+            fingerprint_path.display()
+        ));
+    }
     let digest = fingerprint_digest(&recorded).ok_or_else(|| {
         format!(
             "shared native SDK provenance '{}' is malformed",
