@@ -500,14 +500,11 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
         analyzer
     };
     let matching = if string_type && indexing_script.is_none() {
-        Some(matching.unwrap_or(MatchingConfigIr {
-            mode: if keyword {
-                MatchingModeIr::Exact
-            } else {
-                MatchingModeIr::Text
-            },
-            options: SchemaPropertiesIr::new(),
-        }))
+        // Preserve whether matching was explicitly represented by the ingress.
+        // Rust Text/Keyword structural decoding supplies Text/Exact above;
+        // portable canonical IR may intentionally carry no matching config.
+        // Inventing one here breaks lossless IR -> FlatBuffers -> IR round trips.
+        matching
     } else {
         if matching.is_some() {
             return Err(invalid(
