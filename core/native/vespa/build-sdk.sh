@@ -321,10 +321,15 @@ if [ -z "$NATIVE_TARGET" ]; then
     echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
     exit 1
 fi
+FINGERPRINT_SCOPE=full
+if [ "$BASE_ONLY" = 1 ]; then
+    FINGERPRINT_SCOPE=base
+fi
 python3 "$ROOT/tools/native-build-fingerprint.py" \
     --root "$ROOT" \
     --vespa-root "$VESPA_ROOT" \
     --target "$NATIVE_TARGET" \
+    --scope "$FINGERPRINT_SCOPE" \
     --output "$SDK/native-build-fingerprint-v2.txt"
 python3 - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
 import json
