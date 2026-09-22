@@ -5,7 +5,7 @@ use searchkernel_ir::{
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const DEFAULT_OUTPUT: &str = "reference/persistence/fixtures";
+const COMMITTED_OUTPUT: &str = "reference/persistence/fixtures";
 const STORAGE_SOURCE: &str = "reference/vespa/m5/fixtures/persisted-v1/index";
 const VESPA_REVISION: &str = "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e";
 
@@ -13,7 +13,20 @@ fn main() {
     let output = std::env::args()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_OUTPUT));
+        .unwrap_or_else(|| {
+            panic!("usage: searchkernel-persistence-fixtures <candidate-output-directory>")
+        });
+    let committed = repo_root().join(COMMITTED_OUTPUT);
+    let candidate = if output.is_absolute() {
+        output.clone()
+    } else {
+        std::env::current_dir()
+            .expect("resolve current directory")
+            .join(&output)
+    };
+    if candidate == committed {
+        panic!("refusing to rewrite the committed persistence fixture corpus");
+    }
     fs::create_dir_all(&output).expect("create persistence fixture directory");
 
     // The preserved M5 corpus used Search Kernel's historical integer facade
