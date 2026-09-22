@@ -283,10 +283,7 @@ fn canonical_grouping_round_trips_through_flatbuffers_and_ir() {
                 FieldCapabilities::new(true, false, true, true, true),
             ),
         ],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .expect("grouping test definition");
     let bytes = searchkernel_ir::search_request_ir_to_api(&request);
@@ -1985,10 +1982,7 @@ fn multi_valued_schema_is_rejected_before_m_configuration() {
             None,
             FieldCapabilities::new(false, false, true, false, false),
         )],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let error = validate_index_definition(&definition).unwrap_err();
@@ -2007,10 +2001,7 @@ fn document_type_drives_native_schema_identity() {
         let mut definition = IndexDefinitionIr::new(
             Some(IndexName::parse("index_name").unwrap()),
             vec![field],
-            Vec::new(),
-            RankingPolicyIr::DefaultRelevanceV1,
-            PrefixPolicy::Disabled,
-            TypoPolicy::Disabled,
+            Vec::new()
         )
         .unwrap();
         definition.set_document_type("document_type");
@@ -2041,10 +2032,7 @@ fn portable_dense_tensor_definition_compiles_and_opens_through_adapter() {
             None,
             FieldCapabilities::new(true, false, false, false, false),
         )],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let root = std::env::temp_dir().join(format!(
@@ -2093,10 +2081,7 @@ fn portable_hnsw_tensor_definition_lowers_to_native_attribute_config() {
     let definition = IndexDefinitionIr::new(
         None,
         vec![embedding],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let root = std::env::temp_dir().join(format!(
@@ -2132,10 +2117,7 @@ fn typed_attribute_settings_are_lowered_and_contradictions_fail_closed() {
     let definition = IndexDefinitionIr::new(
         None,
         vec![value_field],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     validate_index_definition(&definition).expect("typed attribute settings are supported");
@@ -2166,10 +2148,7 @@ fn typed_attribute_settings_are_lowered_and_contradictions_fail_closed() {
     let definition = IndexDefinitionIr::new(
         None,
         vec![contradictory],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let error = validate_index_definition(&definition).expect_err("contradiction rejected");
@@ -2193,10 +2172,7 @@ fn typed_index_and_summary_settings_cannot_disagree_with_resolved_capabilities()
     let definition = IndexDefinitionIr::new(
         None,
         vec![index_field],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let error = validate_index_definition(&definition).expect_err("index contradiction");
@@ -2215,10 +2191,7 @@ fn typed_index_and_summary_settings_cannot_disagree_with_resolved_capabilities()
     let definition = IndexDefinitionIr::new(
         None,
         vec![summary_field],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let error = validate_index_definition(&definition).expect_err("summary contradiction");
@@ -2240,10 +2213,7 @@ fn word_matching_is_rejected_instead_of_narrowed_to_exact() {
     let definition = IndexDefinitionIr::new(
         None,
         vec![title],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     let error = validate_index_definition(&definition).expect_err("word matching rejected");
@@ -2280,10 +2250,7 @@ fn unsupported_schema_capabilities_are_rejected_before_m_configuration() {
                 None,
                 capabilities,
             )],
-            Vec::new(),
-            RankingPolicyIr::DefaultRelevanceV1,
-            PrefixPolicy::Disabled,
-            TypoPolicy::Disabled,
+            Vec::new()
         )
         .unwrap();
         let error = validate_index_definition(&definition).unwrap_err();
@@ -2300,10 +2267,7 @@ fn unsupported_schema_capabilities_are_rejected_before_m_configuration() {
             None,
             FieldCapabilities::new(true, false, true, true, true),
         )],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     validate_index_definition(&definition)
@@ -3262,10 +3226,7 @@ fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members
                     FieldCapabilities::new(true, true, true, false, false),
                 ),
             ],
-            Vec::new(),
-            RankingPolicyIr::DefaultRelevanceV1,
-            PrefixPolicy::Disabled,
-            TypoPolicy::Disabled,
+            Vec::new()
         )
         .expect("portable same-element definition");
         let request = SearchRequestIr::new(
@@ -4126,10 +4087,7 @@ fn supported_rank_profile_definitions_lower_to_native_config() {
             None,
             FieldCapabilities::new(true, true, false, false, false),
         )],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     definition.set_rank_profiles(vec![RankProfileDefinitionIr {
@@ -4195,10 +4153,7 @@ fn second_phase_and_rerank_count_lower_to_native_config_independently() {
                 FieldCapabilities::new(true, false, true, true, false),
             ),
         ],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .unwrap();
     definition.set_rank_profiles(vec![RankProfileDefinitionIr {
@@ -4512,10 +4467,7 @@ fn highlighting_compatibility_survives_portable_flatbuffers_resolution() {
             None,
             FieldCapabilities::new(true, true, false, false, false),
         )],
-        Vec::new(),
-        RankingPolicyIr::DefaultRelevanceV1,
-        PrefixPolicy::Disabled,
-        TypoPolicy::Disabled,
+        Vec::new()
     )
     .expect("highlighting parity definition");
 
