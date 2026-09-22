@@ -156,21 +156,7 @@ impl IndexContext {
         c: api::FilterComparison<'_>,
         path: &str,
     ) -> Result<ComparisonIr> {
-        let op = match c.op().0 {
-            1 => ComparisonOp::Eq,
-            2 => ComparisonOp::Ne,
-            3 => ComparisonOp::Lt,
-            4 => ComparisonOp::Lte,
-            5 => ComparisonOp::Gt,
-            6 => ComparisonOp::Gte,
-            _ => {
-                return Err(invalid(
-                    "invalid_filter",
-                    Some(format!("{path}.op")),
-                    "comparison operator is unspecified or unknown",
-                ))
-            }
-        };
+        let op = filter_comparison_op(c.op().0, &format!("{path}.op"))?;
         let v = c.value().ok_or_else(|| {
             invalid(
                 "missing_value",
@@ -208,6 +194,22 @@ impl IndexContext {
             FilterIr::Range(value) => Ok(value),
             _ => unreachable!("range resolver returned a non-range filter"),
         }
+    }
+}
+
+fn filter_comparison_op(value: u8, path: &str) -> Result<ComparisonOp> {
+    match value {
+        1 => Ok(ComparisonOp::Eq),
+        2 => Ok(ComparisonOp::Ne),
+        3 => Ok(ComparisonOp::Lt),
+        4 => Ok(ComparisonOp::Lte),
+        5 => Ok(ComparisonOp::Gt),
+        6 => Ok(ComparisonOp::Gte),
+        _ => Err(invalid(
+            "invalid_filter",
+            Some(path),
+            "comparison operator is unspecified or unknown",
+        )),
     }
 }
 
@@ -311,10 +313,7 @@ fn filter_to_input_at(filter: api::FilterExpr<'_>, path: &str) -> Result<FilterI
                     .and_then(|field| field.path())
                     .unwrap_or_default()
                     .to_owned(),
-                op: crate::api_to_ir::query::query_comparison_op(
-                    value.op().0,
-                    &format!("{path}.comparison.op"),
-                )?,
+                op: filter_comparison_op(value.op().0, &format!("{path}.comparison.op"))?,
                 value: RequestValueIr::from_api(
                     value.value().ok_or_else(|| {
                         invalid(
