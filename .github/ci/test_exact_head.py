@@ -205,6 +205,77 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 self.assertEqual("native i" in logged, expect_native)
 
+    def test_precommit_runs_python_native_e2e_for_code_sensitive_changes(self) -> None:
+        cases = (
+            ("clients/python/searchkernel/client.py", True),
+            ("searchkerneld/src/main.rs", True),
+            ("core/native/vespa/abi.cc", True),
+            ("docs/architecture.md", False),
+        )
+        for staged_path, expect_e2e in cases:
+            with self.subTest(staged_path=staged_path):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                repo = Path(temp.name)
+                git(repo, "init", "-q")
+                git(repo, "config", "user.name", "CI Test")
+                git(repo, "config", "user.email", "ci@example.invalid")
+
+                (repo / ".githooks").mkdir(parents=True)
+                (repo / ".github" / "ci").mkdir(parents=True)
+                (repo / "reference" / "vespa").mkdir(parents=True)
+                (repo / "tools").mkdir(parents=True)
+                (repo / "fakebin").mkdir(parents=True)
+                (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+
+                log = repo / "hook.log"
+                cargo = repo / "fakebin" / "cargo"
+                cargo.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                cargo.chmod(0o755)
+                native_gate = repo / "reference" / "vespa" / "verify-through.sh"
+                native_gate.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'native %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                native_gate.chmod(0o755)
+                python_e2e = repo / "tools" / "run-python-native-e2e.sh"
+                python_e2e.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'python-native-e2e\\n' >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                python_e2e.chmod(0o755)
+
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin")
+                git(repo, "commit", "-q", "-m", "fixture")
+
+                staged = repo / staged_path
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                staged.write_text("changed\n", encoding="utf-8")
+                git(repo, "add", staged_path)
+
+                env = os.environ.copy()
+                env["HOOK_LOG"] = str(log)
+                env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+                result = subprocess.run(
+                    ["bash", str(repo / ".githooks" / "pre-commit")],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout)
+                logged = log.read_text(encoding="utf-8")
+                self.assertEqual("python-native-e2e" in logged, expect_e2e)
+
     def test_precommit_treats_native_rename_as_native_sensitive(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
