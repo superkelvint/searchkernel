@@ -307,10 +307,11 @@ def canonical(fields: dict[str, str]) -> str:
     return "".join(f"{key}\t{escape(value)}\n" for key, value in sorted(fields.items()))
 
 
-def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
+def fingerprint(root: Path, vespa_root: Path, target: str, scope: str) -> tuple[str, str]:
     cxx = resolve_program(os.environ.get("CXX", "c++"))
     fields: dict[str, str] = {
         "fingerprint.version": VERSION,
+        "fingerprint.scope": scope,
         "build.environment": os.environ.get("SEARCHKERNEL_BUILD_ENV", "host"),
         "cargo.target": target,
         "rustc": rust_identity(),
@@ -338,6 +339,9 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
         "native.runtime_bundle": runtime_bundle_identity(root, vespa_root),
     }
 
+    if scope == "full":
+        fields["native.source"] = source_digest(root)
+
     tracked = (
         "CC", "CXX", "AR", "RANLIB", "LD", "CFLAGS", "CXXFLAGS", "CPPFLAGS",
         "LDFLAGS", "CMAKE", "CMAKE_ARGS", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH",
@@ -346,6 +350,20 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
     )
     for name in tracked:
         fields[f"env.{name}"] = os.environ.get(name, "")
+    if scope == "full":
+        defaults = {
+            "SK_NATIVE_ENABLE_FAILPOINTS": "0",
+            "SK_NATIVE_COVERAGE": "0",
+            "SK_NATIVE_SANITIZER": "none",
+        }
+        for name in (
+            "SK_NATIVE_ENABLE_FAILPOINTS",
+            "SK_NATIVE_COVERAGE",
+            "SK_NATIVE_SANITIZER",
+            "SK_NATIVE_EXTRA_CXX_FLAGS",
+            "SK_NATIVE_EXTRA_LINK_FLAGS",
+        ):
+            fields[f"env.{name}"] = os.environ.get(name, defaults.get(name, ""))
     target_underscore = target.replace("-", "_")
     for base in ("CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS"):
         fields[f"env.{base}_{target}"] = os.environ.get(f"{base}_{target}", "")
@@ -364,12 +382,13 @@ def main() -> int:
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--vespa-root", type=Path)
     parser.add_argument("--target", required=True)
+    parser.add_argument("--scope", choices=("base", "full"), default="full")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     root = args.root.resolve()
     vespa_root = (args.vespa_root or root / "upstream/vespa").resolve()
-    digest, text = fingerprint(root, vespa_root, args.target)
+    digest, text = fingerprint(root, vespa_root, args.target, args.scope)
     if args.output:
         args.output.write_text(text, encoding="utf-8")
     else:
