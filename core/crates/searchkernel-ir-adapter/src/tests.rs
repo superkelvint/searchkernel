@@ -4560,6 +4560,8 @@ fn insert_and_upsert_are_linearizable_for_one_document_id() {
     let engine = Engine::open(&data, &config).expect("open test engine");
     let probe = std::sync::Arc::new(MutationProbe {
         rendezvous: std::sync::Barrier::new(3),
+        release: std::sync::Barrier::new(1),
+        update_completed: None,
     });
     let backend = std::sync::Arc::new(VespaBackend::with_mutation_probe(engine, probe.clone()));
 
@@ -4603,6 +4605,291 @@ fn insert_and_upsert_are_linearizable_for_one_document_id() {
         Err(_) => panic!("test backend still has owners"),
     };
     backend.engine.close().expect("close test engine");
+    std::fs::remove_dir_all(root).expect("remove test index");
+}
+
+#[test]
+fn insert_does_not_overwrite_a_concurrent_create_if_missing_update() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-insert-update-linearizable-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    std::fs::create_dir_all(&data).expect("create test data directory");
+    ConfigCompiler
+        .compile_to(
+            &Schema::new("searchkernel").field(
+                Field::new("value", FieldType::Integer)
+                    .attribute()
+                    .summary(),
+            ),
+            &config,
+        )
+        .expect("compile test schema");
+    let engine = Engine::open(&data, &config).expect("open test engine");
+    let (update_completed_sender, update_completed_receiver) = std::sync::mpsc::channel();
+    let probe = std::sync::Arc::new(MutationProbe {
+        rendezvous: std::sync::Barrier::new(2),
+        release: std::sync::Barrier::new(2),
+        update_completed: Some(update_completed_sender),
+    });
+    let backend = std::sync::Arc::new(VespaBackend::with_mutation_probe(engine, probe.clone()));
+
+    let insert_backend = std::sync::Arc::clone(&backend);
+    let insert =
+        std::thread::spawn(move || insert_backend.insert(InsertRequestIr::new(test_document(1))));
+    probe.rendezvous.wait();
+
+    let update_backend = std::sync::Arc::clone(&backend);
+    let update = std::thread::spawn(move || {
+        update_backend.update(
+            UpdateRequestIr::new(
+                DocumentId::parse("doc-1").expect("valid document ID"),
+                vec![UpdateOperationIr::Assign {
+                    target: UpdateTargetIr::parse("value").expect("valid update target"),
+                    value: FieldValueIr::Single(ScalarValueIr::Int64(2)),
+                }],
+            )
+            .with_create(true),
+        )
+    });
+
+    // On the buggy implementation the create-if-missing update completes while
+    // insert is paused, after which insert overwrites it. With the fix the
+    // update is blocked by the same existence-mutation lock. The timeout is
+    // only a bounded observation of this forced interleaving, not a stress race.
+    let update_completed_before_insert_release = update_completed_receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .is_ok();
+    probe.release.wait();
+
+    let insert_result = insert.join().expect("insert thread");
+    let update_result = update.join().expect("update thread");
+    let stored = backend
+        .engine
+        .get("doc-1")
+        .expect("read final document")
+        .expect("final document exists");
+    let stored_value = stored.fields().get("value").cloned();
+
+    if update_completed_before_insert_release {
+        assert!(
+            insert_result.is_err(),
+            "insert succeeded after a create-if-missing update completed"
+        );
+    } else {
+        assert!(
+            insert_result.is_ok(),
+            "serialized insert should succeed before the create-if-missing update"
+        );
+    }
+    assert!(update_result.is_ok(), "create-if-missing update failed");
+    assert_eq!(
+        stored_value,
+        Some(FieldValue::Scalar(
+            searchkernel_vespa_engine::ScalarValue::Integer(2),
+        ))
+    );
+
+    let backend = match std::sync::Arc::try_unwrap(backend) {
+        Ok(backend) => backend,
+        Err(_) => panic!("test backend still has owners"),
+    };
+    backend.engine.close().expect("close test engine");
+    std::fs::remove_dir_all(root).expect("remove test index");
+}
+
+#[test]
+fn non_creating_mutations_leave_a_missing_document_missing() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-noncreating-mutations-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    std::fs::create_dir_all(&data).expect("create test data directory");
+    ConfigCompiler
+        .compile_to(
+            &Schema::new("searchkernel").field(
+                Field::new("value", FieldType::Integer)
+                    .attribute()
+                    .summary(),
+            ),
+            &config,
+        )
+        .expect("compile test schema");
+    let backend =
+        VespaBackend::open(&data, &config).expect("open non-creating mutation test backend");
+    let id = DocumentId::parse("missing-doc").expect("valid document ID");
+
+    let _patch_result = backend.patch(PatchRequestIr::new(
+        id.clone(),
+        vec![PatchOperationIr::Set {
+            field: field("value"),
+            value: FieldValueIr::Single(ScalarValueIr::Int64(1)),
+        }],
+    ));
+    assert!(
+        backend
+            .engine
+            .get(id.as_str())
+            .expect("get after patch")
+            .is_none(),
+        "patch unexpectedly created a missing document"
+    );
+
+    let _update_result = backend.update(UpdateRequestIr::new(
+        id.clone(),
+        vec![UpdateOperationIr::Assign {
+            target: UpdateTargetIr::parse("value").expect("valid update target"),
+            value: FieldValueIr::Single(ScalarValueIr::Int64(2)),
+        }],
+    ));
+    assert!(
+        backend
+            .engine
+            .get(id.as_str())
+            .expect("get after ordinary update")
+            .is_none(),
+        "ordinary update unexpectedly created a missing document"
+    );
+
+    let _create_false_result = backend.update(
+        UpdateRequestIr::new(
+            id.clone(),
+            vec![UpdateOperationIr::Assign {
+                target: UpdateTargetIr::parse("value").expect("valid update target"),
+                value: FieldValueIr::Single(ScalarValueIr::Int64(3)),
+            }],
+        )
+        .with_create(false),
+    );
+    assert!(
+        backend
+            .engine
+            .get(id.as_str())
+            .expect("get after create=false update")
+            .is_none(),
+        "create=false update unexpectedly created a missing document"
+    );
+
+    let deleted = backend
+        .delete(DeleteRequestIr::new(id.clone()))
+        .expect("delete missing document");
+    assert!(!deleted.deleted, "delete unexpectedly reported a missing document as deleted");
+    assert!(
+        backend
+            .engine
+            .get(id.as_str())
+            .expect("get after delete")
+            .is_none(),
+        "delete unexpectedly created a missing document"
+    );
+
+    backend.engine.close().expect("close test engine");
+    std::fs::remove_dir_all(root).expect("remove test index");
+}
+
+#[test]
+fn session_close_drains_serialized_existence_mutations_without_deadlock() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-existence-close-drain-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    std::fs::create_dir_all(&data).expect("create test data directory");
+    ConfigCompiler
+        .compile_to(
+            &Schema::new("searchkernel").field(
+                Field::new("value", FieldType::Integer)
+                    .attribute()
+                    .summary(),
+            ),
+            &config,
+        )
+        .expect("compile test schema");
+    let engine = Engine::open(&data, &config).expect("open test engine");
+    let probe = std::sync::Arc::new(MutationProbe {
+        rendezvous: std::sync::Barrier::new(2),
+        release: std::sync::Barrier::new(2),
+        update_completed: None,
+    });
+    let backend = VespaBackend::with_mutation_probe(engine, probe.clone());
+    let session = BackendSession::new(Box::new(backend));
+
+    let insert_session = std::sync::Arc::clone(&session);
+    let insert = std::thread::spawn(move || {
+        insert_session.execute(|backend| backend.insert(InsertRequestIr::new(test_document(1))))
+    });
+    probe.rendezvous.wait();
+
+    let (update_admitted_sender, update_admitted_receiver) = std::sync::mpsc::channel();
+    let update_session = std::sync::Arc::clone(&session);
+    let update = std::thread::spawn(move || {
+        update_session.execute(|backend| {
+            update_admitted_sender
+                .send(())
+                .expect("signal admitted update");
+            backend.update(
+                UpdateRequestIr::new(
+                    DocumentId::parse("doc-1").expect("valid document ID"),
+                    vec![UpdateOperationIr::Assign {
+                        target: UpdateTargetIr::parse("value").expect("valid update target"),
+                        value: FieldValueIr::Single(ScalarValueIr::Int64(2)),
+                    }],
+                )
+                .with_create(true),
+            )
+        })
+    });
+    update_admitted_receiver
+        .recv()
+        .expect("create-if-missing update must be admitted before close");
+
+    let close_session = std::sync::Arc::clone(&session);
+    let closer = std::thread::spawn(move || close_session.close());
+
+    // Observe the CLOSING admission boundary without reaching into session
+    // internals. Once new work is rejected, close is definitely draining the
+    // two already-admitted operations.
+    loop {
+        match session.execute(|_| Ok::<(), ()>(())) {
+            Err(SessionError::Closed) => break,
+            Ok(Ok(())) => std::thread::yield_now(),
+            Ok(Err(())) => unreachable!("no-op callback cannot fail"),
+        }
+    }
+
+    probe.release.wait();
+
+    assert!(matches!(
+        insert.join().expect("insert thread"),
+        Ok(Ok(_))
+    ));
+    assert!(matches!(
+        update.join().expect("update thread"),
+        Ok(Ok(_))
+    ));
+    closer
+        .join()
+        .expect("close thread")
+        .expect("session close must drain without deadlock");
+
+    drop(session);
     std::fs::remove_dir_all(root).expect("remove test index");
 }
 
