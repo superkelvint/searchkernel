@@ -320,9 +320,10 @@ fn tensor_to_ir(tensor: &searchkernel_vespa_engine::TensorValue) -> RequestTenso
 
 fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
     let message = error.to_string();
+    let detail_code = error.detail_code().map(str::to_owned);
     match error.kind() {
         searchkernel_vespa_engine::ErrorKind::InvalidArgument => PortableError::invalid(
-            error.detail_code().unwrap_or("backend_request"),
+            detail_code.as_deref().unwrap_or("backend_request"),
             None::<String>,
             message,
         ),
@@ -330,8 +331,8 @@ fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
             PortableError::new(searchkernel_ir::ErrorCode::ResourceExhausted, message)
         }
         searchkernel_vespa_engine::ErrorKind::Unsupported => PortableError::unsupported(
-            error
-                .detail_code()
+            detail_code
+                .as_deref()
                 .unwrap_or("native_capability_not_supported"),
             None::<String>,
             message,
@@ -339,9 +340,14 @@ fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
         searchkernel_vespa_engine::ErrorKind::Type => {
             PortableError::invalid("backend_value_type", None::<String>, message)
         }
-        searchkernel_vespa_engine::ErrorKind::Internal => {
-            PortableError::new(searchkernel_ir::ErrorCode::Internal, message)
-        }
+        searchkernel_vespa_engine::ErrorKind::Internal => match detail_code {
+            Some(detail_code) => PortableError::new(
+                searchkernel_ir::ErrorCode::Internal,
+                message.clone(),
+            )
+            .with_detail(detail_code, None::<String>, message),
+            None => PortableError::new(searchkernel_ir::ErrorCode::Internal, message),
+        },
         searchkernel_vespa_engine::ErrorKind::DeadlineExceeded => {
             PortableError::new(searchkernel_ir::ErrorCode::DeadlineExceeded, message)
         }
