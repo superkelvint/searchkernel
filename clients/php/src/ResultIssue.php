@@ -26,7 +26,9 @@ final class ResultIssue
         } else {
             $this->transient = null;
         }
-        $this->metadata = Protocol::decodeValueEntries($node['metadata'] ?? []);
+        $this->metadata = Protocol::decodeValueEntries(
+            Protocol::listField($node, 'metadata', 'SearchResultError.metadata'),
+        );
     }
 
     public readonly int|string $code;
