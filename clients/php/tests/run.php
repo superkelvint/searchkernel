@@ -614,13 +614,13 @@ throws(
     'dense tensor wire payload validates cell types in the protocol error domain',
 );
 throws(
-    \InvalidArgumentException::class,
+    ProtocolException::class,
     static fn () => Tensor::fromWire(
         'tensor<float>(x{})',
         'SparseTensorCells',
         ['cells' => [['address' => [['dimension' => 'x', 'label' => 3]], 'value' => 1.0]]],
     ),
-    'sparse tensor wire payload validates address entries',
+    'sparse tensor wire payload validates address entries in the protocol error domain',
 );
 
 throws(
