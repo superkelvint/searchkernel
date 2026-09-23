@@ -1,0 +1,1086 @@
+# SearchKernel verification DAG.
+#
+# This file is the semantic source of truth for verification ownership.
+# It is intentionally independent of GitHub Actions, moonrepo, nextest, or any
+# other execution engine.
+#
+# Rules:
+# - new behavioral subsystems MUST be added here before they can be
+#   merge-authorized;
+# - unknown behavioral paths fail closed;
+# - execution tools may project this DAG, but may not redefine its semantics;
+# - aggregate tasks have no command and exist only to express closure.
+#
+# First-pass schema. Consumers must reject unknown schema_version values.
+
+schema_version = 1
+unknown_behavior = "block"
+full_roots = ["full"]
+legacy_lane_names = [
+  "rust", "python", "typescript", "php", "ruby", "native", "protocol",
+  "api_conformance", "contracts", "abi", "persistence",
+  "issue_queue", "verification",
+]
+
+[coverage]
+include = [
+  "api/**",
+  "core/crates/**",
+  "core/native/**",
+  "searchkerneld/**",
+  "clients/**",
+  "searchkernel-web/**",
+  "verification/**",
+]
+
+[[exemption]]
+id = "documentation"
+paths = [
+  "README.md",
+  "**/README.md",
+  "**/AGENTS.md",
+  "docs/*.md",
+  "docs/**/*.md",
+  "docs/*.txt",
+  "docs/**/*.txt",
+  "implementation-plan/*.md",
+  "implementation-plan/**/*.md",
+  "audits/*.md",
+  "audits/**/*.md",
+  ".gitignore",
+  ".rgignore",
+  "LICENSE*",
+  "NOTICE*",
+  "clients/IMPLEMENTING_NEW_CLIENTS.md",
+  "clients/INTEGRATING_NEW_CLIENTS.md",
+  "searchkernel-web/reference/**",
+]
+reason = "Documentation/reference-only material is not executable product behavior."
+
+[[exemption]]
+id = "local-metadata"
+paths = [
+  "clients/**/.gitignore",
+  "searchkernel-web/**/.gitignore",
+]
+reason = "Repository metadata does not alter product execution."
+
+
+# ---------------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------------
+
+[[task]]
+id = "rust-non-native"
+legacy_lanes = ["rust"]
+kind = "command"
+runner = "linux"
+command = "cargo test --workspace --all-targets --no-default-features"
+depends_on = ["rust-quality"]
+cache_result = false
+
+[[task]]
+id = "rust-quality"
+legacy_lanes = ["rust"]
+kind = "command"
+runner = "linux"
+command = "cargo fmt --all --check && cargo clippy --workspace --all-targets --no-default-features -- -D warnings"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "rust-remote-client"
+kind = "aggregate"
+runner = "linux"
+depends_on = ["rust-non-native", "protocol-generated", "client-contracts"]
+cache_result = false
+notes = "Pre-registered ownership for the Rust remote-client ingress. The product change replaces this aggregate with its focused executable verifier."
+
+[[task]]
+id = "python-client"
+legacy_lanes = ["python"]
+kind = "command"
+runner = "linux"
+command = "./dev test python"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "typescript-client"
+legacy_lanes = ["typescript"]
+kind = "command"
+runner = "linux"
+command = "./dev test typescript"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "php-client"
+legacy_lanes = ["php"]
+kind = "command"
+runner = "linux"
+command = "./dev test php"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "ruby-client"
+legacy_lanes = ["ruby"]
+kind = "aggregate"
+runner = "linux"
+depends_on = ["client-contracts"]
+cache_result = false
+notes = "Pre-registered ownership for the Ruby client ingress. The first Ruby product PR replaces this aggregate with ./dev test ruby."
+
+[[task]]
+id = "protocol-generated"
+legacy_lanes = ["protocol"]
+kind = "command"
+runner = "linux"
+command = "./dev check-protocol"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "api-conformance"
+legacy_lanes = ["api_conformance"]
+kind = "command"
+runner = "linux"
+command = "./dev verify api-conformance"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "client-contracts"
+legacy_lanes = ["contracts"]
+kind = "command"
+runner = "linux"
+command = "./dev verify contracts"
+depends_on = ["c2-historical"]
+cache_result = false
+
+[[task]]
+id = "c2-historical"
+legacy_lanes = ["contracts"]
+kind = "command"
+runner = "linux"
+command = "reference/clients/c2/verify-c2.sh"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "abi"
+legacy_lanes = ["abi"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify abi"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "persistence-static"
+legacy_lanes = ["persistence"]
+kind = "command"
+runner = "linux"
+command = "tools/check-persistence-fixtures.sh"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "persistence-native"
+legacy_lanes = ["persistence", "native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify persistence"
+depends_on = ["persistence-static"]
+cache_result = false
+
+[[task]]
+id = "native-python-e2e"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "tools/run-python-native-e2e.sh"
+depends_on = []
+cache_result = false
+
+# Focused semantic Vespa verifier targets. Historical milestone scripts remain
+# implementation/provenance behind these names while the verifier internals are
+# progressively decomposed.
+
+[[task]]
+id = "vespa.native-sdk"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.native-sdk"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.rust-ownership"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.rust-ownership"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.document-mutation"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.document-mutation"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.linguistics"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.linguistics"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.text-indexing"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.text-indexing"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.persistence.reopen"
+legacy_lanes = ["native", "persistence"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.persistence.reopen"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.schema-config"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.schema-config"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.query-compilation"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.query-compilation"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.results"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.results"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.grouping"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.grouping"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.grouping.recursive"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.grouping.recursive"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.ranking"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.ranking"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.ranking.feature-values"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.ranking.feature-values"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.search-reply"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.search-reply"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.hardening"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.hardening"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.hardening.core"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.hardening.core"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.hardening.stress"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.hardening.stress"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.hardening.sanitizers"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.hardening.sanitizers"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.nearest-neighbor.query"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.nearest-neighbor.query"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.tensor.document-crud"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.tensor.document-crud"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.nearest-neighbor.hnsw"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.nearest-neighbor.hnsw"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "milestone.m14"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify milestone.m14"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "product.integration"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify product.integration"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "product.rust-real-engine"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify product.rust-real-engine"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.grouping.yql"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.grouping.yql"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.recovery"
+legacy_lanes = ["native", "persistence"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.recovery"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "phase9"
+legacy_lanes = ["native"]
+kind = "command"
+runner = "self-hosted-native"
+command = "reference/vespa/phase9/verify-phase9.sh"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "issue-queue"
+legacy_lanes = ["issue_queue"]
+kind = "command"
+runner = "linux"
+command = "./dev verify issue-queue"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "verification-policy"
+legacy_lanes = ["verification"]
+kind = "command"
+runner = "linux"
+command = "python3 .github/ci/test_exact_head.py"
+depends_on = []
+cache_result = false
+
+# SearchKernel Web is deliberately decomposed. Several subsystems share the same
+# executable task today, but retain separate subsystem ownership below so new
+# feature families cannot appear invisibly.
+
+[[task]]
+id = "web-unit"
+legacy_lanes = ["typescript"]
+kind = "command"
+runner = "linux"
+command = "npm --prefix searchkernel-web test"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "web-build"
+legacy_lanes = ["typescript"]
+kind = "command"
+runner = "linux"
+command = "npm --prefix searchkernel-web run build"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "web-portable-client"
+kind = "aggregate"
+runner = "linux"
+depends_on = ["web-unit", "web-build", "typescript-client", "client-contracts"]
+cache_result = false
+
+[[task]]
+id = "web-admin-client"
+kind = "aggregate"
+runner = "linux"
+depends_on = ["web-unit", "web-build"]
+cache_result = false
+
+[[task]]
+id = "web-static-serving-e2e"
+kind = "aggregate"
+runner = "linux"
+depends_on = ["web-build"]
+cache_result = false
+notes = "First pass: add the concrete searchkerneld static/API/SPA routing E2E command when implemented."
+
+[[task]]
+id = "frontend-harness-selftest"
+legacy_lanes = ["verification"]
+kind = "command"
+runner = "linux"
+command = "tools/frontend-harness/frontend-harness-selftest"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "frontend-verifier-integrity"
+legacy_lanes = ["verification"]
+kind = "command"
+runner = "linux"
+command = "tools/frontend-harness/frontend-verifier-integrity"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "web-full"
+kind = "aggregate"
+runner = "linux"
+depends_on = [
+  "web-portable-client",
+  "web-admin-client",
+  "web-static-serving-e2e",
+  "frontend-harness-selftest",
+  "frontend-verifier-integrity",
+]
+cache_result = false
+
+# Compatibility aggregate for the existing trusted task vocabulary. Phase 3
+# should migrate the selector from this coarse name to subsystem-specific tasks.
+[[task]]
+id = "web-dashboard"
+kind = "aggregate"
+runner = "linux"
+depends_on = ["web-full"]
+cache_result = false
+
+[[task]]
+id = "native-full"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = [
+  "milestone.m14",
+  "product.integration",
+  "product.rust-real-engine",
+  "vespa.grouping.yql",
+  "vespa.recovery",
+  "phase9",
+  "native-python-e2e",
+  "persistence-native",
+  "abi",
+]
+cache_result = false
+
+[[task]]
+id = "clients-full"
+kind = "aggregate"
+runner = "linux"
+depends_on = [
+  "python-client",
+  "typescript-client",
+  "php-client",
+  "ruby-client",
+  "client-contracts",
+  "c2-historical",
+]
+cache_result = false
+
+[[task]]
+id = "portable-full"
+kind = "aggregate"
+runner = "linux"
+depends_on = [
+  "rust-remote-client",
+  "rust-non-native",
+  "rust-quality",
+  "protocol-generated",
+  "api-conformance",
+  "client-contracts",
+]
+cache_result = false
+
+[[task]]
+id = "full"
+kind = "aggregate"
+runner = "mixed"
+depends_on = [
+  "portable-full",
+  "clients-full",
+  "native-full",
+  "web-dashboard",
+  "issue-queue",
+  "verification-policy",
+]
+cache_result = false
+
+# ---------------------------------------------------------------------------
+# Subsystems
+#
+# "paths" are ownership patterns, not execution-engine globs. The future DAG
+# validator/selector owns their interpretation and must test it explicitly.
+# ---------------------------------------------------------------------------
+
+[[subsystem]]
+id = "portable-schema"
+paths = [
+  "api/searchkernel.fbs",
+  "api/searchkernel_request.fbs",
+  "api/searchkernel_response.fbs",
+]
+requires = [
+  "protocol-generated",
+  "api-conformance",
+  "clients-full",
+  "rust-non-native",
+  "persistence-native",
+]
+
+[[subsystem]]
+id = "rpc-transport-contract"
+paths = ["api/rpc/searchkernel.proto", "tools/rpc-codegen/**"]
+requires = ["rust-non-native", "protocol-generated", "python-client", "typescript-client", "php-client", "client-contracts"]
+
+[[subsystem]]
+id = "flatbuffers-build"
+paths = ["core/crates/flatbuffers-build/**"]
+requires = ["rust-non-native", "rust-quality", "protocol-generated"]
+
+[[subsystem]]
+id = "searchkernel-filter"
+paths = ["core/crates/searchkernel-filter/**"]
+requires = ["rust-non-native", "rust-quality"]
+
+[[subsystem]]
+id = "searchkernel-ir"
+paths = ["core/crates/searchkernel-ir/**"]
+requires = ["rust-non-native", "rust-quality"]
+
+[[subsystem]]
+id = "generated-protocol-artifacts"
+paths = [
+  "core/crates/searchkernel-protocol/src/generated/**",
+  "core/crates/searchkernel-protocol/bfbs/**",
+  "core/crates/searchkernel-rpc/src/generated/**",
+  "searchkerneld/src/generated/**",
+  "clients/python/searchkernel/_wire_generated/**",
+  "clients/python/searchkernel/rpc/**",
+  "clients/typescript/src/generated/**",
+]
+requires = [
+  "rust-non-native",
+  "python-client",
+  "typescript-client",
+  "protocol-generated",
+  "client-contracts",
+]
+
+[[subsystem]]
+id = "searchkernel-protocol"
+paths = ["core/crates/searchkernel-protocol/**"]
+requires = ["rust-non-native", "protocol-generated", "api-conformance", "php-client"]
+
+[[subsystem]]
+id = "searchkernel-testkit"
+paths = ["core/crates/searchkernel-testkit/**"]
+requires = ["rust-non-native", "rust-quality"]
+
+[[subsystem]]
+id = "searchkernel-dispatch"
+paths = ["core/crates/searchkernel-dispatch/**"]
+requires = ["rust-non-native", "rust-quality", "api-conformance"]
+
+[[subsystem]]
+id = "searchkernel-ir-adapter"
+paths = ["core/crates/searchkernel-ir-adapter/**"]
+requires = ["rust-non-native", "client-contracts", "native-full"]
+
+[[subsystem]]
+id = "searchkernel-vespa-bindings"
+paths = ["core/crates/searchkernel-vespa-bindings/**"]
+requires = ["rust-non-native", "client-contracts", "abi", "native-full"]
+
+[[subsystem]]
+id = "searchkernel-vespa-engine"
+paths = ["core/crates/searchkernel-vespa-engine/**"]
+requires = ["rust-non-native", "client-contracts", "native-full"]
+
+[[subsystem]]
+id = "searchkernel-rpc-client"
+paths = [
+  "core/crates/searchkernel-rpc/**",
+  "core/crates/searchkernel/src/remote.rs",
+  "searchkerneld/tests/rust_remote_client.rs",
+]
+requires = ["rust-remote-client", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
+
+[[subsystem]]
+id = "searchkernel-rust-api"
+paths = ["core/crates/searchkernel/**"]
+requires = ["rust-non-native", "rust-quality", "client-contracts"]
+
+[[subsystem]]
+id = "searchkernel-native-facade"
+paths = [
+  "core/crates/searchkernel/Cargo.toml",
+  "core/crates/searchkernel/src/index/native.rs",
+  "core/crates/searchkernel/src/index/manifest.rs",
+  "core/crates/searchkernel/src/portable_definition.rs",
+]
+requires = ["rust-non-native", "client-contracts", "native-full"]
+
+[[subsystem]]
+id = "native-vespa-cpp"
+paths = ["core/native/**"]
+requires = ["rust-non-native", "client-contracts", "abi", "native-full"]
+
+[[subsystem]]
+id = "searchkerneld"
+paths = ["searchkerneld/**"]
+requires = ["rust-non-native", "rust-quality", "client-contracts", "native-full", "native-python-e2e", "web-static-serving-e2e"]
+
+[[subsystem]]
+id = "client-python"
+paths = ["clients/python/**"]
+requires = ["python-client", "client-contracts"]
+
+[[subsystem]]
+id = "client-typescript"
+paths = ["clients/typescript/**"]
+requires = ["typescript-client", "client-contracts", "web-portable-client"]
+
+[[subsystem]]
+id = "client-php"
+paths = ["clients/php/**"]
+requires = ["php-client", "client-contracts"]
+
+[[subsystem]]
+id = "client-ruby"
+paths = ["clients/ruby/**"]
+requires = ["ruby-client", "client-contracts"]
+
+[[subsystem]]
+id = "persistence"
+paths = [
+  "reference/persistence/**",
+  "reference/vespa/m5/fixtures/persisted-v1/**",
+  "core/crates/searchkernel/src/index/**",
+  "core/crates/searchkernel/src/tests.rs",
+  "core/crates/searchkernel/src/schema.rs",
+  "core/crates/searchkernel/src/portable_definition.rs",
+  "core/crates/searchkernel/src/search.rs",
+  "core/crates/searchkernel/src/filter.rs",
+  "core/crates/searchkernel/src/result.rs",
+  "core/crates/searchkernel/tests/persistence_compatibility.rs",
+  "core/crates/searchkernel-ir/src/api_to_ir/schema.rs",
+  "core/crates/searchkernel-ir/src/ir_to_api/schema.rs",
+  "core/crates/searchkernel-ir/src/model/schema.rs",
+  "core/crates/searchkernel-ir/src/snapshot.rs",
+]
+requires = ["rust-non-native", "persistence-native", "vespa.recovery"]
+
+[[subsystem]]
+id = "vespa-verifiers"
+paths = [
+  "reference/vespa/api-contract/**",
+  "reference/vespa/common/**",
+  "reference/vespa/i/**",
+  "reference/vespa/m0/**",
+  "reference/vespa/m1/**",
+  "reference/vespa/m2/**",
+  "reference/vespa/m3/**",
+  "reference/vespa/m4/**",
+  "reference/vespa/m5/**",
+  "reference/vespa/m6/**",
+  "reference/vespa/m7/**",
+  "reference/vespa/m8/**",
+  "reference/vespa/m9/**",
+  "reference/vespa/m10/**",
+  "reference/vespa/m11/**",
+  "reference/vespa/m12/**",
+  "reference/vespa/m13/**",
+  "reference/vespa/m14/**",
+  "reference/vespa/m9-general-grouping-verifier/**",
+  "reference/vespa/phase9/**",
+  "reference/vespa/phase10/**",
+  "reference/vespa/recovery/**",
+  "reference/vespa/searchreply/**",
+  "reference/vespa/verify-through.sh",
+  "reference/vespa/NATIVE_ABI_CONTRACT.h",
+  "reference/vespa/PINNED_VESPA.json",
+  "reference/vespa/verifiers/README.md",
+  "reference/vespa/verifiers/document-mutation/**",
+  "reference/vespa/verifiers/grouping/attributes-facets/**",
+  "reference/vespa/verifiers/grouping/recursive/**",
+  "reference/vespa/verifiers/grouping/yql/**",
+  "reference/vespa/verifiers/hardening/core/**",
+  "reference/vespa/verifiers/hardening/full/**",
+  "reference/vespa/verifiers/hardening/sanitizers/**",
+  "reference/vespa/verifiers/hardening/stress/**",
+  "reference/vespa/verifiers/linguistics/**",
+  "reference/vespa/verifiers/native-sdk/**",
+  "reference/vespa/verifiers/nearest-neighbor/hnsw/**",
+  "reference/vespa/verifiers/nearest-neighbor/query/**",
+  "reference/vespa/verifiers/persistence/reopen/**",
+  "reference/vespa/verifiers/product/integration/**",
+  "reference/vespa/verifiers/product/rust-real-engine/**",
+  "reference/vespa/verifiers/query-compilation/**",
+  "reference/vespa/verifiers/ranking/feature-values/**",
+  "reference/vespa/verifiers/ranking/verify.sh",
+  "reference/vespa/verifiers/recovery/**",
+  "reference/vespa/verifiers/results/**",
+  "reference/vespa/verifiers/rust-ownership/**",
+  "reference/vespa/verifiers/schema-config/**",
+  "reference/vespa/verifiers/search-reply/**",
+  "reference/vespa/verifiers/tensor/document-crud/**",
+  "reference/vespa/verifiers/test-routing.sh",
+  "reference/vespa/verifiers/text-indexing/**",
+]
+requires = ["native-full"]
+
+[[subsystem]]
+id = "verification-control-plane"
+paths = [".github/ci/**", ".github/workflows/**", ".githooks/**", "dev", "verification/**"]
+requires = ["verification-policy", "full"]
+
+# --- SearchKernel Web subsystem ownership ---
+
+[[subsystem]]
+id = "web-portable-client-seam"
+paths = ["searchkernel-web/src/api/**"]
+requires = ["web-portable-client"]
+
+[[subsystem]]
+id = "web-admin-client-seam"
+paths = ["searchkernel-web/src/admin-client/**"]
+requires = ["web-admin-client"]
+
+[[subsystem]]
+id = "web-app-routing-state"
+paths = [
+  "searchkernel-web/src/app/**",
+  "searchkernel-web/src/main.tsx",
+  "searchkernel-web/src/App.tsx",
+]
+requires = ["web-unit", "web-build"]
+
+[[subsystem]]
+id = "web-shared-presentation"
+paths = [
+  "searchkernel-web/src/components/**",
+  "searchkernel-web/src-components/**",
+  "searchkernel-web/src/styles.css",
+]
+requires = ["web-unit", "web-build"]
+
+[[subsystem]]
+id = "web-feature-configuration"
+paths = ["searchkernel-web/src/features/configuration/**"]
+requires = ["web-build", "web-portable-client"]
+
+[[subsystem]]
+id = "web-feature-documents"
+paths = ["searchkernel-web/src/features/documents/**"]
+requires = ["web-build", "web-portable-client"]
+
+[[subsystem]]
+id = "web-feature-indexes"
+paths = ["searchkernel-web/src/features/indexes/**"]
+requires = ["web-build", "web-portable-client", "web-admin-client"]
+
+[[subsystem]]
+id = "web-feature-operations"
+paths = ["searchkernel-web/src/features/operations/**"]
+requires = ["web-build", "web-admin-client"]
+
+[[subsystem]]
+id = "web-feature-overview"
+paths = ["searchkernel-web/src/features/overview/**"]
+requires = ["web-build", "web-portable-client", "web-admin-client"]
+
+[[subsystem]]
+id = "web-feature-ranking"
+paths = ["searchkernel-web/src/features/ranking/**"]
+requires = ["web-build", "web-portable-client"]
+
+[[subsystem]]
+id = "web-feature-search-debugging"
+paths = ["searchkernel-web/src/features/search-debugging/**"]
+requires = ["web-build", "web-portable-client", "web-admin-client"]
+
+[[subsystem]]
+id = "web-feature-search-lab"
+paths = ["searchkernel-web/src/features/search-lab/**"]
+requires = ["web-unit", "web-build", "web-portable-client"]
+
+[[subsystem]]
+id = "web-feature-settings"
+paths = ["searchkernel-web/src/features/settings/**"]
+requires = ["web-build", "web-admin-client"]
+
+[[subsystem]]
+id = "web-feature-summaries"
+paths = ["searchkernel-web/src/features/summaries/**"]
+requires = ["web-build", "web-portable-client"]
+
+[[subsystem]]
+id = "web-build-config"
+paths = [
+  "searchkernel-web/package.json",
+  "searchkernel-web/package-lock.json",
+  "searchkernel-web/tsconfig.json",
+  "searchkernel-web/tsconfig.app.json",
+  "searchkernel-web/vite.config.ts",
+  "searchkernel-web/index.html",
+]
+requires = ["web-full"]
+
+[[subsystem]]
+id = "web-static-bundle"
+paths = ["searchkernel-web/dist/**"]
+requires = ["web-static-serving-e2e"]
+
+[[subsystem]]
+id = "web-tracked-package-artifact"
+paths = ["searchkernel-web/skw.zip"]
+requires = ["web-full"]
+notes = "Tracked archive is conservatively behavioral until explicitly retired or classified as immutable/reference-only."
+
+[[subsystem]]
+id = "frontend-acceptance-harness"
+paths = ["tools/frontend-harness/**"]
+requires = ["frontend-harness-selftest", "frontend-verifier-integrity"]
+
+# The Catalyst kit is reference input rather than product runtime code. If a
+# product file starts importing from it directly, architecture checks should
+# reject that rather than silently making it behavioral.
+[[subsystem]]
+id = "web-reference-assets"
+paths = ["searchkernel-web/reference/**"]
+requires = []
+behavioral = false
+
+# --- Build/tooling/control ownership used by the selector during migration ---
+
+[[subsystem]]
+id = "workspace-build"
+paths = ["Cargo.toml", "Cargo.lock", ".cargo/**", "rust-toolchain*"]
+requires = ["full"]
+
+[[subsystem]]
+id = "protocol-tooling"
+paths = [
+  "tools/rpc-codegen/**",
+  "tools/generate-flatbuffers-bfbs.sh",
+  "tools/generate-python-flatbuffers.sh",
+  "tools/generate-python-grpc.sh",
+  "tools/generate-searchkernel-protocol.sh",
+  "tools/generate-searchkernel-rpc.sh",
+  "tools/generate-typescript-flatbuffers.sh",
+  "tools/generate-typescript-grpc-web.sh",
+  "tools/check-flatbuffers-bfbs.sh",
+  "tools/check-flatbuffers-cpp.sh",
+  "tools/check-python-flatbuffers-boundary.py",
+  "tools/check-python-flatbuffers-generated.sh",
+  "tools/check-python-grpc.sh",
+  "tools/check-searchkernel-protocol-generated.sh",
+  "tools/check-searchkernel-rpc.sh",
+  "tools/check-typescript-generated.sh",
+  "tools/patch-python-flatbuffers-object-api.py",
+  "tools/resolve-flatc.sh",
+  "tools/test-flatbuffers-cpp-toolchain.sh",
+  "tools/test-typescript-generation.sh",
+]
+requires = ["rust-non-native", "protocol-generated", "python-client", "typescript-client", "client-contracts"]
+
+[[subsystem]]
+id = "client-contract-tooling"
+paths = [
+  "reference/client-contracts/**",
+  "tools/check-capabilities.py",
+  "tools/check-client-contracts.py",
+  "tools/check-python-dependencies.py",
+  "tools/test_check_capabilities.py",
+  "tools/test_check_client_contracts.py",
+  "tools/test_python_dependency_contract.py",
+]
+requires = ["clients-full"]
+
+[[subsystem]]
+id = "api-conformance-reference"
+paths = ["reference/api-conformance/**"]
+requires = ["api-conformance"]
+
+[[subsystem]]
+id = "c2-reference"
+paths = ["reference/clients/c2/**"]
+requires = ["c2-historical"]
+
+[[subsystem]]
+id = "native-tooling"
+paths = [
+  "tools/check-native-*.sh",
+  "tools/check-native-*.py",
+  "tools/check-native-bindings/**",
+  "tools/check-vespa-bindings.sh",
+  "tools/check_abi_surface.py",
+  "tools/test_check_abi_surface.py",
+  "tools/test_check_native_*.py",
+  "tools/test-native-*.sh",
+  "tools/test-check-native-abi.sh",
+  "tools/native-*.py",
+  "tools/native-contract-tests/**",
+  "tools/*native-sdk*.sh",
+  "tools/*native-base*.sh",
+  "tools/*shared-library*.sh",
+  "tools/copy-shared-library-into-sdk.sh",
+  "tools/install-native-base-artifact.sh",
+  "tools/package-native-base-artifact.sh",
+  "tools/resolve-native-sdk.sh",
+  "tools/coverage-native-adapter.sh",
+  "tools/coverage-m0-probe.sh",
+  "tools/m0-probe-abi-double.c",
+]
+requires = ["rust-non-native", "client-contracts", "abi", "native-full"]
+
+[[subsystem]]
+id = "persistence-tooling"
+paths = ["tools/check-persistence-*.sh"]
+requires = ["persistence-native"]
+
+[[subsystem]]
+id = "issue-queue-tooling"
+paths = ["tools/check-issue-queue.py", "tools/test_check_issue_queue.py"]
+requires = ["issue-queue"]
+
+[[subsystem]]
+id = "architecture-tooling"
+paths = [
+  "tools/check-ir-boundary.sh",
+  "tools/check-layout.sh",
+  "tools/check-search-semantic-entry-points.py",
+  "tools/check-testkit-backend-free.py",
+  "tools/test_check_ir_boundary.py",
+  "tools/test_check_search_semantic_entry_points.py",
+]
+requires = ["rust-non-native", "rust-quality", "verification-policy"]
+
+[[subsystem]]
+id = "repository-agent-rules"
+paths = ["AGENTS.md"]
+requires = ["issue-queue", "verification-policy"]
+
+[[subsystem]]
+id = "capability-ledger"
+override_exemption = true
+paths = [
+  "docs/capabilities.json",
+  "docs/CAPABILITIES.md",
+  "docs/CLIENT_CAPABILITIES.md",
+  "docs/client-capabilities.json",
+  "LIMITATIONS.md",
+]
+requires = ["client-contracts"]
+
+[[subsystem]]
+id = "future-task-orchestration"
+paths = [".moon/**", "moon.yml", "moon.yaml"]
+requires = ["full"]

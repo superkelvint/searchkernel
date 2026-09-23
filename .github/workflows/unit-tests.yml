@@ -83,6 +83,9 @@ jobs:
       - name: Run native SDK cache regression
         run: bash tools/test-native-sdk-cache.sh
 
+      - name: Run semantic verifier routing regression
+        run: bash reference/vespa/verifiers/test-routing.sh
+
       - name: Run workspace unit tests
         run: cargo test --workspace --no-default-features
 
