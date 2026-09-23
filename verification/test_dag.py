@@ -40,6 +40,13 @@ class VerificationDagTests(unittest.TestCase):
         self.assertFalse(verification_dag.matching_subsystems(current, probe))
         self.assertFalse(verification_dag.matching_exemptions(current, probe))
 
+    def test_audit_split_manifest_is_documentation_exempt(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+        probe = "implementation-plan/audit/split-manifest.json"
+        self.assertFalse(verification_dag.matching_subsystems(current, probe))
+        exemptions = verification_dag.matching_exemptions(current, probe)
+        self.assertEqual([exemption.id for exemption in exemptions], ["documentation"])
+
     def test_ruby_client_family_has_explicit_verification_ownership(self) -> None:
         current = verification_dag.load_dag(DAG_PATH)
         probe = "clients/ruby/lib/searchkernel.rb"
