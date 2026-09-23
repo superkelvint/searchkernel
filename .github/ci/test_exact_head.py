@@ -246,12 +246,25 @@ class ExactHeadTests(unittest.TestCase):
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         typescript = workflow.split("\n  typescript:\n", 1)[1].split(
-            "\n  exact-head-gate:\n", 1
+            "\n  ruby:\n", 1
         )[0]
         self.assertIn("uses: dtolnay/rust-toolchain@stable", typescript)
         self.assertIn("./tools/test-typescript-generation.sh", typescript)
         self.assertIn("npm run check:generated --prefix clients/typescript", typescript)
         self.assertIn("npm run test:package --prefix clients/typescript", typescript)
+
+    def test_ruby_behavior_is_exact_head_gated(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        ruby = workflow.split("\n  ruby:\n", 1)[1].split(
+            "\n  exact-head-gate:\n", 1
+        )[0]
+        self.assertIn("if: needs.classify.outputs.ruby == 'true'", ruby)
+        self.assertIn("ruby --version", ruby)
+        self.assertIn("./dev test ruby", ruby)
+        gate = workflow.split("\n  exact-head-gate:\n", 1)[1]
+        self.assertIn("RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}", gate)
+        self.assertIn("RUBY_RESULT: ${{ needs.ruby.result }}", gate)
+        self.assertIn('require_lane Ruby "$RUBY_REQUIRED" "$RUBY_RESULT"', gate)
 
     def test_precommit_runs_native_gate_only_for_native_sensitive_staged_paths(self) -> None:
         for staged_path, expect_native in (
@@ -592,57 +605,62 @@ class ExactHeadTests(unittest.TestCase):
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
             b"core/crates/searchkernel-ir/src/model.rs\0": {
-                "rust=true", "python=false", "typescript=false", "php=false", "native=false",
+                "rust=true", "python=false", "typescript=false", "php=false", "ruby=false", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"clients/python/searchkernel/ergonomic.py\0": {
-                "rust=false", "python=true", "typescript=false", "php=false", "native=false",
+                "rust=false", "python=true", "typescript=false", "php=false", "ruby=false", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=true", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"clients/typescript/src/index.ts\0": {
-                "rust=false", "python=false", "typescript=true", "php=false", "native=false",
+                "rust=false", "python=false", "typescript=true", "php=false", "ruby=false", "native=false",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=false",
+                "persistence=false", "issue_queue=false", "verification=false",
+            },
+            b"clients/ruby/lib/searchkernel.rb\0": {
+                "rust=false", "python=false", "typescript=false", "php=false", "ruby=true", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=true", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"core/native/vespa/abi.cc\0": {
-                "rust=true", "python=false", "typescript=false", "php=false", "native=true",
+                "rust=true", "python=false", "typescript=false", "php=false", "ruby=false", "native=true",
                 "protocol=false", "api_conformance=false", "contracts=true", "abi=true",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
             b"api/searchkernel.fbs\0": {
-                "rust=true", "python=true", "typescript=true", "php=true", "native=true",
+                "rust=true", "python=true", "typescript=true", "php=true", "ruby=true", "native=true",
                 "protocol=true", "api_conformance=true", "contracts=true", "abi=false",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
             b"api/rpc/searchkernel.proto\0": {
-                "rust=true", "python=true", "typescript=true", "php=true", "native=false",
+                "rust=true", "python=true", "typescript=true", "php=true", "ruby=false", "native=false",
                 "protocol=true", "api_conformance=false", "contracts=true", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"tools/copy-shared-library-into-sdk.sh\0": {
-                "rust=true", "python=false", "typescript=false", "php=false", "native=true",
+                "rust=true", "python=false", "typescript=false", "php=false", "ruby=false", "native=true",
                 "protocol=false", "api_conformance=false", "contracts=true", "abi=true",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
             b"reference/api-conformance/golden/example.json\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=false",
+                "rust=false", "python=false", "typescript=false", "php=false", "ruby=false", "native=false",
                 "protocol=false", "api_conformance=true", "contracts=false", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"tools/check-native-abi-authorities.py\0": {
-                "rust=true", "python=false", "typescript=false", "php=false", "native=true",
+                "rust=true", "python=false", "typescript=false", "php=false", "ruby=false", "native=true",
                 "protocol=false", "api_conformance=false", "contracts=true", "abi=true",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
             b"docs/architecture.md\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=false",
+                "rust=false", "python=false", "typescript=false", "php=false", "ruby=false", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b".githooks/pre-commit\0": {
-                "rust=true", "python=true", "typescript=true", "php=true", "native=true",
+                "rust=true", "python=true", "typescript=true", "php=true", "ruby=true", "native=true",
                 "protocol=true", "api_conformance=true", "contracts=true", "abi=true",
                 "persistence=true", "issue_queue=true", "verification=true",
             },
@@ -681,8 +699,15 @@ class ExactHeadTests(unittest.TestCase):
     def test_new_core_crate_blocks(self) -> None:
         self.assert_unclassified_path_blocks("core/crates/searchkernel-new/src/lib.rs")
 
-    def test_new_client_family_blocks(self) -> None:
-        self.assert_unclassified_path_blocks("clients/ruby/lib/searchkernel.rb")
+    def test_registered_ruby_client_family_selects_ruby_contract_verification(self) -> None:
+        lines = classify_lines("clients/ruby/lib/searchkernel.rb")
+        self.assertIn("ruby=true", lines)
+        self.assertIn("contracts=true", lines)
+        for lane in ("rust", "python", "typescript", "php", "native", "protocol"):
+            self.assertIn(f"{lane}=false", lines)
+
+    def test_unregistered_client_family_still_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("clients/go/searchkernel.go")
 
     def test_new_api_contract_family_blocks(self) -> None:
         self.assert_unclassified_path_blocks("api/new_contract.fbs")
@@ -727,6 +752,7 @@ class ExactHeadTests(unittest.TestCase):
             "python",
             "typescript",
             "php",
+            "ruby",
             "native",
             "protocol",
             "api_conformance",

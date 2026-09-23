@@ -17,7 +17,7 @@ schema_version = 1
 unknown_behavior = "block"
 full_roots = ["full"]
 legacy_lane_names = [
-  "rust", "python", "typescript", "php", "native", "protocol",
+  "rust", "python", "typescript", "php", "ruby", "native", "protocol",
   "api_conformance", "contracts", "abi", "persistence",
   "issue_queue", "verification",
 ]
@@ -122,6 +122,15 @@ runner = "linux"
 command = "./dev test php"
 depends_on = []
 cache_result = false
+
+[[task]]
+id = "ruby-client"
+legacy_lanes = ["ruby"]
+kind = "aggregate"
+runner = "linux"
+depends_on = ["client-contracts"]
+cache_result = false
+notes = "Pre-registered ownership for the Ruby client ingress. The first Ruby product PR replaces this aggregate with ./dev test ruby."
 
 [[task]]
 id = "protocol-generated"
@@ -569,6 +578,7 @@ depends_on = [
   "python-client",
   "typescript-client",
   "php-client",
+  "ruby-client",
   "client-contracts",
   "c2-historical",
 ]
@@ -741,6 +751,11 @@ requires = ["typescript-client", "client-contracts", "web-portable-client"]
 id = "client-php"
 paths = ["clients/php/**"]
 requires = ["php-client", "client-contracts"]
+
+[[subsystem]]
+id = "client-ruby"
+paths = ["clients/ruby/**"]
+requires = ["ruby-client", "client-contracts"]
 
 [[subsystem]]
 id = "persistence"
