@@ -13,7 +13,6 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
-use InvalidArgumentException;
 use SearchKernel\Bytes;
 use SearchKernel\Coverage;
 use SearchKernel\HttpTransport;
@@ -27,7 +26,6 @@ use SearchKernel\TransportException;
 use SearchKernel\ProtocolException;
 use SearchKernel\UInt64;
 use SearchKernel\ValueObject;
-use UnexpectedValueException;
 
 function same(mixed $expected, mixed $actual, string $message): void
 {
@@ -166,12 +164,12 @@ same('tensor<float>(x[2])', $decodedTensor->typeSpec, 'tensor type spec round tr
 same([1.0, 2.5], $decodedTensor->payload['values'], 'tensor cells round trip');
 
 throws(
-    InvalidArgumentException::class,
+    \InvalidArgumentException::class,
     static fn () => Tensor::dense('tensor<float>(x[1])', [INF]),
     'tensor non-finite cells fail closed',
 );
 throws(
-    UnexpectedValueException::class,
+    \UnexpectedValueException::class,
     static fn () => Protocol::decodeValue(['kind_type' => 'FutureValue', 'kind' => []]),
     'unknown Value unions fail closed',
 );
@@ -292,22 +290,22 @@ same('YqlQuery', $yql['query']['source_type'], 'YQL source discriminator');
 same('q', $yql['query']['source']['parameters'][0]['key'], 'YQL parameter namespace');
 
 throws(
-    InvalidArgumentException::class,
+    \InvalidArgumentException::class,
     static fn () => $index->search(' '),
     'blank search requires browse()',
 );
 throws(
-    InvalidArgumentException::class,
+    \InvalidArgumentException::class,
     static fn () => $index->browse()->page(2, 20)->limit(20),
     'page and limit cannot mix',
 );
 throws(
-    InvalidArgumentException::class,
+    \InvalidArgumentException::class,
     static fn () => $index->browse()->page(PHP_INT_MAX, 2),
     'page arithmetic is checked',
 );
 throws(
-    InvalidArgumentException::class,
+    \InvalidArgumentException::class,
     static fn () => $index->browse()->sort('price', 'sideways'),
     'invalid sort direction rejected',
 );
@@ -434,7 +432,7 @@ try {
 }
 
 throws(
-    InvalidArgumentException::class,
+    \InvalidArgumentException::class,
     static fn () => Protocol::value(INF),
     'non-finite input is not silently encoded as Float64Value',
 );
@@ -445,7 +443,7 @@ throws(
 // --------------------------------------------------------------------------
 
 throws(
-    UnexpectedValueException::class,
+    \UnexpectedValueException::class,
     static fn () => Protocol::decodeValue([
         'kind_type' => 'BoolValue',
         'kind' => ['value' => 'false'],
@@ -453,7 +451,7 @@ throws(
     'BoolValue rejects non-boolean payloads instead of PHP truthiness coercion',
 );
 throws(
-    UnexpectedValueException::class,
+    \UnexpectedValueException::class,
     static fn () => Protocol::decodeValue([
         'kind_type' => 'Float64Value',
         'kind' => ['value' => 'not-a-number'],
@@ -461,7 +459,7 @@ throws(
     'Float64Value rejects non-numeric payloads instead of coercing to zero',
 );
 throws(
-    UnexpectedValueException::class,
+    \UnexpectedValueException::class,
     static fn () => Protocol::decodeValue([
         'kind_type' => 'StringValue',
         'kind' => ['value' => ['not', 'a', 'string']],
@@ -469,7 +467,7 @@ throws(
     'StringValue rejects non-string payloads',
 );
 throws(
-    UnexpectedValueException::class,
+    \UnexpectedValueException::class,
     static fn () => Protocol::decodeValue([
         'kind_type' => 'NullValueValue',
         'kind' => ['value' => 'Unspecified'],
@@ -477,7 +475,7 @@ throws(
     'NullValueValue requires the canonical Null enum member',
 );
 throws(
-    UnexpectedValueException::class,
+    \UnexpectedValueException::class,
     static fn () => Protocol::decodeValue([
         'kind_type' => 'TensorValue',
         'kind' => [
@@ -489,7 +487,7 @@ throws(
     'tensor decoding validates the inner payload instead of trusting the union tag',
 );
 throws(
-    UnexpectedValueException::class,
+    \UnexpectedValueException::class,
     static fn () => Protocol::expectPayload([
         'protocol_version' => 2,
         'payload_type' => 'SearchKernel_V2_Error',
@@ -503,7 +501,7 @@ throws(
     'malformed canonical Error payloads fail as protocol errors',
 );
 throws(
-    UnexpectedValueException::class,
+    \UnexpectedValueException::class,
     static fn () => new Coverage(['full' => ['value' => 'false']]),
     'optional bool result fields reject string coercion',
 );
@@ -516,7 +514,7 @@ $malformedHit = [
     ],
 ];
 throws(
-    UnexpectedValueException::class,
+    \UnexpectedValueException::class,
     static fn () => SearchResult::fromPayload(['root' => $malformedHit]),
     'malformed hit scalar fields fail closed',
 );
@@ -533,6 +531,15 @@ same('0', $encodedNumericKeyObject['kind']['fields'][0]['key'], 'numeric-looking
 $encodedU64 = Protocol::value(UInt64::fromDecimal('18446744073709551615'));
 same('UInt64Value', $encodedU64['kind_type'], 'explicit uint64 uses the UInt64Value union variant');
 same('18446744073709551615', $encodedU64['kind']['value'], 'uint64 max remains lossless as decimal text');
+$u64Json = Protocol::encodeJson(['value' => $encodedU64]);
+truth(
+    str_contains($u64Json, '"value":18446744073709551615'),
+    'uint64 max is emitted as an unquoted standard FlatBuffers JSON number',
+);
+truth(
+    !str_contains($u64Json, '"18446744073709551615"'),
+    'uint64 max is never stringified on the HTTP wire',
+);
 
 throws(
     TransportException::class,
@@ -585,7 +592,7 @@ same(
     'uint64 max is explicitly representable',
 );
 throws(
-    InvalidArgumentException::class,
+    \InvalidArgumentException::class,
     static fn () => new SearchKernel\UInt64('18446744073709551616'),
     'uint64 overflow rejected',
 );
@@ -602,12 +609,12 @@ $oddWire = Protocol::value($oddKeys);
 same(['0', '😀'], array_column($oddWire['kind']['fields'], 'key'), 'explicit object preserves numeric and non-BMP keys');
 
 throws(
-    InvalidArgumentException::class,
+    \InvalidArgumentException::class,
     static fn () => Tensor::fromWire('tensor<float>(x[1])', 'DenseTensorValues', ['values' => ['bad']]),
     'dense tensor wire payload validates cell types',
 );
 throws(
-    InvalidArgumentException::class,
+    \InvalidArgumentException::class,
     static fn () => Tensor::fromWire(
         'tensor<float>(x{})',
         'SparseTensorCells',
