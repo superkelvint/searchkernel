@@ -19,7 +19,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Range queries (query.range) | query | — | — | — | — |
 | Boolean query operators (query.boolean) | query | — | — | — | — |
 | Phrase queries (query.phrase) | query | — | ergonomic (native) | ergonomic (grpc) | — |
-| Near and ordered-near proximity queries (query.proximity) | query | — | — | ergonomic (grpc) | — |
+| Near and ordered-near proximity queries (query.proximity) | query | — | ergonomic (native) | ergonomic (grpc) | — |
 | sameElement query (query.same_element) | query | — | — | ergonomic (grpc) | — |
 | Fuzzy query (query.fuzzy) | query | — | ergonomic (native) | ergonomic (grpc) | — |
 | Prefix, suffix, and substring queries (query.prefix_suffix_substring) | query | — | — | — | — |
