@@ -58,7 +58,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 752
+              "line": 1133
             },
             {
               "capability": "query.term",
@@ -91,7 +91,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.boolean_constants",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1134
+            }
+          ],
           "overrides": []
         }
       ]
@@ -104,7 +114,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.comparison",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1135
+            }
+          ],
           "overrides": []
         }
       ]
@@ -117,7 +137,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.range",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1136
+            }
+          ],
           "overrides": []
         }
       ]
@@ -131,6 +161,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "query.boolean",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1137
+            },
             {
               "capability": "query.boolean",
               "scenario": "basic",
@@ -166,6 +205,15 @@
             {
               "capability": "query.phrase",
               "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1138
+            },
+            {
+              "capability": "query.phrase",
+              "scenario": "basic",
               "surface": "python",
               "runtime": "grpc",
               "kind": "ergonomic",
@@ -195,6 +243,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "query.proximity",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1139
+            },
             {
               "capability": "query.proximity",
               "scenario": "basic",
@@ -230,6 +287,15 @@
             {
               "capability": "query.same_element",
               "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1140
+            },
+            {
+              "capability": "query.same_element",
+              "scenario": "basic",
               "surface": "python",
               "runtime": "grpc",
               "kind": "ergonomic",
@@ -250,6 +316,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "query.fuzzy",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1141
+            },
             {
               "capability": "query.fuzzy",
               "scenario": "basic",
@@ -313,6 +388,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1142
+            },
+            {
+              "capability": "query.nearest_neighbor",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 752
@@ -361,6 +445,15 @@
             {
               "capability": "query.geo",
               "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1143
+            },
+            {
+              "capability": "query.geo",
+              "scenario": "basic",
               "surface": "python",
               "runtime": "grpc",
               "kind": "ergonomic",
@@ -380,7 +473,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.predicate",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1144
+            }
+          ],
           "overrides": []
         }
       ]
@@ -394,6 +497,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "query.weighted_and_wand",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1145
+            },
             {
               "capability": "query.weighted_and_wand",
               "scenario": "basic",
@@ -425,7 +537,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.weighted_set_dot_product",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1146
+            }
+          ],
           "overrides": []
         }
       ]
@@ -438,7 +560,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.equivalence",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1147
+            }
+          ],
           "overrides": []
         }
       ]
@@ -451,7 +583,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.rank",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1148
+            }
+          ],
           "overrides": []
         }
       ]
@@ -464,7 +606,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.user_input_user_query",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1149
+            }
+          ],
           "overrides": []
         }
       ]
@@ -498,7 +650,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 753
+              "line": 1154
             },
             {
               "capability": "filter.textual",
@@ -557,7 +709,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 754
+              "line": 1155
             },
             {
               "capability": "search.sorting",
@@ -638,7 +790,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 756
+              "line": 1157
             },
             {
               "capability": "search.pagination",
@@ -706,7 +858,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 755
+              "line": 1156
             },
             {
               "capability": "search.search_fields",
@@ -873,7 +1025,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 766
+              "line": 1172
             },
             {
               "capability": "result.highlighting",
@@ -1007,7 +1159,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 757
+              "line": 1158
             },
             {
               "capability": "grouping.structured",
@@ -1058,7 +1210,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "grouping.functions",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1159
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1079,7 +1241,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 758
+              "line": 1160
             },
             {
               "capability": "grouping.aggregations",
@@ -1162,7 +1324,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "grouping.continuations",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1161
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1175,7 +1347,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "grouping.raw_source",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1162
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1196,7 +1378,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 759
+              "line": 1163
             },
             {
               "capability": "update.document_crud",
@@ -1264,7 +1446,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 760
+              "line": 1164
             },
             {
               "capability": "update.arithmetic",
@@ -1305,7 +1487,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 761
+              "line": 1165
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -1364,7 +1546,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "update.matched_element",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1166
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1377,7 +1569,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "update.tensor_modify",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1167
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1430,7 +1632,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 762
+              "line": 1168
             },
             {
               "capability": "query.yql",
@@ -1495,7 +1697,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.typed_text",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1150
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1508,7 +1720,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.in_term",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1151
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1521,7 +1743,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.non_empty",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1152
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1534,7 +1766,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "query.labels",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 1153
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1594,7 +1836,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 763
+              "line": 1169
             },
             {
               "capability": "ranking.profile_selection",
@@ -1667,7 +1909,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 764
+              "line": 1170
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -1708,7 +1950,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 765
+              "line": 1171
             },
             {
               "capability": "ranking.rank_properties",
@@ -1781,7 +2023,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 767
+              "line": 1173
             },
             {
               "capability": "result.grouping_tree",
@@ -1822,7 +2064,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 768
+              "line": 1174
             },
             {
               "capability": "result.degradation_metadata",
