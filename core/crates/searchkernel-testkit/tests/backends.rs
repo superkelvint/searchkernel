@@ -138,10 +138,7 @@ fn update() -> UpdateRequestIr {
     let mut builder = FlatBufferBuilder::new();
     let id = builder.create_string("a");
     let path = builder.create_string("title");
-    let target = api::FieldPath::create(
-        &mut builder,
-        &api::FieldPathArgs { path: Some(path) },
-    );
+    let target = api::FieldPath::create(&mut builder, &api::FieldPathArgs { path: Some(path) });
     let clear = api::ClearUpdate::create(&mut builder, &api::ClearUpdateArgs {});
     let operation = api::UpdateOperation::create(
         &mut builder,

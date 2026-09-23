@@ -4785,7 +4785,10 @@ fn non_creating_mutations_leave_a_missing_document_missing() {
     let deleted = backend
         .delete(DeleteRequestIr::new(id.clone()))
         .expect("delete missing document");
-    assert!(!deleted.deleted, "delete unexpectedly reported a missing document as deleted");
+    assert!(
+        !deleted.deleted,
+        "delete unexpectedly reported a missing document as deleted"
+    );
     assert!(
         backend
             .engine
@@ -4876,14 +4879,8 @@ fn session_close_drains_serialized_existence_mutations_without_deadlock() {
 
     probe.release.wait();
 
-    assert!(matches!(
-        insert.join().expect("insert thread"),
-        Ok(Ok(_))
-    ));
-    assert!(matches!(
-        update.join().expect("update thread"),
-        Ok(Ok(_))
-    ));
+    assert!(matches!(insert.join().expect("insert thread"), Ok(Ok(_))));
+    assert!(matches!(update.join().expect("update thread"), Ok(Ok(_))));
     closer
         .join()
         .expect("close thread")

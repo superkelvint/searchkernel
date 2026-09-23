@@ -1542,8 +1542,7 @@ pub(crate) fn resolve_filter(
         )?))),
         FilterInput::Exists { field } => {
             let exists_path = filter_operation_path(path, "exists");
-            let field =
-                context.query_field_for_resolver(field, format!("{exists_path}.field"))?;
+            let field = context.query_field_for_resolver(field, format!("{exists_path}.field"))?;
             if !field.capabilities().filterable() {
                 return Err(invalid(
                     "field_not_filterable",

@@ -382,10 +382,7 @@ struct AdmissionLayer {
 }
 
 impl AdmissionLayer {
-    fn new(
-        semaphore: Arc<Semaphore>,
-        json_transport: Option<SearchKernelTransport>,
-    ) -> Self {
+    fn new(semaphore: Arc<Semaphore>, json_transport: Option<SearchKernelTransport>) -> Self {
         Self {
             semaphore,
             json_transport,

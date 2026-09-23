@@ -127,11 +127,18 @@ async fn http_json_and_direct_dispatch_produce_identical_ir_calls() {
 
     let (status, _, body) =
         execute_json_raw(address, Method::POST, "application/json", SEARCH_JSON).await;
-    assert_eq!(status, StatusCode::OK, "semantic errors stay response payloads");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "semantic errors stay response payloads"
+    );
     assert!(!body.is_empty());
 
     let remote_calls = backend.take_calls();
-    assert_eq!(direct_calls, remote_calls, "HTTP JSON must add representation only");
+    assert_eq!(
+        direct_calls, remote_calls,
+        "HTTP JSON must add representation only"
+    );
 
     server.shutdown().await.expect("shutdown HTTP edge");
     index.close().expect("close test index");
@@ -150,12 +157,16 @@ async fn http_json_rejects_edge_failures_before_dispatch() {
     .expect("start HTTP edge");
     let address = server.web_tcp_addr().expect("HTTP edge address");
 
-    let (status, _, _) =
-        execute_json_raw(address, Method::POST, "application/json", Bytes::from_static(b"{")).await;
+    let (status, _, _) = execute_json_raw(
+        address,
+        Method::POST,
+        "application/json",
+        Bytes::from_static(b"{"),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    let (status, _, _) =
-        execute_json_raw(address, Method::POST, "text/plain", DESCRIBE_JSON).await;
+    let (status, _, _) = execute_json_raw(address, Method::POST, "text/plain", DESCRIBE_JSON).await;
     assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
 
     let (status, _, _) =

@@ -439,7 +439,7 @@ fn resolve_index_definition_fields(
     let default_search_fields = match default_search_fields {
         Some(selection) => {
             resolve_default_search_fields(selection, &all_fields, default_search_fields_path)?
-        },
+        }
         None => all_fields
             .iter()
             .filter(|field| field.capabilities.searchable)
