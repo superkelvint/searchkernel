@@ -12,6 +12,12 @@ class SearchBuilder
     private array $filters = [];
     /** @var list<array<string,mixed>> */
     private array $sorts = [];
+    /** @var list<Group> */
+    private array $groups = [];
+    /** @var list<array{field:string,name:string,limit:int,sort:string}> */
+    private array $facets = [];
+    /** @var list<GroupingOutput> */
+    private array $aggregates = [];
     /** @var list<string>|null */
     private ?array $fields = null;
     /** @var list<string>|null */
@@ -124,6 +130,42 @@ class SearchBuilder
         return $copy;
     }
 
+    public function facet(
+        string $field,
+        ?string $name = null,
+        int $limit = 10,
+        string $sort = 'count_desc',
+    ): self {
+        if ($field === '') {
+            throw new InvalidArgumentException('facet field must not be empty');
+        }
+        self::uint32($limit, 'facet limit');
+        $copy = clone $this;
+        $copy->facets[] = [
+            'field' => $field,
+            'name' => $name ?? $field,
+            'limit' => $limit,
+            'sort' => $sort,
+        ];
+        return $copy;
+    }
+
+    public function group(Group $group): self
+    {
+        $copy = clone $this;
+        $copy->groups[] = $group;
+        return $copy;
+    }
+
+    public function aggregate(GroupingExpression|GroupingOutput $expression): self
+    {
+        $copy = clone $this;
+        $copy->aggregates[] = $expression instanceof GroupingOutput
+            ? $expression
+            : $expression->as('');
+        return $copy;
+    }
+
     public function ranking(string $profile): self
     {
         if ($profile === '') {
@@ -215,7 +257,11 @@ class SearchBuilder
 
     public function execute(): SearchResult
     {
-        return $this->index->executeSearchRequest($this->request());
+        $result = $this->index->executeSearchRequest($this->request());
+        foreach ($this->facets as $facet) {
+            $result->projectFacet($facet['name'], $facet['field']);
+        }
+        return $result;
     }
 
     /** @return array<string,mixed> */
@@ -236,6 +282,24 @@ class SearchBuilder
         }
         if ($this->sorts !== []) {
             $request['sort'] = $this->sorts;
+        }
+        $grouping = array_map(
+            static fn (Group $group): array => $group->toRequest(),
+            $this->groups,
+        );
+        foreach ($this->facets as $facet) {
+            $grouping[] = Group::facetRequest(
+                $facet['field'],
+                $facet['name'],
+                $facet['limit'],
+                $facet['sort'],
+            );
+        }
+        if ($this->aggregates !== []) {
+            $grouping[] = Group::rootAggregationRequest($this->aggregates);
+        }
+        if ($grouping !== []) {
+            $request['grouping'] = $grouping;
         }
         if ($this->ranking !== null || $this->rankProperties !== []) {
             $request['ranking'] = [
