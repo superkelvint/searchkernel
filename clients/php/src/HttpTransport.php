@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
-use RuntimeException;
 use JsonException;
 
 final class HttpTransport implements Transport
@@ -15,7 +14,7 @@ final class HttpTransport implements Transport
     {
         $baseUrl = rtrim($baseUrl, '/');
         if ($baseUrl === '') {
-            throw new RuntimeException('Search Kernel HTTP base URL must not be empty');
+            throw new TransportException('Search Kernel HTTP base URL must not be empty');
         }
         $this->executeUrl = $baseUrl . '/v1/execute';
     }
@@ -31,7 +30,7 @@ final class HttpTransport implements Transport
                 JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE,
             );
         } catch (JsonException $error) {
-            throw new RuntimeException('encode Search Kernel request JSON', 0, $error);
+            throw new TransportException('encode Search Kernel request JSON', 0, $error);
         }
 
         $context = stream_context_create([
@@ -41,6 +40,8 @@ final class HttpTransport implements Transport
                 'content' => $body,
                 'timeout' => $this->timeoutSeconds,
                 'ignore_errors' => true,
+                'follow_location' => 0,
+                'max_redirects' => 0,
             ],
         ]);
 
@@ -50,12 +51,12 @@ final class HttpTransport implements Transport
 
         if ($response === false && $status === 0) {
             $last = error_get_last();
-            throw new RuntimeException(
+            throw new TransportException(
                 'Search Kernel HTTP request failed' . ($last ? ': ' . $last['message'] : '')
             );
         }
         if ($status < 200 || $status >= 300) {
-            throw new RuntimeException(sprintf(
+            throw new TransportException(sprintf(
                 'Search Kernel HTTP request failed with status %d: %s',
                 $status,
                 is_string($response) ? trim($response) : '',
@@ -70,11 +71,11 @@ final class HttpTransport implements Transport
                 JSON_THROW_ON_ERROR | JSON_BIGINT_AS_STRING,
             );
         } catch (JsonException $error) {
-            throw new RuntimeException('decode Search Kernel response JSON', 0, $error);
+            throw new TransportException('decode Search Kernel response JSON', 0, $error);
         }
 
         if (!is_array($decoded)) {
-            throw new RuntimeException('Search Kernel response JSON must be an object');
+            throw new TransportException('Search Kernel response JSON must be an object');
         }
         return $decoded;
     }
@@ -82,11 +83,12 @@ final class HttpTransport implements Transport
     /** @param list<string> $headers */
     private static function statusCode(array $headers): int
     {
+        $status = 0;
         foreach ($headers as $header) {
             if (preg_match('/^HTTP\/\S+\s+(\d{3})\b/', $header, $matches) === 1) {
-                return (int) $matches[1];
+                $status = (int) $matches[1];
             }
         }
-        return 0;
+        return $status;
     }
 }
