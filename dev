@@ -25,6 +25,7 @@ Search Kernel development commands
 
   ./dev check                 Run the full repository quality and test suite
   ./dev check-fast            Run formatting, compile, and boundary checks
+  ./dev check-protocol        Verify generated FlatBuffers/gRPC artifacts
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client
@@ -110,12 +111,19 @@ check_fast() {
     cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
 }
 
+check_protocol() {
+    bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
+    bash "$ROOT/tools/check-searchkernel-protocol-generated.sh"
+    bash "$ROOT/tools/check-searchkernel-rpc.sh"
+    bash "$ROOT/tools/check-python-flatbuffers-generated.sh"
+    bash "$ROOT/tools/check-python-grpc.sh"
+    run_typescript_generation_check
+}
+
 check_all() {
     check_fast
     bash "$ROOT/tools/check-vespa-bindings.sh"
-    bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
-    bash "$ROOT/tools/check-searchkernel-rpc.sh"
-    bash "$ROOT/tools/check-python-grpc.sh"
+    check_protocol
     "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
     "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
     "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
@@ -164,11 +172,14 @@ verify_target() {
         integration|i)
             "$ROOT/reference/vespa/i/verify-i.sh"
             ;;
+        api-conformance)
+            "$ROOT/reference/api-conformance/verify.sh"
+            ;;
         m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|phase10|searchreply)
             "$ROOT/reference/vespa/verify-through.sh" "$1"
             ;;
         *)
-            echo "usage: ./dev verify m0|...|m13|integration|phase10|searchreply" >&2
+            echo "usage: ./dev verify m0|...|m13|integration|api-conformance|phase10|searchreply" >&2
             return 2
             ;;
     esac
@@ -507,6 +518,9 @@ case "${1:-help}" in
         ;;
     check-fast)
         check_fast
+        ;;
+    check-protocol)
+        check_protocol
         ;;
     test)
         shift
