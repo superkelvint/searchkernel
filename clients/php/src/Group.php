@@ -9,6 +9,7 @@ use InvalidArgumentException;
 final class Group
 {
     private ?int $limit = null;
+    private bool $limitExplicit = false;
     private ?int $precision = null;
     /** @var list<GroupingOrder> */
     private array $orders = [];
@@ -19,7 +20,12 @@ final class Group
     /** @var list<array{0:string,1:GroupingExpression}> */
     private array $aliases = [];
     /** @var array<string,mixed>|null */
+    private ?array $filter = null;
+    /** @var array<string,mixed>|null */
     private ?array $keep = null;
+    private ?GroupingExpression $where = null;
+    /** @var list<string> */
+    private array $continuations = [];
 
     private function __construct(private readonly GroupingExpression $expression) {}
 
@@ -33,6 +39,15 @@ final class Group
         self::uint32($value, 'group limit');
         $copy = clone $this;
         $copy->limit = $value;
+        $copy->limitExplicit = true;
+        return $copy;
+    }
+
+    public function unlimited(): self
+    {
+        $copy = clone $this;
+        $copy->limit = null;
+        $copy->limitExplicit = true;
         return $copy;
     }
 
@@ -72,8 +87,21 @@ final class Group
         if ($name === '') {
             throw new InvalidArgumentException('group alias must not be empty');
         }
+        foreach ($this->aliases as [$existing]) {
+            if ($existing === $name) {
+                throw new InvalidArgumentException('duplicate group alias: ' . $name);
+            }
+        }
         $copy = clone $this;
         $copy->aliases[] = [$name, $expression];
+        return $copy;
+    }
+
+    /** @param array<string,mixed> $filter */
+    public function filter(array $filter): self
+    {
+        $copy = clone $this;
+        $copy->filter = self::groupingFilter($filter);
         return $copy;
     }
 
@@ -81,17 +109,38 @@ final class Group
     public function keep(array $filter): self
     {
         $copy = clone $this;
-        $copy->keep = $filter;
+        $copy->keep = self::groupingFilter($filter);
+        return $copy;
+    }
+
+    public function where(GroupingExpression $expression): self
+    {
+        $copy = clone $this;
+        $copy->where = $expression;
+        return $copy;
+    }
+
+    public function continuation(string $token): self
+    {
+        if ($token === '') {
+            throw new InvalidArgumentException('grouping continuation token must not be empty');
+        }
+        $copy = clone $this;
+        $copy->continuations[] = $token;
         return $copy;
     }
 
     /** @return array<string,mixed> */
     public function toRequest(): array
     {
-        return [
+        $request = [
             'source_type' => 'StructuredGroupingSource',
             'source' => ['root' => ['operations' => $this->operations()]],
         ];
+        if ($this->continuations !== []) {
+            $request['continuations'] = $this->continuations;
+        }
+        return $request;
     }
 
     /** @return list<array<string,mixed>> */
@@ -119,13 +168,15 @@ final class Group
                 'operation' => ['name' => $name, 'expression' => $expression->model],
             ];
         }
-        if ($this->limit !== null) {
+        if ($this->limitExplicit) {
             $operations[] = [
                 'operation_type' => 'GroupingMaxOperation',
-                'operation' => [
-                    'value_type' => 'FiniteGroupingMax',
-                    'value' => ['value' => $this->limit],
-                ],
+                'operation' => $this->limit === null
+                    ? ['value_type' => 'InfiniteGroupingMax', 'value' => []]
+                    : [
+                        'value_type' => 'FiniteGroupingMax',
+                        'value' => ['value' => $this->limit],
+                    ],
             ];
         }
         if ($this->precision !== null) {
@@ -145,10 +196,22 @@ final class Group
                 ],
             ];
         }
+        if ($this->filter !== null) {
+            $operations[] = [
+                'operation_type' => 'GroupingFilterOperation',
+                'operation' => ['filter' => $this->filter],
+            ];
+        }
         if ($this->keep !== null) {
             $operations[] = [
                 'operation_type' => 'GroupingKeepOperation',
                 'operation' => ['filter' => $this->keep],
+            ];
+        }
+        if ($this->where !== null) {
+            $operations[] = [
+                'operation_type' => 'GroupingWhereOperation',
+                'operation' => ['expression' => $this->where->model],
             ];
         }
         if ($this->outputs !== []) {
@@ -172,9 +235,17 @@ final class Group
     }
 
     /** @return array<string,mixed> */
-    public static function facetRequest(string $field, string $name, int $limit, string $sort): array
-    {
+    public static function facetRequest(
+        string $field,
+        string $name,
+        int $limit,
+        string $sort,
+        ?int $precision = null,
+    ): array {
         self::uint32($limit, 'facet limit');
+        if ($precision !== null) {
+            self::uint32($precision, 'facet precision');
+        }
         $order = match ($sort) {
             'count_desc' => GroupingOrder::desc(Agg::count()),
             'count_asc' => GroupingOrder::asc(Agg::count()),
@@ -182,7 +253,11 @@ final class Group
             'value_asc' => GroupingOrder::asc(G::field($field)),
             default => throw new InvalidArgumentException('facet sort must be count_desc, count_asc, value_asc, or value_desc'),
         };
-        $group = self::by($field)->limit($limit)->orderBy($order)->output(Agg::count());
+        $group = self::by($field)->limit($limit);
+        if ($precision !== null) {
+            $group = $group->precision($precision);
+        }
+        $group = $group->orderBy($order)->output(Agg::count());
         $request = $group->toRequest();
         $request['source']['root']['label'] = $name;
         return $request;
@@ -209,6 +284,17 @@ final class Group
                 ],
             ],
         ];
+    }
+
+    /** @param array<string,mixed> $filter
+     *  @return array<string,mixed>
+     */
+    private static function groupingFilter(array $filter): array
+    {
+        if (!is_string($filter['expr_type'] ?? null) || !is_array($filter['expr'] ?? null)) {
+            throw new InvalidArgumentException('grouping filter must come from Gf helpers');
+        }
+        return $filter;
     }
 
     private static function uint32(int $value, string $label): void
