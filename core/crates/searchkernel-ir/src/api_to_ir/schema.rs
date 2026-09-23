@@ -657,6 +657,24 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
     let string_type = data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::String);
     let explicit_analyzer = analyzer.is_some();
     let explicit_matching = matching.is_some();
+    if indexing_script.is_some()
+        && (stored.is_some()
+            || searchable.is_some()
+            || filterable.is_some()
+            || sortable.is_some()
+            || groupable.is_some()
+            || explicit_analyzer
+            || explicit_matching
+            || index.is_some()
+            || attribute.is_some()
+            || summary.is_some())
+    {
+        return Err(invalid(
+            "ambiguous_indexing_script",
+            Some(format!("{path}.indexing_script")),
+            "an indexing script cannot be combined with typed field behavior that C2 cannot prove equivalent",
+        ));
+    }
     let keyword = string_type
         && matches!(
             matching.as_ref().map(|value| value.mode),
@@ -786,24 +804,6 @@ fn resolve_field_input(input: UnresolvedFieldInput, path: &str) -> Result<FieldI
             "invalid_capability",
             Some(format!("{path}.sortable")),
             "multi-valued fields cannot be sortable",
-        ));
-    }
-    if indexing_script.is_some()
-        && (stored.is_some()
-            || searchable.is_some()
-            || filterable.is_some()
-            || sortable.is_some()
-            || groupable.is_some()
-            || explicit_analyzer
-            || explicit_matching
-            || index.is_some()
-            || attribute.is_some()
-            || summary.is_some())
-    {
-        return Err(invalid(
-            "ambiguous_indexing_script",
-            Some(format!("{path}.indexing_script")),
-            "an indexing script cannot be combined with typed field behavior that C2 cannot prove equivalent",
         ));
     }
     Ok(FieldIr {
