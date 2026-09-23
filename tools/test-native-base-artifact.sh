@@ -41,6 +41,7 @@ cat >"$fixture/libvespa.c" <<'C'
 int searchkernel_published_fixture(void) { return 1; }
 C
 cc -shared -fPIC "$fixture/libvespa.c" -Wl,-soname,libvespalib.so -o "$bundle/base/lib/libvespalib.so"
+ln -s libvespalib.so "$bundle/base/lib/libvespalib.so.1"
 printf '{"kind":"vespa-base","vespa_commit":"fixture-vespa-commit"}\n' >"$bundle/base/manifest.json"
 printf 'CXX_INCLUDES = -I/work/vespa -isystem /fixture-deps/include\n' >"$configured/flags.make"
 printf 'c++ CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o -o searchcore_embedded_crud_spike_app\n' >"$configured/link.txt"
@@ -98,6 +99,8 @@ fi
 expected="$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-unknown-linux-gnu/objects/fixture-vespa-commit"
 [[ "$after" == "$expected" ]]
 [[ -s "$after/lib/libvespalib.so" ]]
+[[ -L "$after/lib/libvespalib.so.1" ]]
+[[ "$(readlink "$after/lib/libvespalib.so.1")" == "libvespalib.so" ]]
 [[ ! -e "$after/lib/libsearchkernel_vespa.so" ]]
 [[ -z "$(find "$after" -perm /222 -print -quit)" ]]
 grep -q 'installed published Vespa base' "$fixture/install.err"
@@ -139,6 +142,29 @@ if run_resolver ensure corrupt-environment x86_64-unknown-linux-gnu "file://$cor
     exit 1
 fi
 grep -q 'checksum mismatch' "$fixture/corrupt.err"
+
+unsafe_parent="$fixture/unsafe-parent"
+unsafe_bundle="$unsafe_parent/searchkernel-vespa-base"
+mkdir -p "$unsafe_bundle/base/lib" "$unsafe_bundle/toolchain/upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir" "$unsafe_bundle/toolchain/vespa-deps/include"
+cp "$bundle/manifest.json" "$unsafe_bundle/manifest.json"
+cp "$bundle/base/manifest.json" "$unsafe_bundle/base/manifest.json"
+cp "$bundle/base/lib/libvespalib.so" "$unsafe_bundle/base/lib/libvespalib.so"
+ln -s ../../../../outside "$unsafe_bundle/base/lib/libescape.so"
+cp "$configured/flags.make" "$unsafe_bundle/toolchain/upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make"
+cp "$configured/link.txt" "$unsafe_bundle/toolchain/upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt"
+cp "$vespa_toolchain/.searchkernel-vespa-artifact.json" "$unsafe_bundle/toolchain/upstream/vespa/.searchkernel-vespa-artifact.json"
+cp "$bundle/toolchain/vespa-deps/include/fixture.h" "$unsafe_bundle/toolchain/vespa-deps/include/fixture.h"
+unsafe="$fixture/unsafe.tar.gz"
+(
+    cd "$unsafe_parent"
+    tar -czf "$unsafe" searchkernel-vespa-base
+)
+sha256sum "$unsafe" >"$unsafe.sha256"
+if run_resolver ensure unsafe-environment x86_64-unknown-linux-gnu "file://$unsafe" >"$fixture/unsafe.out" 2>"$fixture/unsafe.err"; then
+    echo 'escaping published base symlink unexpectedly installed' >&2
+    exit 1
+fi
+grep -q 'unsafe published Vespa base symlink' "$fixture/unsafe.err"
 
 truncated="$fixture/truncated.tar.gz"
 head -c 32 "$archive" >"$truncated"
