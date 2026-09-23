@@ -889,14 +889,24 @@ class ExactHeadTests(unittest.TestCase):
 
 
     def test_precommit_source_is_valid_and_each_major_gate_occurs_once(self) -> None:
-        syntax = subprocess.run(
-            ["bash", "-n", str(HOOK)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-            text=True,
-        )
-        self.assertEqual(syntax.returncode, 0, syntax.stdout)
+        root = SCRIPT.parents[2]
+        for shell_source in (
+            HOOK,
+            root / "dev",
+            root / "tools" / "check-persistence-fixture-immutability.sh",
+            root / "tools" / "check-python-flatbuffers-generated.sh",
+            root / "tools" / "check-searchkernel-protocol-generated.sh",
+            root / "tools" / "generate-python-flatbuffers.sh",
+            root / "tools" / "generate-searchkernel-protocol.sh",
+        ):
+            syntax = subprocess.run(
+                ["bash", "-n", str(shell_source)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+                text=True,
+            )
+            self.assertEqual(syntax.returncode, 0, f"{shell_source}: {syntax.stdout}")
         source = HOOK.read_text(encoding="utf-8")
         for needle in (
             'cargo fmt --all --check',
