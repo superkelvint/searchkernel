@@ -257,7 +257,9 @@ fn grouping_result_group(
                     .root_output_labels
                     .get(index)
                     .and_then(|label| label.clone())
-                    .unwrap_or_else(|| grouping_aggregation_name(aggregation));
+                    .ok_or_else(|| {
+                        internal("lowered grouping root output has no canonical result-field name")
+                    })?;
                 insert_unique_grouping_field(
                     &mut fields,
                     label,
@@ -294,7 +296,9 @@ fn grouping_result_group(
                     .output_labels
                     .get(index)
                     .and_then(|label| label.clone())
-                    .unwrap_or_else(|| grouping_aggregation_name(aggregation));
+                    .ok_or_else(|| {
+                        internal("lowered grouping output has no canonical result-field name")
+                    })?;
                 insert_unique_grouping_field(
                     &mut fields,
                     label,
@@ -359,31 +363,6 @@ fn grouping_result_group(
         limits: None,
         metadata: std::collections::BTreeMap::new(),
     })
-}
-
-fn grouping_aggregation_name(aggregation: &GroupingAggregation) -> String {
-    let expression_name = |expression: &GroupingExpression| match expression {
-        GroupingExpression::Attribute(field) => field.clone(),
-        GroupingExpression::AggregationReference(index) => format!("aggregation({index})"),
-        expression => format!("{expression:?}"),
-    };
-    match aggregation {
-        GroupingAggregation::Count => "count".to_owned(),
-        GroupingAggregation::Average(expression) => {
-            format!("average({})", expression_name(expression))
-        }
-        GroupingAggregation::Sum(expression) => format!("sum({})", expression_name(expression)),
-        GroupingAggregation::Min(expression) => format!("min({})", expression_name(expression)),
-        GroupingAggregation::Max(expression) => format!("max({})", expression_name(expression)),
-        GroupingAggregation::StandardDeviation(expression) => {
-            format!("stddev({})", expression_name(expression))
-        }
-        GroupingAggregation::Xor(expression) => format!("xor({})", expression_name(expression)),
-        GroupingAggregation::Quantiles { expression, .. } => {
-            format!("quantiles({})", expression_name(expression))
-        }
-        GroupingAggregation::Summary { .. } => "summary".to_owned(),
-    }
 }
 
 fn grouping_output_value(output: GroupingOutput) -> Result<searchkernel_ir::Value> {
@@ -933,6 +912,33 @@ mod implicit_output_name_regression_tests {
         assert_eq!(
             root_fields.get("sum(Literal(Int64(1)))"),
             Some(&searchkernel_ir::Value::Int64(2))
+        );
+    }
+
+    #[test]
+    fn missing_canonical_grouping_output_name_fails_closed() {
+        let plan = GroupingPlan {
+            levels: Vec::new(),
+            group_all: false,
+            root_label: None,
+            root_aggregations: vec![GroupingAggregation::Count],
+            root_output_labels: vec![None],
+        };
+        let error = grouping_result_node(
+            GroupingResult {
+                key: None,
+                outputs: vec![GroupingOutput::Value(GroupingResultValue::Integer(1))],
+                groups: Vec::new(),
+            },
+            &plan,
+        )
+        .expect_err("visible lowered outputs must carry a canonical result-field name");
+
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Internal);
+        assert!(
+            error
+                .message
+                .contains("no canonical result-field name")
         );
     }
 
