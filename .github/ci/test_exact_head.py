@@ -275,7 +275,7 @@ class ExactHeadTests(unittest.TestCase):
                 logged = log.read_text(encoding="utf-8")
                 self.assertIn("cargo fmt --all --check", logged)
                 self.assertIn(
-                    "cargo clippy --workspace --all-targets --no-default-features -- -D warnings",
+                    "dev lint --profile rust-clippy-non-native",
                     logged,
                 )
                 self.assertIn(
@@ -1176,6 +1176,7 @@ class ExactHeadTests(unittest.TestCase):
                 cargo = repo / "fakebin" / "cargo"
                 cargo.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
                 cargo.chmod(0o755)
+                write_fake_dev(repo)
                 git(repo, "add", ".")
                 git(repo, "commit", "-q", "-m", "fixture")
 
@@ -1293,7 +1294,7 @@ class ExactHeadTests(unittest.TestCase):
         source = HOOK.read_text(encoding="utf-8")
         for needle in (
             'cargo fmt --all --check',
-            'cargo clippy --workspace --all-targets --no-default-features -- -D warnings',
+            './dev lint --profile rust-clippy-non-native',
             'cargo test --workspace --all-targets --no-default-features',
             './dev check-protocol',
             './dev verify api-conformance',
