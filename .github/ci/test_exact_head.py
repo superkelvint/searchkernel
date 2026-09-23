@@ -866,9 +866,17 @@ class ExactHeadTests(unittest.TestCase):
         self.assertEqual(task_ids, expected)
         for task in payload["tasks"]:
             self.assertTrue(
-                any("verification/task orchestration change" in reason for reason in task["reasons"]),
+                any(".moon/workspace.yml" in reason for reason in task["reasons"]),
                 task,
             )
+        self.assertTrue(
+            any(
+                "verification/task orchestration change" in reason
+                for task in payload["tasks"]
+                for reason in task["reasons"]
+            ),
+            payload,
+        )
 
     def test_classification_covers_precommit_verification_surfaces(self) -> None:
         cases = {
