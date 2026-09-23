@@ -17,28 +17,57 @@ if ! git diff --cached --quiet -- docs/capabilities.json; then
     git add docs/CAPABILITIES.md LIMITATIONS.md
 fi
 
-native_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-native.XXXXXX")
-trap 'rm -f -- "$native_selection"' EXIT
+native_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-selection.XXXXXX")
+untracked_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-untracked.XXXXXX")
+trap 'rm -f -- "$native_selection" "$untracked_selection"' EXIT
 git diff --cached --name-only --no-renames -z \
     | python3 .github/ci/exact_head.py classify --github-output "$native_selection" >/dev/null
 
+lane_required() {
+    local lane=$1
+    grep -qx "$lane=true" "$native_selection"
+}
+
 native_required=false
-if grep -qx 'native=true' "$native_selection"; then
-    native_required=true
+python_required=false
+typescript_required=false
+php_required=false
+protocol_required=false
+api_conformance_required=false
+verification_required=false
+
+lane_required native && native_required=true
+lane_required python && python_required=true
+lane_required typescript && typescript_required=true
+lane_required php && php_required=true
+lane_required protocol && protocol_required=true
+lane_required api_conformance && api_conformance_required=true
+lane_required verification && verification_required=true
+
+# Every verifier below runs against the working tree, while lane selection is
+# based on the staged tree. Refuse tracked unstaged changes for every commit so
+# an unstaged fix cannot make a broken staged snapshot look green.
+if ! git diff --quiet; then
+    echo "pre-commit: tracked unstaged changes exist" >&2
+    echo "pre-commit: stage or revert them so verification matches the commit" >&2
+    exit 1
+fi
+
+# Untracked source/tooling files can also affect working-tree builds without
+# being present in the commit. Reject only untracked paths that select at least
+# one behavioral lane; harmless scratch files remain allowed.
+git ls-files --others --exclude-standard -z \
+    | python3 .github/ci/exact_head.py classify --github-output "$untracked_selection" >/dev/null
+if grep -Eq '=true$' "$untracked_selection"; then
+    echo "pre-commit: behaviorally relevant untracked files exist" >&2
+    echo "pre-commit: add, remove, or ignore them so verification matches the commit" >&2
+    exit 1
 fi
 
 # The real Python gRPC E2E is part of native-sensitive verification. Keep it
 # on the same classifier boundary as the real-Vespa gate so non-native-only
 # Rust/Python changes do not unexpectedly require a Vespa SDK.
 python_native_e2e_required="$native_required"
-
-if [[ "$native_required" == true ]]; then
-    if ! git diff --quiet; then
-        echo "pre-commit: native/E2E-sensitive changes are staged, but tracked unstaged changes also exist" >&2
-        echo "pre-commit: stage or revert those tracked changes so verification matches the commit" >&2
-        exit 1
-    fi
-fi
 
 echo "pre-commit: checking rustfmt"
 cargo fmt --all --check
@@ -48,6 +77,36 @@ cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
 echo "pre-commit: running workspace unit tests"
 cargo test --workspace --all-targets --no-default-features
+
+if [[ "$verification_required" == true && "${SEARCHKERNEL_PRECOMMIT_SELFTEST:-0}" != "1" ]]; then
+    echo "pre-commit: verification tooling changed; running selector/hook regressions"
+    SEARCHKERNEL_PRECOMMIT_SELFTEST=1 python3 .github/ci/test_exact_head.py
+fi
+
+if [[ "$protocol_required" == true ]]; then
+    echo "pre-commit: protocol/generated-artifact changes detected; checking generated contracts"
+    ./dev check-protocol
+fi
+
+if [[ "$api_conformance_required" == true ]]; then
+    echo "pre-commit: API conformance changes detected; running conformance verifier"
+    ./dev verify api-conformance
+fi
+
+if [[ "$python_required" == true ]]; then
+    echo "pre-commit: Python-sensitive changes detected; running Python client tests"
+    ./dev test python
+fi
+
+if [[ "$typescript_required" == true ]]; then
+    echo "pre-commit: TypeScript-sensitive changes detected; running TypeScript client tests"
+    ./dev test typescript
+fi
+
+if [[ "$php_required" == true ]]; then
+    echo "pre-commit: PHP-sensitive changes detected; running PHP client tests"
+    ./dev test php
+fi
 
 if [[ "$native_required" == true ]]; then
     echo "pre-commit: native-sensitive changes detected; running local real-Vespa verification"

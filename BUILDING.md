@@ -116,13 +116,32 @@ native build tooling, or real-Vespa acceptance artifacts, run the applicable
 native verifier locally and include the exact command and result in the pull
 request. Do not interpret a green non-native CI run as native verification.
 
-The repository-managed pre-commit hook enforces this split. Staged native-sensitive
-changes run both the real-Vespa gate and the real Python gRPC E2E through
-`tools/run-python-native-e2e.sh`. That runner opts the native E2E test in explicitly
-and bootstraps the native SDK first. Non-native-only Rust or Python changes do not
-trigger native verification solely because their language lane is selected.
-Ordinary Python unittest discovery leaves the real gRPC E2E skipped, so GitHub CI
-does not acquire or build Vespa merely because Python behavioral tests are selected.
+The repository-managed pre-commit hook enforces this split with path-sensitive
+verification lanes. Every commit runs Rust formatting, Clippy, and non-native
+workspace tests. Staged Python, TypeScript, and PHP changes additionally run
+their client suites; canonical API changes select all affected first-party
+clients; protocol/schema changes verify checked-in FlatBuffers/gRPC
+artifacts for Rust, Python, and TypeScript; API-conformance changes run the
+conformance verifier; and hook/classifier changes run the selector regression
+suite.
+
+Staged native-sensitive changes run both the real-Vespa gate and the real Python
+gRPC E2E through `tools/run-python-native-e2e.sh`. Native-sensitive paths include
+the native adapter/bindings/engine/IR adapter plus native-only public facade code
+and the `searchkerneld` native entrypoint. The E2E runner opts the native test in
+explicitly and bootstraps the native SDK first. Non-native-only Rust or Python
+changes do not trigger native verification solely because their language lane is
+selected. Ordinary Python unittest discovery leaves the real gRPC E2E skipped,
+so GitHub CI does not acquire or build Vespa merely because Python behavioral
+tests are selected.
+
+Because lane selection is based on the staged snapshot while the verifiers run
+from the working tree, pre-commit rejects tracked unstaged changes. It also
+rejects untracked files that select a behavioral verification lane, since an
+untracked source or tooling file can influence a working-tree build without
+being present in the commit. Unrelated scratch files remain allowed. Stage,
+remove, ignore, or revert relevant edits before committing so working-tree-only
+state cannot make a broken staged commit appear green.
 
 
 ## Environment isolation
