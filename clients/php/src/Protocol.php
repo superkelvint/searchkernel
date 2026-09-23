@@ -298,7 +298,7 @@ final class Protocol
         }
 
         return match ($type) {
-            'FiniteRelevance' => self::finiteNumber(self::required($payload, 'value'), 'FiniteRelevance.value'),
+            'FiniteRelevance' => self::finiteScalarField($payload, 'value', 'FiniteRelevance.value', 0.0),
             'PositiveInfinityRelevance' => self::emptyMarker($payload, 'PositiveInfinityRelevance'),
             'NegativeInfinityRelevance' => -self::emptyMarker($payload, 'NegativeInfinityRelevance'),
             default => throw new ProtocolException('unsupported relevance kind: ' . $type),
@@ -474,6 +474,40 @@ final class Protocol
             throw new ProtocolException($label . ' must be a string');
         }
         return $value;
+    }
+
+    /** @param array<string,mixed> $node */
+    public static function boolScalarField(array $node, string $key, string $label, bool $default = false): bool
+    {
+        if (!array_key_exists($key, $node)) {
+            return $default;
+        }
+        if (!is_bool($node[$key])) {
+            throw new ProtocolException($label . ' must be a boolean');
+        }
+        return $node[$key];
+    }
+
+    /** @param array<string,mixed> $node */
+    public static function uint32ScalarField(array $node, string $key, string $label, int $default = 0): int
+    {
+        if (!array_key_exists($key, $node)) {
+            return $default;
+        }
+        $value = $node[$key];
+        if (!is_int($value) || $value < 0 || $value > 0xFFFF_FFFF) {
+            throw new ProtocolException($label . ' must be a uint32');
+        }
+        return $value;
+    }
+
+    /** @param array<string,mixed> $node */
+    public static function finiteScalarField(array $node, string $key, string $label, float $default = 0.0): float
+    {
+        if (!array_key_exists($key, $node)) {
+            return $default;
+        }
+        return self::finiteNumber($node[$key], $label);
     }
 
     /** @internal
