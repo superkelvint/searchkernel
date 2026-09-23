@@ -221,8 +221,8 @@ final class Protocol
         if ($entries === null) {
             return [];
         }
-        if (!is_array($entries)) {
-            throw new ProtocolException('portable value entries must be an array');
+        if (!is_array($entries) || !array_is_list($entries)) {
+            throw new ProtocolException('portable value entries must be a list');
         }
 
         $result = [];
@@ -287,8 +287,8 @@ final class Protocol
     private static function decodeValueList(array $payload): array
     {
         $values = $payload['values'] ?? [];
-        if (!is_array($values)) {
-            throw new ProtocolException('portable ValueList values must be an array');
+        if (!is_array($values) || !array_is_list($values)) {
+            throw new ProtocolException('portable ValueList values must be a list');
         }
         return array_map(
             static function (mixed $value): mixed {
