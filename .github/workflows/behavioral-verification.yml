@@ -18,6 +18,7 @@ jobs:
       rust: ${{ steps.changes.outputs.rust }}
       python: ${{ steps.changes.outputs.python }}
       typescript: ${{ steps.changes.outputs.typescript }}
+      ruby: ${{ steps.changes.outputs.ruby }}
       native: ${{ steps.changes.outputs.native }}
     steps:
       - name: Check out exact PR head
@@ -83,6 +84,9 @@ jobs:
           echo "EXACT_HEAD_TEST=$regression_dir/test_exact_head.py" >> "$GITHUB_ENV"
 
       - name: Verify exact-head CI regressions
+        env:
+          SEARCHKERNEL_VERIFICATION_DAG_MODULE: ${{ github.workspace }}/verification/dag.py
+          SEARCHKERNEL_VERIFICATION_DAG: ${{ github.workspace }}/verification/dag.toml
         run: $CI_PYTHON "$EXACT_HEAD_TEST"
 
       - name: Verify candidate verification DAG integrity and coverage
@@ -263,9 +267,39 @@ jobs:
       - name: Verify TypeScript package
         run: npm run test:package --prefix clients/typescript
 
+  ruby:
+    name: Ruby behavior
+    needs: classify
+    if: needs.classify.outputs.ruby == 'true'
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Reject stale verification checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            exit 1
+          fi
+          echo "Verified exact PR head $actual."
+
+      - name: Verify Ruby runtime
+        run: ruby --version
+
+      - name: Run Ruby behavioral tests
+        run: ./dev test ruby
+
   exact-head-gate:
     name: Exact-head gate
-    needs: [classify, rust, python, typescript]
+    needs: [classify, rust, python, typescript, ruby]
     if: always()
     runs-on: [self-hosted, linux, x64]
     steps:
@@ -279,6 +313,8 @@ jobs:
           PYTHON_RESULT: ${{ needs.python.result }}
           TYPESCRIPT_REQUIRED: ${{ needs.classify.outputs.typescript }}
           TYPESCRIPT_RESULT: ${{ needs.typescript.result }}
+          RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}
+          RUBY_RESULT: ${{ needs.ruby.result }}
           NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}
         run: |
           set -euo pipefail
@@ -301,6 +337,7 @@ jobs:
           require_lane Rust "$RUST_REQUIRED" "$RUST_RESULT"
           require_lane Python "$PYTHON_REQUIRED" "$PYTHON_RESULT"
           require_lane TypeScript "$TYPESCRIPT_REQUIRED" "$TYPESCRIPT_RESULT"
+          require_lane Ruby "$RUBY_REQUIRED" "$RUBY_RESULT"
 
           if [[ "$NATIVE_SENSITIVE" == "true" ]]; then
             echo "::notice title=Native verification is local::Native-sensitive paths changed. CI intentionally does not bootstrap Vespa or run the real-engine gate; local native verification evidence is required by AGENTS.md."
