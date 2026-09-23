@@ -33,7 +33,21 @@ Semantic verifier targets:
   product.integration
 
 Milestone aggregate targets:
-  milestone.m0 ... milestone.m14
+  milestone.m0
+  milestone.m1
+  milestone.m2
+  milestone.m3
+  milestone.m4
+  milestone.m5
+  milestone.m6
+  milestone.m7
+  milestone.m8
+  milestone.m9
+  milestone.m10
+  milestone.m11
+  milestone.m12
+  milestone.m13
+  milestone.m14
 
 Legacy aliases retained during migration:
   m0 ... m14
