@@ -37,6 +37,7 @@ verification, generation, and acceptance lanes:
 ```text
 ./dev doctor
 ./dev check-fast
+./dev lint --profile rust-clippy-non-native
 ./dev test ir
 ./dev test rust-api
 ./dev test python
@@ -396,7 +397,7 @@ run the full workspace checks:
 
 ```text
 cargo fmt --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+./dev lint --profile rust-clippy-all-features
 cargo test --workspace --all-targets --all-features
 ```
 
@@ -404,11 +405,18 @@ Use the no-default-features lane when intentionally verifying Rust/FlatBuffers
 without the optional Vespa SDK:
 
 ```text
-cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+./dev lint --profile rust-clippy-non-native
 cargo test --workspace --all-targets --no-default-features
 ```
 
 There must be zero compiler and Clippy warnings.
+
+The canonical workspace lint profiles are owned by `./dev lint`. In CI, the
+runner also writes a repair packet containing the complete rendered diagnostics,
+machine-readable Cargo/Clippy messages, the failure classification, and the exact
+reproduction command. A `BUILD_OR_COMPILE_FAILURE` packet means no Clippy lint
+was observed before the build failed; run `./dev doctor` before changing
+product code.
 
 ## Native build verification
 
