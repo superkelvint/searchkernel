@@ -14,6 +14,7 @@ LANES = (
     "rust",
     "python",
     "typescript",
+    "php",
     "native",
     "protocol",
     "api_conformance",
@@ -48,6 +49,12 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
         "tools/check-client-contracts.py",
         "tools/test_check_client_contracts.py",
         "tools/generate-typescript-*.sh",
+    ),
+    "php": (
+        "clients/php/**",
+        "reference/client-contracts/**",
+        "tools/check-client-contracts.py",
+        "tools/test_check_client_contracts.py",
     ),
     "native": (
         ".githooks/pre-commit",
