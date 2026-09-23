@@ -81,7 +81,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" -- \
+          git diff --name-only --no-renames -z "$BASE_SHA" "$HEAD_SHA" -- \
             | "$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
 
   rust:

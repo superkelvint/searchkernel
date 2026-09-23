@@ -510,6 +510,67 @@ Recommended inventory-level placement before optimization:
 - **Excluded until activated:** F0-F12 frontend milestone acceptance because the
   repository explicitly marks the initial verifiers NOT_IMPLEMENTED.
 
+## Fail-closed selection policy
+
+Phase 2 makes the trusted selector conservative before the moon task graph is
+introduced.
+
+The policy uses these rules:
+
+- known lane patterns select their existing verification families;
+- portable FlatBuffer schema changes fan out to Rust, all current language
+  clients, native behavior, generated-protocol checks, API conformance,
+  contracts, and persistence because the canonical schema can affect stored and
+  executable semantics;
+- RPC/protocol-tooling changes fan out across Rust/Python/TypeScript protocol
+  and contract checks without automatically implying persistence/native
+  semantics;
+- shared client-contract changes fan out to all client lanes plus contracts;
+- generated wire/RPC artifacts fan out across Rust/Python/TypeScript protocol
+  and contract checks so one generated surface cannot drift independently;
+- native behavior changes fan out to Rust, native, persistence, and contracts;
+- ABI-sensitive native/tooling changes additionally select ABI verification;
+- persistence/storage changes select Rust, native, and persistence;
+- root Cargo/toolchain metadata selects every current lane because it can alter
+  workspace membership, features, native linkage, or code generation;
+- verification/task-control changes under `.githooks/**`, `.github/ci/**`,
+  `.github/workflows/**`, `.moon/**`, root moon configuration, or `dev`
+  select every current lane;
+- any path not recognized by a lane and not explicitly exempted selects every
+  current lane.
+
+The explicit non-behavioral exemptions are deliberately narrow: repository and
+nested README/AGENTS documentation, Markdown/text files under `docs/**`,
+Markdown under `implementation-plan/**` and `audits/**`, license/notice and
+ignore files. Common local scratch suffixes such as `.tmp`, `.log`, and
+`.swp` are exempted only by pre-commit's **untracked-file** check; once tracked,
+they fail closed like any other unknown file. Behavioral ledgers/configuration
+already mapped by a known lane (for example `docs/capabilities.json`) still
+select that lane. Unknown non-document files under documentation directories
+fail closed.
+
+CI continues to execute the classifier copied from the trusted PR base revision.
+The authoritative diff is produced with rename detection disabled:
+
+```text
+git diff --name-only --no-renames -z <base> <head>
+```
+
+so a rename/move is represented as deletion of the old path plus addition of
+the new path. This preserves both semantic areas during classification. Local
+pre-commit already uses `--no-renames` for the staged diff.
+
+The trusted selector also exposes a deterministic `plan` command whose output
+contains stable task IDs plus selection reasons. These IDs are the authority
+boundary that Phase 3 will bind to moon tasks; candidate moon configuration is
+not read while calculating the required set. A candidate change to moon/task
+configuration itself selects the conservative full current task set.
+
+A policy change cannot use the candidate policy to reduce its own required
+verification. The base classifier remains authoritative, while candidate policy
+self-tests are additive evidence. Once a policy revision lands on `main`, its
+elevated/fail-closed rules become authoritative for later pull requests.
+
 ## Implementation roadmap
 
 This checklist is the operational roadmap for this CI work. Update it as work is
@@ -543,18 +604,18 @@ generic orchestration and build/test acceleration they already solve.
 This remains SearchKernel-owned. Do not delegate verification sufficiency to
 moonrepo or candidate-controlled task configuration.
 
-- [ ] Define the explicit set of non-behavioral paths that may safely select no behavioral tests.
-- [ ] Make unknown source/build/tooling/behavioral paths select a conservative/full task set.
-- [ ] Add semantic fan-out rules for schema/protocol/client changes.
-- [ ] Add semantic fan-out rules for ABI/native changes.
-- [ ] Add semantic fan-out rules for persistence/storage changes.
-- [ ] Add semantic fan-out rules for dependency/build-system/generated-artifact changes.
-- [ ] Ensure renames/moves account for both old and new semantic areas.
-- [ ] Make verification-policy/orchestration changes automatically select elevated verification.
-- [ ] Add adversarial classifier tests for new, unknown, renamed, and moved paths.
-- [ ] Verify the authoritative CI selector continues to come from the trusted base revision.
-- [ ] Make the trusted plan output stable task IDs plus human-readable selection reasons.
-- [ ] Ensure candidate moon/task configuration cannot reduce the trusted task set required for that candidate.
+- [x] Define the explicit set of non-behavioral paths that may safely select no behavioral tests.
+- [x] Make unknown source/build/tooling/behavioral paths select a conservative/full task set.
+- [x] Add semantic fan-out rules for schema/protocol/client changes.
+- [x] Add semantic fan-out rules for ABI/native changes.
+- [x] Add semantic fan-out rules for persistence/storage changes.
+- [x] Add semantic fan-out rules for dependency/build-system/generated-artifact changes.
+- [x] Ensure renames/moves account for both old and new semantic areas.
+- [x] Make verification-policy/orchestration changes automatically select elevated verification.
+- [x] Add adversarial classifier tests for new, unknown, renamed, and moved paths.
+- [x] Verify the authoritative CI selector continues to come from the trusted base revision.
+- [x] Make the trusted plan output stable task IDs plus human-readable selection reasons.
+- [x] Ensure candidate moon/task configuration cannot reduce the trusted task set required for that candidate.
 
 ### Phase 3: adopt the commodity execution platform
 

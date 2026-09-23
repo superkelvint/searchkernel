@@ -65,7 +65,7 @@ fi
 # being present in the commit. Reject only untracked paths that select at least
 # one behavioral lane; harmless scratch files remain allowed.
 git ls-files --others --exclude-standard -z \
-    | python3 .github/ci/exact_head.py classify --github-output "$untracked_selection" >/dev/null
+    | python3 .github/ci/exact_head.py classify --allow-local-scratch --github-output "$untracked_selection" >/dev/null
 if grep -Eq '=true$' "$untracked_selection"; then
     echo "pre-commit: behaviorally relevant untracked files exist" >&2
     echo "pre-commit: add, remove, or ignore them so verification matches the commit" >&2

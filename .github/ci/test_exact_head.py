@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -40,6 +41,19 @@ def write_fake_dev(repo: Path) -> None:
         encoding="utf-8",
     )
     dev.chmod(0o755)
+
+
+def classify_lines(*paths: str) -> set[str]:
+    with tempfile.NamedTemporaryFile() as output_file:
+        result = run(
+            "classify",
+            "--github-output",
+            output_file.name,
+            input_bytes=b"\0".join(path.encode() for path in paths) + b"\0",
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stdout.decode())
+        return set(Path(output_file.name).read_text(encoding="utf-8").splitlines())
 
 
 class ExactHeadTests(unittest.TestCase):
@@ -406,6 +420,7 @@ class ExactHeadTests(unittest.TestCase):
         env = os.environ.copy()
         env["HOOK_LOG"] = str(log)
         env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
         result = subprocess.run(
             ["bash", str(repo / ".githooks" / "pre-commit")],
             cwd=repo,
@@ -545,23 +560,23 @@ class ExactHeadTests(unittest.TestCase):
             },
             b"core/native/vespa/abi.cc\0": {
                 "rust=true", "python=false", "typescript=false", "php=false", "native=true",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=true",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=true",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
             b"api/searchkernel.fbs\0": {
-                "rust=true", "python=true", "typescript=true", "php=true", "native=false",
-                "protocol=true", "api_conformance=false", "contracts=false", "abi=false",
+                "rust=true", "python=true", "typescript=true", "php=true", "native=true",
+                "protocol=true", "api_conformance=true", "contracts=true", "abi=false",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
             b"api/rpc/searchkernel.proto\0": {
                 "rust=true", "python=true", "typescript=true", "php=true", "native=false",
-                "protocol=true", "api_conformance=false", "contracts=false", "abi=false",
+                "protocol=true", "api_conformance=false", "contracts=true", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"tools/copy-shared-library-into-sdk.sh\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=true",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=true",
-                "persistence=false", "issue_queue=false", "verification=false",
+                "rust=true", "python=false", "typescript=false", "php=false", "native=true",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=true",
+                "persistence=true", "issue_queue=false", "verification=false",
             },
             b"reference/api-conformance/golden/example.json\0": {
                 "rust=false", "python=false", "typescript=false", "php=false", "native=false",
@@ -569,9 +584,9 @@ class ExactHeadTests(unittest.TestCase):
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"tools/check-native-abi-authorities.py\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=true",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=true",
-                "persistence=false", "issue_queue=false", "verification=false",
+                "rust=true", "python=false", "typescript=false", "php=false", "native=true",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=true",
+                "persistence=true", "issue_queue=false", "verification=false",
             },
             b"docs/architecture.md\0": {
                 "rust=false", "python=false", "typescript=false", "php=false", "native=false",
@@ -579,9 +594,9 @@ class ExactHeadTests(unittest.TestCase):
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b".githooks/pre-commit\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=false",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
-                "persistence=false", "issue_queue=false", "verification=true",
+                "rust=true", "python=true", "typescript=true", "php=true", "native=true",
+                "protocol=true", "api_conformance=true", "contracts=true", "abi=true",
+                "persistence=true", "issue_queue=true", "verification=true",
             },
         }
         for changed, expected in cases.items():
@@ -602,13 +617,296 @@ class ExactHeadTests(unittest.TestCase):
                     self.assertEqual(lines, expected)
 
 
+    def test_unknown_behavioral_paths_fail_closed_to_all_current_lanes(self) -> None:
+        lines = classify_lines("new-runtime/src/engine.rs")
+        self.assertTrue(lines)
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_new_core_crate_fails_closed_even_though_broad_rust_pattern_matches(self) -> None:
+        lines = classify_lines("core/crates/searchkernel-new/src/lib.rs")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_new_client_family_fails_closed_even_though_contract_pattern_matches(self) -> None:
+        lines = classify_lines("clients/ruby/lib/searchkernel.rb")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_unknown_path_trusted_plan_contains_full_active_inventory(self) -> None:
+        result = run(
+            "plan",
+            "--json",
+            input_bytes=b"searchkernel-web/src/new-runtime.ts\0",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout.decode())
+        payload = json.loads(result.stdout.decode())
+        task_ids = {task["id"] for task in payload["tasks"]}
+        for task_id in (
+            "web-dashboard",
+            "vespa-m14",
+            "recovery",
+            "phase9",
+            "c2-historical",
+            "verification-policy",
+            "frontend-harness-selftest",
+            "frontend-verifier-integrity",
+        ):
+            self.assertIn(task_id, task_ids)
+
+    def test_new_api_contract_family_fails_closed(self) -> None:
+        lines = classify_lines("api/new_contract.schema")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_new_vespa_milestone_fails_closed(self) -> None:
+        lines = classify_lines("reference/vespa/m15/verify-m15.sh")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_explicit_non_behavioral_paths_do_not_select_behavioral_lanes(self) -> None:
+        for path in (
+            "docs/architecture.md",
+            "nested/README.md",
+            "core/README.md",
+            "core/native/README.md",
+        ):
+            with self.subTest(path=path):
+                lines = classify_lines(path)
+                self.assertTrue(lines)
+                self.assertFalse(
+                    [line for line in lines if line.endswith("=true")],
+                    lines,
+                )
+
+    def test_tracked_scratch_like_file_fails_closed(self) -> None:
+        lines = classify_lines("notes.tmp")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_behavioral_documentation_overrides_non_behavioral_exemption(self) -> None:
+        lines = classify_lines("docs/CAPABILITIES.md")
+        self.assertIn("contracts=true", lines)
+        self.assertTrue(
+            any(line.endswith("=true") for line in lines),
+            lines,
+        )
+
+    def test_non_markdown_file_under_docs_still_fails_closed_when_unclassified(self) -> None:
+        lines = classify_lines("docs/new-runtime-policy.json")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_schema_changes_fan_out_across_protocol_clients_contracts_and_persistence(self) -> None:
+        lines = classify_lines("api/searchkernel.fbs")
+        for lane in (
+            "rust",
+            "python",
+            "typescript",
+            "php",
+            "native",
+            "protocol",
+            "api_conformance",
+            "contracts",
+            "persistence",
+        ):
+            self.assertIn(f"{lane}=true", lines)
+
+    def test_generated_artifact_changes_fan_out_to_cross_language_protocol_checks(self) -> None:
+        lines = classify_lines("clients/python/searchkernel/_wire_generated/SearchKernel/V2/Foo.py")
+        for lane in ("rust", "python", "typescript", "protocol", "contracts"):
+            self.assertIn(f"{lane}=true", lines)
+
+    def test_native_and_abi_changes_fan_out_to_persistence_and_contracts(self) -> None:
+        lines = classify_lines("core/native/vespa/abi.cc")
+        for lane in ("rust", "native", "abi", "persistence", "contracts"):
+            self.assertIn(f"{lane}=true", lines)
+
+    def test_persistence_storage_changes_select_native_persistence(self) -> None:
+        lines = classify_lines("reference/persistence/fixtures/example/METADATA.json")
+        for lane in ("rust", "native", "persistence"):
+            self.assertIn(f"{lane}=true", lines)
+
+    def test_root_build_metadata_selects_all_current_lanes(self) -> None:
+        lines = classify_lines("Cargo.lock")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_verification_orchestration_changes_select_all_current_lanes(self) -> None:
+        lines = classify_lines(".github/workflows/behavioral-verification.yml")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_ci_diff_disables_rename_detection_so_old_and_new_paths_are_classified(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            'git diff --name-only --no-renames -z "$BASE_SHA" "$HEAD_SHA" -- \\',
+            workflow,
+        )
+
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+
+        source = repo / "clients" / "python" / "searchkernel" / "moved.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("old\n", encoding="utf-8")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "base")
+        base = git(repo, "rev-parse", "HEAD")
+
+        destination = repo / "clients" / "typescript" / "src" / "moved.ts"
+        destination.parent.mkdir(parents=True)
+        source.rename(destination)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "move")
+        head = git(repo, "rev-parse", "HEAD")
+
+        changed = subprocess.check_output(
+            ["git", "diff", "--name-only", "--no-renames", "-z", base, head, "--"],
+            cwd=repo,
+        )
+        result = run("classify", input_bytes=changed)
+        self.assertEqual(result.returncode, 0, result.stdout.decode())
+        output = result.stdout.decode()
+        self.assertIn("python: required", output)
+        self.assertIn("typescript: required", output)
+
+    def test_trusted_plan_emits_stable_task_ids_with_reasons(self) -> None:
+        result = run(
+            "plan",
+            "--json",
+            input_bytes=b"core/native/vespa/abi.cc\0",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout.decode())
+        payload = json.loads(result.stdout.decode())
+        tasks = payload["tasks"]
+        self.assertEqual(
+            [task["id"] for task in tasks],
+            [
+                "rust-non-native",
+                "rust-quality",
+                "vespa-m14",
+                "vespa-integration",
+                "phase10-rust-e2e",
+                "m13-grouping-yql",
+                "recovery",
+                "phase9",
+                "native-python-e2e",
+                "client-contracts",
+                "c2-historical",
+                "abi",
+                "persistence-static",
+                "persistence-native",
+            ],
+        )
+        for task in tasks:
+            self.assertTrue(task["reasons"], task)
+            self.assertTrue(
+                any("core/native/vespa/abi.cc" in reason for reason in task["reasons"]),
+                task,
+            )
+
+    def test_trusted_plan_is_deterministic_across_input_order_and_duplicates(self) -> None:
+        forward = run(
+            "plan",
+            "--json",
+            input_bytes=(
+                b"core/native/vespa/abi.cc\0"
+                b"api/searchkernel.fbs\0"
+                b"core/native/vespa/abi.cc\0"
+            ),
+        )
+        reverse = run(
+            "plan",
+            "--json",
+            input_bytes=(
+                b"api/searchkernel.fbs\0"
+                b"core/native/vespa/abi.cc\0"
+            ),
+        )
+        self.assertEqual(forward.returncode, 0, forward.stdout.decode())
+        self.assertEqual(reverse.returncode, 0, reverse.stdout.decode())
+        self.assertEqual(forward.stdout, reverse.stdout)
+
+    def test_candidate_moon_configuration_cannot_reduce_trusted_task_set(self) -> None:
+        result = run(
+            "plan",
+            "--json",
+            input_bytes=b".moon/workspace.yml\0",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout.decode())
+        payload = json.loads(result.stdout.decode())
+        task_ids = {task["id"] for task in payload["tasks"]}
+        expected = {
+            "rust-non-native",
+            "rust-quality",
+            "python-client",
+            "typescript-client",
+            "php-client",
+            "vespa-m14",
+            "vespa-integration",
+            "phase10-rust-e2e",
+            "m13-grouping-yql",
+            "recovery",
+            "phase9",
+            "native-python-e2e",
+            "protocol-generated",
+            "api-conformance",
+            "client-contracts",
+            "c2-historical",
+            "abi",
+            "persistence-static",
+            "persistence-native",
+            "issue-queue",
+            "verification-policy",
+            "web-dashboard",
+            "frontend-harness-selftest",
+            "frontend-verifier-integrity",
+        }
+        self.assertEqual(task_ids, expected)
+        for task in payload["tasks"]:
+            self.assertTrue(
+                any(".moon/workspace.yml" in reason for reason in task["reasons"]),
+                task,
+            )
+        self.assertTrue(
+            any(
+                "verification/task orchestration change" in reason
+                for task in payload["tasks"]
+                for reason in task["reasons"]
+            ),
+            payload,
+        )
+
     def test_classification_covers_precommit_verification_surfaces(self) -> None:
         cases = {
             b"searchkerneld/src/main.rs\0": {"native=true"},
             b"core/crates/searchkernel/src/index/native.rs\0": {"native=true"},
             b"core/crates/searchkernel/src/index/manifest.rs\0": {"native=true"},
             b"core/crates/searchkernel/src/portable_definition.rs\0": {"native=true"},
-            b"api/rpc/searchkernel.proto\0": {"protocol=true", "persistence=false"},
+            b"api/rpc/searchkernel.proto\0": {"protocol=true", "persistence=false", "contracts=true"},
             b"tools/copy-shared-library-into-sdk.sh\0": {"native=true", "abi=true"},
             b"api/searchkernel.fbs\0": {"protocol=true"},
             b"reference/api-conformance/golden/example.json\0": {"api_conformance=true"},
@@ -645,7 +943,13 @@ class ExactHeadTests(unittest.TestCase):
             ),
             (
                 "api/rpc/searchkernel.proto",
-                ("dev check-protocol", "dev test python", "dev test typescript", "dev test php"),
+                (
+                    "dev check-protocol",
+                    "dev verify contracts",
+                    "dev test python",
+                    "dev test typescript",
+                    "dev test php",
+                ),
                 ("dev verify persistence", "native i", "python-native-e2e"),
             ),
             (
