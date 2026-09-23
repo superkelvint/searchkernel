@@ -28,13 +28,61 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+download_artifact() {
+    local url=$1
+    local destination=$2
+    local token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
+    local prefix='https://github.com/superkelvint/searchkernel/releases/download/'
+    local remainder tag asset release_json asset_url
+
+    if [[ -n "$token" && "$url" == "$prefix"* ]]; then
+        remainder=${url#"$prefix"}
+        tag=${remainder%%/*}
+        asset=${remainder#*/}
+        [[ -n "$tag" && -n "$asset" && "$asset" != "$remainder" ]] || return 1
+
+        release_json=$TMP/release.json
+        curl -fsSL \
+            -H "Authorization: Bearer $token" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/superkelvint/searchkernel/releases/tags/$tag" \
+            -o "$release_json" || return 1
+
+        asset_url=$(python3 - "$release_json" "$asset" <<'PY'
+import json
+import sys
+
+path, wanted = sys.argv[1:]
+with open(path, encoding="utf-8") as stream:
+    release = json.load(stream)
+for candidate in release.get("assets", []):
+    if candidate.get("name") == wanted:
+        print(candidate["url"])
+        break
+else:
+    raise SystemExit(f"release asset not found: {wanted}")
+PY
+        ) || return 1
+
+        curl -fsSL \
+            -H "Authorization: Bearer $token" \
+            -H "Accept: application/octet-stream" \
+            "$asset_url" \
+            -o "$destination"
+        return
+    fi
+
+    curl -fsSL "$url" -o "$destination"
+}
+
 ARCHIVE=$TMP/base.tar.gz
 CHECKSUM=$TMP/base.tar.gz.sha256
-if ! curl -fsSL "$ARTIFACT_URL" -o "$ARCHIVE"; then
+if ! download_artifact "$ARTIFACT_URL" "$ARCHIVE"; then
     echo "published Vespa base is unavailable: $ARTIFACT_URL" >&2
     exit 10
 fi
-if ! curl -fsSL "$ARTIFACT_URL.sha256" -o "$CHECKSUM"; then
+if ! download_artifact "$ARTIFACT_URL.sha256" "$CHECKSUM"; then
     echo "published Vespa base checksum is unavailable: $ARTIFACT_URL.sha256" >&2
     exit 1
 fi
