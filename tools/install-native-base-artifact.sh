@@ -30,11 +30,29 @@ trap cleanup EXIT INT TERM
 
 ARCHIVE=$TMP/base.tar.gz
 CHECKSUM=$TMP/base.tar.gz.sha256
-if ! curl -fsSL "$ARTIFACT_URL" -o "$ARCHIVE"; then
+
+curl_download() {
+    local url=$1
+    local output=$2
+    local token=${GITHUB_TOKEN:-${GH_TOKEN:-}}
+    local -a args=(-fsSL)
+
+    case "$url" in
+        https://github.com/*/releases/download/*)
+            if [[ -n "$token" ]]; then
+                args+=(-H "Authorization: Bearer $token")
+            fi
+            ;;
+    esac
+
+    curl "${args[@]}" "$url" -o "$output"
+}
+
+if ! curl_download "$ARTIFACT_URL" "$ARCHIVE"; then
     echo "published Vespa base is unavailable: $ARTIFACT_URL" >&2
     exit 10
 fi
-if ! curl -fsSL "$ARTIFACT_URL.sha256" -o "$CHECKSUM"; then
+if ! curl_download "$ARTIFACT_URL.sha256" "$CHECKSUM"; then
     echo "published Vespa base checksum is unavailable: $ARTIFACT_URL.sha256" >&2
     exit 1
 fi
@@ -66,7 +84,39 @@ with tarfile.open(archive, "r:gz") as stream:
         path = pathlib.PurePosixPath(member.name)
         if path.is_absolute() or ".." in path.parts:
             raise SystemExit(f"unsafe published Vespa base path: {member.name}")
-        if member.issym() or member.islnk() or member.isdev():
+        if member.issym():
+            target = pathlib.PurePosixPath(member.linkname)
+            if target.is_absolute():
+                raise SystemExit(f"unsafe published Vespa base symlink: {member.name} -> {member.linkname}")
+            parts = []
+            for part in (path.parent / target).parts:
+                if part in ("", "."):
+                    continue
+                if part == "..":
+                    if not parts:
+                        raise SystemExit(f"unsafe published Vespa base symlink: {member.name} -> {member.linkname}")
+                    parts.pop()
+                else:
+                    parts.append(part)
+            if not parts or parts[0] != "searchkernel-vespa-base":
+                raise SystemExit(f"unsafe published Vespa base symlink: {member.name} -> {member.linkname}")
+        elif member.islnk():
+            target = pathlib.PurePosixPath(member.linkname)
+            if target.is_absolute():
+                raise SystemExit(f"unsafe published Vespa base hardlink: {member.name} -> {member.linkname}")
+            parts = []
+            for part in target.parts:
+                if part in ("", "."):
+                    continue
+                if part == "..":
+                    if not parts:
+                        raise SystemExit(f"unsafe published Vespa base hardlink: {member.name} -> {member.linkname}")
+                    parts.pop()
+                else:
+                    parts.append(part)
+            if not parts or parts[0] != "searchkernel-vespa-base":
+                raise SystemExit(f"unsafe published Vespa base hardlink: {member.name} -> {member.linkname}")
+        elif member.isdev():
             raise SystemExit(f"unsupported published Vespa base entry: {member.name}")
     stream.extractall(destination, members=members)
 PY

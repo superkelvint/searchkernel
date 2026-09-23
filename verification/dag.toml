@@ -676,7 +676,7 @@ requires = [
 [[subsystem]]
 id = "searchkernel-protocol"
 paths = ["core/crates/searchkernel-protocol/**"]
-requires = ["rust-non-native", "protocol-generated", "api-conformance"]
+requires = ["rust-non-native", "protocol-generated", "api-conformance", "php-client"]
 
 [[subsystem]]
 id = "searchkernel-testkit"
