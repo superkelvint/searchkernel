@@ -38,10 +38,15 @@ final class SearchKernelException extends RuntimeException
     {
         $code = $payload['code'] ?? null;
         $message = $payload['message'] ?? null;
-        $retryable = $payload['retryable'] ?? null;
+        $retryable = Protocol::boolScalarField(
+            $payload,
+            'retryable',
+            'Error.retryable',
+            false,
+        );
         $details = Protocol::listField($payload, 'details', 'Error.details');
 
-        if (!is_string($code) || !is_string($message) || !is_bool($retryable)) {
+        if (!is_string($code) || !is_string($message)) {
             throw new ProtocolException('malformed canonical Search Kernel Error payload');
         }
         if (!in_array($code, self::ERROR_CODES, true)) {
