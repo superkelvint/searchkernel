@@ -274,8 +274,7 @@ NATIVE_BEHAVIOR_PATTERNS: tuple[str, ...] = (
     "core/crates/searchkernel/src/index/native.rs",
     "core/crates/searchkernel/src/index/manifest.rs",
     "core/crates/searchkernel/src/portable_definition.rs",
-    "searchkerneld/Cargo.toml",
-    "searchkerneld/src/main.rs",
+    "searchkerneld/**",
     "reference/vespa/**",
     "tools/check-vespa-bindings.sh",
     "tools/check-native-*.sh",
@@ -319,6 +318,25 @@ BUILD_SYSTEM_PATTERNS: tuple[str, ...] = (
     "Cargo.lock",
     ".cargo/**",
     "rust-toolchain*",
+)
+
+KNOWN_CORE_PATTERNS: tuple[str, ...] = (
+    "core/native/**",
+    "core/crates/searchkernel-dispatch/**",
+    "core/crates/searchkernel-filter/**",
+    "core/crates/searchkernel-ir/**",
+    "core/crates/searchkernel-ir-adapter/**",
+    "core/crates/searchkernel-protocol/**",
+    "core/crates/searchkernel-testkit/**",
+    "core/crates/searchkernel-vespa-bindings/**",
+    "core/crates/searchkernel-vespa-engine/**",
+    "core/crates/searchkernel/**",
+)
+
+KNOWN_CLIENT_PATTERNS: tuple[str, ...] = (
+    "clients/python/**",
+    "clients/typescript/**",
+    "clients/php/**",
 )
 
 # Stable task IDs are the trusted plan vocabulary. Phase 3 will bind these IDs
@@ -390,6 +408,17 @@ def _matches(path: str, patterns: Iterable[str]) -> bool:
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
 
 
+def _is_known_behavioral_path(path: str) -> bool:
+    # Broad compatibility patterns such as core/** and clients/** are useful
+    # lane selectors but must not make a newly introduced architecture area
+    # look known to an older trusted-base policy.
+    if path.startswith("core/"):
+        return _matches(path, KNOWN_CORE_PATTERNS)
+    if path.startswith("clients/"):
+        return _matches(path, KNOWN_CLIENT_PATTERNS)
+    return any(_matches(path, LANE_PATTERNS[lane]) for lane in LANES)
+
+
 def classify(paths: Iterable[str]) -> dict[str, bool]:
     normalized = [path.strip().replace("\\", "/") for path in paths if path.strip()]
     selected = {
@@ -444,9 +473,9 @@ def classify(paths: Iterable[str]) -> dict[str, bool]:
         if _matches(path, PERSISTENCE_STORAGE_PATTERNS):
             _require(selected, "rust", "native", "persistence")
 
-        matched_known_lane = any(_matches(path, LANE_PATTERNS[lane]) for lane in LANES)
+        known_behavioral_path = _is_known_behavioral_path(path)
         explicitly_non_behavioral = _matches(path, NON_BEHAVIORAL_PATTERNS)
-        if not matched_known_lane and not explicitly_non_behavioral:
+        if not known_behavioral_path and not explicitly_non_behavioral:
             # Fail closed for new source/build/tooling paths that the trusted
             # base policy does not know yet. A future policy revision can
             # classify the path more narrowly after this candidate lands.
@@ -504,9 +533,9 @@ def _selection_reasons(path: str, lane: str) -> list[str]:
     if lane in persistence_lanes and _matches(path, PERSISTENCE_STORAGE_PATTERNS):
         reasons.append(f"{path}: persistence/storage fan-out")
 
-    matched_known_lane = any(_matches(path, LANE_PATTERNS[item]) for item in LANES)
+    known_behavioral_path = _is_known_behavioral_path(path)
     explicitly_non_behavioral = _matches(path, NON_BEHAVIORAL_PATTERNS)
-    if not matched_known_lane and not explicitly_non_behavioral:
+    if not known_behavioral_path and not explicitly_non_behavioral:
         reasons.append(f"{path}: unclassified behavioral path, fail closed")
 
     return reasons
