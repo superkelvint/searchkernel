@@ -12,6 +12,8 @@ class SearchBuilder
     private array $filters = [];
     /** @var list<array<string,mixed>> */
     private array $sorts = [];
+    /** @var list<array<string,mixed>> */
+    private array $searchFields = [];
     /** @var list<Group> */
     private array $groups = [];
     /** @var list<array{field:string,name:string,limit:int,sort:string}> */
@@ -40,6 +42,39 @@ class SearchBuilder
         private readonly Index $index,
         private readonly array $query,
     ) {}
+
+    public function searchField(string $field, ?float $weight = null): self
+    {
+        if ($field === '') {
+            throw new InvalidArgumentException('search field must not be empty');
+        }
+        foreach ($this->searchFields as $existing) {
+            if (($existing['field'] ?? null) === $field) {
+                throw new InvalidArgumentException('duplicate search field: ' . $field);
+            }
+        }
+
+        $entry = ['field' => $field];
+        if ($weight !== null) {
+            if (!is_finite($weight)) {
+                throw new InvalidArgumentException('search field weight must be finite');
+            }
+            $entry['weight'] = ['value' => $weight];
+        }
+
+        $copy = clone $this;
+        $copy->searchFields[] = $entry;
+        return $copy;
+    }
+
+    public function searchFields(string ...$fields): self
+    {
+        $copy = $this;
+        foreach ($fields as $field) {
+            $copy = $copy->searchField($field);
+        }
+        return $copy;
+    }
 
     /** @param array<string,mixed> $bindings */
     public function filter(string $source, array $bindings = []): self
@@ -265,9 +300,19 @@ class SearchBuilder
     }
 
     /** @return array<string,mixed> */
+    public function inspect(): array
+    {
+        return $this->index->inspectSearchRequest($this->request());
+    }
+
+    /** @return array<string,mixed> */
     public function request(): array
     {
         $request = ['query' => $this->query];
+
+        if ($this->searchFields !== []) {
+            $request['search_fields'] = ['fields' => $this->searchFields];
+        }
 
         if ($this->filters !== []) {
             $request['filters'] = [
