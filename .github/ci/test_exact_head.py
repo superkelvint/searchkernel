@@ -150,6 +150,29 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
 
+    def test_verification_dag_changes_select_elevated_full_lane_set(self) -> None:
+        expected = {
+            "rust=true",
+            "python=true",
+            "typescript=true",
+            "php=true",
+            "native=true",
+            "protocol=true",
+            "api_conformance=true",
+            "contracts=true",
+            "abi=true",
+            "persistence=true",
+            "issue_queue=true",
+            "verification=true",
+        }
+        for path in (
+            "verification/dag.toml",
+            "tools/check-verification-dag.py",
+            "tools/test_check_verification_dag.py",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(classify_lines(path), expected)
+
     def test_workflow_keeps_native_signal_without_running_native_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("\n  native:\n", workflow)
