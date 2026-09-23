@@ -15,12 +15,18 @@ spl_autoload_register(static function (string $class): void {
 
 use InvalidArgumentException;
 use SearchKernel\Bytes;
+use SearchKernel\Coverage;
+use SearchKernel\HttpTransport;
 use SearchKernel\Index;
 use SearchKernel\Protocol;
 use SearchKernel\SearchKernelException;
 use SearchKernel\SearchResult;
 use SearchKernel\Tensor;
 use SearchKernel\Transport;
+use SearchKernel\TransportException;
+use SearchKernel\ProtocolException;
+use SearchKernel\UInt64;
+use SearchKernel\ValueObject;
 use UnexpectedValueException;
 
 function same(mixed $expected, mixed $actual, string $message): void
@@ -431,6 +437,119 @@ throws(
     InvalidArgumentException::class,
     static fn () => Protocol::value(INF),
     'non-finite input is not silently encoded as Float64Value',
+);
+
+
+// --------------------------------------------------------------------------
+// CTO adversarial regressions: malformed wire + lossless host representation.
+// --------------------------------------------------------------------------
+
+throws(
+    UnexpectedValueException::class,
+    static fn () => Protocol::decodeValue([
+        'kind_type' => 'BoolValue',
+        'kind' => ['value' => 'false'],
+    ]),
+    'BoolValue rejects non-boolean payloads instead of PHP truthiness coercion',
+);
+throws(
+    UnexpectedValueException::class,
+    static fn () => Protocol::decodeValue([
+        'kind_type' => 'Float64Value',
+        'kind' => ['value' => 'not-a-number'],
+    ]),
+    'Float64Value rejects non-numeric payloads instead of coercing to zero',
+);
+throws(
+    UnexpectedValueException::class,
+    static fn () => Protocol::decodeValue([
+        'kind_type' => 'StringValue',
+        'kind' => ['value' => ['not', 'a', 'string']],
+    ]),
+    'StringValue rejects non-string payloads',
+);
+throws(
+    UnexpectedValueException::class,
+    static fn () => Protocol::decodeValue([
+        'kind_type' => 'NullValueValue',
+        'kind' => ['value' => 'Unspecified'],
+    ]),
+    'NullValueValue requires the canonical Null enum member',
+);
+throws(
+    UnexpectedValueException::class,
+    static fn () => Protocol::decodeValue([
+        'kind_type' => 'TensorValue',
+        'kind' => [
+            'type_spec' => 'tensor<float>(x[1])',
+            'payload_type' => 'DenseTensorValues',
+            'payload' => ['values' => ['not-a-number']],
+        ],
+    ]),
+    'tensor decoding validates the inner payload instead of trusting the union tag',
+);
+throws(
+    UnexpectedValueException::class,
+    static fn () => Protocol::expectPayload([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_Error',
+        'payload' => [
+            'code' => ['not-a-code'],
+            'message' => 'bad request',
+            'retryable' => false,
+            'details' => [],
+        ],
+    ], 'SearchResult'),
+    'malformed canonical Error payloads fail as protocol errors',
+);
+throws(
+    UnexpectedValueException::class,
+    static fn () => new Coverage(['full' => ['value' => 'false']]),
+    'optional bool result fields reject string coercion',
+);
+
+$malformedHit = [
+    'node_type' => 'Hit',
+    'node' => [
+        'id' => ['not-a-string'],
+        'fields' => [],
+    ],
+];
+throws(
+    UnexpectedValueException::class,
+    static fn () => SearchResult::fromPayload(['root' => $malformedHit]),
+    'malformed hit scalar fields fail closed',
+);
+
+$encodedEmptyObject = Protocol::value(ValueObject::fromPairs([]));
+same('ValueObject', $encodedEmptyObject['kind_type'], 'empty object is distinct from empty list');
+same([], $encodedEmptyObject['kind']['fields'], 'empty object encodes with an empty field vector');
+
+$encodedNumericKeyObject = Protocol::value(ValueObject::fromPairs([
+    ['key' => '0', 'value' => 'zero'],
+]));
+same('0', $encodedNumericKeyObject['kind']['fields'][0]['key'], 'numeric-looking string map keys stay strings');
+
+$encodedU64 = Protocol::value(UInt64::fromDecimal('18446744073709551615'));
+same('UInt64Value', $encodedU64['kind_type'], 'explicit uint64 uses the UInt64Value union variant');
+same('18446744073709551615', $encodedU64['kind']['value'], 'uint64 max remains lossless as decimal text');
+
+throws(
+    TransportException::class,
+    static fn () => new HttpTransport(''),
+    'transport configuration errors use the transport error domain',
+);
+throws(
+    ProtocolException::class,
+    static fn () => Protocol::expectPayload([], 'SearchResult'),
+    'malformed envelopes use the protocol error domain',
+);
+
+$statusCode = new ReflectionMethod(HttpTransport::class, 'statusCode');
+same(
+    200,
+    $statusCode->invoke(null, ['HTTP/1.1 302 Found', 'HTTP/1.1 200 OK']),
+    'HTTP transport uses the final response status after redirects/proxy hops',
 );
 
 echo "PHP client semantic-spine tests PASS\n";
