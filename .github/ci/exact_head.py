@@ -220,6 +220,15 @@ NON_BEHAVIORAL_PATTERNS: tuple[str, ...] = (
     ".DS_Store",
 )
 
+NON_BEHAVIORAL_OVERRIDE_PATTERNS: tuple[str, ...] = (
+    "AGENTS.md",
+    "docs/capabilities.json",
+    "docs/CAPABILITIES.md",
+    "docs/CLIENT_CAPABILITIES.md",
+    "docs/client-capabilities.json",
+    "LIMITATIONS.md",
+)
+
 # Changes to the verification control plane must never be allowed to select
 # their own reduced verification set. CI still executes the trusted base
 # revision of this classifier; locally these paths conservatively select every
@@ -408,6 +417,12 @@ def _matches(path: str, patterns: Iterable[str]) -> bool:
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
 
 
+def _is_non_behavioral_exempt(path: str) -> bool:
+    return _matches(path, NON_BEHAVIORAL_PATTERNS) and not _matches(
+        path, NON_BEHAVIORAL_OVERRIDE_PATTERNS
+    )
+
+
 def _is_known_behavioral_path(path: str) -> bool:
     # Broad compatibility patterns such as core/** and clients/** are useful
     # lane selectors but must not make a newly introduced architecture area
@@ -421,12 +436,15 @@ def _is_known_behavioral_path(path: str) -> bool:
 
 def classify(paths: Iterable[str]) -> dict[str, bool]:
     normalized = [path.strip().replace("\\", "/") for path in paths if path.strip()]
-    selected = {
-        lane: any(_matches(path, LANE_PATTERNS[lane]) for path in normalized)
-        for lane in LANES
-    }
+    selected = {lane: False for lane in LANES}
 
     for path in normalized:
+        if _is_non_behavioral_exempt(path):
+            continue
+
+        for lane in LANES:
+            if _matches(path, LANE_PATTERNS[lane]):
+                selected[lane] = True
         # Verification-policy and orchestration changes get the strongest
         # current selection. The authoritative CI copy of this policy still
         # comes from the trusted base revision.
@@ -474,8 +492,7 @@ def classify(paths: Iterable[str]) -> dict[str, bool]:
             _require(selected, "rust", "native", "persistence")
 
         known_behavioral_path = _is_known_behavioral_path(path)
-        explicitly_non_behavioral = _matches(path, NON_BEHAVIORAL_PATTERNS)
-        if not known_behavioral_path and not explicitly_non_behavioral:
+        if not known_behavioral_path:
             # Fail closed for new source/build/tooling paths that the trusted
             # base policy does not know yet. A future policy revision can
             # classify the path more narrowly after this candidate lands.
@@ -486,6 +503,9 @@ def classify(paths: Iterable[str]) -> dict[str, bool]:
 
 def _selection_reasons(path: str, lane: str) -> list[str]:
     reasons: list[str] = []
+
+    if _is_non_behavioral_exempt(path):
+        return reasons
 
     if _matches(path, LANE_PATTERNS[lane]):
         reasons.append(f"{path}: matches {lane} lane")
@@ -534,8 +554,7 @@ def _selection_reasons(path: str, lane: str) -> list[str]:
         reasons.append(f"{path}: persistence/storage fan-out")
 
     known_behavioral_path = _is_known_behavioral_path(path)
-    explicitly_non_behavioral = _matches(path, NON_BEHAVIORAL_PATTERNS)
-    if not known_behavioral_path and not explicitly_non_behavioral:
+    if not known_behavioral_path:
         reasons.append(f"{path}: unclassified behavioral path, fail closed")
 
     return reasons
