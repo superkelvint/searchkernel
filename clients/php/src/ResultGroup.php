@@ -16,9 +16,20 @@ final class ResultGroup
             throw new ProtocolException('ResultGroup.value must be a portable Value');
         }
         $this->value = is_array($node['value'] ?? null) ? Protocol::decodeValue($node['value']) : null;
-        $this->fields = Protocol::decodeValueEntries(
-            Protocol::listField($node, 'fields', 'ResultGroup.fields'),
-        );
+        $fieldEntries = Protocol::listField($node, 'fields', 'ResultGroup.fields');
+        $this->fields = Protocol::decodeValueEntries($fieldEntries);
+        $fieldKinds = [];
+        foreach ($fieldEntries as $entry) {
+            if (!is_array($entry)
+                || !is_string($entry['key'] ?? null)
+                || !is_array($entry['value'] ?? null)
+                || !is_string($entry['value']['kind_type'] ?? null)
+            ) {
+                throw new ProtocolException('malformed ResultGroup field entry');
+            }
+            $fieldKinds[$entry['key']] = $entry['value']['kind_type'];
+        }
+        $this->fieldKinds = $fieldKinds;
         $this->source = self::optionalString($node, 'source');
         $this->types = self::strings(
             Protocol::listField($node, 'types', 'ResultGroup.types'),
@@ -87,6 +98,8 @@ final class ResultGroup
     public readonly mixed $value;
     /** @var array<string,mixed> */
     public readonly array $fields;
+    /** @var array<string,string> */
+    private readonly array $fieldKinds;
     /** @var list<Hit|ResultGroup> */
     public readonly array $children;
     /** @var list<ResultGroup> */
@@ -103,6 +116,12 @@ final class ResultGroup
     public readonly ?array $limits;
     /** @var array<string,mixed> */
     public readonly array $metadata;
+
+    /** @internal */
+    public function fieldKind(string $key): ?string
+    {
+        return $this->fieldKinds[$key] ?? null;
+    }
 
     /** @param array<string,mixed> $node */
     public static function decodeNode(array $node): Hit|self
