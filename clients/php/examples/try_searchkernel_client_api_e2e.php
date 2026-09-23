@@ -446,6 +446,8 @@ same(2, $byBrand['Acme']->fields['products'], 'Acme group count');
 closeEnough(124.0, (float) $byBrand['Acme']->fields['avg_price'], 'Acme avg');
 same(2, $byBrand['TrailCo']->fields['products'], 'TrailCo group count');
 closeEnough(119.0, (float) $byBrand['TrailCo']->fields['avg_price'], 'TrailCo avg');
+same(1, $byBrand['Budget']->fields['products'], 'Budget group count');
+closeEnough(49.0, (float) $byBrand['Budget']->fields['avg_price'], 'Budget avg');
 same(['Acme', 'TrailCo', 'Budget'], array_map(static fn ($g): string => (string) $g->value, groupingGroups($results)), 'group ordering');
 
 heading('16. NESTED GROUPING: CATEGORY -> BRAND');
@@ -471,7 +473,13 @@ $categories = groupsByValue(groupingGroups($results));
 same(5, $categories['shoes']->fields['products'], 'nested shoes count');
 same(1, $categories['bags']->fields['products'], 'nested bags count');
 $shoeBrands = groupsByValue($categories['shoes']->groups);
+same(['Acme', 'TrailCo', 'Budget'], array_keys($shoeBrands), 'nested shoe brand set');
 same(2, $shoeBrands['Acme']->fields['products'], 'nested Acme count');
+same(2, $shoeBrands['TrailCo']->fields['products'], 'nested TrailCo count');
+same(1, $shoeBrands['Budget']->fields['products'], 'nested Budget count');
+$bagBrands = groupsByValue($categories['bags']->groups);
+same(['Acme'], array_keys($bagBrands), 'nested bag brand set');
+same(1, $bagBrands['Acme']->fields['products'], 'nested bag Acme count');
 
 heading('17. GROUP ALIAS + OUTPUT');
 $results = $index->search('shoes')
@@ -486,6 +494,7 @@ $results = $index->search('shoes')
 $byBrand = groupsByValue(groupingGroups($results));
 closeEnough(248.0, (float) $byBrand['Acme']->fields['revenue'], 'Acme revenue');
 closeEnough(238.0, (float) $byBrand['TrailCo']->fields['revenue'], 'TrailCo revenue');
+closeEnough(49.0, (float) $byBrand['Budget']->fields['revenue'], 'Budget revenue');
 
 heading('18. GROUP KEEP FILTER');
 $results = $index->search('shoes')
@@ -497,6 +506,7 @@ $results = $index->search('shoes')
     )
     ->execute();
 same(['Acme'], array_map(static fn ($g): string => (string) $g->value, groupingGroups($results)), 'group keep regex');
+same(2, groupingGroups($results)[0]->fields['products'], 'group keep count');
 
 heading('19. SUMMARY AGGREGATION -> GROUP HIT CHILDREN');
 $results = $index->search('shoes')
@@ -560,6 +570,7 @@ foreach ($rankPropertyResults->hits as $hit) {
 heading('TWO-PHASE RANKING / SECOND-PHASE RERANK');
 $firstPhase = $index->search('candidate')->ranking('first_phase_only')->limit(4)->execute();
 assertIds($firstPhase, ['rerank-a', 'rerank-b', 'rerank-c', 'rerank-d']);
+same([100.0, 90.0, 80.0, 70.0], array_map(static fn ($h): float => (float) $h->score(), $firstPhase->hits), 'first-phase scores');
 $twoPhase = $index->search('candidate')->ranking('two_phase')->limit(4)->execute();
 assertIds($twoPhase, ['rerank-b', 'rerank-c', 'rerank-a', 'rerank-d']);
 same(4, $twoPhase->totalHits, 'two-phase total hits');
@@ -590,6 +601,9 @@ $hybrid = $index->query(Query::anyOf(
     ->execute();
 $hybridIds = ids($hybrid);
 check(in_array('bag-1', $hybridIds, true), 'vector-only candidate survives OR union');
+foreach (['shoe-1', 'shoe-2', 'shoe-3', 'shoe-4', 'shoe-5'] as $shoeId) {
+    check(in_array($shoeId, $hybridIds, true), "hybrid union contains {$shoeId}");
+}
 same('bag-1', $hybrid->hits[0]->id, 'hybrid top hit');
 $top = $hybrid->hits[0];
 closeEnough(0.0, (float) $top->matchFeatures['bm25(title)'], 'vector-only bm25 feature');
@@ -598,6 +612,15 @@ closeEnough(
     (float) $top->score(),
     (float) $top->matchFeatures['bm25(title)'] + 10.0 * (float) $top->matchFeatures['closeness(embedding)'],
     'hybrid score consistency',
+);
+$lexicalHit = current(array_values(array_filter($hybrid->hits, static fn ($hit): bool => $hit->id === 'shoe-1')));
+check($lexicalHit !== false, 'hybrid contains lexical shoe-1');
+check($lexicalHit->matchFeatures['bm25(title)'] > 0, 'lexical hybrid candidate has BM25 contribution');
+closeEnough(
+    (float) $lexicalHit->score(),
+    (float) $lexicalHit->matchFeatures['bm25(title)']
+        + 10.0 * (float) $lexicalHit->matchFeatures['closeness(embedding)'],
+    'lexical hybrid score consistency',
 );
 
 heading('COVERAGE AND DEGRADATION');
