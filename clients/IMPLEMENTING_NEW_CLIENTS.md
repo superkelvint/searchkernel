@@ -1198,7 +1198,7 @@ Repeated filters remain distinct clauses. Do not concatenate their source string
 
 ## 35. Query helpers
 
-Typed query helpers should construct generated query objects immediately.
+Typed query helpers should construct the client's canonical low-level query representation immediately.
 
 Do not invent a parallel handwritten AST that later needs a second semantic compiler unless the host language requires a tiny ergonomic wrapper.
 
@@ -1289,7 +1289,7 @@ condition
 create
 ```
 
-Additional portable update operations may be added ergonomically as implemented, but the generated low-level model remains available immediately.
+Additional portable update operations may be added ergonomically as implemented, but the supported low-level canonical representation remains available immediately.
 
 ---
 
@@ -1533,7 +1533,7 @@ Acceptance must build/package exactly what users install, then consume that arti
 Verify:
 
 - declared main/module entrypoints exist;
-- generated low-level export works;
+- supported low-level canonical export works;
 - runtime-specific entrypoint works;
 - type declarations/metadata are present;
 - examples intended for distribution are actually included;
@@ -1583,7 +1583,7 @@ When porting from an existing first-party client, preserve behavior while adapti
 Each first-party SDK needs several independent test layers.
 
 ```text
-A. generated/reproducibility checks
+A. low-level representation/reproducibility checks
 B. protocol tests
 C. value conversion tests
 D. low-level client tests
@@ -1603,8 +1603,6 @@ K. cross-language conformance
 Cover at least:
 
 ```text
-request file identifier
-response file identifier
 protocol version
 all operation discriminators
 expected response discriminator
@@ -1615,7 +1613,14 @@ malformed nested union payload
 unknown operation
 ```
 
-Do not write a test named "has SKRQ" that merely checks the result is a byte array. Inspect the actual contract.
+Binary clients must additionally verify request/response file identifiers and
+root decoding. HTTP-first clients must instead prove that representative
+client-emitted standard FlatBuffers JSON parses/round-trips through the official
+BFBS-backed bridge and that malformed JSON/envelope shapes fail closed.
+
+Do not write a test named "has SKRQ" that merely checks the result is a byte
+array, and do not treat "JSON parsed" as sufficient HTTP conformance. Inspect the
+actual canonical contract.
 
 ---
 
@@ -1657,7 +1662,7 @@ Examples:
 insert accepts InsertRequest
 insert rejects SearchRequest
 search returns SearchResult
-low-level generated types are importable
+supported low-level canonical API is importable
 builder method combinations typecheck as intended
 ```
 
@@ -1722,18 +1727,26 @@ Malformed result nodes must fail closed rather than disappear silently.
 
 For each supported transport:
 
-- closed transport;
-- cancellation where the language supports it;
-- deadline/timeout;
+- closed/unavailable transport;
+- cancellation where the language/transport supports it;
+- deadline/timeout behavior where claimed;
 - message size limits;
-- malformed transport frame;
-- non-zero gRPC status;
-- successful unary request/response;
-- UDS connection if supported;
-- TCP connection if claimed;
-- browser gRPC-Web build/runtime smoke test if claimed.
+- malformed transport response/frame;
+- successful request/response;
+- endpoint connectivity for each claimed endpoint type.
 
-Transport tests must not depend on Search Kernel semantics beyond carrying opaque bytes.
+gRPC transports must additionally cover non-zero gRPC status, generated runtime
+behavior, and UDS/TCP connectivity as claimed.
+
+HTTP-first transports must additionally cover HTTP method/content-type/status
+handling, malformed JSON responses, redirects/proxy status chains where
+supported, and the generic execute endpoint.
+
+Browser gRPC-Web clients must include a build/runtime smoke test if browser
+support is claimed.
+
+Transport tests must not depend on Search Kernel semantics beyond carrying the
+canonical payload representation.
 
 ---
 
@@ -1774,7 +1787,7 @@ Verify every supported public entrypoint and, where relevant:
 CommonJS/ESM import behavior
 browser bundler build
 native-runtime import
-low-level generated import
+low-level canonical import
 type declarations
 example compilation
 ```
@@ -2187,7 +2200,7 @@ Every discovered language-specific edge case gets a regression test immediately.
 
 The E2E should use only the public package surface users are expected to use.
 
-Do not cheat by constructing generated request objects in the showcase unless demonstrating the explicit low-level API.
+Do not cheat by constructing low-level protocol requests in the showcase unless demonstrating the explicit low-level API.
 
 ### Step 7 — Independent adversarial review
 
@@ -2232,7 +2245,7 @@ Keep the client addition focused. Do not opportunistically rewrite unrelated cod
 
 ### Protocol
 
-- [ ] Correct request/response identifiers.
+- [ ] Binary clients verify correct request/response identifiers; HTTP-first clients prove canonical roots through BFBS bridge conformance.
 - [ ] Correct protocol version handling.
 - [ ] Every operation has correct request and response union mapping.
 - [ ] Canonical Error discriminator is handled.
