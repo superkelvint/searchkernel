@@ -194,6 +194,7 @@ class ExactHeadTests(unittest.TestCase):
     def test_precommit_runs_native_gate_only_for_native_sensitive_staged_paths(self) -> None:
         for staged_path, expect_native in (
             ("core/native/vespa/abi.cc", True),
+            ("tools/copy-shared-library-into-sdk.sh", True),
             ("docs/architecture.md", False),
         ):
             with self.subTest(staged_path=staged_path):
@@ -276,6 +277,7 @@ class ExactHeadTests(unittest.TestCase):
             ("clients/python/searchkernel/client.py", False),
             ("searchkerneld/src/main.rs", True),
             ("core/crates/searchkernel/src/index/native.rs", True),
+            ("tools/copy-shared-library-into-sdk.sh", True),
             ("core/crates/searchkernel-ir/src/model.rs", False),
             ("docs/architecture.md", False),
         )
@@ -551,6 +553,16 @@ class ExactHeadTests(unittest.TestCase):
                 "protocol=true", "api_conformance=false", "contracts=false", "abi=false",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
+            b"api/rpc/searchkernel.proto\0": {
+                "rust=true", "python=true", "typescript=true", "php=true", "native=false",
+                "protocol=true", "api_conformance=false", "contracts=false", "abi=false",
+                "persistence=false", "issue_queue=false", "verification=false",
+            },
+            b"tools/copy-shared-library-into-sdk.sh\0": {
+                "rust=false", "python=false", "typescript=false", "php=false", "native=true",
+                "protocol=false", "api_conformance=false", "contracts=false", "abi=true",
+                "persistence=false", "issue_queue=false", "verification=false",
+            },
             b"reference/api-conformance/golden/example.json\0": {
                 "rust=false", "python=false", "typescript=false", "php=false", "native=false",
                 "protocol=false", "api_conformance=true", "contracts=false", "abi=false",
@@ -596,7 +608,8 @@ class ExactHeadTests(unittest.TestCase):
             b"core/crates/searchkernel/src/index/native.rs\0": {"native=true"},
             b"core/crates/searchkernel/src/index/manifest.rs\0": {"native=true"},
             b"core/crates/searchkernel/src/portable_definition.rs\0": {"native=true"},
-            b"api/rpc/searchkernel.proto\0": {"protocol=true"},
+            b"api/rpc/searchkernel.proto\0": {"protocol=true", "persistence=false"},
+            b"tools/copy-shared-library-into-sdk.sh\0": {"native=true", "abi=true"},
             b"api/searchkernel.fbs\0": {"protocol=true"},
             b"reference/api-conformance/golden/example.json\0": {"api_conformance=true"},
             b".githooks/pre-commit\0": {"verification=true"},
@@ -620,13 +633,33 @@ class ExactHeadTests(unittest.TestCase):
 
     def test_precommit_consumes_non_rust_behavioral_lanes(self) -> None:
         cases = (
-            ("clients/python/searchkernel/client.py", "dev test python"),
-            ("clients/typescript/src/index.ts", "dev test typescript"),
-            ("api/rpc/searchkernel.proto", "dev check-protocol"),
-            ("api/searchkernel.fbs", "dev check-protocol"),
-            ("reference/api-conformance/golden/example.json", "dev verify api-conformance"),
+            (
+                "clients/python/searchkernel/client.py",
+                ("dev verify contracts", "dev test python"),
+                (),
+            ),
+            (
+                "clients/typescript/src/index.ts",
+                ("dev verify contracts", "dev test typescript"),
+                (),
+            ),
+            (
+                "api/rpc/searchkernel.proto",
+                ("dev check-protocol", "dev test python", "dev test typescript", "dev test php"),
+                ("dev verify persistence", "native i", "python-native-e2e"),
+            ),
+            (
+                "api/searchkernel.fbs",
+                ("dev check-protocol", "dev verify persistence"),
+                (),
+            ),
+            (
+                "reference/api-conformance/golden/example.json",
+                ("dev verify api-conformance",),
+                (),
+            ),
         )
-        for staged_path, expected in cases:
+        for staged_path, required_commands, forbidden_commands in cases:
             with self.subTest(staged_path=staged_path):
                 temp = tempfile.TemporaryDirectory()
                 self.addCleanup(temp.cleanup)
@@ -695,7 +728,10 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stdout)
                 logged = log.read_text(encoding="utf-8")
-                self.assertIn(expected, logged)
+                for expected in required_commands:
+                    self.assertIn(expected, logged)
+                for forbidden in forbidden_commands:
+                    self.assertNotIn(forbidden, logged)
 
     def test_precommit_treats_native_facade_and_daemon_entrypoint_as_native(self) -> None:
         for staged_path in (
