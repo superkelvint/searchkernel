@@ -51,6 +51,7 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
         "tools/generate-typescript-*.sh",
     ),
     "php": (
+        "api/**",
         "clients/php/**",
         "reference/client-contracts/**",
         "tools/check-client-contracts.py",
