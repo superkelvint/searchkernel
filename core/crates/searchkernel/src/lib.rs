@@ -7,7 +7,7 @@ mod filter;
 mod grouping;
 mod index;
 mod patch;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", test))]
 mod portable_definition;
 mod query;
 mod result;

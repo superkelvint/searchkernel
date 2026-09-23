@@ -28,6 +28,226 @@ pub fn index_definition_ir_to_api(definition: &crate::model::IndexDefinitionIr) 
     builder.finished_data().to_vec()
 }
 
+/// Encode unresolved schema intent without applying resolver defaults.
+pub fn index_definition_input_to_api(
+    definition: &crate::api_to_ir::IndexDefinitionInput,
+) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let root = index_definition_input_offset(&mut builder, definition);
+    builder.finish(root, None);
+    builder.finished_data().to_vec()
+}
+
+fn index_definition_input_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    definition: &crate::api_to_ir::IndexDefinitionInput,
+) -> flatbuffers::WIPOffset<api::IndexDefinition<'a>> {
+    let name = definition
+        .name
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let fields = definition
+        .fields
+        .iter()
+        .map(|field| unresolved_field_definition_offset(builder, field))
+        .collect::<Vec<_>>();
+    let fields = builder.create_vector(&fields);
+    let schema_fields = (!definition.schema_fields.is_empty()).then(|| {
+        let fields = definition
+            .schema_fields
+            .iter()
+            .map(|field| {
+                let field = unresolved_field_definition_offset(builder, field);
+                api::SearchOnlyFieldDefinition::create(
+                    builder,
+                    &api::SearchOnlyFieldDefinitionArgs { field: Some(field) },
+                )
+            })
+            .collect::<Vec<_>>();
+        builder.create_vector(&fields)
+    });
+    let default_search_fields = definition.default_search_fields.as_ref().map(|values| {
+        let values = values
+            .iter()
+            .map(|value| {
+                let field = builder.create_string(&value.field);
+                let weight = value.weight.map(api::OptionalDouble::new);
+                api::SearchField::create(
+                    builder,
+                    &api::SearchFieldArgs {
+                        field: Some(field),
+                        weight: weight.as_ref(),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let values = builder.create_vector(&values);
+        api::SearchFieldSelection::create(
+            builder,
+            &api::SearchFieldSelectionArgs {
+                fields: Some(values),
+            },
+        )
+    });
+    let properties = request_value_entries_offset(builder, &definition.properties);
+    let document_type = definition
+        .document_type
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let schema_inherits = string_vector_offset(builder, &definition.schema_inherits);
+    let document_inherits = string_vector_offset(builder, &definition.document_inherits);
+    let structs = named_struct_offsets(builder, &definition.structs);
+    let fieldsets = fieldset_offsets(builder, &definition.fieldsets);
+    let imported_fields = imported_field_offsets(builder, &definition.imported_fields);
+    let document_summaries = document_summary_offsets(builder, &definition.document_summaries);
+    let rank_profiles = unresolved_rank_profile_offsets(builder, &definition.rank_profiles);
+    let constants = constant_offsets(builder, &definition.constants);
+    let onnx_models = onnx_model_offsets(builder, &definition.onnx_models);
+    api::IndexDefinition::create(
+        builder,
+        &api::IndexDefinitionArgs {
+            name,
+            fields: Some(fields),
+            default_search_fields,
+            properties,
+            document_type,
+            schema_inherits,
+            document_inherits,
+            structs,
+            fieldsets,
+            schema_fields,
+            imported_fields,
+            document_summaries,
+            rank_profiles,
+            constants,
+            onnx_models,
+        },
+    )
+}
+
+fn unresolved_field_definition_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    field: &crate::api_to_ir::UnresolvedFieldInput,
+) -> flatbuffers::WIPOffset<api::FieldDefinition<'a>> {
+    let name = builder.create_string(field.name.as_str());
+    let data_type = data_type_offset(builder, &field.data_type);
+    let stored = field.stored.map(api::OptionalBool::new);
+    let searchable = field.searchable.map(api::OptionalBool::new);
+    let filterable = field.filterable.map(api::OptionalBool::new);
+    let sortable = field.sortable.map(api::OptionalBool::new);
+    let facetable = field.groupable.map(api::OptionalBool::new);
+    let analyzer = field
+        .analyzer
+        .as_ref()
+        .map(|value| analyzer_offset(builder, value));
+    let matching = field
+        .matching
+        .as_ref()
+        .map(|value| matching_offset(builder, value));
+    let index = field
+        .index
+        .as_ref()
+        .map(|value| index_config_offset(builder, value));
+    let attribute = field
+        .attribute
+        .as_ref()
+        .map(|value| attribute_config_offset(builder, value));
+    let summary = field
+        .summary
+        .as_ref()
+        .map(|value| summary_config_offset(builder, value));
+    let indexing_script = field
+        .indexing_script
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let properties = request_value_entries_offset(builder, &field.properties);
+    let struct_fields = struct_field_config_offsets(builder, &field.struct_fields);
+    api::FieldDefinition::create(
+        builder,
+        &api::FieldDefinitionArgs {
+            name: Some(name),
+            data_type: Some(data_type),
+            stored: stored.as_ref(),
+            searchable: searchable.as_ref(),
+            filterable: filterable.as_ref(),
+            sortable: sortable.as_ref(),
+            facetable: facetable.as_ref(),
+            analyzer,
+            matching,
+            index,
+            attribute,
+            summary,
+            indexing_script,
+            properties,
+            struct_fields,
+        },
+    )
+}
+
+fn unresolved_rank_profile_offsets<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    values: &[crate::api_to_ir::UnresolvedRankProfileInput],
+) -> Option<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::RankProfileDefinition<'a>>>,
+    >,
+> {
+    (!values.is_empty()).then(|| {
+        let values = values
+            .iter()
+            .map(|value| {
+                let name = builder.create_string(&value.name);
+                let inherits = string_vector_offset(builder, &value.inherits);
+                let inputs = rank_input_offsets(builder, &value.inputs);
+                let functions = rank_function_offsets(builder, &value.functions);
+                let first_phase = value
+                    .first_phase
+                    .as_ref()
+                    .map(|value| rank_phase_offset(builder, value));
+                let second_phase = value
+                    .second_phase
+                    .as_ref()
+                    .map(|value| rank_phase_offset(builder, value));
+                let global_phase = value
+                    .global_phase
+                    .as_ref()
+                    .map(|value| rank_phase_offset(builder, value));
+                let rank_features = string_vector_offset(builder, &value.rank_features);
+                let match_features = string_vector_offset(builder, &value.match_features);
+                let summary_features = string_vector_offset(builder, &value.summary_features);
+                let sort_features = string_vector_offset(builder, &value.sort_features);
+                let constants = constant_offsets(builder, &value.constants);
+                let onnx_models = onnx_model_offsets(builder, &value.onnx_models);
+                let rank_properties = string_entry_offsets(builder, &value.rank_properties);
+                let strict = value.strict.map(api::OptionalBool::new);
+                let properties = request_value_entries_offset(builder, &value.properties);
+                api::RankProfileDefinition::create(
+                    builder,
+                    &api::RankProfileDefinitionArgs {
+                        name: Some(name),
+                        inherits,
+                        inputs,
+                        functions,
+                        first_phase,
+                        second_phase,
+                        global_phase,
+                        rank_features,
+                        match_features,
+                        summary_features,
+                        sort_features,
+                        constants,
+                        onnx_models,
+                        rank_properties,
+                        strict: strict.as_ref(),
+                        properties,
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        builder.create_vector(&values)
+    })
+}
+
 pub(super) fn index_definition_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     definition: &crate::model::IndexDefinitionIr,

@@ -2817,6 +2817,79 @@ fn portable_definition_encoding_uses_public_state_without_a_canonical_sidecar() 
 }
 
 #[test]
+fn portable_definition_round_trips_all_public_schema_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let bytes = crate::portable_definition::encode_portable_definition(&described);
+    let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+        .expect("portable definition should parse");
+    let encoded =
+        searchkernel_ir::index_definition_to_ir(root).expect("portable definition should resolve");
+
+    assert_eq!(encoded, canonical);
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn create_persists_unresolved_presence_and_resolved_schema_consistently() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-schema-provenance-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let definition = IndexDefinition::new()
+        .name("presence_schema")
+        .field(Field::text("title"))
+        .field(Field::keyword("sku").stored(false));
+    let expected_resolved =
+        definition_to_ir(&definition).expect("public definition should resolve before create");
+
+    let index = Index::create(&root, definition).expect("create native index");
+    index.close().expect("close created index");
+
+    let portable_bytes = std::fs::read(root.join("manifest/portable-index-definition.bfbs"))
+        .expect("read persisted portable definition");
+    let portable =
+        searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&portable_bytes)
+            .expect("persisted portable definition should parse");
+    let fields = portable
+        .fields()
+        .expect("persisted portable definition should contain fields");
+    assert_eq!(fields.len(), 2);
+    let title = fields.get(0);
+    let sku = fields.get(1);
+
+    assert!(
+        title.stored().is_none(),
+        "omitted caller state must stay absent in persisted portable intent"
+    );
+    assert_eq!(
+        sku.stored().map(|value| value.value()),
+        Some(false),
+        "explicit false must remain distinguishable from an omitted value"
+    );
+
+    let canonical_bytes = std::fs::read(root.join("manifest/index-definition.bfbs"))
+        .expect("read persisted canonical definition");
+    let canonical =
+        searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&canonical_bytes)
+            .expect("persisted canonical definition should parse");
+    let persisted_resolved = searchkernel_ir::index_definition_to_ir(canonical)
+        .expect("persisted canonical definition should resolve");
+    assert_eq!(persisted_resolved, expected_resolved);
+
+    let reopened = Index::open(&root).expect("reopen persisted index");
+    let described = reopened.describe().expect("describe reopened index");
+    let reopened_resolved =
+        definition_to_ir(&described).expect("reopened public definition should resolve");
+    assert_eq!(reopened_resolved, expected_resolved);
+    reopened.close().expect("close reopened index");
+    std::fs::remove_dir_all(root).expect("remove provenance test index");
+}
+
+#[test]
 fn describe_preserves_field_properties() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
