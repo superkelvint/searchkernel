@@ -602,18 +602,18 @@ generic orchestration and build/test acceleration they already solve.
 This remains SearchKernel-owned. Do not delegate verification sufficiency to
 moonrepo or candidate-controlled task configuration.
 
-- [ ] Define the explicit set of non-behavioral paths that may safely select no behavioral tests.
-- [ ] Make unknown source/build/tooling/behavioral paths select a conservative/full task set.
-- [ ] Add semantic fan-out rules for schema/protocol/client changes.
-- [ ] Add semantic fan-out rules for ABI/native changes.
-- [ ] Add semantic fan-out rules for persistence/storage changes.
-- [ ] Add semantic fan-out rules for dependency/build-system/generated-artifact changes.
-- [ ] Ensure renames/moves account for both old and new semantic areas.
-- [ ] Make verification-policy/orchestration changes automatically select elevated verification.
-- [ ] Add adversarial classifier tests for new, unknown, renamed, and moved paths.
-- [ ] Verify the authoritative CI selector continues to come from the trusted base revision.
-- [ ] Make the trusted plan output stable task IDs plus human-readable selection reasons.
-- [ ] Ensure candidate moon/task configuration cannot reduce the trusted task set required for that candidate.
+- [x] Define the explicit set of non-behavioral paths that may safely select no behavioral tests.
+- [x] Make unknown source/build/tooling/behavioral paths select a conservative/full task set.
+- [x] Add semantic fan-out rules for schema/protocol/client changes.
+- [x] Add semantic fan-out rules for ABI/native changes.
+- [x] Add semantic fan-out rules for persistence/storage changes.
+- [x] Add semantic fan-out rules for dependency/build-system/generated-artifact changes.
+- [x] Ensure renames/moves account for both old and new semantic areas.
+- [x] Make verification-policy/orchestration changes automatically select elevated verification.
+- [x] Add adversarial classifier tests for new, unknown, renamed, and moved paths.
+- [x] Verify the authoritative CI selector continues to come from the trusted base revision.
+- [x] Make the trusted plan output stable task IDs plus human-readable selection reasons.
+- [x] Ensure candidate moon/task configuration cannot reduce the trusted task set required for that candidate.
 
 ### Phase 3: adopt the commodity execution platform
 
