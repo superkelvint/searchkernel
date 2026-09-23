@@ -33,8 +33,10 @@ Search Kernel development commands
   ./dev test php              Test the PHP client
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev regen result-fixtures Generate canonical encoded result fixtures
-  ./dev verify m14            Run a frozen Vespa milestone verifier
-  ./dev verify integration   Run the cross-entry-point integration verifier
+  ./dev verify vespa.grouping.yql  Run one semantic verifier target
+  ./dev verify milestone.m14       Run a frozen cumulative milestone closure
+  ./dev verify product.integration Run the cross-entry-point integration verifier
+  ./dev verify --list              List semantic and legacy Vespa verifier targets
   ./dev verify contracts      Verify capability/client contract tooling
   ./dev verify abi            Verify the public native ABI contract
   ./dev verify persistence    Verify persistence compatibility
@@ -106,13 +108,13 @@ run_php_tests() {
     bash "$ROOT/clients/php/tests/verify_package.sh"
 }
 
-
 check_fast() {
     cargo fmt --all --check
     cargo check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
     bash "$ROOT/tools/test-flatbuffers-cpp-toolchain.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
+    bash "$ROOT/reference/vespa/verifiers/test-routing.sh"
     "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check-native-abi-authorities.py"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
@@ -186,8 +188,8 @@ test_target() {
 
 verify_target() {
     case "${1:-}" in
-        integration|i)
-            "$ROOT/reference/vespa/i/verify-i.sh"
+        integration|i|product.integration)
+            "$ROOT/reference/vespa/verify-through.sh" product.integration
             ;;
         api-conformance)
             "$ROOT/reference/api-conformance/verify.sh"
@@ -228,11 +230,12 @@ verify_target() {
         issue-queue)
             "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
             ;;
-        m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|m14|phase10|searchreply)
+        m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|m14|milestone.*|vespa.*|product.rust-real-engine|phase10|searchreply|--list|list)
             "$ROOT/reference/vespa/verify-through.sh" "$1"
             ;;
         *)
-            echo "usage: ./dev verify m0|...|m14|integration|api-conformance|contracts|abi|persistence|issue-queue|phase10|searchreply" >&2
+            echo "usage: ./dev verify <semantic-target>|milestone.mN|mN|integration|api-conformance|contracts|abi|persistence|issue-queue" >&2
+            echo "       ./dev verify --list" >&2
             return 2
             ;;
     esac
