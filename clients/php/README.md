@@ -92,10 +92,26 @@ The client also keeps three failure domains distinct: `TransportException` for
 HTTP/network failures, `ProtocolException` for malformed or mismatched wire
 responses, and `SearchKernelException` for canonical portable Error payloads.
 
-The remaining broader work includes fully lossless values (especially
-uint64/bytes/tensors), ergonomic patch/update/query/filter/grouping/ranking
-builders, complete recursive result projections, real-engine cross-language
-conformance, managed lifecycle if justified, and package hardening.
+Portable values now use explicit wrappers where ordinary PHP values cannot carry
+the canonical type losslessly or unambiguously:
+
+- `Int64` and `UInt64` accept strict canonical decimal strings across the full
+  64-bit ranges. The HTTP JSON representation may quote those scalar values;
+  the pinned official FlatBuffers parser accepts scalar-in-string input.
+- `Bytes` wraps a PHP binary string and maps it to/from `BytesValue` octets.
+- `NonFiniteFloat` explicitly represents NaN and positive/negative infinity
+  without emitting invalid JSON numbers.
+- `Tensor::dense()`, `Tensor::sparse()`, and `Tensor::mixed()` preserve the
+  canonical tensor payload variants. PHP checks only host-level shape and finite
+  cell values; tensor semantic validity remains server-owned.
+
+Unknown or malformed portable value/tensor union discriminators fail closed with
+`ProtocolException`.
+
+The remaining broader work includes ergonomic patch/update/query/filter/grouping/
+ranking builders, complete recursive result projections, real-engine
+cross-language conformance, managed lifecycle if justified, and package
+hardening.
 
 Run unit tests:
 
