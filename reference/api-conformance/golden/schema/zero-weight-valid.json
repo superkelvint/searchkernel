@@ -1,15 +1,12 @@
 {
   "ok": {
     "constants": [],
-    "default_prefix_policy": "disabled",
-    "default_ranking": "default_relevance_v1",
     "default_search_fields": [
       {
         "field": "title",
         "weight": 0.0
       }
     ],
-    "default_typo_policy": "disabled",
     "document_inherits": [],
     "document_summaries": [],
     "document_type": null,
