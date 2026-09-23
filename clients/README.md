@@ -95,10 +95,21 @@ parallel full-schema DTO layer or handwritten field-by-field FlatBuffer codec.
 
 ## Adding another language SDK
 
-Before implementing a new language client, read
-[`IMPLEMENTING_NEW_CLIENTS.md`](IMPLEMENTING_NEW_CLIENTS.md).
+There are two client SOPs:
 
-That document is the normative implementation SOP for new SDKs. It covers:
+- [`IMPLEMENTING_NEW_CLIENTS.md`](IMPLEMENTING_NEW_CLIENTS.md) — how to build
+  a correct first-party client.
+- [`INTEGRATING_NEW_CLIENTS.md`](INTEGRATING_NEW_CLIENTS.md) — after the client
+  works, how to wire it into repository-wide build, regeneration, conformance,
+  capability, CI, packaging, and real-E2E verification so future drift cannot
+  silently skip it.
+
+Before implementing a new language client, read
+[`IMPLEMENTING_NEW_CLIENTS.md`](IMPLEMENTING_NEW_CLIENTS.md), then complete
+[`INTEGRATING_NEW_CLIENTS.md`](INTEGRATING_NEW_CLIENTS.md) before calling the
+client first-class.
+
+The implementation SOP covers:
 
 - generated FlatBuffers and gRPC layers;
 - handwritten ergonomic facade boundaries;
@@ -108,6 +119,18 @@ That document is the normative implementation SOP for new SDKs. It covers:
 - browser vs native-runtime transport separation;
 - packaging, generated-code reproducibility, and publish checks;
 - cross-language conformance and end-to-end acceptance.
+
+The integration SOP covers the repository promotion step, including:
+
+- `./dev test <client>`, `./dev check`, `check-fast`, regeneration, and
+  doctor wiring;
+- client surface and runtime registration in the shared capability catalog;
+- executable `SKC:` evidence and E2E-lane registration;
+- shared conformance fixture consumption;
+- generated capability/compatibility reports;
+- CI bootstrap and workflow coverage;
+- clean package-consumer verification;
+- adversarial checks for false-green or silently omitted client lanes.
 
 At a high level, every new first-class SDK should:
 
@@ -120,7 +143,9 @@ At a high level, every new first-class SDK should:
 4. Reuse that same transport/client stack for `Index.connect(...)` when attaching to
    an already-running daemon.
 5. Add the thin idiomatic facade for the language.
-6. Run the shared protocol, semantic, packaging, managed-lifecycle, persistence/reopen,
+6. Integrate that client into the repository-wide generation, test, conformance,
+   capability, packaging, and E2E harnesses.
+7. Run the shared protocol, semantic, packaging, managed-lifecycle, persistence/reopen,
    and end-to-end conformance tests.
 
 Browser-only clients cannot spawn local processes, so they expose the connection path
