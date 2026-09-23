@@ -84,7 +84,23 @@ with tarfile.open(archive, "r:gz") as stream:
         path = pathlib.PurePosixPath(member.name)
         if path.is_absolute() or ".." in path.parts:
             raise SystemExit(f"unsafe published Vespa base path: {member.name}")
-        if member.issym() or member.islnk() or member.isdev():
+        if member.issym():
+            target = pathlib.PurePosixPath(member.linkname)
+            if target.is_absolute():
+                raise SystemExit(f"unsafe published Vespa base symlink: {member.name} -> {member.linkname}")
+            parts = []
+            for part in (path.parent / target).parts:
+                if part in ("", "."):
+                    continue
+                if part == "..":
+                    if not parts:
+                        raise SystemExit(f"unsafe published Vespa base symlink: {member.name} -> {member.linkname}")
+                    parts.pop()
+                else:
+                    parts.append(part)
+            if not parts or parts[0] != "searchkernel-vespa-base":
+                raise SystemExit(f"unsafe published Vespa base symlink: {member.name} -> {member.linkname}")
+        elif member.islnk() or member.isdev():
             raise SystemExit(f"unsupported published Vespa base entry: {member.name}")
     stream.extractall(destination, members=members)
 PY
