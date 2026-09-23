@@ -49,14 +49,12 @@ changed_flags=$(fingerprint "$temporary/compiler-a" '-DSEARCHKERNEL_NATIVE_FINGE
 [[ "$first" != "$changed_flags" ]]
 echo 'native fingerprint: full-package compiler flags change the fingerprint'
 
-base_plain=$(fingerprint "$temporary/compiler-a" '' '' '' base '')
-base_other_compiler=$(fingerprint "$temporary/compiler-b" '' '' '' base '')
-base_other_flags=$(fingerprint "$temporary/compiler-a" '-DIGNORED_FOR_BASE=1' '' '' base '')
-base_adapter_flags=$(fingerprint "$temporary/compiler-a" '' '' '' base '-DADAPTER_ONLY_CHANGE=1')
-[[ "$base_plain" == "$base_other_compiler" ]]
-[[ "$base_plain" == "$base_other_flags" ]]
-[[ "$base_plain" == "$base_adapter_flags" ]]
-echo 'native fingerprint: active compiler and adapter flags do not perturb Vespa base identity'
+if grep -q -- '--scope base' "$root/tools/resolve-native-sdk.sh" "$root/core/native/vespa/build-sdk.sh"; then
+    echo 'immutable Vespa base must not use native-build-fingerprint.py' >&2
+    exit 1
+fi
+grep -q 'CACHE_ROOT=\$CACHE_BASE/\$BUILD_ENV/\$TARGET' "$root/tools/resolve-native-sdk.sh"
+echo 'native base identity: pinned Vespa checkout hash within build-environment/target namespace'
 
 full_plain=$(fingerprint "$temporary/compiler-a" '' '' '' full '')
 full_adapter_flags=$(fingerprint "$temporary/compiler-a" '' '' '' full '-DADAPTER_ONLY_CHANGE=1')

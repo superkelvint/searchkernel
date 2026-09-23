@@ -391,14 +391,24 @@ doctor_typescript() {
 doctor_native_sdk() {
     local sdk
     sdk=$(native_sdk_path)
-    [[ -f "$sdk/include/searchkernel_vespa.h" ]]
     [[ -f "$sdk/manifest.json" ]]
-    compgen -G "$sdk/lib/libsearchkernel_vespa.so*" >/dev/null
+    if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
+        [[ -f "$sdk/include/searchkernel_vespa.h" ]]
+        compgen -G "$sdk/lib/libsearchkernel_vespa.so*" >/dev/null
+    else
+        grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$sdk/manifest.json"
+        compgen -G "$sdk/lib/libvespa*.so*" >/dev/null
+        bash "$ROOT/tools/resolve-native-sdk.sh" vespa-root >/dev/null
+    fi
 }
 
 doctor_native_abi() {
-    # Keep ABI authority checking in the existing acceptance helper so doctor
-    # and milestone verification cannot silently grow different rules.
+    if [[ -z "${SK_NATIVE_SDK:-}" ]]; then
+        # The shared Vespa base intentionally contains no Search Kernel adapter
+        # or ABI header. ABI agreement is checked when Cargo builds the local
+        # adapter against that base.
+        return 0
+    fi
     (
         source "$ROOT/reference/vespa/common/verify-common.sh"
         require_sdk_manifest "$(native_sdk_path)/manifest.json"
@@ -406,8 +416,7 @@ doctor_native_abi() {
 }
 
 doctor_vespa() {
-    source "$ROOT/reference/vespa/common/verify-common.sh"
-    require_pinned_vespa
+    bash "$ROOT/tools/resolve-native-sdk.sh" vespa-root >/dev/null
 }
 
 doctor_python() {
@@ -467,8 +476,8 @@ doctor() {
     doctor_optional 'native ABI versions agree' \
         'Only checked when a native SDK is present/required.' \
         doctor_native_abi
-    doctor_optional 'pinned Vespa checkout present' \
-        'Only required for Vespa/native verification; ordinary Rust/API work may proceed without it.' \
+    doctor_optional 'pinned Vespa checkout registered' \
+        'Only required for native/all-features verification; provision once with: ./dev native-sdk ensure' \
         doctor_vespa
     doctor_check 'Python dependencies present' doctor_python
     doctor_optional 'searchkerneld built' \

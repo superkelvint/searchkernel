@@ -330,8 +330,9 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
     if [ "$ENABLE_FAILPOINTS" = 1 ]; then
         cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
     fi
+    cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
 
-    SDK_BACKUP="${SDK_PACKAGE}.old.$$"
+    SDK_BACKUP="${SDK_PACKAGE}.old.$"
     if [ -e "$SDK_BACKUP" ]; then
         echo "adapter backup path already exists: $SDK_BACKUP" >&2
         exit 1
@@ -354,25 +355,19 @@ if [ "$BASE_ONLY" != 1 ]; then
         cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
     fi
     cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
-else
-    printf '{"kind":"vespa-base"}\n' >"$SDK/manifest.json"
-fi
-NATIVE_TARGET=${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}
-if [ -z "$NATIVE_TARGET" ]; then
-    echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
-    exit 1
-fi
-FINGERPRINT_SCOPE=full
-if [ "$BASE_ONLY" = 1 ]; then
-    FINGERPRINT_SCOPE=base
-fi
-python3 "$ROOT/tools/native-build-fingerprint.py" \
-    --root "$ROOT" \
-    --vespa-root "$VESPA_ROOT" \
-    --target "$NATIVE_TARGET" \
-    --scope "$FINGERPRINT_SCOPE" \
-    --output "$SDK/native-build-fingerprint-v2.txt"
-python3 - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
+
+    NATIVE_TARGET=${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}
+    if [ -z "$NATIVE_TARGET" ]; then
+        echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
+        exit 1
+    fi
+    python3 "$ROOT/tools/native-build-fingerprint.py" \
+        --root "$ROOT" \
+        --vespa-root "$VESPA_ROOT" \
+        --target "$NATIVE_TARGET" \
+        --scope full \
+        --output "$SDK/native-build-fingerprint-v2.txt"
+    python3 - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
 import json
 import re
 import sys
@@ -380,17 +375,16 @@ import sys
 path, source_header, failpoints, sanitizer = sys.argv[1:]
 with open(path, encoding="utf-8") as stream:
     manifest = json.load(stream)
-if manifest.get("kind") != "vespa-base":
-    with open(source_header, encoding="utf-8") as stream:
-        header = stream.read()
-    matches = re.findall(r"^#define SK_NATIVE_ABI_VERSION ([0-9]+)U$", header, re.MULTILINE)
-    if len(matches) != 1:
-        raise SystemExit(
-            f"expected exactly one SK_NATIVE_ABI_VERSION in {source_header}, found {len(matches)}"
-        )
-    manifest["native_abi_version"] = int(matches[0])
-    manifest["hardening_failpoints"] = failpoints == "1"
-    manifest["sanitizer"] = sanitizer
+with open(source_header, encoding="utf-8") as stream:
+    header = stream.read()
+matches = re.findall(r"^#define SK_NATIVE_ABI_VERSION ([0-9]+)U$", header, re.MULTILINE)
+if len(matches) != 1:
+    raise SystemExit(
+        f"expected exactly one SK_NATIVE_ABI_VERSION in {source_header}, found {len(matches)}"
+    )
+manifest["native_abi_version"] = int(matches[0])
+manifest["hardening_failpoints"] = failpoints == "1"
+manifest["sanitizer"] = sanitizer
 with open(path.replace("manifest.json", "native-build-fingerprint-v2.txt"), encoding="utf-8") as stream:
     manifest["native_build_fingerprint"] = next(
         line.split("=", 1)[1].strip()
@@ -401,7 +395,25 @@ with open(path, "w", encoding="utf-8") as stream:
     json.dump(manifest, stream, indent=2, sort_keys=True)
     stream.write("\n")
 PY
-cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
+    cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
+else
+    python3 - "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json" <<'PY'
+import json
+import sys
+
+source_path, output_path = sys.argv[1:]
+with open(source_path, encoding="utf-8") as stream:
+    source = json.load(stream)
+with open(output_path, "w", encoding="utf-8") as stream:
+    json.dump(
+        {"kind": "vespa-base", "vespa_commit": source["vespa_commit"]},
+        stream,
+        indent=2,
+        sort_keys=True,
+    )
+    stream.write("\n")
+PY
+fi
 
 # Bundle the exact Vespa and third-party shared libraries used by the pinned
 # build. Test support libraries are not part of the production ABI package.
