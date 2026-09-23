@@ -114,6 +114,28 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                 request_json_to_flatbuffer(&printed).unwrap_or_else(|error| {
                     panic!("{name}: BFBS-printed request is not readable: {error}")
                 });
+                if name == "insert-empty-string-bytes" {
+                    let document = &round_trip["payload"]["document"];
+                    let fields = document["fields"]
+                        .as_array()
+                        .expect("empty-value request fields survive as a vector");
+                    let field = |key: &str| {
+                        fields
+                            .iter()
+                            .find(|entry| entry["key"].as_str() == Some(key))
+                            .unwrap_or_else(|| panic!("{name}: missing field {key}"))
+                    };
+                    assert_eq!(
+                        field("title")["value"]["kind"]["value"].as_str(),
+                        Some(""),
+                        "{name}: empty StringValue must survive BFBS JSON parsing"
+                    );
+                    assert_eq!(
+                        field("raw")["value"]["kind"]["value"].as_array().map(Vec::len),
+                        Some(0),
+                        "{name}: empty BytesValue must survive BFBS JSON parsing"
+                    );
+                }
             }
             "response" => {
                 response_json_to_flatbuffer(&printed).unwrap_or_else(|error| {
@@ -126,7 +148,33 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
     }
 
     assert!(
-        count >= 14,
+        count >= 16,
         "expected representative bidirectional PHP/BFBS coverage, saw only {count} fixtures"
+    );
+
+    let fixture_root =
+        repo_root.join("core/crates/searchkernel-dispatch/tests/fixtures/portable/responses");
+    let mut facet_count = 0usize;
+    for entry in std::fs::read_dir(&fixture_root).expect("read shared response fixture directory") {
+        let entry = entry.expect("read shared response fixture entry");
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with("result-facet-") || !name.ends_with(".skrs") {
+            continue;
+        }
+        facet_count += 1;
+        let bytes = std::fs::read(entry.path())
+            .unwrap_or_else(|error| panic!("{name}: read shared facet fixture: {error}"));
+        let printed = response_flatbuffer_to_json(&bytes)
+            .unwrap_or_else(|error| panic!("{name}: print shared facet fixture: {error}"));
+        assert_php_consumes_printed_response(
+            &repo_root,
+            &format!("shared-facet:{}", name.trim_end_matches(".skrs")),
+            &printed,
+        );
+    }
+    assert!(
+        facet_count >= 20,
+        "expected the shared facet response corpus, saw only {facet_count} fixtures"
     );
 }
