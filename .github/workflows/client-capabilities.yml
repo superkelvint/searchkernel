@@ -128,8 +128,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: clients/typescript/package-lock.json
       - run: $CI_PYTHON -m pip install -e clients/python
       - run: $CI_PYTHON tools/check-python-dependencies.py
       - run: npm ci --prefix clients/typescript
