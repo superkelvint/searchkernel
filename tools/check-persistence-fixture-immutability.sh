@@ -25,9 +25,15 @@ if [[ -z "$base_dirs" ]]; then
     exit 0
 fi
 
-changed=$(
-    git diff --name-only "$BASE_REF"...HEAD -- reference/persistence/fixtures || true
-)
+if [[ "${PERSISTENCE_CHECK_INDEX:-0}" == "1" ]]; then
+    changed=$(
+        git diff --cached --name-only "$BASE_REF" -- reference/persistence/fixtures || true
+    )
+else
+    changed=$(
+        git diff --name-only "$BASE_REF"...HEAD -- reference/persistence/fixtures || true
+    )
+fi
 
 while IFS= read -r dir; do
     [[ -n "$dir" ]] || continue
