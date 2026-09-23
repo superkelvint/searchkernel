@@ -21,7 +21,9 @@ final class Coverage
         $this->degraded = is_array($node['degraded'] ?? null)
             ? new CoverageDegraded($node['degraded'])
             : null;
-        $this->metadata = Protocol::decodeValueEntries($node['metadata'] ?? []);
+        $this->metadata = Protocol::decodeValueEntries(
+            Protocol::listField($node, 'metadata', 'Coverage.metadata'),
+        );
     }
 
     public readonly ?float $coveragePercent;
