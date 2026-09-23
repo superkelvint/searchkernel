@@ -12,6 +12,11 @@ on:
       - "core/**"
       - "searchkerneld/**"
       - "reference/api-conformance/**"
+      - "verification/**"
+      - "tools/check-verification-dag.py"
+      - "tools/test_check_verification_dag.py"
+      - ".github/ci/exact_head.py"
+      - ".github/ci/test_exact_head.py"
       - ".github/workflows/unit-tests.yml"
       - "dev"
       - "tools/copy-shared-library-into-sdk.sh"
@@ -30,6 +35,11 @@ on:
       - "core/**"
       - "searchkerneld/**"
       - "reference/api-conformance/**"
+      - "verification/**"
+      - "tools/check-verification-dag.py"
+      - "tools/test_check_verification_dag.py"
+      - ".github/ci/exact_head.py"
+      - ".github/ci/test_exact_head.py"
       - ".github/workflows/unit-tests.yml"
       - "dev"
       - "tools/copy-shared-library-into-sdk.sh"
@@ -85,6 +95,11 @@ jobs:
 
       - name: Run semantic verifier routing regression
         run: bash reference/vespa/verifiers/test-routing.sh
+
+      - name: Validate verification DAG
+        run: |
+          python3 tools/test_check_verification_dag.py
+          python3 tools/check-verification-dag.py
 
       - name: Run workspace unit tests
         run: cargo test --workspace --no-default-features
