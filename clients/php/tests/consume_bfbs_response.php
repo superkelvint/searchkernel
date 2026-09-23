@@ -127,6 +127,29 @@ switch ($name) {
         break;
 
     default:
+        if (str_starts_with($name, 'shared-facet:')) {
+            $fixture = substr($name, strlen('shared-facet:'));
+            $result = SearchResult::fromPayload($payload);
+            if ($fixture === 'result-facet-valid') {
+                $result->projectFacet('brand', 'brand');
+                check(
+                    $result->facets === ['brand' => [['value' => 'Acme', 'count' => 3]]],
+                    'valid shared facet fixture did not project',
+                );
+                break;
+            }
+            if ($fixture === 'result-facet-valid-named') {
+                $result->projectFacet('brands', 'brand');
+                check(
+                    $result->facets === ['brands' => [['value' => 'Acme', 'count' => 3]]],
+                    'valid named shared facet fixture did not project',
+                );
+                break;
+            }
+            $result->projectFacet('brand', 'brand');
+            check($result->facets === [], $fixture . ' must not project as a facet');
+            break;
+        }
         throw new RuntimeException('unknown BFBS response fixture: ' . $name);
 }
 
