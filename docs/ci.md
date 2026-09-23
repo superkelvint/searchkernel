@@ -121,37 +121,72 @@ Arbitrary agent-reported commands remain evidence only.
 
 ## CI execution model
 
-A planner job computes required profiles from the trusted base policy and the
-candidate diff. Independent jobs execute the selected profiles in parallel.
+SearchKernel owns the **verification authority** but should not build a generic
+task scheduler, cache engine, Rust test runner, or distributed compilation
+system.
 
-Conceptually:
+The intended division of responsibility is:
 
 ```text
+SEARCHKERNEL-OWNED TRUST LAYER
+
 trusted base policy
        |
        v
 base..candidate diff
        |
        v
-verification plan
-       |
-       +---- rust
-       +---- protocol/clients/contracts
-       +---- persistence
-       +---- ABI
-       +---- native/oracle/E2E
+fail-closed semantic classification
        |
        v
-exact-head/required-evidence gate
+required verification task IDs
+       |
+       v
+exact-head / base-drift authorization
+
+
+COMMODITY EXECUTION LAYER
+
+moonrepo
+    task graph / dependencies / parallel execution / task caching
+       |
+       +---- cargo-nextest
+       |         Rust test execution / filtering / sharding / archives
+       |
+       +---- sccache
+       |         Rust and C/C++ compilation cache
+       |
+       +---- repository verifier commands
+                 native / protocol / clients / persistence / oracle / E2E
 ```
 
-Verification runs against candidate code even though authoritative selection is
-made by trusted base policy.
+The trusted SearchKernel selector answers **what verification is mandatory**.
+moonrepo executes the resulting repository-owned tasks. moonrepo's own affected
+calculation may be useful for local developer feedback and execution
+optimization, but it is not authoritative for deciding whether a candidate has
+tested itself sufficiently.
 
-CI should continue to guard exact-head evidence. Where practical, final
-acceptance should also protect against base drift by testing the current merge
-candidate/merge result or requiring re-verification after the base changes.
-Post-merge `main` verification remains part of closure for substantive work.
+The canonical task graph should therefore be declarative and mechanical. A
+profile/task owns one command and may depend on other tasks, while the trusted
+selector returns task IDs plus reasons. GitHub Actions should not maintain a
+second handwritten meaning for those tasks.
+
+For Rust test-heavy tasks, prefer cargo-nextest over bespoke test scheduling.
+Where one compiled Rust test corpus is executed on several workers, prefer
+nextest archives/partitions so CI compiles once and executes many rather than
+rebuilding the same tests independently on every shard.
+
+Use sccache from the beginning for supported Rust and C/C++ compilation. This is
+baseline CI infrastructure for SearchKernel's expensive native/Rust build, not a
+late optimization.
+
+Verification still runs against candidate code even though authoritative
+selection is made by trusted base policy.
+
+CI must continue to guard exact-head evidence. Where practical, final acceptance
+must also protect against base drift by testing the current merge candidate or
+merge result, or by requiring re-verification after the base changes. Post-merge
+`main` verification remains part of closure for substantive work.
 
 ## Native runner provisioning
 
@@ -481,6 +516,11 @@ This checklist is the operational roadmap for this CI work. Update it as work is
 completed or new closure requirements are discovered. A checked box means the
 item has been implemented and independently verified, not merely started.
 
+The roadmap deliberately separates SearchKernel-specific verification authority
+from commodity execution infrastructure. SearchKernel owns policy, trust,
+exact-head evidence, and closure. moonrepo, cargo-nextest, and sccache own the
+generic orchestration and build/test acceleration they already solve.
+
 ### Phase 1: inventory and closure graph
 
 - [x] Inventory every executable test/verifier entry point in the repository.
@@ -498,10 +538,13 @@ item has been implemented and independently verified, not merely started.
 - [x] Reconcile the Vespa milestone/integration chain, including M13/M14 coverage.
 - [x] Document the resulting inventory and DAG in this file.
 
-### Phase 2: fail-closed policy
+### Phase 2: trusted fail-closed policy
+
+This remains SearchKernel-owned. Do not delegate verification sufficiency to
+moonrepo or candidate-controlled task configuration.
 
 - [ ] Define the explicit set of non-behavioral paths that may safely select no behavioral tests.
-- [ ] Make unknown source/build/tooling/behavioral paths select a conservative/full profile.
+- [ ] Make unknown source/build/tooling/behavioral paths select a conservative/full task set.
 - [ ] Add semantic fan-out rules for schema/protocol/client changes.
 - [ ] Add semantic fan-out rules for ABI/native changes.
 - [ ] Add semantic fan-out rules for persistence/storage changes.
@@ -510,68 +553,119 @@ item has been implemented and independently verified, not merely started.
 - [ ] Make verification-policy/orchestration changes automatically select elevated verification.
 - [ ] Add adversarial classifier tests for new, unknown, renamed, and moved paths.
 - [ ] Verify the authoritative CI selector continues to come from the trusted base revision.
+- [ ] Make the trusted plan output stable task IDs plus human-readable selection reasons.
+- [ ] Ensure candidate moon/task configuration cannot reduce the trusted task set required for that candidate.
 
-### Phase 3: canonical verification profiles
+### Phase 3: adopt the commodity execution platform
 
-- [ ] Define repository-owned verification profile IDs.
-- [ ] Give each profile one canonical repository-owned command implementation.
-- [ ] Prevent planner/executor drift by mechanically validating that every selectable profile has an executor.
-- [ ] Make pre-commit consume canonical profile definitions.
-- [ ] Add a developer/agent `test-plan` interface.
-- [ ] Add a developer/agent `test-affected` interface.
-- [ ] Ensure agent/issue requirements can add profiles/evidence but cannot subtract repository-required verification.
-- [ ] Ensure arbitrary issue/PR shell text is never executable CI authority.
-- [ ] Add self-tests proving candidate changes cannot weaken their own selector or executor.
+Use standard tools for generic orchestration rather than building a
+SearchKernel-specific scheduler/cache/test-distribution system.
+
+#### moonrepo
+
+- [ ] Introduce moonrepo with a pinned version/toolchain identity.
+- [ ] Represent every surviving verification profile as one canonical moon task.
+- [ ] Encode task dependencies from the verified Phase 1 closure graph.
+- [ ] Keep repository verifier scripts as task commands where they remain the authoritative acceptance entry point.
+- [ ] Add a mechanical check that every task ID emitted by the trusted selector exists in the moon graph.
+- [ ] Add a mechanical check that every required full-suite verifier is reachable from the full-suite root.
+- [ ] Make pre-commit and developer tooling invoke the same canonical tasks rather than duplicating commands.
+- [ ] Make the developer/agent `test-plan` interface print trusted task IDs and reasons.
+- [ ] Make the developer/agent `test-affected` interface execute the trusted task set through moon.
+- [ ] Ensure arbitrary issue/PR shell text can add evidence but never becomes executable CI authority.
+
+#### cargo-nextest
+
+- [ ] Adopt cargo-nextest for Rust test tasks where it preserves the existing test contract.
+- [ ] Preserve ordinary `cargo test` only where a verifier specifically depends on cargo-test behavior.
+- [ ] Define nextest profiles/filtersets for the Rust task families identified in Phase 1.
+- [ ] Use nextest partitions for useful Rust test sharding.
+- [ ] Evaluate/use nextest archives where one compiled test corpus should execute on several workers.
+- [ ] Verify sharding/archive execution preserves the same required test closure as unsharded execution.
+
+#### sccache
+
+- [ ] Configure sccache for rustc on CI runners.
+- [ ] Configure sccache for supported C/C++ compiler invocations where practical.
+- [ ] Provide a persistent or remote cache backend appropriate to the runner topology.
+- [ ] Include compiler/toolchain/native-environment identity in cache correctness assumptions and provenance checks.
+- [ ] Verify cache corruption/mis-keying cannot turn a required compile/test failure into a false green.
+- [ ] Measure hit rates and make cache misses observable.
+- [ ] Ensure a cache miss never authorizes an implicit full Vespa source rebuild in ordinary CI.
 
 ### Phase 4: provision native runners
 
+The initial goal is a boring, reproducible immutable runner environment. Do not
+block native CI on adopting Nix.
+
 - [ ] Define the complete native runner prerequisite manifest.
+- [ ] Provide a one-command/bootstrap deployment bundle for a fresh supported self-hosted runner.
 - [ ] Provision the immutable SearchKernel native base/SDK and runtime closure.
 - [ ] Provision a clean Vespa checkout at the exact pinned revision required by current verifiers.
 - [ ] Provision required prebuilt oracle artifacts.
 - [ ] Provision required compiler/toolchain/system dependencies.
+- [ ] Provision pinned moonrepo, cargo-nextest, and sccache tooling.
 - [ ] Give provisioned state an immutable/versioned identity and manifest/checksum validation.
 - [ ] Add a cheap CI environment/provenance verifier.
 - [ ] Make missing/stale prerequisites fail instead of silently rebuilding Vespa.
 - [ ] Ensure shared heavyweight prerequisites are read-only/immutable.
 - [ ] Ensure runtime/persistence/socket/temp state is private per CI job.
 - [ ] Verify concurrent native jobs cannot contaminate each other.
-- [ ] Document the rsync/update procedure for self-hosted runners.
-- [ ] Evaluate replacing the full Vespa checkout with a smaller immutable verifier bundle after CI is green.
+- [ ] Document the bootstrap/update procedure for self-hosted runners.
+- [ ] After native CI is green, evaluate Nix plus Cachix/Attic as a replacement for ad-hoc immutable prerequisite distribution.
+- [ ] Treat a smaller purpose-built verifier bundle as a later optimization rather than a prerequisite for CI enablement.
 
-### Phase 5: complete change-aware CI
+### Phase 5: connect trusted policy to the moon task graph
 
-- [ ] Extend the trusted planner to expose every required verification profile.
-- [ ] Add CI executors for every non-native profile.
-- [ ] Add CI executors for native real-engine verification.
-- [ ] Add CI executors for native client/gRPC end-to-end verification.
-- [ ] Add CI executors for Vespa milestone/oracle verification.
-- [ ] Run candidate policy self-tests plus conservative/full verification when verification infrastructure changes.
-- [ ] Preserve exact-head evidence for every required profile.
+- [ ] Extend the trusted base-owned selector to emit every required canonical moon task ID.
+- [ ] Have CI execute exactly the trusted task set through moon against candidate code.
+- [ ] Add GitHub Actions worker placement for non-native tasks.
+- [ ] Add self-hosted worker placement for native real-engine tasks.
+- [ ] Add native client/gRPC end-to-end tasks.
+- [ ] Add Vespa milestone/oracle tasks.
+- [ ] Keep task dependencies in the moon graph instead of duplicating them in GitHub Actions YAML.
+- [ ] Run candidate policy/task-graph self-tests plus conservative/full verification when verification infrastructure changes.
+- [ ] Preserve exact-head evidence for every required task.
 - [ ] Detect base drift so stale evidence cannot authorize a changed merge candidate.
 - [ ] Establish merge-result/current-base verification or an equivalent final gate.
 - [ ] Keep post-merge `main` reconciliation/verification as part of substantive closure.
 
-### Phase 6: authoritative full suite
+### Phase 6: authoritative full DAG
 
-- [ ] Define `test-all` (or equivalent) directly from the verified inventory/DAG.
-- [ ] Mechanically ensure every surviving required verifier is reachable from the full-suite root.
-- [ ] Make removing/renaming a verifier fail if the full-suite inventory is not updated.
-- [ ] Run the authoritative full suite on `main`.
-- [ ] Run the appropriate comprehensive suite on nightly CI.
-- [ ] Verify the full suite includes the latest intended Vespa milestone coverage rather than relying on ambiguous umbrella names.
-- [ ] Verify the full suite never rebuilds heavyweight immutable dependencies as a hidden fallback.
+- [ ] Define one canonical full-suite moon root from the verified Phase 1 inventory/DAG.
+- [ ] Mechanically ensure every surviving required verifier is reachable from that root.
+- [ ] Make removing/renaming a verifier fail if the full-suite graph/inventory is not updated.
+- [ ] Run the authoritative full DAG on `main`.
+- [ ] Run the appropriate comprehensive DAG on nightly CI.
+- [ ] Verify the full DAG includes the latest intended Vespa milestone coverage rather than relying on ambiguous umbrella names.
+- [ ] Explicitly disposition retained/retired historical gates such as Phase 9 and C2 rather than silently dropping them.
+- [ ] Verify the full DAG never rebuilds heavyweight immutable dependencies as a hidden fallback.
 
-### Phase 7: optimize without weakening
+### Phase 7: optimize and distribute without weakening
 
-- [ ] Measure per-profile CI runtime after correctness coverage is complete.
+Use the adopted tools before inventing custom acceleration.
+
+- [ ] Measure per-task CI runtime, queue time, compile time, and cache hit rate after correctness coverage is complete.
 - [ ] Remove only proven duplicate verification.
-- [ ] Parallelize independent DAG nodes.
-- [ ] Reuse immutable caches/artifacts where correctness permits.
-- [ ] Keep mutable test state isolated despite cache optimization.
+- [ ] Let moon parallelize independent DAG nodes.
+- [ ] Use nextest partitions for Rust execution parallelism.
+- [ ] Use nextest archives where build-once/test-many materially reduces repeated compilation.
+- [ ] Reuse moon task caches where task inputs/outputs are safe and deterministic.
+- [ ] Reuse sccache for compilation outputs.
+- [ ] Keep mutable test state isolated despite cache and artifact reuse.
+- [ ] Evaluate a moon-compatible remote task cache if local/self-hosted caching is insufficient.
+- [ ] Evaluate Nix/Cachix/Attic for immutable native prerequisite distribution only after measured need and a working baseline.
 - [ ] Add regression checks ensuring optimization does not change required verification closure.
-- [ ] Re-run adversarial false-green review of the completed system.
-- [ ] Reconcile documentation, CI, developer commands, agent guidance, and CTO state after rollout.
+
+### Phase 8: adversarial CI-system closure
+
+- [ ] Re-run the complete false-green test matrix against the trusted selector, moon graph, nextest sharding/archive path, caches, and native provisioning.
+- [ ] Verify a candidate cannot weaken its own selector, moon task definition, executor mapping, or full-suite reachability and then authorize itself.
+- [ ] Verify exact-head and base-drift protections against force-push/rebase/base-change cases.
+- [ ] Verify cache hits and restored artifacts cannot substitute evidence from a different semantic/toolchain/native identity.
+- [ ] Verify concurrent native jobs cannot share mutable persistence/runtime state.
+- [ ] Verify missing native prerequisites fail rather than triggering an expensive hidden rebuild.
+- [ ] Reconcile documentation, GitHub Actions, developer commands, agent guidance, and CTO state after rollout.
 
 ## False-green properties to test
 
@@ -597,14 +691,21 @@ The verification system itself needs regression tests proving at least:
 The design is complete when:
 
 1. every surviving repository verifier/test family is represented in the
-   inventory and verification DAG;
-2. PR CI independently and fail-closed selects all required profiles from a
-   trusted policy;
-3. all selected profiles, including real native/Vespa paths, can execute in CI;
-4. `test-all` mechanically runs the complete intended suite;
-5. coding agents can obtain a precise required-test plan without being trusted
+   verified inventory and canonical moon task graph;
+2. PR CI independently and fail-closed selects all required task IDs from
+   trusted base policy, while candidate-controlled moon configuration cannot
+   reduce that mandatory set;
+3. all selected tasks, including real native/Vespa paths, execute in CI against
+   the exact candidate head;
+4. one mechanically checked full-suite moon root reaches the complete intended
+   verifier closure;
+5. Rust test execution uses cargo-nextest where appropriate, including
+   partition/archive reuse when it materially reduces duplicate compilation;
+6. Rust/C/C++ compilation uses sccache where appropriate without weakening
+   provenance or correctness;
+7. coding agents can obtain a precise required-test plan without being trusted
    to decide sufficiency;
-6. main/nightly CI can run the complete suite without rebuilding heavyweight
+8. main/nightly CI can run the complete suite without rebuilding heavyweight
    immutable dependencies; and
-7. the selector/executor/provisioning system has adversarial regression tests
-   against the false-green cases above.
+9. the selector/task-graph/executor/cache/provisioning system has adversarial
+   regression tests against the false-green cases above.
