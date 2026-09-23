@@ -37,6 +37,8 @@
 #include <vespa/document/repo/newconfigbuilder.h>
 #include <vespa/searchlib/predicate/predicate_hash.h>
 #include <vespa/vespalib/geo/zcurve.h>
+#include <vespa/vespalib/data/slime/json_format.h>
+#include <vespa/vespalib/data/slime/slime.h>
 #include <vespa/document/update/assignvalueupdate.h>
 #include <vespa/document/update/arithmeticvalueupdate.h>
 #include <vespa/document/update/clearvalueupdate.h>

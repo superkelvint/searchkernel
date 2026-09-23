@@ -226,7 +226,44 @@ fn packed_strings(values: &[String]) -> Result<(Vec<u8>, Vec<u32>), Error> {
 
 type PackedPredicate = (Vec<u8>, Vec<u32>, Vec<u8>, Vec<u32>);
 
+fn native_predicate_expression(expression: &str) -> Result<String, Error> {
+    let parsed = serde_json::from_str::<serde_json::Value>(expression).map_err(|error| {
+        Error::message(format!("predicate expression is invalid JSON: {error}"))
+    })?;
+    let object = parsed
+        .as_object()
+        .ok_or_else(|| Error::message("predicate expression must be a JSON object"))?;
+    let Some(kind) = object.get("type") else {
+        return Ok(expression.to_owned());
+    };
+    let mut remainder = object.clone();
+    remainder.remove("type");
+    let remainder =
+        serde_json::to_string(&serde_json::Value::Object(remainder)).map_err(|error| {
+            Error::message(format!(
+                "predicate expression could not be encoded: {error}"
+            ))
+        })?;
+    let kind = serde_json::to_string(kind).map_err(|error| {
+        Error::message(format!(
+            "predicate expression type could not be encoded: {error}"
+        ))
+    })?;
+    let mut result = format!("{{\"type\":{kind}");
+    if remainder.len() > 2 {
+        result.push(',');
+        result.push_str(&remainder[1..remainder.len() - 1]);
+    }
+    result.push('}');
+    Ok(result)
+}
+
 fn packed_predicate(value: &PredicateValue) -> Result<PackedPredicate, Error> {
+    if value.features.len() != 1 {
+        return Err(Error::unsupported(
+            "predicate feature form requires exactly one feature key; use predicate expression form for composed predicates",
+        ));
+    }
     let keys: Vec<String> = value.features.keys().cloned().collect();
     let values: Vec<String> = value.features.values().cloned().collect();
     let (key_bytes, key_lengths) = packed_strings(&keys)?;
@@ -324,11 +361,30 @@ fn add_struct_array_field(
     )
 }
 
+fn validate_position_precision(latitude: f64, longitude: f64) -> Result<(), Error> {
+    for (name, value) in [("latitude", latitude), ("longitude", longitude)] {
+        let scaled = value * 1_000_000.0;
+        if !scaled.is_finite() || scaled.round() != scaled {
+            return Err(Error::unsupported(format!(
+                "position {name} exceeds Vespa microdegree precision"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn add_document_field(
     document: *mut sys::sk_document,
     field: &str,
     value: &FieldValue,
 ) -> Result<(), Error> {
+    if let FieldValue::Position(PositionValue {
+        latitude,
+        longitude,
+    }) = value
+    {
+        validate_position_precision(*latitude, *longitude)?;
+    }
     let field = cstring(field)?;
     let mut error = NativeError::new();
     let status = match value {
@@ -410,7 +466,8 @@ pub(crate) fn add_document_field(
         },
         FieldValue::Predicate(value) => {
             if let Some(expression) = &value.expression {
-                let expression = cstring(expression)?;
+                let expression = native_predicate_expression(expression)?;
+                let expression = cstring(&expression)?;
                 return check(
                     unsafe {
                         sys::sk_document_add_predicate_json(
@@ -470,6 +527,13 @@ pub(crate) fn add_update_field(
     field: &str,
     mutation: &FieldUpdate,
 ) -> Result<(), Error> {
+    if let FieldUpdate::Assign(FieldValue::Position(PositionValue {
+        latitude,
+        longitude,
+    })) = mutation
+    {
+        validate_position_precision(*latitude, *longitude)?;
+    }
     let field = cstring(field)?;
     let mut error = NativeError::new();
     let status = match mutation {
@@ -571,7 +635,8 @@ pub(crate) fn add_update_field(
         },
         FieldUpdate::Assign(FieldValue::Predicate(value)) => {
             if let Some(expression) = &value.expression {
-                let expression = cstring(expression)?;
+                let expression = native_predicate_expression(expression)?;
+                let expression = cstring(&expression)?;
                 return check(
                     unsafe {
                         sys::sk_document_update_assign_predicate_json(
@@ -826,19 +891,28 @@ pub(crate) fn require_ptr<T>(pointer: *mut T, name: &str) -> Result<NonNull<T>, 
         .ok_or_else(|| Error::message(format!("native operation returned a null {name}")))
 }
 
+fn validate_native_slice_pointer<T>(
+    pointer: *const T,
+    length: u32,
+    name: &str,
+) -> Result<(), Error> {
+    if length != 0 && pointer.is_null() {
+        return Err(Error::message(format!(
+            "native operation returned a null {name}"
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn native_bytes<'a>(
     _owner: &'a NativeDocument,
     pointer: *const std::os::raw::c_char,
     length: u32,
     name: &str,
 ) -> Result<&'a [u8], Error> {
+    validate_native_slice_pointer(pointer, length, name)?;
     if length == 0 {
         return Ok(&[]);
-    }
-    if pointer.is_null() {
-        return Err(Error::message(format!(
-            "native operation returned a null {name}"
-        )));
     }
     // SAFETY: the native result contract keeps the returned bytes alive for
     // the lifetime of its owning opaque result, which the caller holds while
@@ -852,13 +926,9 @@ pub(crate) fn native_f64s<'a>(
     length: u32,
     name: &str,
 ) -> Result<&'a [f64], Error> {
+    validate_native_slice_pointer(pointer, length, name)?;
     if length == 0 {
         return Ok(&[]);
-    }
-    if pointer.is_null() {
-        return Err(Error::message(format!(
-            "native operation returned a null {name}"
-        )));
     }
     // SAFETY: the native result contract keeps the returned cells alive for
     // the lifetime of its owning opaque document, which the caller holds.
@@ -2499,4 +2569,79 @@ fn read_search_facet(
         groups.push(FacetGroup { key, count });
     }
     Ok(FacetResult { groups })
+}
+
+#[cfg(test)]
+mod native_slice_tests {
+    use super::{
+        native_predicate_expression, packed_predicate, validate_native_slice_pointer,
+        validate_position_precision,
+    };
+    use crate::document::PredicateValue;
+    use std::collections::BTreeMap;
+    use std::ptr;
+
+    #[test]
+    fn predicate_expression_normalization_preserves_expression_provenance() {
+        assert_eq!(
+            native_predicate_expression(r#"{"key":"hobby","type":4,"feature_set":["music"]}"#)
+                .expect("predicate expression should normalize"),
+            r#"{"type":4,"feature_set":["music"],"key":"hobby"}"#
+        );
+        assert_eq!(
+            native_predicate_expression(r#"{"type":6}"#)
+                .expect("keyless predicate expression should normalize"),
+            r#"{"type":6}"#
+        );
+        assert!(native_predicate_expression("[]").is_err());
+    }
+
+    #[test]
+    fn predicate_feature_form_requires_exactly_one_key() {
+        let single =
+            PredicateValue::new(BTreeMap::from([("hobby".to_owned(), "music".to_owned())]));
+        packed_predicate(&single).expect("single predicate feature key is representable");
+
+        for features in [
+            BTreeMap::new(),
+            BTreeMap::from([
+                ("hobby".to_owned(), "music".to_owned()),
+                ("region".to_owned(), "us".to_owned()),
+            ]),
+        ] {
+            let error = packed_predicate(&PredicateValue::new(features))
+                .expect_err("lossy predicate feature map must fail before FFI");
+            assert!(error.to_string().contains("exactly one feature key"));
+        }
+    }
+
+    #[test]
+    fn position_precision_must_be_exactly_representable_by_vespa() {
+        validate_position_precision(37.774929, -122.419416)
+            .expect("microdegree coordinates are representable");
+
+        let latitude = validate_position_precision(37.7749294, -122.419416)
+            .expect_err("sub-microdegree latitude must fail before FFI");
+        assert!(latitude.to_string().contains("latitude"));
+
+        let longitude = validate_position_precision(37.774929, -122.4194164)
+            .expect_err("sub-microdegree longitude must fail before FFI");
+        assert!(longitude.to_string().contains("longitude"));
+    }
+
+    #[test]
+    fn nonzero_native_length_requires_non_null_pointer() {
+        let error =
+            validate_native_slice_pointer::<u8>(ptr::null(), 1, "document composite payload")
+                .expect_err("nonzero length with null pointer must fail");
+        assert!(error
+            .to_string()
+            .contains("null document composite payload"));
+    }
+
+    #[test]
+    fn zero_native_length_allows_null_pointer_without_dereference() {
+        validate_native_slice_pointer::<u8>(ptr::null(), 0, "empty payload")
+            .expect("zero-length payload does not dereference its pointer");
+    }
 }

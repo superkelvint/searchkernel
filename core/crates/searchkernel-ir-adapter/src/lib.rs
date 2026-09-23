@@ -63,7 +63,7 @@ fn lower_document(document: &DocumentIr) -> Result<Document> {
 fn project_document(
     document: &Document,
     projection: &[searchkernel_ir::FieldName],
-) -> BTreeMap<String, Value> {
+) -> Result<BTreeMap<String, Value>> {
     document
         .fields()
         .iter()
@@ -72,21 +72,30 @@ fn project_document(
                 .iter()
                 .any(|field| field.as_str() == name.as_str())
         })
-        .map(|(name, value)| (name.clone(), value_to_ir(value)))
+        .map(|(name, value)| value_to_ir(value).map(|value| (name.clone(), value)))
         .collect()
 }
 
 fn lower_field_value(value: &FieldValueIr) -> Result<FieldValue> {
     match value {
         FieldValueIr::Single(value) => Ok(FieldValue::Scalar(lower_scalar(value)?)),
-        FieldValueIr::Position { latitude, longitude } => Ok(FieldValue::Position(
-            PositionValue::new(*latitude, *longitude),
-        )),
-        FieldValueIr::Predicate { features } => Ok(FieldValue::Predicate(PredicateValue::new(
-            features.clone(),
-        ))),
+        FieldValueIr::Position { latitude, longitude } => {
+            let latitude = lower_position_coordinate(*latitude, "latitude")?;
+            let longitude = lower_position_coordinate(*longitude, "longitude")?;
+            Ok(FieldValue::Position(PositionValue::new(latitude, longitude)))
+        },
+        FieldValueIr::Predicate { features } => {
+            if features.len() != 1 {
+                return Err(PortableError::unsupported(
+                    "predicate_feature_map_not_supported",
+                    Some("document.value.features".to_owned()),
+                    "the current native document boundary can preserve exactly one predicate feature key; use PredicateExpression for composed predicates",
+                ));
+            }
+            Ok(FieldValue::Predicate(PredicateValue::new(features.clone())))
+        }
         FieldValueIr::PredicateExpression { expression } => Ok(FieldValue::Predicate(
-            PredicateValue::from_expression(expression.clone()),
+            PredicateValue::from_expression(native_predicate_expression(expression)?),
         )),
         FieldValueIr::Tensor(tensor) => match &tensor.payload {
             RequestTensorPayloadIr::Dense(values)
@@ -202,6 +211,66 @@ fn lower_field_value(value: &FieldValueIr) -> Result<FieldValue> {
     }
 }
 
+/// Vespa normalizes predicate JSON while constructing the native value. The
+/// native result decoder uses the root key order to preserve the distinction
+/// between feature-form and expression-form predicates, so put the expression
+/// discriminator first after canonical IR serialization has sorted object keys.
+fn native_predicate_expression(expression: &str) -> Result<String> {
+    let parsed = serde_json::from_str::<serde_json::Value>(expression).map_err(|error| {
+        PortableError::invalid(
+            "invalid_predicate_result",
+            Some("document.value.expression"),
+            format!("predicate expression is invalid JSON: {error}"),
+        )
+    })?;
+    let Some(object) = parsed.as_object() else {
+        return Err(PortableError::invalid(
+            "invalid_predicate_result",
+            Some("document.value.expression"),
+            "predicate expression must be a JSON object",
+        ));
+    };
+    let Some(kind) = object.get("type") else {
+        return Ok(expression.to_owned());
+    };
+    let mut remainder = object.clone();
+    remainder.remove("type");
+    let remainder =
+        serde_json::to_string(&serde_json::Value::Object(remainder)).map_err(|error| {
+            PortableError::invalid(
+                "invalid_predicate_result",
+                Some("document.value.expression"),
+                format!("predicate expression could not be encoded: {error}"),
+            )
+        })?;
+    let kind = serde_json::to_string(kind).map_err(|error| {
+        PortableError::invalid(
+            "invalid_predicate_result",
+            Some("document.value.expression"),
+            format!("predicate expression type could not be encoded: {error}"),
+        )
+    })?;
+    let mut result = format!("{{\"type\":{kind}");
+    if remainder.len() > 2 {
+        result.push(',');
+        result.push_str(&remainder[1..remainder.len() - 1]);
+    }
+    result.push('}');
+    Ok(result)
+}
+
+fn lower_position_coordinate(value: f64, name: &str) -> Result<f64> {
+    let scaled = value * 1_000_000.0;
+    if !scaled.is_finite() || scaled.round() != scaled {
+        return Err(PortableError::unsupported(
+            "position_precision_not_supported",
+            Some(format!("document.value.{name}")),
+            "the current Vespa document representation preserves position coordinates only to microdegree precision",
+        ));
+    }
+    Ok(value)
+}
+
 fn lower_scalar(value: &ScalarValueIr) -> Result<ScalarValue> {
     Ok(match value {
         ScalarValueIr::Bool(value) => ScalarValue::Boolean(*value),
@@ -211,8 +280,8 @@ fn lower_scalar(value: &ScalarValueIr) -> Result<ScalarValue> {
     })
 }
 
-fn value_to_ir(value: &FieldValue) -> Value {
-    match value {
+fn value_to_ir(value: &FieldValue) -> Result<Value> {
+    Ok(match value {
         FieldValue::Scalar(ScalarValue::String(value)) => Value::String(value.clone()),
         FieldValue::Scalar(ScalarValue::Integer(value)) => Value::Int64(*value),
         FieldValue::Scalar(ScalarValue::Float(value)) => Value::Float64(*value),
@@ -225,20 +294,7 @@ fn value_to_ir(value: &FieldValue) -> Value {
             .into_iter()
             .collect(),
         ),
-        FieldValue::Predicate(value) => Value::Object(
-            [(
-                "features".to_owned(),
-                Value::Object(
-                    value
-                        .features
-                        .iter()
-                        .map(|(key, value)| (key.clone(), Value::String(value.clone())))
-                        .collect(),
-                ),
-            )]
-            .into_iter()
-            .collect(),
-        ),
+        FieldValue::Predicate(value) => predicate_value_to_ir(value)?,
         FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Strings(values)) => {
             Value::List(values.iter().cloned().map(Value::String).collect())
         }
@@ -265,7 +321,80 @@ fn value_to_ir(value: &FieldValue) -> Value {
                 .collect(),
         ),
         FieldValue::Tensor(tensor) => Value::Tensor(tensor_to_ir(tensor)),
+    })
+}
+
+fn predicate_value_to_ir(value: &PredicateValue) -> Result<Value> {
+    if let Some(expression) = &value.expression {
+        let parsed = serde_json::from_str::<serde_json::Value>(expression).map_err(|error| {
+            PortableError::invalid(
+                "invalid_predicate_result",
+                Some("document.value.expression"),
+                format!("native predicate expression is invalid JSON: {error}"),
+            )
+        })?;
+        return Ok(Value::Object(
+            [(
+                "expression".to_owned(),
+                json_value_to_ir(parsed, "document.value.expression")?,
+            )]
+            .into_iter()
+            .collect(),
+        ));
     }
+
+    Ok(Value::Object(
+        [(
+            "features".to_owned(),
+            Value::Object(
+                value
+                    .features
+                    .iter()
+                    .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+                    .collect(),
+            ),
+        )]
+        .into_iter()
+        .collect(),
+    ))
+}
+
+fn json_value_to_ir(value: serde_json::Value, path: &str) -> Result<Value> {
+    Ok(match value {
+        serde_json::Value::Null => Value::Null,
+        serde_json::Value::Bool(value) => Value::Bool(value),
+        serde_json::Value::String(value) => Value::String(value),
+        serde_json::Value::Array(values) => Value::List(
+            values
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| json_value_to_ir(value, &format!("{path}[{index}]")))
+                .collect::<Result<Vec<_>>>()?,
+        ),
+        serde_json::Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(name, value)| {
+                    json_value_to_ir(value, &format!("{path}.{name}")).map(|value| (name, value))
+                })
+                .collect::<Result<BTreeMap<_, _>>>()?,
+        ),
+        serde_json::Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                Value::Int64(value)
+            } else if let Some(value) = value.as_u64() {
+                Value::UInt64(value)
+            } else if let Some(value) = value.as_f64().filter(|value| value.is_finite()) {
+                Value::Float64(value)
+            } else {
+                return Err(PortableError::invalid(
+                    "invalid_predicate_result",
+                    Some(path.to_owned()),
+                    "predicate expression contains an unrepresentable number",
+                ));
+            }
+        }
+    })
 }
 
 fn scalar_value_to_ir(value: &ScalarValue) -> Value {

@@ -2607,6 +2607,80 @@ fn field_value_lowering_covers_scalars_arrays_and_type_errors() {
 }
 
 #[test]
+fn position_lowering_rejects_precision_vespa_cannot_round_trip() {
+    let exact = FieldValueIr::Position {
+        latitude: 37.774929,
+        longitude: -122.419416,
+    };
+    assert_eq!(
+        lower_field_value(&exact).expect("microdegree position should be representable"),
+        FieldValue::Position(PositionValue::new(37.774929, -122.419416))
+    );
+
+    for (name, value) in [
+        (
+            "latitude",
+            FieldValueIr::Position {
+                latitude: 37.7749294,
+                longitude: -122.419416,
+            },
+        ),
+        (
+            "longitude",
+            FieldValueIr::Position {
+                latitude: 37.774929,
+                longitude: -122.4194164,
+            },
+        ),
+    ] {
+        let error = lower_field_value(&value)
+            .expect_err("sub-microdegree position must fail before native mutation");
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "position_precision_not_supported");
+        let expected_path = format!("document.value.{name}");
+        assert_eq!(
+            error.details[0].path.as_deref(),
+            Some(expected_path.as_str())
+        );
+    }
+}
+
+#[test]
+fn predicate_feature_map_lowering_rejects_unrepresentable_multi_key_values() {
+    let single = FieldValueIr::Predicate {
+        features: std::collections::BTreeMap::from([("hobby".to_owned(), "music".to_owned())]),
+    };
+    assert!(matches!(
+        lower_field_value(&single),
+        Ok(FieldValue::Predicate(_))
+    ));
+
+    for features in [
+        std::collections::BTreeMap::new(),
+        std::collections::BTreeMap::from([
+            ("hobby".to_owned(), "music".to_owned()),
+            ("region".to_owned(), "us".to_owned()),
+        ]),
+    ] {
+        let error = lower_field_value(&FieldValueIr::Predicate { features })
+            .expect_err("unrepresentable predicate feature maps must fail before native mutation");
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "predicate_feature_map_not_supported");
+        assert_eq!(
+            error.details[0].path.as_deref(),
+            Some("document.value.features")
+        );
+    }
+
+    assert!(lower_field_value(&FieldValueIr::PredicateExpression {
+        expression:
+            r#"{"type":1,"children":[{"type":4,"key":"hobby","feature_set":["music"]},{"type":4,"key":"region","feature_set":["us"]}]}"#
+                .to_owned(),
+    })
+    .is_ok());
+}
+
+#[test]
 fn query_and_filter_lowering_covers_supported_variants() {
     let title = field("title");
     let price = field("price");
@@ -2796,7 +2870,10 @@ fn value_conversion_preserves_all_native_value_shapes() {
         ),
     ];
     for (native, expected) in values {
-        assert_eq!(value_to_ir(&native), expected);
+        assert_eq!(
+            value_to_ir(&native).expect("supported native value"),
+            expected
+        );
     }
 }
 
@@ -4433,9 +4510,11 @@ fn explicit_empty_projection_returns_no_document_fields() {
             FieldValue::Scalar(ScalarValue::String("fox".into())),
         )
         .field("price", FieldValue::Scalar(ScalarValue::Integer(10)));
-    assert!(project_document(&document, &[]).is_empty());
+    assert!(project_document(&document, &[])
+        .expect("empty projection must decode")
+        .is_empty());
     assert_eq!(
-        project_document(&document, &[field("title")]),
+        project_document(&document, &[field("title")]).expect("title projection must decode"),
         BTreeMap::from([("title".into(), Value::String("fox".into()))])
     );
 }

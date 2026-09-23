@@ -5116,3 +5116,135 @@ fn rich_schema_negative_semantics_match_portable_ingress() {
         "unknown_struct",
     );
 }
+
+#[cfg(feature = "native")]
+#[test]
+fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
+    use searchkernel_ir::{
+        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr, PrimitiveDataTypeIr,
+        StructFieldIr,
+    };
+
+    // Vespa stores these composite values in attribute-backed fields. The
+    // public stored capability controls inclusion in the default GET
+    // projection, while filterable is what gives the native adapter the
+    // attribute required for these types.
+    let stored_attribute = || FieldCapabilities::new(true, false, true, false, false);
+    let fields = vec![
+        FieldIr::new(
+            FieldName::parse("tags").unwrap(),
+            DataTypeIr::Array(Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::String))),
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("people").unwrap(),
+            DataTypeIr::Array(Box::new(DataTypeIr::Struct {
+                fields: vec![
+                    StructFieldIr {
+                        name: "name".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                    },
+                    StructFieldIr {
+                        name: "age".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                    },
+                    StructFieldIr {
+                        name: "active".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+                    },
+                ],
+            })),
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("location").unwrap(),
+            DataTypeIr::Position,
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("feature_access").unwrap(),
+            DataTypeIr::Predicate,
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("expression_access").unwrap(),
+            DataTypeIr::Predicate,
+            None,
+            stored_attribute(),
+        ),
+    ];
+    let canonical = IndexDefinitionIr::new(None, fields, Vec::new())
+        .expect("composite product schema should be valid canonical IR");
+    let definition = definition_from_ir(&canonical);
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-public-composite-get-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+
+    let expected = json!({
+        "tags": ["alpha", "", "omega"],
+        "people": [
+            {"name": "Ada", "age": 37, "active": true},
+            {"name": "Grace", "age": 85, "active": false}
+        ],
+        "location": {"latitude": 1.25, "longitude": -2.5},
+        "feature_access": {"features": {"hobby": "music"}},
+        "expression_access": {
+            "expression": {"type": 4, "key": "hobby", "feature_set": ["music"]}
+        }
+    });
+
+    let index = Index::create(&path, definition).expect("create composite product index");
+    index
+        .upsert("composite-1", &expected)
+        .expect("write composite product document");
+
+    let full = index
+        .get::<serde_json::Value>("composite-1")
+        .expect("get composite document through public facade")
+        .expect("composite document exists");
+    assert_eq!(full, expected);
+
+    let projected = index
+        .get_with_projection::<serde_json::Value>(
+            "composite-1",
+            ["people", "feature_access", "expression_access"],
+        )
+        .expect("get projected composite document")
+        .expect("projected document exists");
+    assert_eq!(
+        projected,
+        json!({
+            "people": expected["people"].clone(),
+            "feature_access": expected["feature_access"].clone(),
+            "expression_access": expected["expression_access"].clone()
+        })
+    );
+
+    let empty = index
+        .get_with_projection::<serde_json::Value>("composite-1", std::iter::empty::<&str>())
+        .expect("get explicit empty projection")
+        .expect("document exists for empty projection");
+    assert_eq!(empty, json!({}));
+
+    index.close().expect("close composite product index");
+    let reopened = Index::open(&path).expect("reopen composite product index");
+    let persisted = reopened
+        .get::<serde_json::Value>("composite-1")
+        .expect("get composite document after reopen")
+        .expect("reopened composite document exists");
+    assert_eq!(persisted, expected);
+    reopened
+        .close()
+        .expect("close reopened composite product index");
+    std::fs::remove_dir_all(path).expect("remove composite product index");
+}
