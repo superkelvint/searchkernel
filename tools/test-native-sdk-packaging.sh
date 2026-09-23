@@ -24,11 +24,23 @@ ln -s "$external/victim" "$dest/libpackaging_fixture.so.0"
 
 sh "$helper" "$dest" "$src/libpackaging_fixture.so"
 
-[[ -f "$dest/libpackaging_fixture.so" && ! -L "$dest/libpackaging_fixture.so" ]]
-[[ -f "$dest/libpackaging_fixture.so.0" && ! -L "$dest/libpackaging_fixture.so.0" ]]
+[[ -f "$dest/libpackaging_fixture.so.0.1" && ! -L "$dest/libpackaging_fixture.so.0.1" ]]
+[[ -L "$dest/libpackaging_fixture.so" ]]
+[[ -L "$dest/libpackaging_fixture.so.0" ]]
+[[ "$(readlink "$dest/libpackaging_fixture.so")" == 'libpackaging_fixture.so.0.1' ]]
+[[ "$(readlink "$dest/libpackaging_fixture.so.0")" == 'libpackaging_fixture.so.0.1' ]]
 [[ "$(cat "$external/victim")" == 'do-not-overwrite' ]]
-cmp "$dest/libpackaging_fixture.so" "$external/libpackaging_fixture.so.0.1"
-cmp "$dest/libpackaging_fixture.so.0" "$external/libpackaging_fixture.so.0.1"
+cmp "$dest/libpackaging_fixture.so.0.1" "$external/libpackaging_fixture.so.0.1"
+[[ "$(find "$dest" -maxdepth 1 -type f -name 'libpackaging_fixture.so*' | wc -l)" -eq 1 ]]
+
+# Aliases must never retain the producer's absolute path. Every packaged
+# symlink is relative and resolves back inside SDK/lib.
+for link in "$dest/libpackaging_fixture.so" "$dest/libpackaging_fixture.so.0"; do
+    target=$(readlink "$link")
+    [[ "$target" != /* ]]
+    resolved=$(readlink -f "$link")
+    [[ "$resolved" == "$dest/libpackaging_fixture.so.0.1" ]]
+done
 
 cat >"$fixture/consumer.c" <<'C'
 extern int searchkernel_packaging_fixture(void);

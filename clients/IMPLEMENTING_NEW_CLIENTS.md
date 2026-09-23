@@ -362,9 +362,12 @@ A schema regeneration check must fail if checked-in generated artifacts are stal
 
 # Phase 2 — Transport plumbing
 
-## 11. Prefer standard native gRPC
+## 11. Prefer standard native gRPC by default
 
-For server/runtime languages such as Python, Go, Java, PHP, C#, Ruby, Swift, and Node:
+For server/runtime languages such as Python, Go, Java, C#, Ruby, Swift, and Node,
+binary FlatBuffers over generated gRPC is the default local/native path. A
+language explicitly designated as HTTP-first, such as the initial PHP client,
+uses the standard FlatBuffers JSON exception in section 13.1 instead:
 
 ```text
 canonical FlatBuffer bytes
@@ -503,6 +506,42 @@ A minimal handwritten transport may be justified when the language/runtime toolc
 If handwritten, it must remain framing-only and must have dedicated wire-level tests.
 
 Do not use a transport limitation as an excuse to create a second Search Kernel API.
+
+### 13.1 Explicit standard FlatBuffers JSON HTTP edge
+
+A client may use the daemon's HTTP/JSON edge when that transport is explicitly
+chosen for the client or deployment. This is an alternative representation of
+the same portable contract, not permission to define an HTTP-specific Search
+Kernel schema.
+
+The required path is:
+
+```text
+idiomatic client facade
+        ↓
+standard FlatBuffers JSON RequestEnvelope
+        ↓
+generic HTTP execute endpoint
+        ↓
+official BFBS-backed FlatBuffers JSON parser
+        ↓
+canonical RequestEnvelope bytes
+        ↓
+shared dispatcher / *_to_ir()
+```
+
+Responses take the inverse path through the official FlatBuffers JSON printer.
+
+An HTTP/JSON client MUST NOT add handwritten server-side request DTOs, REST
+operation semantics, defaults, validation, filter parsing, or a custom JSON
+dialect. The HTTP endpoint selects transport only; operation identity remains in
+the canonical FlatBuffers envelope.
+
+A staged proof client may intentionally implement only a bounded ergonomic
+subset while this transport is being proven. Such a slice is not yet a complete
+first-class client under this SOP: the remaining generation, low-level escape
+hatch, lifecycle, packaging, E2E, and conformance gates still apply before the
+client is declared first-class.
 
 ---
 
@@ -2081,11 +2120,13 @@ Keep the client addition focused. Do not opportunistically rewrite unrelated cod
 
 ### Transport
 
-- [ ] Native gRPC works for server/runtime use.
-- [ ] UDS works where local management is supported.
-- [ ] TCP works if claimed.
+- [ ] At least one explicitly sanctioned transport is complete for the client.
+- [ ] Default native/runtime clients use generated gRPC carrying canonical FlatBuffer bytes.
+- [ ] Explicit HTTP-first clients use only standard FlatBuffers JSON through the BFBS-backed generic execute edge.
+- [ ] UDS works where local management is supported and claimed.
+- [ ] TCP/HTTP endpoint connectivity works where claimed.
 - [ ] gRPC-Web works if browser support is claimed.
-- [ ] deadlines/cancellation behave correctly.
+- [ ] deadlines/cancellation behave correctly for the selected transport.
 - [ ] message size limits are enforced.
 
 ### Managed local lifecycle
@@ -2132,7 +2173,10 @@ Keep the client addition focused. Do not opportunistically rewrite unrelated cod
 
 ## 70. The client architecture must remain boring
 
-A successful new client should ultimately look like this:
+A successful new client should ultimately converge on the canonical dispatcher
+through one deliberately selected representation path.
+
+Default binary/native path:
 
 ```text
 application code
@@ -2143,11 +2187,33 @@ standard generated FlatBuffers objects
       ↓
 canonical FlatBuffer envelope bytes
       ↓
-small gRPC transport
+generated gRPC transport
       ↓
 searchkerneld
       ↓
 shared dispatcher
+      ↓
+searchkernel-ir
+      ↓
+Vespa
+```
+
+Explicit HTTP-first path:
+
+```text
+application code
+      ↓
+small idiomatic facade
+      ↓
+standard FlatBuffers JSON envelope
+      ↓
+generic HTTP execute edge
+      ↓
+official BFBS-backed JSON parser
+      ↓
+canonical FlatBuffer envelope bytes
+      ↓
+the same shared dispatcher
       ↓
 searchkernel-ir
       ↓

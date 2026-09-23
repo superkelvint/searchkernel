@@ -79,7 +79,39 @@ dependency_a=$(fingerprint "$temporary/compiler-a" '' "$runtime_dir" "$deps_root
 printf 'dependency-target-b\n' >"$external_deps/libfixture.so.1"
 dependency_b=$(fingerprint "$temporary/compiler-a" '' "$runtime_dir" "$deps_root")
 [[ "$dependency_a" != "$dependency_b" ]]
-echo 'native fingerprint: dereferenced dependency symlink contents change the fingerprint'
+echo 'native fingerprint: dependency symlink payload contents change the fingerprint'
+
+# The packaged SDK preserves alias topology, so retargeting a symlink must
+# invalidate the cache even when the replacement payload bytes are identical.
+cp "$external_deps/libfixture.so.1" "$external_deps/libfixture.so.2"
+ln -sfn "$external_deps/libfixture.so.2" "$deps_root/lib64/libfixture.so"
+dependency_retargeted=$(fingerprint "$temporary/compiler-a" '' "$runtime_dir" "$deps_root")
+[[ "$dependency_b" != "$dependency_retargeted" ]]
+echo 'native fingerprint: dependency symlink target changes the fingerprint'
+
+python3 - "$root/tools/native-build-fingerprint.py" "$temporary/packaging-root" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+
+module_path = Path(sys.argv[1])
+fixture = Path(sys.argv[2])
+(fixture / "core/native/vespa").mkdir(parents=True)
+(fixture / "tools").mkdir(parents=True)
+(fixture / "core/native/vespa/build-sdk.sh").write_text("builder-a\n", encoding="utf-8")
+(fixture / "tools/copy-shared-library-into-sdk.sh").write_text("packager-a\n", encoding="utf-8")
+
+spec = importlib.util.spec_from_file_location("native_build_fingerprint", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+
+before = module.packaging_digest(fixture)
+(fixture / "tools/copy-shared-library-into-sdk.sh").write_text("packager-b\n", encoding="utf-8")
+after = module.packaging_digest(fixture)
+assert before != after
+PY
+echo 'native fingerprint: SDK packaging policy changes the fingerprint'
 
 [[ "$(grep -o 'target/host' "$root/.cargo/config.toml" | head -1)" == target/host ]]
 grep -q 'ENV CARGO_TARGET_DIR=target/devcontainer' "$root/.yolobox.Dockerfile"

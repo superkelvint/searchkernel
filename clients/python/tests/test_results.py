@@ -7,6 +7,7 @@ from searchkernel.client import value
 from searchkernel.ergonomic import Hit, SearchBuilder, SearchResults
 from searchkernel.protocol import unpack_response
 from SearchKernel.V2.Hit import HitT
+from SearchKernel.V2.Int64Value import Int64ValueT
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind
 from SearchKernel.V2.RelevanceKind import RelevanceKind
 from SearchKernel.V2.ResultGroup import ResultGroupT
@@ -22,9 +23,9 @@ def result_node(node):
     return ResultNodeT(node_type, node)
 
 
-def group(*, label=None, value_=None, fields=None, children=None):
+def group(*, id_=None, label=None, value_=None, fields=None, children=None):
     return ResultGroupT(
-        id=None,
+        id=id_,
         label=label,
         value=value_,
         fields=list(fields or []),
@@ -49,10 +50,24 @@ def uint64_count(count):
     )
 
 
+def int64_count(count):
+    return ValueEntryT(
+        key="count",
+        value=ValueT(kindType=ValueKind.Int64Value, kind=Int64ValueT(value=count)),
+    )
+
+
 class SearchResultFacetProjectionTest(unittest.TestCase):
-    def exact_facet_result(self, *, label="brand", count=None, mixed=False):
+    def exact_facet_result(
+        self, *, label="brand", count=None, mixed=False, native=False
+    ):
         count = count or uint64_count(3)
-        bucket = group(value_=value("Acme"), fields=[count])
+        bucket = group(
+            id_="grouping-0" if native else None,
+            label=label if native else None,
+            value_=value("Acme"),
+            fields=[count],
+        )
         children = [result_node(bucket)]
         if mixed:
             hit = HitT(
@@ -109,6 +124,32 @@ class SearchResultFacetProjectionTest(unittest.TestCase):
             "brand", name="brands"
         ).execute()
         self.assertEqual(result.facets, {"brands": [{"value": "Acme", "count": 3}]})
+
+    def test_requested_facet_projects_native_int64_count(self):
+        raw = self.exact_facet_result(
+            label="brands", count=int64_count(3), native=True
+        )
+
+        class Client:
+            def search(self, _request):
+                return raw
+
+        result = (
+            SearchBuilder(SimpleNamespace(client=Client()), None)
+            .facet("brand", name="brands")
+            .execute()
+        )
+        self.assertEqual(result.facets, {"brands": [{"value": "Acme", "count": 3}]})
+
+        raw = self.exact_facet_result(
+            label="brands", count=int64_count(-1), native=True
+        )
+        result = (
+            SearchBuilder(SimpleNamespace(client=Client()), None)
+            .facet("brand", name="brands")
+            .execute()
+        )
+        self.assertEqual(result.facets, {})
 
     def test_missing_or_wrong_count_does_not_project(self):
         missing = self.exact_facet_result(count=ValueEntryT(key="other", value=value(3)))
