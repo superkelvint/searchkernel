@@ -17,15 +17,15 @@ if ! git diff --cached --quiet -- docs/capabilities.json; then
     git add docs/CAPABILITIES.md LIMITATIONS.md
 fi
 
-native_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-selection.XXXXXX")
+selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-selection.XXXXXX")
 untracked_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-untracked.XXXXXX")
-trap 'rm -f -- "$native_selection" "$untracked_selection"' EXIT
+trap 'rm -f -- "$selection" "$untracked_selection"' EXIT
 git diff --cached --name-only --no-renames -z \
-    | python3 .github/ci/exact_head.py classify --github-output "$native_selection" >/dev/null
+    | python3 .github/ci/exact_head.py classify --github-output "$selection" >/dev/null
 
 lane_required() {
     local lane=$1
-    grep -qx "$lane=true" "$native_selection"
+    grep -qx "$lane=true" "$selection"
 }
 
 native_required=false
@@ -34,6 +34,10 @@ typescript_required=false
 php_required=false
 protocol_required=false
 api_conformance_required=false
+contracts_required=false
+abi_required=false
+persistence_required=false
+issue_queue_required=false
 verification_required=false
 
 lane_required native && native_required=true
@@ -42,6 +46,10 @@ lane_required typescript && typescript_required=true
 lane_required php && php_required=true
 lane_required protocol && protocol_required=true
 lane_required api_conformance && api_conformance_required=true
+lane_required contracts && contracts_required=true
+lane_required abi && abi_required=true
+lane_required persistence && persistence_required=true
+lane_required issue_queue && issue_queue_required=true
 lane_required verification && verification_required=true
 
 # Every verifier below runs against the working tree, while lane selection is
@@ -91,6 +99,26 @@ fi
 if [[ "$api_conformance_required" == true ]]; then
     echo "pre-commit: API conformance changes detected; running conformance verifier"
     ./dev verify api-conformance
+fi
+
+if [[ "$contracts_required" == true ]]; then
+    echo "pre-commit: capability/client-contract changes detected; running contract verifiers"
+    ./dev verify contracts
+fi
+
+if [[ "$abi_required" == true ]]; then
+    echo "pre-commit: ABI-sensitive changes detected; running ABI verifier"
+    ./dev verify abi
+fi
+
+if [[ "$persistence_required" == true ]]; then
+    echo "pre-commit: persistence-sensitive changes detected; running persistence verifier"
+    ./dev verify persistence
+fi
+
+if [[ "$issue_queue_required" == true ]]; then
+    echo "pre-commit: issue-queue tooling changed; running issue-queue verifier tests"
+    ./dev verify issue-queue
 fi
 
 if [[ "$python_required" == true ]]; then
