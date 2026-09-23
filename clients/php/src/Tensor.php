@@ -71,12 +71,16 @@ final class Tensor
             throw new ProtocolException('malformed TensorValue');
         }
 
-        return match ($payloadType) {
-            self::DENSE => self::decodeDense($typeSpec, $payload),
-            self::SPARSE => self::decodeSparse($typeSpec, $payload),
-            self::MIXED => self::decodeMixed($typeSpec, $payload),
-            default => throw new ProtocolException('unsupported TensorValue payload kind: ' . $payloadType),
-        };
+        try {
+            return match ($payloadType) {
+                self::DENSE => self::decodeDense($typeSpec, $payload),
+                self::SPARSE => self::decodeSparse($typeSpec, $payload),
+                self::MIXED => self::decodeMixed($typeSpec, $payload),
+                default => throw new ProtocolException('unsupported TensorValue payload kind: ' . $payloadType),
+            };
+        } catch (InvalidArgumentException $error) {
+            throw new ProtocolException($error->getMessage(), 0, $error);
+        }
     }
 
     /** @return array<string, mixed> */
