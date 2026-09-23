@@ -84,6 +84,39 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
 }
 
 #[test]
+fn standard_json_accepts_lossless_decimal_strings_for_64_bit_scalars() {
+    let input = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_InsertRequest",
+      "payload": {
+        "document": {
+          "id": "full-width-integers",
+          "fields": [
+            {"key":"i64","value":{"kind_type":"Int64Value","kind":{"value":"9223372036854775807"}}},
+            {"key":"u64","value":{"kind_type":"UInt64Value","kind":{"value":"18446744073709551615"}}}
+          ]
+        }
+      }
+    }"#;
+
+    let bytes = request_json_to_flatbuffer(input).expect("quoted 64-bit scalar JSON");
+    let printed = request_flatbuffer_to_json(&bytes).expect("canonical request JSON");
+    let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+    let fields = value["payload"]["document"]["fields"]
+        .as_array()
+        .expect("document fields");
+
+    assert_eq!(
+        fields[0]["value"]["kind"]["value"].as_i64(),
+        Some(i64::MAX)
+    );
+    assert_eq!(
+        fields[1]["value"]["kind"]["value"].as_u64(),
+        Some(u64::MAX)
+    );
+}
+
+#[test]
 fn standard_json_handles_response_union_and_errors() {
     let input = br#"{
       "protocol_version": 2,
