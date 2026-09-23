@@ -198,7 +198,8 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_check_native_abi_authorities.py"
             "$PYTHON" "$ROOT/tools/check-native-abi-authorities.py"
             "$PYTHON" "$ROOT/tools/test_check_abi_surface.py"
-            bash "$ROOT/tools/check-native-bindings.sh"
+            SK_NATIVE_ABI_HEADER="$ROOT/core/native/vespa/searchkernel_vespa.h" \
+                bash "$ROOT/tools/check-native-bindings.sh"
             bash "$ROOT/tools/check-layout.sh"
             bash "$ROOT/tools/test-native-sdk-cache.sh"
             "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
