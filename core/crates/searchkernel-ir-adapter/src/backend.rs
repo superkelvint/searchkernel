@@ -924,11 +924,7 @@ mod implicit_output_name_regression_tests {
         .expect_err("visible lowered outputs must carry a canonical result-field name");
 
         assert_eq!(error.code, searchkernel_ir::ErrorCode::Internal);
-        assert!(
-            error
-                .message
-                .contains("no canonical result-field name")
-        );
+        assert!(error.message.contains("no canonical result-field name"));
     }
 
     #[test]

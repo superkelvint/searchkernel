@@ -2527,10 +2527,8 @@ fn search_resolver_rejects_explicit_and_implicit_root_output_name_collisions() {
 
 #[test]
 fn search_resolver_rejects_complex_explicit_and_implicit_canonical_name_collision() {
-    let explicit = root_output_grouping(
-        Some("sum(Literal(Int64(1)))"),
-        GroupingAggregationIr::Count,
-    );
+    let explicit =
+        root_output_grouping(Some("sum(Literal(Int64(1)))"), GroupingAggregationIr::Count);
     let implicit = root_output_grouping(
         None,
         GroupingAggregationIr::Sum(GroupingExpressionIr::Literal(RequestValueIr::Int64(1))),
