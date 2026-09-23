@@ -20,6 +20,9 @@ pub use query::{
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod property_tests;
+
 pub(crate) use grouping::grouping_to_input;
 pub use resolve::{
     facet_grouping_input, resolve_analyze, resolve_delete, resolve_document, resolve_facets,
