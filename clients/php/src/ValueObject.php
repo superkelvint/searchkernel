@@ -28,6 +28,12 @@ final class ValueObject
         $this->entries = array_values($entries);
     }
 
+    /** @param list<array{key:string,value:mixed}> $pairs */
+    public static function fromPairs(array $pairs): self
+    {
+        return new self($pairs);
+    }
+
     /** @param array<string,mixed> $values */
     public static function fromArray(array $values): self
     {
