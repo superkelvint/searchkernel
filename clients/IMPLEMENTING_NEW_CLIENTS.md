@@ -504,6 +504,42 @@ If handwritten, it must remain framing-only and must have dedicated wire-level t
 
 Do not use a transport limitation as an excuse to create a second Search Kernel API.
 
+### 13.1 Explicit standard FlatBuffers JSON HTTP edge
+
+A client may use the daemon's HTTP/JSON edge when that transport is explicitly
+chosen for the client or deployment. This is an alternative representation of
+the same portable contract, not permission to define an HTTP-specific Search
+Kernel schema.
+
+The required path is:
+
+```text
+idiomatic client facade
+        ↓
+standard FlatBuffers JSON RequestEnvelope
+        ↓
+generic HTTP execute endpoint
+        ↓
+official BFBS-backed FlatBuffers JSON parser
+        ↓
+canonical RequestEnvelope bytes
+        ↓
+shared dispatcher / *_to_ir()
+```
+
+Responses take the inverse path through the official FlatBuffers JSON printer.
+
+An HTTP/JSON client MUST NOT add handwritten server-side request DTOs, REST
+operation semantics, defaults, validation, filter parsing, or a custom JSON
+dialect. The HTTP endpoint selects transport only; operation identity remains in
+the canonical FlatBuffers envelope.
+
+A staged proof client may intentionally implement only a bounded ergonomic
+subset while this transport is being proven. Such a slice is not yet a complete
+first-class client under this SOP: the remaining generation, low-level escape
+hatch, lifecycle, packaging, E2E, and conformance gates still apply before the
+client is declared first-class.
+
 ---
 
 # Phase 3 — Protocol envelope layer
