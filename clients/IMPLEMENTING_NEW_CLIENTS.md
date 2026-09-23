@@ -362,9 +362,12 @@ A schema regeneration check must fail if checked-in generated artifacts are stal
 
 # Phase 2 — Transport plumbing
 
-## 11. Prefer standard native gRPC
+## 11. Prefer standard native gRPC by default
 
-For server/runtime languages such as Python, Go, Java, PHP, C#, Ruby, Swift, and Node:
+For server/runtime languages such as Python, Go, Java, C#, Ruby, Swift, and Node,
+binary FlatBuffers over generated gRPC is the default local/native path. A
+language explicitly designated as HTTP-first, such as the initial PHP client,
+uses the standard FlatBuffers JSON exception in section 13.1 instead:
 
 ```text
 canonical FlatBuffer bytes
@@ -2117,11 +2120,13 @@ Keep the client addition focused. Do not opportunistically rewrite unrelated cod
 
 ### Transport
 
-- [ ] Native gRPC works for server/runtime use.
-- [ ] UDS works where local management is supported.
-- [ ] TCP works if claimed.
+- [ ] At least one explicitly sanctioned transport is complete for the client.
+- [ ] Default native/runtime clients use generated gRPC carrying canonical FlatBuffer bytes.
+- [ ] Explicit HTTP-first clients use only standard FlatBuffers JSON through the BFBS-backed generic execute edge.
+- [ ] UDS works where local management is supported and claimed.
+- [ ] TCP/HTTP endpoint connectivity works where claimed.
 - [ ] gRPC-Web works if browser support is claimed.
-- [ ] deadlines/cancellation behave correctly.
+- [ ] deadlines/cancellation behave correctly for the selected transport.
 - [ ] message size limits are enforced.
 
 ### Managed local lifecycle
@@ -2168,7 +2173,10 @@ Keep the client addition focused. Do not opportunistically rewrite unrelated cod
 
 ## 70. The client architecture must remain boring
 
-A successful new client should ultimately look like this:
+A successful new client should ultimately converge on the canonical dispatcher
+through one deliberately selected representation path.
+
+Default binary/native path:
 
 ```text
 application code
@@ -2179,11 +2187,33 @@ standard generated FlatBuffers objects
       ↓
 canonical FlatBuffer envelope bytes
       ↓
-small gRPC transport
+generated gRPC transport
       ↓
 searchkerneld
       ↓
 shared dispatcher
+      ↓
+searchkernel-ir
+      ↓
+Vespa
+```
+
+Explicit HTTP-first path:
+
+```text
+application code
+      ↓
+small idiomatic facade
+      ↓
+standard FlatBuffers JSON envelope
+      ↓
+generic HTTP execute edge
+      ↓
+official BFBS-backed JSON parser
+      ↓
+canonical FlatBuffer envelope bytes
+      ↓
+the same shared dispatcher
       ↓
 searchkernel-ir
       ↓
