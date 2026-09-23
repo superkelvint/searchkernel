@@ -137,42 +137,47 @@ def main() -> int:
     emit(f"SearchKernel Clippy profile: {args.profile}\n")
     emit(f"Reproduce: ./dev lint --profile {args.profile}\n")
 
+    returncode = 1
     try:
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        assert process.stdout is not None
-        for line in process.stdout:
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                emit(line)
-                continue
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except OSError as error:
+            emit(f"failed to start Cargo/Clippy: {error}\n")
+        else:
+            assert process.stdout is not None
+            for line in process.stdout:
+                try:
+                    message = json.loads(line)
+                except json.JSONDecodeError:
+                    emit(line)
+                    continue
 
-            if json_log is not None:
-                json_log.write(json.dumps(message, separators=(",", ":")) + "\n")
+                if json_log is not None:
+                    json_log.write(json.dumps(message, separators=(",", ":")) + "\n")
 
-            if message.get("reason") != "compiler-message":
-                continue
+                if message.get("reason") != "compiler-message":
+                    continue
 
-            diagnostic = message.get("message")
-            if isinstance(diagnostic, dict):
-                rendered = diagnostic.get("rendered")
-                if isinstance(rendered, str):
-                    emit(rendered)
-                else:
-                    emit(str(diagnostic.get("message", "compiler diagnostic")) + "\n")
+                diagnostic = message.get("message")
+                if isinstance(diagnostic, dict):
+                    rendered = diagnostic.get("rendered")
+                    if isinstance(rendered, str):
+                        emit(rendered)
+                    else:
+                        emit(str(diagnostic.get("message", "compiler diagnostic")) + "\n")
 
-            add_diagnostics, add_clippy, add_suggestions = analyze_compiler_message(message)
-            diagnostics += add_diagnostics
-            clippy_diagnostics += add_clippy
-            suggestions += add_suggestions
+                add_diagnostics, add_clippy, add_suggestions = analyze_compiler_message(message)
+                diagnostics += add_diagnostics
+                clippy_diagnostics += add_clippy
+                suggestions += add_suggestions
 
-        returncode = process.wait()
+            returncode = process.wait()
     finally:
         if human_log is not None:
             human_log.close()
