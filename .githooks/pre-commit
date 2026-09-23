@@ -103,7 +103,9 @@ echo "pre-commit: running workspace unit tests"
 cargo test --workspace --all-targets --no-default-features
 
 if [[ "$verification_required" == true && "${SEARCHKERNEL_PRECOMMIT_SELFTEST:-0}" != "1" ]]; then
-    echo "pre-commit: verification tooling changed; running selector/hook regressions"
+    echo "pre-commit: verification tooling changed; validating DAG and selector/hook regressions"
+    python3 tools/test_check_verification_dag.py
+    python3 tools/check-verification-dag.py
     SEARCHKERNEL_PRECOMMIT_SELFTEST=1 python3 .github/ci/test_exact_head.py
 fi
 
