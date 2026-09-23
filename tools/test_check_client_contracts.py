@@ -31,6 +31,7 @@ CATALOG = {
                     "command": ["python3", "-c", "pass"],
                 }
             ],
+            "required_e2e_runtimes": ["native"],
         },
         "python": {
             "title": "Python",
@@ -124,6 +125,22 @@ class ClientContractTests(unittest.TestCase):
         self.assertIn("ergonomic · E2E 1/2 (native)", markdown)
         self.assertIn("rust-tests/e2e.rs", markdown)
 
+
+    def test_required_e2e_runtime_requires_lane(self) -> None:
+        path = self.root / "reference" / "client-contracts" / "catalog.json"
+        catalog = json.loads(json.dumps(CATALOG))
+        catalog["surfaces"]["rust"].pop("e2e_lanes")
+        path.write_text(json.dumps(catalog), encoding="utf-8")
+        global_caps = MODULE.load_global_capabilities(
+            self.root / "docs" / "capabilities.json"
+        )
+        with self.assertRaisesRegex(
+            MODULE.RegistryError,
+            "requires an E2E lane for runtime native",
+        ):
+            MODULE.validate_catalog(
+                MODULE.load_catalog(path), global_caps, self.root
+            )
 
     def test_e2e_evidence_requires_ci_lane(self) -> None:
         path = self.root / "reference" / "client-contracts" / "catalog.json"
