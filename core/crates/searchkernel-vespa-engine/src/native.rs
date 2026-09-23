@@ -2472,8 +2472,9 @@ pub(crate) fn read_generic_search_result(
     for grouping_index in 0..grouping_count {
         facets.push(read_search_facet(result.0.as_ptr(), grouping_index)?);
     }
-    let grouping_tree_count =
-        unsafe { sys::sk_generic_search_result_grouping_tree_count(result.0.as_ptr()) };
+    let grouping_tree_count = unsafe {
+        sys::sk_generic_search_result_grouping_tree_count(result.0.as_ptr())
+    };
     let mut groupings = Vec::with_capacity(grouping_tree_count as usize);
     for grouping_index in 0..grouping_tree_count {
         let mut root = ptr::null();
