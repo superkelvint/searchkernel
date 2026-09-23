@@ -18,6 +18,7 @@ std::string copy_text_bytes(const uint8_t *bytes, uint32_t length,
 
 void validate_query_field(const NativeQueryState &query, uint32_t kind,
                           const char *field) {
+    query.ensure_active();
     if (!field) {
         throw std::invalid_argument("query field must not be null");
     }
@@ -146,6 +147,7 @@ std::string query_index_field(const NativeQueryState &query, const char *field) 
 }
 
 void add_query_operator(NativeQueryState &query, uint32_t kind, uint32_t child_count) {
+    query.ensure_active();
     if (child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
         throw std::invalid_argument("query child count cannot be represented by Vespa");
     }
@@ -233,6 +235,7 @@ void add_query_text(NativeQueryState &query, uint32_t kind, const char *field,
 }
 
 void validate_query_multi_field(const NativeQueryState &query, const char *field) {
+    query.ensure_active();
     if (!field) {
         throw std::invalid_argument("query field must not be null");
     }
@@ -254,6 +257,7 @@ void validate_query_multi_field(const NativeQueryState &query, const char *field
 }
 
 void validate_fuzzy_query_field(const NativeQueryState &query, const char *field) {
+    query.ensure_active();
     if (!field) {
         throw std::invalid_argument("query field must not be null");
     }
