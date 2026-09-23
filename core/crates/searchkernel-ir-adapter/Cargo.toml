@@ -16,6 +16,7 @@ native = ["searchkernel-vespa-engine/native"]
 [dependencies]
 searchkernel-ir = { path = "../searchkernel-ir" }
 searchkernel-vespa-engine = { path = "../searchkernel-vespa-engine", default-features = false }
+serde_json = "1"
 
 [dev-dependencies]
 searchkernel-ir = { path = "../searchkernel-ir", features = ["test"] }

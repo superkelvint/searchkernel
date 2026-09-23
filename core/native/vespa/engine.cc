@@ -1389,7 +1389,43 @@ class EmbeddedEngine {
         return (*retrievers)[0]->getFullDocument(lid);
     }
 
-    static OwnedValue owned_value(const document::FieldValue &value, const std::string &field_name) {
+    static std::string slime_json(const vespalib::Slime &slime) {
+        vespalib::SmartBuffer output(1024);
+        vespalib::slime::JsonFormat::encode(slime, output, true);
+        const auto json = output.obtain();
+        return std::string(json.data, json.size);
+    }
+
+    static void set_slime_scalar(vespalib::slime::Cursor &cursor,
+                                 const document::FieldValue &value,
+                                 const std::string &field_name) {
+        switch (value.type()) {
+        case document::FieldValue::Type::STRING:
+            cursor.setString("type", "string");
+            cursor.setString("value", value.getAsString());
+            break;
+        case document::FieldValue::Type::LONG:
+            cursor.setString("type", "integer");
+            cursor.setLong("value", value.getAsLong());
+            break;
+        case document::FieldValue::Type::INT:
+            cursor.setString("type", "integer");
+            cursor.setLong("value", value.getAsInt());
+            break;
+        case document::FieldValue::Type::DOUBLE:
+            cursor.setString("type", "float");
+            cursor.setDouble("value", value.getAsDouble());
+            break;
+        case document::FieldValue::Type::BOOL:
+            cursor.setString("type", "boolean");
+            cursor.setBool("value", value.getAsLong() != 0);
+            break;
+        default:
+            throw std::invalid_argument("unsupported struct member type in field: " + field_name);
+        }
+    }
+
+    OwnedValue owned_value(const document::FieldValue &value, const std::string &field_name) const {
         OwnedValue owned;
         switch (value.type()) {
         case document::FieldValue::Type::STRING:
@@ -1415,13 +1451,44 @@ class EmbeddedEngine {
         case document::FieldValue::Type::ARRAY: {
             const auto *array = dynamic_cast<const document::ArrayFieldValue *>(&value);
             if (!array) throw std::invalid_argument("array field has no value: " + field_name);
-            owned.kind = SK_VALUE_STRING_ARRAY;
-            for (const auto &entry : *array) {
-                if (entry.type() != document::FieldValue::Type::STRING) {
-                    throw std::invalid_argument("retrieved array field is not string-valued: " + field_name);
+            const bool struct_array = require_manifest_field(field_name).type == "array<struct>";
+            vespalib::Slime encoded;
+            auto &encoded_array = encoded.setArray();
+            if (struct_array) {
+                owned.kind = SK_VALUE_STRUCT_ARRAY;
+                for (const auto &entry : *array) {
+                    const auto *struct_value = dynamic_cast<const document::StructFieldValue *>(&entry);
+                    if (!struct_value) {
+                        throw std::invalid_argument("retrieved struct array field has a non-struct element: " + field_name);
+                    }
+                    std::vector<std::pair<std::string, OwnedValue>> fields;
+                    auto &encoded_object = encoded_array.addObject();
+                    for (auto iterator = struct_value->begin(); iterator != struct_value->end(); ++iterator) {
+                        const auto &member = iterator.field();
+                        const auto full_name = member.getName();
+                        const auto separator = full_name.rfind('.');
+                        const auto member_name = separator == std::string::npos
+                                                     ? full_name
+                                                     : full_name.substr(separator + 1);
+                        auto member_value = struct_value->getValue(member_name);
+                        if (!member_value) continue;
+                        fields.emplace_back(member_name, owned_value(*member_value, field_name));
+                        auto &encoded_member = encoded_object.setObject(member_name);
+                        set_slime_scalar(encoded_member, *member_value, field_name);
+                    }
+                    owned.struct_elements.push_back(std::move(fields));
                 }
-                owned.strings.push_back(entry.getAsString());
+            } else {
+                owned.kind = SK_VALUE_STRING_ARRAY;
+                for (const auto &entry : *array) {
+                    if (entry.type() != document::FieldValue::Type::STRING) {
+                        throw std::invalid_argument("retrieved array field is not string-valued: " + field_name);
+                    }
+                    owned.strings.push_back(entry.getAsString());
+                    encoded_array.addString(entry.getAsString());
+                }
             }
+            owned.string = slime_json(encoded);
             break;
         }
         case document::FieldValue::Type::STRUCT: {
@@ -1435,11 +1502,22 @@ class EmbeddedEngine {
             owned.kind = SK_VALUE_POSITION;
             owned.longitude = static_cast<double>(x->getAsInt()) / 1'000'000.0;
             owned.latitude = static_cast<double>(y->getAsInt()) / 1'000'000.0;
+            vespalib::Slime encoded;
+            auto &object = encoded.setObject();
+            object.setDouble("latitude", owned.latitude);
+            object.setDouble("longitude", owned.longitude);
+            owned.string = slime_json(encoded);
             break;
         }
         case document::FieldValue::Type::PREDICATE:
+            {
+            const auto *predicate = dynamic_cast<const document::PredicateFieldValue *>(&value);
+            if (!predicate) throw std::invalid_argument("predicate field has no value: " + field_name);
             owned.kind = SK_VALUE_PREDICATE;
+            owned.predicate_json = slime_json(predicate->getSlime());
+            owned.string = owned.predicate_json;
             break;
+            }
         case document::FieldValue::Type::TENSOR: {
             const auto *tensor_value = dynamic_cast<const document::TensorFieldValue *>(&value);
             const auto *tensor = tensor_value ? tensor_value->getAsTensorPtr() : nullptr;
@@ -1737,6 +1815,10 @@ class EmbeddedEngine {
         result.exists = true;
         for (auto iterator = document->begin(); iterator != document->end(); ++iterator) {
             const auto &field = *iterator;
+            const auto manifest_field = std::find_if(
+                _manifest.fields.begin(), _manifest.fields.end(),
+                [&field](const auto &candidate) { return candidate.name == field.getName(); });
+            if (manifest_field == _manifest.fields.end() || manifest_field->virtual_field) continue;
             auto value = document->getValue(field);
             if (!value) continue;
             OwnedValue owned = owned_value(*value, field.getName());
@@ -1746,7 +1828,7 @@ class EmbeddedEngine {
         auto observed = find_lid(id, lid) ? read_retrieved_document(id) : nullptr;
         if (observed) {
             for (const auto &manifest_field : _manifest.fields) {
-                if (!manifest_field.attribute) continue;
+                if (!manifest_field.attribute || manifest_field.virtual_field) continue;
                 const auto &schema_field = _doc_type->getField(manifest_field.name);
                 const auto existing = std::find_if(
                     result.fields.begin(), result.fields.end(),

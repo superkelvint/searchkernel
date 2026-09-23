@@ -355,6 +355,10 @@ SK_API int32_t sk_engine_get(const sk_engine *engine, const char *document_id,
 SK_API int32_t sk_document_field_count(const sk_document *document,
                                        uint32_t *out_count, uint8_t *out_error,
                                        uint32_t out_error_capacity) SK_NOEXCEPT;
+/* For SK_VALUE_STRING_ARRAY, SK_VALUE_STRUCT_ARRAY, SK_VALUE_POSITION, and
+ * SK_VALUE_PREDICATE, out_string is a borrowed UTF-8 JSON payload owned by
+ * the document. Scalar fields continue to use the corresponding primitive
+ * output below. */
 SK_API int32_t sk_document_field(const sk_document *document, uint32_t index,
                                  const char **out_name, uint32_t *out_name_length,
                                  uint32_t *out_kind, const char **out_string,

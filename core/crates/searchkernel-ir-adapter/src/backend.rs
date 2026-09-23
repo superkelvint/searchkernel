@@ -159,7 +159,7 @@ fn facet_result_node(
             Ok(searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
                 id: None,
                 label: None,
-                value: Some(value_to_ir(&FieldValue::Scalar(value))),
+                value: Some(value_to_ir(&FieldValue::Scalar(value))?),
                 fields,
                 children: Vec::new(),
                 continuations: std::collections::BTreeMap::new(),
@@ -271,18 +271,20 @@ fn grouping_result_group(
             continue;
         }
         if let GroupingOutput::HitList(ids) = output {
-            children.extend(ids.iter().map(|hit| {
-                searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+            for hit in ids {
+                children.push(searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
                     id: hit.document_id.clone(),
                     score: Some(hit.score),
                     fields: hit
                         .fields
                         .iter()
-                        .map(|(name, value)| (name.clone(), value_to_ir(value)))
-                        .collect(),
+                        .map(|(name, value)| {
+                            value_to_ir(value).map(|value| (name.clone(), value))
+                        })
+                        .collect::<Result<std::collections::BTreeMap<_, _>>>()?,
                     ..Default::default()
-                })
-            }));
+                }));
+            }
         }
     }
     children.extend(
@@ -583,7 +585,7 @@ impl Backend for VespaBackend {
         let Some(document) = document else {
             return Ok(GetResult { document: None });
         };
-        let fields = project_document(&document, request.projection().fields());
+        let fields = project_document(&document, request.projection().fields())?;
         Ok(GetResult {
             document: Some(searchkernel_ir::DocumentResult {
                 id: document.id().to_owned(),
@@ -616,14 +618,16 @@ impl Backend for VespaBackend {
             .hits
             .into_iter()
             .map(|hit| {
-                searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                Ok(searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
                     id: hit.document_id,
                     score: Some(hit.score),
                     fields: hit
                         .fields
                         .into_iter()
-                        .map(|(name, value)| (name, value_to_ir(&value)))
-                        .collect(),
+                        .map(|(name, value)| {
+                            value_to_ir(&value).map(|value| (name, value))
+                        })
+                        .collect::<Result<std::collections::BTreeMap<_, _>>>()?,
                     highlights: hit
                         .highlights
                         .into_iter()
@@ -666,9 +670,9 @@ impl Backend for VespaBackend {
                     summary_features: std::collections::BTreeMap::new(),
                     rank_features: std::collections::BTreeMap::new(),
                     sort_values: Vec::new(),
-                })
+                }))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
         let mut root_fields = std::collections::BTreeMap::new();
         let mut native_facets = result.facets.into_iter();
         for grouping in groupings {
