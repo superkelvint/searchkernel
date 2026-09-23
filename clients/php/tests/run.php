@@ -220,6 +220,20 @@ try {
     Protocol::expectPayload([
         'protocol_version' => 2,
         'payload_type' => 'SearchKernel_V2_Error',
+        'payload' => [
+            'code' => 'InvalidArgument',
+            'message' => 'default retryable',
+        ],
+    ], 'SearchResult');
+    throw new RuntimeException('portable error did not throw');
+} catch (SearchKernelException $error) {
+    same(false, $error->retryable, 'omitted Error.retryable uses FlatBuffers false default');
+}
+
+try {
+    Protocol::expectPayload([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_Error',
         'payload' => ['message' => 'missing code'],
     ], 'SearchResult');
     throw new RuntimeException('malformed portable error did not fail closed');
@@ -227,6 +241,23 @@ try {
     // Expected.
 }
 
+
+same(false, Protocol::decodeValue([
+    'kind_type' => 'BoolValue',
+    'kind' => [],
+]), 'omitted BoolValue scalar uses FlatBuffers false default');
+same(0, Protocol::decodeValue([
+    'kind_type' => 'Int64Value',
+    'kind' => [],
+]), 'omitted Int64Value scalar uses FlatBuffers zero default');
+same('0', (string) Protocol::decodeValue([
+    'kind_type' => 'UInt64Value',
+    'kind' => [],
+]), 'omitted UInt64Value scalar uses FlatBuffers zero default');
+same(0.0, Protocol::decodeValue([
+    'kind_type' => 'Float64Value',
+    'kind' => [],
+]), 'omitted Float64Value scalar uses FlatBuffers zero default');
 
 $int64Max = new \SearchKernel\Int64('9223372036854775807');
 $int64Min = new \SearchKernel\Int64('-9223372036854775808');
