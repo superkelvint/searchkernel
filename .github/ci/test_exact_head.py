@@ -904,5 +904,96 @@ class ExactHeadTests(unittest.TestCase):
             self.assertEqual(source.count(needle), 1, needle)
 
 
+    def test_precommit_selects_repository_verifier_families(self) -> None:
+        cases = (
+            ("tools/check-capabilities.py", "contracts=true", "dev verify contracts"),
+            ("tools/check-client-contracts.py", "contracts=true", "dev verify contracts"),
+            ("tools/check_abi_surface.py", "abi=true", "dev verify abi"),
+            ("core/native/vespa/searchkernel_vespa.h", "abi=true", "dev verify abi"),
+            ("reference/persistence/fixtures/example.txt", "persistence=true", "dev verify persistence"),
+            ("core/crates/searchkernel/src/schema.rs", "persistence=true", "dev verify persistence"),
+            ("tools/check-issue-queue.py", "issue_queue=true", "dev verify issue-queue"),
+        )
+        for staged_path, lane, command in cases:
+            with self.subTest(staged_path=staged_path):
+                with tempfile.NamedTemporaryFile() as output_file:
+                    selected = run(
+                        "classify",
+                        "--github-output",
+                        output_file.name,
+                        input_bytes=staged_path.encode() + b"\0",
+                    )
+                    self.assertEqual(selected.returncode, 0, selected.stdout.decode())
+                    lines = set(Path(output_file.name).read_text(encoding="utf-8").splitlines())
+                    self.assertIn(lane, lines)
+
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                repo = Path(temp.name)
+                git(repo, "init", "-q")
+                git(repo, "config", "user.name", "CI Test")
+                git(repo, "config", "user.email", "ci@example.invalid")
+                (repo / ".githooks").mkdir(parents=True)
+                (repo / ".github" / "ci").mkdir(parents=True)
+                (repo / "reference" / "vespa").mkdir(parents=True)
+                (repo / "tools").mkdir(parents=True)
+                (repo / "fakebin").mkdir(parents=True)
+                (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+
+                log = repo / "hook.log"
+                cargo = repo / "fakebin" / "cargo"
+                cargo.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                cargo.chmod(0o755)
+                dev = repo / "dev"
+                dev.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                dev.chmod(0o755)
+                native_gate = repo / "reference" / "vespa" / "verify-through.sh"
+                native_gate.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'native %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                native_gate.chmod(0o755)
+                python_e2e = repo / "tools" / "run-python-native-e2e.sh"
+                python_e2e.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'python-native-e2e\\n' >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                python_e2e.chmod(0o755)
+                git(repo, "add", ".")
+                git(repo, "commit", "-q", "-m", "fixture")
+
+                staged = repo / staged_path
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                staged.write_text("changed\n", encoding="utf-8")
+                git(repo, "add", staged_path)
+
+                env = os.environ.copy()
+                env["HOOK_LOG"] = str(log)
+                env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+                env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
+                result = subprocess.run(
+                    ["bash", str(repo / ".githooks" / "pre-commit")],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertIn(command, log.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
