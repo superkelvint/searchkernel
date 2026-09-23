@@ -7,6 +7,15 @@ namespace SearchKernel;
 
 final class SearchResult
 {
+    /** @var list<string> */
+    private const TOTAL_HIT_RELATIONS = [
+        'Unspecified',
+        'Exact',
+        'LowerBound',
+        'Approximate',
+        'Unknown',
+    ];
+
     /** @var array<string,list<array{value:mixed,count:int|string}>> */
     public array $facets = [];
     /**
@@ -122,7 +131,10 @@ final class SearchResult
                 : 0;
             $relation = array_key_exists('relation', $payload['total_hits'])
                 ? Protocol::decodeStringScalar($payload['total_hits']['relation'], 'TotalHits.relation')
-                : 'Unknown';
+                : 'Unspecified';
+            if (!in_array($relation, self::TOTAL_HIT_RELATIONS, true)) {
+                throw new ProtocolException('unsupported TotalHits.relation: ' . $relation);
+            }
         }
 
         if (array_key_exists('coverage', $payload) && $payload['coverage'] !== null && !is_array($payload['coverage'])) {
@@ -134,10 +146,7 @@ final class SearchResult
         $coverage = is_array($payload['coverage'] ?? null) ? new Coverage($payload['coverage']) : null;
         $timing = is_array($payload['timing'] ?? null) ? new SearchTiming($payload['timing']) : null;
 
-        $errorEntries = $payload['errors'] ?? [];
-        if (!is_array($errorEntries) || !array_is_list($errorEntries)) {
-            throw new ProtocolException('SearchResult.errors must be a list');
-        }
+        $errorEntries = Protocol::listField($payload, 'errors', 'SearchResult.errors');
         $errors = [];
         foreach ($errorEntries as $error) {
             if (!is_array($error)) {
@@ -164,7 +173,9 @@ final class SearchResult
             $timing,
             $errors,
             $trace,
-            Protocol::decodeValueEntries($payload['metadata'] ?? []),
+            Protocol::decodeValueEntries(
+                Protocol::listField($payload, 'metadata', 'SearchResult.metadata'),
+            ),
             $aggregations,
             $continuations,
         );
