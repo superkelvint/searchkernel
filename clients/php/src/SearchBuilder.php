@@ -192,10 +192,10 @@ class SearchBuilder
             throw new InvalidArgumentException('invalid page() combination');
         }
         self::uint32($size, 'page size');
-        $offset = ($number - 1) * $size;
-        if ($offset > 0xFFFF_FFFF) {
+        if ($size !== 0 && ($number - 1) > intdiv(0xFFFF_FFFF, $size)) {
             throw new InvalidArgumentException('page range exceeds uint32 range');
         }
+        $offset = ($number - 1) * $size;
         $copy = clone $this;
         $copy->paged = true;
         $copy->offset = $offset;
@@ -244,9 +244,10 @@ class SearchBuilder
             ];
         }
         if ($this->inputs !== []) {
-            ksort($this->inputs, SORT_STRING);
+            $inputs = $this->inputs;
+            ksort($inputs, SORT_STRING);
             $request['inputs'] = [];
-            foreach ($this->inputs as $name => $value) {
+            foreach ($inputs as $name => $value) {
                 $request['inputs'][] = [
                     'name' => $name,
                     'input_type' => 'LiteralQueryInput',
