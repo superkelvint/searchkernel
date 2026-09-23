@@ -7,7 +7,7 @@ namespace SearchKernel;
 use RuntimeException;
 use JsonException;
 
-final class HttpTransport
+final class HttpTransport implements Transport
 {
     private string $executeUrl;
 
