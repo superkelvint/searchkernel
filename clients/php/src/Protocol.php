@@ -423,6 +423,78 @@ final class Protocol
         return $digits;
     }
 
+    public static function decodeUInt64Scalar(mixed $value, string $label): int|string
+    {
+        try {
+            return self::decodeInteger(['value' => $value], false);
+        } catch (ProtocolException $error) {
+            throw new ProtocolException($label . ': ' . $error->getMessage(), 0, $error);
+        }
+    }
+
+    public static function decodeStringScalar(mixed $value, string $label): string
+    {
+        if (!is_string($value)) {
+            throw new ProtocolException($label . ' must be a string');
+        }
+        return $value;
+    }
+
+    public static function encodeJson(array $value): string
+    {
+        return self::encodeJsonNode($value);
+    }
+
+    private static function encodeJsonNode(mixed $value): string
+    {
+        if (is_array($value)) {
+            if (array_is_list($value)) {
+                return '[' . implode(',', array_map(self::encodeJsonNode(...), $value)) . ']';
+            }
+
+            $parts = [];
+            $uint64Kind = ($value['kind_type'] ?? null) === 'UInt64Value';
+            foreach ($value as $key => $item) {
+                if (!is_string($key)) {
+                    throw new ProtocolException('standard FlatBuffers JSON object keys must be strings');
+                }
+                $encoded = $uint64Kind && $key === 'kind' && is_array($item)
+                    ? self::encodeUInt64Kind($item)
+                    : self::encodeJsonNode($item);
+                try {
+                    $encodedKey = json_encode($key, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+                } catch (\JsonException $error) {
+                    throw new ProtocolException('encode Search Kernel JSON object key', 0, $error);
+                }
+                $parts[] = $encodedKey . ':' . $encoded;
+            }
+            return '{' . implode(',', $parts) . '}';
+        }
+
+        if (is_object($value)) {
+            throw new ProtocolException('unexpected object in standard FlatBuffers JSON tree');
+        }
+
+        try {
+            return json_encode(
+                $value,
+                JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE,
+            );
+        } catch (\JsonException $error) {
+            throw new ProtocolException('encode Search Kernel request JSON', 0, $error);
+        }
+    }
+
+    /** @param array<string,mixed> $kind */
+    private static function encodeUInt64Kind(array $kind): string
+    {
+        if (array_keys($kind) !== ['value']) {
+            throw new ProtocolException('UInt64Value.kind must contain only value');
+        }
+        $value = self::decodeUInt64Scalar($kind['value'], 'UInt64Value.value');
+        return '{"value":' . (string) $value . '}';
+    }
+
     /** @param array<string,mixed> $payload */
     private static function emptyMarker(array $payload, string $label): float
     {
