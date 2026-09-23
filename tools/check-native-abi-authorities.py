@@ -110,6 +110,12 @@ def repository_authorities(
         raise AuthorityCheckError(
             f"{PINNED_METADATA.as_posix()} must contain a non-empty commit"
         )
+    native_commit = native_manifest.get("vespa_commit")
+    if native_commit != pin_commit:
+        raise AuthorityCheckError(
+            f"native manifest Vespa commit {native_commit!r} does not match "
+            f"pinned commit {pin_commit!r}"
+        )
 
     authorities = {
         "source header": _single_version(
