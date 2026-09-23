@@ -124,37 +124,41 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: ./dev native-sdk ensure
-      - name: Install published immutable Vespa base for client E2E
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Select C++23 compiler for Search Kernel adapter
         run: |
           set -euo pipefail
 
-          if ./dev native-sdk path >/dev/null 2>&1; then
-            echo "Compatible CI Vespa base already installed."
-            exit 0
+          probe() {
+            local compiler=$1
+            command -v "$compiler" >/dev/null 2>&1 || return 1
+            printf '#include <expected>\nint main(){ std::expected<int,int> v(1); return *v - 1; }\n' \
+              | "$compiler" -std=gnu++23 -x c++ -fsyntax-only - >/dev/null 2>&1
+          }
+
+          selected=
+          for compiler in g++-15 g++-14 g++-13 g++-12 clang++-19 clang++-18 clang++-17 clang++-16 c++; do
+            if probe "$compiler"; then
+              selected=$(command -v "$compiler")
+              break
+            fi
+          done
+
+          if [[ -z "$selected" ]]; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y g++-12
+            if probe g++-12; then
+              selected=$(command -v g++-12)
+            fi
           fi
 
-          commit=$("$CI_PYTHON" - <<'PY'
-          import json
-          with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
-              print(json.load(stream)["vespa_commit"])
-          PY
-          )
-          target=$(rustc -vV | sed -n 's/^host: //p')
-          tag="vespa-base-v1-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}"
-          asset="searchkernel-vespa-base-v1-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}.tar.gz"
-          download="$RUNNER_TEMP/searchkernel-native-base"
-          rm -rf "$download"
-          mkdir -p "$download"
+          if [[ -z "$selected" ]]; then
+            echo "::error::No compiler with the C++23 standard-library support required by the native adapter is available."
+            exit 1
+          fi
 
-          gh release download "$tag" \
-            --repo "${{ github.repository }}" \
-            --pattern "$asset" \
-            --pattern "$asset.sha256" \
-            --dir "$download"
-
-          SK_NATIVE_BASE_ARTIFACT_URL="file://$download/$asset" ./dev native-sdk ensure
+          echo "Using C++ compiler: $selected"
+          "$selected" --version | head -n 1
+          echo "CXX=$selected" >> "$GITHUB_ENV"
 
       - name: Build native searchkerneld for executable client E2E
         run: cargo build -p searchkerneld --features native
