@@ -24,14 +24,7 @@ final class HttpTransport implements Transport
      */
     public function execute(array $request): array
     {
-        try {
-            $body = json_encode(
-                $request,
-                JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE,
-            );
-        } catch (JsonException $error) {
-            throw new TransportException('encode Search Kernel request JSON', 0, $error);
-        }
+        $body = Protocol::encodeJson($request);
 
         $context = stream_context_create([
             'http' => [
@@ -71,11 +64,11 @@ final class HttpTransport implements Transport
                 JSON_THROW_ON_ERROR | JSON_BIGINT_AS_STRING,
             );
         } catch (JsonException $error) {
-            throw new TransportException('decode Search Kernel response JSON', 0, $error);
+            throw new ProtocolException('decode Search Kernel response JSON', 0, $error);
         }
 
-        if (!is_array($decoded)) {
-            throw new TransportException('Search Kernel response JSON must be an object');
+        if (!is_array($decoded) || array_is_list($decoded)) {
+            throw new ProtocolException('Search Kernel response JSON must be an object');
         }
         return $decoded;
     }
