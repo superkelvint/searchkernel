@@ -306,7 +306,7 @@ same(89.0, $doc['price'], 'price round trip');
 check($doc['embedding'] instanceof Tensor, 'stored tensor decodes to Tensor');
 
 heading('4. FULL-TEXT SEARCH');
-$results = $index->search('shoes')->limit(20)->execute();
+$results = $index->search('shoes')->searchField('title')->limit(20)->execute();
 $actual = ids($results);
 sort($actual);
 $expected = ['shoe-1', 'shoe-2', 'shoe-3', 'shoe-4', 'shoe-5'];
@@ -752,6 +752,7 @@ SKC: query.boolean/basic kinds=ergonomic,e2e runtime=http
 SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=http
 SKC: filter.textual/basic kinds=ergonomic,e2e runtime=http
 SKC: search.sorting/basic kinds=ergonomic,e2e runtime=http
+SKC: search.search_fields/basic kinds=ergonomic,e2e runtime=http
 SKC: search.pagination/basic kinds=ergonomic,e2e runtime=http
 SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=http
 SKC: result.named_summary_class/basic kinds=ergonomic,e2e runtime=http
