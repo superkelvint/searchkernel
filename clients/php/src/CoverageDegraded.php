@@ -14,7 +14,9 @@ final class CoverageDegraded
         $this->adaptiveTimeout = self::optionalBool($node, 'adaptive_timeout');
         $this->annTimeout = self::optionalBool($node, 'ann_timeout');
         $this->nonIdealState = self::optionalBool($node, 'non_ideal_state');
-        $this->metadata = Protocol::decodeValueEntries($node['metadata'] ?? []);
+        $this->metadata = Protocol::decodeValueEntries(
+            Protocol::listField($node, 'metadata', 'CoverageDegraded.metadata'),
+        );
     }
 
     public readonly ?bool $matchPhase;
