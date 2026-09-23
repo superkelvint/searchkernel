@@ -228,49 +228,103 @@ The inventory should record for every executable verification unit:
 
 This inventory is the next implementation step.
 
-## Incremental rollout
+## Implementation roadmap
+
+This checklist is the operational roadmap for this CI work. Update it as work is
+completed or new closure requirements are discovered. A checked box means the
+item has been implemented and independently verified, not merely started.
 
 ### Phase 1: inventory and closure graph
 
-Enumerate the existing test/verifier surface. Establish which commands are
-cumulative, duplicated, stale, missing from CI, or require unavailable runner
-state. Build the explicit verification DAG.
+- [ ] Inventory every executable test/verifier entry point in the repository.
+- [ ] Record the stable profile ID and exact command for each verification unit.
+- [ ] Record semantic/path triggers for each verification unit.
+- [ ] Record profile dependencies and build an explicit verification DAG.
+- [ ] Determine which umbrella/cumulative verifiers genuinely subsume others.
+- [ ] Identify duplicated, stale, unreachable, or misleading verifier entry points.
+- [ ] Record native/Vespa/oracle/toolchain prerequisites for every relevant unit.
+- [ ] Record runner suitability: GitHub-hosted versus self-hosted.
+- [ ] Record mutable state, cache behavior, concurrency hazards, and isolation needs.
+- [ ] Record approximate runtime and useful parallelization boundaries.
+- [ ] Record PR-CI versus main/nightly suitability.
+- [ ] Record whether verifier implementation must be trusted from base or candidate.
+- [ ] Reconcile the Vespa milestone/integration chain, including M13/M14 coverage.
+- [ ] Document the resulting inventory and DAG in this file.
 
 ### Phase 2: fail-closed policy
 
-Harden the current exact-head classifier so unknown behavioral paths fail
-closed. Add semantic fan-out/dependency rules and tests that demonstrate newly
-introduced or moved paths cannot silently escape verification.
+- [ ] Define the explicit set of non-behavioral paths that may safely select no behavioral tests.
+- [ ] Make unknown source/build/tooling/behavioral paths select a conservative/full profile.
+- [ ] Add semantic fan-out rules for schema/protocol/client changes.
+- [ ] Add semantic fan-out rules for ABI/native changes.
+- [ ] Add semantic fan-out rules for persistence/storage changes.
+- [ ] Add semantic fan-out rules for dependency/build-system/generated-artifact changes.
+- [ ] Ensure renames/moves account for both old and new semantic areas.
+- [ ] Make verification-policy/orchestration changes automatically select elevated verification.
+- [ ] Add adversarial classifier tests for new, unknown, renamed, and moved paths.
+- [ ] Verify the authoritative CI selector continues to come from the trusted base revision.
 
-### Phase 3: canonical profiles
+### Phase 3: canonical verification profiles
 
-Move command ownership into repository-defined verification profiles. Make
-pre-commit and developer commands consume the same profile definitions while
-retaining base-owned authority in CI.
+- [ ] Define repository-owned verification profile IDs.
+- [ ] Give each profile one canonical repository-owned command implementation.
+- [ ] Prevent planner/executor drift by mechanically validating that every selectable profile has an executor.
+- [ ] Make pre-commit consume canonical profile definitions.
+- [ ] Add a developer/agent `test-plan` interface.
+- [ ] Add a developer/agent `test-affected` interface.
+- [ ] Ensure agent/issue requirements can add profiles/evidence but cannot subtract repository-required verification.
+- [ ] Ensure arbitrary issue/PR shell text is never executable CI authority.
+- [ ] Add self-tests proving candidate changes cannot weaken their own selector or executor.
 
 ### Phase 4: provision native runners
 
-Provision immutable native/Vespa/oracle prerequisites onto the self-hosted
-Actions runners and add a cheap environment/provenance check. Do not permit
-ordinary CI to fall back to rebuilding Vespa.
+- [ ] Define the complete native runner prerequisite manifest.
+- [ ] Provision the immutable SearchKernel native base/SDK and runtime closure.
+- [ ] Provision a clean Vespa checkout at the exact pinned revision required by current verifiers.
+- [ ] Provision required prebuilt oracle artifacts.
+- [ ] Provision required compiler/toolchain/system dependencies.
+- [ ] Give provisioned state an immutable/versioned identity and manifest/checksum validation.
+- [ ] Add a cheap CI environment/provenance verifier.
+- [ ] Make missing/stale prerequisites fail instead of silently rebuilding Vespa.
+- [ ] Ensure shared heavyweight prerequisites are read-only/immutable.
+- [ ] Ensure runtime/persistence/socket/temp state is private per CI job.
+- [ ] Verify concurrent native jobs cannot contaminate each other.
+- [ ] Document the rsync/update procedure for self-hosted runners.
+- [ ] Evaluate replacing the full Vespa checkout with a smaller immutable verifier bundle after CI is green.
 
 ### Phase 5: complete change-aware CI
 
-Teach the planner to expose every required profile and add CI executors for all
-of them, including native and end-to-end profiles. Ensure policy changes receive
-candidate self-tests plus conservative/full verification.
+- [ ] Extend the trusted planner to expose every required verification profile.
+- [ ] Add CI executors for every non-native profile.
+- [ ] Add CI executors for native real-engine verification.
+- [ ] Add CI executors for native client/gRPC end-to-end verification.
+- [ ] Add CI executors for Vespa milestone/oracle verification.
+- [ ] Run candidate policy self-tests plus conservative/full verification when verification infrastructure changes.
+- [ ] Preserve exact-head evidence for every required profile.
+- [ ] Detect base drift so stale evidence cannot authorize a changed merge candidate.
+- [ ] Establish merge-result/current-base verification or an equivalent final gate.
+- [ ] Keep post-merge `main` reconciliation/verification as part of substantive closure.
 
 ### Phase 6: authoritative full suite
 
-Add `test-all` (or equivalent) from the verified inventory/DAG and run it on
-`main` and/or nightly as appropriate. The full suite must be explicit rather
-than an alias whose transitive coverage is assumed.
+- [ ] Define `test-all` (or equivalent) directly from the verified inventory/DAG.
+- [ ] Mechanically ensure every surviving required verifier is reachable from the full-suite root.
+- [ ] Make removing/renaming a verifier fail if the full-suite inventory is not updated.
+- [ ] Run the authoritative full suite on `main`.
+- [ ] Run the appropriate comprehensive suite on nightly CI.
+- [ ] Verify the full suite includes the latest intended Vespa milestone coverage rather than relying on ambiguous umbrella names.
+- [ ] Verify the full suite never rebuilds heavyweight immutable dependencies as a hidden fallback.
 
 ### Phase 7: optimize without weakening
 
-Only after coverage is mechanically established, reduce duplicated work,
-parallelize independent profiles, and improve caches. Optimization must preserve
-the same required verification closure.
+- [ ] Measure per-profile CI runtime after correctness coverage is complete.
+- [ ] Remove only proven duplicate verification.
+- [ ] Parallelize independent DAG nodes.
+- [ ] Reuse immutable caches/artifacts where correctness permits.
+- [ ] Keep mutable test state isolated despite cache optimization.
+- [ ] Add regression checks ensuring optimization does not change required verification closure.
+- [ ] Re-run adversarial false-green review of the completed system.
+- [ ] Reconcile documentation, CI, developer commands, agent guidance, and CTO state after rollout.
 
 ## False-green properties to test
 
