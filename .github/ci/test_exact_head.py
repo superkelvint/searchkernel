@@ -1205,6 +1205,19 @@ class ExactHeadTests(unittest.TestCase):
                     self.assertIn("behaviorally relevant untracked files", result.stdout)
 
 
+    def test_ir_semantic_changes_select_cross_language_client_lanes(self) -> None:
+        with tempfile.NamedTemporaryFile() as output_file:
+            result = run(
+                "classify",
+                "--github-output",
+                output_file.name,
+                input_bytes=b"core/crates/searchkernel-ir/src/api_to_ir/resolve.rs\0",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout.decode())
+            lines = set(Path(output_file.name).read_text(encoding="utf-8").splitlines())
+            self.assertIn("python=true", lines)
+            self.assertIn("typescript=true", lines)
+
     def test_php_client_changes_select_and_execute_php_tests(self) -> None:
         with tempfile.NamedTemporaryFile() as output_file:
             result = run(
