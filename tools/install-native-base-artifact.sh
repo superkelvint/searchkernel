@@ -217,6 +217,10 @@ retire_existing() {
 }
 
 mkdir -p "$CACHE_ROOT/objects" "$CACHE_ROOT/toolchains"
+# These are mutable cache namespace directories, not immutable artifact
+# contents. A previous interrupted install or inherited restrictive umask must
+# not make atomic publication impossible.
+chmod u+rwx "$CACHE_ROOT" "$CACHE_ROOT/objects" "$CACHE_ROOT/toolchains"
 retire_existing "$OBJECT" object
 retire_existing "$TOOLCHAIN" toolchain
 
