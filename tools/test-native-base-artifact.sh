@@ -45,13 +45,16 @@ ln -s libvespalib.so "$bundle/base/lib/libvespalib.so.fixture"
 ln "$bundle/base/lib/libvespalib.so" "$bundle/base/lib/libvespalib.so.hardlink"
 printf '{"kind":"vespa-base","vespa_commit":"fixture-vespa-commit"}\n' >"$bundle/base/manifest.json"
 printf 'CXX_INCLUDES = -I/work/vespa -isystem /fixture-deps/include\n' >"$configured/flags.make"
-printf 'c++ CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o -o searchcore_embedded_crud_spike_app\n' >"$configured/link.txt"
+static_dir="$vespa_toolchain/searchcore/src/vespa/searchcore/proton/server"
+mkdir -p "$static_dir"
+printf 'fixture-static\n' >"$static_dir/libsearchcore_server.a"
+printf 'c++ CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o ../../../vespa/searchcore/proton/server/libsearchcore_server.a -o searchcore_embedded_crud_spike_app\n' >"$configured/link.txt"
 printf '#define FIXTURE_DEP 1\n' >"$bundle/toolchain/vespa-deps/include/fixture.h"
 python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
 import json
 import sys
 payload = {
-    "format_version": 1,
+    "format_version": 2,
     "build_environment": "artifact-regression",
     "native_target": "x86_64-unknown-linux-gnu",
     "vespa_commit": "fixture-vespa-commit",
@@ -114,6 +117,7 @@ resolved_root=$(run_resolver vespa-root)
 [[ "$resolved_root" == "$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-unknown-linux-gnu/toolchains/fixture-vespa-commit/upstream/vespa" ]]
 [[ -f "$resolved_root/.searchkernel-vespa-artifact.json" ]]
 [[ -f "$resolved_root/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make" ]]
+[[ -f "$resolved_root/searchcore/src/vespa/searchcore/proton/server/libsearchcore_server.a" ]]
 
 if run_resolver ensure other-environment x86_64-unknown-linux-gnu >"$fixture/wrong-env.out" 2>"$fixture/wrong-env.err"; then
     echo 'published base unexpectedly crossed build environments' >&2
