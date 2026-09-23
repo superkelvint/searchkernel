@@ -28,13 +28,61 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+download_artifact() {
+    local url=$1
+    local destination=$2
+    local token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
+    local prefix='https://github.com/superkelvint/searchkernel/releases/download/'
+    local remainder tag asset release_json asset_url
+
+    if [[ -n "$token" && "$url" == "$prefix"* ]]; then
+        remainder=${url#"$prefix"}
+        tag=${remainder%%/*}
+        asset=${remainder#*/}
+        [[ -n "$tag" && -n "$asset" && "$asset" != "$remainder" ]] || return 1
+
+        release_json=$TMP/release.json
+        curl -fsSL \
+            -H "Authorization: Bearer $token" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/superkelvint/searchkernel/releases/tags/$tag" \
+            -o "$release_json" || return 1
+
+        asset_url=$(python3 - "$release_json" "$asset" <<'PY'
+import json
+import sys
+
+path, wanted = sys.argv[1:]
+with open(path, encoding="utf-8") as stream:
+    release = json.load(stream)
+for candidate in release.get("assets", []):
+    if candidate.get("name") == wanted:
+        print(candidate["url"])
+        break
+else:
+    raise SystemExit(f"release asset not found: {wanted}")
+PY
+        ) || return 1
+
+        curl -fsSL \
+            -H "Authorization: Bearer $token" \
+            -H "Accept: application/octet-stream" \
+            "$asset_url" \
+            -o "$destination"
+        return
+    fi
+
+    curl -fsSL "$url" -o "$destination"
+}
+
 ARCHIVE=$TMP/base.tar.gz
 CHECKSUM=$TMP/base.tar.gz.sha256
-if ! curl -fsSL "$ARTIFACT_URL" -o "$ARCHIVE"; then
+if ! download_artifact "$ARTIFACT_URL" "$ARCHIVE"; then
     echo "published Vespa base is unavailable: $ARTIFACT_URL" >&2
     exit 10
 fi
-if ! curl -fsSL "$ARTIFACT_URL.sha256" -o "$CHECKSUM"; then
+if ! download_artifact "$ARTIFACT_URL.sha256" "$CHECKSUM"; then
     echo "published Vespa base checksum is unavailable: $ARTIFACT_URL.sha256" >&2
     exit 1
 fi
@@ -54,6 +102,7 @@ EXTRACT=$TMP/extract
 mkdir -p "$EXTRACT"
 python3 - "$ARCHIVE" "$EXTRACT" <<'PY'
 import pathlib
+import posixpath
 import sys
 import tarfile
 
@@ -62,12 +111,41 @@ with tarfile.open(archive, "r:gz") as stream:
     members = stream.getmembers()
     if not members:
         raise SystemExit("published Vespa base archive is empty")
+
+    by_name = {str(pathlib.PurePosixPath(member.name)): member for member in members}
+    symlinks = set()
     for member in members:
         path = pathlib.PurePosixPath(member.name)
         if path.is_absolute() or ".." in path.parts:
             raise SystemExit(f"unsafe published Vespa base path: {member.name}")
-        if member.issym() or member.islnk() or member.isdev():
+        if member.isdev():
             raise SystemExit(f"unsupported published Vespa base entry: {member.name}")
+        if member.issym():
+            target = pathlib.PurePosixPath(member.linkname)
+            if target.is_absolute():
+                raise SystemExit(f"unsafe published Vespa base symlink: {member.name}")
+            resolved = posixpath.normpath(str(path.parent / target))
+            if resolved == ".." or resolved.startswith("../"):
+                raise SystemExit(f"unsafe published Vespa base symlink: {member.name}")
+            symlinks.add(path)
+        elif member.islnk():
+            target = pathlib.PurePosixPath(member.linkname)
+            if target.is_absolute() or ".." in target.parts:
+                raise SystemExit(f"unsafe published Vespa base hardlink: {member.name}")
+            resolved = posixpath.normpath(str(target))
+            target_member = by_name.get(resolved)
+            if target_member is None or not target_member.isfile():
+                raise SystemExit(f"unsafe published Vespa base hardlink: {member.name}")
+
+    # A later archive member must never be extracted through a symlink created
+    # by an earlier member. Legitimate runtime SONAME links point at sibling
+    # files and have no children of their own.
+    for member in members:
+        path = pathlib.PurePosixPath(member.name)
+        for parent in path.parents:
+            if parent in symlinks:
+                raise SystemExit(f"unsafe published Vespa base symlink traversal: {member.name}")
+
     stream.extractall(destination, members=members)
 PY
 
@@ -139,10 +217,27 @@ retire_existing() {
 }
 
 mkdir -p "$CACHE_ROOT/objects" "$CACHE_ROOT/toolchains"
+# These are mutable cache namespace directories, not immutable artifact
+# contents. A previous interrupted install or inherited restrictive umask must
+# not make atomic publication impossible.
+chmod u+rwx "$CACHE_ROOT" "$CACHE_ROOT/objects" "$CACHE_ROOT/toolchains"
 retire_existing "$OBJECT" object
 retire_existing "$TOOLCHAIN" toolchain
 
-mv "$BASE" "$OBJECT"
-mv "$BUNDLE/toolchain" "$TOOLCHAIN"
+# Do not rename directly out of the extracted bundle. Published base trees
+# intentionally preserve read-only directory modes, so their archive parent may
+# not be a valid rename source on every filesystem. Copy into writable staging
+# directories under the cache, then atomically publish those staging roots.
+OBJECT_STAGE=$TMP/object-stage
+TOOLCHAIN_STAGE=$TMP/toolchain-stage
+mkdir -p "$OBJECT_STAGE" "$TOOLCHAIN_STAGE"
+cp -a "$BASE/." "$OBJECT_STAGE/"
+cp -a "$BUNDLE/toolchain/." "$TOOLCHAIN_STAGE/"
+# cp -a preserves the immutable source root mode onto the staging root on GNU
+# coreutils. Make only those staging directory entries writable long enough for
+# publication; the installed trees are sealed read-only immediately afterward.
+chmod u+rwx "$OBJECT_STAGE" "$TOOLCHAIN_STAGE"
+mv "$OBJECT_STAGE" "$OBJECT"
+mv "$TOOLCHAIN_STAGE" "$TOOLCHAIN"
 chmod -R a-w "$OBJECT" "$TOOLCHAIN"
 printf '%s\n' "$TOOLCHAIN/upstream/vespa"

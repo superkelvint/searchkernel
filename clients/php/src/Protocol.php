@@ -5,11 +5,39 @@ declare(strict_types=1);
 namespace SearchKernel;
 
 use InvalidArgumentException;
-use UnexpectedValueException;
 
 final class Protocol
 {
     public const VERSION = 2;
+
+    /** @var array<string,array{0:string,1:string}> */
+    private const OPERATIONS = [
+        'insert' => ['InsertRequest', 'InsertResult'],
+        'upsert' => ['UpsertRequest', 'UpsertResult'],
+        'patch' => ['PatchRequest', 'PatchResult'],
+        'update' => ['UpdateRequest', 'UpdateResult'],
+        'delete' => ['DeleteRequest', 'DeleteResult'],
+        'get' => ['GetRequest', 'GetResult'],
+        'search' => ['SearchRequest', 'SearchResult'],
+        'analyze' => ['AnalyzeRequest', 'AnalyzeResult'],
+        'describe' => ['DescribeRequest', 'DescribeResult'],
+        'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
+    ];
+
+    /** @return array{0:string,1:string} */
+    public static function operation(string $operation): array
+    {
+        if (!array_key_exists($operation, self::OPERATIONS)) {
+            throw new InvalidArgumentException('unknown Search Kernel operation: ' . $operation);
+        }
+        return self::OPERATIONS[$operation];
+    }
+
+    /** @return list<string> */
+    public static function operations(): array
+    {
+        return array_keys(self::OPERATIONS);
+    }
 
     /** @return array<string, mixed> */
     public static function envelope(string $payloadType, array $payload): array
@@ -55,6 +83,22 @@ final class Protocol
         return $entries;
     }
 
+    /** @param array<string,string> $values
+     *  @return list<array{key:string,value:string}>
+     */
+    public static function stringEntries(array $values): array
+    {
+        ksort($values, SORT_STRING);
+        $entries = [];
+        foreach ($values as $key => $value) {
+            if (!is_string($key) || !is_string($value)) {
+                throw new InvalidArgumentException('string entry maps require string keys and values');
+            }
+            $entries[] = ['key' => $key, 'value' => $value];
+        }
+        return $entries;
+    }
+
     /** @return array<string, mixed> */
     public static function value(mixed $value): array
     {
@@ -68,6 +112,26 @@ final class Protocol
             return [
                 'kind_type' => 'BoolValue',
                 'kind' => ['value' => $value],
+            ];
+        }
+        if ($value instanceof UInt64) {
+            return [
+                'kind_type' => 'UInt64Value',
+                'kind' => ['value' => $value->value],
+            ];
+        }
+        if ($value instanceof ValueObject) {
+            return [
+                'kind_type' => 'ValueObject',
+                'kind' => [
+                    'fields' => array_map(
+                        static fn (array $entry): array => [
+                            'key' => $entry['key'],
+                            'value' => self::value($entry['value']),
+                        ],
+                        $value->entries,
+                    ),
+                ],
             ];
         }
         if (is_int($value)) {
@@ -89,6 +153,23 @@ final class Protocol
             return [
                 'kind_type' => 'StringValue',
                 'kind' => ['value' => $value],
+            ];
+        }
+        if ($value instanceof Bytes) {
+            $bytes = unpack('C*', $value->value);
+            return [
+                'kind_type' => 'BytesValue',
+                'kind' => ['value' => $bytes === false ? [] : array_values($bytes)],
+            ];
+        }
+        if ($value instanceof Tensor) {
+            return [
+                'kind_type' => 'TensorValue',
+                'kind' => [
+                    'type_spec' => $value->typeSpec,
+                    'payload_type' => $value->payloadType,
+                    'payload' => $value->payload,
+                ],
             ];
         }
         if (is_array($value)) {
@@ -115,13 +196,13 @@ final class Protocol
     public static function expectPayload(array $response, string $expectedType): array
     {
         if (($response['protocol_version'] ?? null) !== self::VERSION) {
-            throw new UnexpectedValueException('unsupported Search Kernel response protocol version');
+            throw new ProtocolException('unsupported Search Kernel response protocol version');
         }
 
         $type = $response['payload_type'] ?? null;
         $payload = $response['payload'] ?? null;
         if (!is_array($payload)) {
-            throw new UnexpectedValueException('Search Kernel response is missing its union payload');
+            throw new ProtocolException('Search Kernel response is missing its union payload');
         }
 
         if ($type === 'SearchKernel_V2_Error') {
@@ -129,7 +210,7 @@ final class Protocol
         }
 
         if ($type !== 'SearchKernel_V2_' . $expectedType) {
-            throw new UnexpectedValueException(sprintf(
+            throw new ProtocolException(sprintf(
                 'unexpected Search Kernel response type %s (expected %s)',
                 is_string($type) ? $type : '<missing>',
                 'SearchKernel_V2_' . $expectedType,
@@ -144,8 +225,14 @@ final class Protocol
      */
     public static function decodeDocument(array $document): array
     {
-        $fields = self::decodeValueEntries($document['fields'] ?? []);
-        $fields['_id'] = (string) ($document['id'] ?? '');
+        $fields = self::decodeValueEntries(
+            self::listField($document, 'fields', 'Document.fields'),
+        );
+        $id = $document['id'] ?? null;
+        if (!is_string($id)) {
+            throw new ProtocolException('Document.id must be a string');
+        }
+        $fields['_id'] = $id;
         return $fields;
     }
 
@@ -154,21 +241,18 @@ final class Protocol
      */
     public static function decodeValueEntries(mixed $entries): array
     {
-        if ($entries === null) {
-            return [];
-        }
-        if (!is_array($entries)) {
-            throw new UnexpectedValueException('portable value entries must be an array');
+        if (!is_array($entries) || !array_is_list($entries)) {
+            throw new ProtocolException('portable value entries must be a list');
         }
 
         $result = [];
         foreach ($entries as $entry) {
             if (!is_array($entry) || !is_string($entry['key'] ?? null) || !is_array($entry['value'] ?? null)) {
-                throw new UnexpectedValueException('malformed portable value entry');
+                throw new ProtocolException('malformed portable value entry');
             }
             $key = $entry['key'];
             if (array_key_exists($key, $result)) {
-                throw new UnexpectedValueException('duplicate portable value key: ' . $key);
+                throw new ProtocolException('duplicate portable value key: ' . $key);
             }
             $result[$key] = self::decodeValue($entry['value']);
         }
@@ -181,19 +265,25 @@ final class Protocol
         $type = $value['kind_type'] ?? null;
         $payload = $value['kind'] ?? null;
         if (!is_string($type) || !is_array($payload)) {
-            throw new UnexpectedValueException('malformed portable Value union');
+            throw new ProtocolException('malformed portable Value union');
         }
 
         return match ($type) {
-            'NullValueValue' => null,
-            'BoolValue' => (bool) self::required($payload, 'value'),
-            'Int64Value', 'UInt64Value' => self::required($payload, 'value'),
-            'Float64Value' => (float) self::required($payload, 'value'),
-            'StringValue' => (string) self::required($payload, 'value'),
+            'NullValueValue' => self::decodeNull($payload),
+            'BoolValue' => self::decodeBool($payload),
+            'Int64Value' => self::decodeInteger($payload, true),
+            'UInt64Value' => self::decodeInteger($payload, false),
+            'Float64Value' => self::decodeFloat64($payload),
+            'NonFiniteFloatValue' => self::decodeNonFiniteFloat($payload),
+            'StringValue' => self::decodeString($payload),
+            'BytesValue' => self::decodeBytes($payload),
             'ValueList' => self::decodeValueList($payload),
-            'ValueObject' => self::decodeValueEntries($payload['fields'] ?? []),
-            default => throw new UnexpectedValueException(
-                'unsupported portable Value kind in first PHP slice: ' . $type
+            'ValueObject' => self::decodeValueEntries(
+                self::listField($payload, 'fields', 'ValueObject.fields'),
+            ),
+            'TensorValue' => self::decodeTensor($payload),
+            default => throw new ProtocolException(
+                'unsupported portable Value kind: ' . $type
             ),
         };
     }
@@ -204,14 +294,14 @@ final class Protocol
         $type = $node['value_type'] ?? null;
         $payload = $node['value'] ?? null;
         if (!is_string($type) || !is_array($payload)) {
-            throw new UnexpectedValueException('malformed relevance union');
+            throw new ProtocolException('malformed relevance union');
         }
 
         return match ($type) {
-            'FiniteRelevance' => (float) self::required($payload, 'value'),
-            'PositiveInfinityRelevance' => INF,
-            'NegativeInfinityRelevance' => -INF,
-            default => throw new UnexpectedValueException('unsupported relevance kind: ' . $type),
+            'FiniteRelevance' => self::finiteScalarField($payload, 'value', 'FiniteRelevance.value', 0.0),
+            'PositiveInfinityRelevance' => self::emptyMarker($payload, 'PositiveInfinityRelevance'),
+            'NegativeInfinityRelevance' => -self::emptyMarker($payload, 'NegativeInfinityRelevance'),
+            default => throw new ProtocolException('unsupported relevance kind: ' . $type),
         };
     }
 
@@ -220,14 +310,11 @@ final class Protocol
      */
     private static function decodeValueList(array $payload): array
     {
-        $values = $payload['values'] ?? [];
-        if (!is_array($values)) {
-            throw new UnexpectedValueException('portable ValueList values must be an array');
-        }
+        $values = self::listField($payload, 'values', 'ValueList.values');
         return array_map(
             static function (mixed $value): mixed {
                 if (!is_array($value)) {
-                    throw new UnexpectedValueException('malformed portable ValueList member');
+                    throw new ProtocolException('malformed portable ValueList member');
                 }
                 return self::decodeValue($value);
             },
@@ -236,10 +323,274 @@ final class Protocol
     }
 
     /** @param array<string, mixed> $payload */
+    private static function decodeNonFiniteFloat(array $payload): float
+    {
+        return match (self::required($payload, 'kind')) {
+            'NaN' => NAN,
+            'PositiveInfinity' => INF,
+            'NegativeInfinity' => -INF,
+            default => throw new ProtocolException('unknown non-finite float kind'),
+        };
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function decodeBytes(array $payload): Bytes
+    {
+        $values = self::required($payload, 'value');
+        if (!is_array($values) || !array_is_list($values)) {
+            throw new ProtocolException('BytesValue.value must be a list');
+        }
+        $binary = '';
+        foreach ($values as $value) {
+            if (!is_int($value) || $value < 0 || $value > 255) {
+                throw new ProtocolException('BytesValue members must be uint8 values');
+            }
+            $binary .= chr($value);
+        }
+        return new Bytes($binary);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function decodeTensor(array $payload): Tensor
+    {
+        $typeSpec = self::required($payload, 'type_spec');
+        $payloadType = self::required($payload, 'payload_type');
+        $tensorPayload = self::required($payload, 'payload');
+        if (!is_string($typeSpec) || !is_string($payloadType) || !is_array($tensorPayload)) {
+            throw new ProtocolException('malformed TensorValue payload');
+        }
+
+        return Tensor::fromWire($typeSpec, $payloadType, $tensorPayload);
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function decodeNull(array $payload): mixed
+    {
+        $value = self::required($payload, 'value');
+        if ($value !== 'Null') {
+            throw new ProtocolException('NullValueValue.value must be Null');
+        }
+        return null;
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function decodeBool(array $payload): bool
+    {
+        return self::boolScalarField($payload, 'value', 'BoolValue.value', false);
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function decodeString(array $payload): string
+    {
+        $value = self::required($payload, 'value');
+        if (!is_string($value)) {
+            throw new ProtocolException('StringValue.value must be a string');
+        }
+        return $value;
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function decodeFloat64(array $payload): float
+    {
+        return self::finiteScalarField($payload, 'value', 'Float64Value.value', 0.0);
+    }
+
+    private static function finiteNumber(mixed $value, string $label): float
+    {
+        if ((!is_int($value) && !is_float($value)) || !is_finite((float) $value)) {
+            throw new ProtocolException($label . ' must be a finite JSON number');
+        }
+        return (float) $value;
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function decodeInteger(array $payload, bool $signed): int|string
+    {
+        $value = array_key_exists('value', $payload) ? $payload['value'] : 0;
+        if (is_int($value)) {
+            if (!$signed && $value < 0) {
+                throw new ProtocolException('UInt64Value.value must be unsigned');
+            }
+            return $value;
+        }
+        if (!is_string($value)) {
+            throw new ProtocolException(($signed ? 'Int64Value' : 'UInt64Value') . '.value must be an integer or decimal string');
+        }
+        $pattern = $signed ? '/^-?(0|[1-9][0-9]*)$/' : '/^(0|[1-9][0-9]*)$/';
+        if (preg_match($pattern, $value) !== 1) {
+            throw new ProtocolException('invalid integer decimal string');
+        }
+
+        if ($signed) {
+            $negative = str_starts_with($value, '-');
+            $digits = ltrim($negative ? substr($value, 1) : $value, '0');
+            $digits = $digits === '' ? '0' : $digits;
+            $max = $negative ? '9223372036854775808' : '9223372036854775807';
+            if (strlen($digits) > strlen($max) || (strlen($digits) === strlen($max) && strcmp($digits, $max) > 0)) {
+                throw new ProtocolException('Int64Value.value exceeds int64 range');
+            }
+            return (int) $value;
+        }
+
+        $digits = ltrim($value, '0');
+        $digits = $digits === '' ? '0' : $digits;
+        $max = '18446744073709551615';
+        if (strlen($digits) > strlen($max) || (strlen($digits) === strlen($max) && strcmp($digits, $max) > 0)) {
+            throw new ProtocolException('UInt64Value.value exceeds uint64 range');
+        }
+        if (strlen($digits) < strlen((string) PHP_INT_MAX)
+            || (strlen($digits) === strlen((string) PHP_INT_MAX) && strcmp($digits, (string) PHP_INT_MAX) <= 0)
+        ) {
+            return (int) $digits;
+        }
+        return $digits;
+    }
+
+    public static function decodeInt64Scalar(mixed $value, string $label): int|string
+    {
+        try {
+            return self::decodeInteger(['value' => $value], true);
+        } catch (ProtocolException $error) {
+            throw new ProtocolException($label . ': ' . $error->getMessage(), 0, $error);
+        }
+    }
+
+    public static function decodeUInt64Scalar(mixed $value, string $label): int|string
+    {
+        try {
+            return self::decodeInteger(['value' => $value], false);
+        } catch (ProtocolException $error) {
+            throw new ProtocolException($label . ': ' . $error->getMessage(), 0, $error);
+        }
+    }
+
+    public static function decodeStringScalar(mixed $value, string $label): string
+    {
+        if (!is_string($value)) {
+            throw new ProtocolException($label . ' must be a string');
+        }
+        return $value;
+    }
+
+    /** @param array<string,mixed> $node */
+    public static function boolScalarField(array $node, string $key, string $label, bool $default = false): bool
+    {
+        if (!array_key_exists($key, $node)) {
+            return $default;
+        }
+        if (!is_bool($node[$key])) {
+            throw new ProtocolException($label . ' must be a boolean');
+        }
+        return $node[$key];
+    }
+
+    /** @param array<string,mixed> $node */
+    public static function uint32ScalarField(array $node, string $key, string $label, int $default = 0): int
+    {
+        if (!array_key_exists($key, $node)) {
+            return $default;
+        }
+        $value = $node[$key];
+        if (!is_int($value) || $value < 0 || $value > 0xFFFF_FFFF) {
+            throw new ProtocolException($label . ' must be a uint32');
+        }
+        return $value;
+    }
+
+    /** @param array<string,mixed> $node */
+    public static function finiteScalarField(array $node, string $key, string $label, float $default = 0.0): float
+    {
+        if (!array_key_exists($key, $node)) {
+            return $default;
+        }
+        return self::finiteNumber($node[$key], $label);
+    }
+
+    /** @internal
+     *  @param array<string,mixed> $node
+     *  @return list<mixed>
+     */
+    public static function listField(array $node, string $key, string $label): array
+    {
+        if (!array_key_exists($key, $node)) {
+            return [];
+        }
+        $value = $node[$key];
+        if (!is_array($value) || !array_is_list($value)) {
+            throw new ProtocolException($label . ' must be a list');
+        }
+        return $value;
+    }
+
+    public static function encodeJson(array $value): string
+    {
+        return self::encodeJsonNode($value);
+    }
+
+    private static function encodeJsonNode(mixed $value): string
+    {
+        if (is_array($value)) {
+            if (array_is_list($value)) {
+                return '[' . implode(',', array_map(self::encodeJsonNode(...), $value)) . ']';
+            }
+
+            $parts = [];
+            $uint64Kind = ($value['kind_type'] ?? null) === 'UInt64Value';
+            foreach ($value as $key => $item) {
+                if (!is_string($key)) {
+                    throw new ProtocolException('standard FlatBuffers JSON object keys must be strings');
+                }
+                $encoded = $uint64Kind && $key === 'kind' && is_array($item)
+                    ? self::encodeUInt64Kind($item)
+                    : self::encodeJsonNode($item);
+                try {
+                    $encodedKey = json_encode($key, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+                } catch (\JsonException $error) {
+                    throw new ProtocolException('encode Search Kernel JSON object key', 0, $error);
+                }
+                $parts[] = $encodedKey . ':' . $encoded;
+            }
+            return '{' . implode(',', $parts) . '}';
+        }
+
+        if (is_object($value)) {
+            throw new ProtocolException('unexpected object in standard FlatBuffers JSON tree');
+        }
+
+        try {
+            return json_encode(
+                $value,
+                JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE,
+            );
+        } catch (\JsonException $error) {
+            throw new ProtocolException('encode Search Kernel request JSON', 0, $error);
+        }
+    }
+
+    /** @param array<string,mixed> $kind */
+    private static function encodeUInt64Kind(array $kind): string
+    {
+        if (array_keys($kind) !== ['value']) {
+            throw new ProtocolException('UInt64Value.kind must contain only value');
+        }
+        $value = self::decodeUInt64Scalar($kind['value'], 'UInt64Value.value');
+        return '{"value":' . (string) $value . '}';
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function emptyMarker(array $payload, string $label): float
+    {
+        if ($payload !== []) {
+            throw new ProtocolException($label . ' payload must be empty');
+        }
+        return INF;
+    }
+
+    /** @param array<string, mixed> $payload */
     private static function required(array $payload, string $key): mixed
     {
         if (!array_key_exists($key, $payload)) {
-            throw new UnexpectedValueException('missing portable union field: ' . $key);
+            throw new ProtocolException('missing portable union field: ' . $key);
         }
         return $payload[$key];
     }
