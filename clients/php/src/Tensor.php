@@ -81,7 +81,10 @@ final class Tensor
     /** @param array<string,mixed> $payload */
     private static function denseFromWire(string $typeSpec, array $payload): self
     {
-        if (array_keys($payload) !== ['values'] || !is_array($payload['values'])) {
+        if (array_keys($payload) !== ['values']
+            || !is_array($payload['values'])
+            || !array_is_list($payload['values'])
+        ) {
             throw new InvalidArgumentException('DenseTensorValues payload must contain only values');
         }
         return self::dense($typeSpec, $payload['values']);
@@ -90,7 +93,10 @@ final class Tensor
     /** @param array<string,mixed> $payload */
     private static function sparseFromWire(string $typeSpec, array $payload): self
     {
-        if (array_keys($payload) !== ['cells'] || !is_array($payload['cells'])) {
+        if (array_keys($payload) !== ['cells']
+            || !is_array($payload['cells'])
+            || !array_is_list($payload['cells'])
+        ) {
             throw new InvalidArgumentException('SparseTensorCells payload must contain only cells');
         }
         $cells = [];
@@ -109,12 +115,20 @@ final class Tensor
     /** @param array<string,mixed> $payload */
     private static function mixedFromWire(string $typeSpec, array $payload): self
     {
-        if (array_keys($payload) !== ['blocks'] || !is_array($payload['blocks'])) {
+        if (array_keys($payload) !== ['blocks']
+            || !is_array($payload['blocks'])
+            || !array_is_list($payload['blocks'])
+        ) {
             throw new InvalidArgumentException('MixedTensorBlocks payload must contain only blocks');
         }
         $blocks = [];
         foreach ($payload['blocks'] as $block) {
-            if (!is_array($block) || !is_array($block['address'] ?? null) || !is_array($block['values'] ?? null)) {
+            if (!is_array($block)
+                || !is_array($block['address'] ?? null)
+                || !array_is_list($block['address'] ?? [])
+                || !is_array($block['values'] ?? null)
+                || !array_is_list($block['values'] ?? [])
+            ) {
                 throw new InvalidArgumentException('malformed mixed tensor block');
             }
             $blocks[] = [
@@ -130,6 +144,9 @@ final class Tensor
      */
     private static function wireAddress(array $address): array
     {
+        if (!array_is_list($address)) {
+            throw new InvalidArgumentException('tensor address must be a list');
+        }
         $decoded = [];
         foreach ($address as $entry) {
             if (!is_array($entry)
