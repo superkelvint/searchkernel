@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import subprocess
 import sys
 import tempfile
@@ -908,6 +909,51 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             _canonical_snapshot(helper_index.client.request),
             _canonical_snapshot(explicit),
         )
+
+    def test_generated_page_property_is_lossless_and_overflow_safe(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        rng = random.Random(0x5EA2C)
+        max_u32 = 0xFFFF_FFFF
+
+        for _ in range(512):
+            size = rng.randrange(0, 1 << 16)
+            if size == 0:
+                number = 1 + rng.randrange(0, 1 << 20)
+            else:
+                max_page = max_u32 // size
+                number = 1 + rng.randrange(max_page)
+
+            paged = Index()
+            SearchBuilder(paged, None).page(number, size).execute()
+            explicit = Index()
+            SearchBuilder(explicit, None).limit(size).offset((number - 1) * size).execute()
+
+            self.assertEqual(paged.client.request.limit.value, size)
+            self.assertEqual(paged.client.request.offset.value, (number - 1) * size)
+            self.assertEqual(paged.client.request.limit.value, explicit.client.request.limit.value)
+            self.assertEqual(paged.client.request.offset.value, explicit.client.request.offset.value)
+            self.assertLessEqual(paged.client.request.offset.value, max_u32)
+
+        for _ in range(256):
+            size = 1 + rng.randrange(1 << 16)
+            number = max_u32 // size + 1
+            with self.assertRaises(ValueError):
+                SearchBuilder(Index(), None).page(number, size)
 
     def test_page_rejects_non_uint32_and_conflicting_pagination(self):
         class Index:
