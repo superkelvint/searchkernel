@@ -60,6 +60,9 @@ jobs:
         with:
           php-version: "8.2"
           coverage: none
+          tools: none
+        env:
+          runner: self-hosted
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
       - name: Enforce runner-Python workflow policy
