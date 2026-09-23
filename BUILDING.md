@@ -135,9 +135,12 @@ so GitHub CI does not acquire or build Vespa merely because Python behavioral
 tests are selected.
 
 Because lane selection is based on the staged snapshot while the verifiers run
-from the working tree, pre-commit rejects tracked unstaged changes. Stage or
-revert tracked edits before committing so an unstaged fix cannot make a broken
-staged commit appear green.
+from the working tree, pre-commit rejects tracked unstaged changes. It also
+rejects untracked files that select a behavioral verification lane, since an
+untracked source or tooling file can influence a working-tree build without
+being present in the commit. Unrelated scratch files remain allowed. Stage,
+remove, ignore, or revert relevant edits before committing so working-tree-only
+state cannot make a broken staged commit appear green.
 
 
 ## Environment isolation
