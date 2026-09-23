@@ -87,7 +87,6 @@ Capabilities with known constraints are collected in the generated
 - `query.comparison` — The Python and TypeScript q facades do not yet expose comparison constructors.
 - `query.range` — The Python and TypeScript q facades do not yet expose range constructors.
 - `query.phrase` — The TypeScript high-level q namespace does not yet expose a phrase helper.
-- `query.proximity` — The TypeScript q facade does not expose proximity constructors yet.
 - `query.same_element` — Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. The Rust query helper exists, but the current high-level Rust schema facade cannot itself define the required array-of-struct field.
 - `query.fuzzy` — The TypeScript high-level q facade does not yet expose a fuzzy helper.
 - `query.prefix_suffix_substring` — the Python and TypeScript q facades do not yet expose
@@ -144,3 +143,13 @@ Capabilities with known constraints are collected in the generated
 - `result.grouping_tree` — The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Rust now preserves nested Hit children with the same Hit decoder used at the root, but its GroupingResult convenience separates nested groups and hits into distinct vectors and does not expose the canonical mixed-child ordering or canonical root directly.
 - `result.degradation_metadata` — The real backend populates coverage counters and match-phase/timeout/ANN degradation flags. Portable timing, trace, arbitrary metadata, and native Vespa UniqueIssues are not currently populated by this backend; UniqueIssues are deliberately not fabricated into SearchResult.errors.
 - `platform.embedded_vespa_scope` — Distributed routing, configuration services, schema deployment, federation, and other container-level Vespa facilities are outside this wrapper.
+
+## Structured facade support
+
+Facade availability below is validated against implementation symbols and executable client evidence.
+
+| Capability | Surface | Status | Structural evidence |
+| --- | --- | --- | --- |
+| `query.proximity` | rust | supported | core/crates/searchkernel/src/query.rs |
+| `query.proximity` | python | supported | clients/python/searchkernel/ergonomic.py |
+| `query.proximity` | typescript | missing | — |

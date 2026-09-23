@@ -169,6 +169,19 @@ class ClientContractTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.RegistryError, "unknown runtime"):
             MODULE.collect_evidence(surfaces, scenarios, self.root)
 
+    def test_facade_support_rejects_missing_claim_with_ergonomic_evidence(self) -> None:
+        (self.root / "python-tests" / "support.py").write_text(
+            "# SKC: result.highlighting/basic kinds=ergonomic runtime=grpc\n",
+            encoding="utf-8",
+        )
+        global_caps, surfaces, scenarios, _ = self.load()
+        global_caps["result.highlighting"]["facade_support"] = {
+            "python": {"status": "missing", "evidence": []}
+        }
+        evidence = MODULE.collect_evidence(surfaces, scenarios, self.root)
+        with self.assertRaisesRegex(MODULE.RegistryError, "claims python is missing"):
+            MODULE.validate_facade_support(global_caps, surfaces, evidence)
+
     def test_malformed_annotation_is_rejected(self) -> None:
         (self.root / "rust-tests" / "bad.rs").write_text(
             "// SKC: result.highlighting/basic e2e native\n",

@@ -31,6 +31,9 @@ REQUIRED_FIELDS = {
     "verified_by",
     "limitations",
 }
+FACADE_SURFACES = {"rust", "python", "typescript"}
+FACADE_TITLES = {"rust": "Rust", "python": "Python", "typescript": "TypeScript"}
+FACADE_STATUSES = {"supported", "missing"}
 
 
 class LedgerError(ValueError):
@@ -68,6 +71,117 @@ def _require_string_list(value: Any, label: str) -> list[str]:
     for index, item in enumerate(value):
         result.append(_require_string(item, f"{label}[{index}]"))
     return result
+
+
+def _source_has_symbol(source: str, symbol: str) -> bool:
+    """Match declaration-shaped evidence, not comments or arbitrary substrings."""
+    return any(line.strip().startswith(symbol) for line in source.splitlines())
+
+
+def _validate_facade_support(
+    value: Any,
+    label: str,
+    root: Path,
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict):
+        raise LedgerError(f"{label} must be an object")
+
+    validated: dict[str, dict[str, Any]] = {}
+    for surface, state in value.items():
+        if surface not in FACADE_SURFACES:
+            raise LedgerError(f"{label} has unknown facade surface: {surface}")
+        if not isinstance(state, dict):
+            raise LedgerError(f"{label}.{surface} must be an object")
+        status = state.get("status")
+        if status not in FACADE_STATUSES:
+            raise LedgerError(
+                f"{label}.{surface}.status must be one of: missing, supported"
+            )
+        raw_evidence = state.get("evidence", [])
+        raw_absence_evidence = state.get("absence_evidence", [])
+        if not isinstance(raw_evidence, list):
+            raise LedgerError(f"{label}.{surface}.evidence must be a list")
+        if not isinstance(raw_absence_evidence, list):
+            raise LedgerError(f"{label}.{surface}.absence_evidence must be a list")
+        if status == "supported" and not raw_evidence:
+            raise LedgerError(
+                f"{label}.{surface}: supported facade requires structural evidence"
+            )
+        if status == "supported" and raw_absence_evidence:
+            raise LedgerError(
+                f"{label}.{surface}: supported facade cannot list absence evidence"
+            )
+        if status == "missing" and raw_evidence:
+            raise LedgerError(
+                f"{label}.{surface} claims the facade is missing but lists "
+                "implementation evidence"
+            )
+        if status == "missing" and not raw_absence_evidence:
+            raise LedgerError(
+                f"{label}.{surface}: missing facade requires absence evidence"
+            )
+
+        def validate_symbol_evidence(
+            items: list[Any],
+            evidence_name: str,
+            expect_present: bool,
+        ) -> list[dict[str, Any]]:
+            validated_items: list[dict[str, Any]] = []
+            for index, item in enumerate(items):
+                evidence_label = f"{label}.{surface}.{evidence_name}[{index}]"
+                if not isinstance(item, dict):
+                    raise LedgerError(f"{evidence_label} must be an object")
+                path_value = item.get("path")
+                if not isinstance(path_value, str) or not path_value:
+                    raise LedgerError(
+                        f"{evidence_label}.path must be a non-empty string"
+                    )
+                path = Path(path_value)
+                if path.is_absolute() or ".." in path.parts:
+                    raise LedgerError(
+                        f"{evidence_label}.path must be repository-relative: {path_value}"
+                    )
+                target = root / path
+                if not target.is_file():
+                    raise LedgerError(
+                        f"{evidence_label}.path does not exist: {path_value}"
+                    )
+                symbols = _require_string_list(
+                    item.get("symbols"), f"{evidence_label}.symbols"
+                )
+                try:
+                    source = target.read_text(encoding="utf-8")
+                except OSError as error:
+                    raise LedgerError(
+                        f"cannot read facade evidence {path_value}: {error}"
+                    ) from error
+                present = [symbol for symbol in symbols if _source_has_symbol(source, symbol)]
+                if expect_present:
+                    missing_symbols = [symbol for symbol in symbols if symbol not in present]
+                    if missing_symbols:
+                        raise LedgerError(
+                            f"{label}.{surface} evidence is missing symbol(s): "
+                            + ", ".join(missing_symbols)
+                        )
+                elif present:
+                    raise LedgerError(
+                        f"{label}.{surface} claims the facade is missing but "
+                        "implementation symbol(s) now exist: "
+                        + ", ".join(present)
+                    )
+                validated_items.append({"path": path.as_posix(), "symbols": symbols})
+            return validated_items
+
+        evidence = validate_symbol_evidence(raw_evidence, "evidence", True)
+        absence_evidence = validate_symbol_evidence(
+            raw_absence_evidence, "absence_evidence", False
+        )
+        validated[surface] = {
+            "status": status,
+            "evidence": evidence,
+            "absence_evidence": absence_evidence,
+        }
+    return validated
 
 
 def load_query_expr_kinds(path: Path = QUERY_SCHEMA_PATH) -> list[str]:
@@ -177,6 +291,11 @@ def validate_ledger(ledger: dict[str, Any], root: Path = ROOT) -> list[dict[str,
         if not represented and not limitations:
             raise LedgerError(f"{identifier}: unsupported capability needs a limitation")
 
+        if "facade_support" in capability:
+            _validate_facade_support(
+                capability["facade_support"], f"{label}.facade_support", root
+            )
+
         validated.append(capability)
 
     missing_query_expr_kinds = query_expr_kinds - query_expr_owners.keys()
@@ -248,6 +367,26 @@ def render_capabilities(ledger: dict[str, Any], capabilities: list[dict[str, Any
     for capability in capabilities:
         if capability["limitations"]:
             lines.append(f"- `{capability['id']}` — {capability['limitations'][0]}")
+    structured = [
+        capability for capability in capabilities if "facade_support" in capability
+    ]
+    if structured:
+        lines.extend(["", "## Structured facade support", ""])
+        lines.extend(
+            [
+                "Facade availability below is validated against implementation symbols "
+                "and executable client evidence.",
+                "",
+                "| Capability | Surface | Status | Structural evidence |",
+                "| --- | --- | --- | --- |",
+            ]
+        )
+        for capability in structured:
+            for surface, state in capability["facade_support"].items():
+                evidence = ", ".join(item["path"] for item in state["evidence"]) or "—"
+                lines.append(
+                    f"| `{capability['id']}` | {surface} | {state['status']} | {evidence} |"
+                )
     lines.append("")
     return "\n".join(lines)
 
@@ -267,13 +406,24 @@ def render_limitations(ledger: dict[str, Any], capabilities: list[dict[str, Any]
     ]
     by_area: dict[str, list[dict[str, Any]]] = {}
     for capability in capabilities:
-        if capability["limitations"]:
+        missing_facades = [
+            surface
+            for surface, state in capability.get("facade_support", {}).items()
+            if state["status"] == "missing"
+        ]
+        if capability["limitations"] or missing_facades:
             by_area.setdefault(capability["area"], []).append(capability)
     for area, entries in by_area.items():
         lines.extend([f"## {area.title()}", ""])
         for capability in entries:
             lines.append(f"### {capability['title']} (`{capability['id']}`)")
             lines.append("")
+            for surface, state in capability.get("facade_support", {}).items():
+                if state["status"] == "missing":
+                    lines.append(
+                        f"- The {FACADE_TITLES[surface]} facade does not expose this capability "
+                        "(machine-checked structured support state)."
+                    )
             for limitation in capability["limitations"]:
                 lines.append(f"- {_markdown_text(limitation)}")
             lines.append("")

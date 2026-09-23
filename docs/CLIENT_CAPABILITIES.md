@@ -19,7 +19,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Range queries (query.range) | query | — | — | — | — |
 | Boolean query operators (query.boolean) | query | — | — | — | — |
 | Phrase queries (query.phrase) | query | — | ergonomic (native) | ergonomic (grpc) | — |
-| Near and ordered-near proximity queries (query.proximity) | query | — | — | ergonomic (grpc) | — |
+| Near and ordered-near proximity queries (query.proximity) | query | — | ergonomic (native) | ergonomic (grpc) | — |
 | sameElement query (query.same_element) | query | — | — | ergonomic (grpc) | — |
 | Fuzzy query (query.fuzzy) | query | — | ergonomic (native) | ergonomic (grpc) | — |
 | Prefix, suffix, and substring queries (query.prefix_suffix_substring) | query | — | — | — | — |
@@ -89,6 +89,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 - **Basic behavior** (basic)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L371)
+  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L416)
 
 ### sameElement query (query.same_element)
 
@@ -99,7 +100,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 - **Basic behavior** (basic)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L372)
-  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L416)
+  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L417)
 
 ### Nearest-neighbor vector search (query.nearest_neighbor)
 
@@ -116,7 +117,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 - **Basic behavior** (basic)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L373)
-  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L417)
+  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L418)
 
 ### Textual filter expressions (filter.textual)
 

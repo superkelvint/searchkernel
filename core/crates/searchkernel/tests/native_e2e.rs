@@ -413,6 +413,7 @@ fn native_product_path_has_current_search_and_facet_parity() {
 }
 
 // SKC: query.phrase/basic kinds=ergonomic runtime=native
+// SKC: query.proximity/basic kinds=ergonomic runtime=native
 // SKC: query.fuzzy/basic kinds=ergonomic runtime=native
 // SKC: query.weighted_and_wand/basic kinds=ergonomic runtime=native
 #[test]

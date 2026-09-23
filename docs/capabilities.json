@@ -136,9 +136,46 @@
         "core/crates/searchkernel-ir-adapter/src/tests.rs",
         "core/crates/searchkernel/src/query.rs"
       ],
-      "limitations": [
-        "The TypeScript q facade does not expose proximity constructors yet."
-      ]
+      "facade_support": {
+        "rust": {
+          "status": "supported",
+          "evidence": [
+            {
+              "path": "core/crates/searchkernel/src/query.rs",
+              "symbols": [
+                "pub fn near",
+                "pub fn onear"
+              ]
+            }
+          ]
+        },
+        "python": {
+          "status": "supported",
+          "evidence": [
+            {
+              "path": "clients/python/searchkernel/ergonomic.py",
+              "symbols": [
+                "def near",
+                "def onear"
+              ]
+            }
+          ]
+        },
+        "typescript": {
+          "status": "missing",
+          "evidence": [],
+          "absence_evidence": [
+            {
+              "path": "clients/typescript/src/ergonomic/query.ts",
+              "symbols": [
+                "near(",
+                "onear("
+              ]
+            }
+          ]
+        }
+      },
+      "limitations": []
     },
     {
       "id": "query.same_element",
