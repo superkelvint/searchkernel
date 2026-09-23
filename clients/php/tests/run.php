@@ -114,4 +114,117 @@ try {
     // Expected.
 }
 
-echo "PHP first-slice tests PASS\n";
+
+
+$expectedOperations = [
+    'insert' => ['InsertRequest', 'InsertResult'],
+    'upsert' => ['UpsertRequest', 'UpsertResult'],
+    'patch' => ['PatchRequest', 'PatchResult'],
+    'update' => ['UpdateRequest', 'UpdateResult'],
+    'delete' => ['DeleteRequest', 'DeleteResult'],
+    'get' => ['GetRequest', 'GetResult'],
+    'search' => ['SearchRequest', 'SearchResult'],
+    'analyze' => ['AnalyzeRequest', 'AnalyzeResult'],
+    'describe' => ['DescribeRequest', 'DescribeResult'],
+    'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
+];
+same(array_keys($expectedOperations), Protocol::operations(), 'portable operation list');
+foreach ($expectedOperations as $operation => $types) {
+    same($types, Protocol::operation($operation), 'operation mapping: ' . $operation);
+}
+
+$transport = new class($expectedOperations) implements \SearchKernel\Transport {
+    /** @param array<string, array{0:string,1:string}> $operations */
+    public function __construct(private readonly array $operations) {}
+
+    public function execute(array $request): array
+    {
+        same(2, $request['protocol_version'] ?? null, 'low-level request protocol version');
+        $requestType = $request['payload_type'] ?? null;
+        foreach ($this->operations as [$expectedRequest, $expectedResponse]) {
+            if ($requestType === 'SearchKernel_V2_' . $expectedRequest) {
+                return [
+                    'protocol_version' => 2,
+                    'payload_type' => 'SearchKernel_V2_' . $expectedResponse,
+                    'payload' => ['echo' => $request['payload'] ?? null],
+                ];
+            }
+        }
+        throw new RuntimeException('unexpected request type: ' . var_export($requestType, true));
+    }
+};
+
+$client = new \SearchKernel\Client($transport);
+foreach ($expectedOperations as $operation => $_types) {
+    $payload = ['operation' => $operation];
+    $result = $client->execute($operation, $payload);
+    same($payload, $result['echo'] ?? null, 'low-level execute round trip: ' . $operation);
+}
+
+try {
+    $client->execute('not_an_operation', []);
+    throw new RuntimeException('unknown operation did not throw');
+} catch (InvalidArgumentException) {
+    // Expected.
+}
+
+try {
+    Protocol::expectPayload([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_GetResult',
+        'payload' => [],
+    ], 'SearchResult');
+    throw new RuntimeException('wrong response discriminator did not throw');
+} catch (\SearchKernel\ProtocolException) {
+    // Expected.
+}
+
+try {
+    Protocol::expectPayload([
+        'protocol_version' => 999,
+        'payload_type' => 'SearchKernel_V2_SearchResult',
+        'payload' => [],
+    ], 'SearchResult');
+    throw new RuntimeException('wrong protocol version did not throw');
+} catch (\SearchKernel\ProtocolException) {
+    // Expected.
+}
+
+try {
+    Protocol::expectPayload([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_Error',
+        'payload' => [
+            'code' => 'InvalidArgument',
+            'message' => 'bad request',
+            'retryable' => true,
+            'details' => [
+                [
+                    'code' => 'unknown_field',
+                    'path' => 'filters[0]',
+                    'message' => 'unknown field',
+                    'metadata' => [],
+                ],
+            ],
+        ],
+    ], 'SearchResult');
+    throw new RuntimeException('portable error did not throw');
+} catch (SearchKernelException $error) {
+    same('InvalidArgument', $error->errorCode, 'portable error preserves code');
+    same('bad request', $error->getMessage(), 'portable error preserves message');
+    same(true, $error->retryable, 'portable error preserves retryable');
+    same('filters[0]', $error->details[0]['path'] ?? null, 'portable error preserves detail path');
+}
+
+try {
+    Protocol::expectPayload([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_Error',
+        'payload' => ['message' => 'missing code'],
+    ], 'SearchResult');
+    throw new RuntimeException('malformed portable error did not fail closed');
+} catch (\SearchKernel\ProtocolException) {
+    // Expected.
+}
+
+echo "PHP portable-core tests PASS\\n";

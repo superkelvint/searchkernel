@@ -66,7 +66,7 @@ This HTTP direction does not preclude a future generated gRPC PHP transport.
 Both transports can coexist because neither owns domain semantics; they terminate
 at the same canonical FlatBuffer dispatcher.
 
-## Current first slice
+## Current client surface
 
 Supported ergonomically:
 
@@ -78,9 +78,24 @@ Supported ergonomically:
 - `search()->limit()->execute()`
 - scalar/list/object portable values used by those operations
 
-The full first-party facade, generated low-level escape hatch, managed local
-lifecycle, tensors/bytes, filters, grouping, ranking, and the rest of the client
-SOP are intentionally deferred from this first proof.
+The low-level `Client` covers every current portable operation through one
+central operation map:
+
+- insert / upsert / patch / update / delete / get;
+- search / analyze / describe / inspect_query.
+
+Low-level payloads and results are standard FlatBuffers JSON table bodies. This
+is the escape hatch for represented capabilities that do not yet have PHP
+ergonomic sugar; it deliberately performs no Search Kernel semantic validation.
+
+The client also keeps three failure domains distinct: `TransportException` for
+HTTP/network failures, `ProtocolException` for malformed or mismatched wire
+responses, and `SearchKernelException` for canonical portable Error payloads.
+
+The remaining broader work includes fully lossless values (especially
+uint64/bytes/tensors), ergonomic patch/update/query/filter/grouping/ranking
+builders, complete recursive result projections, real-engine cross-language
+conformance, managed lifecycle if justified, and package hardening.
 
 Run unit tests:
 

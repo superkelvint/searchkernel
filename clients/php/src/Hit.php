@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
-use UnexpectedValueException;
 
 final class Hit
 {
@@ -21,13 +20,18 @@ final class Hit
         $relevance = null;
         if (array_key_exists('relevance', $node) && $node['relevance'] !== null) {
             if (!is_array($node['relevance'])) {
-                throw new UnexpectedValueException('hit relevance must be an object');
+                throw new ProtocolException('hit relevance must be an object');
             }
             $relevance = Protocol::decodeRelevance($node['relevance']);
         }
 
+        $id = $node['id'] ?? null;
+        if (!is_string($id) || $id === '') {
+            throw new ProtocolException('Hit.id must be a non-empty string');
+        }
+
         return new self(
-            (string) ($node['id'] ?? ''),
+            $id,
             Protocol::decodeValueEntries($node['fields'] ?? []),
             $relevance,
         );

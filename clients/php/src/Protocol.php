@@ -5,11 +5,39 @@ declare(strict_types=1);
 namespace SearchKernel;
 
 use InvalidArgumentException;
-use UnexpectedValueException;
 
 final class Protocol
 {
     public const VERSION = 2;
+
+    /** @var array<string, array{0:string,1:string}> */
+    private const OPERATIONS = [
+        'insert' => ['InsertRequest', 'InsertResult'],
+        'upsert' => ['UpsertRequest', 'UpsertResult'],
+        'patch' => ['PatchRequest', 'PatchResult'],
+        'update' => ['UpdateRequest', 'UpdateResult'],
+        'delete' => ['DeleteRequest', 'DeleteResult'],
+        'get' => ['GetRequest', 'GetResult'],
+        'search' => ['SearchRequest', 'SearchResult'],
+        'analyze' => ['AnalyzeRequest', 'AnalyzeResult'],
+        'describe' => ['DescribeRequest', 'DescribeResult'],
+        'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
+    ];
+
+    /** @return array{0:string,1:string} */
+    public static function operation(string $operation): array
+    {
+        if (!array_key_exists($operation, self::OPERATIONS)) {
+            throw new InvalidArgumentException('unknown Search Kernel operation: ' . $operation);
+        }
+        return self::OPERATIONS[$operation];
+    }
+
+    /** @return list<string> */
+    public static function operations(): array
+    {
+        return array_keys(self::OPERATIONS);
+    }
 
     /** @return array<string, mixed> */
     public static function envelope(string $payloadType, array $payload): array
@@ -115,13 +143,13 @@ final class Protocol
     public static function expectPayload(array $response, string $expectedType): array
     {
         if (($response['protocol_version'] ?? null) !== self::VERSION) {
-            throw new UnexpectedValueException('unsupported Search Kernel response protocol version');
+            throw new ProtocolException('unsupported Search Kernel response protocol version');
         }
 
         $type = $response['payload_type'] ?? null;
         $payload = $response['payload'] ?? null;
         if (!is_array($payload)) {
-            throw new UnexpectedValueException('Search Kernel response is missing its union payload');
+            throw new ProtocolException('Search Kernel response is missing its union payload');
         }
 
         if ($type === 'SearchKernel_V2_Error') {
@@ -129,7 +157,7 @@ final class Protocol
         }
 
         if ($type !== 'SearchKernel_V2_' . $expectedType) {
-            throw new UnexpectedValueException(sprintf(
+            throw new ProtocolException(sprintf(
                 'unexpected Search Kernel response type %s (expected %s)',
                 is_string($type) ? $type : '<missing>',
                 'SearchKernel_V2_' . $expectedType,
@@ -144,8 +172,12 @@ final class Protocol
      */
     public static function decodeDocument(array $document): array
     {
+        $id = $document['id'] ?? null;
+        if (!is_string($id) || $id === '') {
+            throw new ProtocolException('Document.id must be a non-empty string');
+        }
         $fields = self::decodeValueEntries($document['fields'] ?? []);
-        $fields['_id'] = (string) ($document['id'] ?? '');
+        $fields['_id'] = $id;
         return $fields;
     }
 
@@ -158,17 +190,17 @@ final class Protocol
             return [];
         }
         if (!is_array($entries)) {
-            throw new UnexpectedValueException('portable value entries must be an array');
+            throw new ProtocolException('portable value entries must be an array');
         }
 
         $result = [];
         foreach ($entries as $entry) {
             if (!is_array($entry) || !is_string($entry['key'] ?? null) || !is_array($entry['value'] ?? null)) {
-                throw new UnexpectedValueException('malformed portable value entry');
+                throw new ProtocolException('malformed portable value entry');
             }
             $key = $entry['key'];
             if (array_key_exists($key, $result)) {
-                throw new UnexpectedValueException('duplicate portable value key: ' . $key);
+                throw new ProtocolException('duplicate portable value key: ' . $key);
             }
             $result[$key] = self::decodeValue($entry['value']);
         }
@@ -181,7 +213,7 @@ final class Protocol
         $type = $value['kind_type'] ?? null;
         $payload = $value['kind'] ?? null;
         if (!is_string($type) || !is_array($payload)) {
-            throw new UnexpectedValueException('malformed portable Value union');
+            throw new ProtocolException('malformed portable Value union');
         }
 
         return match ($type) {
@@ -192,7 +224,7 @@ final class Protocol
             'StringValue' => (string) self::required($payload, 'value'),
             'ValueList' => self::decodeValueList($payload),
             'ValueObject' => self::decodeValueEntries($payload['fields'] ?? []),
-            default => throw new UnexpectedValueException(
+            default => throw new ProtocolException(
                 'unsupported portable Value kind in first PHP slice: ' . $type
             ),
         };
@@ -204,14 +236,14 @@ final class Protocol
         $type = $node['value_type'] ?? null;
         $payload = $node['value'] ?? null;
         if (!is_string($type) || !is_array($payload)) {
-            throw new UnexpectedValueException('malformed relevance union');
+            throw new ProtocolException('malformed relevance union');
         }
 
         return match ($type) {
             'FiniteRelevance' => (float) self::required($payload, 'value'),
             'PositiveInfinityRelevance' => INF,
             'NegativeInfinityRelevance' => -INF,
-            default => throw new UnexpectedValueException('unsupported relevance kind: ' . $type),
+            default => throw new ProtocolException('unsupported relevance kind: ' . $type),
         };
     }
 
@@ -222,12 +254,12 @@ final class Protocol
     {
         $values = $payload['values'] ?? [];
         if (!is_array($values)) {
-            throw new UnexpectedValueException('portable ValueList values must be an array');
+            throw new ProtocolException('portable ValueList values must be an array');
         }
         return array_map(
             static function (mixed $value): mixed {
                 if (!is_array($value)) {
-                    throw new UnexpectedValueException('malformed portable ValueList member');
+                    throw new ProtocolException('malformed portable ValueList member');
                 }
                 return self::decodeValue($value);
             },
@@ -239,7 +271,7 @@ final class Protocol
     private static function required(array $payload, string $key): mixed
     {
         if (!array_key_exists($key, $payload)) {
-            throw new UnexpectedValueException('missing portable union field: ' . $key);
+            throw new ProtocolException('missing portable union field: ' . $key);
         }
         return $payload[$key];
     }

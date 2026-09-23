@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
-use UnexpectedValueException;
 
 final class SearchResult
 {
@@ -28,7 +27,7 @@ final class SearchResult
         if (is_array($payload['total_hits'] ?? null)) {
             $totalHits = $payload['total_hits']['value'] ?? 0;
             if (!is_int($totalHits) && !is_string($totalHits)) {
-                throw new UnexpectedValueException('total_hits.value must be an integer or lossless decimal string');
+                throw new ProtocolException('total_hits.value must be an integer or lossless decimal string');
             }
             $relation = (string) ($payload['total_hits']['relation'] ?? 'Unknown');
         }
@@ -44,7 +43,7 @@ final class SearchResult
         $type = $node['node_type'] ?? null;
         $payload = $node['node'] ?? null;
         if (!is_string($type) || !is_array($payload)) {
-            throw new UnexpectedValueException('malformed ResultNode union');
+            throw new ProtocolException('malformed ResultNode union');
         }
 
         if ($type === 'Hit') {
@@ -52,21 +51,21 @@ final class SearchResult
             return;
         }
         if ($type !== 'ResultGroup') {
-            throw new UnexpectedValueException('unsupported ResultNode kind: ' . $type);
+            throw new ProtocolException('unsupported ResultNode kind: ' . $type);
         }
 
         $children = $payload['children'] ?? [];
         if (!is_array($children)) {
-            throw new UnexpectedValueException('ResultGroup children must be an array');
+            throw new ProtocolException('ResultGroup children must be an array');
         }
         foreach ($children as $child) {
             if (!is_array($child)) {
-                throw new UnexpectedValueException('malformed ResultGroup child');
+                throw new ProtocolException('malformed ResultGroup child');
             }
             if (($child['node_type'] ?? null) === 'Hit') {
                 $childPayload = $child['node'] ?? null;
                 if (!is_array($childPayload)) {
-                    throw new UnexpectedValueException('missing Hit union payload');
+                    throw new ProtocolException('missing Hit union payload');
                 }
                 $hits[] = Hit::fromJson($childPayload);
             }

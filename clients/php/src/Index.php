@@ -6,20 +6,19 @@ namespace SearchKernel;
 
 final class Index
 {
-    public function __construct(private readonly HttpTransport $transport) {}
+    public function __construct(private readonly Client $client) {}
 
     public static function connect(string $baseUrl): self
     {
-        return new self(new HttpTransport($baseUrl));
+        return new self(Client::connect($baseUrl));
     }
 
     /** @param array<string, mixed> $document */
     public function insert(array $document): string
     {
         $payload = $this->execute(
-            'InsertRequest',
+            'insert',
             ['document' => Protocol::document($document)],
-            'InsertResult',
         );
         return (string) ($payload['id'] ?? '');
     }
@@ -28,9 +27,8 @@ final class Index
     public function upsert(array $document): string
     {
         $payload = $this->execute(
-            'UpsertRequest',
+            'upsert',
             ['document' => Protocol::document($document)],
-            'UpsertResult',
         );
         return (string) ($payload['id'] ?? '');
     }
@@ -38,20 +36,20 @@ final class Index
     /** @return array<string, mixed>|null */
     public function get(string $id): ?array
     {
-        $payload = $this->execute('GetRequest', ['id' => $id], 'GetResult');
+        $payload = $this->execute('get', ['id' => $id]);
         $document = $payload['document'] ?? null;
         if ($document === null) {
             return null;
         }
         if (!is_array($document)) {
-            throw new \UnexpectedValueException('GetResult.document must be an object or null');
+            throw new ProtocolException('GetResult.document must be an object or null');
         }
         return Protocol::decodeDocument($document);
     }
 
     public function delete(string $id): bool
     {
-        $payload = $this->execute('DeleteRequest', ['id' => $id], 'DeleteResult');
+        $payload = $this->execute('delete', ['id' => $id]);
         return (bool) ($payload['deleted'] ?? false);
     }
 
@@ -73,16 +71,15 @@ final class Index
             $request['limit'] = ['value' => $limit];
         }
 
-        $payload = $this->execute('SearchRequest', $request, 'SearchResult');
+        $payload = $this->execute('search', $request);
         return SearchResult::fromPayload($payload);
     }
 
     /** @param array<string, mixed> $payload
      *  @return array<string, mixed>
      */
-    private function execute(string $requestType, array $payload, string $responseType): array
+    private function execute(string $operation, array $payload): array
     {
-        $response = $this->transport->execute(Protocol::envelope($requestType, $payload));
-        return Protocol::expectPayload($response, $responseType);
+        return $this->client->execute($operation, $payload);
     }
 }
