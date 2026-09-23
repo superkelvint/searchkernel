@@ -259,6 +259,15 @@
               "scenario": "basic",
               "surface": "typescript",
               "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 44
+            },
+            {
+              "capability": "query.nearest_neighbor",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
               "kind": "ergonomic",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
               "line": 44
@@ -424,6 +433,15 @@
               "scenario": "basic",
               "surface": "typescript",
               "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 40
+            },
+            {
+              "capability": "filter.textual",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
               "kind": "ergonomic",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
               "line": 40
@@ -459,6 +477,15 @@
               "kind": "ergonomic",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
               "line": 217
+            },
+            {
+              "capability": "search.sorting",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 41
             },
             {
               "capability": "search.sorting",
@@ -513,6 +540,15 @@
               "kind": "ergonomic",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
               "line": 218
+            },
+            {
+              "capability": "search.pagination",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 42
             },
             {
               "capability": "search.pagination",
@@ -576,6 +612,15 @@
               "kind": "ergonomic",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
               "line": 219
+            },
+            {
+              "capability": "result.docsum_field_projection",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 43
             },
             {
               "capability": "result.docsum_field_projection",
@@ -741,6 +786,15 @@
               "scenario": "basic",
               "surface": "typescript",
               "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 45
+            },
+            {
+              "capability": "grouping.structured",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
               "kind": "ergonomic",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
               "line": 45
@@ -781,6 +835,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "grouping.aggregations",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 46
+            },
             {
               "capability": "grouping.aggregations",
               "scenario": "basic",
@@ -869,6 +932,15 @@
               "kind": "ergonomic",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
               "line": 14
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 39
             },
             {
               "capability": "update.document_crud",
