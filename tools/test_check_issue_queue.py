@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +130,29 @@ class IssueQueueTests(unittest.TestCase):
             ),
             [],
         )
+
+
+    def test_load_closed_issues_requests_closed_state_and_ignores_pull_requests(self) -> None:
+        closed_issue = issue(42, "priority:p1")
+        pull_request = {
+            "number": 99,
+            "title": "not an issue",
+            "labels": [],
+            "pull_request": {"url": "https://example.invalid/pulls/99"},
+        }
+        with mock.patch.object(
+            MODULE,
+            "_github_json",
+            return_value=[closed_issue, pull_request],
+        ) as github_json:
+            self.assertEqual(MODULE.load_closed_issues("owner/repo"), [closed_issue])
+        github_json.assert_called_once_with(
+            "owner/repo",
+            "issues",
+            page=1,
+            state="closed",
+        )
+
 
 
 if __name__ == "__main__":
