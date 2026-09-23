@@ -58,6 +58,11 @@ jobs:
           mkdir -p "$trusted_dir"
           git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"
           echo "TRUSTED_EXACT_HEAD_HELPER=$trusted_dir/exact_head.py" >> "$GITHUB_ENV"
+          if [[ -f .github/ci/exact_head.py ]]; then
+            echo "PROPOSED_EXACT_HEAD_HELPER=$PWD/.github/ci/exact_head.py" >> "$GITHUB_ENV"
+          else
+            echo "PROPOSED_EXACT_HEAD_HELPER=$trusted_dir/exact_head.py" >> "$GITHUB_ENV"
+          fi
 
           if [[ -f .github/ci/exact_head.py && -f .github/ci/test_exact_head.py ]]; then
             regression_dir="$PWD/.github/ci"
@@ -84,8 +89,26 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" -- \
-            | "$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
+          set -euo pipefail
+          changed_paths=$(mktemp)
+          trusted_output=$(mktemp)
+          proposed_output=$(mktemp)
+          trap 'rm -f -- "$changed_paths" "$trusted_output" "$proposed_output"' EXIT
+
+          git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" -- > "$changed_paths"
+          "$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$trusted_output" < "$changed_paths" >/dev/null
+          "$CI_PYTHON" "$PROPOSED_EXACT_HEAD_HELPER" classify --github-output "$proposed_output" < "$changed_paths" >/dev/null
+
+          # The base classifier is the minimum trusted gate. The proposed
+          # classifier may add new lanes immediately, but cannot remove a lane
+          # required by the base revision.
+          for lane in rust python typescript native generated conformance grpc_e2e; do
+            if grep -qx "$lane=true" "$trusted_output" || grep -qx "$lane=true" "$proposed_output"; then
+              echo "$lane=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$lane=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
 
   rust:
     name: Rust behavior
