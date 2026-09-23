@@ -7,6 +7,7 @@ from searchkernel.client import value
 from searchkernel.ergonomic import Hit, SearchBuilder, SearchResults
 from searchkernel.protocol import unpack_response
 from SearchKernel.V2.Hit import HitT
+from SearchKernel.V2.Int64Value import Int64ValueT
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind
 from SearchKernel.V2.RelevanceKind import RelevanceKind
 from SearchKernel.V2.ResultGroup import ResultGroupT
@@ -22,9 +23,9 @@ def result_node(node):
     return ResultNodeT(node_type, node)
 
 
-def group(*, label=None, value_=None, fields=None, children=None):
+def group(*, id_=None, label=None, value_=None, fields=None, children=None):
     return ResultGroupT(
-        id=None,
+        id=id_,
         label=label,
         value=value_,
         fields=list(fields or []),
@@ -46,6 +47,13 @@ def uint64_count(count):
     return ValueEntryT(
         key="count",
         value=ValueT(kindType=ValueKind.UInt64Value, kind=UInt64ValueT(value=count)),
+    )
+
+
+def int64_count(count):
+    return ValueEntryT(
+        key="count",
+        value=ValueT(kindType=ValueKind.Int64Value, kind=Int64ValueT(value=count)),
     )
 
 
@@ -110,9 +118,31 @@ class SearchResultFacetProjectionTest(unittest.TestCase):
         ).execute()
         self.assertEqual(result.facets, {"brands": [{"value": "Acme", "count": 3}]})
 
+    def test_named_requested_facet_projects_native_grouping_shape(self):
+        bucket = group(
+            id_="grouping-0",
+            label="brands",
+            value_=value("Acme"),
+            fields=[int64_count(3)],
+        )
+        facet = group(
+            label="brands",
+            children=[result_node(bucket)],
+        )
+        raw = search_result(group(children=[result_node(facet)]))
+
+        class Client:
+            def search(self, _request):
+                return raw
+
+        result = SearchBuilder(SimpleNamespace(client=Client()), None).facet(
+            "brand", name="brands"
+        ).execute()
+        self.assertEqual(result.facets, {"brands": [{"value": "Acme", "count": 3}]})
+
     def test_missing_or_wrong_count_does_not_project(self):
         missing = self.exact_facet_result(count=ValueEntryT(key="other", value=value(3)))
-        wrong_type = self.exact_facet_result(count=ValueEntryT(key="count", value=value(3)))
+        wrong_type = self.exact_facet_result(count=ValueEntryT(key="count", value=value(3.0)))
 
         for raw in (missing, wrong_type):
             results = SearchResults(raw)
@@ -239,7 +269,7 @@ class SharedResultFixtureTest(unittest.TestCase):
         self.assertEqual(state_only.root.limits.from_, 1)
         self.assertEqual(state_only.root.metadata, {"state": "present"})
 
-    def test_shared_facet_corpus_matches_strict_rust_shape(self):
+    def test_shared_facet_corpus_matches_strict_and_native_shapes(self):
         valid = self.load("facet-valid")
         valid._project_facet("brand", "brand")
         self.assertEqual(valid.facets, {"brand": [{"value": "Acme", "count": 3}]})
@@ -248,8 +278,16 @@ class SharedResultFixtureTest(unittest.TestCase):
         named._project_facet("brands", "brands", "brand")
         self.assertEqual(named.facets, {"brands": [{"value": "Acme", "count": 3}]})
 
+        native_signed = self.load("facet-wrong-count-type")
+        native_signed._project_facet("brand", "brand")
+        self.assertEqual(native_signed.facets, {"brand": [{"value": "Acme", "count": 3}]})
+
         for path in self.fixture_root.glob("result-facet-*.skrs"):
-            if path.stem in {"result-facet-valid", "result-facet-valid-named"}:
+            if path.stem in {
+                "result-facet-valid",
+                "result-facet-valid-named",
+                "result-facet-wrong-count-type",
+            }:
                 continue
             result = self.load(path.stem.removeprefix("result-"))
             result._project_facet("brand", "brand")

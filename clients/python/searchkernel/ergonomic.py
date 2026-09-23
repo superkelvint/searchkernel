@@ -1175,7 +1175,8 @@ class SearchResults:
             if (
                 count.key != "count"
                 or count.value is None
-                or count.value.kindType != ValueKind.UInt64Value
+                or count.value.kindType
+                not in (ValueKind.UInt64Value, ValueKind.Int64Value)
             ):
                 return
             buckets.append({"value": child.value, "count": _python_value(count.value)})
