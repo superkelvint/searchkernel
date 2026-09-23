@@ -127,6 +127,11 @@ final class Index
         return new YqlBuilder($this, $query);
     }
 
+    public function analyze(string $text): AnalyzeBuilder
+    {
+        return new AnalyzeBuilder($this, $text);
+    }
+
     /** @return array<string,mixed> */
     public function describe(): array
     {
@@ -169,6 +174,33 @@ final class Index
         }
         $payload = $this->execute('UpdateRequest', $request, 'UpdateResult');
         return (string) ($payload['id'] ?? '');
+    }
+
+    /** @internal
+     *  @param array<string,mixed> $request
+     *  @return array<string,mixed>
+     */
+    public function executeAnalyzeRequest(array $request): array
+    {
+        return $this->execute('AnalyzeRequest', $request, 'AnalyzeResult');
+    }
+
+    /** @internal
+     *  @param array<string,mixed> $request
+     *  @return array<string,mixed>
+     */
+    public function inspectSearchRequest(array $request): array
+    {
+        $payload = $this->execute(
+            'InspectQueryRequest',
+            ['request' => $request],
+            'InspectQueryResult',
+        );
+        $resolved = $payload['resolved_request'] ?? null;
+        if (!is_array($resolved)) {
+            throw new ProtocolException('InspectQueryResult.resolved_request must be an object');
+        }
+        return $resolved;
     }
 
     /** @internal
