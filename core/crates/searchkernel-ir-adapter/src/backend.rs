@@ -86,7 +86,7 @@ pub(crate) fn portable_errors_from_native_issues(
 /// A real Vespa-backed implementation of the portable backend contract.
 pub struct VespaBackend {
     pub(crate) engine: Engine,
-    insert_lock: Mutex<()>,
+    existence_mutation_lock: Mutex<()>,
     #[cfg(test)]
     mutation_probe: Option<std::sync::Arc<MutationProbe>>,
 }
@@ -94,6 +94,8 @@ pub struct VespaBackend {
 #[cfg(test)]
 pub(crate) struct MutationProbe {
     pub(crate) rendezvous: std::sync::Barrier,
+    pub(crate) release: std::sync::Barrier,
+    pub(crate) update_completed: Option<std::sync::mpsc::Sender<()>>,
 }
 
 impl VespaBackend {
@@ -109,7 +111,7 @@ impl VespaBackend {
     pub fn from_engine(engine: Engine) -> Self {
         Self {
             engine,
-            insert_lock: Mutex::new(()),
+            existence_mutation_lock: Mutex::new(()),
             #[cfg(test)]
             mutation_probe: None,
         }
@@ -122,7 +124,7 @@ impl VespaBackend {
     ) -> Self {
         Self {
             engine,
-            insert_lock: Mutex::new(()),
+            existence_mutation_lock: Mutex::new(()),
             mutation_probe: Some(probe),
         }
     }
@@ -373,10 +375,10 @@ impl Backend for VespaBackend {
     fn insert(&self, request: InsertRequestIr) -> Result<InsertResult> {
         let document = lower_document(request.document())?;
         let id = document.id().to_owned();
-        let _insert_guard = self
-            .insert_lock
+        let _existence_mutation_guard = self
+            .existence_mutation_lock
             .lock()
-            .map_err(|_| internal("insert lock is poisoned"))?;
+            .map_err(|_| internal("existence mutation lock is poisoned"))?;
         if self.engine.get(&id).map_err(native_error)?.is_some() {
             return Err(PortableError::new(
                 searchkernel_ir::ErrorCode::AlreadyExists,
@@ -386,6 +388,7 @@ impl Backend for VespaBackend {
         #[cfg(test)]
         if let Some(probe) = &self.mutation_probe {
             probe.rendezvous.wait();
+            probe.release.wait();
         }
         self.engine.put(document).map_err(native_error)?;
         Ok(InsertResult { id })
@@ -405,10 +408,10 @@ impl Backend for VespaBackend {
         if let Some(probe) = &self.mutation_probe {
             probe.rendezvous.wait();
         }
-        let _mutation_guard = self
-            .insert_lock
+        let _existence_mutation_guard = self
+            .existence_mutation_lock
             .lock()
-            .map_err(|_| internal("insert/upsert lock is poisoned"))?;
+            .map_err(|_| internal("existence mutation lock is poisoned"))?;
         self.engine.put(document).map_err(native_error)?;
         Ok(UpsertResult { id })
     }
@@ -530,7 +533,25 @@ impl Backend for VespaBackend {
                 }
             }
         }
+        // create_if_nonexistent(true) is an existence-changing mutation and
+        // must share the same serialization boundary as insert/upsert. Ordinary
+        // updates cannot create a missing document and remain outside this lock.
+        let _existence_mutation_guard = if request.create() == Some(true) {
+            Some(
+                self.existence_mutation_lock
+                    .lock()
+                    .map_err(|_| internal("existence mutation lock is poisoned"))?,
+            )
+        } else {
+            None
+        };
         self.engine.update(update).map_err(native_error)?;
+        #[cfg(test)]
+        if let Some(probe) = &self.mutation_probe {
+            if let Some(update_completed) = &probe.update_completed {
+                let _ = update_completed.send(());
+            }
+        }
         Ok(UpdateResult {
             id: request.id().to_string(),
         })
