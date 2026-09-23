@@ -9,7 +9,12 @@ use UnexpectedValueException;
 
 final class Index
 {
-    public function __construct(private readonly Transport $transport) {}
+    private readonly Client $client;
+
+    public function __construct(Transport $transport)
+    {
+        $this->client = new Client($transport);
+    }
 
     public static function connect(string $baseUrl): self
     {
@@ -19,11 +24,7 @@ final class Index
     /** @param array<string, mixed> $document */
     public function insert(array $document): string
     {
-        $payload = $this->execute(
-            'InsertRequest',
-            ['document' => Protocol::document($document)],
-            'InsertResult',
-        );
+        $payload = $this->client->insert(['document' => Protocol::document($document)]);
         return (string) ($payload['id'] ?? '');
     }
 
@@ -34,7 +35,7 @@ final class Index
         if ($condition !== null) {
             $request['condition'] = $condition;
         }
-        $payload = $this->execute('UpsertRequest', $request, 'UpsertResult');
+        $payload = $this->client->upsert($request);
         return (string) ($payload['id'] ?? '');
     }
 
@@ -49,7 +50,7 @@ final class Index
         if ($fields !== null) {
             $request['projection'] = ['fields' => array_values($fields)];
         }
-        $payload = $this->execute('GetRequest', $request, 'GetResult');
+        $payload = $this->client->get($request);
         $document = $payload['document'] ?? null;
         if ($document === null) {
             return null;
@@ -67,7 +68,7 @@ final class Index
         if ($condition !== null) {
             $request['condition'] = $condition;
         }
-        $payload = $this->execute('DeleteRequest', $request, 'DeleteResult');
+        $payload = $this->client->delete($request);
         return (bool) ($payload['deleted'] ?? false);
     }
 
@@ -135,7 +136,7 @@ final class Index
     /** @return array<string,mixed> */
     public function describe(): array
     {
-        $payload = $this->execute('DescribeRequest', [], 'DescribeResult');
+        $payload = $this->client->describe();
         $index = $payload['index'] ?? null;
         if (!is_array($index)) {
             throw new UnexpectedValueException('DescribeResult.index must be an object');
@@ -148,11 +149,7 @@ final class Index
      */
     public function executePatch(string $id, array $operations): string
     {
-        $payload = $this->execute(
-            'PatchRequest',
-            ['id' => $id, 'operations' => $operations],
-            'PatchResult',
-        );
+        $payload = $this->client->patch(['id' => $id, 'operations' => $operations]);
         return (string) ($payload['id'] ?? '');
     }
 
@@ -172,7 +169,7 @@ final class Index
         if ($create !== null) {
             $request['create'] = ['value' => $create];
         }
-        $payload = $this->execute('UpdateRequest', $request, 'UpdateResult');
+        $payload = $this->client->update($request);
         return (string) ($payload['id'] ?? '');
     }
 
@@ -182,7 +179,7 @@ final class Index
      */
     public function executeAnalyzeRequest(array $request): array
     {
-        return $this->execute('AnalyzeRequest', $request, 'AnalyzeResult');
+        return $this->client->analyze($request);
     }
 
     /** @internal
@@ -191,11 +188,7 @@ final class Index
      */
     public function inspectSearchRequest(array $request): array
     {
-        $payload = $this->execute(
-            'InspectQueryRequest',
-            ['request' => $request],
-            'InspectQueryResult',
-        );
+        $payload = $this->client->inspectQuery(['request' => $request]);
         $resolved = $payload['resolved_request'] ?? null;
         if (!is_array($resolved)) {
             throw new ProtocolException('InspectQueryResult.resolved_request must be an object');
@@ -208,17 +201,8 @@ final class Index
      */
     public function executeSearchRequest(array $request): SearchResult
     {
-        $payload = $this->execute('SearchRequest', $request, 'SearchResult');
+        $payload = $this->client->search($request);
         return SearchResult::fromPayload($payload);
-    }
-
-    /** @param array<string, mixed> $payload
-     *  @return array<string, mixed>
-     */
-    private function execute(string $requestType, array $payload, string $responseType): array
-    {
-        $response = $this->transport->execute(Protocol::envelope($requestType, $payload));
-        return Protocol::expectPayload($response, $responseType);
     }
 
     private static function id(string $id): void
