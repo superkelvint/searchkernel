@@ -7,6 +7,10 @@ extern crate self as searchkernel_ir;
 #[path = "../tests/semantics.rs"]
 mod semantics;
 
+#[cfg(test)]
+#[path = "../tests/property.rs"]
+mod property;
+
 pub mod api_to_ir;
 pub mod backend;
 pub mod error;
