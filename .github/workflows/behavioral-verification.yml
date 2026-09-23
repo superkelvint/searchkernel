@@ -84,6 +84,9 @@ jobs:
           echo "EXACT_HEAD_TEST=$regression_dir/test_exact_head.py" >> "$GITHUB_ENV"
 
       - name: Verify exact-head CI regressions
+        env:
+          SEARCHKERNEL_VERIFICATION_DAG_MODULE: ${{ github.workspace }}/verification/dag.py
+          SEARCHKERNEL_VERIFICATION_DAG: ${{ github.workspace }}/verification/dag.toml
         run: $CI_PYTHON "$EXACT_HEAD_TEST"
 
       - name: Verify candidate verification DAG integrity and coverage

@@ -167,6 +167,20 @@ class ExactHeadTests(unittest.TestCase):
         self.assertEqual(classified.returncode, 0, classified.stdout.decode())
         self.assertIn("rust: required", classified.stdout.decode())
 
+    def test_candidate_regressions_use_candidate_verification_policy(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        regression_step = workflow.split("- name: Verify exact-head CI regressions", 1)[1].split(
+            "- name: Verify candidate verification DAG integrity and coverage", 1
+        )[0]
+        self.assertIn(
+            "SEARCHKERNEL_VERIFICATION_DAG_MODULE: ${{ github.workspace }}/verification/dag.py",
+            regression_step,
+        )
+        self.assertIn(
+            "SEARCHKERNEL_VERIFICATION_DAG: ${{ github.workspace }}/verification/dag.toml",
+            regression_step,
+        )
+
     def test_workflow_uses_base_classifier_for_authoritative_lane_selection(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
