@@ -811,10 +811,164 @@ same('QueryContains', $typedRequest['query']['source']['query']['expr_type'], 't
 same(3, count($typedRequest['grouping']), 'group + facet + root aggregate lower to grouping requests');
 same('StructuredGroupingSource', $typedRequest['grouping'][0]['source_type'], 'structured grouping source');
 
+$queryExpr = static function (array $query): array {
+    $expr = $query['source']['query'] ?? null;
+    if (!is_array($expr)) {
+        throw new RuntimeException('expected typed query helper result');
+    }
+    return $expr;
+};
+
+$phrase = SearchKernel\Query::contains(
+    'title',
+    SearchKernel\Query::phrase('wireless', 'headphones'),
+);
+same('QueryContains', $queryExpr($phrase)['expr_type'], 'contains typed query');
+same('QueryPhrase', $queryExpr($phrase)['expr']['item']['expr_type'], 'phrase query item');
+
+$boolean = SearchKernel\Query::allOf(
+    SearchKernel\Query::eq('brand', 'Acme'),
+    SearchKernel\Query::negate(SearchKernel\Query::alwaysFalse()),
+);
+same('QueryAnd', $queryExpr($boolean)['expr_type'], 'boolean AND query');
+same('QueryComparison', $queryExpr($boolean)['expr']['clauses'][0]['expr_type'], 'comparison query');
+same('QueryNot', $queryExpr($boolean)['expr']['clauses'][1]['expr_type'], 'boolean NOT query');
+
+$range = SearchKernel\Query::range('price', gte: 10, lt: 100);
+same('QueryRange', $queryExpr($range)['expr_type'], 'range query');
+same('FiniteRangeBound', $queryExpr($range)['expr']['lower']['bound_type'], 'range lower bound');
+same(['value' => true], $queryExpr($range)['expr']['include_lower'], 'range lower inclusion');
+same(['value' => false], $queryExpr($range)['expr']['include_upper'], 'range upper exclusion');
+
+same('QueryIn', $queryExpr(SearchKernel\Query::inValues('brand', ['Acme', 'TrailCo']))['expr_type'], 'IN query');
+same('QueryNear', $queryExpr(SearchKernel\Query::near('one', 'two'))['expr_type'], 'near query');
+same('QueryONear', $queryExpr(SearchKernel\Query::onear('one', 'two'))['expr_type'], 'ordered-near query');
+same(
+    'QuerySameElement',
+    $queryExpr(SearchKernel\Query::sameElement(SearchKernel\Query::contains('first_name', 'Joe')))['expr_type'],
+    'same-element query',
+);
+same(
+    'QueryEquiv',
+    $queryExpr(SearchKernel\Query::equiv(SearchKernel\Query::term('color'), SearchKernel\Query::term('colour')))['expr_type'],
+    'equivalence query',
+);
+same('QueryFuzzy', $queryExpr(SearchKernel\Query::fuzzy('colour'))['expr_type'], 'fuzzy query');
+same('QueryMatches', $queryExpr(SearchKernel\Query::matches('title', 'foo.*'))['expr_type'], 'matches query');
+same('QueryText', $queryExpr(SearchKernel\Query::text('hello'))['expr_type'], 'typed text query');
+same('QueryUserInput', $queryExpr(SearchKernel\Query::userInput('hello'))['expr_type'], 'user-input query');
+same('QueryUserQuery', $queryExpr(SearchKernel\Query::userQuery())['expr_type'], 'user-query node');
+
+same(
+    'QueryDotProduct',
+    $queryExpr(SearchKernel\Query::dotProduct('tags', ['a' => 10]))['expr_type'],
+    'dot-product query',
+);
+same(
+    'QueryWeightedSet',
+    $queryExpr(SearchKernel\Query::weightedSet('tags', ['a' => 10]))['expr_type'],
+    'weighted-set query',
+);
+same(
+    'QueryWand',
+    $queryExpr(SearchKernel\Query::wand('tags', ['a' => 10]))['expr_type'],
+    'WAND query',
+);
+same(
+    'QueryWeakAnd',
+    $queryExpr(SearchKernel\Query::weakAnd(
+        SearchKernel\Query::contains('title', 'fox'),
+        SearchKernel\Query::contains('body', 'fox'),
+    ))['expr_type'],
+    'weak-and query',
+);
+same(
+    'QueryRank',
+    $queryExpr(SearchKernel\Query::rank(
+        SearchKernel\Query::contains('title', 'fox'),
+        SearchKernel\Query::contains('body', 'fox'),
+    ))['expr_type'],
+    'rank query',
+);
+same(
+    'QueryLabeled',
+    $queryExpr(SearchKernel\Query::labeled(SearchKernel\Query::contains('title', 'fox'), 'candidate', 1.5))['expr_type'],
+    'labeled query',
+);
+same(
+    'QueryNonEmpty',
+    $queryExpr(SearchKernel\Query::nonEmpty(SearchKernel\Query::contains('title', 'fox')))['expr_type'],
+    'non-empty query',
+);
+same(
+    'QueryGeoLocation',
+    $queryExpr(SearchKernel\Query::geoLocation('location', 37.3, -121.9, '10km'))['expr_type'],
+    'geo-location query',
+);
+same(
+    'QueryGeoBoundingBox',
+    $queryExpr(SearchKernel\Query::geoBox('location', 37.0, -122.0, 38.0, -121.0))['expr_type'],
+    'geo-box query',
+);
+
+$nearestAnnotated = SearchKernel\Query::nearestNeighbor(
+    'embedding',
+    'query_embedding',
+    ['approximate' => true, 'targetNumHits' => 20],
+);
+same('QueryNearestNeighbor', $queryExpr($nearestAnnotated)['expr_type'], 'nearest-neighbor query');
+same(
+    ['approximate', 'targetNumHits'],
+    array_column($queryExpr($nearestAnnotated)['annotations'], 'key'),
+    'nearest-neighbor annotations are canonical sorted entries',
+);
+
+$predicate = SearchKernel\Query::predicate(
+    'targeting',
+    ['country' => 'US'],
+    ['age' => 18],
+);
+same('QueryPredicate', $queryExpr($predicate)['expr_type'], 'predicate query');
+same('country', $queryExpr($predicate)['expr']['features']['fields'][0]['key'], 'predicate feature map');
+
+throws(
+    \InvalidArgumentException::class,
+    static fn () => SearchKernel\Query::range('price', gte: 10, gt: 11),
+    'range rejects conflicting lower-bound forms',
+);
+throws(
+    \InvalidArgumentException::class,
+    static fn () => SearchKernel\Query::annotate(
+        SearchKernel\Query::annotate(SearchKernel\Query::term('fox'), ['label' => 'a']),
+        ['label' => 'b'],
+    ),
+    'duplicate query annotations are rejected',
+);
+
 /*
 Canonical portable request/result conformance evidence.
 
 SKC: query.term/basic kinds=conformance runtime=http
+SKC: query.boolean_constants/basic kinds=conformance runtime=http
+SKC: query.comparison/basic kinds=conformance runtime=http
+SKC: query.range/basic kinds=conformance runtime=http
+SKC: query.boolean/basic kinds=conformance runtime=http
+SKC: query.phrase/basic kinds=conformance runtime=http
+SKC: query.proximity/basic kinds=conformance runtime=http
+SKC: query.same_element/basic kinds=conformance runtime=http
+SKC: query.fuzzy/basic kinds=conformance runtime=http
+SKC: query.nearest_neighbor/basic kinds=conformance runtime=http
+SKC: query.geo/basic kinds=conformance runtime=http
+SKC: query.predicate/basic kinds=conformance runtime=http
+SKC: query.weighted_and_wand/basic kinds=conformance runtime=http
+SKC: query.weighted_set_dot_product/basic kinds=conformance runtime=http
+SKC: query.equivalence/basic kinds=conformance runtime=http
+SKC: query.rank/basic kinds=conformance runtime=http
+SKC: query.user_input_user_query/basic kinds=conformance runtime=http
+SKC: query.typed_text/basic kinds=conformance runtime=http
+SKC: query.in_term/basic kinds=conformance runtime=http
+SKC: query.non_empty/basic kinds=conformance runtime=http
+SKC: query.labels/basic kinds=conformance runtime=http
 SKC: filter.textual/basic kinds=conformance runtime=http
 SKC: search.sorting/basic kinds=conformance runtime=http
 SKC: search.search_fields/basic kinds=conformance runtime=http
