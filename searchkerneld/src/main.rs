@@ -32,6 +32,7 @@ mod native_main {
         let mut listen = None;
         let mut web_listen = None;
         let mut execution_limit = None;
+        let mut admission_limit = None;
 
         while let Some(argument) = args.next() {
             match argument.to_string_lossy().as_ref() {
@@ -53,6 +54,14 @@ mod native_main {
                     execution_limit = Some(
                         args.next()
                             .ok_or("--execution-limit requires a positive integer")?
+                            .to_string_lossy()
+                            .parse::<usize>()?,
+                    );
+                }
+                "--admission-limit" => {
+                    admission_limit = Some(
+                        args.next()
+                            .ok_or("--admission-limit requires a positive integer")?
                             .to_string_lossy()
                             .parse::<usize>()?,
                     );
@@ -96,6 +105,14 @@ mod native_main {
                 Err(error) => return Err(error.into()),
             },
         };
+        let admission_limit = match admission_limit {
+            Some(value) => value,
+            None => match env::var("SEARCHKERNEL_ADMISSION_LIMIT") {
+                Ok(value) => value.parse::<usize>()?,
+                Err(env::VarError::NotPresent) => server.admission_limit,
+                Err(error) => return Err(error.into()),
+            },
+        };
 
         let server = if let Some(web_listen_addr) = web_listen_addr {
             server.with_web_listen_addr(web_listen_addr)
@@ -106,7 +123,9 @@ mod native_main {
         Ok(Config {
             index_path,
             definition_path,
-            server: server.with_execution_limit(execution_limit),
+            server: server
+                .with_execution_limit(execution_limit)
+                .with_admission_limit(admission_limit),
         })
     }
 
@@ -217,6 +236,13 @@ mod native_main {
             let config = ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 50051)))
                 .with_execution_limit(3);
             assert_eq!(config.execution_limit, 3);
+        }
+
+        #[test]
+        fn admission_limit_can_be_configured() {
+            let config = ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 50051)))
+                .with_admission_limit(3);
+            assert_eq!(config.admission_limit, 3);
         }
 
         #[cfg(unix)]

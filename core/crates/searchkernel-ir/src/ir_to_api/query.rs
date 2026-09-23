@@ -32,8 +32,8 @@ pub(super) fn query_source_offset<'a>(
             );
             (api::QuerySourceKind::YqlQuery, value.as_union_value())
         }
-        _ => {
-            let value = query_expr_offset(builder, query);
+        ir::QueryIr::Typed(query) => {
+            let value = query_expr_ir_offset(builder, query);
             let value =
                 api::TypedQuery::create(builder, &api::TypedQueryArgs { query: Some(value) });
             (api::QuerySourceKind::TypedQuery, value.as_union_value())
@@ -106,86 +106,6 @@ pub(super) fn highlighting_offset<'a>(
         builder,
         &api::HighlightRequestArgs {
             fields: Some(fields),
-        },
-    )
-}
-
-pub(super) fn query_expr_offset<'a>(
-    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
-    query: &ir::QueryIr,
-) -> flatbuffers::WIPOffset<api::QueryExpr<'a>> {
-    if let ir::QueryIr::Typed(query) = query {
-        return query_expr_ir_offset(builder, query);
-    }
-    let (expr_type, expr) = match query {
-        ir::QueryIr::Term { field, value } => {
-            let field = query_field_ref_offset(builder, field.as_str());
-            let value = scalar_value_offset(builder, value);
-            let term = api::TermQuery::create(builder, &api::TermQueryArgs { value: Some(value) });
-            let item = api::QueryExpr::create(
-                builder,
-                &api::QueryExprArgs {
-                    expr_type: api::QueryExprKind::TermQuery,
-                    expr: Some(term.as_union_value()),
-                    annotations: None,
-                },
-            );
-            let contains = api::QueryContains::create(
-                builder,
-                &api::QueryContainsArgs {
-                    field: Some(field),
-                    item: Some(item),
-                },
-            );
-            (api::QueryExprKind::QueryContains, contains.as_union_value())
-        }
-        ir::QueryIr::And(clauses) => {
-            let clauses = clauses
-                .iter()
-                .map(|clause| query_expr_offset(builder, clause))
-                .collect::<Vec<_>>();
-            let clauses = builder.create_vector(&clauses);
-            let value = api::QueryAnd::create(
-                builder,
-                &api::QueryAndArgs {
-                    clauses: Some(clauses),
-                },
-            );
-            (api::QueryExprKind::QueryAnd, value.as_union_value())
-        }
-        ir::QueryIr::Or(clauses) => {
-            let clauses = clauses
-                .iter()
-                .map(|clause| query_expr_offset(builder, clause))
-                .collect::<Vec<_>>();
-            let clauses = builder.create_vector(&clauses);
-            let value = api::QueryOr::create(
-                builder,
-                &api::QueryOrArgs {
-                    clauses: Some(clauses),
-                },
-            );
-            (api::QueryExprKind::QueryOr, value.as_union_value())
-        }
-        ir::QueryIr::Not(clause) => {
-            let clause = query_expr_offset(builder, clause);
-            let value = api::QueryNot::create(
-                builder,
-                &api::QueryNotArgs {
-                    clause: Some(clause),
-                },
-            );
-            (api::QueryExprKind::QueryNot, value.as_union_value())
-        }
-        ir::QueryIr::MatchAll | ir::QueryIr::Text(_) | ir::QueryIr::Yql { .. } => unreachable!(),
-        ir::QueryIr::Typed(_) => unreachable!(),
-    };
-    api::QueryExpr::create(
-        builder,
-        &api::QueryExprArgs {
-            expr_type,
-            expr: Some(expr),
-            annotations: None,
         },
     )
 }

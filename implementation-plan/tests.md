@@ -61,55 +61,62 @@ not relax the acceptance rule above.
 Persistent indexes are a compatibility boundary. Historical formats must be tested as immutable artifacts, not reconstructed on the fly.
 
 > **Implemented on main:** PR #145 added versioned resolved-schema snapshot replay and
-> compatibility/fault regressions; PR #176 restored explicit manifest-v3 reopen support.
-> Existing manifest tests also cover corrupt BFBS payloads, storage-generation mismatch,
-> resolved engine-config drift, missing generated config, and missing/invalid manifests.
+> compatibility/fault regressions; PR #176 restored explicit manifest-v3 reopen support;
+> PR #290 added complete checked-in v2/v3/v4 compatibility fixtures, provenance/version
+> coupling, append-only enforcement, the native reopen/search/mutate/reopen verifier,
+> expanded fault-matrix regressions, and a dedicated persistence compatibility workflow.
 >
-> **Still open:** the historical manifest corpus is not yet immutable/comprehensive.
-> In particular, the v3 regression in #176 reconstructs the prior manifest shape in the
-> test rather than opening a checked-in historical Search Kernel index artifact. The
-> preserved M5 `persisted-v1` Vespa fixture provides real persisted-engine provenance,
-> but it does not by itself satisfy the manifest-version corpus below.
+> **CTO verification:** PR #290 exact head `34cd6818` passed persistence compatibility,
+> Rust unit, behavioral, and client-capability CI; merged main `85ac7683` passed the
+> persistence compatibility and Rust unit push gates. Deliberate-regression PR #374
+> proved that removing claimed v3 support fails the fixture/version gate and that
+> modifying an already-landed v3 fixture fails the append-only gate.
+>
+> **Native acceptance complete:** the historical reopen/search/mutate/close/reopen
+> verifier, persisted-state fault matrix, unsupported-version/generation checks, repeated
+> failed-open preservation checks, and corruption/config/snapshot sensitivity harness
+> all pass on the current landed implementation. The persistence compatibility cluster
+> is therefore fully accepted and closed.
 
 ## Historical fixture corpus
 
-- [ ] Check in a real persisted index fixture for every supported historical manifest/storage generation.
-- [ ] Include at minimum the current manifest format and every prior format that `IndexRuntime::open` claims to support.
-- [ ] Record fixture provenance: Search Kernel revision, manifest version, storage generation, native ABI version, Vespa revision, schema, mutations, and expected queries.
-- [ ] Treat historical fixtures as immutable once committed.
-- [ ] Add a verifier that opens every historical fixture using current HEAD.
-- [ ] Verify search before mutation for each historical fixture.
-- [ ] Mutate each compatible fixture, close, reopen, and verify search again.
-- [ ] Verify unsupported future manifest versions return `IncompatibleIndex`.
-- [ ] Verify unsupported old manifest/storage generations return the documented compatibility error.
+- [x] Check in a real persisted index fixture for every supported historical manifest/storage generation.
+- [x] Include at minimum the current manifest format and every prior format that `IndexRuntime::open` claims to support.
+- [x] Record fixture provenance: Search Kernel revision, manifest version, storage generation, native ABI version, Vespa revision, schema, mutations, and expected queries.
+- [x] Treat historical fixtures as immutable once committed.
+- [x] Add a verifier that opens every historical fixture using current HEAD.
+- [x] Verify search before mutation for each historical fixture.
+- [x] Mutate each compatible fixture, close, reopen, and verify search again.
+- [x] Verify unsupported future manifest versions return `IncompatibleIndex`.
+- [x] Verify unsupported old manifest/storage generations return the documented compatibility error.
 
 ## Persisted-state fault matrix
 
 - [x] Missing `manifest/index.json` is classified correctly.
-- [ ] Truncated `index.json` is classified correctly.
+- [x] Truncated `index.json` is classified correctly.
 - [x] Invalid manifest JSON is classified correctly.
-- [ ] Missing canonical definition BFBS is classified correctly.
-- [ ] Missing portable definition BFBS is classified correctly.
+- [x] Missing canonical definition BFBS is classified correctly.
+- [x] Missing portable definition BFBS is classified correctly.
 - [x] Corrupted canonical definition BFBS is classified correctly.
 - [x] Corrupted portable definition BFBS is classified correctly.
-- [ ] Missing resolved schema snapshot is rejected where required.
+- [x] Missing resolved schema snapshot is rejected where required.
 - [x] Mismatched resolved schema snapshot is rejected.
 - [x] Mismatched storage compatibility generation is rejected.
 - [x] Mismatched resolved engine configuration identity is rejected.
 - [x] Missing generated engine configuration files are rejected.
-- [ ] Partially written temporary manifest files cannot be mistaken for committed state.
-- [ ] Repeated failed open attempts do not mutate or destroy a valid persisted index.
+- [x] Partially written temporary manifest files cannot be mistaken for committed state.
+- [x] Repeated failed open attempts do not mutate or destroy a valid persisted index.
 
 ## CI
 
-- [ ] Add a persistence compatibility CI job.
-- [ ] Run it for changes touching manifest, schema, persistence, API/IR schema encoding, Vespa configuration, or index lifecycle.
-- [ ] Run the complete persistence compatibility corpus on `main`.
+- [x] Add a persistence compatibility CI job.
+- [x] Run it for changes touching manifest, schema, persistence, API/IR schema encoding, Vespa configuration, or index lifecycle.
+- [x] Run the complete persistence compatibility corpus on `main`.
 
 **Sensitivity verification**
 
-- [ ] Deliberately removing support for a claimed historical manifest/storage generation makes the persistence compatibility gate fail.
-- [ ] Deliberately weakening persisted-state corruption/config/snapshot validation makes the persistence fault-matrix gate fail.
+- [x] Deliberately removing support for a claimed historical manifest/storage generation makes the persistence compatibility gate fail.
+- [x] Deliberately weakening persisted-state corruption/config/snapshot validation makes the persistence fault-matrix gate fail.
 
 **Exit criterion:** deliberately removing support for any claimed historical persisted format makes CI fail.
 

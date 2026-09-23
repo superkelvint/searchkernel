@@ -73,7 +73,7 @@ jobs:
           echo "EXACT_HEAD_TEST=$regression_dir/test_exact_head.py" >> "$GITHUB_ENV"
 
       - name: Verify exact-head CI regressions
-        run: python3 "$EXACT_HEAD_TEST"
+        run: $CI_PYTHON "$EXACT_HEAD_TEST"
 
       - name: Classify changed behavior
         id: changes
@@ -82,7 +82,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" -- \
-            | python3 "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
+            | "$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
 
   rust:
     name: Rust behavior
@@ -163,11 +163,23 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
+
       - name: Install Python client
-        run: python -m pip install -e clients/python
+        run: $CI_PYTHON -m pip install -e clients/python
 
       - name: Run Python behavioral tests
-        run: python -m unittest discover -s clients/python/tests -p 'test_*.py'
+        run: $CI_PYTHON -m unittest discover -s clients/python/tests -p 'test_*.py'
 
   typescript:
     name: TypeScript behavior
@@ -196,6 +208,9 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -203,8 +218,26 @@ jobs:
           cache: npm
           cache-dependency-path: clients/typescript/package-lock.json
 
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
+
       - name: Install TypeScript client
         run: npm ci --prefix clients/typescript
+
+      - name: Run TypeScript generation regressions
+        run: ./tools/test-typescript-generation.sh
+
+      - name: Generate TypeScript protocol bindings
+        run: npm run generate --prefix clients/typescript
+
+      - name: Verify TypeScript generated bindings
+        run: npm run check:generated --prefix clients/typescript
 
       - name: Typecheck TypeScript client
         run: npm --prefix clients/typescript run typecheck
@@ -212,63 +245,12 @@ jobs:
       - name: Run TypeScript behavioral tests
         run: npm --prefix clients/typescript test
 
-  native:
-    name: Native product behavior
-    needs: classify
-    if: needs.classify.outputs.native == 'true'
-    runs-on: [self-hosted, linux, x64]
-    env:
-      CARGO_TARGET_DIR: target/ci-exact-head-native
-      SEARCHKERNEL_BUILD_ENV: ci
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - name: Check out exact PR head
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 1
-
-      - name: Select runner Python
-        run: bash .github/ci/select-python.sh
-
-      - name: Reject stale verification checkout
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          actual=$(git rev-parse HEAD)
-          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
-            exit 1
-          fi
-          echo "Verified exact PR head $actual."
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target/ci-exact-head-native"
-          shared-key: exact-head-native
-
-      - name: Cache pinned FlatBuffers toolchain
-        uses: actions/cache@v4
-        with:
-          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
-          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Bootstrap native prerequisites
-        run: |
-          ./dev install flatbuffers
-          ./dev native-sdk ensure
-
-      - name: Run authoritative native product gate
-        run: ./reference/vespa/verify-through.sh i
+      - name: Verify TypeScript package
+        run: npm run test:package --prefix clients/typescript
 
   exact-head-gate:
     name: Exact-head gate
-    needs: [classify, rust, python, typescript, native]
+    needs: [classify, rust, python, typescript]
     if: always()
     runs-on: [self-hosted, linux, x64]
     steps:
@@ -282,8 +264,7 @@ jobs:
           PYTHON_RESULT: ${{ needs.python.result }}
           TYPESCRIPT_REQUIRED: ${{ needs.classify.outputs.typescript }}
           TYPESCRIPT_RESULT: ${{ needs.typescript.result }}
-          NATIVE_REQUIRED: ${{ needs.classify.outputs.native }}
-          NATIVE_RESULT: ${{ needs.native.result }}
+          NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}
         run: |
           set -euo pipefail
 
@@ -305,6 +286,9 @@ jobs:
           require_lane Rust "$RUST_REQUIRED" "$RUST_RESULT"
           require_lane Python "$PYTHON_REQUIRED" "$PYTHON_RESULT"
           require_lane TypeScript "$TYPESCRIPT_REQUIRED" "$TYPESCRIPT_RESULT"
-          require_lane Native "$NATIVE_REQUIRED" "$NATIVE_RESULT"
 
-          echo "All behavior required for exact PR head $EXPECTED_HEAD is verified."
+          if [[ "$NATIVE_SENSITIVE" == "true" ]]; then
+            echo "::notice title=Native verification is local::Native-sensitive paths changed. CI intentionally does not bootstrap Vespa or run the real-engine gate; local native verification evidence is required by AGENTS.md."
+          fi
+
+          echo "All non-native CI behavior required for exact PR head $EXPECTED_HEAD is verified."

@@ -59,11 +59,11 @@ jobs:
         run: bash .github/ci/select-python.sh
       - name: Enforce runner-Python workflow policy
         run: bash .github/ci/check-python-workflows.sh
-      - run: python tools/check-capabilities.py --check
-      - run: python tools/check-client-contracts.py --check
-      - run: python tools/test_check_capabilities.py
-      - run: python tools/test_check_client_contracts.py
-      - run: python tools/test_python_dependency_contract.py
+      - run: $CI_PYTHON tools/check-capabilities.py --check
+      - run: $CI_PYTHON tools/check-client-contracts.py --check
+      - run: $CI_PYTHON tools/test_check_capabilities.py
+      - run: $CI_PYTHON tools/test_check_client_contracts.py
+      - run: $CI_PYTHON tools/test_python_dependency_contract.py
 
   e2e:
     name: Executable E2E evidence
@@ -75,12 +75,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
+      - name: Create isolated Python environment
+        run: |
+          python -m venv "$RUNNER_TEMP/searchkernel-client-venv"
+          echo "$RUNNER_TEMP/searchkernel-client-venv/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: clients/typescript/package-lock.json
-      - run: python -m pip install -e clients/python
-      - run: python tools/check-python-dependencies.py
+      - run: $CI_PYTHON -m pip install -e clients/python
+      - run: $CI_PYTHON tools/check-python-dependencies.py
       - run: npm ci --prefix clients/typescript
-      - run: python tools/check-client-contracts.py --run-e2e
+      - run: $CI_PYTHON tools/check-client-contracts.py --run-e2e

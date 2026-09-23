@@ -102,6 +102,28 @@ paths without requiring the optional Vespa SDK:
 cargo test --workspace --all-targets --no-default-features
 ```
 
+### CI does not require Vespa source
+
+Ordinary GitHub CI uses the non-native lanes and must not depend on an
+`upstream/vespa` checkout or call `./dev native-sdk ensure`. Native-sensitive
+pull requests are still classified so reviewers can see that native behavior may
+be affected, but the real-engine acceptance command is run locally by the
+implementation agent for now.
+
+When a change affects the native adapter, bindings, Vespa engine, IR adapter,
+native build tooling, or real-Vespa acceptance artifacts, run the applicable
+native verifier locally and include the exact command and result in the pull
+request. Do not interpret a green non-native CI run as native verification.
+
+The repository-managed pre-commit hook enforces this split. Staged native-sensitive
+changes run both the real-Vespa gate and the real Python gRPC E2E through
+`tools/run-python-native-e2e.sh`. That runner opts the native E2E test in explicitly
+and bootstraps the native SDK first. Non-native-only Rust or Python changes do not
+trigger native verification solely because their language lane is selected.
+Ordinary Python unittest discovery leaves the real gRPC E2E skipped, so GitHub CI
+does not acquire or build Vespa merely because Python behavioral tests are selected.
+
+
 ## Environment isolation
 
 Supported workflows use these independent target roots:
