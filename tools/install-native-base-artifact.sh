@@ -233,6 +233,10 @@ TOOLCHAIN_STAGE=$TMP/toolchain-stage
 mkdir -p "$OBJECT_STAGE" "$TOOLCHAIN_STAGE"
 cp -a "$BASE/." "$OBJECT_STAGE/"
 cp -a "$BUNDLE/toolchain/." "$TOOLCHAIN_STAGE/"
+# cp -a preserves the immutable source root mode onto the staging root on GNU
+# coreutils. Make only those staging directory entries writable long enough for
+# publication; the installed trees are sealed read-only immediately afterward.
+chmod u+rwx "$OBJECT_STAGE" "$TOOLCHAIN_STAGE"
 mv "$OBJECT_STAGE" "$OBJECT"
 mv "$TOOLCHAIN_STAGE" "$TOOLCHAIN"
 chmod -R a-w "$OBJECT" "$TOOLCHAIN"
