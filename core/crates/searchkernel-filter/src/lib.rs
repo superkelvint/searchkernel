@@ -16,7 +16,9 @@ pub use ast::{
 pub use error::{ComplexityLimit, ErrorKind, ParseError, SyntaxReason};
 
 /// Parses a complete filter expression into a syntax-only AST.
-pub fn parse_filter( source:&str)->Result<Spanned<Expr>,ParseError>{parser::parse(source)}
+pub fn parse_filter(source: &str) -> Result<Spanned<Expr>, ParseError> {
+    parser::parse(source)
+}
 
 #[cfg(test)]
 mod tests {
