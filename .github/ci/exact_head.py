@@ -10,7 +10,15 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-LANES = ("rust", "python", "typescript", "native")
+LANES = (
+    "rust",
+    "python",
+    "typescript",
+    "native",
+    "protocol",
+    "api_conformance",
+    "verification",
+)
 
 LANE_PATTERNS: dict[str, tuple[str, ...]] = {
     "rust": (
@@ -47,12 +55,51 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
         "core/crates/searchkernel-vespa-bindings/**",
         "core/crates/searchkernel-vespa-engine/**",
         "core/crates/searchkernel-ir-adapter/**",
+        "core/crates/searchkernel/Cargo.toml",
+        "core/crates/searchkernel/src/index/native.rs",
+        "core/crates/searchkernel/src/index/manifest.rs",
+        "core/crates/searchkernel/src/portable_definition.rs",
+        "searchkerneld/Cargo.toml",
+        "searchkerneld/src/main.rs",
         "reference/vespa/**",
         "tools/check-vespa-bindings.sh",
         "tools/check-native-*.sh",
         "tools/test-native-*.sh",
         "tools/native-*.py",
         "tools/resolve-native-sdk.sh",
+    ),
+    "protocol": (
+        "api/**",
+        "core/crates/searchkernel-protocol/src/generated/**",
+        "core/crates/searchkernel-protocol/bfbs/**",
+        "searchkerneld/src/generated/**",
+        "clients/python/searchkernel/_wire_generated/**",
+        "clients/python/searchkernel/rpc/**",
+        "clients/typescript/src/generated/**",
+        "tools/rpc-codegen/**",
+        "tools/generate-searchkernel-protocol.sh",
+        "tools/generate-flatbuffers-bfbs.sh",
+        "tools/generate-python-flatbuffers.sh",
+        "tools/generate-python-grpc.sh",
+        "tools/generate-searchkernel-rpc.sh",
+        "tools/generate-typescript-flatbuffers.sh",
+        "tools/generate-typescript-grpc-web.sh",
+        "tools/check-flatbuffers-bfbs.sh",
+        "tools/check-searchkernel-protocol-generated.sh",
+        "tools/check-searchkernel-rpc.sh",
+        "tools/check-python-flatbuffers-generated.sh",
+        "tools/check-python-grpc.sh",
+        "tools/check-typescript-generated.sh",
+        "tools/patch-python-flatbuffers-object-api.py",
+    ),
+    "api_conformance": (
+        "reference/api-conformance/**",
+    ),
+    "verification": (
+        ".githooks/pre-commit",
+        ".github/ci/exact_head.py",
+        ".github/ci/test_exact_head.py",
+        "dev",
     ),
 }
 
