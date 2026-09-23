@@ -73,13 +73,31 @@ def source_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def packaging_digest(root: Path) -> str:
+    """Identity of code that determines the published SDK file layout."""
+    digest = hashlib.sha256()
+    for relative in (
+        Path("core/native/vespa/build-sdk.sh"),
+        Path("tools/copy-shared-library-into-sdk.sh"),
+    ):
+        path = root / relative
+        digest.update(relative.as_posix().encode())
+        digest.update(b"\0")
+        if path.is_file():
+            digest.update(file_digest(path).encode())
+        else:
+            digest.update(b"missing")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def shared_library_tree_identity(root: Path, pattern: str = "*.so*") -> str:
-    """Content identity for packaged shared-library inputs.
+    """Content and alias identity for packaged shared-library inputs.
 
     Cache identity must be stable across Git worktrees, so timestamps and inode
-    metadata are deliberately excluded. Because SDK packaging dereferences
-    shared-library symlinks, valid symlinks contribute the bytes that will
-    actually be packaged under each library name.
+    metadata are deliberately excluded. SDK packaging preserves library alias
+    topology with relative symlinks, so both the symlink target and resolved
+    payload bytes contribute to the fingerprint.
     """
     if not root.is_dir():
         return "missing"
@@ -89,12 +107,17 @@ def shared_library_tree_identity(root: Path, pattern: str = "*.so*") -> str:
         digest.update(relative.encode())
         digest.update(b"\0")
         try:
-            if path.is_file():
+            if path.is_symlink():
+                digest.update(b"symlink\0")
+                digest.update(os.readlink(path).encode())
+                digest.update(b"\0")
+                if path.is_file():
+                    digest.update(file_digest(path).encode())
+                else:
+                    digest.update(b"broken")
+            elif path.is_file():
                 digest.update(b"file\0")
                 digest.update(file_digest(path).encode())
-            elif path.is_symlink():
-                digest.update(b"broken-symlink\0")
-                digest.update(os.readlink(path).encode())
             else:
                 digest.update(b"other")
         except OSError as error:
@@ -329,6 +352,7 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
         "vespa.library_bundle": vespa_library_identity(vespa_root),
         "native.dependency_bundle": dependency_bundle_identity(root, vespa_root),
         "native.runtime_bundle": runtime_bundle_identity(root, vespa_root),
+        "native.packaging": packaging_digest(root),
         "flatbuffers.version": os.environ.get("FLATBUFFERS_VERSION", "25.12.19"),
         "rustc": rust_identity(),
         "c.compiler": tool_identity("CC", "cc", dumpmachine=True),
