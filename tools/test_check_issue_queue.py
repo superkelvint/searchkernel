@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -112,6 +113,46 @@ class IssueQueueTests(unittest.TestCase):
         fixture = issue(1, "status:ready", "priority:p1", "area:ir", "type:bug")
         errors = MODULE.validate_queue([fixture, fixture], set())
         self.assertTrue(any("duplicate issue" in error for error in errors))
+
+    def test_closed_issues_must_not_keep_workflow_state_labels(self) -> None:
+        for state in sorted(MODULE.WORKFLOW_STATES):
+            with self.subTest(state=state):
+                errors = MODULE.validate_closed_issue_labels([issue(42, state)])
+                self.assertEqual(
+                    errors,
+                    [f"issue #42 (fixture): closed issue retains workflow state label {state}"],
+                )
+
+    def test_closed_issue_without_workflow_state_passes(self) -> None:
+        self.assertEqual(
+            MODULE.validate_closed_issue_labels(
+                [issue(42, "priority:p1", "area:ci", "type:bug")]
+            ),
+            [],
+        )
+
+
+    def test_load_closed_issues_requests_closed_state_and_ignores_pull_requests(self) -> None:
+        closed_issue = issue(42, "priority:p1")
+        pull_request = {
+            "number": 99,
+            "title": "not an issue",
+            "labels": [],
+            "pull_request": {"url": "https://example.invalid/pulls/99"},
+        }
+        with mock.patch.object(
+            MODULE,
+            "_github_json",
+            return_value=[closed_issue, pull_request],
+        ) as github_json:
+            self.assertEqual(MODULE.load_closed_issues("owner/repo"), [closed_issue])
+        github_json.assert_called_once_with(
+            "owner/repo",
+            "issues",
+            page=1,
+            state="closed",
+        )
+
 
 
 if __name__ == "__main__":

@@ -134,7 +134,36 @@ def validate_queue(
     return errors
 
 
-def _github_json(repo: str, path: str, *, page: int | None = None) -> Any:
+def validate_closed_issue_labels(
+    issues: Sequence[dict[str, Any]],
+) -> list[str]:
+    """Reject canonical workflow-state labels on closed issues."""
+    errors: list[str] = []
+    seen_numbers: set[int] = set()
+
+    for issue in sorted(issues, key=_issue_number):
+        number = _issue_number(issue)
+        if number in seen_numbers:
+            errors.append(f"issue #{number}: duplicate issue in closed snapshot")
+            continue
+        seen_numbers.add(number)
+        title = _issue_title(issue)
+        description = f"issue #{number} ({title})" if title else f"issue #{number}"
+        for state in sorted(_labels(issue) & WORKFLOW_STATES):
+            errors.append(
+                f"{description}: closed issue retains workflow state label {state}"
+            )
+
+    return errors
+
+
+def _github_json(
+    repo: str,
+    path: str,
+    *,
+    page: int | None = None,
+    state: str | None = None,
+) -> Any:
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if not token:
         raise QueueError("GH_TOKEN or GITHUB_TOKEN is required for live issue queue validation")
@@ -142,6 +171,8 @@ def _github_json(repo: str, path: str, *, page: int | None = None) -> Any:
     query = {"per_page": "100"}
     if page is not None:
         query["page"] = str(page)
+    if state is not None:
+        query["state"] = state
     url = f"https://api.github.com/repos/{repo}/{path}?{urllib.parse.urlencode(query)}"
     request = urllib.request.Request(
         url,
@@ -160,11 +191,14 @@ def _github_json(repo: str, path: str, *, page: int | None = None) -> Any:
         raise QueueError(f"GitHub API request failed for {path}: {detail}") from error
 
 
-def load_open_issues(repo: str) -> list[dict[str, Any]]:
+def load_issues(repo: str, *, state: str) -> list[dict[str, Any]]:
+    if state not in {"open", "closed"}:
+        raise QueueError(f"unsupported issue state: {state}")
+
     issues: list[dict[str, Any]] = []
     page = 1
     while True:
-        value = _github_json(repo, "issues", page=page)
+        value = _github_json(repo, "issues", page=page, state=state)
         if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
             raise QueueError("GitHub issues API returned an invalid issue snapshot")
         # GitHub's REST issues collection includes pull requests. Queue state is
@@ -174,6 +208,14 @@ def load_open_issues(repo: str) -> list[dict[str, Any]]:
             break
         page += 1
     return issues
+
+
+def load_open_issues(repo: str) -> list[dict[str, Any]]:
+    return load_issues(repo, state="open")
+
+
+def load_closed_issues(repo: str) -> list[dict[str, Any]]:
+    return load_issues(repo, state="closed")
 
 
 def load_claim_branches(repo: str) -> set[str]:
@@ -195,8 +237,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         issues = load_open_issues(args.repo)
+        closed_issues = load_closed_issues(args.repo)
         branches = load_claim_branches(args.repo)
         errors = validate_queue(issues, branches)
+        errors.extend(validate_closed_issue_labels(closed_issues))
     except (QueueError, json.JSONDecodeError) as error:
         print(f"Issue queue check FAILED: {error}", file=sys.stderr)
         return 2
@@ -207,7 +251,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"- {error}", file=sys.stderr)
         return 1
 
-    print(f"Issue queue check PASS ({len(issues)} open issues).")
+    print(
+        f"Issue queue check PASS ({len(issues)} open issues; "
+        f"{len(closed_issues)} closed issues)."
+    )
     return 0
 
 
