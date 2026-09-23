@@ -658,7 +658,13 @@ def _selection_reasons(path: str, lane: str) -> list[str]:
 
 
 def build_task_plan(paths: Iterable[str]) -> list[dict[str, object]]:
-    normalized = [path.strip().replace("\\", "/") for path in paths if path.strip()]
+    normalized = sorted(
+        {
+            path.strip().replace("\\", "/")
+            for path in paths
+            if path.strip()
+        }
+    )
     selected = classify(normalized)
     task_reasons: dict[str, list[str]] = {}
 
