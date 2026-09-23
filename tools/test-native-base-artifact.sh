@@ -42,6 +42,7 @@ int searchkernel_published_fixture(void) { return 1; }
 C
 cc -shared -fPIC "$fixture/libvespa.c" -Wl,-soname,libvespalib.so -o "$bundle/base/lib/libvespalib.so"
 ln -s libvespalib.so "$bundle/base/lib/libvespalib.so.fixture"
+ln "$bundle/base/lib/libvespalib.so" "$bundle/base/lib/libvespalib.so.hardlink"
 printf '{"kind":"vespa-base","vespa_commit":"fixture-vespa-commit"}\n' >"$bundle/base/manifest.json"
 printf 'CXX_INCLUDES = -I/work/vespa -isystem /fixture-deps/include\n' >"$configured/flags.make"
 printf 'c++ CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o -o searchcore_embedded_crud_spike_app\n' >"$configured/link.txt"
@@ -101,6 +102,8 @@ expected="$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-u
 [[ -s "$after/lib/libvespalib.so" ]]
 [[ -L "$after/lib/libvespalib.so.fixture" ]]
 [[ "$(readlink "$after/lib/libvespalib.so.fixture")" == "libvespalib.so" ]]
+[[ -f "$after/lib/libvespalib.so.hardlink" ]]
+[[ "$(stat -c %i "$after/lib/libvespalib.so")" == "$(stat -c %i "$after/lib/libvespalib.so.hardlink")" ]]
 [[ ! -e "$after/lib/libsearchkernel_vespa.so" ]]
 [[ -z "$(find "$after" -perm /222 -print -quit)" ]]
 grep -q 'installed published Vespa base' "$fixture/install.err"
