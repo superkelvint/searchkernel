@@ -10,6 +10,11 @@ final class UInt64
 {
     public readonly string $value;
 
+    public static function fromDecimal(string $value): self
+    {
+        return new self($value);
+    }
+
     public function __construct(string|int $value)
     {
         $decimal = (string) $value;
