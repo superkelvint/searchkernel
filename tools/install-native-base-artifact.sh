@@ -102,6 +102,7 @@ EXTRACT=$TMP/extract
 mkdir -p "$EXTRACT"
 python3 - "$ARCHIVE" "$EXTRACT" <<'PY'
 import pathlib
+import posixpath
 import sys
 import tarfile
 
@@ -110,12 +111,32 @@ with tarfile.open(archive, "r:gz") as stream:
     members = stream.getmembers()
     if not members:
         raise SystemExit("published Vespa base archive is empty")
+
+    symlinks = set()
     for member in members:
         path = pathlib.PurePosixPath(member.name)
         if path.is_absolute() or ".." in path.parts:
             raise SystemExit(f"unsafe published Vespa base path: {member.name}")
-        if member.issym() or member.islnk() or member.isdev():
+        if member.isdev() or member.islnk():
             raise SystemExit(f"unsupported published Vespa base entry: {member.name}")
+        if member.issym():
+            target = pathlib.PurePosixPath(member.linkname)
+            if target.is_absolute():
+                raise SystemExit(f"unsafe published Vespa base symlink: {member.name}")
+            resolved = posixpath.normpath(str(path.parent / target))
+            if resolved == ".." or resolved.startswith("../"):
+                raise SystemExit(f"unsafe published Vespa base symlink: {member.name}")
+            symlinks.add(path)
+
+    # A later archive member must never be extracted through a symlink created
+    # by an earlier member. Legitimate runtime SONAME links point at sibling
+    # files and have no children of their own.
+    for member in members:
+        path = pathlib.PurePosixPath(member.name)
+        for parent in path.parents:
+            if parent in symlinks:
+                raise SystemExit(f"unsafe published Vespa base symlink traversal: {member.name}")
+
     stream.extractall(destination, members=members)
 PY
 
