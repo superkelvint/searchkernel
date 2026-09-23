@@ -109,18 +109,26 @@ class ExactHeadTests(unittest.TestCase):
         self.assertEqual(classified.returncode, 0, classified.stdout.decode())
         self.assertIn("rust: required", classified.stdout.decode())
 
-    def test_workflow_uses_base_classifier_for_authoritative_lane_selection(self) -> None:
+    def test_workflow_unions_trusted_and_proposed_classifier_lanes(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
             'git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"',
             workflow,
         )
         self.assertIn(
-            '"$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
+            '"$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$trusted_output"',
             workflow,
         )
-        self.assertNotIn(
-            '"$CI_PYTHON" "$EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
+        self.assertIn(
+            '"$CI_PYTHON" "$PROPOSED_EXACT_HEAD_HELPER" classify --github-output "$proposed_output"',
+            workflow,
+        )
+        self.assertIn(
+            'grep -qx "$lane=true" "$trusted_output" || grep -qx "$lane=true" "$proposed_output"',
+            workflow,
+        )
+        self.assertIn(
+            "The proposed\n          # classifier may add new lanes immediately, but cannot remove a lane",
             workflow,
         )
 
