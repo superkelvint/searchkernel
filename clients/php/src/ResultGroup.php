@@ -4,19 +4,24 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
-use UnexpectedValueException;
 
 final class ResultGroup
 {
     /** @param array<string,mixed> $node */
     private function __construct(array $node)
     {
-        $this->id = isset($node['id']) ? (string) $node['id'] : null;
-        $this->label = isset($node['label']) ? (string) $node['label'] : null;
+        $this->id = self::optionalString($node, 'id');
+        $this->label = self::optionalString($node, 'label');
+        if (array_key_exists('value', $node) && $node['value'] !== null && !is_array($node['value'])) {
+            throw new ProtocolException('ResultGroup.value must be a portable Value');
+        }
         $this->value = is_array($node['value'] ?? null) ? Protocol::decodeValue($node['value']) : null;
         $this->fields = Protocol::decodeValueEntries($node['fields'] ?? []);
-        $this->source = isset($node['source']) ? (string) $node['source'] : null;
+        $this->source = self::optionalString($node, 'source');
         $this->types = self::strings($node['types'] ?? []);
+        if (array_key_exists('relevance', $node) && $node['relevance'] !== null && !is_array($node['relevance'])) {
+            throw new ProtocolException('ResultGroup.relevance must be an object');
+        }
         $this->relevance = is_array($node['relevance'] ?? null)
             ? Protocol::decodeRelevance($node['relevance'])
             : null;
@@ -24,29 +29,37 @@ final class ResultGroup
 
         $limits = $node['limits'] ?? null;
         if ($limits !== null && !is_array($limits)) {
-            throw new UnexpectedValueException('ResultGroup.limits must be an object');
+            throw new ProtocolException('ResultGroup.limits must be an object');
         }
         $this->limits = is_array($limits) ? [
             'from' => is_array($limits['from'] ?? null) ? Protocol::decodeValue($limits['from']) : null,
             'to' => is_array($limits['to'] ?? null) ? Protocol::decodeValue($limits['to']) : null,
         ] : null;
 
+        $continuationEntries = $node['continuations'] ?? [];
+        if (!is_array($continuationEntries)) {
+            throw new ProtocolException('ResultGroup.continuations must be an array');
+        }
         $continuations = [];
-        foreach ($node['continuations'] ?? [] as $entry) {
+        foreach ($continuationEntries as $entry) {
             if (!is_array($entry) || !is_string($entry['key'] ?? null) || !is_string($entry['value'] ?? null)) {
-                throw new UnexpectedValueException('malformed continuation entry');
+                throw new ProtocolException('malformed continuation entry');
             }
             if (array_key_exists($entry['key'], $continuations)) {
-                throw new UnexpectedValueException('duplicate continuation key: ' . $entry['key']);
+                throw new ProtocolException('duplicate continuation key: ' . $entry['key']);
             }
             $continuations[$entry['key']] = $entry['value'];
         }
         $this->continuations = $continuations;
 
+        $childEntries = $node['children'] ?? [];
+        if (!is_array($childEntries)) {
+            throw new ProtocolException('ResultGroup.children must be an array');
+        }
         $children = [];
-        foreach ($node['children'] ?? [] as $child) {
+        foreach ($childEntries as $child) {
             if (!is_array($child)) {
-                throw new UnexpectedValueException('malformed ResultGroup child');
+                throw new ProtocolException('malformed ResultGroup child');
             }
             $children[] = self::decodeNode($child);
         }
@@ -83,24 +96,36 @@ final class ResultGroup
         $type = $node['node_type'] ?? null;
         $payload = $node['node'] ?? null;
         if (!is_string($type) || !is_array($payload)) {
-            throw new UnexpectedValueException('malformed ResultNode union');
+            throw new ProtocolException('malformed ResultNode union');
         }
         return match ($type) {
             'Hit' => Hit::fromJson($payload),
             'ResultGroup' => new self($payload),
-            default => throw new UnexpectedValueException('unsupported ResultNode kind: ' . $type),
+            default => throw new ProtocolException('unsupported ResultNode kind: ' . $type),
         };
+    }
+
+    /** @param array<string,mixed> $node */
+    private static function optionalString(array $node, string $key): ?string
+    {
+        if (!array_key_exists($key, $node) || $node[$key] === null) {
+            return null;
+        }
+        if (!is_string($node[$key])) {
+            throw new ProtocolException('ResultGroup.' . $key . ' must be a string');
+        }
+        return $node[$key];
     }
 
     /** @return list<string> */
     private static function strings(mixed $values): array
     {
         if (!is_array($values)) {
-            throw new UnexpectedValueException('expected a string array');
+            throw new ProtocolException('expected a string array');
         }
         foreach ($values as $value) {
             if (!is_string($value)) {
-                throw new UnexpectedValueException('expected a string array');
+                throw new ProtocolException('expected a string array');
             }
         }
         return array_values($values);
