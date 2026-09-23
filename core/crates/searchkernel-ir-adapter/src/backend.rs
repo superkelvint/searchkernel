@@ -221,6 +221,19 @@ fn grouping_result_node(
     grouping_result_group(result, plan, None).map(searchkernel_ir::ResultNode::Group)
 }
 
+fn insert_unique_grouping_field(
+    fields: &mut std::collections::BTreeMap<String, searchkernel_ir::Value>,
+    label: String,
+    value: searchkernel_ir::Value,
+) -> Result<()> {
+    if fields.insert(label.clone(), value).is_some() {
+        return Err(internal(format!(
+            "duplicate grouping result field `{label}` reached adapter assembly"
+        )));
+    }
+    Ok(())
+}
+
 fn grouping_result_group(
     result: GroupingResult,
     plan: &GroupingPlan,
@@ -233,19 +246,25 @@ fn grouping_result_group(
                     "native grouping returned an unexpected root output count",
                 ));
             }
-            plan.root_aggregations
+            let mut fields = std::collections::BTreeMap::new();
+            for (index, (aggregation, output)) in plan
+                .root_aggregations
                 .iter()
                 .zip(result.outputs.iter())
                 .enumerate()
-                .map(|(index, (aggregation, output))| {
-                    let label = plan
-                        .root_output_labels
-                        .get(index)
-                        .and_then(|label| label.clone())
-                        .unwrap_or_else(|| grouping_aggregation_name(aggregation));
-                    Ok((label, grouping_output_value(output.clone())?))
-                })
-                .collect::<Result<std::collections::BTreeMap<_, _>>>()?
+            {
+                let label = plan
+                    .root_output_labels
+                    .get(index)
+                    .and_then(|label| label.clone())
+                    .unwrap_or_else(|| grouping_aggregation_name(aggregation));
+                insert_unique_grouping_field(
+                    &mut fields,
+                    label,
+                    grouping_output_value(output.clone())?,
+                )?;
+            }
+            fields
         }
         Some(level) => {
             let grouping_level = plan
@@ -257,7 +276,8 @@ fn grouping_result_group(
                     "native grouping returned an unexpected output count",
                 ));
             }
-            grouping_level
+            let mut fields = std::collections::BTreeMap::new();
+            for (index, (aggregation, output)) in grouping_level
                 .aggregations
                 .iter()
                 .zip(result.outputs.iter())
@@ -269,15 +289,19 @@ fn grouping_result_group(
                         .copied()
                         .unwrap_or(true)
                 })
-                .map(|(index, (aggregation, output))| {
-                    let label = grouping_level
-                        .output_labels
-                        .get(index)
-                        .and_then(|label| label.clone())
-                        .unwrap_or_else(|| grouping_aggregation_name(aggregation));
-                    Ok((label, grouping_output_value(output.clone())?))
-                })
-                .collect::<Result<std::collections::BTreeMap<_, _>>>()?
+            {
+                let label = grouping_level
+                    .output_labels
+                    .get(index)
+                    .and_then(|label| label.clone())
+                    .unwrap_or_else(|| grouping_aggregation_name(aggregation));
+                insert_unique_grouping_field(
+                    &mut fields,
+                    label,
+                    grouping_output_value(output.clone())?,
+                )?;
+            }
+            fields
         }
     };
     let child_level = level.map_or(0, |level| level + 1);
@@ -726,7 +750,9 @@ impl Backend for VespaBackend {
                         let searchkernel_ir::ResultNode::Group(group) = grouping_node else {
                             return Err(internal("native grouping root is not a result group"));
                         };
-                        root_fields.extend(group.fields);
+                        for (name, value) in group.fields {
+                            insert_unique_grouping_field(&mut root_fields, name, value)?;
+                        }
                         children.extend(group.children);
                     } else {
                         children.push(grouping_node);
@@ -840,5 +866,31 @@ mod implicit_output_name_regression_tests {
             !group.fields.contains_key("sum(Literal(Integer(1)))"),
             "native enum debug spelling must not leak into portable result keys"
         );
+    }
+
+    #[test]
+    fn duplicate_grouping_result_fields_fail_closed_instead_of_overwriting() {
+        let plan = GroupingPlan {
+            levels: Vec::new(),
+            group_all: false,
+            root_label: None,
+            root_aggregations: vec![GroupingAggregation::Count, GroupingAggregation::Count],
+            root_output_labels: vec![Some("metric".to_owned()), Some("metric".to_owned())],
+        };
+        let error = grouping_result_node(
+            GroupingResult {
+                key: None,
+                outputs: vec![
+                    GroupingOutput::Value(GroupingResultValue::Integer(1)),
+                    GroupingOutput::Value(GroupingResultValue::Integer(2)),
+                ],
+                groups: Vec::new(),
+            },
+            &plan,
+        )
+        .expect_err("duplicate grouping result keys must fail closed");
+
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Internal);
+        assert!(error.message.contains("duplicate grouping result field"));
     }
 }
