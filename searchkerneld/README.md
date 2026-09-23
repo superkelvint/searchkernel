@@ -14,8 +14,9 @@ that option is only used during creation. On Unix, omitting `--listen` uses
 `/tmp/searchkerneld.sock`. TCP addresses are also supported, for example
 `--listen 127.0.0.1:50051`.
 
-To expose the same service to browser gRPC-Web clients, add an explicit HTTP/1
-listener, for example:
+To expose the HTTP/1 edge, add `--web-listen`. The same listener serves
+browser gRPC-Web clients and the standard FlatBuffers JSON endpoint used by the
+first HTTP clients:
 
 ```text
 searchkerneld --index /path/to/index \
@@ -23,10 +24,25 @@ searchkerneld --index /path/to/index \
   --web-listen 127.0.0.1:50052
 ```
 
-The browser listener is optional and separate from the local listener. Both
+The HTTP/JSON operation is deliberately generic:
+
+```text
+POST /v1/execute
+Content-Type: application/json
+
+standard FlatBuffers JSON RequestEnvelope
+    ->
+standard FlatBuffers JSON ResponseEnvelope
+```
+
+The JSON body is not a second Search Kernel domain schema. `searchkerneld`
+converts it through the existing BFBS-backed FlatBuffers JSON parser, dispatches
+the resulting canonical FlatBuffer bytes through `searchkernel-dispatch`, and
+prints the canonical response with the matching FlatBuffers JSON printer.
+
+The HTTP/1 listener is optional and separate from the local listener. Both
 listeners share the same dispatcher, admission limit, and bounded execution
-limit. The
-`SEARCHKERNEL_GRPC_WEB_ADDR` environment variable is equivalent to
+limit. The `SEARCHKERNEL_GRPC_WEB_ADDR` environment variable is equivalent to
 `--web-listen` when the flag is omitted.
 
 If a Unix socket path already exists, startup first probes it. A live server
