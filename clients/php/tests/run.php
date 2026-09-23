@@ -58,6 +58,20 @@ function throws(string $class, callable $operation, string $message): void
     throw new RuntimeException($message . ': no exception');
 }
 
+final class FixedResponseTransport implements Transport
+{
+    /** @param array<string,mixed> $response */
+    public function __construct(private readonly array $response) {}
+
+    /** @param array<string,mixed> $request
+     *  @return array<string,mixed>
+     */
+    public function execute(array $request): array
+    {
+        return $this->response;
+    }
+}
+
 final class RecordingTransport implements Transport
 {
     /** @var list<array<string,mixed>> */
@@ -201,6 +215,28 @@ same(
 // --------------------------------------------------------------------------
 // Document and update facade.
 // --------------------------------------------------------------------------
+
+// Facade response fields are part of the protocol boundary and must fail
+// closed rather than inheriting PHP scalar coercion rules.
+$malformedFacadeCases = [
+    ['InsertResult', static fn (Index $i) => $i->insert(['_id' => 'doc']), ['id' => 7]],
+    ['UpsertResult', static fn (Index $i) => $i->upsert(['_id' => 'doc']), ['id' => false]],
+    ['PatchResult', static fn (Index $i) => $i->patch('doc')->execute(), ['id' => ['doc']]],
+    ['UpdateResult', static fn (Index $i) => $i->update('doc')->execute(), ['id' => null]],
+    ['DeleteResult', static fn (Index $i) => $i->delete('doc'), ['id' => 'doc', 'deleted' => 'false']],
+];
+foreach ($malformedFacadeCases as [$resultType, $operation, $payload]) {
+    $indexWithMalformedResult = new Index(new FixedResponseTransport([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_' . $resultType,
+        'payload' => $payload,
+    ]));
+    throws(
+        ProtocolException::class,
+        static fn () => $operation($indexWithMalformedResult),
+        $resultType . ' malformed scalar fields fail closed',
+    );
+}
 
 $transport = new RecordingTransport();
 $index = new Index($transport);
