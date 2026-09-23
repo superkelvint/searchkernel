@@ -367,7 +367,11 @@ final class Protocol
         if (!is_array($octets) || !array_is_list($octets)) {
             throw new ProtocolException('BytesValue.value must be a byte list');
         }
-        return Bytes::fromOctets($octets);
+        try {
+            return Bytes::fromOctets($octets);
+        } catch (InvalidArgumentException $error) {
+            throw new ProtocolException($error->getMessage(), 0, $error);
+        }
     }
 
     /** @param array<string, mixed> $payload */
