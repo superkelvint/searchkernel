@@ -8,6 +8,8 @@ on:
       - "core/crates/searchkernel-vespa-bindings/**"
       - "tools/check_abi_surface.py"
       - "tools/test_check_abi_surface.py"
+      - "tools/check-native-bindings.sh"
+      - "tools/check-native-bindings/**"
       - "tools/check-layout.sh"
       - "tools/native-build-fingerprint.py"
       - "tools/*native-sdk*.sh"
@@ -19,6 +21,8 @@ on:
       - "core/crates/searchkernel-vespa-bindings/**"
       - "tools/check_abi_surface.py"
       - "tools/test_check_abi_surface.py"
+      - "tools/check-native-bindings.sh"
+      - "tools/check-native-bindings/**"
       - "tools/check-layout.sh"
       - "tools/native-build-fingerprint.py"
       - "tools/*native-sdk*.sh"
@@ -32,7 +36,7 @@ concurrency:
 
 jobs:
   abi-surface:
-    name: Public ABI aggregate check
+    name: Public ABI contract check
     runs-on: [self-hosted, linux, x64]
     env:
       CARGO_TARGET_DIR: target/ci
@@ -41,6 +45,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Verify self-hosted ABI dependencies
         run: |
@@ -52,11 +58,31 @@ jobs:
       - name: Run ABI surface regression tests
         run: $ABI_PYTHON tools/test_check_abi_surface.py
 
+      - name: Verify checked-in Rust ABI bindings
+        env:
+          SK_NATIVE_ABI_HEADER: ${{ github.workspace }}/core/native/vespa/searchkernel_vespa.h
+        run: bash tools/check-native-bindings.sh
+
       - name: Check repository layout
         run: bash tools/check-layout.sh
 
       - name: Verify cross-worktree native SDK cache
         run: bash tools/test-native-sdk-cache.sh
 
-      - name: Check public Vespa ABI header
-        run: $ABI_PYTHON tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
+      - name: Check public Vespa ABI contract
+        env:
+          ABI_BASELINE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          args=(
+            core/native/vespa/searchkernel_vespa.h
+            --linker-map core/native/vespa/searchkernel_vespa.map
+          )
+          if [[ -n "${ABI_BASELINE_SHA:-}" ]] &&
+             [[ "$ABI_BASELINE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            baseline_header=$(mktemp)
+            trap 'rm -f "$baseline_header"' EXIT
+            git show "${ABI_BASELINE_SHA}:core/native/vespa/searchkernel_vespa.h" > "$baseline_header"
+            args+=(--baseline-header "$baseline_header")
+          fi
+          "$ABI_PYTHON" tools/check_abi_surface.py "${args[@]}"
