@@ -348,6 +348,42 @@ KNOWN_CLIENT_PATTERNS: tuple[str, ...] = (
     "clients/php/**",
 )
 
+KNOWN_API_PATTERNS: tuple[str, ...] = (
+    "api/searchkernel.fbs",
+    "api/searchkernel_request.fbs",
+    "api/searchkernel_response.fbs",
+    "api/rpc/**",
+)
+
+KNOWN_VESPA_REFERENCE_PATTERNS: tuple[str, ...] = (
+    "reference/vespa/api-contract/**",
+    "reference/vespa/common/**",
+    "reference/vespa/i/**",
+    "reference/vespa/m0/**",
+    "reference/vespa/m1/**",
+    "reference/vespa/m2/**",
+    "reference/vespa/m3/**",
+    "reference/vespa/m4/**",
+    "reference/vespa/m5/**",
+    "reference/vespa/m6/**",
+    "reference/vespa/m7/**",
+    "reference/vespa/m8/**",
+    "reference/vespa/m9/**",
+    "reference/vespa/m9-general-grouping-verifier/**",
+    "reference/vespa/m10/**",
+    "reference/vespa/m11/**",
+    "reference/vespa/m12/**",
+    "reference/vespa/m13/**",
+    "reference/vespa/m14/**",
+    "reference/vespa/phase9/**",
+    "reference/vespa/phase10/**",
+    "reference/vespa/recovery/**",
+    "reference/vespa/searchreply/**",
+    "reference/vespa/verify-through.sh",
+    "reference/vespa/NATIVE_ABI_CONTRACT.h",
+    "reference/vespa/PINNED_VESPA.json",
+)
+
 # Stable task IDs are the trusted plan vocabulary. Phase 3 will bind these IDs
 # to the canonical moon task graph, but candidate task configuration never
 # participates in deciding which IDs are mandatory.
@@ -401,6 +437,8 @@ ALL_TRUSTED_TASKS: tuple[str, ...] = (
     "issue-queue",
     "verification-policy",
     "web-dashboard",
+    "frontend-harness-selftest",
+    "frontend-verifier-integrity",
 )
 
 
@@ -468,6 +506,10 @@ def _is_known_behavioral_path(path: str) -> bool:
         return _matches(path, KNOWN_CORE_PATTERNS)
     if path.startswith("clients/"):
         return _matches(path, KNOWN_CLIENT_PATTERNS)
+    if path.startswith("api/"):
+        return _matches(path, KNOWN_API_PATTERNS)
+    if path.startswith("reference/vespa/"):
+        return _matches(path, KNOWN_VESPA_REFERENCE_PATTERNS)
     return any(_matches(path, LANE_PATTERNS[lane]) for lane in LANES)
 
 
