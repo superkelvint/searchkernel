@@ -302,8 +302,8 @@ These are non-negotiable unless the task explicitly changes the architecture:
 - `searchkernel-ir` owns portable semantics through `*_to_ir()`.
 - There must be one implementation of portable semantics.
 - Rust uses the engine directly in-process.
-- First-party non-Rust clients use gRPC carrying canonical FlatBuffer bytes.
-- Protobuf is transport framing only; it does not duplicate the domain model.
+- First-party non-Rust clients use canonical FlatBuffers through thin transports. Binary FlatBuffers over generated gRPC is the default native/runtime path; explicitly selected HTTP clients may use standard FlatBuffers JSON only through the official BFBS-backed JSON bridge into the same canonical dispatcher.
+- Protobuf is transport framing only; it does not duplicate the domain model. HTTP routes and JSON DTOs must likewise never duplicate the portable domain model.
 - `searchkernel-ir-adapter` is the integration boundary between portable IR and
   the Vespa-facing engine.
 - Vespa types stay behind the native adapter.
