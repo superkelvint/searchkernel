@@ -788,3 +788,57 @@ impl Backend for VespaBackend {
         self.engine.close().map_err(native_error)
     }
 }
+
+#[cfg(test)]
+mod implicit_output_name_regression_tests {
+    use super::*;
+    use crate::search::lower_groupings;
+    use searchkernel_ir::{
+        GroupingAggregationIr, GroupingAllIr, GroupingExpressionIr, GroupingOperationIr,
+        GroupingOutputIr, GroupingRequestIr, RequestValueIr,
+    };
+
+    #[test]
+    fn implicit_root_output_name_survives_lowering_without_native_debug_drift() {
+        let request = GroupingRequestIr {
+            root: GroupingAllIr {
+                operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                    label: None,
+                    expression: GroupingExpressionIr::Aggregation(Box::new(
+                        GroupingAggregationIr::Sum(GroupingExpressionIr::Literal(
+                            RequestValueIr::Int64(1),
+                        )),
+                    )),
+                }])],
+                label: None,
+            },
+            continuations: Vec::new(),
+        };
+        let lowerings = lower_groupings(&[request]).expect("root grouping should lower");
+        let GroupingLowering::Native(native) = &lowerings[0] else {
+            panic!("root aggregation should use native grouping lowering");
+        };
+
+        let node = grouping_result_node(
+            GroupingResult {
+                key: None,
+                outputs: vec![GroupingOutput::Value(GroupingResultValue::Integer(1))],
+                groups: Vec::new(),
+            },
+            &native.plan,
+        )
+        .expect("grouping result should project");
+        let searchkernel_ir::ResultNode::Group(group) = node else {
+            panic!("grouping result should be a group");
+        };
+
+        assert!(
+            group.fields.contains_key("sum(Literal(Int64(1)))"),
+            "portable implicit output names must remain canonical across lowering"
+        );
+        assert!(
+            !group.fields.contains_key("sum(Literal(Integer(1)))"),
+            "native enum debug spelling must not leak into portable result keys"
+        );
+    }
+}
