@@ -12,7 +12,9 @@ final class SearchTiming
         $this->queryTimeSeconds = self::optionalFloat($node, 'query_time_seconds');
         $this->searchTimeSeconds = self::optionalFloat($node, 'search_time_seconds');
         $this->summaryFetchTimeSeconds = self::optionalFloat($node, 'summary_fetch_time_seconds');
-        $this->metadata = Protocol::decodeValueEntries($node['metadata'] ?? []);
+        $this->metadata = Protocol::decodeValueEntries(
+            Protocol::listField($node, 'metadata', 'SearchTiming.metadata'),
+        );
     }
 
     public readonly ?float $queryTimeSeconds;
