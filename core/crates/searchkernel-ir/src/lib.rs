@@ -8,6 +8,9 @@ extern crate self as searchkernel_ir;
 mod semantics;
 
 #[cfg(test)]
+mod property_tests;
+
+#[cfg(test)]
 #[path = "../tests/property.rs"]
 mod property;
 
