@@ -2918,7 +2918,6 @@ fn create_persists_rich_schema_provenance_and_reopens_consistently() {
     let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&portable_bytes)
         .expect("persisted portable definition should parse");
     assert_eq!(portable_bytes, expected_portable);
-
     let portable_ir = searchkernel_ir::index_definition_to_ir(portable)
         .expect("persisted portable definition should resolve");
     assert_eq!(portable_ir, expected_resolved);
