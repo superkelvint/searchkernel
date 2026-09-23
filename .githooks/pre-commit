@@ -32,6 +32,22 @@ fi
 # Rust/Python changes do not unexpectedly require a Vespa SDK.
 python_native_e2e_required="$native_required"
 
+abi_authority_required=false
+if [[ -n "$(git diff --cached --name-only --no-renames -- \
+    core/native/vespa/searchkernel_vespa.h \
+    core/native/vespa/manifest.json \
+    core/crates/searchkernel-vespa-bindings/src/abi.rs \
+    core/crates/searchkernel-vespa-bindings/src/bindings.rs \
+    reference/vespa/NATIVE_ABI_CONTRACT.h \
+    reference/vespa/PINNED_VESPA.json)" ]]; then
+    abi_authority_required=true
+fi
+
+if [[ "$abi_authority_required" == true ]]; then
+    echo "pre-commit: checking staged native ABI authority agreement"
+    python3 tools/check-native-abi-authorities.py --git-index
+fi
+
 if [[ "$native_required" == true ]]; then
     if ! git diff --quiet; then
         echo "pre-commit: native/E2E-sensitive changes are staged, but tracked unstaged changes also exist" >&2
