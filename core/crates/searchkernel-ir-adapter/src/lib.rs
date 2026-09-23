@@ -23,11 +23,11 @@ use std::collections::BTreeMap;
 #[cfg(all(test, feature = "native"))]
 mod tests;
 
-#[cfg(test)]
-pub(crate) use backend::MutationProbe;
 pub use backend::VespaBackend;
 #[cfg(test)]
 pub(crate) use backend::{portable_coverage, portable_errors_from_native_issues};
+#[cfg(test)]
+pub(crate) use backend::{MutationProbe, SearchGroupingProbe};
 pub use schema::{compile_index_definition, validate_index_definition};
 #[cfg(test)]
 pub(crate) use search::filter::{lower_comparison, lower_filter};
