@@ -214,7 +214,7 @@ impl Index {
     pub fn create(path: impl AsRef<std::path::Path>, definition: IndexDefinition) -> Result<Self> {
         let root = path.as_ref();
         let portable_definition_bytes =
-            crate::portable_definition::encode_portable_definition(&definition);
+            crate::portable_definition::try_encode_portable_definition(&definition)?;
         let resolved_ir = definition_to_ir(&definition)?;
         searchkernel_ir_adapter::validate_index_definition(&resolved_ir).map_err(Error::from_ir)?;
         let resolved_context = IndexContext::from_definition_ir(resolved_ir);

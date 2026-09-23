@@ -36,7 +36,10 @@ pub use result::{
     update_result_offset, update_result_to_api, upsert_result_offset, upsert_result_to_api,
     validate_search_result,
 };
-pub use schema::{describe_result_offset, describe_result_to_api, index_definition_ir_to_api};
+pub use schema::{
+    describe_result_offset, describe_result_to_api, index_definition_input_to_api,
+    index_definition_ir_to_api,
+};
 pub use search::{
     inspect_query_result_offset, inspect_query_result_to_api, search_request_ir_to_api,
 };

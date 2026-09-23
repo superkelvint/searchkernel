@@ -2817,6 +2817,94 @@ fn portable_definition_encoding_uses_public_state_without_a_canonical_sidecar() 
 }
 
 #[test]
+fn portable_definition_round_trips_all_public_schema_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let bytes = crate::portable_definition::encode_portable_definition(&described);
+    let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+        .expect("portable definition should parse");
+    let encoded =
+        searchkernel_ir::index_definition_to_ir(root).expect("portable definition should resolve");
+
+    assert_eq!(encoded, canonical);
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn create_persists_rich_schema_provenance_and_reopens_consistently() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-schema-provenance-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let definition = IndexDefinition::new()
+        .name("rich_native_schema")
+        .field(
+            Field::text("title")
+                .stored(true)
+                .searchable(true)
+                .analyzer(Analyzer::standard_v1()),
+        )
+        .field(
+            Field::keyword("brand")
+                .stored(true)
+                .filterable(true)
+                .sortable(true)
+                .facetable(true),
+        )
+        .field(Field::int64("price").stored(true).filterable(true))
+        .field(Field::tensor("embedding", "tensor<float>(x[3])"))
+        .default_search_fields([SearchField::new("title").weight(0.75)])
+        .rank_profile(
+            RankProfile::new("product_search")
+                .first_phase("bm25(title)")
+                .match_feature("bm25(title)"),
+        );
+    let expected_resolved =
+        definition_to_ir(&definition).expect("public definition should resolve before create");
+    let expected_portable = crate::portable_definition::encode_portable_definition(&definition);
+
+    let index = Index::create(&root, definition).expect("create native index");
+    index.close().expect("close created index");
+
+    let portable_bytes = std::fs::read(root.join("manifest/portable-index-definition.bfbs"))
+        .expect("read persisted portable definition");
+    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&portable_bytes)
+        .expect("persisted portable definition should parse");
+    assert_eq!(portable_bytes, expected_portable);
+    let portable_ir = searchkernel_ir::index_definition_to_ir(portable)
+        .expect("persisted portable definition should resolve");
+    assert_eq!(portable_ir, expected_resolved);
+    assert_eq!(portable_ir.schema_fields().len(), 0);
+    assert_eq!(portable_ir.rank_profiles().len(), 1);
+    assert_eq!(portable_ir.properties().len(), 0);
+    assert!(portable_ir.fields().iter().any(|field| {
+        field.name().as_str() == "title"
+            && field.analyzer().is_some()
+            && field.capabilities().stored()
+            && field.capabilities().searchable()
+    }));
+
+    let canonical_bytes = std::fs::read(root.join("manifest/index-definition.bfbs"))
+        .expect("read persisted canonical definition");
+    let canonical = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&canonical_bytes)
+        .expect("persisted canonical definition should parse");
+    let persisted_resolved = searchkernel_ir::index_definition_to_ir(canonical)
+        .expect("persisted canonical definition should resolve");
+    assert_eq!(persisted_resolved, expected_resolved);
+
+    let reopened = Index::open(&root).expect("reopen persisted index");
+    let described = reopened.describe().expect("describe reopened index");
+    let reopened_resolved =
+        definition_to_ir(&described).expect("reopened public definition should resolve");
+    assert_eq!(reopened_resolved, expected_resolved);
+    reopened.close().expect("close reopened index");
+    std::fs::remove_dir_all(root).expect("remove provenance test index");
+}
+
+#[test]
 fn describe_preserves_field_properties() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
