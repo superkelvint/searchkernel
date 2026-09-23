@@ -8,6 +8,21 @@ use RuntimeException;
 
 final class SearchKernelException extends RuntimeException
 {
+    /** @var list<string> */
+    private const ERROR_CODES = [
+        'Unspecified',
+        'InvalidArgument',
+        'NotFound',
+        'AlreadyExists',
+        'FailedPrecondition',
+        'Conflict',
+        'Unsupported',
+        'ResourceExhausted',
+        'Internal',
+        'Unavailable',
+        'DeadlineExceeded',
+    ];
+
     /** @param list<array{code:string,path:?string,message:string,metadata:array<string,string>}> $details */
     public function __construct(
         public readonly string $errorCode,
@@ -24,10 +39,13 @@ final class SearchKernelException extends RuntimeException
         $code = $payload['code'] ?? null;
         $message = $payload['message'] ?? null;
         $retryable = $payload['retryable'] ?? null;
-        $details = $payload['details'] ?? [];
+        $details = Protocol::listField($payload, 'details', 'Error.details');
 
-        if (!is_string($code) || !is_string($message) || !is_bool($retryable) || !is_array($details)) {
+        if (!is_string($code) || !is_string($message) || !is_bool($retryable)) {
             throw new ProtocolException('malformed canonical Search Kernel Error payload');
+        }
+        if (!in_array($code, self::ERROR_CODES, true)) {
+            throw new ProtocolException('unsupported canonical Search Kernel Error code: ' . $code);
         }
 
         $decodedDetails = [];
@@ -36,13 +54,16 @@ final class SearchKernelException extends RuntimeException
                 || !is_string($detail['code'] ?? null)
                 || !is_string($detail['message'] ?? null)
                 || (array_key_exists('path', $detail) && $detail['path'] !== null && !is_string($detail['path']))
-                || !is_array($detail['metadata'] ?? [])
             ) {
                 throw new ProtocolException('malformed canonical Search Kernel Error detail');
             }
 
             $metadata = [];
-            foreach ($detail['metadata'] ?? [] as $entry) {
+            foreach (Protocol::listField(
+                $detail,
+                'metadata',
+                'ErrorDetail.metadata',
+            ) as $entry) {
                 if (!is_array($entry)
                     || !is_string($entry['key'] ?? null)
                     || !is_string($entry['value'] ?? null)
