@@ -4,23 +4,40 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
-use UnexpectedValueException;
-
 final class ResultIssue
 {
     /** @param array<string,mixed> $node */
     public function __construct(array $node)
     {
-        $this->code = $node['code'] ?? 0;
-        $this->summary = (string) ($node['summary'] ?? '');
-        $this->message = (string) ($node['message'] ?? '');
-        $this->source = (string) ($node['source'] ?? '');
-        $this->stackTrace = (string) ($node['stack_trace'] ?? '');
+        $code = $node['code'] ?? null;
+        $summary = $node['summary'] ?? null;
+        $message = $node['message'] ?? null;
+        $source = $node['source'] ?? null;
+        $stackTrace = $node['stack_trace'] ?? null;
+
+        if ((!is_int($code) && !is_string($code))
+            || !is_string($summary)
+            || !is_string($message)
+            || !is_string($source)
+            || !is_string($stackTrace)
+        ) {
+            throw new ProtocolException('malformed SearchResult error');
+        }
+
+        $this->code = $code;
+        $this->summary = $summary;
+        $this->message = $message;
+        $this->source = $source;
+        $this->stackTrace = $stackTrace;
+
         if (array_key_exists('transient', $node) && $node['transient'] !== null) {
-            if (!is_array($node['transient']) || !array_key_exists('value', $node['transient'])) {
-                throw new UnexpectedValueException('result error transient must be an optional-value object');
+            if (!is_array($node['transient'])
+                || !array_key_exists('value', $node['transient'])
+                || !is_bool($node['transient']['value'])
+            ) {
+                throw new ProtocolException('result error transient must be an optional boolean');
             }
-            $this->transient = (bool) $node['transient']['value'];
+            $this->transient = $node['transient']['value'];
         } else {
             $this->transient = null;
         }
