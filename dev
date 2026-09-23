@@ -197,6 +197,7 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_check_abi_surface.py"
             bash "$ROOT/tools/check-native-bindings.sh"
             bash "$ROOT/tools/check-layout.sh"
+            bash "$ROOT/tools/test-native-sdk-cache.sh"
             "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
                 "$ROOT/core/native/vespa/searchkernel_vespa.h" \
                 --linker-map "$ROOT/core/native/vespa/searchkernel_vespa.map" \
