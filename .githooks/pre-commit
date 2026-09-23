@@ -30,6 +30,7 @@ lane_required() {
 native_required=false
 python_required=false
 typescript_required=false
+php_required=false
 protocol_required=false
 api_conformance_required=false
 verification_required=false
@@ -37,6 +38,7 @@ verification_required=false
 lane_required native && native_required=true
 lane_required python && python_required=true
 lane_required typescript && typescript_required=true
+lane_required php && php_required=true
 lane_required protocol && protocol_required=true
 lane_required api_conformance && api_conformance_required=true
 lane_required verification && verification_required=true
@@ -95,6 +97,11 @@ fi
 if [[ "$typescript_required" == true ]]; then
     echo "pre-commit: TypeScript-sensitive changes detected; running TypeScript client tests"
     ./dev test typescript
+fi
+
+if [[ "$php_required" == true ]]; then
+    echo "pre-commit: PHP-sensitive changes detected; running PHP client tests"
+    ./dev test php
 fi
 
 if [[ "$native_required" == true ]]; then
