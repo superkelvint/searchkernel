@@ -655,8 +655,24 @@ class ExactHeadTests(unittest.TestCase):
             "phase9",
             "c2-historical",
             "verification-policy",
+            "frontend-harness-selftest",
+            "frontend-verifier-integrity",
         ):
             self.assertIn(task_id, task_ids)
+
+    def test_new_api_contract_family_fails_closed(self) -> None:
+        lines = classify_lines("api/new_contract.schema")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_new_vespa_milestone_fails_closed(self) -> None:
+        lines = classify_lines("reference/vespa/m15/verify-m15.sh")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
 
     def test_explicit_non_behavioral_paths_do_not_select_behavioral_lanes(self) -> None:
         for path in (
@@ -838,6 +854,8 @@ class ExactHeadTests(unittest.TestCase):
             "issue-queue",
             "verification-policy",
             "web-dashboard",
+            "frontend-harness-selftest",
+            "frontend-verifier-integrity",
         }
         self.assertEqual(task_ids, expected)
         for task in payload["tasks"]:
