@@ -14,6 +14,7 @@ ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
 NIGHTLY_WORKFLOW = SCRIPT.parents[1] / "workflows" / "nightly.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
+PYTHON_GRPC_CHECK = SCRIPT.parents[2] / "tools" / "check-python-grpc.sh"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -170,6 +171,15 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("uses: dtolnay/rust-toolchain@stable", contracts)
         self.assertIn("components: rustfmt", contracts)
         self.assertIn("bash tools/check-flatbuffers-generated.sh", contracts)
+
+    def test_python_grpc_generation_check_uses_selected_runner_python(self) -> None:
+        script = PYTHON_GRPC_CHECK.read_text(encoding="utf-8")
+        self.assertIn('PYTHON_BIN="${CI_PYTHON:-python3}"', script)
+        self.assertIn(
+            '"$PYTHON_BIN" "$root/tools/check-python-dependencies.py" --codegen',
+            script,
+        )
+        self.assertIn('"$PYTHON_BIN" -m grpc_tools.protoc', script)
 
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
