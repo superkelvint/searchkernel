@@ -101,12 +101,16 @@ final class Tensor
         }
         $cells = [];
         foreach ($payload['cells'] as $cell) {
-            if (!is_array($cell) || !is_array($cell['address'] ?? null) || !array_key_exists('value', $cell)) {
+            if (!is_array($cell) || !is_array($cell['address'] ?? null)) {
                 throw new InvalidArgumentException('malformed sparse tensor cell');
             }
             $cells[] = [
                 'address' => self::wireAddress($cell['address']),
-                'value' => self::wireNumber($cell['value']),
+                'value' => Protocol::finiteScalarField(
+                    $cell,
+                    'value',
+                    'TensorCell.value',
+                ),
             ];
         }
         return self::sparse($typeSpec, $cells);
