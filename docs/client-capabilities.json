@@ -638,7 +638,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 755
+              "line": 756
             },
             {
               "capability": "search.pagination",
@@ -647,7 +647,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 755
+              "line": 756
             },
             {
               "capability": "search.pagination",
@@ -656,7 +656,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 755
+              "line": 756
             },
             {
               "capability": "search.pagination",
@@ -698,7 +698,35 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "search.search_fields",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 755
+            },
+            {
+              "capability": "search.search_fields",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "e2e",
+              "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
+              "line": 755
+            },
+            {
+              "capability": "search.search_fields",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "ergonomic",
+              "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
+              "line": 755
+            }
+          ],
           "overrides": []
         }
       ]
@@ -719,7 +747,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 756
+              "line": 757
             },
             {
               "capability": "result.docsum_field_projection",
@@ -728,7 +756,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 756
+              "line": 757
             },
             {
               "capability": "result.docsum_field_projection",
@@ -787,7 +815,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 757
+              "line": 758
             },
             {
               "capability": "result.named_summary_class",
@@ -796,7 +824,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 757
+              "line": 758
             }
           ],
           "overrides": []
@@ -845,7 +873,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 765
+              "line": 766
             },
             {
               "capability": "result.highlighting",
@@ -854,7 +882,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 758
+              "line": 759
             },
             {
               "capability": "result.highlighting",
@@ -863,7 +891,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 758
+              "line": 759
             },
             {
               "capability": "result.highlighting",
@@ -934,7 +962,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 759
+              "line": 760
             },
             {
               "capability": "result.tensor_document_readback",
@@ -943,7 +971,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 759
+              "line": 760
             }
           ],
           "overrides": []
@@ -979,7 +1007,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 756
+              "line": 757
             },
             {
               "capability": "grouping.structured",
@@ -988,7 +1016,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 760
+              "line": 761
             },
             {
               "capability": "grouping.structured",
@@ -997,7 +1025,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 760
+              "line": 761
             },
             {
               "capability": "grouping.structured",
@@ -1051,7 +1079,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 757
+              "line": 758
             },
             {
               "capability": "grouping.aggregations",
@@ -1060,7 +1088,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 761
+              "line": 762
             },
             {
               "capability": "grouping.aggregations",
@@ -1069,7 +1097,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 761
+              "line": 762
             },
             {
               "capability": "grouping.aggregations",
@@ -1110,7 +1138,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 762
+              "line": 763
             },
             {
               "capability": "grouping.summary_aggregation",
@@ -1119,7 +1147,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 762
+              "line": 763
             }
           ],
           "overrides": []
@@ -1168,7 +1196,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 758
+              "line": 759
             },
             {
               "capability": "update.document_crud",
@@ -1177,7 +1205,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 763
+              "line": 764
             },
             {
               "capability": "update.document_crud",
@@ -1186,7 +1214,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 763
+              "line": 764
             },
             {
               "capability": "update.document_crud",
@@ -1236,7 +1264,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 759
+              "line": 760
             },
             {
               "capability": "update.arithmetic",
@@ -1245,7 +1273,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 764
+              "line": 765
             },
             {
               "capability": "update.arithmetic",
@@ -1254,7 +1282,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 764
+              "line": 765
             }
           ],
           "overrides": []
@@ -1277,7 +1305,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 760
+              "line": 761
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -1286,7 +1314,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 765
+              "line": 766
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -1295,7 +1323,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 765
+              "line": 766
             }
           ],
           "overrides": []
@@ -1370,7 +1398,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 766
+              "line": 767
             },
             {
               "capability": "tensor.dense_document_crud",
@@ -1379,7 +1407,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 766
+              "line": 767
             }
           ],
           "overrides": []
@@ -1402,7 +1430,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 761
+              "line": 762
             },
             {
               "capability": "query.yql",
@@ -1411,7 +1439,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 767
+              "line": 768
             },
             {
               "capability": "query.yql",
@@ -1420,7 +1448,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 767
+              "line": 768
             }
           ],
           "overrides": []
@@ -1443,7 +1471,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 768
+              "line": 769
             },
             {
               "capability": "query.text_weak_and",
@@ -1452,7 +1480,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 768
+              "line": 769
             }
           ],
           "overrides": []
@@ -1566,7 +1594,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 762
+              "line": 763
             },
             {
               "capability": "ranking.profile_selection",
@@ -1575,7 +1603,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 769
+              "line": 770
             },
             {
               "capability": "ranking.profile_selection",
@@ -1584,7 +1612,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 769
+              "line": 770
             }
           ],
           "overrides": []
@@ -1607,7 +1635,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 770
+              "line": 771
             },
             {
               "capability": "ranking.numeric_query_inputs",
@@ -1616,7 +1644,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 770
+              "line": 771
             }
           ],
           "overrides": []
@@ -1639,7 +1667,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 763
+              "line": 764
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -1648,7 +1676,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 771
+              "line": 772
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -1657,7 +1685,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 771
+              "line": 772
             }
           ],
           "overrides": []
@@ -1680,7 +1708,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 764
+              "line": 765
             },
             {
               "capability": "ranking.rank_properties",
@@ -1689,7 +1717,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 772
+              "line": 773
             },
             {
               "capability": "ranking.rank_properties",
@@ -1698,7 +1726,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 772
+              "line": 773
             }
           ],
           "overrides": []
@@ -1721,7 +1749,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 773
+              "line": 774
             },
             {
               "capability": "result.match_features",
@@ -1730,7 +1758,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 773
+              "line": 774
             }
           ],
           "overrides": []
@@ -1753,7 +1781,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 766
+              "line": 767
             },
             {
               "capability": "result.grouping_tree",
@@ -1762,7 +1790,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 774
+              "line": 775
             },
             {
               "capability": "result.grouping_tree",
@@ -1771,7 +1799,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 774
+              "line": 775
             }
           ],
           "overrides": []
@@ -1794,7 +1822,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 767
+              "line": 768
             },
             {
               "capability": "result.degradation_metadata",
@@ -1803,7 +1831,7 @@
               "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 775
+              "line": 776
             },
             {
               "capability": "result.degradation_metadata",
@@ -1812,7 +1840,7 @@
               "runtime": "http",
               "kind": "ergonomic",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 775
+              "line": 776
             }
           ],
           "overrides": []
