@@ -79,11 +79,19 @@ final class SearchResult
             ) {
                 return;
             }
+            $countKind = $child->fieldKind('count');
+            $acceptedKinds = $generic
+                ? ['Int64Value', 'UInt64Value']
+                : ['UInt64Value'];
+            if (!in_array($countKind, $acceptedKinds, true)) {
+                return;
+            }
+
             $count = $child->fields['count'];
             if (!is_int($count) && !is_string($count)) {
                 return;
             }
-            if ($generic && is_int($count) && $count < 0) {
+            if ($generic && $countKind === 'Int64Value' && is_int($count) && $count < 0) {
                 return;
             }
             $buckets[] = ['value' => $child->value, 'count' => $count];
