@@ -107,6 +107,24 @@ class NativeAbiAuthorityTests(unittest.TestCase):
             self.assertIsNotNone(mismatch)
             self.assertIn("native manifest=12", mismatch)
 
+    def test_native_manifest_vespa_commit_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_fixture(root)
+            manifest = root / "core/native/vespa/manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "native_abi_version": 13,
+                        "vespa_commit": "wrong",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(CHECKER.AuthorityCheckError):
+                self.authorities(root)
+
     def test_sdk_authorities_and_pin_are_checked(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -137,6 +155,27 @@ class NativeAbiAuthorityTests(unittest.TestCase):
                 pinned_commit=pin,
             )
             self.assertIsNone(CHECKER.disagreement(authorities))
+
+            sdk_manifest.write_text(
+                json.dumps(
+                    {
+                        "native_abi_version": 12,
+                        "vespa_commit": "deadbeef",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            sdk_version_mismatch = dict(self.authorities(root))
+            CHECKER.add_sdk_authorities(
+                sdk_version_mismatch,
+                sdk_header=sdk_header,
+                sdk_manifest=sdk_manifest,
+                pinned_commit=pin,
+            )
+            mismatch = CHECKER.disagreement(sdk_version_mismatch)
+            self.assertIsNotNone(mismatch)
+            self.assertIn("SDK manifest=12", mismatch)
 
             sdk_manifest.write_text(
                 json.dumps(
