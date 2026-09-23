@@ -496,17 +496,17 @@ class ExactHeadTests(unittest.TestCase):
             },
             b"clients/python/searchkernel/ergonomic.py\0": {
                 "rust=false", "python=true", "typescript=false", "php=false", "native=false",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"clients/typescript/src/index.ts\0": {
                 "rust=false", "python=false", "typescript=true", "php=false", "native=false",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"core/native/vespa/abi.cc\0": {
                 "rust=true", "python=false", "typescript=false", "php=false", "native=true",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
+                "protocol=false", "api_conformance=false", "contracts=false", "abi=true",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
             b"api/searchkernel.fbs\0": {
