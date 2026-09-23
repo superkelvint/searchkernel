@@ -22,7 +22,6 @@ use searchkernel_testkit::RecordingBackend;
 use searchkerneld::{start, ServerConfig, JSON_EXECUTE_PATH};
 use tokio::sync::Notify;
 
-
 struct BlockingBackend {
     started: Arc<Notify>,
     release: Arc<AtomicBool>,
@@ -48,13 +47,41 @@ impl BlockingBackend {
 }
 
 impl Backend for BlockingBackend {
-    fn insert(&self, _request: searchkernel_ir::InsertRequestIr) -> BackendResult<searchkernel_ir::InsertResult> { Self::unsupported() }
-    fn upsert(&self, _request: searchkernel_ir::UpsertRequestIr) -> BackendResult<searchkernel_ir::UpsertResult> { Self::unsupported() }
-    fn patch(&self, _request: searchkernel_ir::PatchRequestIr) -> BackendResult<searchkernel_ir::PatchResult> { Self::unsupported() }
-    fn delete(&self, _request: searchkernel_ir::DeleteRequestIr) -> BackendResult<searchkernel_ir::DeleteResult> { Self::unsupported() }
-    fn get(&self, _request: searchkernel_ir::GetRequestIr) -> BackendResult<searchkernel_ir::GetResult> { Self::unsupported() }
+    fn insert(
+        &self,
+        _request: searchkernel_ir::InsertRequestIr,
+    ) -> BackendResult<searchkernel_ir::InsertResult> {
+        Self::unsupported()
+    }
+    fn upsert(
+        &self,
+        _request: searchkernel_ir::UpsertRequestIr,
+    ) -> BackendResult<searchkernel_ir::UpsertResult> {
+        Self::unsupported()
+    }
+    fn patch(
+        &self,
+        _request: searchkernel_ir::PatchRequestIr,
+    ) -> BackendResult<searchkernel_ir::PatchResult> {
+        Self::unsupported()
+    }
+    fn delete(
+        &self,
+        _request: searchkernel_ir::DeleteRequestIr,
+    ) -> BackendResult<searchkernel_ir::DeleteResult> {
+        Self::unsupported()
+    }
+    fn get(
+        &self,
+        _request: searchkernel_ir::GetRequestIr,
+    ) -> BackendResult<searchkernel_ir::GetResult> {
+        Self::unsupported()
+    }
 
-    fn search(&self, _request: searchkernel_ir::SearchRequestIr) -> BackendResult<searchkernel_ir::SearchResult> {
+    fn search(
+        &self,
+        _request: searchkernel_ir::SearchRequestIr,
+    ) -> BackendResult<searchkernel_ir::SearchResult> {
         self.searches.fetch_add(1, Ordering::SeqCst);
         self.started.notify_waiters();
         while !self.release.load(Ordering::Acquire) {
@@ -63,9 +90,13 @@ impl Backend for BlockingBackend {
         Self::unsupported()
     }
 
-    fn analyze(&self, _request: searchkernel_ir::AnalyzeRequestIr) -> BackendResult<searchkernel_ir::AnalyzeResult> { Self::unsupported() }
+    fn analyze(
+        &self,
+        _request: searchkernel_ir::AnalyzeRequestIr,
+    ) -> BackendResult<searchkernel_ir::AnalyzeResult> {
+        Self::unsupported()
+    }
 }
-
 
 const DESCRIBE_JSON: &[u8] = br#"{
   "protocol_version": 2,
@@ -242,7 +273,6 @@ async fn http_json_rejects_edge_failures_before_dispatch() {
     server.shutdown().await.expect("shutdown HTTP edge");
     index.close().expect("close test index");
 }
-
 
 #[tokio::test]
 async fn http_json_admission_limit_rejects_a_queued_request() {

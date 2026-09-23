@@ -50,6 +50,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Verify self-hosted ABI dependencies
         run: |
