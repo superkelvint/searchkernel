@@ -12,6 +12,9 @@ final class HttpTransport implements Transport
 
     public function __construct(string $baseUrl, private readonly float $timeoutSeconds = 30.0)
     {
+        if (!is_finite($timeoutSeconds) || $timeoutSeconds <= 0.0) {
+            throw new TransportException('Search Kernel HTTP timeout must be a positive finite number');
+        }
         $baseUrl = rtrim($baseUrl, '/');
         if ($baseUrl === '') {
             throw new TransportException('Search Kernel HTTP base URL must not be empty');
