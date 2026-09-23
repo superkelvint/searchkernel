@@ -404,17 +404,12 @@ proptest! {
     fn portable_value_encode_decode_preserves_supported_values(
         value in request_value_strategy()
     ) {
-        let mut parameters = BTreeMap::new();
-        parameters.insert("v".to_owned(), value.clone());
-        let request = canonical_request(QueryIr::Yql {
-            source: "select * from sources * where true".to_owned(),
-            parameters,
-        });
-        let roundtripped = roundtrip_search(&context(), &request);
-        let QueryIr::Yql { parameters, .. } = roundtripped.query() else {
-            panic!("YQL query must remain YQL after portable round trip");
-        };
-        prop_assert_eq!(parameters.get("v"), Some(&value));
+        let bytes = crate::ir_to_api::request_value_ir_to_api_for_test(&value);
+        let portable = crate::__flatbuffers::root::<crate::api::Value>(&bytes)
+            .expect("encoded portable value must decode");
+        let decoded = super::value::RequestValueIr::from_api(portable, "value".to_owned())
+            .expect("generated supported portable value must resolve");
+        prop_assert_eq!(decoded, value);
     }
 
     #[test]
