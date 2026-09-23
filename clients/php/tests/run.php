@@ -609,9 +609,9 @@ $oddWire = Protocol::value($oddKeys);
 same(['0', '😀'], array_column($oddWire['kind']['fields'], 'key'), 'explicit object preserves numeric and non-BMP keys');
 
 throws(
-    \InvalidArgumentException::class,
+    ProtocolException::class,
     static fn () => Tensor::fromWire('tensor<float>(x[1])', 'DenseTensorValues', ['values' => ['bad']]),
-    'dense tensor wire payload validates cell types',
+    'dense tensor wire payload validates cell types in the protocol error domain',
 );
 throws(
     \InvalidArgumentException::class,
