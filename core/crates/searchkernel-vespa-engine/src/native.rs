@@ -227,8 +227,9 @@ fn packed_strings(values: &[String]) -> Result<(Vec<u8>, Vec<u32>), Error> {
 type PackedPredicate = (Vec<u8>, Vec<u32>, Vec<u8>, Vec<u32>);
 
 fn native_predicate_expression(expression: &str) -> Result<String, Error> {
-    let parsed = serde_json::from_str::<serde_json::Value>(expression)
-        .map_err(|error| Error::message(format!("predicate expression is invalid JSON: {error}")))?;
+    let parsed = serde_json::from_str::<serde_json::Value>(expression).map_err(|error| {
+        Error::message(format!("predicate expression is invalid JSON: {error}"))
+    })?;
     let object = parsed
         .as_object()
         .ok_or_else(|| Error::message("predicate expression must be a JSON object"))?;
@@ -237,10 +238,17 @@ fn native_predicate_expression(expression: &str) -> Result<String, Error> {
     };
     let mut remainder = object.clone();
     remainder.remove("type");
-    let remainder = serde_json::to_string(&serde_json::Value::Object(remainder))
-        .map_err(|error| Error::message(format!("predicate expression could not be encoded: {error}")))?;
-    let kind = serde_json::to_string(kind)
-        .map_err(|error| Error::message(format!("predicate expression type could not be encoded: {error}")))?;
+    let remainder =
+        serde_json::to_string(&serde_json::Value::Object(remainder)).map_err(|error| {
+            Error::message(format!(
+                "predicate expression could not be encoded: {error}"
+            ))
+        })?;
+    let kind = serde_json::to_string(kind).map_err(|error| {
+        Error::message(format!(
+            "predicate expression type could not be encoded: {error}"
+        ))
+    })?;
     let mut result = format!("{{\"type\":{kind}");
     if remainder.len() > 2 {
         result.push(',');
@@ -2550,10 +2558,8 @@ mod native_slice_tests {
 
     #[test]
     fn predicate_feature_form_requires_exactly_one_key() {
-        let single = PredicateValue::new(BTreeMap::from([(
-            "hobby".to_owned(),
-            "music".to_owned(),
-        )]));
+        let single =
+            PredicateValue::new(BTreeMap::from([("hobby".to_owned(), "music".to_owned())]));
         packed_predicate(&single).expect("single predicate feature key is representable");
 
         for features in [
@@ -2585,12 +2591,9 @@ mod native_slice_tests {
 
     #[test]
     fn nonzero_native_length_requires_non_null_pointer() {
-        let error = validate_native_slice_pointer::<u8>(
-            ptr::null(),
-            1,
-            "document composite payload",
-        )
-        .expect_err("nonzero length with null pointer must fail");
+        let error =
+            validate_native_slice_pointer::<u8>(ptr::null(), 1, "document composite payload")
+                .expect_err("nonzero length with null pointer must fail");
         assert!(error
             .to_string()
             .contains("null document composite payload"));

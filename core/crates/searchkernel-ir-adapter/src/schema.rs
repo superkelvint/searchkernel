@@ -769,13 +769,10 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod predicate_schema_tests {
     use super::{compile_index_definition, PORTABLE_PREDICATE_ARITY};
-    use searchkernel_ir::{
-        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr,
-    };
+    use searchkernel_ir::{DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr};
 
     #[test]
     fn predicate_schema_compiles_with_the_portable_native_arity_default() {
@@ -799,9 +796,7 @@ mod predicate_schema_tests {
         compile_index_definition(&definition, &root)
             .expect("portable Predicate schema should compile");
         let attributes = std::fs::read_to_string(root.join("attributes.cfg")).unwrap();
-        assert!(attributes.contains(&format!(
-            "attribute[0].arity {PORTABLE_PREDICATE_ARITY}"
-        )));
+        assert!(attributes.contains(&format!("attribute[0].arity {PORTABLE_PREDICATE_ARITY}")));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

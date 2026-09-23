@@ -235,13 +235,14 @@ fn native_predicate_expression(expression: &str) -> Result<String> {
     };
     let mut remainder = object.clone();
     remainder.remove("type");
-    let remainder = serde_json::to_string(&serde_json::Value::Object(remainder)).map_err(|error| {
-        PortableError::invalid(
-            "invalid_predicate_result",
-            Some("document.value.expression"),
-            format!("predicate expression could not be encoded: {error}"),
-        )
-    })?;
+    let remainder =
+        serde_json::to_string(&serde_json::Value::Object(remainder)).map_err(|error| {
+            PortableError::invalid(
+                "invalid_predicate_result",
+                Some("document.value.expression"),
+                format!("predicate expression could not be encoded: {error}"),
+            )
+        })?;
     let kind = serde_json::to_string(kind).map_err(|error| {
         PortableError::invalid(
             "invalid_predicate_result",
@@ -374,8 +375,7 @@ fn json_value_to_ir(value: serde_json::Value, path: &str) -> Result<Value> {
             values
                 .into_iter()
                 .map(|(name, value)| {
-                    json_value_to_ir(value, &format!("{path}.{name}"))
-                        .map(|value| (name, value))
+                    json_value_to_ir(value, &format!("{path}.{name}")).map(|value| (name, value))
                 })
                 .collect::<Result<BTreeMap<_, _>>>()?,
         ),

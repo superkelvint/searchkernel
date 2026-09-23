@@ -5121,8 +5121,8 @@ fn rich_schema_negative_semantics_match_portable_ingress() {
 #[test]
 fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
     use searchkernel_ir::{
-        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr,
-        PrimitiveDataTypeIr, StructFieldIr,
+        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr, PrimitiveDataTypeIr,
+        StructFieldIr,
     };
 
     // Vespa stores these composite values in attribute-backed fields. The
@@ -5133,9 +5133,7 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
     let fields = vec![
         FieldIr::new(
             FieldName::parse("tags").unwrap(),
-            DataTypeIr::Array(Box::new(DataTypeIr::Primitive(
-                PrimitiveDataTypeIr::String,
-            ))),
+            DataTypeIr::Array(Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::String))),
             None,
             stored_attribute(),
         ),
@@ -5233,10 +5231,7 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
     );
 
     let empty = index
-        .get_with_projection::<serde_json::Value>(
-            "composite-1",
-            std::iter::empty::<&str>(),
-        )
+        .get_with_projection::<serde_json::Value>("composite-1", std::iter::empty::<&str>())
         .expect("get explicit empty projection")
         .expect("document exists for empty projection");
     assert_eq!(empty, json!({}));
@@ -5248,6 +5243,8 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
         .expect("get composite document after reopen")
         .expect("reopened composite document exists");
     assert_eq!(persisted, expected);
-    reopened.close().expect("close reopened composite product index");
+    reopened
+        .close()
+        .expect("close reopened composite product index");
     std::fs::remove_dir_all(path).expect("remove composite product index");
 }

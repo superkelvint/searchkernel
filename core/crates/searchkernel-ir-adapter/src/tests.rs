@@ -2347,17 +2347,17 @@ fn position_lowering_rejects_precision_vespa_cannot_round_trip() {
         assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
         assert_eq!(error.details[0].code, "position_precision_not_supported");
         let expected_path = format!("document.value.{name}");
-        assert_eq!(error.details[0].path.as_deref(), Some(expected_path.as_str()));
+        assert_eq!(
+            error.details[0].path.as_deref(),
+            Some(expected_path.as_str())
+        );
     }
 }
 
 #[test]
 fn predicate_feature_map_lowering_rejects_unrepresentable_multi_key_values() {
     let single = FieldValueIr::Predicate {
-        features: std::collections::BTreeMap::from([(
-            "hobby".to_owned(),
-            "music".to_owned(),
-        )]),
+        features: std::collections::BTreeMap::from([("hobby".to_owned(), "music".to_owned())]),
     };
     assert!(matches!(
         lower_field_value(&single),
@@ -2374,10 +2374,7 @@ fn predicate_feature_map_lowering_rejects_unrepresentable_multi_key_values() {
         let error = lower_field_value(&FieldValueIr::Predicate { features })
             .expect_err("unrepresentable predicate feature maps must fail before native mutation");
         assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
-        assert_eq!(
-            error.details[0].code,
-            "predicate_feature_map_not_supported"
-        );
+        assert_eq!(error.details[0].code, "predicate_feature_map_not_supported");
         assert_eq!(
             error.details[0].path.as_deref(),
             Some("document.value.features")
@@ -2582,7 +2579,10 @@ fn value_conversion_preserves_all_native_value_shapes() {
         ),
     ];
     for (native, expected) in values {
-        assert_eq!(value_to_ir(&native).expect("supported native value"), expected);
+        assert_eq!(
+            value_to_ir(&native).expect("supported native value"),
+            expected
+        );
     }
 }
 

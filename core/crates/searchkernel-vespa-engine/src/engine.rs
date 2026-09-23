@@ -99,7 +99,6 @@ fn decode_struct_array(value: &str) -> Result<Vec<BTreeMap<String, ScalarValue>>
     Ok(decoded)
 }
 
-
 fn document_value_payload_name(kind: u32) -> Result<Option<&'static str>, Error> {
     Ok(match kind {
         sys::SK_VALUE_STRING => Some("document field value"),
@@ -137,7 +136,9 @@ fn decode_non_tensor_document_value(
                 Error::message("native document string array value is invalid UTF-8")
             })?;
             let values: Vec<String> = serde_json::from_str(value).map_err(|error| {
-                Error::message(format!("native document string array is invalid JSON: {error}"))
+                Error::message(format!(
+                    "native document string array is invalid JSON: {error}"
+                ))
             })?;
             Ok(FieldValue::Array(ArrayValue::Strings(values)))
         }
@@ -145,7 +146,9 @@ fn decode_non_tensor_document_value(
             let value = std::str::from_utf8(payload).map_err(|_| {
                 Error::message("native document struct array value is invalid UTF-8")
             })?;
-            Ok(FieldValue::Array(ArrayValue::Structs(decode_struct_array(value)?)))
+            Ok(FieldValue::Array(ArrayValue::Structs(decode_struct_array(
+                value,
+            )?)))
         }
         sys::SK_VALUE_POSITION => {
             let value: serde_json::Value = serde_json::from_slice(payload).map_err(|error| {
@@ -153,13 +156,17 @@ fn decode_non_tensor_document_value(
             })?;
             let latitude = json_f64(&value, "latitude", "document position")?;
             let longitude = json_f64(&value, "longitude", "document position")?;
-            Ok(FieldValue::Position(PositionValue::new(latitude, longitude)))
+            Ok(FieldValue::Position(PositionValue::new(
+                latitude, longitude,
+            )))
         }
         sys::SK_VALUE_PREDICATE => {
             let value = std::str::from_utf8(payload)
                 .map_err(|_| Error::message("native document predicate value is invalid UTF-8"))?;
             let parsed = serde_json::from_str::<serde_json::Value>(value).map_err(|error| {
-                Error::message(format!("native document predicate is invalid JSON: {error}"))
+                Error::message(format!(
+                    "native document predicate is invalid JSON: {error}"
+                ))
             })?;
             // Vespa preserves the insertion order of the predicate root.
             // PredicateSlimeBuilder writes `key` before `type`, while an
@@ -184,12 +191,16 @@ fn decode_non_tensor_document_value(
                         feature
                             .as_str()
                             .map(|feature| (key.to_owned(), feature.to_owned()))
-                            .ok_or_else(|| Error::message("native predicate feature is not a string"))
+                            .ok_or_else(|| {
+                                Error::message("native predicate feature is not a string")
+                            })
                     })
                     .collect::<Result<BTreeMap<_, _>, _>>()?;
                 Ok(FieldValue::Predicate(PredicateValue::new(features)))
             } else {
-                Ok(FieldValue::Predicate(PredicateValue::from_expression(value)))
+                Ok(FieldValue::Predicate(PredicateValue::from_expression(
+                    value,
+                )))
             }
         }
         _ => Err(Error::message(
@@ -912,13 +923,7 @@ impl Engine {
                     Some(name) => native_bytes(&native, string, string_length, name)?,
                     None => &[],
                 };
-                decode_non_tensor_document_value(
-                    kind,
-                    payload,
-                    integer,
-                    floating,
-                    boolean != 0,
-                )?
+                decode_non_tensor_document_value(kind, payload, integer, floating, boolean != 0)?
             };
             document = document.field(name, value);
         }
@@ -1435,7 +1440,6 @@ impl Drop for Engine {
     }
 }
 
-
 #[cfg(test)]
 mod document_decode_tests {
     use super::*;
@@ -1462,7 +1466,9 @@ mod document_decode_tests {
             false,
         )
         .expect_err("unknown struct scalar kind must fail");
-        assert!(invalid_struct.to_string().contains("unknown type 'mystery'"));
+        assert!(invalid_struct
+            .to_string()
+            .contains("unknown type 'mystery'"));
 
         let invalid_position = decode_non_tensor_document_value(
             sys::SK_VALUE_POSITION,
@@ -1490,9 +1496,7 @@ mod document_decode_tests {
 
         let unknown_kind = decode_non_tensor_document_value(u32::MAX, &[], 0, 0.0, false)
             .expect_err("unknown native kind must fail");
-        assert!(unknown_kind
-            .to_string()
-            .contains("unknown value kind"));
+        assert!(unknown_kind.to_string().contains("unknown value kind"));
     }
 
     #[test]

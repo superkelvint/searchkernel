@@ -1793,7 +1793,6 @@ fn native_grouping_decodes_a_valid_empty_root() {
     let _ = fs::remove_dir_all(data);
 }
 
-
 #[test]
 fn native_get_round_trips_composite_values_across_reopen() {
     let config = temporary_path("composite-get-config");
@@ -1900,7 +1899,9 @@ fn native_get_round_trips_composite_values_across_reopen() {
         .expect("composite document exists after reopen");
     assert_eq!(persisted.fields(), &expected);
 
-    reopened.close().expect("close reopened composite GET engine");
+    reopened
+        .close()
+        .expect("close reopened composite GET engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

@@ -278,9 +278,7 @@ fn grouping_result_group(
                     fields: hit
                         .fields
                         .iter()
-                        .map(|(name, value)| {
-                            value_to_ir(value).map(|value| (name.clone(), value))
-                        })
+                        .map(|(name, value)| value_to_ir(value).map(|value| (name.clone(), value)))
                         .collect::<Result<std::collections::BTreeMap<_, _>>>()?,
                     ..Default::default()
                 }));
@@ -624,9 +622,7 @@ impl Backend for VespaBackend {
                     fields: hit
                         .fields
                         .into_iter()
-                        .map(|(name, value)| {
-                            value_to_ir(&value).map(|value| (name, value))
-                        })
+                        .map(|(name, value)| value_to_ir(&value).map(|value| (name, value)))
                         .collect::<Result<std::collections::BTreeMap<_, _>>>()?,
                     highlights: hit
                         .highlights
