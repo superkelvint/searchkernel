@@ -93,7 +93,7 @@ vespa.grouping.yql
 vespa.ranking
 vespa.search-reply
 vespa.recovery
-vespa.hardening.lifecycle
+vespa.hardening.core
 vespa.hardening.sanitizers
 ```
 

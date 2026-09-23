@@ -108,6 +108,7 @@ check_fast() {
     bash "$ROOT/tools/check-layout.sh"
     bash "$ROOT/tools/test-flatbuffers-cpp-toolchain.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
+    bash "$ROOT/reference/vespa/verifiers/test-routing.sh"
     "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check-native-abi-authorities.py"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \

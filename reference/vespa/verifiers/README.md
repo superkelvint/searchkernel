@@ -24,6 +24,8 @@ Use:
 `milestone.mN` is an aggregate historical closure. Legacy `mN` aliases remain
 temporarily supported by `reference/vespa/verify-through.sh`.
 
+Routing itself is covered by `test-routing.sh`, which syntax-checks every semantic wrapper, verifies list output, and proves unknown semantic targets fail closed without invoking native verification.
+
 Canonical semantic targets:
 
 - `vespa.native-sdk` -> `reference/vespa/verifiers/native-sdk/verify.sh` -> `reference/vespa/m0/verify-m0.sh`
