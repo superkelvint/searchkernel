@@ -2854,6 +2854,10 @@ fn create_persists_rich_schema_provenance_and_reopens_consistently() {
                 .sortable(true)
                 .facetable(true),
         )
+        // Leave this text field's default-true stored/searchable capabilities
+        // omitted so the raw portable BFBS can prove absence is preserved
+        // independently from the explicitly-defaulted title field above.
+        .field(Field::text("description"))
         .field(Field::int64("price").stored(true).filterable(true))
         .field(Field::tensor("embedding", "tensor<float>(x[3])"))
         .default_search_fields([SearchField::new("title").weight(0.75)])
@@ -2874,6 +2878,27 @@ fn create_persists_rich_schema_provenance_and_reopens_consistently() {
     let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&portable_bytes)
         .expect("persisted portable definition should parse");
     assert_eq!(portable_bytes, expected_portable);
+
+    // Freeze unresolved presence directly from the persisted artifact before
+    // canonical resolution erases the distinction. Both text fields resolve
+    // to stored/searchable=true, but title supplied those defaults explicitly
+    // while description omitted them.
+    let portable_fields = portable
+        .fields()
+        .expect("persisted portable definition should contain fields");
+    let title = portable_fields
+        .iter()
+        .find(|field| field.name() == "title")
+        .expect("persisted title field");
+    let description = portable_fields
+        .iter()
+        .find(|field| field.name() == "description")
+        .expect("persisted description field");
+    assert_eq!(title.stored().map(|value| value.value()), Some(true));
+    assert_eq!(title.searchable().map(|value| value.value()), Some(true));
+    assert!(description.stored().is_none());
+    assert!(description.searchable().is_none());
+
     let portable_ir = searchkernel_ir::index_definition_to_ir(portable)
         .expect("persisted portable definition should resolve");
     assert_eq!(portable_ir, expected_resolved);
