@@ -45,6 +45,7 @@ paths = [
   "docs/**/*.txt",
   "implementation-plan/*.md",
   "implementation-plan/**/*.md",
+  "implementation-plan/audit/split-manifest.json",
   "audits/*.md",
   "audits/**/*.md",
   ".gitignore",
