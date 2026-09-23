@@ -15,8 +15,7 @@ final class ResultIssue
         $source = $node['source'] ?? null;
         $stackTrace = $node['stack_trace'] ?? null;
 
-        if ((!is_int($code) && !is_string($code))
-            || !is_string($summary)
+        if (!is_string($summary)
             || !is_string($message)
             || !is_string($source)
             || !is_string($stackTrace)
@@ -24,7 +23,7 @@ final class ResultIssue
             throw new ProtocolException('malformed SearchResult error');
         }
 
-        $this->code = $code;
+        $this->code = Protocol::decodeInt64Scalar($code, 'SearchResultError.code');
         $this->summary = $summary;
         $this->message = $message;
         $this->source = $source;
