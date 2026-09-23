@@ -48,6 +48,29 @@ class VerificationDagTests(unittest.TestCase):
         self.assertEqual(owners[0].requires, ("ruby-client", "client-contracts"))
         self.assertIn("ruby-client", verification_dag.task_closure(current, ("full",)))
 
+
+    def test_search_endpoints_are_pre_registered_before_product_ingress_lands(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+        probe = "searchkerneld/src/search_endpoints.rs"
+        owners = verification_dag.matching_subsystems(current, probe)
+        owner_ids = [owner.id for owner in owners]
+        self.assertIn("searchkerneld-search-endpoints", owner_ids)
+        self.assertIn("searchkerneld", owner_ids)
+
+        endpoint_owner = next(
+            owner for owner in owners if owner.id == "searchkerneld-search-endpoints"
+        )
+        self.assertIn("search-endpoints", endpoint_owner.requires)
+
+        closure = verification_dag.task_closure(current, ("search-endpoints",))
+        self.assertIn("rust-non-native", closure)
+        self.assertIn("protocol-generated", closure)
+        self.assertIn("client-contracts", closure)
+        self.assertIn("search-endpoints", verification_dag.task_closure(current, ("full",)))
+
+        lanes = verification_dag.legacy_lanes_for_tasks(current, closure)
+        self.assertTrue(lanes["rust"])
+
     def test_unknown_task_reference_is_rejected(self) -> None:
         source = DAG_PATH.read_text(encoding="utf-8")
         mutated = source.replace(
