@@ -307,7 +307,10 @@ eval "$CXX $LINK_ARGS"
 # rust-lld does not resolve a -lNAME request through a symlink named
 # libNAME.so in this SDK layout. Keep the unversioned linker name as a real
 # file while retaining the versioned SONAME artifact for runtime loading.
-cp -f "$SDK/lib/libsearchkernel_vespa.so.2" "$SDK/lib/libsearchkernel_vespa.so"
+# A hardlink satisfies that linker constraint without storing a second 100+ MB
+# copy of the exact same adapter payload.
+rm -f "$SDK/lib/libsearchkernel_vespa.so"
+ln "$SDK/lib/libsearchkernel_vespa.so.2" "$SDK/lib/libsearchkernel_vespa.so"
 
 UNEXPECTED_SYMBOLS=$(nm -D --defined-only "$SDK/lib/libsearchkernel_vespa.so.2" |
     awk '$2 ~ /^[A-Z]$/ { name = $3; sub(/@@.*/, "", name); if (name != "SEARCHKERNEL_2" && name !~ /^sk_/) print name }')
@@ -324,7 +327,8 @@ fi
 if [ "$ADAPTER_ONLY" = 1 ]; then
     if command -v patchelf >/dev/null 2>&1; then
         patchelf --force-rpath --set-rpath "$BASE_SDK/lib" "$SDK/lib/libsearchkernel_vespa.so.2"
-        cp -f "$SDK/lib/libsearchkernel_vespa.so.2" "$SDK/lib/libsearchkernel_vespa.so"
+        rm -f "$SDK/lib/libsearchkernel_vespa.so"
+        ln "$SDK/lib/libsearchkernel_vespa.so.2" "$SDK/lib/libsearchkernel_vespa.so"
     fi
     cp "$ROOT/core/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
     if [ "$ENABLE_FAILPOINTS" = 1 ]; then
@@ -420,8 +424,9 @@ fi
 # Dependency installs often expose unversioned linker names as absolute
 # symlinks whose ELF DT_SONAME is a different runtime name (for example,
 # libxxhash.so -> .../libxxhash.so.0.8.2 with SONAME libxxhash.so.0).
-# Materialize both names as SDK-owned regular files so the runtime loader
-# cannot fall back to a host path.
+# Copy each resolved payload once, then recreate linker and SONAME aliases as
+# relative links inside SDK/lib. This keeps the package self-contained without
+# duplicating large shared objects for every alias.
 if [ "$VESPA_LIBRARY_ROOT" = "$VESPA_ROOT" ]; then
     find "$VESPA_ROOT" -name '*.so*' \
         -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
@@ -468,11 +473,32 @@ else
     exit 1
 fi
 
-if find "$SDK/lib" -maxdepth 1 -type l -print -quit | grep -q .; then
-    echo "refusing to publish native SDK containing shared-library symlinks:" >&2
-    find "$SDK/lib" -maxdepth 1 -type l -print >&2
-    exit 1
-fi
+# Shared-library aliases are allowed only when they are simple relative names
+# resolving to regular files inside this SDK. Never publish producer absolute
+# links, directory traversal, broken links, or links back into the host.
+SDK_LIB_REAL=$(CDPATH= cd -- "$SDK/lib" && pwd -P)
+find "$SDK/lib" -maxdepth 1 -type l -print |
+while IFS= read -r LINK; do
+    TARGET=$(readlink "$LINK" 2>/dev/null || true)
+    case "$TARGET" in
+        ''|/*|*/*)
+            echo "refusing unsafe native SDK shared-library symlink: $LINK -> ${TARGET:-unreadable}" >&2
+            exit 1
+            ;;
+    esac
+    RESOLVED=$(readlink -f "$LINK" 2>/dev/null || true)
+    case "$RESOLVED" in
+        "$SDK_LIB_REAL"/*) ;;
+        *)
+            echo "refusing native SDK shared-library symlink escaping SDK/lib: $LINK -> ${RESOLVED:-unresolved}" >&2
+            exit 1
+            ;;
+    esac
+    if [ ! -f "$RESOLVED" ]; then
+        echo "refusing broken native SDK shared-library symlink: $LINK -> $TARGET" >&2
+        exit 1
+    fi
+done
 
 # Keep the checked-in Rust declarations synchronized with the public native
 # header whenever the SDK is rebuilt. This is intentionally a hard failure:
