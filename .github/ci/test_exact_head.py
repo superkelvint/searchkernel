@@ -879,5 +879,30 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("dev test php", log.read_text(encoding="utf-8"))
 
 
+    def test_precommit_source_is_valid_and_each_major_gate_occurs_once(self) -> None:
+        syntax = subprocess.run(
+            ["bash", "-n", str(HOOK)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(syntax.returncode, 0, syntax.stdout)
+        source = HOOK.read_text(encoding="utf-8")
+        for needle in (
+            'cargo fmt --all --check',
+            'cargo clippy --workspace --all-targets --no-default-features -- -D warnings',
+            'cargo test --workspace --all-targets --no-default-features',
+            './dev check-protocol',
+            './dev verify api-conformance',
+            './dev test python',
+            './dev test typescript',
+            './dev test php',
+            './reference/vespa/verify-through.sh i',
+            'bash tools/run-python-native-e2e.sh',
+        ):
+            self.assertEqual(source.count(needle), 1, needle)
+
+
 if __name__ == "__main__":
     unittest.main()
