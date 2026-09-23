@@ -250,10 +250,10 @@ final class Protocol
 
         return match ($type) {
             'NullValueValue' => self::decodeNull($payload),
-            'BoolValue' => self::requiredBool($payload, 'value'),
-            'Int64Value' => self::decodeInt64(self::required($payload, 'value')),
-            'UInt64Value' => self::decodeUInt64(self::required($payload, 'value')),
-            'Float64Value' => self::decodeFloat64(self::required($payload, 'value')),
+            'BoolValue' => self::defaultBool($payload, 'value', false),
+            'Int64Value' => self::decodeInt64($payload['value'] ?? 0),
+            'UInt64Value' => self::decodeUInt64($payload['value'] ?? 0),
+            'Float64Value' => self::decodeFloat64($payload['value'] ?? 0.0),
             'NonFiniteFloatValue' => self::decodeNonFiniteFloat($payload),
             'StringValue' => self::requiredString($payload, 'value'),
             'BytesValue' => self::decodeBytes($payload),
@@ -375,9 +375,9 @@ final class Protocol
     }
 
     /** @param array<string, mixed> $payload */
-    private static function requiredBool(array $payload, string $key): bool
+    private static function defaultBool(array $payload, string $key, bool $default): bool
     {
-        $value = self::required($payload, $key);
+        $value = $payload[$key] ?? $default;
         if (!is_bool($value)) {
             throw new ProtocolException('portable union field ' . $key . ' must be a boolean');
         }
