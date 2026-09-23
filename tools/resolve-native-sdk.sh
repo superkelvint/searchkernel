@@ -52,8 +52,8 @@ published_base_url() {
         printf '%s\n' "$SK_NATIVE_BASE_ARTIFACT_URL"
         return
     fi
-    tag="vespa-base-v1-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"
-    asset="searchkernel-vespa-base-v1-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
+    tag="vespa-base-v2-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"
+    asset="searchkernel-vespa-base-v2-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
     printf 'https://github.com/superkelvint/searchkernel/releases/download/%s/%s\n' "$tag" "$asset"
 }
 
@@ -72,7 +72,7 @@ try:
 except (OSError, json.JSONDecodeError) as exc:
     raise SystemExit(f"invalid published Vespa toolchain marker {path}: {exc}") from exc
 expected = {
-    "format_version": 1,
+    "format_version": 2,
     "build_environment": build_env,
     "native_target": target,
     "vespa_commit": commit,
