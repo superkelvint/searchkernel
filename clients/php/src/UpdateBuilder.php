@@ -66,6 +66,45 @@ final class UpdateBuilder
         return $this->arithmetic($path, 'Divide', $value);
     }
 
+    public function matchElement(string $path, mixed $element, MatchedUpdate $update): self
+    {
+        return $this->operation($path, 'MatchUpdate', [
+            'element' => Protocol::value($element),
+            'update' => $update->toWire(),
+        ]);
+    }
+
+    public function tensorModify(
+        string $path,
+        string $operator,
+        Tensor $payload,
+        ?bool $create = null,
+    ): self {
+        $wireOperator = match (strtolower($operator)) {
+            'replace' => 'Replace',
+            'add' => 'Add',
+            'multiply' => 'Multiply',
+            default => throw new \InvalidArgumentException(
+                'tensor modify operator must be replace, add, or multiply'
+            ),
+        };
+        if (!in_array($payload->payloadType, ['SparseTensorCells', 'MixedTensorBlocks'], true)) {
+            throw new \InvalidArgumentException(
+                'tensor modify payload must use sparse cells or mixed tensor blocks'
+            );
+        }
+
+        $operation = [
+            'operator' => $wireOperator,
+            'payload_type' => $payload->payloadType,
+            'payload' => $payload->payload,
+        ];
+        if ($create !== null) {
+            $operation['create'] = ['value' => $create];
+        }
+        return $this->operation($path, 'TensorModifyUpdate', $operation);
+    }
+
     public function condition(string $expression): self
     {
         $copy = clone $this;
@@ -93,6 +132,9 @@ final class UpdateBuilder
     /** @param array<string,mixed> $payload */
     private function operation(string $path, string $type, array $payload): self
     {
+        if ($path === '') {
+            throw new \InvalidArgumentException('update field path must not be empty');
+        }
         $copy = clone $this;
         $copy->operations[] = [
             'target' => ['path' => $path],
