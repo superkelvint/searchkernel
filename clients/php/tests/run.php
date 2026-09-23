@@ -832,6 +832,71 @@ throws(
     static fn () => new SearchKernel\HttpTransport(''),
     'transport configuration errors use transport domain',
 );
+throws(
+    SearchKernel\TransportException::class,
+    static fn () => new SearchKernel\HttpTransport('http://127.0.0.1', 0.0),
+    'transport timeout must be positive',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => Protocol::decodeValue([
+        'kind_type' => 'ValueList',
+        'kind' => ['values' => [
+            'not-a-vector' => ['kind_type' => 'StringValue', 'kind' => ['value' => 'x']],
+        ]],
+    ]),
+    'ValueList rejects object-shaped vectors',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => Protocol::decodeValue([
+        'kind_type' => 'BytesValue',
+        'kind' => ['value' => ['first' => 1]],
+    ]),
+    'BytesValue rejects object-shaped byte vectors',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => Protocol::decodeValueEntries([
+        'field' => [
+            'key' => 'title',
+            'value' => ['kind_type' => 'StringValue', 'kind' => ['value' => 'x']],
+        ],
+    ]),
+    'ValueEntry vectors reject object-shaped JSON',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => SearchKernel\SearchResult::fromPayload([
+        'errors' => ['only' => ['code' => 1]],
+    ]),
+    'SearchResult errors reject object-shaped vectors',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => SearchKernel\SearchResult::fromPayload([
+        'root' => [
+            'node_type' => 'ResultGroup',
+            'node' => [
+                'limits' => ['from' => 'not-a-value'],
+                'children' => [],
+            ],
+        ],
+    ]),
+    'present malformed group limits fail closed instead of becoming null',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => SearchKernel\Hit::fromJson([
+        'id' => 'doc',
+        'highlights' => ['title' => ['field' => 'title', 'fragments' => []]],
+    ]),
+    'hit highlight vectors reject object-shaped JSON',
+);
+truth(
+    class_exists(SearchKernel\CoverageDegraded::class),
+    'CoverageDegraded is independently autoloadable through its PSR-4 path',
+);
 
 // --------------------------------------------------------------------------
 // Query/grouping facade parity uses the canonical portable request shape.
