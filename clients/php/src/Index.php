@@ -102,6 +102,15 @@ final class Index
         ]);
     }
 
+    /** @param array<string,mixed> $query */
+    public function query(array $query): SearchBuilder
+    {
+        if (($query['source_type'] ?? null) !== 'TypedQuery') {
+            throw new InvalidArgumentException('query() expects a Query helper result');
+        }
+        return new SearchBuilder($this, $query);
+    }
+
     /** @param array<string,mixed> $parameters */
     public function yql(string $source, array $parameters = []): YqlBuilder
     {
