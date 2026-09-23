@@ -441,6 +441,69 @@ tools/frontend-harness frontend-{ci,verify,accept,verifier-integrity,harness-sel
 tools/frontend-harness/verifiers/F0/verify.sh ... F12/verify.sh
 ```
 
+### SearchKernel Web subsystem inventory
+
+`searchkernel-web/` is a product area with several independently meaningful
+subsystems. It must not be represented in the verification DAG only as one
+opaque `web-dashboard` node.
+
+The current tree contains at least these subsystem boundaries:
+
+| Subsystem | Current paths | Primary responsibility | Required verification ownership |
+| --- | --- | --- | --- |
+| Web portable client seam | `searchkernel-web/src/api/**` | Generated-client-shaped portable Search Kernel operations and fixture seam | client contract/unit tests, generated TypeScript/client compatibility, dashboard integration |
+| Web admin client seam | `searchkernel-web/src/admin-client/**` | Operational/diagnostic administration API distinct from portable semantics | admin-client unit/contract tests and daemon admin integration |
+| Application shell and routing | `searchkernel-web/src/app/**`, `src/main.tsx`, top-level app entrypoints | route tree, canonical redirects, client/index context, query state, preferences, fallback pages | route/navigation/query tests plus production build |
+| Shared presentation/result layer | `searchkernel-web/src/components/**`, `src-components/**` | shared chrome, command palette, result rendering, reusable UI primitives | component/result-display tests plus build/typecheck |
+| Configuration/schema feature | `searchkernel-web/src/features/configuration/**` | schema/configuration presentation | web build + relevant client/feature acceptance |
+| Documents feature | `searchkernel-web/src/features/documents/**` | document browsing/detail flows | web build + portable-client/document acceptance |
+| Indexes feature | `searchkernel-web/src/features/indexes/**` | index-scoped navigation and management surfaces | web build + admin/portable index acceptance as applicable |
+| Operations feature | `searchkernel-web/src/features/operations/**` | operational status/actions | admin-client/daemon integration + web build |
+| Overview feature | `searchkernel-web/src/features/overview/**` | global/index overview presentation | web build + relevant client integration |
+| Ranking feature | `searchkernel-web/src/features/ranking/**` | rank-profile presentation/configuration | web build + ranking capability/contract acceptance |
+| Search debugging feature | `searchkernel-web/src/features/search-debugging/**` | inspection/debugging surfaces | web build + inspect/debug endpoint acceptance |
+| Search Lab feature | `searchkernel-web/src/features/search-lab/**` | query/ranking/limit URL state, request execution/inspection | search-param tests + portable-client real request acceptance + web build |
+| Settings feature | `searchkernel-web/src/features/settings/**` | global/index settings UI | web build + admin/config integration as applicable |
+| Summaries feature | `searchkernel-web/src/features/summaries/**` | document-summary presentation/configuration | web build + summary capability/contract acceptance |
+| Static serving / SPA integration | `searchkernel-web/dist/**` contract plus `searchkerneld` static serving | serve concrete assets, preserve `/api/*`, SPA fallback to `index.html` | clean dashboard build + daemon routing/E2E |
+| Frontend milestone acceptance | `tools/frontend-harness/**` and F-series verifiers | immutable frontend acceptance/reviewer contracts | harness self-tests/integrity and activated F-series acceptance |
+
+The machine-readable SearchKernel verification DAG does not necessarily need a
+separate executable command for every feature directory if several features are
+proved by the same build/test command. It **does** need an explicit subsystem
+mapping so every path above resolves to the correct verification closure and so
+new feature families cannot appear without DAG ownership.
+
+The minimum initial web task closure should distinguish at least:
+
+```text
+web-unit
+    npm --prefix searchkernel-web test
+
+web-build
+    npm --prefix searchkernel-web run build
+
+web-portable-client
+    depends on web-unit + TypeScript/generated-client contract verification
+
+web-admin-client
+    depends on web-unit + daemon/admin contract verification
+
+web-static-serving-e2e
+    depends on web-build + searchkerneld static/API/SPA routing verification
+
+frontend-harness-selftest
+frontend-verifier-integrity
+
+web-full
+    reaches all active web tasks and activated F-series acceptance
+```
+
+Feature folders should map to those tasks plus any feature-specific acceptance
+task that exists or is introduced. Unsupported/not-yet-implemented F-series
+acceptance remains explicitly excluded until activated; its absence must not
+hide ordinary dashboard unit/build/static-serving verification.
+
 ### Current CI coverage and gaps
 
 Current Actions coverage is asymmetric:
@@ -635,9 +698,13 @@ SearchKernel-specific scheduler/cache/test-distribution system.
 - [ ] Represent every surviving Phase 1 verification profile in that DAG with a stable task ID.
 - [ ] Encode the verified Phase 1 dependency/subsumption edges in the SearchKernel DAG.
 - [ ] Record the canonical verifier command and runner class for each task in the SearchKernel DAG.
+- [ ] Represent subsystem/path ownership separately from executable task identity so multiple subsystems may share a task without becoming invisible.
+- [ ] Decompose `searchkernel-web` into the subsystem inventory above rather than one opaque dashboard node.
+- [ ] Map every current `searchkernel-web/src/features/*` family plus the portable-client seam, admin-client seam, app/routing layer, shared presentation layer, daemon/static-serving boundary, and frontend harness to explicit DAG verification closure.
+- [ ] Add a mechanical check that a newly introduced top-level subsystem or `searchkernel-web/src/features/*` family is rejected until DAG ownership is added.
 - [ ] Make the trusted selector validate emitted task IDs against the SearchKernel DAG.
-- [ ] Define the authoritative full-suite root/closure in the SearchKernel DAG.
-- [ ] Add mechanical closure checks so every surviving verifier is represented and reachable where required.
+- [ ] Define the authoritative full-suite root/closure in the SearchKernel DAG, including the active web closure.
+- [ ] Add mechanical closure checks so every surviving verifier and supported product subsystem is represented and reachable where required.
 
 #### moonrepo
 
