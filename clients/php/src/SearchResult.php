@@ -8,19 +8,55 @@ use UnexpectedValueException;
 
 final class SearchResult
 {
-    /** @param list<Hit> $hits */
+    /**
+     * @param list<Hit> $hits
+     * @param list<ResultGroup> $groups
+     * @param list<ResultIssue> $errors
+     * @param array<string,mixed> $metadata
+     * @param array<string,mixed> $aggregations
+     * @param array<string,string> $continuations
+     */
     public function __construct(
+        public readonly Hit|ResultGroup|null $root,
         public readonly array $hits,
+        public readonly array $groups,
         public readonly int|string $totalHits,
         public readonly string $totalHitsRelation,
+        public readonly ?Coverage $coverage,
+        public readonly ?SearchTiming $timing,
+        public readonly array $errors,
+        public readonly mixed $trace,
+        public readonly array $metadata,
+        public readonly array $aggregations,
+        public readonly array $continuations,
     ) {}
 
     /** @param array<string, mixed> $payload */
     public static function fromPayload(array $payload): self
     {
-        $hits = [];
-        if (is_array($payload['root'] ?? null)) {
-            self::collectTopLevelHits($payload['root'], $hits);
+        $root = null;
+        if (array_key_exists('root', $payload) && $payload['root'] !== null) {
+            if (!is_array($payload['root'])) {
+                throw new UnexpectedValueException('SearchResult.root must be a ResultNode object');
+            }
+            $root = ResultGroup::decodeNode($payload['root']);
+        }
+
+        if ($root instanceof ResultGroup) {
+            $hits = $root->hits;
+            $groups = $root->groups;
+            $aggregations = $root->fields;
+            $continuations = $root->continuations;
+        } elseif ($root instanceof Hit) {
+            $hits = [$root];
+            $groups = [];
+            $aggregations = [];
+            $continuations = [];
+        } else {
+            $hits = [];
+            $groups = [];
+            $aggregations = [];
+            $continuations = [];
         }
 
         $totalHits = 0;
@@ -33,43 +69,38 @@ final class SearchResult
             $relation = (string) ($payload['total_hits']['relation'] ?? 'Unknown');
         }
 
-        return new self($hits, $totalHits, $relation);
-    }
+        $coverage = is_array($payload['coverage'] ?? null) ? new Coverage($payload['coverage']) : null;
+        $timing = is_array($payload['timing'] ?? null) ? new SearchTiming($payload['timing']) : null;
 
-    /** @param array<string, mixed> $node
-     *  @param list<Hit> $hits
-     */
-    private static function collectTopLevelHits(array $node, array &$hits): void
-    {
-        $type = $node['node_type'] ?? null;
-        $payload = $node['node'] ?? null;
-        if (!is_string($type) || !is_array($payload)) {
-            throw new UnexpectedValueException('malformed ResultNode union');
-        }
-
-        if ($type === 'Hit') {
-            $hits[] = Hit::fromJson($payload);
-            return;
-        }
-        if ($type !== 'ResultGroup') {
-            throw new UnexpectedValueException('unsupported ResultNode kind: ' . $type);
-        }
-
-        $children = $payload['children'] ?? [];
-        if (!is_array($children)) {
-            throw new UnexpectedValueException('ResultGroup children must be an array');
-        }
-        foreach ($children as $child) {
-            if (!is_array($child)) {
-                throw new UnexpectedValueException('malformed ResultGroup child');
+        $errors = [];
+        foreach ($payload['errors'] ?? [] as $error) {
+            if (!is_array($error)) {
+                throw new UnexpectedValueException('SearchResult.errors must contain objects');
             }
-            if (($child['node_type'] ?? null) === 'Hit') {
-                $childPayload = $child['node'] ?? null;
-                if (!is_array($childPayload)) {
-                    throw new UnexpectedValueException('missing Hit union payload');
-                }
-                $hits[] = Hit::fromJson($childPayload);
-            }
+            $errors[] = new ResultIssue($error);
         }
+
+        $trace = null;
+        if (array_key_exists('trace', $payload) && $payload['trace'] !== null) {
+            if (!is_array($payload['trace'])) {
+                throw new UnexpectedValueException('SearchResult.trace must be a portable Value');
+            }
+            $trace = Protocol::decodeValue($payload['trace']);
+        }
+
+        return new self(
+            $root,
+            $hits,
+            $groups,
+            $totalHits,
+            $relation,
+            $coverage,
+            $timing,
+            $errors,
+            $trace,
+            Protocol::decodeValueEntries($payload['metadata'] ?? []),
+            $aggregations,
+            $continuations,
+        );
     }
 }
