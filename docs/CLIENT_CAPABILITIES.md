@@ -89,6 +89,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 - **Basic behavior** (basic)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L371)
+  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L416)
 
 ### sameElement query (query.same_element)
 

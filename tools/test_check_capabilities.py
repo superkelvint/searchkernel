@@ -47,6 +47,17 @@ class CapabilityLedgerTests(unittest.TestCase):
         self.assertIn("CLIENT_CAPABILITIES.md", document)
         self.assertNotIn("| TypeScript |", document)
 
+    def test_generated_documents_include_structured_facade_state(self) -> None:
+        documents = MODULE.generated_documents(self.ledger)
+        self.assertIn(
+            "Structured facade support",
+            documents[ROOT / "docs" / "CAPABILITIES.md"],
+        )
+        self.assertIn(
+            "machine-checked structured support state",
+            documents[ROOT / "LIMITATIONS.md"],
+        )
+
     def test_every_query_expr_kind_has_one_capability_owner(self) -> None:
         schema = (ROOT / "api" / "searchkernel.fbs").read_text(encoding="utf-8")
         match = re.search(r"union QueryExprKind \{(?P<body>.*?)\n\}", schema, re.DOTALL)
@@ -107,8 +118,6 @@ class CapabilityLedgerTests(unittest.TestCase):
         capability["query_expr_kinds"].append("TermQuery")
         with self.assertRaisesRegex(MODULE.LedgerError, "assigned to both"):
             MODULE.validate_ledger(ledger)
-
-
     def test_proximity_capability_matches_rust_facade_support(self) -> None:
         capability = next(
             capability
@@ -119,10 +128,114 @@ class CapabilityLedgerTests(unittest.TestCase):
             "core/crates/searchkernel/src/query.rs",
             capability["verified_by"],
         )
+        self.assertEqual(
+            capability["facade_support"]["rust"]["status"],
+            "supported",
+        )
+        self.assertEqual(
+            capability["facade_support"]["typescript"]["status"],
+            "missing",
+        )
         self.assertNotIn(
             "Rust Query",
             " ".join(capability["limitations"]),
         )
+
+    def test_facade_support_rejects_missing_claim_with_matching_symbols(self) -> None:
+        ledger = copy.deepcopy(self.ledger)
+        capability = next(
+            capability
+            for capability in ledger["capabilities"]
+            if capability["id"] == "query.proximity"
+        )
+        capability["facade_support"] = {
+            "rust": {
+                "status": "missing",
+                "evidence": [
+                    {
+                        "path": "core/crates/searchkernel/src/query.rs",
+                        "symbols": ["pub fn near", "pub fn onear"],
+                    }
+                ],
+            }
+        }
+        with self.assertRaisesRegex(MODULE.LedgerError, "claims the facade is missing"):
+            MODULE.validate_ledger(ledger)
+
+    def test_facade_support_rejects_new_constructor_for_missing_claim(self) -> None:
+        ledger = copy.deepcopy(self.ledger)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            query = root / "clients" / "typescript" / "src" / "ergonomic" / "query.ts"
+            query.parent.mkdir(parents=True)
+            query.write_text(
+                "export const q = {\n"
+                "  near(field: string): unknown { return field; },\n"
+                "};\n",
+                encoding="utf-8",
+            )
+            capability = next(
+                capability
+                for capability in ledger["capabilities"]
+                if capability["id"] == "query.proximity"
+            )
+            capability["facade_support"] = {
+                "typescript": {
+                    "status": "missing",
+                    "evidence": [],
+                    "absence_evidence": [
+                        {
+                            "path": "clients/typescript/src/ergonomic/query.ts",
+                            "symbols": ["near(", "onear("],
+                        }
+                    ],
+                }
+            }
+            with self.assertRaisesRegex(
+                MODULE.LedgerError, "implementation symbol.*now exist"
+            ):
+                MODULE._validate_facade_support(
+                    capability["facade_support"],
+                    "query.proximity.facade_support",
+                    root,
+                )
+
+    def test_facade_symbol_evidence_ignores_comments(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            query = root / "query.ts"
+            query.write_text("// near(field: string)\n", encoding="utf-8")
+            state = {
+                "typescript": {
+                    "status": "missing",
+                    "evidence": [],
+                    "absence_evidence": [
+                        {"path": "query.ts", "symbols": ["near("]}
+                    ],
+                }
+            }
+            MODULE._validate_facade_support(state, "facade_support", root)
+
+    def test_facade_support_rejects_supported_claim_without_symbols(self) -> None:
+        ledger = copy.deepcopy(self.ledger)
+        capability = next(
+            capability
+            for capability in ledger["capabilities"]
+            if capability["id"] == "query.proximity"
+        )
+        capability["facade_support"] = {
+            "rust": {
+                "status": "supported",
+                "evidence": [
+                    {
+                        "path": "core/crates/searchkernel/src/query.rs",
+                        "symbols": ["pub fn removed_proximity_constructor"],
+                    }
+                ],
+            }
+        }
+        with self.assertRaisesRegex(MODULE.LedgerError, "missing symbol"):
+            MODULE.validate_ledger(ledger)
 
     def test_stale_document_is_detected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

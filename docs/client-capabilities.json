@@ -149,6 +149,15 @@
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 371
+            },
+            {
+              "capability": "query.proximity",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 416
             }
           ],
           "overrides": []
