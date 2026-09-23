@@ -82,6 +82,7 @@ def validate_catalog(
         runtimes = config.get("runtimes")
         roots = config.get("evidence_roots")
         raw_lanes = config.get("e2e_lanes", [])
+        required_e2e_runtimes = config.get("required_e2e_runtimes", [])
         if not isinstance(title, str) or not title.strip():
             raise RegistryError(f"surface {name}.title must be a non-empty string")
         if not isinstance(runtimes, list) or not runtimes or not all(
@@ -104,6 +105,14 @@ def validate_catalog(
             evidence_paths.append(path)
         if not isinstance(raw_lanes, list):
             raise RegistryError(f"surface {name}.e2e_lanes must be a list")
+        if not isinstance(required_e2e_runtimes, list) or not all(
+            isinstance(item, str) and item in runtimes for item in required_e2e_runtimes
+        ):
+            raise RegistryError(
+                f"surface {name}.required_e2e_runtimes must be a list of surface runtimes"
+            )
+        if len(set(required_e2e_runtimes)) != len(required_e2e_runtimes):
+            raise RegistryError(f"surface {name}.required_e2e_runtimes contains duplicates")
         e2e_lanes: list[dict[str, Any]] = []
         for lane_index, lane in enumerate(raw_lanes):
             label = f"surface {name}.e2e_lanes[{lane_index}]"
@@ -141,11 +150,17 @@ def validate_catalog(
                     "command": list(command),
                 }
             )
+        for runtime in required_e2e_runtimes:
+            if not any(runtime in lane["runtimes"] for lane in e2e_lanes):
+                raise RegistryError(
+                    f"surface {name} requires an E2E lane for runtime {runtime}"
+                )
         surfaces[name] = {
             "title": title,
             "runtimes": runtimes,
             "evidence_roots": roots,
             "e2e_lanes": e2e_lanes,
+            "required_e2e_runtimes": list(required_e2e_runtimes),
         }
 
     scenarios = {
