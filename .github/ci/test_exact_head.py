@@ -275,6 +275,13 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("if: needs.classify.outputs.ruby == 'true'", ruby)
         self.assertIn("ruby --version", ruby)
         self.assertIn("./dev test ruby", ruby)
+        no_client_guard = ruby.index("if [[ ! -d clients/ruby ]]")
+        runtime_probe = ruby.index("ruby --version")
+        self.assertLess(
+            no_client_guard,
+            runtime_probe,
+            "pre-registered Ruby verification must not require a Ruby runtime before a Ruby client exists",
+        )
         gate = workflow.split("\n  exact-head-gate:\n", 1)[1]
         self.assertIn("RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}", gate)
         self.assertIn("RUBY_RESULT: ${{ needs.ruby.result }}", gate)
