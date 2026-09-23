@@ -16,16 +16,22 @@ final class ResultGroup
             throw new ProtocolException('ResultGroup.value must be a portable Value');
         }
         $this->value = is_array($node['value'] ?? null) ? Protocol::decodeValue($node['value']) : null;
-        $this->fields = Protocol::decodeValueEntries($node['fields'] ?? []);
+        $this->fields = Protocol::decodeValueEntries(
+            Protocol::listField($node, 'fields', 'ResultGroup.fields'),
+        );
         $this->source = self::optionalString($node, 'source');
-        $this->types = self::strings($node['types'] ?? []);
+        $this->types = self::strings(
+            Protocol::listField($node, 'types', 'ResultGroup.types'),
+        );
         if (array_key_exists('relevance', $node) && $node['relevance'] !== null && !is_array($node['relevance'])) {
             throw new ProtocolException('ResultGroup.relevance must be an object');
         }
         $this->relevance = is_array($node['relevance'] ?? null)
             ? Protocol::decodeRelevance($node['relevance'])
             : null;
-        $this->metadata = Protocol::decodeValueEntries($node['metadata'] ?? []);
+        $this->metadata = Protocol::decodeValueEntries(
+            Protocol::listField($node, 'metadata', 'ResultGroup.metadata'),
+        );
 
         $limits = $node['limits'] ?? null;
         if ($limits !== null && !is_array($limits)) {
@@ -46,10 +52,11 @@ final class ResultGroup
             'to' => is_array($limits['to'] ?? null) ? Protocol::decodeValue($limits['to']) : null,
         ] : null;
 
-        $continuationEntries = $node['continuations'] ?? [];
-        if (!is_array($continuationEntries) || !array_is_list($continuationEntries)) {
-            throw new ProtocolException('ResultGroup.continuations must be a list');
-        }
+        $continuationEntries = Protocol::listField(
+            $node,
+            'continuations',
+            'ResultGroup.continuations',
+        );
         $continuations = [];
         foreach ($continuationEntries as $entry) {
             if (!is_array($entry) || !is_string($entry['key'] ?? null) || !is_string($entry['value'] ?? null)) {
@@ -62,10 +69,7 @@ final class ResultGroup
         }
         $this->continuations = $continuations;
 
-        $childEntries = $node['children'] ?? [];
-        if (!is_array($childEntries) || !array_is_list($childEntries)) {
-            throw new ProtocolException('ResultGroup.children must be a list');
-        }
+        $childEntries = Protocol::listField($node, 'children', 'ResultGroup.children');
         $children = [];
         foreach ($childEntries as $child) {
             if (!is_array($child)) {
