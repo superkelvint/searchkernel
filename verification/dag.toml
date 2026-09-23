@@ -103,7 +103,7 @@ kind = "aggregate"
 runner = "linux"
 depends_on = ["rust-non-native", "protocol-generated", "client-contracts"]
 cache_result = false
-notes = "Pre-registered ownership for the public Search Endpoint ingress. PR #470 replaces this aggregate with its focused executable verifier once the dedicated target exists."
+notes = "Pre-registered ownership for the public Search Endpoint ingress. The product change replaces this aggregate with its focused executable verifier once the dedicated target exists."
 
 [[task]]
 id = "python-client"
