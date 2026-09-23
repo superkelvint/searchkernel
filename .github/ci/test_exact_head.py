@@ -677,7 +677,6 @@ class ExactHeadTests(unittest.TestCase):
     def test_explicit_non_behavioral_paths_do_not_select_behavioral_lanes(self) -> None:
         for path in (
             "docs/architecture.md",
-            "notes.tmp",
             "nested/README.md",
             "core/README.md",
             "core/native/README.md",
@@ -689,6 +688,13 @@ class ExactHeadTests(unittest.TestCase):
                     [line for line in lines if line.endswith("=true")],
                     lines,
                 )
+
+    def test_tracked_scratch_like_file_fails_closed(self) -> None:
+        lines = classify_lines("notes.tmp")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
 
     def test_behavioral_documentation_overrides_non_behavioral_exemption(self) -> None:
         lines = classify_lines("docs/CAPABILITIES.md")
