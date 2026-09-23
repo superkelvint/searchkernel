@@ -289,9 +289,6 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
-      - name: Verify Ruby runtime
-        run: ruby --version
-
       - name: Run Ruby behavioral tests
         run: |
           set -euo pipefail
@@ -299,6 +296,7 @@ jobs:
             echo "Ruby client is only pre-registered on this base; no Ruby product surface exists yet."
             exit 0
           fi
+          ruby --version
           ./dev test ruby
 
   exact-head-gate:
