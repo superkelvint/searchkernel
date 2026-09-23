@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "type_mismatch",
+        "path": "operations[0].operation.value"
+      }
+    ],
+    "retryable": false
+  }
+}

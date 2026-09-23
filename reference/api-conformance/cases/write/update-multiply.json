@@ -1,0 +1,20 @@
+{
+  "category": "write",
+  "description": "Float arithmetic multiply preserves numeric semantics.",
+  "id": "write.update-multiply",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "multiply": {
+          "field": "price",
+          "value": {
+            "float64": 1.5
+          }
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}

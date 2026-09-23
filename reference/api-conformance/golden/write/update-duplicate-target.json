@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "unsupported",
+    "details": [
+      {
+        "code": "multiple_updates_per_target_not_supported",
+        "path": "operations[1]"
+      }
+    ],
+    "retryable": false
+  }
+}

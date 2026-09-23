@@ -1,12 +1,54 @@
 {
-  "error": {
-    "code": "unsupported",
-    "details": [
+  "ok": {
+    "constants": [],
+    "default_search_fields": [
       {
-        "code": "unsupported_analyzer",
-        "path": "fields[0].analyzer"
+        "field": "title",
+        "weight": 1.0
       }
     ],
-    "retryable": false
+    "document_inherits": [],
+    "document_summaries": [],
+    "document_type": null,
+    "fields": [
+      {
+        "analyzer": {
+          "name": "english",
+          "options": {},
+          "version": 1
+        },
+        "attribute": null,
+        "capabilities": {
+          "filterable": false,
+          "groupable": false,
+          "searchable": true,
+          "sortable": false,
+          "stored": true
+        },
+        "data_type": {
+          "kind": "primitive",
+          "type": "string"
+        },
+        "index": null,
+        "indexing_script": null,
+        "matching": {
+          "mode": "text",
+          "options": {}
+        },
+        "name": "title",
+        "properties": {},
+        "struct_fields": [],
+        "summary": null
+      }
+    ],
+    "fieldsets": [],
+    "imported_fields": [],
+    "name": "bad",
+    "onnx_models": [],
+    "properties": {},
+    "rank_profiles": [],
+    "schema_fields": [],
+    "schema_inherits": [],
+    "structs": []
   }
 }

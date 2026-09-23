@@ -1,0 +1,18 @@
+{
+  "category": "write",
+  "description": "Present true create remains present.",
+  "id": "write.update-create-true",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "create": true,
+    "operations": [
+      {
+        "unset": {
+          "field": "category"
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}

@@ -11,6 +11,8 @@ on:
       - "api/**"
       - "core/**"
       - "searchkerneld/**"
+      - "reference/api-conformance/**"
+      - ".github/workflows/unit-tests.yml"
       - "dev"
   pull_request:
     paths:
@@ -21,6 +23,8 @@ on:
       - "api/**"
       - "core/**"
       - "searchkerneld/**"
+      - "reference/api-conformance/**"
+      - ".github/workflows/unit-tests.yml"
       - "dev"
   workflow_dispatch:
 
@@ -60,3 +64,6 @@ jobs:
 
       - name: Run workspace unit tests
         run: cargo test --workspace --no-default-features
+
+      - name: Run portable API conformance
+        run: reference/api-conformance/verify.sh

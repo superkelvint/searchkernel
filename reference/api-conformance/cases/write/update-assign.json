@@ -1,0 +1,20 @@
+{
+  "category": "write",
+  "description": "Update assign lowers through the canonical update_to_ir path.",
+  "id": "write.update-assign",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "set": {
+          "field": "brand",
+          "value": {
+            "string": "Sony"
+          }
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}

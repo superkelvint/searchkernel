@@ -1,0 +1,14 @@
+{
+  "ok": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "unset": {
+          "field": "brand"
+        }
+      }
+    ],
+    "condition": "in_stock = true",
+    "create": false
+  }
+}

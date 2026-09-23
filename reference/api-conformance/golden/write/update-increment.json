@@ -1,0 +1,15 @@
+{
+  "ok": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "increment": {
+          "field": "popularity",
+          "value": 2.0
+        }
+      }
+    ],
+    "condition": null,
+    "create": null
+  }
+}

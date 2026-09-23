@@ -1,0 +1,15 @@
+{
+  "ok": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "multiply": {
+          "field": "price",
+          "value": 1.5
+        }
+      }
+    ],
+    "condition": null,
+    "create": null
+  }
+}

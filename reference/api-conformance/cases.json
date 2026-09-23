@@ -1267,6 +1267,114 @@
       "operation": "insert_to_ir"
     },
     {
+      "id": "write.update-add-unsupported",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-add-unsupported.json",
+      "golden": "golden/write/update-add-unsupported.json"
+    },
+    {
+      "id": "write.update-assign",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-assign.json",
+      "golden": "golden/write/update-assign.json"
+    },
+    {
+      "id": "write.update-clear",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-clear.json",
+      "golden": "golden/write/update-clear.json"
+    },
+    {
+      "id": "write.update-condition-create-false",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-condition-create-false.json",
+      "golden": "golden/write/update-condition-create-false.json"
+    },
+    {
+      "id": "write.update-create-true",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-create-true.json",
+      "golden": "golden/write/update-create-true.json"
+    },
+    {
+      "id": "write.update-decrement",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-decrement.json",
+      "golden": "golden/write/update-decrement.json"
+    },
+    {
+      "id": "write.update-divide",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-divide.json",
+      "golden": "golden/write/update-divide.json"
+    },
+    {
+      "id": "write.update-duplicate-target",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-duplicate-target.json",
+      "golden": "golden/write/update-duplicate-target.json"
+    },
+    {
+      "id": "write.update-empty-condition",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-empty-condition.json",
+      "golden": "golden/write/update-empty-condition.json"
+    },
+    {
+      "id": "write.update-empty-error",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-empty-error.json",
+      "golden": "golden/write/update-empty-error.json"
+    },
+    {
+      "id": "write.update-field-path-unsupported",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-field-path-unsupported.json",
+      "golden": "golden/write/update-field-path-unsupported.json"
+    },
+    {
+      "id": "write.update-increment",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-increment.json",
+      "golden": "golden/write/update-increment.json"
+    },
+    {
+      "id": "write.update-match-unsupported",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-match-unsupported.json",
+      "golden": "golden/write/update-match-unsupported.json"
+    },
+    {
+      "id": "write.update-multiply",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-multiply.json",
+      "golden": "golden/write/update-multiply.json"
+    },
+    {
+      "id": "write.update-none-operation",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-none-operation.json",
+      "golden": "golden/write/update-none-operation.json"
+    },
+    {
+      "id": "write.update-remove-unsupported",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-remove-unsupported.json",
+      "golden": "golden/write/update-remove-unsupported.json"
+    },
+    {
+      "id": "write.update-tensor-modify-unsupported",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-tensor-modify-unsupported.json",
+      "golden": "golden/write/update-tensor-modify-unsupported.json"
+    },
+    {
+      "id": "write.update-type-error",
+      "operation": "update_to_ir",
+      "case": "cases/write/update-type-error.json",
+      "golden": "golden/write/update-type-error.json"
+    },
+    {
       "case": "cases/write/upsert.json",
       "golden": "golden/write/upsert.json",
       "id": "write.upsert",
