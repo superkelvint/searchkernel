@@ -1252,4 +1252,104 @@ throws(
     'unknown low-level operation fails closed',
 );
 
+// --------------------------------------------------------------------------
+// Final strict-decoding regressions: canonical JSON container/enum fidelity.
+// These live after SKC annotations so adding them does not churn evidence lines.
+// --------------------------------------------------------------------------
+
+throws(
+    ProtocolException::class,
+    static fn () => Protocol::decodeValue([
+        'kind_type' => 'ValueList',
+        'kind' => ['values' => null],
+    ]),
+    'present-null ValueList vector fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchKernel\Hit::fromJson([
+        'id' => 'doc',
+        'fields' => null,
+    ]),
+    'present-null Hit fields vector fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload(['errors' => null]),
+    'present-null SearchResult errors vector fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchKernel\ResultGroup::decodeNode([
+        'node_type' => 'ResultGroup',
+        'node' => ['children' => null],
+    ]),
+    'present-null ResultGroup children vector fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => new SearchKernel\Coverage(['metadata' => null]),
+    'present-null Coverage metadata vector fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => new SearchKernel\SearchTiming(['metadata' => null]),
+    'present-null SearchTiming metadata vector fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => new SearchKernel\ResultIssue(['metadata' => null]),
+    'present-null result-error metadata vector fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchKernelException::fromPayload([
+        'code' => 'InvalidArgument',
+        'message' => 'bad',
+        'retryable' => false,
+        'details' => null,
+    ]),
+    'present-null canonical Error details vector fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchKernelException::fromPayload([
+        'code' => 'InvalidArgument',
+        'message' => 'bad',
+        'retryable' => false,
+        'details' => [[
+            'code' => 'bad_detail',
+            'message' => 'bad',
+            'metadata' => [
+                'not-a-vector' => ['key' => 'k', 'value' => 'v'],
+            ],
+        ]],
+    ]),
+    'canonical Error detail metadata must be a vector',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchKernelException::fromPayload([
+        'code' => 'FutureErrorCode',
+        'message' => 'bad',
+        'retryable' => false,
+        'details' => [],
+    ]),
+    'unknown canonical Error code fails closed',
+);
+same(
+    'Unspecified',
+    SearchResult::fromPayload([
+        'total_hits' => ['value' => 0],
+    ])->totalHitsRelation,
+    'present TotalHits with omitted relation preserves the schema default',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload([
+        'total_hits' => ['value' => 0, 'relation' => 'FutureRelation'],
+    ]),
+    'unknown TotalHits relation fails closed',
+);
+
 echo "PHP client semantic-spine tests PASS\n";
