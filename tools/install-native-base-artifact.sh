@@ -30,11 +30,29 @@ trap cleanup EXIT INT TERM
 
 ARCHIVE=$TMP/base.tar.gz
 CHECKSUM=$TMP/base.tar.gz.sha256
-if ! curl -fsSL "$ARTIFACT_URL" -o "$ARCHIVE"; then
+
+curl_download() {
+    local url=$1
+    local output=$2
+    local token=${GITHUB_TOKEN:-${GH_TOKEN:-}}
+    local -a args=(-fsSL)
+
+    case "$url" in
+        https://github.com/*/releases/download/*)
+            if [[ -n "$token" ]]; then
+                args+=(-H "Authorization: Bearer $token")
+            fi
+            ;;
+    esac
+
+    curl "${args[@]}" "$url" -o "$output"
+}
+
+if ! curl_download "$ARTIFACT_URL" "$ARCHIVE"; then
     echo "published Vespa base is unavailable: $ARTIFACT_URL" >&2
     exit 10
 fi
-if ! curl -fsSL "$ARTIFACT_URL.sha256" -o "$CHECKSUM"; then
+if ! curl_download "$ARTIFACT_URL.sha256" "$CHECKSUM"; then
     echo "published Vespa base checksum is unavailable: $ARTIFACT_URL.sha256" >&2
     exit 1
 fi
