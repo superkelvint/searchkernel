@@ -256,7 +256,7 @@ git checkout -f origin/main
 source "$HOME/.cargo/env"
 SEARCHKERNEL_BUILD_ENV=ci ./dev native-sdk ensure
 SEARCHKERNEL_BUILD_ENV=ci ./dev native-sdk path
-./dev doctor
+SEARCHKERNEL_BUILD_ENV=ci ./dev doctor
 ```
 
 If the runner bootstrap layout from `tools/ci/runner-bootstrap` is in use, the
@@ -273,7 +273,28 @@ and the persistent cache root is:
 ```
 
 Run the commands as the configured runner service account, not as root, so the
-installed cache has the same ownership as later Actions jobs.
+installed cache has the same ownership as later Actions jobs. With the default
+runner-bootstrap layout, preserve the same cache environment used by the
+service:
+
+```bash
+RUNNER_USER=actions-runner
+RUNNER_USER_HOME="$(getent passwd "$RUNNER_USER" | cut -d: -f6)"
+
+sudo -u "$RUNNER_USER" -H env \
+  HOME="$RUNNER_USER_HOME" \
+  XDG_CACHE_HOME=/var/cache/searchkernel \
+  SEARCHKERNEL_BUILD_ENV=ci \
+  bash -lc '
+    source "$HOME/.cargo/env"
+    cd /opt/searchkernel/provisioning
+    git fetch origin
+    git checkout -f origin/main
+    ./dev native-sdk ensure
+    ./dev native-sdk path
+    ./dev doctor
+  '
+```
 
 ### Existing runner without a persistent Search Kernel checkout
 
@@ -361,7 +382,7 @@ After provisioning each runner, verify:
 
 ```bash
 SEARCHKERNEL_BUILD_ENV=ci ./dev native-sdk path
-./dev doctor
+SEARCHKERNEL_BUILD_ENV=ci ./dev doctor
 ```
 
 or, for the standalone bootstrap, confirm that the printed SDK path is under the
@@ -378,7 +399,7 @@ Use this order whenever the pinned Vespa base changes:
 4. On every self-hosted native Actions runner, update the provisioning view of main.
 5. As the runner service user, run SEARCHKERNEL_BUILD_ENV=ci ./dev native-sdk ensure.
 6. Verify SEARCHKERNEL_BUILD_ENV=ci ./dev native-sdk path.
-7. Run ./dev doctor.
+7. Run SEARCHKERNEL_BUILD_ENV=ci ./dev doctor.
 8. Only then rely on the runner for native CI.
 ```
 
