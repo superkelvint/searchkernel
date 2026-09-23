@@ -645,10 +645,7 @@ mod tests {
         FieldName::parse(name).unwrap()
     }
 
-    fn definition_with_rank_input_default(
-        type_spec: &str,
-        values: Vec<f64>,
-    ) -> IndexDefinitionIr {
+    fn definition_with_rank_input_default(type_spec: &str, values: Vec<f64>) -> IndexDefinitionIr {
         let mut definition = IndexDefinitionIr::new(
             None,
             vec![FieldIr::new(

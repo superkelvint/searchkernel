@@ -1065,7 +1065,6 @@ fn manifest_validation_rejects_identity_and_structure_corruption() {
     let _ = std::fs::remove_dir_all(root);
 }
 
-
 #[test]
 fn persistence_fault_matrix_rejects_truncated_and_missing_binary_state() {
     fn assert_corrupt(root: &std::path::Path) {
@@ -1090,25 +1089,38 @@ fn persistence_fault_matrix_rejects_truncated_and_missing_binary_state() {
     )
     .unwrap();
 
-    for case in ["truncated-manifest", "missing-canonical", "missing-portable", "missing-snapshot"] {
+    for case in [
+        "truncated-manifest",
+        "missing-canonical",
+        "missing-portable",
+        "missing-snapshot",
+    ] {
         let case_root = root.join(case);
         std::fs::create_dir_all(&case_root).unwrap();
         manifest.write(&case_root).unwrap();
         match case {
             "truncated-manifest" => {
-                std::fs::write(case_root.join("manifest/index.json"), br#"{"manifest_format_version":4"#).unwrap();
+                std::fs::write(
+                    case_root.join("manifest/index.json"),
+                    br#"{"manifest_format_version":4"#,
+                )
+                .unwrap();
             }
             "missing-canonical" => {
                 std::fs::remove_file(case_root.join("manifest/index-definition.bfbs")).unwrap();
             }
             "missing-portable" => {
-                std::fs::remove_file(case_root.join("manifest/portable-index-definition.bfbs")).unwrap();
+                std::fs::remove_file(case_root.join("manifest/portable-index-definition.bfbs"))
+                    .unwrap();
             }
             "missing-snapshot" => {
                 let path = case_root.join("manifest/index.json");
                 let mut value: serde_json::Value =
                     serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-                value.as_object_mut().unwrap().remove("resolved_schema_snapshot");
+                value
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("resolved_schema_snapshot");
                 std::fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
             }
             _ => unreachable!(),
@@ -1142,9 +1154,21 @@ fn persistence_fault_matrix_rejects_unknown_versions_without_touching_state() {
     }
 
     for (label, version, generation) in [
-        ("future", MANIFEST_FORMAT_VERSION + 1, STORAGE_COMPATIBILITY_GENERATION),
-        ("old", LEGACY_MANIFEST_FORMAT_VERSION - 1, STORAGE_COMPATIBILITY_GENERATION),
-        ("generation", MANIFEST_FORMAT_VERSION, STORAGE_COMPATIBILITY_GENERATION + 1),
+        (
+            "future",
+            MANIFEST_FORMAT_VERSION + 1,
+            STORAGE_COMPATIBILITY_GENERATION,
+        ),
+        (
+            "old",
+            LEGACY_MANIFEST_FORMAT_VERSION - 1,
+            STORAGE_COMPATIBILITY_GENERATION,
+        ),
+        (
+            "generation",
+            MANIFEST_FORMAT_VERSION,
+            STORAGE_COMPATIBILITY_GENERATION + 1,
+        ),
     ] {
         let root = temporary_path(label);
         write_version(&root, version, generation);
@@ -1188,9 +1212,13 @@ fn persistence_fault_matrix_ignores_uncommitted_manifest_temporary_files() {
     )
     .unwrap();
 
-    let loaded = IndexManifest::read(&root).expect("temporary manifest must not shadow committed state");
+    let loaded =
+        IndexManifest::read(&root).expect("temporary manifest must not shadow committed state");
     loaded.validate_config(&config).unwrap();
-    assert_eq!(std::fs::read(root.join("manifest/index.json")).unwrap(), committed);
+    assert_eq!(
+        std::fs::read(root.join("manifest/index.json")).unwrap(),
+        committed
+    );
     assert!(root.join("manifest/.index.json.tmp").exists());
     let _ = std::fs::remove_dir_all(root);
 }
@@ -1225,7 +1253,9 @@ fn repeated_failed_manifest_reads_do_not_mutate_a_valid_index() {
         ));
         assert_eq!(std::fs::read(&path).unwrap(), corrupt);
         assert!(root.join("manifest/index-definition.bfbs").is_file());
-        assert!(root.join("manifest/portable-index-definition.bfbs").is_file());
+        assert!(root
+            .join("manifest/portable-index-definition.bfbs")
+            .is_file());
     }
 
     std::fs::write(&path, valid).unwrap();
