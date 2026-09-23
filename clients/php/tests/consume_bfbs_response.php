@@ -104,6 +104,16 @@ switch ($name) {
         check($result->hits[0]->score() === 0.0, 'omitted FiniteRelevance.value did not decode as zero');
         break;
 
+    case 'portable-zero-values':
+        $result = SearchResult::fromPayload($payload);
+        check(count($result->hits) === 1, 'zero-value result hit missing');
+        $fields = $result->hits[0]->fields;
+        check(($fields['bool'] ?? null) === false, 'omitted BoolValue.value did not decode as false');
+        check(($fields['int'] ?? null) === 0, 'omitted Int64Value.value did not decode as zero');
+        check(($fields['uint'] ?? null) === 0, 'omitted UInt64Value.value did not decode as zero');
+        check(($fields['float'] ?? null) === 0.0, 'omitted Float64Value.value did not decode as zero');
+        break;
+
     case 'default-sparse-tensor-zero':
         $document = $payload['document'] ?? null;
         check(is_array($document), 'tensor GetResult document missing');
