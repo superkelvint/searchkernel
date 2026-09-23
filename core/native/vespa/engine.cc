@@ -3637,6 +3637,26 @@ public:
         set_grouping_spec(request, std::vector<LocalGroupingRequestState>{grouping});
     }
 
+    void set_grouping_spec(SearchRequest &request,
+                           const LocalSearchRequestState &options) const {
+        // The pinned Vespa Matcher::match path deserializes this count and all
+        // Grouping objects into one GroupingContext before matching, then
+        // returns their results in one SearchReply::groupResult payload.
+        vespalib::nbostream buffer;
+        vespalib::NBOSerializer output(buffer);
+        output << static_cast<uint32_t>(options.groupings.size() + options.grouping_plans.size());
+        for (const auto &grouping : options.groupings) {
+            auto grouping_spec = make_grouping(grouping);
+            grouping_spec.serialize(output);
+        }
+        for (const auto &plan : options.grouping_plans) {
+            if (!plan) throw std::invalid_argument("structured grouping plan is null");
+            auto grouping_spec = make_grouping(*plan);
+            grouping_spec.serialize(output);
+        }
+        request.groupSpec.assign(buffer.data(), buffer.data() + buffer.size());
+    }
+
     LocalGroupingResultState decode_grouping(const Grouping &result_grouping,
                                              const LocalGroupingRequestState &options) const {
         LocalGroupingResultState result;
@@ -3798,8 +3818,8 @@ public:
         for (const auto &field_name : options.highlight_fields) {
             require_highlight_field(field_name);
         }
-        if (!options.groupings.empty()) {
-            set_grouping_spec(request, options.groupings);
+        if (!options.groupings.empty() || !options.grouping_plans.empty()) {
+            set_grouping_spec(request, options);
         }
         request.setSerializedQueryTree(query.serialized_query_tree());
         failpoint("search_before_match");
@@ -3819,7 +3839,9 @@ public:
         result.hits.reserve(reply->hits.size());
         for (size_t row = 0; row < reply->hits.size(); ++row) {
             const auto &hit = reply->hits[row];
-            if (auto id = id_for_gid(hit.gid)) {
+            // search_local_result holds the mutation lock for the complete
+            // match/reply conversion, including all structured groupings.
+            if (auto id = id_for_gid_unlocked(hit.gid)) {
                 result.hits.push_back({std::move(*id), hit.metric, {}, {}});
                 live_hit_rows.push_back(row);
             }
@@ -3905,7 +3927,7 @@ public:
             }
             failpoint("search_after_docsums");
         }
-        if (!options.groupings.empty()) {
+        if (!options.groupings.empty() || !options.grouping_plans.empty()) {
             if (reply->groupResult.empty()) {
                 throw std::runtime_error("native search returned no grouping result");
             }
@@ -3913,15 +3935,27 @@ public:
             vespalib::NBOSerializer input(result_buffer);
             uint32_t result_count = 0;
             input >> result_count;
-            if (result_count != options.groupings.size()) {
+            if (result_count != options.groupings.size() + options.grouping_plans.size()) {
                 throw std::runtime_error("native search returned an unexpected grouping count");
             }
             result.groupings.reserve(result_count);
-            for (uint32_t index = 0; index < result_count; ++index) {
+            for (uint32_t index = 0; index < options.groupings.size(); ++index) {
                 Grouping result_grouping;
                 result_grouping.deserialize(input);
                 result.groupings.push_back(decode_grouping(
                     result_grouping, options.groupings[index]));
+            }
+            for (size_t index = 0; index < options.grouping_plans.size(); ++index) {
+                Grouping result_grouping;
+                result_grouping.deserialize(input);
+                auto *ready_sub_db = _db->getReadySubDB();
+                if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+                auto meta_store_guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
+                result_grouping.convertToGlobalId(meta_store_guard->get());
+                auto tree = std::make_unique<sk_grouping_tree_result>();
+                tree->root = grouping_tree_node(result_grouping.getRoot(), false);
+                if (tree->root) resolve_grouping_node(*tree->root);
+                result.grouping_trees.push_back(std::move(tree));
             }
         }
         return result;
@@ -4167,6 +4201,7 @@ public:
     LocalSearchResultState search_local_result(const NativeQueryState &query,
                                                 const LocalSearchRequestState &request) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         return search_local(query, request);
     }

@@ -146,6 +146,8 @@ pub struct SearchResult {
     pub total_hits_relation: TotalHitsRelation,
     pub hits: Vec<Hit>,
     pub facets: Vec<FacetResult>,
+    /// Structured grouping trees returned by the same native match reply.
+    pub groupings: Vec<GroupingResult>,
     pub coverage: SearchCoverage,
     pub issues: Vec<String>,
 }

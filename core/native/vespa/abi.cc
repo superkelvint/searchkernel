@@ -99,6 +99,63 @@ void run_open_stage(const char *stage, Function &&function) {
 }
 
 namespace {
+sk_grouping_aggregation clone_grouping_aggregation(const sk_grouping_aggregation &source) {
+    sk_grouping_aggregation result;
+    result.kind = source.kind;
+    if (source.expression) result.expression.reset(source.expression->clone());
+    result.quantiles = source.quantiles;
+    result.summary_class = source.summary_class;
+    result.max_hits = source.max_hits;
+    return result;
+}
+
+std::unique_ptr<sk_grouping_plan> clone_grouping_plan(const sk_grouping_plan &source) {
+    auto result = std::make_unique<sk_grouping_plan>();
+    result->all = source.all;
+    for (const auto &source_level : source.levels) {
+        if (!source_level || !source_level->classifier) {
+            throw std::invalid_argument("structured grouping level is incomplete");
+        }
+        auto level = std::make_unique<sk_grouping_level>();
+        level->classifier.reset(source_level->classifier->clone());
+        level->max_groups = source_level->max_groups;
+        level->precision = source_level->precision;
+        for (const auto &aggregation : source_level->aggregations) {
+            level->aggregations.push_back(clone_grouping_aggregation(aggregation));
+        }
+        for (const auto &order : source_level->order_by) {
+            if (!order.expression) {
+                throw std::invalid_argument("structured grouping order is incomplete");
+            }
+            level->order_by.push_back({
+                std::unique_ptr<search::expression::ExpressionNode>(order.expression->clone()),
+                order.ascending,
+            });
+        }
+        if (source_level->filter) {
+            const auto &source_filter = *source_level->filter;
+            if (!source_filter.predicate) {
+                throw std::invalid_argument("structured grouping filter is incomplete");
+            }
+            sk_grouping_filter filter;
+            filter.pattern = source_filter.pattern;
+            if (source_filter.expression) {
+                filter.expression.reset(source_filter.expression->clone());
+            }
+            filter.predicate.reset(source_filter.predicate->clone());
+            level->filter = std::move(filter);
+        }
+        result->levels.push_back(std::move(level));
+    }
+    for (const auto &aggregation : source.root_aggregations) {
+        result->root_aggregations.push_back(clone_grouping_aggregation(aggregation));
+    }
+    return result;
+}
+
+}
+
+namespace {
 #include "document.cc"
 #include "update.cc"
 }
@@ -2795,6 +2852,18 @@ extern "C" int32_t sk_generic_search_request_add_grouping(
     });
 }
 
+extern "C" int32_t sk_generic_search_request_add_grouping_plan(
+    sk_generic_search_request *request, const sk_grouping_plan *plan,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !plan) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "structured grouping plan arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        request->grouping_plans.push_back(clone_grouping_plan(*plan));
+    });
+}
+
 extern "C" void sk_generic_search_request_destroy(
     sk_generic_search_request *request) SK_NOEXCEPT { destroy_noexcept(request); }
 
@@ -2824,6 +2893,11 @@ extern "C" int32_t sk_engine_search_generic(
         for (auto &grouping : result->groupings) {
             grouping.failpoints = result->failpoints;
             grouping.result_faults = result->result_faults;
+        }
+        for (auto &tree : result->grouping_trees) {
+            tree->result_faults = result->result_faults;
+            tree->result_destroyed = result->result_destroyed;
+            if (tree->root) attach_grouping_faults(*tree->root, result->result_faults);
         }
         if (result->result_faults->take(SK_TEST_RESULT_FAULT_NULL_RESULT)) {
             return;
@@ -2995,6 +3069,24 @@ extern "C" int32_t sk_generic_search_result_match_feature_value_ref(
 extern "C" uint32_t sk_generic_search_result_grouping_count(
     const sk_generic_search_result *result) SK_NOEXCEPT {
     return result ? static_cast<uint32_t>(result->groupings.size()) : 0;
+}
+extern "C" uint32_t sk_generic_search_result_grouping_tree_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result ? static_cast<uint32_t>(result->grouping_trees.size()) : 0;
+}
+
+extern "C" int32_t sk_generic_search_result_grouping_tree_root(
+    const sk_generic_search_result *result, uint32_t grouping_index,
+    const sk_grouping_tree_node **out_root, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_root) *out_root = nullptr;
+    if (!result || !out_root || grouping_index >= result->grouping_trees.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "structured grouping result arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        *out_root = result->grouping_trees[grouping_index]->root.get();
+    });
 }
 extern "C" uint32_t sk_generic_search_result_group_count(
     const sk_generic_search_result *result, uint32_t grouping_index) SK_NOEXCEPT {
