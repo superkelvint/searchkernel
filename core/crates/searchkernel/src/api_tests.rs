@@ -2830,7 +2830,7 @@ fn portable_definition_round_trips_all_public_schema_state() {
 
 #[cfg(feature = "native")]
 #[test]
-fn create_persists_unresolved_presence_and_resolved_schema_consistently() {
+fn create_persists_rich_schema_provenance_and_reopens_consistently() {
     let root = std::env::temp_dir().join(format!(
         "searchkernel-schema-provenance-{}-{}",
         std::process::id(),
@@ -2840,42 +2840,57 @@ fn create_persists_unresolved_presence_and_resolved_schema_consistently() {
             .as_nanos()
     ));
     let definition = IndexDefinition::new()
-        .name("presence_schema")
-        .field(Field::text("title"))
-        .field(Field::keyword("sku").stored(false));
+        .name("rich_native_schema")
+        .field(
+            Field::text("title")
+                .stored(true)
+                .searchable(true)
+                .analyzer(Analyzer::standard_v1()),
+        )
+        .field(
+            Field::keyword("brand")
+                .stored(true)
+                .filterable(true)
+                .sortable(true)
+                .facetable(true),
+        )
+        .field(Field::int64("price").stored(true).filterable(true))
+        .field(Field::tensor("embedding", "tensor<float>(x[3])"))
+        .default_search_fields([SearchField::new("title").weight(0.75)])
+        .rank_profile(
+            RankProfile::new("product_search")
+                .first_phase("bm25(title)")
+                .match_feature("bm25(title)"),
+        );
     let expected_resolved =
         definition_to_ir(&definition).expect("public definition should resolve before create");
+    let expected_portable = crate::portable_definition::encode_portable_definition(&definition);
 
     let index = Index::create(&root, definition).expect("create native index");
     index.close().expect("close created index");
 
     let portable_bytes = std::fs::read(root.join("manifest/portable-index-definition.bfbs"))
         .expect("read persisted portable definition");
-    let portable =
-        searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&portable_bytes)
-            .expect("persisted portable definition should parse");
-    let fields = portable
-        .fields()
-        .expect("persisted portable definition should contain fields");
-    assert_eq!(fields.len(), 2);
-    let title = fields.get(0);
-    let sku = fields.get(1);
-
-    assert!(
-        title.stored().is_none(),
-        "omitted caller state must stay absent in persisted portable intent"
-    );
-    assert_eq!(
-        sku.stored().map(|value| value.value()),
-        Some(false),
-        "explicit false must remain distinguishable from an omitted value"
-    );
+    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&portable_bytes)
+        .expect("persisted portable definition should parse");
+    assert_eq!(portable_bytes, expected_portable);
+    let portable_ir = searchkernel_ir::index_definition_to_ir(portable)
+        .expect("persisted portable definition should resolve");
+    assert_eq!(portable_ir, expected_resolved);
+    assert_eq!(portable_ir.schema_fields().len(), 0);
+    assert_eq!(portable_ir.rank_profiles().len(), 1);
+    assert_eq!(portable_ir.properties().len(), 0);
+    assert!(portable_ir.fields().iter().any(|field| {
+        field.name().as_str() == "title"
+            && field.analyzer().is_some()
+            && field.capabilities().stored()
+            && field.capabilities().searchable()
+    }));
 
     let canonical_bytes = std::fs::read(root.join("manifest/index-definition.bfbs"))
         .expect("read persisted canonical definition");
-    let canonical =
-        searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&canonical_bytes)
-            .expect("persisted canonical definition should parse");
+    let canonical = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&canonical_bytes)
+        .expect("persisted canonical definition should parse");
     let persisted_resolved = searchkernel_ir::index_definition_to_ir(canonical)
         .expect("persisted canonical definition should resolve");
     assert_eq!(persisted_resolved, expected_resolved);
