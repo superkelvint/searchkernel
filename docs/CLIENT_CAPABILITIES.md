@@ -24,7 +24,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Fuzzy query (query.fuzzy) | query | — | ergonomic (native) | ergonomic (grpc) | — |
 | Prefix, suffix, and substring queries (query.prefix_suffix_substring) | query | — | — | — | — |
 | Alternatives queries (query.alternatives) | query | — | — | — | — |
-| Nearest-neighbor vector search (query.nearest_neighbor) | query | — | — | — | ergonomic (node, shared) |
+| Nearest-neighbor vector search (query.nearest_neighbor) | query | — | — | — | ergonomic · E2E (node, shared) |
 | Geo-location and bounding-box queries (query.geo) | query | — | — | ergonomic (grpc) | — |
 | Predicate queries (query.predicate) | query | — | — | — | — |
 | WeakAnd and WAND queries (query.weighted_and_wand) | query | — | ergonomic (native) | ergonomic (grpc) | — |
@@ -33,25 +33,25 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Rank query composition (query.rank) | query | — | — | — | — |
 | userInput and userQuery text parsing (query.user_input_user_query) | query | — | — | — | — |
 | Structured filters (filter.structured) | filter | — | — | — | — |
-| Textual filter expressions (filter.textual) | filter | — | — | — | ergonomic (node, shared) |
-| Field sorting (search.sorting) | search | — | ergonomic (native) | — | ergonomic (node, shared) |
+| Textual filter expressions (filter.textual) | filter | — | — | — | ergonomic · E2E (node, shared) |
+| Field sorting (search.sorting) | search | — | ergonomic (native) | — | ergonomic · E2E (node, shared) |
 | First/last missing-value sort placement (search.sort_missing_placement) | search | — | — | — | — |
-| Limit and offset pagination (search.pagination) | search | — | ergonomic (native) | — | ergonomic (node, shared) |
+| Limit and offset pagination (search.pagination) | search | — | ergonomic (native) | — | ergonomic · E2E (node, shared) |
 | Text search-field selection (search.search_fields) | search | — | — | — | — |
-| Document-summary field projection (result.docsum_field_projection) | result | — | ergonomic (native) | ergonomic (grpc) | ergonomic (node, shared) |
+| Document-summary field projection (result.docsum_field_projection) | result | — | ergonomic (native) | ergonomic (grpc) | ergonomic · E2E (node, shared) |
 | Named summary-class selection (result.named_summary_class) | result | — | — | — | — |
 | Rich document-summary values (scalar subset) (result.rich_docsum_values) | result | — | — | — | — |
 | Summary-feature readback (result.summary_features) | result | — | — | — | — |
 | Highlighting (result.highlighting) | result | — | ergonomic (native) | ergonomic · conformance (grpc, shared) | conformance (shared) |
 | Dense tensor document readback (result.tensor_document_readback) | result | — | — | — | — |
 | Typed tensor feature readback (result.tensor_feature_readback) | result | — | — | — | — |
-| Structured grouping and faceting (grouping.structured) | grouping | — | — | — | ergonomic (node, shared) |
+| Structured grouping and faceting (grouping.structured) | grouping | — | — | — | ergonomic · E2E (node, shared) |
 | Executable grouping expression/function subset (grouping.functions) | grouping | — | — | — | — |
-| Grouping aggregations (grouping.aggregations) | grouping | — | — | — | ergonomic (node, shared) |
+| Grouping aggregations (grouping.aggregations) | grouping | — | — | — | ergonomic · E2E (node, shared) |
 | Summary aggregation (grouping.summary_aggregation) | grouping | — | — | — | — |
 | Grouping continuations (grouping.continuations) | grouping | — | — | — | — |
 | Raw grouping source (grouping.raw_source) | grouping | — | — | — | — |
-| Document insert, upsert, patch, delete, and get (update.document_crud) | update | — | ergonomic (native) | ergonomic (managed-local) | ergonomic (node) |
+| Document insert, upsert, patch, delete, and get (update.document_crud) | update | — | ergonomic (native) | ergonomic (managed-local) | ergonomic · E2E (node) |
 | Arithmetic document updates (update.arithmetic) | update | — | — | — | — |
 | Create-if-nonexistent document updates (update.create_if_nonexistent) | update | — | — | — | — |
 | Conditional document mutations (update.conditional) | update | — | — | — | — |
@@ -105,6 +105,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Nearest-neighbor vector search (query.nearest_neighbor)
 
 - **Basic behavior** (basic)
+  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L44)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L44)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L128)
 
@@ -122,6 +123,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Textual filter expressions (filter.textual)
 
 - **Basic behavior** (basic)
+  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L40)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L40)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L89)
 
@@ -129,6 +131,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 - **Basic behavior** (basic)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L217)
+  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L41)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L41)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L90)
 
@@ -136,6 +139,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 - **Basic behavior** (basic)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L218)
+  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L42)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L42)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L91)
 
@@ -144,6 +148,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 - **Basic behavior** (basic)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L507)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L219)
+  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L43)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L43)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L92)
 
@@ -158,12 +163,14 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Structured grouping and faceting (grouping.structured)
 
 - **Basic behavior** (basic)
+  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L45)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L45)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L129)
 
 ### Grouping aggregations (grouping.aggregations)
 
 - **Basic behavior** (basic)
+  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L46)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L46)
   - typescript / shared / ergonomic — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L130)
 
@@ -172,5 +179,6 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 - **Basic behavior** (basic)
   - python / managed-local / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L257)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L14)
+  - typescript / node / e2e — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L39)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L39)
 
