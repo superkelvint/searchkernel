@@ -197,6 +197,38 @@ describe("ergonomic facade", () => {
     expect(canonicalSnapshot(helper)).toEqual(canonicalSnapshot(explicitGrouping));
   }, 120_000);
 
+  it("property-checks generated page arithmetic without uint32 overflow", () => {
+    const maxU32 = 0xffff_ffff;
+    let state = 0x5ea2c;
+    const next = (): number => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return state;
+    };
+
+    for (let sample = 0; sample < 512; sample += 1) {
+      const size = next() & 0xffff;
+      const maxPage = size === 0 ? maxU32 : Math.floor(maxU32 / size);
+      const boundedMaxPage = Math.max(1, Math.min(maxPage, 0x00ff_ffff));
+      const number = 1 + (next() % boundedMaxPage);
+      const expectedOffset = (number - 1) * size;
+
+      const paged = index().browse().page(number, size).build();
+      const explicit = index().browse().limit(size).offset(expectedOffset).build();
+
+      expect(paged.limit?.value).toBe(size);
+      expect(paged.offset?.value).toBe(expectedOffset);
+      expect(paged.limit?.value).toBe(explicit.limit?.value);
+      expect(paged.offset?.value).toBe(explicit.offset?.value);
+      expect(expectedOffset).toBeLessThanOrEqual(maxU32);
+    }
+
+    for (let sample = 0; sample < 256; sample += 1) {
+      const size = 1 + (next() & 0xffff);
+      const number = Math.floor(maxU32 / size) + 1;
+      expect(() => index().browse().page(number, size)).toThrow(/uint32 range/);
+    }
+  });
+
   it("maps portable error codes to stable names", () => {
     const error = new SearchKernelError(
       "unsupported",
