@@ -11,6 +11,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
+NIGHTLY_WORKFLOW = SCRIPT.parents[1] / "workflows" / "nightly.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 
@@ -162,6 +163,13 @@ class ExactHeadTests(unittest.TestCase):
             "- name: Verify self-hosted ABI dependencies", 1
         )[0]
         self.assertIn("components: rustfmt", rust_step)
+
+    def test_nightly_contracts_installs_rustfmt_for_generation_check(self) -> None:
+        workflow = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
+        contracts = workflow.split("\n  contracts:\n", 1)[1].split("\n  client-e2e:\n", 1)[0]
+        self.assertIn("uses: dtolnay/rust-toolchain@stable", contracts)
+        self.assertIn("components: rustfmt", contracts)
+        self.assertIn("bash tools/check-flatbuffers-generated.sh", contracts)
 
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
