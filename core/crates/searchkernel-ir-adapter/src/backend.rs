@@ -869,6 +869,74 @@ mod implicit_output_name_regression_tests {
     }
 
     #[test]
+    fn explicit_native_spelling_and_implicit_canonical_name_both_survive_root_assembly() {
+        let requests = vec![
+            GroupingRequestIr {
+                root: GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                        label: Some("sum(Literal(Integer(1)))".to_owned()),
+                        expression: GroupingExpressionIr::Aggregation(Box::new(
+                            GroupingAggregationIr::Count,
+                        )),
+                    }])],
+                    label: None,
+                },
+                continuations: Vec::new(),
+            },
+            GroupingRequestIr {
+                root: GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                        label: None,
+                        expression: GroupingExpressionIr::Aggregation(Box::new(
+                            GroupingAggregationIr::Sum(GroupingExpressionIr::Literal(
+                                RequestValueIr::Int64(1),
+                            )),
+                        )),
+                    }])],
+                    label: None,
+                },
+                continuations: Vec::new(),
+            },
+        ];
+        let lowerings = lower_groupings(&requests).expect("both root groupings should lower");
+        let mut root_fields = std::collections::BTreeMap::new();
+
+        for (index, lowering) in lowerings.iter().enumerate() {
+            let GroupingLowering::Native(native) = lowering else {
+                panic!("root aggregation should use native grouping lowering");
+            };
+            let node = grouping_result_node(
+                GroupingResult {
+                    key: None,
+                    outputs: vec![GroupingOutput::Value(GroupingResultValue::Integer(
+                        i64::try_from(index + 1).expect("small test index"),
+                    ))],
+                    groups: Vec::new(),
+                },
+                &native.plan,
+            )
+            .expect("grouping result should project");
+            let searchkernel_ir::ResultNode::Group(group) = node else {
+                panic!("grouping result should be a group");
+            };
+            for (name, value) in group.fields {
+                insert_unique_grouping_field(&mut root_fields, name, value)
+                    .expect("canonical output names must remain distinct");
+            }
+        }
+
+        assert_eq!(root_fields.len(), 2);
+        assert_eq!(
+            root_fields.get("sum(Literal(Integer(1)))"),
+            Some(&searchkernel_ir::Value::Int64(1))
+        );
+        assert_eq!(
+            root_fields.get("sum(Literal(Int64(1)))"),
+            Some(&searchkernel_ir::Value::Int64(2))
+        );
+    }
+
+    #[test]
     fn duplicate_grouping_result_fields_fail_closed_instead_of_overwriting() {
         let plan = GroupingPlan {
             levels: Vec::new(),
