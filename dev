@@ -30,6 +30,7 @@ Search Kernel development commands
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client
   ./dev test typescript       Test the TypeScript client and generated contract
+  ./dev test php              Test the PHP client
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify m13            Run a frozen Vespa milestone verifier
@@ -160,8 +161,11 @@ test_target() {
         typescript)
             run_typescript_tests
             ;;
+        php)
+            php "$ROOT/clients/php/tests/run.php"
+            ;;
         *)
-            echo "usage: ./dev test ir|rust-api|python|typescript" >&2
+            echo "usage: ./dev test ir|rust-api|python|typescript|php" >&2
             return 2
             ;;
     esac
