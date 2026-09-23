@@ -1,0 +1,35 @@
+name: Issue 422 clean native base verification
+
+on:
+  push:
+    branches: [codex/issue-422]
+    paths:
+      - ".github/workflows/issue-422-clean-verify.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  clean-ci-bootstrap:
+    runs-on: [self-hosted, linux, x64]
+    env:
+      SEARCHKERNEL_BUILD_ENV: ci
+      CARGO_TARGET_DIR: target/issue-422-clean-ci
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Bootstrap from published CI base with no local Vespa state
+        run: |
+          set -euo pipefail
+          export XDG_CACHE_HOME="$RUNNER_TEMP/issue-422-clean-cache"
+          rm -rf "$XDG_CACHE_HOME"
+          unset VESPA_ROOT SK_NATIVE_SDK SK_NATIVE_CACHE_DIR SK_NATIVE_BASE_ARTIFACT_URL
+          test ! -e upstream/vespa
+          ./dev native-sdk ensure
+      - name: Build native searchkerneld from published CI base
+        run: |
+          set -euo pipefail
+          export XDG_CACHE_HOME="$RUNNER_TEMP/issue-422-clean-cache"
+          unset VESPA_ROOT SK_NATIVE_SDK SK_NATIVE_CACHE_DIR SK_NATIVE_BASE_ARTIFACT_URL
+          cargo build -p searchkerneld --features native
