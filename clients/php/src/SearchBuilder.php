@@ -16,7 +16,7 @@ class SearchBuilder
     private array $searchFields = [];
     /** @var list<Group> */
     private array $groups = [];
-    /** @var list<array{field:string,name:string,limit:int,sort:string}> */
+    /** @var list<array{field:string,name:string,limit:int,sort:string,precision:?int}> */
     private array $facets = [];
     /** @var list<GroupingOutput> */
     private array $aggregates = [];
@@ -212,17 +212,22 @@ class SearchBuilder
         ?string $name = null,
         int $limit = 10,
         string $sort = 'count_desc',
+        ?int $precision = null,
     ): self {
         if ($field === '') {
             throw new InvalidArgumentException('facet field must not be empty');
         }
         self::uint32($limit, 'facet limit');
+        if ($precision !== null) {
+            self::uint32($precision, 'facet precision');
+        }
         $copy = clone $this;
         $copy->facets[] = [
             'field' => $field,
             'name' => $name ?? $field,
             'limit' => $limit,
             'sort' => $sort,
+            'precision' => $precision,
         ];
         return $copy;
     }
@@ -509,6 +514,7 @@ class SearchBuilder
                 $facet['name'],
                 $facet['limit'],
                 $facet['sort'],
+                $facet['precision'],
             );
         }
         if ($this->aggregates !== []) {
