@@ -810,20 +810,41 @@ async fn inaccessible_unix_socket_is_not_removed_before_binding() {
         .duration_since(UNIX_EPOCH)
         .expect("system clock must be after the Unix epoch")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!(
+    let directory = std::env::temp_dir().join(format!(
         "searchkerneld-inaccessible-uds-{}-{nonce}.sock",
         std::process::id(),
     ));
-    let _ = std::fs::remove_file(&path);
+    std::fs::create_dir(&directory).expect("create inaccessible UDS directory");
+    let path = directory.join("socket");
     let listener = UnixListener::bind(&path).expect("create inaccessible UDS listener");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000))
-        .expect("make UDS inaccessible");
-    // The errno reported for a permission-denied Unix socket is platform
-    // dependent. Capture the local probe result so the regression checks that
-    // bind_unix_listener propagates it instead of treating it as stale.
-    let probe_error = UnixStream::connect(&path)
-        .await
-        .expect_err("mode 000 UDS must reject a client connection");
+    // Socket inode mode bits are not consistently enforced for same-owner
+    // connections across Unix platforms. Restrict the parent directory
+    // instead, so path access fails before stale-socket handling can remove it.
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o000))
+        .expect("make UDS directory inaccessible");
+    let lock_path = directory.join("socket.lock");
+    let access_error = match std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+    {
+        Ok(lock) => {
+            // Privileged test processes can bypass directory permissions, so
+            // this fixture cannot produce an inaccessible path in that mode.
+            drop(lock);
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
+                .expect("restore UDS directory permissions");
+            drop(listener);
+            std::fs::remove_file(&path).expect("remove UDS used by skipped test");
+            std::fs::remove_file(&lock_path).expect("remove UDS lock used by skipped test");
+            std::fs::remove_dir(&directory).expect("remove skipped UDS directory");
+            eprintln!("skipping inaccessible UDS test under privileged filesystem access");
+            return;
+        }
+        Err(error) => error,
+    };
 
     let backend = Arc::new(RecordingBackend::new());
     let (index, dispatcher) = dispatcher(backend);
@@ -832,17 +853,17 @@ async fn inaccessible_unix_socket_is_not_removed_before_binding() {
         .expect_err("inaccessible UDS must not be treated as stale");
     assert!(matches!(
         error,
-        ServerError::Bind(error) if error.kind() == probe_error.kind()
+        ServerError::Bind(error) if error.kind() == access_error.kind()
     ));
+
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
+        .expect("restore UDS directory permissions");
     assert!(path.exists(), "permission failure removed the UDS path");
 
     drop(listener);
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-        .expect("restore UDS permissions");
     std::fs::remove_file(&path).expect("remove inaccessible UDS");
-    let mut lock_path = path.as_os_str().to_os_string();
-    lock_path.push(".lock");
     let _ = std::fs::remove_file(lock_path);
+    std::fs::remove_dir(&directory).expect("remove inaccessible UDS directory");
     index.close().expect("close test index");
 }
 
