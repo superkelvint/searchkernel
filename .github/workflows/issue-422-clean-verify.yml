@@ -1,5 +1,5 @@
 name: Issue 422 clean native base verification
-# Validates private-release acquisition and safe runtime links, immutable staging, and writable cache publication from a pristine cache.
+# Validates private-release acquisition and safe runtime links, immutable staging, and publishable staging roots from a pristine cache.
 
 on:
   push:
