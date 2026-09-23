@@ -1,25 +1,21 @@
 # Search Kernel PHP client
 
-This is the first HTTP/JSON Search Kernel client slice.
+The PHP client is an HTTP-first first-party facade over Search Kernel's
+canonical portable contract.
 
-The public PHP facade is ergonomic, but the HTTP body is **standard FlatBuffers
-JSON for the canonical Search Kernel envelope**. The daemon converts it with the
-existing BFBS-backed FlatBuffers JSON bridge before calling the same dispatcher
-used by gRPC.
+The HTTP body is **standard FlatBuffers JSON for the canonical Search Kernel
+envelope**. `searchkerneld` converts it with the BFBS-backed FlatBuffers JSON
+bridge before calling the same dispatcher and `*_to_ir()` semantics used by
+other transports.
 
 No PHP-specific Search Kernel domain schema exists.
 
-## Architectural direction
-
-PHP is intentionally an HTTP-first Search Kernel client. The long-term path is
-not to grow a PHP REST API; it is to make the PHP facade broad and idiomatic
-while keeping the wire representation mechanically tied to the canonical
-FlatBuffers contract:
+## Architecture
 
 ```text
 PHP ergonomic API
     ↓
-schema-derived standard FlatBuffers JSON
+standard FlatBuffers JSON RequestEnvelope
     ↓
 POST /v1/execute
     ↓
@@ -34,66 +30,85 @@ searchkernel-ir / *_to_ir()
 Vespa
 ```
 
-Responses take the inverse path through the canonical FlatBuffers response
-encoder and BFBS-backed JSON printer.
+Responses take the inverse path through the canonical response encoder and
+FlatBuffers JSON printer.
 
-The PHP client may own host-language ergonomics: builders, value conversion,
-result wrappers, error presentation, endpoint configuration, packaging, and
-tests. It must not own Search Kernel defaults, filter parsing/semantics, schema
-validation, ranking/grouping semantics, request normalization, or backend
-behavior.
+PHP owns only host-language ergonomics, lossless value conversion, result
+wrappers, error presentation, endpoint configuration, packaging, and tests. It
+must not own Search Kernel defaults, filter parsing/semantics, schema validation,
+ranking/grouping semantics, request normalization, or backend behavior.
 
-The intended expansion order is:
+## Current ergonomic surface
 
-1. complete the portable operation core and centralize request/response union
-   mapping;
-2. make portable value conversion lossless across int64/uint64, bytes, lists,
-   objects, tensors, duplicate-key rejection, and future union variants;
-3. port the shared result tree, filters, query inputs, ranking, grouping/facets,
-   patch/update, analyze, describe, and inspect-query ergonomics;
-4. add package-level low-level access to schema-derived JSON/envelope helpers so
-   advanced callers are not blocked on ergonomic sugar;
-5. add real-engine PHP E2E and cross-language conformance coverage;
-6. harden Composer packaging, endpoint/deadline behavior, and compatibility
-   policy.
+The current branch covers the public operations exercised by the canonical
+client E2E:
 
-Managed local daemon lifecycle is a separate concern from the portable PHP API.
-It should only be added if PHP deployments materially benefit from PHP spawning
-and supervising `searchkerneld`; remote/shared-host deployments can connect to
-an already managed daemon without changing the client semantics.
+- `Index::connect()`, insert/upsert/get/delete, patch and advanced update;
+- search, browse, typed query, and raw YQL entry points;
+- textual filters with clause-local typed bindings;
+- field/relevance/feature sorting, projection, highlighting, offset/limit/page;
+- ranking profiles, query inputs, rank properties, and generic properties;
+- facets, root aggregations, structured/nested grouping, aliases, ordering,
+  grouping keep filters, and summary aggregation;
+- recursive hit/group result decoding, facets/aggregations projections,
+  match/rank features, coverage/degradation, timing, result errors, and
+  continuations;
+- portable null/bool/int64/uint64/float64/string/bytes/list/object/tensor values,
+  including explicit `UInt64` and `ValueObject` wrappers for PHP-ambiguous
+  values;
+- strict transport, protocol, and portable-error domains with malformed wire
+  data rejected rather than coerced.
 
-This HTTP direction does not preclude a future generated gRPC PHP transport.
-Both transports can coexist because neither owns domain semantics; they terminate
-at the same canonical FlatBuffer dispatcher.
+The typed query/grouping helper vocabulary is intentionally the subset required
+by the current canonical E2E. New ergonomic helpers must continue to lower
+directly to the canonical FlatBuffers JSON shapes rather than implementing
+query/grouping semantics in PHP.
 
-## Current first slice
+## Lifecycle boundary
 
-Supported ergonomically:
+PHP does not currently expose Python-style `Index::create()` /
+`Index::open()` schema construction and managed-daemon ownership. Index
+lifecycle/schema administration is outside the cross-language client API spec,
+and this HTTP client normally connects to an already managed `searchkerneld`.
 
-- `Index::connect()`
-- `insert()`
-- `upsert()`
-- `get()`
-- `delete()`
-- `search()->limit()->execute()`
-- scalar/list/object portable values used by those operations
+For the canonical real-engine E2E, the harness creates the exact same
+schema/rank-profile fixture through the existing canonical Python managed-local
+path, then starts `searchkerneld` with its HTTP edge and exercises only the
+public PHP facade. The harness restarts the daemon against the same index and
+runs PHP reopen assertions, so persistence is verified without inventing PHP
+schema semantics.
 
-The full first-party facade, generated low-level escape hatch, managed local
-lifecycle, tensors/bytes, filters, grouping, ranking, and the rest of the client
-SOP are intentionally deferred from this first proof.
+Grouping continuation execution remains deferred for the same backend reason as
+the Python showcase: the native grouping ABI does not currently return
+continuation tokens. Decoding preserves tokens when they are present.
 
-Run unit tests:
+## Verification
 
-```bash
-cd clients/php
-php tests/run.php
-```
-
-Run the real-engine showcase against a `searchkerneld` instance whose
-`--web-listen` address is reachable and whose schema has a searchable/stored
-`title` text field:
+Focused PHP semantic/wire tests:
 
 ```bash
-SEARCHKERNEL_HTTP_URL=http://127.0.0.1:50052 \
-  php examples/try_searchkernel_client_api_e2e.php
+php clients/php/tests/run.php
 ```
+
+Canonical real-engine E2E, including daemon restart/reopen:
+
+```bash
+bash clients/php/examples/run_searchkernel_client_api_e2e.sh
+```
+
+The E2E expects a native `searchkerneld` at `SEARCHKERNEL_LOCAL_HOST` or the
+repository's normal debug target. CI registers this script as the PHP executable
+capability lane, so E2E evidence cannot be green without running it.
+
+To regenerate/check the cross-language capability report:
+
+```bash
+python3 tools/check-client-contracts.py --write
+python3 tools/check-client-contracts.py --check
+```
+
+## Packaging
+
+The Composer package uses PSR-4 autoloading under `SearchKernel\` and supports
+PHP 8.1+. Package/install consumption remains a separate first-class-client gate;
+do not infer publish readiness solely from the source-tree tests.
