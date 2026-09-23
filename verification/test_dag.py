@@ -69,6 +69,31 @@ cache_result = false
             with self.assertRaisesRegex(verification_dag.DagError, "duplicate task id"):
                 verification_dag.load_dag(path)
 
+    def test_behavioral_subsystem_task_must_be_reachable_from_full_root(self) -> None:
+        source = DAG_PATH.read_text(encoding="utf-8")
+        source += """
+[[task]]
+id = "orphan-behavior"
+kind = "command"
+runner = "linux"
+command = "true"
+depends_on = []
+cache_result = false
+
+[[subsystem]]
+id = "orphan-subsystem"
+paths = ["orphan/**"]
+requires = ["orphan-behavior"]
+"""
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "dag.toml"
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaisesRegex(
+                verification_dag.DagError,
+                "not reachable from full_roots",
+            ):
+                verification_dag.load_dag(path)
+
     def test_dependency_cycle_is_rejected(self) -> None:
         source = DAG_PATH.read_text(encoding="utf-8")
         source = source.replace(
