@@ -1027,6 +1027,11 @@ class ExactHeadTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 python_e2e.chmod(0o755)
+                abi_authority = repo / "tools" / "check-native-abi-authorities.py"
+                abi_authority.write_text(
+                    "raise SystemExit(0)\n",
+                    encoding="utf-8",
+                )
                 git(repo, "add", ".")
                 git(repo, "commit", "-q", "-m", "fixture")
 
