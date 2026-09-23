@@ -90,12 +90,11 @@ cache_result = false
 
 [[task]]
 id = "rust-remote-client"
-kind = "command"
+kind = "aggregate"
 runner = "linux"
-command = "cargo test -p searchkerneld --test rust_remote_client --no-default-features"
-depends_on = ["rust-quality", "protocol-generated", "client-contracts"]
+depends_on = ["rust-non-native", "protocol-generated", "client-contracts"]
 cache_result = false
-notes = "Registered before the Rust remote-client product change lands. The command becomes executable when the integration test is introduced."
+notes = "Pre-registered ownership for the Rust remote-client ingress. The product change replaces this aggregate with its focused executable verifier."
 
 [[task]]
 id = "python-client"
@@ -580,6 +579,7 @@ id = "portable-full"
 kind = "aggregate"
 runner = "linux"
 depends_on = [
+  "rust-remote-client",
   "rust-non-native",
   "rust-quality",
   "protocol-generated",
