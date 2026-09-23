@@ -227,4 +227,141 @@ try {
     // Expected.
 }
 
-echo "PHP portable-core tests PASS\\n";
+
+$int64Max = new \SearchKernel\Int64('9223372036854775807');
+$int64Min = new \SearchKernel\Int64('-9223372036854775808');
+same('9223372036854775807', Protocol::value($int64Max)['kind']['value'], 'explicit int64 max stays decimal text');
+same('-9223372036854775808', Protocol::value($int64Min)['kind']['value'], 'explicit int64 min stays decimal text');
+same('Int64Value', Protocol::value($int64Max)['kind_type'], 'explicit int64 discriminator');
+
+$uint64Max = new \SearchKernel\UInt64('18446744073709551615');
+$encodedUInt64 = Protocol::value($uint64Max);
+same('UInt64Value', $encodedUInt64['kind_type'], 'uint64 discriminator');
+same('18446744073709551615', $encodedUInt64['kind']['value'], 'uint64 max stays decimal text');
+$decodedUInt64 = Protocol::decodeValue($encodedUInt64);
+same('18446744073709551615', (string) $decodedUInt64, 'uint64 max round trip');
+
+try {
+    new \SearchKernel\Int64('9223372036854775808');
+    throw new RuntimeException('int64 overflow did not throw');
+} catch (InvalidArgumentException) {
+    // Expected.
+}
+try {
+    new \SearchKernel\Int64('-9223372036854775809');
+    throw new RuntimeException('int64 underflow did not throw');
+} catch (InvalidArgumentException) {
+    // Expected.
+}
+try {
+    new \SearchKernel\UInt64('18446744073709551616');
+    throw new RuntimeException('uint64 overflow did not throw');
+} catch (InvalidArgumentException) {
+    // Expected.
+}
+try {
+    new \SearchKernel\UInt64('01');
+    throw new RuntimeException('non-canonical uint64 did not throw');
+} catch (InvalidArgumentException) {
+    // Expected.
+}
+
+$binary = new \SearchKernel\Bytes("\x00\x01\x7f\x80\xff");
+$encodedBytes = Protocol::value($binary);
+same('BytesValue', $encodedBytes['kind_type'], 'bytes discriminator');
+same([0, 1, 127, 128, 255], $encodedBytes['kind']['value'], 'bytes encode as octets');
+$decodedBytes = Protocol::decodeValue($encodedBytes);
+same("\x00\x01\x7f\x80\xff", $decodedBytes->value, 'bytes round trip as binary string');
+
+foreach ([
+    \SearchKernel\NonFiniteFloat::nan(),
+    \SearchKernel\NonFiniteFloat::positiveInfinity(),
+    \SearchKernel\NonFiniteFloat::negativeInfinity(),
+] as $special) {
+    $encoded = Protocol::value($special);
+    same('NonFiniteFloatValue', $encoded['kind_type'], 'non-finite discriminator');
+    same($special->kind, $encoded['kind']['kind'], 'non-finite kind encode');
+    $decodedSpecial = Protocol::decodeValue($encoded);
+    same($special->kind, $decodedSpecial->kind, 'non-finite round trip');
+}
+
+$unicodeEntries = Protocol::valueEntries([
+    "\u{1F600}" => 4,
+    "\u{10000}" => 3,
+    "\u{E000}" => 2,
+    'a' => 1,
+]);
+same(['a', "\u{E000}", "\u{10000}", "\u{1F600}"], array_column($unicodeEntries, 'key'), 'semantic maps use stable UTF-8/codepoint ordering');
+
+try {
+    Protocol::decodeValueEntries([
+        ['key' => 'x', 'value' => Protocol::value(1)],
+        ['key' => 'x', 'value' => Protocol::value(2)],
+    ]);
+    throw new RuntimeException('duplicate portable object key did not throw');
+} catch (\SearchKernel\ProtocolException) {
+    // Expected.
+}
+
+$dense = \SearchKernel\Tensor::dense('tensor<float>(x[3])', [1, 2.5, -3]);
+$denseValue = Protocol::value($dense);
+same('TensorValue', $denseValue['kind_type'], 'dense tensor discriminator');
+same('DenseTensorValues', $denseValue['kind']['payload_type'], 'dense tensor payload discriminator');
+same($dense->toJson(), Protocol::decodeValue($denseValue)->toJson(), 'dense tensor round trip');
+
+$sparse = \SearchKernel\Tensor::sparse('tensor<float>(token{})', [
+    ['address' => ['token' => 'fox'], 'value' => 1.25],
+    ['address' => ['token' => 'dog'], 'value' => -0.5],
+]);
+$sparseValue = Protocol::value($sparse);
+same($sparse->toJson(), Protocol::decodeValue($sparseValue)->toJson(), 'sparse tensor round trip');
+
+$mixed = \SearchKernel\Tensor::mixed('tensor<float>(paragraph{},x[2])', [
+    ['address' => ['paragraph' => 'p1'], 'values' => [1.0, 2.0]],
+    ['address' => ['paragraph' => 'p2'], 'values' => [3.0, 4.0]],
+]);
+$mixedValue = Protocol::value($mixed);
+same($mixed->toJson(), Protocol::decodeValue($mixedValue)->toJson(), 'mixed tensor round trip');
+
+try {
+    Protocol::decodeValue([
+        'kind_type' => 'FutureValueKind',
+        'kind' => [],
+    ]);
+    throw new RuntimeException('unknown future Value discriminator did not fail closed');
+} catch (\SearchKernel\ProtocolException) {
+    // Expected.
+}
+
+try {
+    Protocol::decodeValue([
+        'kind_type' => 'TensorValue',
+        'kind' => [
+            'type_spec' => 'tensor<float>(x[1])',
+            'payload_type' => 'FutureTensorPayload',
+            'payload' => [],
+        ],
+    ]);
+    throw new RuntimeException('unknown tensor payload discriminator did not fail closed');
+} catch (\SearchKernel\ProtocolException) {
+    // Expected.
+}
+
+try {
+    Protocol::decodeValue([
+        'kind_type' => 'BytesValue',
+        'kind' => ['value' => [256]],
+    ]);
+    throw new RuntimeException('invalid byte did not fail closed');
+} catch (\SearchKernel\ProtocolException) {
+    // Expected.
+}
+
+try {
+    \SearchKernel\Tensor::dense('tensor<float>(x[1])', [INF]);
+    throw new RuntimeException('non-finite tensor cell did not throw');
+} catch (InvalidArgumentException) {
+    // Expected.
+}
+
+echo "PHP portable-value tests PASS\\n";
