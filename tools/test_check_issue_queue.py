@@ -113,6 +113,23 @@ class IssueQueueTests(unittest.TestCase):
         errors = MODULE.validate_queue([fixture, fixture], set())
         self.assertTrue(any("duplicate issue" in error for error in errors))
 
+    def test_closed_issues_must_not_keep_workflow_state_labels(self) -> None:
+        for state in sorted(MODULE.WORKFLOW_STATES):
+            with self.subTest(state=state):
+                errors = MODULE.validate_closed_issue_labels([issue(42, state)])
+                self.assertEqual(
+                    errors,
+                    [f"issue #42 (fixture): closed issue retains workflow state label {state}"],
+                )
+
+    def test_closed_issue_without_workflow_state_passes(self) -> None:
+        self.assertEqual(
+            MODULE.validate_closed_issue_labels(
+                [issue(42, "priority:p1", "area:ci", "type:bug")]
+            ),
+            [],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
