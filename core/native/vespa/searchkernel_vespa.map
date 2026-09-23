@@ -149,6 +149,7 @@ SEARCHKERNEL_2 {
         sk_generic_search_request_add_query_tensor_dense;
         sk_generic_search_request_add_rank_property;
         sk_generic_search_request_add_grouping;
+        sk_generic_search_request_add_grouping_plan;
         sk_generic_search_request_destroy;
         sk_engine_search_generic;
         sk_generic_search_result_total_hit_count;
@@ -174,6 +175,8 @@ SEARCHKERNEL_2 {
         sk_generic_search_result_match_feature_value;
         sk_generic_search_result_match_feature_value_ref;
         sk_generic_search_result_grouping_count;
+        sk_generic_search_result_grouping_tree_count;
+        sk_generic_search_result_grouping_tree_root;
         sk_generic_search_result_group_count;
         sk_generic_search_result_group;
         sk_generic_search_result_destroy;

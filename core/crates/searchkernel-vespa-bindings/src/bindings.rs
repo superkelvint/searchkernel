@@ -88,7 +88,7 @@ pub const SK_FEATURE_VALUE_KIND_INVALID: u32 = 0;
 pub const SK_FEATURE_VALUE_DOUBLE: u32 = 1;
 pub const SK_FEATURE_VALUE_DATA: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 12;
+pub const SK_NATIVE_ABI_VERSION: u32 = 13;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -1601,6 +1601,14 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_generic_search_request_add_grouping_plan(
+        request: *mut sk_generic_search_request,
+        plan: *const sk_grouping_plan,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_generic_search_request_destroy(request: *mut sk_generic_search_request);
 }
 unsafe extern "C" {
@@ -1789,6 +1797,20 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn sk_generic_search_result_grouping_count(result: *const sk_generic_search_result) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_grouping_tree_count(
+        result: *const sk_generic_search_result,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_grouping_tree_root(
+        result: *const sk_generic_search_result,
+        grouping_index: u32,
+        out_root: *mut *const sk_grouping_tree_node,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_generic_search_result_group_count(

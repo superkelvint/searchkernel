@@ -2817,6 +2817,94 @@ fn portable_definition_encoding_uses_public_state_without_a_canonical_sidecar() 
 }
 
 #[test]
+fn portable_definition_round_trips_all_public_schema_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let bytes = crate::portable_definition::encode_portable_definition(&described);
+    let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+        .expect("portable definition should parse");
+    let encoded =
+        searchkernel_ir::index_definition_to_ir(root).expect("portable definition should resolve");
+
+    assert_eq!(encoded, canonical);
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn create_persists_rich_schema_provenance_and_reopens_consistently() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-schema-provenance-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let definition = IndexDefinition::new()
+        .name("rich_native_schema")
+        .field(
+            Field::text("title")
+                .stored(true)
+                .searchable(true)
+                .analyzer(Analyzer::standard_v1()),
+        )
+        .field(
+            Field::keyword("brand")
+                .stored(true)
+                .filterable(true)
+                .sortable(true)
+                .facetable(true),
+        )
+        .field(Field::int64("price").stored(true).filterable(true))
+        .field(Field::tensor("embedding", "tensor<float>(x[3])"))
+        .default_search_fields([SearchField::new("title").weight(0.75)])
+        .rank_profile(
+            RankProfile::new("product_search")
+                .first_phase("bm25(title)")
+                .match_feature("bm25(title)"),
+        );
+    let expected_resolved =
+        definition_to_ir(&definition).expect("public definition should resolve before create");
+    let expected_portable = crate::portable_definition::encode_portable_definition(&definition);
+
+    let index = Index::create(&root, definition).expect("create native index");
+    index.close().expect("close created index");
+
+    let portable_bytes = std::fs::read(root.join("manifest/portable-index-definition.bfbs"))
+        .expect("read persisted portable definition");
+    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&portable_bytes)
+        .expect("persisted portable definition should parse");
+    assert_eq!(portable_bytes, expected_portable);
+    let portable_ir = searchkernel_ir::index_definition_to_ir(portable)
+        .expect("persisted portable definition should resolve");
+    assert_eq!(portable_ir, expected_resolved);
+    assert_eq!(portable_ir.schema_fields().len(), 0);
+    assert_eq!(portable_ir.rank_profiles().len(), 1);
+    assert_eq!(portable_ir.properties().len(), 0);
+    assert!(portable_ir.fields().iter().any(|field| {
+        field.name().as_str() == "title"
+            && field.analyzer().is_some()
+            && field.capabilities().stored()
+            && field.capabilities().searchable()
+    }));
+
+    let canonical_bytes = std::fs::read(root.join("manifest/index-definition.bfbs"))
+        .expect("read persisted canonical definition");
+    let canonical = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&canonical_bytes)
+        .expect("persisted canonical definition should parse");
+    let persisted_resolved = searchkernel_ir::index_definition_to_ir(canonical)
+        .expect("persisted canonical definition should resolve");
+    assert_eq!(persisted_resolved, expected_resolved);
+
+    let reopened = Index::open(&root).expect("reopen persisted index");
+    let described = reopened.describe().expect("describe reopened index");
+    let reopened_resolved =
+        definition_to_ir(&described).expect("reopened public definition should resolve");
+    assert_eq!(reopened_resolved, expected_resolved);
+    reopened.close().expect("close reopened index");
+    std::fs::remove_dir_all(root).expect("remove provenance test index");
+}
+
+#[test]
 fn describe_preserves_field_properties() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
@@ -5115,4 +5203,136 @@ fn rich_schema_negative_semantics_match_portable_ingress() {
         invalid_schema_with_field(missing_struct),
         "unknown_struct",
     );
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
+    use searchkernel_ir::{
+        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr, PrimitiveDataTypeIr,
+        StructFieldIr,
+    };
+
+    // Vespa stores these composite values in attribute-backed fields. The
+    // public stored capability controls inclusion in the default GET
+    // projection, while filterable is what gives the native adapter the
+    // attribute required for these types.
+    let stored_attribute = || FieldCapabilities::new(true, false, true, false, false);
+    let fields = vec![
+        FieldIr::new(
+            FieldName::parse("tags").unwrap(),
+            DataTypeIr::Array(Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::String))),
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("people").unwrap(),
+            DataTypeIr::Array(Box::new(DataTypeIr::Struct {
+                fields: vec![
+                    StructFieldIr {
+                        name: "name".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                    },
+                    StructFieldIr {
+                        name: "age".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                    },
+                    StructFieldIr {
+                        name: "active".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+                    },
+                ],
+            })),
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("location").unwrap(),
+            DataTypeIr::Position,
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("feature_access").unwrap(),
+            DataTypeIr::Predicate,
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("expression_access").unwrap(),
+            DataTypeIr::Predicate,
+            None,
+            stored_attribute(),
+        ),
+    ];
+    let canonical = IndexDefinitionIr::new(None, fields, Vec::new())
+        .expect("composite product schema should be valid canonical IR");
+    let definition = definition_from_ir(&canonical);
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-public-composite-get-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+
+    let expected = json!({
+        "tags": ["alpha", "", "omega"],
+        "people": [
+            {"name": "Ada", "age": 37, "active": true},
+            {"name": "Grace", "age": 85, "active": false}
+        ],
+        "location": {"latitude": 1.25, "longitude": -2.5},
+        "feature_access": {"features": {"hobby": "music"}},
+        "expression_access": {
+            "expression": {"type": 4, "key": "hobby", "feature_set": ["music"]}
+        }
+    });
+
+    let index = Index::create(&path, definition).expect("create composite product index");
+    index
+        .upsert("composite-1", &expected)
+        .expect("write composite product document");
+
+    let full = index
+        .get::<serde_json::Value>("composite-1")
+        .expect("get composite document through public facade")
+        .expect("composite document exists");
+    assert_eq!(full, expected);
+
+    let projected = index
+        .get_with_projection::<serde_json::Value>(
+            "composite-1",
+            ["people", "feature_access", "expression_access"],
+        )
+        .expect("get projected composite document")
+        .expect("projected document exists");
+    assert_eq!(
+        projected,
+        json!({
+            "people": expected["people"].clone(),
+            "feature_access": expected["feature_access"].clone(),
+            "expression_access": expected["expression_access"].clone()
+        })
+    );
+
+    let empty = index
+        .get_with_projection::<serde_json::Value>("composite-1", std::iter::empty::<&str>())
+        .expect("get explicit empty projection")
+        .expect("document exists for empty projection");
+    assert_eq!(empty, json!({}));
+
+    index.close().expect("close composite product index");
+    let reopened = Index::open(&path).expect("reopen composite product index");
+    let persisted = reopened
+        .get::<serde_json::Value>("composite-1")
+        .expect("get composite document after reopen")
+        .expect("reopened composite document exists");
+    assert_eq!(persisted, expected);
+    reopened
+        .close()
+        .expect("close reopened composite product index");
+    std::fs::remove_dir_all(path).expect("remove composite product index");
 }

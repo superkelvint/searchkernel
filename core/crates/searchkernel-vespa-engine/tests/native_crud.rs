@@ -4,9 +4,9 @@ use searchkernel_vespa_engine::{
     ArithmeticOperator, ArrayValue, AttributeDocument, AttributeUpdate, ConfigCompiler, Document,
     DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue, GroupingAggregation,
     GroupingExpression, GroupingFilter, GroupingLevel, GroupingOrder, GroupingPlan, InQueryValue,
-    LinguisticsOptions, NearestNeighborOptions, Query, QueryInput, RankProfile, ScalarValue,
-    Schema, SearchRequest, SortField, StructField, StructFieldType, SummaryRequest, TensorValue,
-    Value,
+    LinguisticsOptions, NearestNeighborOptions, PositionValue, PredicateValue, Query, QueryInput,
+    RankProfile, ScalarValue, Schema, SearchRequest, SortField, StructField, StructFieldType,
+    SummaryRequest, TensorValue, Value,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -1789,6 +1789,119 @@ fn native_grouping_decodes_a_valid_empty_root() {
     assert!(result.groups.is_empty());
 
     engine.close().expect("close empty-group engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_get_round_trips_composite_values_across_reopen() {
+    let config = temporary_path("composite-get-config");
+    let data = temporary_path("composite-get-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("tags", FieldType::ArrayString).attribute())
+        .field(
+            Field::new(
+                "people",
+                FieldType::ArrayStruct(vec![
+                    StructField {
+                        name: "name".to_owned(),
+                        field_type: StructFieldType::String,
+                    },
+                    StructField {
+                        name: "age".to_owned(),
+                        field_type: StructFieldType::Long,
+                    },
+                    StructField {
+                        name: "active".to_owned(),
+                        field_type: StructFieldType::Boolean,
+                    },
+                ]),
+            )
+            .attribute(),
+        )
+        .field(Field::new("location", FieldType::Position).attribute())
+        .field(
+            Field::new("feature_access", FieldType::Predicate)
+                .attribute()
+                .predicate_arity(8),
+        )
+        .field(
+            Field::new("expression_access", FieldType::Predicate)
+                .attribute()
+                .predicate_arity(8),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile composite GET config");
+
+    let tags = FieldValue::Array(ArrayValue::Strings(vec![
+        "alpha".to_owned(),
+        "".to_owned(),
+        "omega".to_owned(),
+    ]));
+    let people = FieldValue::Array(ArrayValue::Structs(vec![
+        BTreeMap::from([
+            ("active".to_owned(), ScalarValue::Boolean(true)),
+            ("age".to_owned(), ScalarValue::Integer(37)),
+            ("name".to_owned(), ScalarValue::String("Ada".to_owned())),
+        ]),
+        BTreeMap::from([
+            ("active".to_owned(), ScalarValue::Boolean(false)),
+            ("age".to_owned(), ScalarValue::Integer(85)),
+            ("name".to_owned(), ScalarValue::String("Grace".to_owned())),
+        ]),
+    ]));
+    let location = FieldValue::Position(PositionValue::new(1.25, -2.5));
+    let feature_access = FieldValue::Predicate(PredicateValue::new(BTreeMap::from([(
+        "hobby".to_owned(),
+        "music".to_owned(),
+    )])));
+    let expression_access = FieldValue::Predicate(PredicateValue::from_expression(
+        r#"{"type":4,"key":"hobby","feature_set":["music"]}"#,
+    ));
+    // Vespa normalizes predicate-expression JSON before storing it. Object
+    // member order is not semantic, so assert the canonical native form
+    // returned by GET rather than the source spelling sent to upsert.
+    let expected_expression_access = FieldValue::Predicate(PredicateValue::from_expression(
+        r#"{"type":4,"feature_set":["music"],"key":"hobby"}"#,
+    ));
+    let expected = BTreeMap::from([
+        ("expression_access".to_owned(), expected_expression_access),
+        ("feature_access".to_owned(), feature_access.clone()),
+        ("location".to_owned(), location.clone()),
+        ("people".to_owned(), people.clone()),
+        ("tags".to_owned(), tags.clone()),
+    ]);
+
+    let engine = Engine::open(&data, &config).expect("open composite GET engine");
+    engine
+        .put(
+            Document::new("composite-1")
+                .field("tags", tags)
+                .field("people", people)
+                .field("location", location)
+                .field("feature_access", feature_access)
+                .field("expression_access", expression_access),
+        )
+        .expect("put composite document");
+
+    let current = engine
+        .get("composite-1")
+        .expect("get composite document before close")
+        .expect("composite document exists before close");
+    assert_eq!(current.fields(), &expected);
+    engine.close().expect("close composite GET engine");
+
+    let reopened = Engine::open(&data, &config).expect("reopen composite GET engine");
+    let persisted = reopened
+        .get("composite-1")
+        .expect("get composite document after reopen")
+        .expect("composite document exists after reopen");
+    assert_eq!(persisted.fields(), &expected);
+
+    reopened
+        .close()
+        .expect("close reopened composite GET engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

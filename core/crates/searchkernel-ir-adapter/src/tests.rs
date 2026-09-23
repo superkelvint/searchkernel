@@ -106,6 +106,19 @@ fn native_grouping(levels: &[(&str, Vec<GroupingExpressionIr>)]) -> GroupingRequ
     }
 }
 
+fn contains_group_value(node: &ResultNode, value: &Value) -> bool {
+    match node {
+        ResultNode::Hit(_) => false,
+        ResultNode::Group(group) => {
+            group.value.as_ref() == Some(value)
+                || group
+                    .children
+                    .iter()
+                    .any(|child| contains_group_value(child, value))
+        }
+    }
+}
+
 fn count_expression() -> GroupingExpressionIr {
     GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count))
 }
@@ -213,6 +226,47 @@ fn canonical_two_level_grouping_lowers_to_linear_attribute_plan() {
                     )
                 ),
             )
+    );
+}
+
+#[test]
+fn grouping_range_rejects_integer_bounds_that_round_as_f64() {
+    let request = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("category".into())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Filter(GroupingFilterIr::Range {
+                            expression: Box::new(GroupingExpressionIr::Attribute("price".into())),
+                            lower: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                                9_007_199_254_740_993,
+                            ))),
+                            upper: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                                9_007_199_254_740_994,
+                            ))),
+                            include_lower: true,
+                            include_upper: false,
+                        }),
+                        GroupingOperationIr::Output(vec![GroupingOutputIr {
+                            label: None,
+                            expression: count_expression(),
+                        }]),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = lower_groupings(&[request])
+        .expect_err("integer grouping bounds must not be silently rounded to f64");
+    assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    assert_eq!(
+        error.details[0].code,
+        "grouping_filter_bound_precision_loss"
     );
 }
 
@@ -1324,6 +1378,120 @@ fn typed_query_b_remaining_operators_lower_to_existing_vespa_nodes() {
 }
 
 #[test]
+fn structured_groupings_share_the_primary_search_snapshot() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-grouping-snapshot-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("grouping_snapshot")
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        )
+        .field(Field::new("qty", FieldType::Integer).attribute().summary());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile grouping snapshot schema");
+    let engine = Engine::open(&data, &config).expect("open grouping snapshot engine");
+    let document = |id: &str, category: &str, qty: i64| {
+        InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse(id).expect("valid document ID"),
+            std::collections::BTreeMap::from([
+                (
+                    field("category"),
+                    FieldValueIr::Single(ScalarValueIr::String(category.to_owned())),
+                ),
+                (
+                    field("qty"),
+                    FieldValueIr::Single(ScalarValueIr::Int64(qty)),
+                ),
+            ]),
+        ))
+    };
+    let baseline = VespaBackend::from_engine(engine);
+    baseline
+        .insert(document("doc:old", "old", 1))
+        .expect("insert baseline document");
+    let probe = std::sync::Arc::new(SearchGroupingProbe {
+        after_primary: std::sync::Barrier::new(2),
+        continue_search: std::sync::Barrier::new(2),
+    });
+    let backend = std::sync::Arc::new(VespaBackend::with_search_grouping_probe(
+        baseline.engine,
+        probe.clone(),
+    ));
+    let request = SearchRequestIr::new(
+        QueryIr::MatchAll,
+        Vec::new(),
+        None,
+        Vec::new(),
+        10,
+        0,
+        searchkernel_ir::ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_grouping(vec![
+        native_grouping(&[("category", vec![count_expression()])]),
+        native_grouping(&[("qty", vec![count_expression()])]),
+    ]);
+    let searching = std::sync::Arc::clone(&backend);
+    let search = std::thread::spawn(move || searching.search(request));
+    probe.after_primary.wait();
+    backend
+        .insert(document("doc:new", "new", 99))
+        .expect("insert interleaved document");
+    probe.continue_search.wait();
+    let result = search
+        .join()
+        .expect("search thread")
+        .expect("search with structured groupings");
+    let ResultNode::Group(root_group) = result.root else {
+        panic!("search result root must be a group");
+    };
+    assert_eq!(
+        root_group
+            .children
+            .iter()
+            .filter_map(|child| match child {
+                ResultNode::Hit(hit) => Some(hit.id.as_str()),
+                ResultNode::Group(_) => None,
+            })
+            .collect::<Vec<_>>(),
+        vec!["doc:old"]
+    );
+    let grouping_nodes = root_group
+        .children
+        .iter()
+        .filter(|child| matches!(child, ResultNode::Group(_)))
+        .collect::<Vec<_>>();
+    assert_eq!(grouping_nodes.len(), 2);
+    assert!(grouping_nodes
+        .iter()
+        .all(|node| !contains_group_value(node, &Value::String("new".to_owned()))));
+    assert!(grouping_nodes
+        .iter()
+        .all(|node| !contains_group_value(node, &Value::Int64(99))));
+
+    let backend = std::sync::Arc::try_unwrap(backend)
+        .unwrap_or_else(|_| panic!("no outstanding backend owners"));
+    backend
+        .engine
+        .close()
+        .expect("close grouping snapshot engine");
+    std::fs::remove_dir_all(root).expect("remove grouping snapshot index");
+}
+
+#[test]
 fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     let root = std::env::temp_dir().join(format!(
         "searchkernel-adapter-typed-query-a-{}-{}",
@@ -1566,6 +1734,129 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     assert_eq!(qty_two.value, Some(Value::Int64(2)));
     assert_eq!(qty_two.fields["count"], Value::Int64(1));
     assert_eq!(qty_two.fields["average(price)"], Value::Float64(5.0));
+
+    let safe_integer_boundary = (1_i64 << 53) - 1;
+    let adjacent_integer = 1_i64 << 53;
+    for (id, price) in [
+        ("doc:safe-boundary", safe_integer_boundary),
+        ("doc:adjacent-boundary", adjacent_integer),
+    ] {
+        backend
+            .insert(InsertRequestIr::new(DocumentIr::new(
+                DocumentId::parse(id).unwrap(),
+                std::collections::BTreeMap::from([
+                    (
+                        field("title"),
+                        FieldValueIr::Single(ScalarValueIr::String(id.to_owned())),
+                    ),
+                    (
+                        field("price"),
+                        FieldValueIr::Single(ScalarValueIr::Int64(price)),
+                    ),
+                    (
+                        field("sku"),
+                        FieldValueIr::Single(ScalarValueIr::String(id.to_owned())),
+                    ),
+                    (
+                        field("category"),
+                        FieldValueIr::Single(ScalarValueIr::String("precision".to_owned())),
+                    ),
+                    (field("qty"), FieldValueIr::Single(ScalarValueIr::Int64(1))),
+                ]),
+            )))
+            .expect("insert precision-boundary document");
+    }
+
+    let mut safe_precision_grouping = native_grouping(&[("price", vec![count_expression()])]);
+    let each = safe_precision_grouping
+        .root
+        .operations
+        .iter_mut()
+        .find_map(|operation| match operation {
+            GroupingOperationIr::Each(each) => Some(each),
+            _ => None,
+        })
+        .expect("safe precision grouping has an each operation");
+    each.operations.insert(
+        0,
+        GroupingOperationIr::Filter(GroupingFilterIr::Range {
+            expression: Box::new(GroupingExpressionIr::Attribute("price".into())),
+            lower: Box::new(GroupingExpressionIr::Literal(RequestValueIr::Int64(
+                safe_integer_boundary,
+            ))),
+            upper: Box::new(GroupingExpressionIr::Literal(RequestValueIr::Int64(
+                safe_integer_boundary,
+            ))),
+            include_lower: true,
+            include_upper: true,
+        }),
+    );
+    let result = backend
+        .search(
+            comparison
+                .clone()
+                .with_query(QueryIr::MatchAll)
+                .with_grouping(vec![safe_precision_grouping]),
+        )
+        .expect("execute grouping at the last contiguous exact integer boundary");
+    let ResultNode::Group(group) = result.root else {
+        panic!("search root must be a group");
+    };
+    let grouping = group
+        .children
+        .iter()
+        .find_map(|node| match node {
+            ResultNode::Group(grouping) => Some(grouping),
+            ResultNode::Hit(_) => None,
+        })
+        .expect("precision grouping result");
+    assert_eq!(grouping.children.len(), 1);
+    let ResultNode::Group(boundary_group) = &grouping.children[0] else {
+        panic!("precision result child must be a group");
+    };
+    assert_eq!(
+        boundary_group.value,
+        Some(Value::Int64(safe_integer_boundary))
+    );
+    assert_eq!(boundary_group.fields["count"], Value::Int64(1));
+
+    let mut precision_grouping = native_grouping(&[("price", vec![count_expression()])]);
+    let each = precision_grouping
+        .root
+        .operations
+        .iter_mut()
+        .find_map(|operation| match operation {
+            GroupingOperationIr::Each(each) => Some(each),
+            _ => None,
+        })
+        .expect("precision grouping has an each operation");
+    each.operations.insert(
+        0,
+        GroupingOperationIr::Filter(GroupingFilterIr::Range {
+            expression: Box::new(GroupingExpressionIr::Attribute("price".into())),
+            lower: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                9_007_199_254_740_992,
+            ))),
+            upper: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                9_007_199_254_740_993,
+            ))),
+            include_lower: true,
+            include_upper: false,
+        }),
+    );
+    let error = backend
+        .search(
+            comparison
+                .clone()
+                .with_query(QueryIr::MatchAll)
+                .with_grouping(vec![precision_grouping]),
+        )
+        .expect_err("precision-losing grouping bounds must fail before native execution");
+    assert_eq!(error.code, ErrorCode::Unsupported);
+    assert_eq!(
+        error.details[0].code,
+        "grouping_filter_bound_precision_loss"
+    );
 
     let mut invalid_topology = native_grouping(&[(
         "category",
@@ -2316,6 +2607,80 @@ fn field_value_lowering_covers_scalars_arrays_and_type_errors() {
 }
 
 #[test]
+fn position_lowering_rejects_precision_vespa_cannot_round_trip() {
+    let exact = FieldValueIr::Position {
+        latitude: 37.774929,
+        longitude: -122.419416,
+    };
+    assert_eq!(
+        lower_field_value(&exact).expect("microdegree position should be representable"),
+        FieldValue::Position(PositionValue::new(37.774929, -122.419416))
+    );
+
+    for (name, value) in [
+        (
+            "latitude",
+            FieldValueIr::Position {
+                latitude: 37.7749294,
+                longitude: -122.419416,
+            },
+        ),
+        (
+            "longitude",
+            FieldValueIr::Position {
+                latitude: 37.774929,
+                longitude: -122.4194164,
+            },
+        ),
+    ] {
+        let error = lower_field_value(&value)
+            .expect_err("sub-microdegree position must fail before native mutation");
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "position_precision_not_supported");
+        let expected_path = format!("document.value.{name}");
+        assert_eq!(
+            error.details[0].path.as_deref(),
+            Some(expected_path.as_str())
+        );
+    }
+}
+
+#[test]
+fn predicate_feature_map_lowering_rejects_unrepresentable_multi_key_values() {
+    let single = FieldValueIr::Predicate {
+        features: std::collections::BTreeMap::from([("hobby".to_owned(), "music".to_owned())]),
+    };
+    assert!(matches!(
+        lower_field_value(&single),
+        Ok(FieldValue::Predicate(_))
+    ));
+
+    for features in [
+        std::collections::BTreeMap::new(),
+        std::collections::BTreeMap::from([
+            ("hobby".to_owned(), "music".to_owned()),
+            ("region".to_owned(), "us".to_owned()),
+        ]),
+    ] {
+        let error = lower_field_value(&FieldValueIr::Predicate { features })
+            .expect_err("unrepresentable predicate feature maps must fail before native mutation");
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "predicate_feature_map_not_supported");
+        assert_eq!(
+            error.details[0].path.as_deref(),
+            Some("document.value.features")
+        );
+    }
+
+    assert!(lower_field_value(&FieldValueIr::PredicateExpression {
+        expression:
+            r#"{"type":1,"children":[{"type":4,"key":"hobby","feature_set":["music"]},{"type":4,"key":"region","feature_set":["us"]}]}"#
+                .to_owned(),
+    })
+    .is_ok());
+}
+
+#[test]
 fn query_and_filter_lowering_covers_supported_variants() {
     let title = field("title");
     let price = field("price");
@@ -2505,7 +2870,10 @@ fn value_conversion_preserves_all_native_value_shapes() {
         ),
     ];
     for (native, expected) in values {
-        assert_eq!(value_to_ir(&native), expected);
+        assert_eq!(
+            value_to_ir(&native).expect("supported native value"),
+            expected
+        );
     }
 }
 
@@ -4142,9 +4510,11 @@ fn explicit_empty_projection_returns_no_document_fields() {
             FieldValue::Scalar(ScalarValue::String("fox".into())),
         )
         .field("price", FieldValue::Scalar(ScalarValue::Integer(10)));
-    assert!(project_document(&document, &[]).is_empty());
+    assert!(project_document(&document, &[])
+        .expect("empty projection must decode")
+        .is_empty());
     assert_eq!(
-        project_document(&document, &[field("title")]),
+        project_document(&document, &[field("title")]).expect("title projection must decode"),
         BTreeMap::from([("title".into(), Value::String("fox".into()))])
     );
 }

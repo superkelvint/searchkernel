@@ -41,7 +41,7 @@ verification, generation, and acceptance lanes:
 ./dev test rust-api
 ./dev test python
 ./dev regen protocol
-./dev verify m13
+./dev verify m14
 ./dev verify integration
 ./dev install flatbuffers
 ./dev native-sdk ensure
@@ -125,6 +125,11 @@ artifacts for Rust, Python, and TypeScript; API-conformance changes run the
 conformance verifier; capability/client-contract, ABI-surface, persistence, and
 issue-queue verifier changes run their focused checks; and hook/classifier
 changes run the selector regression suite.
+
+When any checked-in native ABI authority is staged, pre-commit first checks the
+Git index with `tools/check-native-abi-authorities.py --git-index`, so a version
+bump cannot commit with stale manifests, Rust constants, reference contracts, or
+pinned metadata.
 
 Staged native-sensitive changes run both the real-Vespa gate and the real Python
 gRPC E2E through `tools/run-python-native-e2e.sh`. Native-sensitive paths include

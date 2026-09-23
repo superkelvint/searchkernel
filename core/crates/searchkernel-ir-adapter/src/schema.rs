@@ -7,6 +7,8 @@ use searchkernel_vespa_engine::{
     StructField, StructFieldType,
 };
 
+const PORTABLE_PREDICATE_ARITY: u32 = 8;
+
 /// Compile the resolved portable definition into the M-layer configuration.
 ///
 /// This is deliberately owned by the adapter: the product layer must resolve
@@ -63,6 +65,13 @@ pub fn compile_index_definition(
         };
         let capabilities = field.capabilities();
         let mut native = Field::new(field.name().as_str(), kind);
+        if matches!(field.data_type(), searchkernel_ir::DataTypeIr::Predicate) {
+            // Predicate arity is a Vespa physical-index parameter rather than
+            // a portable value-semantic. The portable schema currently has no
+            // arity knob, so keep one deterministic backend default instead of
+            // making Predicate syntactically accepted but impossible to compile.
+            native = native.predicate_arity(PORTABLE_PREDICATE_ARITY);
+        }
         let is_tensor = matches!(
             field.data_type(),
             searchkernel_ir::DataTypeIr::Tensor { .. }
@@ -108,12 +117,17 @@ pub fn compile_index_definition(
         // summary, but its document retriever still returns the complete
         // TensorFieldValue used by portable GET. Keep the portable stored
         // capability without manufacturing an invalid tensor summary field.
-        if capabilities.stored()
-            && !matches!(
-                field.data_type(),
-                searchkernel_ir::DataTypeIr::Position | searchkernel_ir::DataTypeIr::Tensor { .. }
-            )
-        {
+        let summary_unsupported = matches!(
+            field.data_type(),
+            searchkernel_ir::DataTypeIr::Position
+                | searchkernel_ir::DataTypeIr::Predicate
+                | searchkernel_ir::DataTypeIr::Tensor { .. }
+        ) || matches!(
+            field.data_type(),
+            searchkernel_ir::DataTypeIr::Array(element)
+                if matches!(element.as_ref(), searchkernel_ir::DataTypeIr::Struct { .. })
+        );
+        if capabilities.stored() && !summary_unsupported {
             native = native.summary();
         }
         schema = schema.field(native);
@@ -338,6 +352,7 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                 searchkernel_ir::PrimitiveDataTypeIr::Float64,
             )
             | searchkernel_ir::DataTypeIr::Position
+            | searchkernel_ir::DataTypeIr::Predicate
             | searchkernel_ir::DataTypeIr::Tensor { .. } => {}
             searchkernel_ir::DataTypeIr::Array(element)
                 if matches!(
@@ -750,6 +765,38 @@ mod tests {
         let config = std::fs::read_to_string(root.join("rank-profiles.cfg")).unwrap();
         assert!(config.contains("vespa.type.query.embedding"));
         assert!(!config.contains(".name \"query(embedding)\""));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod predicate_schema_tests {
+    use super::{compile_index_definition, PORTABLE_PREDICATE_ARITY};
+    use searchkernel_ir::{DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr};
+
+    #[test]
+    fn predicate_schema_compiles_with_the_portable_native_arity_default() {
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![FieldIr::new(
+                FieldName::parse("access").unwrap(),
+                DataTypeIr::Predicate,
+                None,
+                FieldCapabilities::new(true, false, false, false, false),
+            )],
+            Vec::new(),
+        )
+        .unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "searchkernel-adapter-predicate-schema-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+
+        compile_index_definition(&definition, &root)
+            .expect("portable Predicate schema should compile");
+        let attributes = std::fs::read_to_string(root.join("attributes.cfg")).unwrap();
+        assert!(attributes.contains(&format!("attribute[0].arity {PORTABLE_PREDICATE_ARITY}")));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

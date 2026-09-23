@@ -1,6 +1,6 @@
 use crate::document::{
     ArrayValue, AttributeDocument, AttributeUpdate, Document, DocumentUpdate, FieldUpdate,
-    FieldValue, ScalarValue,
+    FieldValue, PositionValue, PredicateValue, ScalarValue,
 };
 use crate::error::{check, cstring, path_cstring, Error, Result};
 use crate::linguistics::{Linguistics, LinguisticsOptions};
@@ -8,6 +8,7 @@ use crate::native::{
     add_attribute_document_value, add_attribute_update_value, add_document_field,
     add_text_annotation, add_text_array_annotation, add_update_field, attribute_document_create,
     attribute_update_create, engine_group_tree, engine_group_tree_with_request,
+    generic_search_request_add_grouping_plan,
     grouping_aggregation_average, grouping_aggregation_count, grouping_aggregation_for_expression,
     grouping_aggregation_quantiles, grouping_aggregation_summary,
     grouping_expression_aggregation_reference, grouping_expression_attribute,
@@ -32,6 +33,182 @@ use std::path::Path;
 use std::ptr::{self, NonNull};
 
 const EXPECTED_ABI: u32 = sys::EXPECTED_ABI;
+
+fn json_f64(value: &serde_json::Value, field: &str, context: &str) -> Result<f64, Error> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| Error::message(format!("{context} is missing numeric field '{field}'")))
+}
+
+fn decode_struct_array(value: &str) -> Result<Vec<BTreeMap<String, ScalarValue>>, Error> {
+    let value: serde_json::Value = serde_json::from_str(value).map_err(|error| {
+        Error::message(format!(
+            "native document struct array is invalid JSON: {error}"
+        ))
+    })?;
+    let elements = value
+        .as_array()
+        .ok_or_else(|| Error::message("native document struct array is not a JSON array"))?;
+    let mut decoded = Vec::with_capacity(elements.len());
+    for element in elements {
+        let fields = element.as_object().ok_or_else(|| {
+            Error::message("native document struct array element is not a JSON object")
+        })?;
+        let mut decoded_fields = BTreeMap::new();
+        for (name, encoded) in fields {
+            let encoded = encoded.as_object().ok_or_else(|| {
+                Error::message(format!("native struct field '{name}' is not an object"))
+            })?;
+            let kind = encoded
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| {
+                    Error::message(format!("native struct field '{name}' has no type"))
+                })?;
+            let value = encoded.get("value").ok_or_else(|| {
+                Error::message(format!("native struct field '{name}' has no value"))
+            })?;
+            let scalar = match kind {
+                "string" => ScalarValue::String(
+                    value
+                        .as_str()
+                        .ok_or_else(|| {
+                            Error::message(format!("native struct field '{name}' is not a string"))
+                        })?
+                        .to_owned(),
+                ),
+                "integer" => ScalarValue::Integer(value.as_i64().ok_or_else(|| {
+                    Error::message(format!("native struct field '{name}' is not an integer"))
+                })?),
+                "float" => ScalarValue::Float(value.as_f64().ok_or_else(|| {
+                    Error::message(format!("native struct field '{name}' is not a float"))
+                })?),
+                "boolean" => ScalarValue::Boolean(value.as_bool().ok_or_else(|| {
+                    Error::message(format!("native struct field '{name}' is not a boolean"))
+                })?),
+                _ => {
+                    return Err(Error::message(format!(
+                        "native struct field '{name}' has unknown type '{kind}'"
+                    )))
+                }
+            };
+            decoded_fields.insert(name.clone(), scalar);
+        }
+        decoded.push(decoded_fields);
+    }
+    Ok(decoded)
+}
+
+fn document_value_payload_name(kind: u32) -> Result<Option<&'static str>, Error> {
+    Ok(match kind {
+        sys::SK_VALUE_STRING => Some("document field value"),
+        sys::SK_VALUE_INTEGER | sys::SK_VALUE_FLOAT | sys::SK_VALUE_BOOLEAN => None,
+        sys::SK_VALUE_STRING_ARRAY => Some("document string array value"),
+        sys::SK_VALUE_STRUCT_ARRAY => Some("document struct array value"),
+        sys::SK_VALUE_POSITION => Some("document position value"),
+        sys::SK_VALUE_PREDICATE => Some("document predicate value"),
+        _ => {
+            return Err(Error::message(
+                "native document returned an unknown value kind",
+            ))
+        }
+    })
+}
+
+fn decode_non_tensor_document_value(
+    kind: u32,
+    payload: &[u8],
+    integer: i64,
+    floating: f64,
+    boolean: bool,
+) -> Result<FieldValue, Error> {
+    match kind {
+        sys::SK_VALUE_STRING => {
+            let value = std::str::from_utf8(payload)
+                .map_err(|_| Error::message("native document string value is invalid UTF-8"))?;
+            Ok(FieldValue::Scalar(ScalarValue::String(value.to_owned())))
+        }
+        sys::SK_VALUE_INTEGER => Ok(FieldValue::Scalar(ScalarValue::Integer(integer))),
+        sys::SK_VALUE_FLOAT => Ok(FieldValue::Scalar(ScalarValue::Float(floating))),
+        sys::SK_VALUE_BOOLEAN => Ok(FieldValue::Scalar(ScalarValue::Boolean(boolean))),
+        sys::SK_VALUE_STRING_ARRAY => {
+            let value = std::str::from_utf8(payload).map_err(|_| {
+                Error::message("native document string array value is invalid UTF-8")
+            })?;
+            let values: Vec<String> = serde_json::from_str(value).map_err(|error| {
+                Error::message(format!(
+                    "native document string array is invalid JSON: {error}"
+                ))
+            })?;
+            Ok(FieldValue::Array(ArrayValue::Strings(values)))
+        }
+        sys::SK_VALUE_STRUCT_ARRAY => {
+            let value = std::str::from_utf8(payload).map_err(|_| {
+                Error::message("native document struct array value is invalid UTF-8")
+            })?;
+            Ok(FieldValue::Array(ArrayValue::Structs(decode_struct_array(
+                value,
+            )?)))
+        }
+        sys::SK_VALUE_POSITION => {
+            let value: serde_json::Value = serde_json::from_slice(payload).map_err(|error| {
+                Error::message(format!("native document position is invalid JSON: {error}"))
+            })?;
+            let latitude = json_f64(&value, "latitude", "document position")?;
+            let longitude = json_f64(&value, "longitude", "document position")?;
+            Ok(FieldValue::Position(PositionValue::new(
+                latitude, longitude,
+            )))
+        }
+        sys::SK_VALUE_PREDICATE => {
+            let value = std::str::from_utf8(payload)
+                .map_err(|_| Error::message("native document predicate value is invalid UTF-8"))?;
+            let parsed = serde_json::from_str::<serde_json::Value>(value).map_err(|error| {
+                Error::message(format!(
+                    "native document predicate is invalid JSON: {error}"
+                ))
+            })?;
+            // Vespa preserves the insertion order of the predicate root.
+            // PredicateSlimeBuilder writes `key` before `type`, while an
+            // expression supplied as JSON retains its explicit type-first
+            // representation. Preserve that distinction at the portable
+            // boundary.
+            let key_first = matches!(
+                (value.find("\"key\""), value.find("\"type\"")),
+                (Some(key_pos), Some(type_pos)) if key_pos < type_pos
+            );
+            if key_first {
+                let key = parsed
+                    .get("key")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| Error::message("native predicate feature key is missing"))?;
+                let features = parsed
+                    .get("feature_set")
+                    .and_then(serde_json::Value::as_array)
+                    .ok_or_else(|| Error::message("native predicate feature set is missing"))?
+                    .iter()
+                    .map(|feature| {
+                        feature
+                            .as_str()
+                            .map(|feature| (key.to_owned(), feature.to_owned()))
+                            .ok_or_else(|| {
+                                Error::message("native predicate feature is not a string")
+                            })
+                    })
+                    .collect::<Result<BTreeMap<_, _>, _>>()?;
+                Ok(FieldValue::Predicate(PredicateValue::new(features)))
+            } else {
+                Ok(FieldValue::Predicate(PredicateValue::from_expression(
+                    value,
+                )))
+            }
+        }
+        _ => Err(Error::message(
+            "native document returned an unknown value kind",
+        )),
+    }
+}
 
 fn grouping_expression(
     expression: &GroupingExpression,
@@ -646,6 +823,18 @@ impl Engine {
         self.execute_search(&request)
     }
 
+    /// Execute one M-layer match request with all structured grouping plans
+    /// attached to that request. Vespa serializes every grouping response in
+    /// the same match reply, so callers cannot observe different generations
+    /// between hits and sibling grouping plans.
+    pub fn search_with_grouping_plans(
+        &self,
+        request: SearchRequest,
+        plans: &[GroupingPlan],
+    ) -> Result<SearchResult, Error> {
+        self.execute_search_with_grouping_plans(&request, plans)
+    }
+
     /// Retrieve the complete document through Vespa's document retriever.
     pub fn get(&self, document_id: &str) -> Result<Option<Document>, Error> {
         let document_id = cstring(document_id)?;
@@ -707,59 +896,47 @@ impl Engine {
             let name = native_bytes(&native, name, name_length, "document field name")?;
             let name = std::str::from_utf8(name)
                 .map_err(|_| Error::message("native document field name is invalid UTF-8"))?;
-            let value = match kind {
-                sys::SK_VALUE_STRING => {
-                    let value =
-                        native_bytes(&native, string, string_length, "document field value")?;
-                    let value = std::str::from_utf8(value).map_err(|_| {
-                        Error::message("native document string value is invalid UTF-8")
-                    })?;
-                    FieldValue::Scalar(ScalarValue::String(value.to_owned()))
-                }
-                sys::SK_VALUE_INTEGER => FieldValue::Scalar(ScalarValue::Integer(integer)),
-                sys::SK_VALUE_FLOAT => FieldValue::Scalar(ScalarValue::Float(floating)),
-                sys::SK_VALUE_BOOLEAN => FieldValue::Scalar(ScalarValue::Boolean(boolean != 0)),
-                sys::SK_VALUE_TENSOR => {
-                    let mut type_spec = ptr::null();
-                    let mut type_spec_length = 0;
-                    let mut cells = ptr::null();
-                    let mut cell_count = 0;
-                    let mut error = NativeError::new();
-                    let status = unsafe {
-                        sys::sk_document_field_tensor_dense(
-                            native.0.as_ptr(),
-                            index,
-                            &mut type_spec,
-                            &mut type_spec_length,
-                            &mut cells,
-                            &mut cell_count,
-                            error.as_mut_ptr(),
-                            error.capacity(),
-                        )
-                    };
-                    check(status, &error)?;
-                    let type_spec = native_bytes(
-                        &native,
-                        type_spec,
-                        type_spec_length,
-                        "document tensor type spec",
-                    )?;
-                    let type_spec = std::str::from_utf8(type_spec).map_err(|_| {
-                        Error::message("native document tensor type spec is invalid UTF-8")
-                    })?;
-                    let cells = native_f64s(&native, cells, cell_count, "document tensor cells")?;
-                    if cells.iter().any(|value| !value.is_finite()) {
-                        return Err(Error::message(
-                            "native document tensor contains a non-finite cell",
-                        ));
-                    }
-                    FieldValue::Tensor(TensorValue::dense(type_spec, cells.to_vec()))
-                }
-                _ => {
+            let value = if kind == sys::SK_VALUE_TENSOR {
+                let mut type_spec = ptr::null();
+                let mut type_spec_length = 0;
+                let mut cells = ptr::null();
+                let mut cell_count = 0;
+                let mut error = NativeError::new();
+                let status = unsafe {
+                    sys::sk_document_field_tensor_dense(
+                        native.0.as_ptr(),
+                        index,
+                        &mut type_spec,
+                        &mut type_spec_length,
+                        &mut cells,
+                        &mut cell_count,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                };
+                check(status, &error)?;
+                let type_spec = native_bytes(
+                    &native,
+                    type_spec,
+                    type_spec_length,
+                    "document tensor type spec",
+                )?;
+                let type_spec = std::str::from_utf8(type_spec).map_err(|_| {
+                    Error::message("native document tensor type spec is invalid UTF-8")
+                })?;
+                let cells = native_f64s(&native, cells, cell_count, "document tensor cells")?;
+                if cells.iter().any(|value| !value.is_finite()) {
                     return Err(Error::message(
-                        "native document returned an unknown value kind",
-                    ))
+                        "native document tensor contains a non-finite cell",
+                    ));
                 }
+                FieldValue::Tensor(TensorValue::dense(type_spec, cells.to_vec()))
+            } else {
+                let payload = match document_value_payload_name(kind)? {
+                    Some(name) => native_bytes(&native, string, string_length, name)?,
+                    None => &[],
+                };
+                decode_non_tensor_document_value(kind, payload, integer, floating, boolean != 0)?
             };
             document = document.field(name, value);
         }
@@ -977,6 +1154,14 @@ impl Engine {
     }
 
     fn execute_search(&self, request: &SearchRequest) -> Result<SearchResult, Error> {
+        self.execute_search_with_grouping_plans(request, &[])
+    }
+
+    fn execute_search_with_grouping_plans(
+        &self,
+        request: &SearchRequest,
+        plans: &[GroupingPlan],
+    ) -> Result<SearchResult, Error> {
         validate_search_ranking_inputs(request)?;
         query::validate_query(&request.query)?;
         self.validate_search_fields(request)?;
@@ -989,6 +1174,13 @@ impl Engine {
         }
         let native_query = self.create_native_query(&request.query, request.language)?;
         let native_request = self.create_native_search_request(request)?;
+        let native_plans = plans
+            .iter()
+            .map(|plan| self.create_native_grouping_plan(plan))
+            .collect::<Result<Vec<_>, _>>()?;
+        for plan in &native_plans {
+            generic_search_request_add_grouping_plan(native_request.0, plan)?;
+        }
         let mut native_result = ptr::null_mut();
         let mut error = NativeError::new();
         let status = unsafe {
@@ -1003,6 +1195,27 @@ impl Engine {
         };
         check(status, &error)?;
         read_generic_search_result(require_ptr(native_result, "generic search result")?)
+    }
+
+    fn create_native_grouping_plan(
+        &self,
+        plan: &GroupingPlan,
+    ) -> Result<crate::native::NativeGroupingPlan, Error> {
+        self.validate_grouping_plan(plan)?;
+        let native_plan = grouping_plan_create()?;
+        grouping_plan_set_all(&native_plan, plan.group_all)?;
+        for aggregation in &plan.root_aggregations {
+            add_root_grouping_aggregation(&native_plan, aggregation)?;
+        }
+        for level in &plan.levels {
+            let classifier = grouping_expression(&level.classifier)?;
+            let native_level = grouping_plan_add_level(&native_plan, &classifier)?;
+            add_grouping_level_configuration(native_level, level)?;
+            for aggregation in &level.aggregations {
+                add_grouping_aggregation(native_level, aggregation)?;
+            }
+        }
+        Ok(native_plan)
     }
 
     pub fn group(
@@ -1273,5 +1486,89 @@ impl Engine {
 impl Drop for Engine {
     fn drop(&mut self) {
         unsafe { sys::sk_engine_destroy(self.handle.as_ptr()) };
+    }
+}
+
+#[cfg(test)]
+mod document_decode_tests {
+    use super::*;
+
+    #[test]
+    fn malformed_composite_payloads_fail_closed() {
+        let invalid_string_array = decode_non_tensor_document_value(
+            sys::SK_VALUE_STRING_ARRAY,
+            br#"{"not":"an array"}"#,
+            0,
+            0.0,
+            false,
+        )
+        .expect_err("string-array payload must be an array");
+        assert!(invalid_string_array
+            .to_string()
+            .contains("string array is invalid JSON"));
+
+        let invalid_struct = decode_non_tensor_document_value(
+            sys::SK_VALUE_STRUCT_ARRAY,
+            br#"[{"age":{"type":"mystery","value":37}}]"#,
+            0,
+            0.0,
+            false,
+        )
+        .expect_err("unknown struct scalar kind must fail");
+        assert!(invalid_struct
+            .to_string()
+            .contains("unknown type 'mystery'"));
+
+        let invalid_position = decode_non_tensor_document_value(
+            sys::SK_VALUE_POSITION,
+            br#"{"latitude":1.25}"#,
+            0,
+            0.0,
+            false,
+        )
+        .expect_err("position without longitude must fail");
+        assert!(invalid_position
+            .to_string()
+            .contains("missing numeric field 'longitude'"));
+
+        let invalid_predicate = decode_non_tensor_document_value(
+            sys::SK_VALUE_PREDICATE,
+            br#"{"key":"hobby","type":4,"feature_set":[1]}"#,
+            0,
+            0.0,
+            false,
+        )
+        .expect_err("non-string predicate feature must fail");
+        assert!(invalid_predicate
+            .to_string()
+            .contains("predicate feature is not a string"));
+
+        let unknown_kind = decode_non_tensor_document_value(u32::MAX, &[], 0, 0.0, false)
+            .expect_err("unknown native kind must fail");
+        assert!(unknown_kind.to_string().contains("unknown value kind"));
+    }
+
+    #[test]
+    fn keyless_predicate_expression_is_not_misclassified_as_feature_form() {
+        let expression = r#"{"type":6}"#;
+        let decoded = decode_non_tensor_document_value(
+            sys::SK_VALUE_PREDICATE,
+            expression.as_bytes(),
+            0,
+            0.0,
+            false,
+        )
+        .expect("Vespa true predicate expression should remain expression-form");
+        assert_eq!(
+            decoded,
+            FieldValue::Predicate(PredicateValue::from_expression(expression))
+        );
+    }
+
+    #[test]
+    fn payload_classification_rejects_unknown_kind_before_dereference() {
+        let error = document_value_payload_name(u32::MAX)
+            .expect_err("unknown kind must fail before reading a native payload");
+        assert!(error.to_string().contains("unknown value kind"));
     }
 }

@@ -18,8 +18,10 @@ use searchkernel_vespa_engine::{
     TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
 use std::sync::Mutex;
+#[cfg(test)]
 use std::time::{Duration, Instant};
 
+#[cfg(test)]
 pub(crate) fn remaining_search_timeout(deadline: Instant, now: Instant) -> Result<Duration> {
     let remaining = deadline.checked_duration_since(now).unwrap_or_default();
     if remaining.is_zero() {
@@ -89,6 +91,8 @@ pub struct VespaBackend {
     existence_mutation_lock: Mutex<()>,
     #[cfg(test)]
     mutation_probe: Option<std::sync::Arc<MutationProbe>>,
+    #[cfg(test)]
+    search_grouping_probe: Option<std::sync::Arc<SearchGroupingProbe>>,
 }
 
 #[cfg(test)]
@@ -96,6 +100,12 @@ pub(crate) struct MutationProbe {
     pub(crate) rendezvous: std::sync::Barrier,
     pub(crate) release: std::sync::Barrier,
     pub(crate) update_completed: Option<std::sync::mpsc::Sender<()>>,
+}
+
+#[cfg(test)]
+pub(crate) struct SearchGroupingProbe {
+    pub(crate) after_primary: std::sync::Barrier,
+    pub(crate) continue_search: std::sync::Barrier,
 }
 
 impl VespaBackend {
@@ -114,6 +124,8 @@ impl VespaBackend {
             existence_mutation_lock: Mutex::new(()),
             #[cfg(test)]
             mutation_probe: None,
+            #[cfg(test)]
+            search_grouping_probe: None,
         }
     }
 
@@ -126,6 +138,20 @@ impl VespaBackend {
             engine,
             existence_mutation_lock: Mutex::new(()),
             mutation_probe: Some(probe),
+            search_grouping_probe: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_search_grouping_probe(
+        engine: Engine,
+        probe: std::sync::Arc<SearchGroupingProbe>,
+    ) -> Self {
+        Self {
+            engine,
+            existence_mutation_lock: Mutex::new(()),
+            mutation_probe: None,
+            search_grouping_probe: Some(probe),
         }
     }
 
@@ -159,7 +185,7 @@ fn facet_result_node(
             Ok(searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
                 id: None,
                 label: None,
-                value: Some(value_to_ir(&FieldValue::Scalar(value))),
+                value: Some(value_to_ir(&FieldValue::Scalar(value))?),
                 fields,
                 children: Vec::new(),
                 continuations: std::collections::BTreeMap::new(),
@@ -271,18 +297,18 @@ fn grouping_result_group(
             continue;
         }
         if let GroupingOutput::HitList(ids) = output {
-            children.extend(ids.iter().map(|hit| {
-                searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+            for hit in ids {
+                children.push(searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
                     id: hit.document_id.clone(),
                     score: Some(hit.score),
                     fields: hit
                         .fields
                         .iter()
-                        .map(|(name, value)| (name.clone(), value_to_ir(value)))
-                        .collect(),
+                        .map(|(name, value)| value_to_ir(value).map(|value| (name.clone(), value)))
+                        .collect::<Result<std::collections::BTreeMap<_, _>>>()?,
                     ..Default::default()
-                })
-            }));
+                }));
+            }
         }
     }
     children.extend(
@@ -583,7 +609,7 @@ impl Backend for VespaBackend {
         let Some(document) = document else {
             return Ok(GetResult { document: None });
         };
-        let fields = project_document(&document, request.projection().fields());
+        let fields = project_document(&document, request.projection().fields())?;
         Ok(GetResult {
             document: Some(searchkernel_ir::DocumentResult {
                 id: document.id().to_owned(),
@@ -593,37 +619,48 @@ impl Backend for VespaBackend {
     }
 
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult> {
-        let started = Instant::now();
         let preflight = preflight_search_request(&request)?;
         let groupings = preflight.groupings;
         let m_request = preflight.request;
-        let deadline = started.checked_add(m_request.timeout).ok_or_else(|| {
-            PortableError::new(
-                searchkernel_ir::ErrorCode::DeadlineExceeded,
-                "portable search deadline cannot be represented",
-            )
-        })?;
+        let expected_facets = m_request.facets.len();
+        let native_plans = groupings
+            .iter()
+            .filter_map(|grouping| match grouping {
+                GroupingLowering::Facet(_) => None,
+                GroupingLowering::Native(native) => Some(native.plan.clone()),
+            })
+            .collect::<Vec<_>>();
         let result = self
             .engine
-            .search(m_request.clone())
+            .search_with_grouping_plans(m_request, &native_plans)
             .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
-        if result.facets.len() != m_request.facets.len() {
+        #[cfg(test)]
+        if let Some(probe) = &self.search_grouping_probe {
+            probe.after_primary.wait();
+            probe.continue_search.wait();
+        }
+        if result.facets.len() != expected_facets {
             return Err(internal(
                 "native search returned an unexpected grouping count",
+            ));
+        }
+        if result.groupings.len() != native_plans.len() {
+            return Err(internal(
+                "native search returned an unexpected structured grouping count",
             ));
         }
         let mut children = result
             .hits
             .into_iter()
             .map(|hit| {
-                searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                Ok(searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
                     id: hit.document_id,
                     score: Some(hit.score),
                     fields: hit
                         .fields
                         .into_iter()
-                        .map(|(name, value)| (name, value_to_ir(&value)))
-                        .collect(),
+                        .map(|(name, value)| value_to_ir(&value).map(|value| (name, value)))
+                        .collect::<Result<std::collections::BTreeMap<_, _>>>()?,
                     highlights: hit
                         .highlights
                         .into_iter()
@@ -666,11 +703,12 @@ impl Backend for VespaBackend {
                     summary_features: std::collections::BTreeMap::new(),
                     rank_features: std::collections::BTreeMap::new(),
                     sort_values: Vec::new(),
-                })
+                }))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
         let mut root_fields = std::collections::BTreeMap::new();
         let mut native_facets = result.facets.into_iter();
+        let mut native_groupings = result.groupings.into_iter();
         for grouping in groupings {
             match grouping {
                 GroupingLowering::Facet(facet) => {
@@ -680,12 +718,9 @@ impl Backend for VespaBackend {
                     children.push(facet_result_node(native, facet)?);
                 }
                 GroupingLowering::Native(native) => {
-                    let remaining = remaining_search_timeout(deadline, Instant::now())?;
-                    let grouping_request = m_request.clone().timeout(remaining);
-                    let grouped = self
-                        .engine
-                        .group_with_request(&grouping_request, &native.plan)
-                        .map_err(|error| native_search_error(error, "grouping_not_supported"))?;
+                    let grouped = native_groupings.next().ok_or_else(|| {
+                        internal("native search returned too few structured groupings")
+                    })?;
                     let grouping_node = grouping_result_node(grouped, &native.plan)?;
                     if !native.plan.root_aggregations.is_empty() {
                         let searchkernel_ir::ResultNode::Group(group) = grouping_node else {
@@ -702,10 +737,11 @@ impl Backend for VespaBackend {
         if native_facets.next().is_some() {
             return Err(internal("native search returned too many facet groupings"));
         }
-        // Vespa `UniqueIssues` are advisory diagnostics, whereas portable
-        // `SearchResult::errors` describe semantic result errors. The V2
-        // result model has no faithful issue channel, so the explicit policy
-        // below intentionally does not fabricate errors from these messages.
+        if native_groupings.next().is_some() {
+            return Err(internal(
+                "native search returned too many structured groupings",
+            ));
+        }
         let errors = portable_errors_from_native_issues(&result.issues);
         Ok(SearchResult {
             root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {

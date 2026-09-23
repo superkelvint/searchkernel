@@ -640,13 +640,88 @@ fn grouping_filter_bound(value: &searchkernel_ir::GroupingExpressionIr) -> Resul
         ));
     };
     match value {
-        searchkernel_ir::RequestValueIr::Int64(value) => Ok(*value as f64),
-        searchkernel_ir::RequestValueIr::UInt64(value) => Ok(*value as f64),
+        searchkernel_ir::RequestValueIr::Int64(value) => {
+            exact_integer_grouping_bound(i128::from(*value))
+        }
+        searchkernel_ir::RequestValueIr::UInt64(value) => {
+            exact_integer_grouping_bound(i128::from(*value))
+        }
         searchkernel_ir::RequestValueIr::Float64(value) if value.is_finite() => Ok(*value),
         _ => Err(unsupported_grouping(
             "grouping_filter_bound_not_supported",
             "native Vespa range predicates require finite numeric literal bounds",
         )),
+    }
+}
+
+fn exact_integer_grouping_bound(value: i128) -> Result<f64> {
+    // Vespa's RangePredicateNode stores double bounds and also evaluates the
+    // operand through ResultNode::getFloat(). At +/- 2^53, an adjacent integer
+    // can therefore collapse onto the same double and change inclusive or
+    // exclusive boundary semantics. Keep integer bounds inside the contiguous
+    // exact-integer range so every adjacent boundary value remains distinct.
+    const MAX_CONTIGUOUS_INTEGER: i128 = (1_i128 << 53) - 1;
+    if (-MAX_CONTIGUOUS_INTEGER..=MAX_CONTIGUOUS_INTEGER).contains(&value) {
+        Ok(value as f64)
+    } else {
+        Err(unsupported_grouping(
+            "grouping_filter_bound_precision_loss",
+            "native Vespa range predicates cannot preserve integer boundary semantics outside the contiguous exact f64 range",
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grouping_filter_bound_preserves_exact_integers_and_rejects_precision_loss() {
+        let two_to_53 = 1_i64 << 53;
+        let exact = [
+            (two_to_53 - 1, (two_to_53 - 1) as f64),
+            (-(two_to_53 - 1), (-(two_to_53 - 1) as f64)),
+        ];
+        for (value, expected) in exact {
+            let expression = searchkernel_ir::GroupingExpressionIr::Literal(
+                searchkernel_ir::RequestValueIr::Int64(value),
+            );
+            assert_eq!(
+                grouping_filter_bound(&expression).expect("exact integer bound"),
+                expected,
+                "integer bound {value} should remain exact"
+            );
+        }
+
+        let exact_unsigned = searchkernel_ir::GroupingExpressionIr::Literal(
+            searchkernel_ir::RequestValueIr::UInt64((two_to_53 - 1) as u64),
+        );
+        assert_eq!(
+            grouping_filter_bound(&exact_unsigned).expect("exact unsigned integer bound"),
+            (two_to_53 - 1) as f64
+        );
+
+        let rejected = [
+            searchkernel_ir::RequestValueIr::Int64(two_to_53),
+            searchkernel_ir::RequestValueIr::Int64(two_to_53 + 1),
+            searchkernel_ir::RequestValueIr::Int64(-two_to_53),
+            searchkernel_ir::RequestValueIr::Int64(-(two_to_53 + 1)),
+            searchkernel_ir::RequestValueIr::Int64(i64::MIN),
+            searchkernel_ir::RequestValueIr::Int64(i64::MAX),
+            searchkernel_ir::RequestValueIr::UInt64(two_to_53 as u64),
+            searchkernel_ir::RequestValueIr::UInt64((two_to_53 + 1) as u64),
+            searchkernel_ir::RequestValueIr::UInt64(u64::MAX),
+        ];
+        for value in rejected {
+            let expression = searchkernel_ir::GroupingExpressionIr::Literal(value);
+            let error = grouping_filter_bound(&expression)
+                .expect_err("an inexact integer bound must be rejected");
+            assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+            assert_eq!(
+                error.details[0].code,
+                "grouping_filter_bound_precision_loss"
+            );
+        }
     }
 }
 
