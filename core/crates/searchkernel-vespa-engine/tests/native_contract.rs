@@ -173,7 +173,11 @@ fn safe_engine_search_builds_a_fresh_native_query_for_each_execution() {
     let (config, data) = compile_config("safe-query-single-use", &text_schema());
     let engine = Engine::open(&data, &config).expect("open safe query single-use config");
     engine
-        .put(Document::new("doc-1").field("title", "fox").field("qty", 1_i64))
+        .put(
+            Document::new("doc-1")
+                .field("title", "fox")
+                .field("qty", 1_i64),
+        )
         .expect("insert safe query document");
 
     let request = SearchRequest::new(Query::Term {
