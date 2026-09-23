@@ -2853,10 +2853,7 @@ fn portable_definition_preserves_explicit_vs_omitted_capability_presence() {
         .expect("omitted field should be encoded");
 
     assert_eq!(explicit.stored().map(|value| value.value()), Some(true));
-    assert_eq!(
-        explicit.searchable().map(|value| value.value()),
-        Some(true)
-    );
+    assert_eq!(explicit.searchable().map(|value| value.value()), Some(true));
     assert!(omitted.stored().is_none());
     assert!(omitted.searchable().is_none());
 
