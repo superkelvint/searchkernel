@@ -312,6 +312,71 @@ $yql = $index->yql('select * from sources * where title contains text(@q)', ['q'
 same('YqlQuery', $yql['query']['source_type'], 'YQL source discriminator');
 same('q', $yql['query']['source']['parameters'][0]['key'], 'YQL parameter namespace');
 
+$advanced = $index->search('fox')
+    ->inputExpr('embedded_query', 'embed(transformer,@query)')
+    ->rankProperties(['alpha' => 1, 'beta' => 'two'])
+    ->properties(['trace.level' => 2, 'custom.flag' => true])
+    ->rawGrouping('all(output(count()))')
+    ->format('json')
+    ->bolding(false)
+    ->timing(true)
+    ->language('en')
+    ->locale('en-US')
+    ->defaultIndex('title')
+    ->sources('products')
+    ->restrict('product')
+    ->searchPath('/0')
+    ->searchGroup(2)
+    ->queryString('fox')
+    ->queryModelType('weakAnd', 'linguistics', 'advanced', 'default', true)
+    ->queryProfile('web')
+    ->searchChain('default')
+    ->request();
+
+$advancedInputs = [];
+foreach ($advanced['inputs'] as $input) {
+    $advancedInputs[$input['name']] = $input;
+}
+same('ExpressionQueryInput', $advancedInputs['embedded_query']['input_type'], 'expression input discriminator');
+same('embed(transformer,@query)', $advancedInputs['embedded_query']['input']['expression'], 'expression input payload');
+same('RawGroupingSource', $advanced['grouping'][0]['source_type'], 'raw grouping discriminator');
+same('all(output(count()))', $advanced['grouping'][0]['source']['expression'], 'raw grouping source');
+same('json', $advanced['presentation']['format'], 'presentation format');
+same(['value' => false], $advanced['presentation']['bolding'], 'presentation bolding presence');
+same(['value' => true], $advanced['presentation']['timing'], 'presentation timing presence');
+same('en', $advanced['query_model']['language'], 'query-model language');
+same('en-US', $advanced['query_model']['locale'], 'query-model locale');
+same('title', $advanced['query_model']['default_index'], 'query-model default index');
+same(['products'], $advanced['query_model']['sources'], 'query-model sources');
+same(['product'], $advanced['query_model']['restrict'], 'query-model restrict');
+same('/0', $advanced['query_model']['search_path'], 'query-model search path');
+same(['value' => 2], $advanced['query_model']['search_group'], 'query-model search group');
+same('fox', $advanced['query_model']['query_string'], 'query-model query string');
+same(['value' => true], $advanced['query_model']['type']['is_yql_default'], 'query-model type optional bool');
+same('web', $advanced['query_profile'], 'query profile');
+same('default', $advanced['search_chain'], 'search chain');
+same(['alpha', 'beta'], array_column($advanced['ranking']['properties'], 'key'), 'rank properties canonical order');
+same(['custom.flag', 'trace.level'], array_column($advanced['properties'], 'key'), 'generic properties canonical order');
+
+$facetsRequest = $index->browse()->facets('brand', 'category')->request();
+same(2, count($facetsRequest['grouping']), 'facets convenience creates one grouping request per field');
+
+$yqlBuilder = $index->yql('select * from sources * where title contains text(@q)')
+    ->property('q', 'fox')
+    ->ranking('default')
+    ->inputExpr('embedded_query', 'embed(transformer,@query)')
+    ->rawGrouping('all(output(count()))')
+    ->limit(10);
+truth(!method_exists($yqlBuilder, 'filter'), 'YQL builder does not expose high-level filter');
+truth(!method_exists($yqlBuilder, 'sort'), 'YQL builder does not expose high-level sort');
+truth(!method_exists($yqlBuilder, 'searchField'), 'YQL builder does not expose search-field selection');
+truth(!method_exists($yqlBuilder, 'fields'), 'YQL builder does not expose projection');
+$restrictedYql = $yqlBuilder->request();
+same('YqlQuery', $restrictedYql['query']['source_type'], 'restricted YQL remains YQL');
+same('ExpressionQueryInput', $restrictedYql['inputs'][0]['input_type'], 'YQL expression input is request-level');
+same('RawGroupingSource', $restrictedYql['grouping'][0]['source_type'], 'YQL programmatic grouping is request-level');
+same(['value' => 10], $restrictedYql['limit'], 'YQL request-level pagination');
+
 $resolved = $index->search('inspect me')->limit(5)->inspect();
 same('SearchKernelTextQuery', $resolved['query']['source_type'], 'inspect returns server-resolved request');
 same(['value' => 5], $resolved['limit'], 'inspect sends configured search controls');
