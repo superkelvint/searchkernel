@@ -9,7 +9,10 @@ if ($argc !== 2) {
 require $argv[1] . '/vendor/autoload.php';
 
 use SearchKernel\Agg;
+use SearchKernel\AnalyzeBuilder;
+use SearchKernel\CoverageDegraded;
 use SearchKernel\Group;
+use SearchKernel\MatchedUpdate;
 use SearchKernel\Index;
 use SearchKernel\Protocol;
 use SearchKernel\Query;
@@ -17,7 +20,10 @@ use SearchKernel\UInt64;
 use SearchKernel\ValueObject;
 
 foreach ([
+    AnalyzeBuilder::class,
+    CoverageDegraded::class,
     Index::class,
+    MatchedUpdate::class,
     Protocol::class,
     Query::class,
     Group::class,
