@@ -62,7 +62,6 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
         "tools/test_check_client_contracts.py",
     ),
     "native": (
-        ".githooks/pre-commit",
         "core/native/**",
         "core/crates/searchkernel-vespa-bindings/**",
         "core/crates/searchkernel-vespa-engine/**",
