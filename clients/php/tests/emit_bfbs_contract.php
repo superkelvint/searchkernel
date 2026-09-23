@@ -163,3 +163,70 @@ emitCase('response', 'recursive-search-result', Protocol::envelope('SearchResult
     ],
     'total_hits' => ['value' => 1, 'relation' => 'Exact'],
 ]));
+
+emitCase('response', 'default-delete-false', Protocol::envelope('DeleteResult', [
+    'id' => 'bfbs-doc',
+    'deleted' => false,
+]));
+
+emitCase('response', 'default-error-retryable-false', Protocol::envelope('Error', [
+    'code' => 'InvalidArgument',
+    'message' => 'not retryable',
+    'retryable' => false,
+    'details' => [],
+]));
+
+emitCase('response', 'default-analyze-zero', Protocol::envelope('AnalyzeResult', [
+    'tokens' => [[
+        'surface' => 'fox',
+        'term' => 'fox',
+        'position' => 0,
+        'start_byte' => 0,
+        'end_byte' => 3,
+    ]],
+]));
+
+emitCase('response', 'default-highlight-zero', Protocol::envelope('SearchResult', [
+    'root' => [
+        'node_type' => 'Hit',
+        'node' => [
+            'id' => 'bfbs-doc',
+            'highlights' => [[
+                'field' => 'title',
+                'fragments' => [[
+                    'text' => 'fox',
+                    'matches' => [[
+                        'start_byte' => 0,
+                        'end_byte' => 3,
+                    ]],
+                ]],
+            ]],
+        ],
+    ],
+]));
+
+emitCase('response', 'default-relevance-zero', Protocol::envelope('SearchResult', [
+    'root' => [
+        'node_type' => 'Hit',
+        'node' => [
+            'id' => 'bfbs-doc',
+            'relevance' => [
+                'value_type' => 'FiniteRelevance',
+                'value' => ['value' => 0.0],
+            ],
+        ],
+    ],
+]));
+
+emitCase('response', 'default-sparse-tensor-zero', Protocol::envelope('GetResult', [
+    'document' => Protocol::document([
+        '_id' => 'bfbs-doc',
+        'embedding' => Tensor::sparse(
+            'tensor<float>(x{})',
+            [[
+                'address' => ['x' => 'alice'],
+                'value' => 0.0,
+            ]],
+        ),
+    ]),
+]));
