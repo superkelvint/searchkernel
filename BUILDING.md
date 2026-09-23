@@ -118,8 +118,9 @@ request. Do not interpret a green non-native CI run as native verification.
 
 The repository-managed pre-commit hook enforces this split with path-sensitive
 verification lanes. Every commit runs Rust formatting, Clippy, and non-native
-workspace tests. Staged Python and TypeScript changes additionally run their
-client suites; protocol/schema changes verify checked-in FlatBuffers/gRPC
+workspace tests. Staged Python, TypeScript, and PHP changes additionally run
+their client suites; canonical API changes select all affected first-party
+clients; protocol/schema changes verify checked-in FlatBuffers/gRPC
 artifacts for Rust, Python, and TypeScript; API-conformance changes run the
 conformance verifier; and hook/classifier changes run the selector regression
 suite.
