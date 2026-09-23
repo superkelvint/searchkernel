@@ -3148,10 +3148,8 @@ impl WireBuilder {
                 .get("value")
                 .map(|value| self.value(value))
                 .transpose()?;
-            let add = api::AddUpdate::create(
-                &mut self.builder,
-                &api::AddUpdateArgs { value: payload },
-            );
+            let add =
+                api::AddUpdate::create(&mut self.builder, &api::AddUpdateArgs { value: payload });
             (
                 target,
                 api::UpdateOperationKind::AddUpdate,
@@ -3262,8 +3260,8 @@ mod update_conformance_regression_tests {
 
     #[test]
     fn frozen_update_presence_detects_false_to_absent_normalization() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../reference/api-conformance");
+        let root =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../reference/api-conformance");
         let case = read_json(&root.join("cases/write/update-condition-create-false.json"))
             .expect("read frozen update case");
         let mut wrong_golden =

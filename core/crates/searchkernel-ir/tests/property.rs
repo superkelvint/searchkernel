@@ -170,10 +170,7 @@ fn generated_request_value(rng: &mut Rng, depth: usize) -> RequestValueIr {
             let len = rng.usize(4);
             let mut values = BTreeMap::new();
             for index in 0..len {
-                values.insert(
-                    format!("k{index}"),
-                    generated_request_value(rng, depth - 1),
-                );
+                values.insert(format!("k{index}"), generated_request_value(rng, depth - 1));
             }
             RequestValueIr::Object(values)
         }
@@ -367,12 +364,8 @@ fn filter_input(spec: &BoolFilterSpec) -> FilterInput {
             op: ComparisonOp::Eq,
             value: RequestValueIr::Bool(*value),
         },
-        BoolFilterSpec::All(values) => {
-            FilterInput::All(values.iter().map(filter_input).collect())
-        }
-        BoolFilterSpec::Any(values) => {
-            FilterInput::Any(values.iter().map(filter_input).collect())
-        }
+        BoolFilterSpec::All(values) => FilterInput::All(values.iter().map(filter_input).collect()),
+        BoolFilterSpec::Any(values) => FilterInput::Any(values.iter().map(filter_input).collect()),
         BoolFilterSpec::Not(value) => FilterInput::Not(Box::new(filter_input(value))),
     }
 }
@@ -400,15 +393,9 @@ fn eval_filter_ir(value: &FilterIr, price: i64, in_stock: bool) -> bool {
             .iter()
             .any(|value| eval_filter_ir(value, price, in_stock)),
         FilterIr::Not(value) => !eval_filter_ir(value, price, in_stock),
-        FilterIr::Comparison(value) => match (
-            value.field().as_str(),
-            value.op(),
-            value.value(),
-        ) {
+        FilterIr::Comparison(value) => match (value.field().as_str(), value.op(), value.value()) {
             ("price", ComparisonOp::Eq, ScalarValueIr::Int64(expected)) => price == *expected,
-            ("in_stock", ComparisonOp::Eq, ScalarValueIr::Bool(expected)) => {
-                in_stock == *expected
-            }
+            ("in_stock", ComparisonOp::Eq, ScalarValueIr::Bool(expected)) => in_stock == *expected,
             other => panic!("unexpected generated comparison {other:?}"),
         },
         other => panic!("unexpected generated filter {other:?}"),
@@ -457,9 +444,7 @@ fn query_expr(spec: &BoolQuerySpec) -> QueryExprIr {
     let kind = match spec {
         BoolQuerySpec::True => QueryExprKindIr::True,
         BoolQuerySpec::False => QueryExprKindIr::False,
-        BoolQuerySpec::And(values) => {
-            QueryExprKindIr::And(values.iter().map(query_expr).collect())
-        }
+        BoolQuerySpec::And(values) => QueryExprKindIr::And(values.iter().map(query_expr).collect()),
         BoolQuerySpec::Or(values) => QueryExprKindIr::Or(values.iter().map(query_expr).collect()),
         BoolQuerySpec::Not(value) => QueryExprKindIr::Not(Box::new(query_expr(value))),
     };
@@ -513,9 +498,11 @@ fn generated_grouping_request(rng: &mut Rng) -> GroupingRequestIr {
             GroupingOpSpec::Where(value) => GroupingOperationIr::Where(
                 GroupingExpressionIr::Literal(RequestValueIr::Int64(i64::from(value))),
             ),
-            GroupingOpSpec::Order(value) => GroupingOperationIr::Order(vec![
-                GroupingExpressionIr::Literal(RequestValueIr::Int64(i64::from(value))),
-            ]),
+            GroupingOpSpec::Order(value) => {
+                GroupingOperationIr::Order(vec![GroupingExpressionIr::Literal(
+                    RequestValueIr::Int64(i64::from(value)),
+                )])
+            }
         })
         .collect();
 
@@ -646,13 +633,11 @@ fn property_presence_sensitive_fields_preserve_absent_vs_present_empty() {
 
             let mut empty_projection_input = absent_input.clone();
             empty_projection_input.projection = Some(Vec::new());
-            let empty_projection =
-                resolve_search(&context, empty_projection_input).unwrap();
+            let empty_projection = resolve_search(&context, empty_projection_input).unwrap();
 
             let mut empty_highlighting_input = absent_input;
             empty_highlighting_input.highlighting = Some(Vec::new());
-            let empty_highlighting =
-                resolve_search(&context, empty_highlighting_input).unwrap();
+            let empty_highlighting = resolve_search(&context, empty_highlighting_input).unwrap();
 
             assert_ne!(
                 absent, empty_projection,
@@ -1013,7 +998,11 @@ fn property_grouping_encode_decode_preserves_child_order() {
             input.grouping = vec![GroupingInput::Structured(grouping.clone())];
 
             let resolved = resolve_search(&context, input).unwrap();
-            assert_eq!(resolved.grouping(), &[grouping.clone()], "seed {seed}");
+            assert_eq!(
+                resolved.grouping(),
+                std::slice::from_ref(&grouping),
+                "seed {seed}"
+            );
 
             let decoded = round_trip_search(&context, &resolved);
             assert_eq!(decoded.grouping(), &[grouping], "seed {seed}");
@@ -1071,8 +1060,7 @@ fn property_duplicate_aliases_fields_and_operators_are_rejected_deterministicall
             let alias_error = resolve_search(&context, alias_input)
                 .expect_err("duplicate grouping aliases must fail");
             assert_eq!(
-                alias_error.details[0].code,
-                "duplicate_grouping_alias",
+                alias_error.details[0].code, "duplicate_grouping_alias",
                 "seed {seed}",
             );
 
@@ -1095,35 +1083,26 @@ fn property_duplicate_aliases_fields_and_operators_are_rejected_deterministicall
             )
             .expect_err("duplicate facet fields must fail");
             assert_eq!(
-                duplicate_fields.details[0].code,
-                "duplicate_facet_field",
+                duplicate_fields.details[0].code, "duplicate_facet_field",
                 "seed {seed}",
             );
 
             let operator = operators[rng.usize(operators.len())];
             let source = format!("price {operator} {operator} 1");
-            let first = bind_filter_expression(
-                &source,
-                context.definition(),
-                &FilterParameters::new(),
-            )
-            .expect_err("duplicate comparison operators must fail");
-            let second = bind_filter_expression(
-                &source,
-                context.definition(),
-                &FilterParameters::new(),
-            )
-            .expect_err("same duplicate comparison operators must fail deterministically");
+            let first =
+                bind_filter_expression(&source, context.definition(), &FilterParameters::new())
+                    .expect_err("duplicate comparison operators must fail");
+            let second =
+                bind_filter_expression(&source, context.definition(), &FilterParameters::new())
+                    .expect_err("same duplicate comparison operators must fail deterministically");
 
             assert_eq!(first.code, second.code, "seed {seed}: {source}");
             assert_eq!(
-                first.details[0].code,
-                second.details[0].code,
+                first.details[0].code, second.details[0].code,
                 "seed {seed}: {source}",
             );
             assert_eq!(
-                first.details[0].path,
-                second.details[0].path,
+                first.details[0].path, second.details[0].path,
                 "seed {seed}: {source}",
             );
         });
