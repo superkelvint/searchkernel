@@ -2526,6 +2526,56 @@ fn search_resolver_rejects_explicit_and_implicit_root_output_name_collisions() {
 }
 
 #[test]
+fn search_resolver_rejects_complex_explicit_and_implicit_canonical_name_collision() {
+    let explicit = root_output_grouping(
+        Some("sum(Literal(Int64(1)))"),
+        GroupingAggregationIr::Count,
+    );
+    let implicit = root_output_grouping(
+        None,
+        GroupingAggregationIr::Sum(GroupingExpressionIr::Literal(RequestValueIr::Int64(1))),
+    );
+
+    let error = resolve_search(
+        &context(),
+        match_all_search(vec![
+            GroupingInput::Structured(explicit),
+            GroupingInput::Structured(implicit),
+        ]),
+    )
+    .expect_err("canonical complex implicit names must share the root output namespace");
+
+    assert_eq!(error.details[0].code, "grouping_output_name_collision");
+    assert_eq!(
+        error.details[0].path.as_deref(),
+        Some("grouping[1].root.operations[0].outputs[0]")
+    );
+}
+
+#[test]
+fn search_resolver_keeps_native_debug_spelling_distinct_from_canonical_implicit_name() {
+    let explicit = root_output_grouping(
+        Some("sum(Literal(Integer(1)))"),
+        GroupingAggregationIr::Count,
+    );
+    let implicit = root_output_grouping(
+        None,
+        GroupingAggregationIr::Sum(GroupingExpressionIr::Literal(RequestValueIr::Int64(1))),
+    );
+
+    let request = resolve_search(
+        &context(),
+        match_all_search(vec![
+            GroupingInput::Structured(explicit),
+            GroupingInput::Structured(implicit),
+        ]),
+    )
+    .expect("native enum debug spelling is not the canonical implicit output name");
+
+    assert_eq!(request.grouping().len(), 2);
+}
+
+#[test]
 fn flatbuffer_grouping_ingress_rejects_the_same_cross_request_collision() {
     let request = SearchRequestIr::new(
         QueryIr::MatchAll,
