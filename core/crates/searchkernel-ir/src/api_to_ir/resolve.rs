@@ -763,7 +763,9 @@ fn validate_grouping_scope_operations(
                         scope.has_summary = true;
                         reject_grouping_summary_max_conflict(scope.has_max, &output_path)?;
                     }
-                    if let Some(name) = crate::model::effective_grouping_output_name(output, &scope.aliases) {
+                    if let Some(name) =
+                        crate::model::effective_grouping_output_name(output, &scope.aliases)
+                    {
                         if !scope.output_names.insert(name) {
                             return Err(invalid(
                                 "grouping_output_name_collision",
