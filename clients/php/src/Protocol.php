@@ -10,6 +10,35 @@ final class Protocol
 {
     public const VERSION = 2;
 
+    /** @var array<string,array{0:string,1:string}> */
+    private const OPERATIONS = [
+        'insert' => ['InsertRequest', 'InsertResult'],
+        'upsert' => ['UpsertRequest', 'UpsertResult'],
+        'patch' => ['PatchRequest', 'PatchResult'],
+        'update' => ['UpdateRequest', 'UpdateResult'],
+        'delete' => ['DeleteRequest', 'DeleteResult'],
+        'get' => ['GetRequest', 'GetResult'],
+        'search' => ['SearchRequest', 'SearchResult'],
+        'analyze' => ['AnalyzeRequest', 'AnalyzeResult'],
+        'describe' => ['DescribeRequest', 'DescribeResult'],
+        'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
+    ];
+
+    /** @return array{0:string,1:string} */
+    public static function operation(string $operation): array
+    {
+        if (!array_key_exists($operation, self::OPERATIONS)) {
+            throw new InvalidArgumentException('unknown Search Kernel operation: ' . $operation);
+        }
+        return self::OPERATIONS[$operation];
+    }
+
+    /** @return list<string> */
+    public static function operations(): array
+    {
+        return array_keys(self::OPERATIONS);
+    }
+
     /** @return array<string, mixed> */
     public static function envelope(string $payloadType, array $payload): array
     {
