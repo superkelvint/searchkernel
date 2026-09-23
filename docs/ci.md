@@ -115,6 +115,13 @@ Coding agents should run the plan and report exact commands/results. CI
 independently recomputes the authoritative plan from the trusted base policy and
 the actual candidate diff.
 
+Lint execution follows the same repository-owned-command rule. The canonical
+workspace Clippy profiles run through `./dev lint`; CI requests a diagnostics
+directory so failures produce a repair packet with rendered output,
+machine-readable Cargo/Clippy diagnostics, a lint-vs-build failure
+classification, and the exact local reproduction command. CI uploads that
+packet when Clippy fails and also writes the summary to the Actions job summary.
+
 Issue acceptance requirements should prefer repository-owned profile IDs or
 clear acceptance behavior rather than arbitrary shell supplied by issue text.
 Arbitrary agent-reported commands remain evidence only.
@@ -274,7 +281,7 @@ not wall-clock measurements. Actual timing belongs in Phase 7.
 | Profile ID | Canonical/current entry point | Current trigger/semantic scope | Dependencies and subsumption | Prerequisites / runner | Mutable state / parallelization | Current CI | Trust boundary | Runtime class |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `rust-non-native` | `cargo test --workspace --all-targets --no-default-features` | Current `rust` lane: root Cargo metadata, `.cargo/**`, `api/**`, `core/**`, `searchkerneld/**`, `dev` | Independent baseline; does not prove native/all-features behavior | Rust + pinned FlatBuffers; any Linux runner | Cargo target/cache only; separate target roots per job | PR behavioral, unit, nightly | Candidate code; lane selection must come from trusted base | medium |
-| `rust-quality` | `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --no-default-features -- -D warnings` | Broad Rust/build changes | Independent baseline; repeated inside several native milestone verifiers via `run_workspace_quality` with all features | Rust; native all-feature variant needs native SDK | Cargo target only | Nightly; pre-commit | Candidate code | medium |
+| `rust-quality` | `cargo fmt --all --check`; `./dev lint --profile rust-clippy-non-native` | Broad Rust/build changes | Independent baseline; repeated inside several native milestone verifiers via `run_workspace_quality` with all features | Rust; native all-feature variant needs native SDK | Cargo target only | Nightly; pre-commit | Candidate code | medium |
 | `python-client` | `./dev test python` | Current `python` lane: `api/**`, `clients/python/**`, client contracts and Python generation/check tooling | Includes Python generated checks plus unittest discovery; ordinary discovery skips real native gRPC E2E unless opt-in | Python runtime + package deps + FlatBuffers tools | Temp/package state; isolate venv where possible | PR behavioral, nightly | Candidate code; base-owned selection | fast-medium |
 | `typescript-client` | `./dev test typescript` | Current `typescript` lane: `api/**`, TS client, client contracts and TS generators | Includes generation regression, generated check, typecheck, Vitest, package verification | Node 22, Rust/FlatBuffers for semantic generation, npm deps | `dist`, generated/temp files; safe with per-job checkout | PR behavioral | Candidate code; base-owned selection | medium |
 | `php-client` | `./dev test php` | Current `php` lane: `api/**`, PHP client, client contracts | Standalone first-slice test runner | PHP runtime | Minimal mutable state | Client-capabilities workflow; not behavioral exact-head executor | Candidate code; base-owned selection | fast |
