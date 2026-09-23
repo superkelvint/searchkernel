@@ -295,7 +295,13 @@ jobs:
         run: ruby --version
 
       - name: Run Ruby behavioral tests
-        run: ./dev test ruby
+        run: |
+          set -euo pipefail
+          if [[ ! -d clients/ruby ]]; then
+            echo "Ruby client is only pre-registered on this base; no Ruby product surface exists yet."
+            exit 0
+          fi
+          ./dev test ruby
 
   exact-head-gate:
     name: Exact-head gate
