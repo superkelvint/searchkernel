@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
+use InvalidArgumentException;
+
 final class Bytes
 {
     public function __construct(public readonly string $value) {}
@@ -24,7 +26,7 @@ final class Bytes
         $value = '';
         foreach ($octets as $octet) {
             if (!is_int($octet) || $octet < 0 || $octet > 255) {
-                throw new ProtocolException('BytesValue members must be integers in 0..255');
+                throw new InvalidArgumentException('byte values must be integers in 0..255');
             }
             $value .= chr($octet);
         }
