@@ -225,7 +225,9 @@ final class Protocol
      */
     public static function decodeDocument(array $document): array
     {
-        $fields = self::decodeValueEntries($document['fields'] ?? []);
+        $fields = self::decodeValueEntries(
+            self::listField($document, 'fields', 'Document.fields'),
+        );
         $id = $document['id'] ?? null;
         if (!is_string($id)) {
             throw new ProtocolException('Document.id must be a string');
@@ -239,9 +241,6 @@ final class Protocol
      */
     public static function decodeValueEntries(mixed $entries): array
     {
-        if ($entries === null) {
-            return [];
-        }
         if (!is_array($entries) || !array_is_list($entries)) {
             throw new ProtocolException('portable value entries must be a list');
         }
@@ -279,7 +278,9 @@ final class Protocol
             'StringValue' => self::decodeString($payload),
             'BytesValue' => self::decodeBytes($payload),
             'ValueList' => self::decodeValueList($payload),
-            'ValueObject' => self::decodeValueEntries($payload['fields'] ?? []),
+            'ValueObject' => self::decodeValueEntries(
+                self::listField($payload, 'fields', 'ValueObject.fields'),
+            ),
             'TensorValue' => self::decodeTensor($payload),
             default => throw new ProtocolException(
                 'unsupported portable Value kind: ' . $type
@@ -309,10 +310,7 @@ final class Protocol
      */
     private static function decodeValueList(array $payload): array
     {
-        $values = $payload['values'] ?? [];
-        if (!is_array($values) || !array_is_list($values)) {
-            throw new ProtocolException('portable ValueList values must be a list');
-        }
+        $values = self::listField($payload, 'values', 'ValueList.values');
         return array_map(
             static function (mixed $value): mixed {
                 if (!is_array($value)) {
@@ -474,6 +472,22 @@ final class Protocol
     {
         if (!is_string($value)) {
             throw new ProtocolException($label . ' must be a string');
+        }
+        return $value;
+    }
+
+    /** @internal
+     *  @param array<string,mixed> $node
+     *  @return list<mixed>
+     */
+    public static function listField(array $node, string $key, string $label): array
+    {
+        if (!array_key_exists($key, $node)) {
+            return [];
+        }
+        $value = $node[$key];
+        if (!is_array($value) || !array_is_list($value)) {
+            throw new ProtocolException($label . ' must be a list');
         }
         return $value;
     }
