@@ -352,19 +352,56 @@ KNOWN_CLIENT_PATTERNS: tuple[str, ...] = (
 # to the canonical moon task graph, but candidate task configuration never
 # participates in deciding which IDs are mandatory.
 TASKS_BY_LANE: dict[str, tuple[str, ...]] = {
-    "rust": ("rust-non-native",),
+    "rust": ("rust-non-native", "rust-quality"),
     "python": ("python-client",),
     "typescript": ("typescript-client",),
     "php": ("php-client",),
-    "native": ("vespa-integration", "native-python-e2e"),
+    "native": (
+        "vespa-m14",
+        "vespa-integration",
+        "phase10-rust-e2e",
+        "m13-grouping-yql",
+        "recovery",
+        "phase9",
+        "native-python-e2e",
+    ),
     "protocol": ("protocol-generated",),
     "api_conformance": ("api-conformance",),
-    "contracts": ("client-contracts",),
+    "contracts": ("client-contracts", "c2-historical"),
     "abi": ("abi",),
-    "persistence": ("persistence-native",),
+    "persistence": ("persistence-static", "persistence-native", "recovery"),
     "issue_queue": ("issue-queue",),
     "verification": ("verification-policy",),
 }
+
+# Ordered active task vocabulary from the Phase 1 inventory. Intentionally
+# excludes the F-series frontend milestone acceptance because those verifiers
+# are explicitly NOT_IMPLEMENTED. Historical Phase 9/C2 remain until Phase 6
+# explicitly dispositions them.
+ALL_TRUSTED_TASKS: tuple[str, ...] = (
+    "rust-non-native",
+    "rust-quality",
+    "python-client",
+    "typescript-client",
+    "php-client",
+    "vespa-m14",
+    "vespa-integration",
+    "phase10-rust-e2e",
+    "m13-grouping-yql",
+    "recovery",
+    "phase9",
+    "native-python-e2e",
+    "protocol-generated",
+    "api-conformance",
+    "client-contracts",
+    "c2-historical",
+    "abi",
+    "persistence-static",
+    "persistence-native",
+    "issue-queue",
+    "verification-policy",
+    "web-dashboard",
+)
 
 
 def _require(selected: dict[str, bool], *lanes: str) -> None:
@@ -432,6 +469,16 @@ def _is_known_behavioral_path(path: str) -> bool:
     if path.startswith("clients/"):
         return _matches(path, KNOWN_CLIENT_PATTERNS)
     return any(_matches(path, LANE_PATTERNS[lane]) for lane in LANES)
+
+
+def _requires_full_task_set(path: str) -> bool:
+    if _is_non_behavioral_exempt(path):
+        return False
+    return (
+        _matches(path, ELEVATED_VERIFICATION_PATTERNS)
+        or _matches(path, BUILD_SYSTEM_PATTERNS)
+        or not _is_known_behavioral_path(path)
+    )
 
 
 def classify(paths: Iterable[str]) -> dict[str, bool]:
@@ -578,19 +625,34 @@ def build_task_plan(paths: Iterable[str]) -> list[dict[str, object]]:
             task_reasons.setdefault(task_id, [])
             task_reasons[task_id].extend(deduped)
 
+    full_reasons = [
+        f"{path}: conservative full task set"
+        for path in normalized
+        if _requires_full_task_set(path)
+    ]
+    if full_reasons:
+        for task_id in ALL_TRUSTED_TASKS:
+            task_reasons.setdefault(task_id, [])
+            task_reasons[task_id].extend(full_reasons)
+
     plan: list[dict[str, object]] = []
-    seen: set[str] = set()
+    emitted: set[str] = set()
+    ordered_task_ids = list(ALL_TRUSTED_TASKS)
     for lane in LANES:
         for task_id in TASKS_BY_LANE[lane]:
-            if task_id in seen or task_id not in task_reasons:
-                continue
-            seen.add(task_id)
-            plan.append(
-                {
-                    "id": task_id,
-                    "reasons": list(dict.fromkeys(task_reasons[task_id])),
-                }
-            )
+            if task_id not in ordered_task_ids:
+                ordered_task_ids.append(task_id)
+
+    for task_id in ordered_task_ids:
+        if task_id in emitted or task_id not in task_reasons:
+            continue
+        emitted.add(task_id)
+        plan.append(
+            {
+                "id": task_id,
+                "reasons": list(dict.fromkeys(task_reasons[task_id])),
+            }
+        )
     return plan
 
 
