@@ -609,6 +609,7 @@ fn resolve_grouping_at(
     facet_path: &str,
 ) -> Result<Vec<GroupingRequestIr>> {
     let mut facet_fields = BTreeSet::new();
+    let mut root_output_names = BTreeSet::new();
     input
         .iter()
         .enumerate()
@@ -626,6 +627,7 @@ fn resolve_grouping_at(
                 GroupingInput::Structured(value) => {
                     let path = format!("grouping[{index}]");
                     validate_grouping_request(context, value, &path)?;
+                    validate_root_output_names(value, &path, &mut root_output_names)?;
                     (
                         value.clone(),
                         format!("{path}.root.operations[0].expression"),
@@ -649,6 +651,43 @@ fn resolve_grouping_at(
             Ok(resolved)
         })
         .collect()
+}
+
+/// Root aggregation outputs from separate grouping requests are flattened into
+/// one portable result-field map by the adapter. Keep this namespace check at
+/// the canonical semantic boundary so a later native pass cannot silently
+/// overwrite an earlier field. Outputs inside `each()`/`all()` remain scoped
+/// to their grouping tree and are intentionally not included here.
+fn validate_root_output_names(
+    value: &GroupingRequestIr,
+    path: &str,
+    names: &mut BTreeSet<String>,
+) -> Result<()> {
+    let mut aliases = BTreeMap::new();
+    for (index, operation) in value.root.operations.iter().enumerate() {
+        let operation_path = format!("{path}.root.operations[{index}]");
+        match operation {
+            GroupingOperationIr::Alias { name, expression } => {
+                aliases.insert(name.clone(), expression.clone());
+            }
+            GroupingOperationIr::Output(outputs) => {
+                for (output_index, output) in outputs.iter().enumerate() {
+                    let output_path = format!("{operation_path}.outputs[{output_index}]");
+                    if let Some(name) = grouping_output_name(output, &aliases) {
+                        if !names.insert(name) {
+                            return Err(invalid(
+                                "grouping_output_name_collision",
+                                Some(output_path),
+                                "root grouping output names must be unique across grouping requests",
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn validate_grouping_request(

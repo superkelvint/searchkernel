@@ -14,6 +14,12 @@ on:
       - "reference/api-conformance/**"
       - ".github/workflows/unit-tests.yml"
       - "dev"
+      - "tools/copy-shared-library-into-sdk.sh"
+      - "tools/test-native-sdk-packaging.sh"
+      - "tools/native-build-fingerprint.py"
+      - "tools/test-native-environment-fingerprint.sh"
+      - "tools/resolve-native-sdk.sh"
+      - "tools/test-native-sdk-cache.sh"
   pull_request:
     paths:
       - "Cargo.toml"
@@ -26,6 +32,12 @@ on:
       - "reference/api-conformance/**"
       - ".github/workflows/unit-tests.yml"
       - "dev"
+      - "tools/copy-shared-library-into-sdk.sh"
+      - "tools/test-native-sdk-packaging.sh"
+      - "tools/native-build-fingerprint.py"
+      - "tools/test-native-environment-fingerprint.sh"
+      - "tools/resolve-native-sdk.sh"
+      - "tools/test-native-sdk-cache.sh"
   workflow_dispatch:
 
 concurrency:
@@ -61,6 +73,15 @@ jobs:
 
       - name: Ensure pinned FlatBuffers toolchain
         run: ./dev install flatbuffers
+
+      - name: Run native SDK packaging regression
+        run: bash tools/test-native-sdk-packaging.sh
+
+      - name: Run native environment fingerprint regression
+        run: bash tools/test-native-environment-fingerprint.sh
+
+      - name: Run native SDK cache regression
+        run: bash tools/test-native-sdk-cache.sh
 
       - name: Run workspace unit tests
         run: cargo test --workspace --no-default-features

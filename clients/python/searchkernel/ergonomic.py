@@ -1172,13 +1172,21 @@ class SearchResults:
             if len(fields) != 1:
                 return
             count = fields[0]
+            accepted_count_kinds = (
+                (ValueKind.Int64Value, ValueKind.UInt64Value)
+                if generic_child
+                else (ValueKind.UInt64Value,)
+            )
             if (
                 count.key != "count"
                 or count.value is None
-                or count.value.kindType != ValueKind.UInt64Value
+                or count.value.kindType not in accepted_count_kinds
             ):
                 return
-            buckets.append({"value": child.value, "count": _python_value(count.value)})
+            count_value = _python_value(count.value)
+            if generic_child and count_value < 0:
+                return
+            buckets.append({"value": child.value, "count": count_value})
 
         self.facets[result_name] = buckets
 

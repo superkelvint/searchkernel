@@ -390,13 +390,12 @@ fn verify_shared_cache_object(manifest_dir: &Path, sdk: &Path) -> Result<(), Str
             manifest_path.display()
         ));
     }
-    let recorded_checkout =
-        manifest_string_field(&manifest, "vespa_commit").ok_or_else(|| {
-            format!(
-                "shared Vespa base manifest '{}' has no vespa_commit",
-                manifest_path.display()
-            )
-        })?;
+    let recorded_checkout = manifest_string_field(&manifest, "vespa_commit").ok_or_else(|| {
+        format!(
+            "shared Vespa base manifest '{}' has no vespa_commit",
+            manifest_path.display()
+        )
+    })?;
     if recorded_checkout != pinned {
         return Err(format!(
             "shared Vespa base '{}' is for checkout {recorded_checkout}, expected {pinned}",
@@ -407,7 +406,12 @@ fn verify_shared_cache_object(manifest_dir: &Path, sdk: &Path) -> Result<(), Str
     let object_name = sdk
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| format!("shared Vespa base path '{}' has no checkout key", sdk.display()))?;
+        .ok_or_else(|| {
+            format!(
+                "shared Vespa base path '{}' has no checkout key",
+                sdk.display()
+            )
+        })?;
     if object_name != pinned {
         return Err(format!(
             "shared Vespa base object '{}' does not match pinned checkout {pinned}",
