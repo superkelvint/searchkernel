@@ -3,7 +3,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 PYTHON="${CI_PYTHON:-python3}"
-HOST="${SEARCHKERNEL_LOCAL_HOST:-$ROOT/target/debug/searchkerneld}"
+TARGET_DIR="${CARGO_TARGET_DIR:-target/host}"
+if [[ "$TARGET_DIR" != /* ]]; then
+  TARGET_DIR="$ROOT/$TARGET_DIR"
+fi
+HOST="${SEARCHKERNEL_LOCAL_HOST:-$TARGET_DIR/debug/searchkerneld}"
 WORK="$(mktemp -d)"
 INDEX="$WORK/showcase-index"
 PID=""
@@ -47,7 +51,11 @@ start_host() {
   local grpc_port web_port
   grpc_port="$(free_port)"
   web_port="$(free_port)"
-  "$HOST"     --index "$INDEX"     --listen "127.0.0.1:$grpc_port"     --web-listen "127.0.0.1:$web_port"     >/dev/null 2>&1 &
+  "$HOST" \
+    --index "$INDEX" \
+    --listen "127.0.0.1:$grpc_port" \
+    --web-listen "127.0.0.1:$web_port" \
+    >/dev/null 2>&1 &
   PID="$!"
   wait_port "$web_port"
   export SEARCHKERNEL_HTTP_URL="http://127.0.0.1:$web_port"
