@@ -655,7 +655,7 @@
               "runtime": "shared",
               "kind": "conformance",
               "path": "clients/python/tests/test_results.py",
-              "line": 181
+              "line": 212
             },
             {
               "capability": "result.highlighting",

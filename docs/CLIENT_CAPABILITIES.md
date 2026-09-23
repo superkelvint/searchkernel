@@ -150,7 +150,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Highlighting (result.highlighting)
 
 - **Basic structured dynamic-teaser highlighting** (basic)
-  - python / shared / conformance — [clients/python/tests/test_results.py](../clients/python/tests/test_results.py#L181)
+  - python / shared / conformance — [clients/python/tests/test_results.py](../clients/python/tests/test_results.py#L212)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L508)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L220)
   - typescript / shared / conformance — [clients/typescript/tests/results.test.ts](../clients/typescript/tests/results.test.ts#L273)
