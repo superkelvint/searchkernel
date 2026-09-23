@@ -31,6 +31,16 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
 
 
+def write_fake_dev(repo: Path) -> None:
+    dev = repo / "dev"
+    dev.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+        encoding="utf-8",
+    )
+    dev.chmod(0o755)
+
+
 class ExactHeadTests(unittest.TestCase):
     def make_repo(self) -> tuple[Path, tempfile.TemporaryDirectory[str]]:
         temp = tempfile.TemporaryDirectory()
@@ -185,6 +195,7 @@ class ExactHeadTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 cargo.chmod(0o755)
+                write_fake_dev(repo)
                 native_gate = repo / "reference" / "vespa" / "verify-through.sh"
                 native_gate.write_text(
                     "#!/usr/bin/env bash\n"
@@ -200,7 +211,7 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 python_e2e.chmod(0o755)
 
-                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin")
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev")
                 git(repo, "commit", "-q", "-m", "fixture")
 
                 staged = repo / staged_path
@@ -338,6 +349,7 @@ class ExactHeadTests(unittest.TestCase):
             encoding="utf-8",
         )
         cargo.chmod(0o755)
+        write_fake_dev(repo)
         native_gate = repo / "reference" / "vespa" / "verify-through.sh"
         native_gate.write_text(
             "#!/usr/bin/env bash\n"
@@ -434,7 +446,7 @@ class ExactHeadTests(unittest.TestCase):
             text=True,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("tracked unstaged changes also exist", result.stdout)
+        self.assertIn("tracked unstaged changes exist", result.stdout)
         logged = log.read_text(encoding="utf-8") if log.exists() else ""
         self.assertNotIn("cargo ", logged)
         self.assertNotIn("native i", logged)
@@ -685,6 +697,7 @@ class ExactHeadTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 cargo.chmod(0o755)
+                write_fake_dev(repo)
                 native_gate = repo / "reference" / "vespa" / "verify-through.sh"
                 native_gate.write_text(
                     "#!/usr/bin/env bash\n"
