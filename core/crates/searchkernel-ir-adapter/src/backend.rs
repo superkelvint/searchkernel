@@ -247,12 +247,7 @@ fn grouping_result_group(
                 ));
             }
             let mut fields = std::collections::BTreeMap::new();
-            for (index, (aggregation, output)) in plan
-                .root_aggregations
-                .iter()
-                .zip(result.outputs.iter())
-                .enumerate()
-            {
+            for (index, output) in result.outputs.iter().enumerate() {
                 let label = plan
                     .root_output_labels
                     .get(index)
@@ -279,19 +274,13 @@ fn grouping_result_group(
                 ));
             }
             let mut fields = std::collections::BTreeMap::new();
-            for (index, (aggregation, output)) in grouping_level
-                .aggregations
-                .iter()
-                .zip(result.outputs.iter())
-                .enumerate()
-                .filter(|(index, _)| {
-                    grouping_level
-                        .output_visible
-                        .get(*index)
-                        .copied()
-                        .unwrap_or(true)
-                })
-            {
+            for (index, output) in result.outputs.iter().enumerate().filter(|(index, _)| {
+                grouping_level
+                    .output_visible
+                    .get(*index)
+                    .copied()
+                    .unwrap_or(true)
+            }) {
                 let label = grouping_level
                     .output_labels
                     .get(index)
