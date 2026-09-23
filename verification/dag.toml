@@ -89,6 +89,14 @@ depends_on = []
 cache_result = false
 
 [[task]]
+id = "rust-remote-client"
+kind = "aggregate"
+runner = "linux"
+depends_on = ["rust-non-native", "protocol-generated", "client-contracts"]
+cache_result = false
+notes = "Pre-registered ownership for the Rust remote-client ingress. The product change replaces this aggregate with its focused executable verifier."
+
+[[task]]
 id = "python-client"
 legacy_lanes = ["python"]
 kind = "command"
@@ -571,6 +579,7 @@ id = "portable-full"
 kind = "aggregate"
 runner = "linux"
 depends_on = [
+  "rust-remote-client",
   "rust-non-native",
   "rust-quality",
   "protocol-generated",
@@ -640,6 +649,7 @@ id = "generated-protocol-artifacts"
 paths = [
   "core/crates/searchkernel-protocol/src/generated/**",
   "core/crates/searchkernel-protocol/bfbs/**",
+  "core/crates/searchkernel-rpc/src/generated/**",
   "searchkerneld/src/generated/**",
   "clients/python/searchkernel/_wire_generated/**",
   "clients/python/searchkernel/rpc/**",
@@ -682,6 +692,15 @@ requires = ["rust-non-native", "client-contracts", "abi", "native-full"]
 id = "searchkernel-vespa-engine"
 paths = ["core/crates/searchkernel-vespa-engine/**"]
 requires = ["rust-non-native", "client-contracts", "native-full"]
+
+[[subsystem]]
+id = "searchkernel-rpc-client"
+paths = [
+  "core/crates/searchkernel-rpc/**",
+  "core/crates/searchkernel/src/remote.rs",
+  "searchkerneld/tests/rust_remote_client.rs",
+]
+requires = ["rust-remote-client", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
 
 [[subsystem]]
 id = "searchkernel-rust-api"
