@@ -36,10 +36,10 @@ def git(repo: Path, *args: str) -> str:
 def write_fake_dev(repo: Path) -> None:
     dev = repo / "dev"
     dev.write_text(
-        "#!/usr/bin/env bash\\n"
-        "if [[ -n \\"${HOOK_LOG:-}\\" ]]; then\\n"
-        "  printf 'dev %s\\\\n' \\"$*\\" >> \\"$HOOK_LOG\\"\\n"
-        "fi\\n",
+        "#!/usr/bin/env bash\n"
+        "if [[ -n \"${HOOK_LOG:-}\" ]]; then\n"
+        "  printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n"
+        "fi\n",
         encoding="utf-8",
     )
     dev.chmod(0o755)
