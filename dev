@@ -41,6 +41,7 @@ Search Kernel development commands
   ./dev verify abi            Verify the public native ABI contract
   ./dev verify persistence    Verify persistence compatibility
   ./dev verify issue-queue    Test issue-queue consistency tooling
+  ./dev verify verification-dag Validate the authoritative verification DAG
   ./dev install flatbuffers   Build and install the pinned FlatBuffers toolchain
   ./dev native-sdk ensure     Resolve/build the immutable shared Vespa SDK
   ./dev native-sdk path       Print the SDK object selected for this worktree
@@ -109,6 +110,7 @@ check_fast() {
     bash "$ROOT/tools/test-flatbuffers-cpp-toolchain.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
     bash "$ROOT/reference/vespa/verifiers/test-routing.sh"
+    "$PYTHON" "$ROOT/tools/check-verification-dag.py"
     "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check-native-abi-authorities.py"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
@@ -223,11 +225,15 @@ verify_target() {
         issue-queue)
             "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
             ;;
+        verification-dag)
+            "$PYTHON" "$ROOT/tools/test_check_verification_dag.py"
+            "$PYTHON" "$ROOT/tools/check-verification-dag.py"
+            ;;
         m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|m14|milestone.*|vespa.*|product.rust-real-engine|phase10|searchreply|--list|list)
             "$ROOT/reference/vespa/verify-through.sh" "$1"
             ;;
         *)
-            echo "usage: ./dev verify <semantic-target>|milestone.mN|mN|integration|api-conformance|contracts|abi|persistence|issue-queue" >&2
+            echo "usage: ./dev verify <semantic-target>|milestone.mN|mN|integration|api-conformance|contracts|abi|persistence|issue-queue|verification-dag" >&2
             echo "       ./dev verify --list" >&2
             return 2
             ;;
