@@ -544,7 +544,7 @@ class ExactHeadTests(unittest.TestCase):
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
             b"core/crates/searchkernel-ir/src/model.rs\0": {
-                "rust=true", "python=false", "typescript=false", "php=false", "native=false",
+                "rust=true", "python=true", "typescript=true", "php=false", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
