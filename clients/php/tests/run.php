@@ -752,6 +752,7 @@ Canonical portable request/result conformance evidence.
 SKC: query.term/basic kinds=conformance runtime=http
 SKC: filter.textual/basic kinds=conformance runtime=http
 SKC: search.sorting/basic kinds=conformance runtime=http
+SKC: search.search_fields/basic kinds=conformance runtime=http
 SKC: search.pagination/basic kinds=conformance runtime=http
 SKC: grouping.structured/basic kinds=conformance runtime=http
 SKC: grouping.aggregations/basic kinds=conformance runtime=http
