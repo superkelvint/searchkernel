@@ -26,6 +26,7 @@ Search Kernel development commands
   ./dev check                 Run the full repository quality and test suite
   ./dev check-fast            Run formatting, compile, and boundary checks
   ./dev check-protocol        Verify generated FlatBuffers/gRPC artifacts
+  ./dev lint --profile <id>   Run a canonical Clippy verification profile
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client
@@ -133,7 +134,7 @@ check_all() {
     "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
     "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
     "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    lint_target --profile rust-clippy-all-features
     cargo test --workspace --all-targets --all-features
     run_python_tests
     run_typescript_tests
@@ -150,6 +151,10 @@ regen_protocol() {
 
 regen_result_fixtures() {
     cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures
+}
+
+lint_target() {
+    "$PYTHON" "$ROOT/tools/run_clippy.py" "$@"
 }
 
 test_target() {
@@ -567,6 +572,10 @@ case "${1:-help}" in
         ;;
     check-protocol)
         check_protocol
+        ;;
+    lint)
+        shift
+        lint_target "$@"
         ;;
     test)
         shift
