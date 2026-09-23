@@ -214,10 +214,14 @@ NON_BEHAVIORAL_PATTERNS: tuple[str, ...] = (
     ".rgignore",
     "LICENSE*",
     "NOTICE*",
+)
+
+LOCAL_SCRATCH_PATTERNS: tuple[str, ...] = (
     "*.tmp",
     "*.log",
     "*.swp",
     ".DS_Store",
+    "**/.DS_Store",
 )
 
 NON_BEHAVIORAL_OVERRIDE_PATTERNS: tuple[str, ...] = (
@@ -492,10 +496,12 @@ def _matches(path: str, patterns: Iterable[str]) -> bool:
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
 
 
-def _is_non_behavioral_exempt(path: str) -> bool:
-    return _matches(path, NON_BEHAVIORAL_PATTERNS) and not _matches(
+def _is_non_behavioral_exempt(path: str, *, allow_local_scratch: bool = False) -> bool:
+    documented_exemption = _matches(path, NON_BEHAVIORAL_PATTERNS) and not _matches(
         path, NON_BEHAVIORAL_OVERRIDE_PATTERNS
     )
+    local_scratch = allow_local_scratch and _matches(path, LOCAL_SCRATCH_PATTERNS)
+    return documented_exemption or local_scratch
 
 
 def _is_known_behavioral_path(path: str) -> bool:
@@ -523,12 +529,14 @@ def _requires_full_task_set(path: str) -> bool:
     )
 
 
-def classify(paths: Iterable[str]) -> dict[str, bool]:
+def classify(
+    paths: Iterable[str], *, allow_local_scratch: bool = False
+) -> dict[str, bool]:
     normalized = [path.strip().replace("\\", "/") for path in paths if path.strip()]
     selected = {lane: False for lane in LANES}
 
     for path in normalized:
-        if _is_non_behavioral_exempt(path):
+        if _is_non_behavioral_exempt(path, allow_local_scratch=allow_local_scratch):
             continue
 
         for lane in LANES:
@@ -720,6 +728,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     changes = subparsers.add_parser("classify")
     changes.add_argument("--github-output", type=Path)
+    changes.add_argument("--allow-local-scratch", action="store_true")
 
     plan = subparsers.add_parser("plan")
     plan.add_argument("--json", action="store_true")
@@ -745,7 +754,9 @@ def main() -> int:
                     print(f"    - {reason}")
         return 0
 
-    selected = classify(changed_paths)
+    selected = classify(
+        changed_paths, allow_local_scratch=args.allow_local_scratch
+    )
     if args.github_output is not None:
         write_github_output(args.github_output, selected)
     print("Changed paths:")
