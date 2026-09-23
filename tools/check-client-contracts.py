@@ -277,6 +277,47 @@ def collect_evidence(
     )
 
 
+def validate_facade_support(
+    global_capabilities: dict[str, dict[str, Any]],
+    surfaces: dict[str, dict[str, Any]],
+    evidence: list[dict[str, Any]],
+) -> None:
+    """Ensure structured facade claims agree with executable ergonomic evidence."""
+    ergonomic_support = {
+        (item["capability"], item["surface"])
+        for item in evidence
+        if item["kind"] == "ergonomic"
+    }
+    for capability_id, capability in global_capabilities.items():
+        raw_support = capability.get("facade_support", {})
+        if not isinstance(raw_support, dict):
+            raise RegistryError(f"{capability_id}.facade_support must be an object")
+        for surface, state in raw_support.items():
+            if surface not in surfaces:
+                raise RegistryError(
+                    f"{capability_id}.facade_support references unknown surface: {surface}"
+                )
+            if not isinstance(state, dict) or state.get("status") not in {
+                "supported",
+                "missing",
+            }:
+                raise RegistryError(
+                    f"{capability_id}.facade_support.{surface}.status must be "
+                    "supported or missing"
+                )
+            has_evidence = (capability_id, surface) in ergonomic_support
+            status = state["status"]
+            if status == "supported" and not has_evidence:
+                raise RegistryError(
+                    f"{capability_id} claims {surface} is supported but has no ergonomic evidence"
+                )
+            if status == "missing" and has_evidence:
+                raise RegistryError(
+                    f"{capability_id} claims {surface} is missing but executable "
+                    "evidence registers support"
+                )
+
+
 def run_e2e_lanes(
     surfaces: dict[str, dict[str, Any]],
     root: Path = ROOT,
@@ -443,6 +484,7 @@ def build_current_report(root: Path = ROOT) -> dict[str, Any]:
     catalog = load_catalog(root / "reference" / "client-contracts" / "catalog.json")
     surfaces, scenarios, overrides = validate_catalog(catalog, global_capabilities, root)
     evidence = collect_evidence(surfaces, scenarios, root)
+    validate_facade_support(global_capabilities, surfaces, evidence)
     return build_report(global_capabilities, surfaces, scenarios, evidence, overrides)
 
 
@@ -460,7 +502,8 @@ def main(argv: list[str] | None = None) -> int:
             surfaces, scenarios, _overrides = validate_catalog(
                 catalog, global_capabilities
             )
-            collect_evidence(surfaces, scenarios)
+            evidence = collect_evidence(surfaces, scenarios)
+            validate_facade_support(global_capabilities, surfaces, evidence)
             run_e2e_lanes(surfaces)
             print("Client capability E2E lanes PASS.")
             return 0

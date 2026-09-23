@@ -602,18 +602,13 @@ async fn cancelled_execution_waiter_releases_admission_capacity() {
         payload: large_search_request(),
     });
     third_request.set_timeout(Duration::from_millis(100));
-    let third_result = tokio::time::timeout(
-        Duration::from_secs(2),
-        third_client.execute(third_request),
-    )
-    .await
-    .expect("third admission probe must finish");
+    let third_result =
+        tokio::time::timeout(Duration::from_secs(2), third_client.execute(third_request))
+            .await
+            .expect("third admission probe must finish");
     let third_error = third_result.expect_err("third request must wait for execution");
     assert!(
-        matches!(
-            third_error.code(),
-            Code::DeadlineExceeded | Code::Cancelled
-        ),
+        matches!(third_error.code(), Code::DeadlineExceeded | Code::Cancelled),
         "cancelled waiter must release admission capacity; got {third_error:?}"
     );
 

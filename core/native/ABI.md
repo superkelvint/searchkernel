@@ -124,22 +124,32 @@ an existing exported signature or reachable type requires a native ABI version
 bump and a new baseline. Compatible additions still require review because
 they change the exported contract and the version-script symbol set.
 
-## Public header aggregate check
+## Public header contract check
 
-The public header is also checked before native ABI comparison. The check uses
-libclang to inspect each function declaration and rejects pointers to, or
-returns of, fully defined `struct`/`union` types. Forward declarations remain
-opaque and pass. An exception must be added to `ALLOWLIST` in
+The public header is also checked before native ABI comparison. The C header is
+the declaration source of truth. CI mechanically regenerates the Rust FFI
+surface with `tools/check-native-bindings.sh` and requires it to match the
+checked-in `searchkernel-vespa-bindings/src/bindings.rs`; do not maintain an
+independent handwritten signature list.
+
+`tools/check_abi_surface.py` uses libclang to normalize every public function
+signature. It also verifies that the production linker map exports exactly the
+functions declared by the header. On pull requests and pushes to `main`, CI
+compares the normalized signature surface with the preceding base header and
+requires `SK_NATIVE_ABI_VERSION` to increase when that surface changes.
+
+The same checker retains the aggregate-layout guard: pointers to, or returns
+of, fully defined `struct`/`union` types are rejected. Forward declarations
+remain opaque and pass. An exception must be added to `ALLOWLIST` in
 `tools/check_abi_surface.py` with a benchmark result and review/PR reference.
 
-The CI job installs `python3-clang` and `libclang` and runs:
-
-```bash
-python3 tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
-```
-
-The focused regression suite can be run locally with:
+The focused checks can be run locally with:
 
 ```bash
 python3 tools/test_check_abi_surface.py
+SK_NATIVE_ABI_HEADER="$PWD/core/native/vespa/searchkernel_vespa.h" \
+  tools/check-native-bindings.sh
+python3 tools/check_abi_surface.py \
+  core/native/vespa/searchkernel_vespa.h \
+  --linker-map core/native/vespa/searchkernel_vespa.map
 ```

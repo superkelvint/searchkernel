@@ -39,18 +39,17 @@ fn copy_tree(source: &Path, destination: &Path) {
 }
 
 fn snapshot_tree(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
-    fn visit(
-        root: &Path,
-        path: &Path,
-        output: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>,
-    ) {
+    fn visit(root: &Path, path: &Path, output: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>) {
         for entry in fs::read_dir(path).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
             if entry.file_type().unwrap().is_dir() {
                 visit(root, &path, output);
             } else {
-                output.insert(path.strip_prefix(root).unwrap().to_path_buf(), fs::read(path).unwrap());
+                output.insert(
+                    path.strip_prefix(root).unwrap().to_path_buf(),
+                    fs::read(path).unwrap(),
+                );
             }
         }
     }
@@ -118,16 +117,18 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
 
         let reopened =
             Index::open(&root).unwrap_or_else(|error| panic!("v{version} reopen: {error}"));
-        assert_eq!(search_ids(&reopened, 50), vec!["id:test:typea::2".to_owned()]);
-        assert_eq!(search_ids(&reopened, 10), vec![
-            "id:test:typea::4".to_owned(),
-            "id:test:typea::5".to_owned(),
-        ]);
+        assert_eq!(
+            search_ids(&reopened, 50),
+            vec!["id:test:typea::2".to_owned()]
+        );
+        assert_eq!(
+            search_ids(&reopened, 10),
+            vec!["id:test:typea::4".to_owned(), "id:test:typea::5".to_owned(),]
+        );
         reopened.close().unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 }
-
 
 #[test]
 fn repeated_failed_real_opens_do_not_mutate_or_destroy_a_valid_fixture() {

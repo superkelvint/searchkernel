@@ -28,7 +28,7 @@ approximated.
 
 ### Near and ordered-near proximity queries (`query.proximity`)
 
-- The TypeScript q facade does not expose proximity constructors yet.
+- The TypeScript facade does not expose this capability (machine-checked structured support state).
 
 ### sameElement query (`query.same_element`)
 
