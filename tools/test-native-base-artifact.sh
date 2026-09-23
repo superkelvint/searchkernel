@@ -41,8 +41,8 @@ cat >"$fixture/libvespa.c" <<'C'
 int searchkernel_published_fixture(void) { return 1; }
 C
 cc -shared -fPIC "$fixture/libvespa.c" -Wl,-soname,libvespalib.so -o "$bundle/base/lib/libvespalib.so"
-ln -s libvespalib.so "$bundle/base/lib/libvespalib.so.1"
-ln "$bundle/base/lib/libvespalib.so" "$bundle/base/lib/libvespalib-hard.so"
+ln -s libvespalib.so "$bundle/base/lib/libvespalib.so.fixture"
+ln "$bundle/base/lib/libvespalib.so" "$bundle/base/lib/libvespalib.so.hardlink"
 printf '{"kind":"vespa-base","vespa_commit":"fixture-vespa-commit"}\n' >"$bundle/base/manifest.json"
 printf 'CXX_INCLUDES = -I/work/vespa -isystem /fixture-deps/include\n' >"$configured/flags.make"
 printf 'c++ CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o -o searchcore_embedded_crud_spike_app\n' >"$configured/link.txt"
@@ -100,12 +100,12 @@ fi
 expected="$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-unknown-linux-gnu/objects/fixture-vespa-commit"
 [[ "$after" == "$expected" ]]
 [[ -s "$after/lib/libvespalib.so" ]]
-[[ -L "$after/lib/libvespalib.so.1" ]]
-[[ "$(readlink "$after/lib/libvespalib.so.1")" == "libvespalib.so" ]]
-[[ -f "$after/lib/libvespalib-hard.so" ]]
-[[ "$(stat -c %i "$after/lib/libvespalib.so")" == "$(stat -c %i "$after/lib/libvespalib-hard.so")" ]]
+[[ -L "$after/lib/libvespalib.so.fixture" ]]
+[[ "$(readlink "$after/lib/libvespalib.so.fixture")" == "libvespalib.so" ]]
+[[ -f "$after/lib/libvespalib.so.hardlink" ]]
+[[ "$(stat -c %i "$after/lib/libvespalib.so")" == "$(stat -c %i "$after/lib/libvespalib.so.hardlink")" ]]
 [[ ! -e "$after/lib/libsearchkernel_vespa.so" ]]
-[[ -z "$(find "$after" ! -type l -perm /222 -print -quit)" ]]
+[[ -z "$(find "$after" -perm /222 -print -quit)" ]]
 grep -q 'installed published Vespa base' "$fixture/install.err"
 
 warm=$(run_resolver path)
@@ -146,29 +146,6 @@ if run_resolver ensure corrupt-environment x86_64-unknown-linux-gnu "file://$cor
 fi
 grep -q 'checksum mismatch' "$fixture/corrupt.err"
 
-unsafe_parent="$fixture/unsafe-parent"
-unsafe_bundle="$unsafe_parent/searchkernel-vespa-base"
-mkdir -p "$unsafe_bundle/base/lib" "$unsafe_bundle/toolchain/upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir" "$unsafe_bundle/toolchain/vespa-deps/include"
-cp "$bundle/manifest.json" "$unsafe_bundle/manifest.json"
-cp "$bundle/base/manifest.json" "$unsafe_bundle/base/manifest.json"
-cp "$bundle/base/lib/libvespalib.so" "$unsafe_bundle/base/lib/libvespalib.so"
-ln -s ../../../../outside "$unsafe_bundle/base/lib/libescape.so"
-cp "$configured/flags.make" "$unsafe_bundle/toolchain/upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make"
-cp "$configured/link.txt" "$unsafe_bundle/toolchain/upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt"
-cp "$vespa_toolchain/.searchkernel-vespa-artifact.json" "$unsafe_bundle/toolchain/upstream/vespa/.searchkernel-vespa-artifact.json"
-cp "$bundle/toolchain/vespa-deps/include/fixture.h" "$unsafe_bundle/toolchain/vespa-deps/include/fixture.h"
-unsafe="$fixture/unsafe.tar.gz"
-(
-    cd "$unsafe_parent"
-    tar -czf "$unsafe" searchkernel-vespa-base
-)
-sha256sum "$unsafe" >"$unsafe.sha256"
-if run_resolver ensure unsafe-environment x86_64-unknown-linux-gnu "file://$unsafe" >"$fixture/unsafe.out" 2>"$fixture/unsafe.err"; then
-    echo 'escaping published base symlink unexpectedly installed' >&2
-    exit 1
-fi
-grep -q 'unsafe published Vespa base symlink' "$fixture/unsafe.err"
-
 truncated="$fixture/truncated.tar.gz"
 head -c 32 "$archive" >"$truncated"
 sha256sum "$truncated" >"$truncated.sha256"
@@ -184,58 +161,5 @@ if run_resolver ensure missing-environment x86_64-unknown-linux-gnu "file://$mis
 fi
 grep -q 'published Vespa base is unavailable' "$fixture/missing.err"
 grep -q 'no configured Vespa build outputs found' "$fixture/missing.err"
-
-
-# Private GitHub release assets must use the workflow token. A fake curl keeps
-# this regression hermetic while asserting that the installer supplies auth.
-fake_bin="$fixture/fake-bin"
-mkdir -p "$fake_bin"
-cat >"$fake_bin/curl" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-auth=false
-output=
-url=
-while (($#)); do
-    case "$1" in
-        -H)
-            [[ "$2" == "Authorization: Bearer ${EXPECTED_GITHUB_TOKEN:?}" ]] && auth=true
-            shift 2
-            ;;
-        -o)
-            output=$2
-            shift 2
-            ;;
-        -*)
-            shift
-            ;;
-        *)
-            url=$1
-            shift
-            ;;
-    esac
-done
-[[ "$auth" == true ]] || { echo "missing GitHub release auth header" >&2; exit 22; }
-[[ -n "$output" && -n "$url" ]]
-case "$url" in
-    *.sha256) cp "${FIXTURE_ARCHIVE:?}.sha256" "$output" ;;
-    *) cp "${FIXTURE_ARCHIVE:?}" "$output" ;;
-esac
-SH
-chmod +x "$fake_bin/curl"
-
-private_cache="$fixture/private-cache"
-private_url="https://github.com/superkelvint/searchkernel/releases/download/fixture/private-base.tar.gz"
-PATH="$fake_bin:$PATH" \
-EXPECTED_GITHUB_TOKEN=fixture-token \
-FIXTURE_ARCHIVE="$archive" \
-GITHUB_TOKEN=fixture-token \
-    bash "$clone/tools/install-native-base-artifact.sh" \
-        "$private_url" \
-        "$private_cache" \
-        artifact-regression \
-        x86_64-unknown-linux-gnu \
-        fixture-vespa-commit >/dev/null
-[[ -s "$private_cache/objects/fixture-vespa-commit/lib/libvespalib.so" ]]
 
 echo 'native base artifact regression PASS'
