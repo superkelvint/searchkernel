@@ -80,20 +80,20 @@ def render_summary(
     lines = [
         "## SearchKernel Clippy",
         "",
-        f"- Result: \`{result}\`",
-        f"- Profile: \`{profile}\`",
+        f"- Result: `{result}`",
+        f"- Profile: `{profile}`",
         f"- Diagnostics: {diagnostics}",
         f"- Clippy diagnostics: {clippy_diagnostics}",
         f"- Machine-applicable suggestions: {suggestions}",
-        f"- Reproduce: \`./dev lint --profile {profile}\`",
-        f"- CARGO_TARGET_DIR: \`{target}\`",
-        f"- SEARCHKERNEL_BUILD_ENV: \`{build_env}\`",
+        f"- Reproduce: `./dev lint --profile {profile}`",
+        f"- CARGO_TARGET_DIR: `{target}`",
+        f"- SEARCHKERNEL_BUILD_ENV: `{build_env}`",
     ]
     if result == "BUILD_OR_COMPILE_FAILURE":
         lines += [
             "",
             "No Clippy lint diagnostic was observed before failure.",
-            "Run \`./dev doctor\` before changing product code, then rerun the reproduction command.",
+            "Run `./dev doctor` before changing product code, then rerun the reproduction command.",
         ]
     return "\n".join(lines) + "\n"
 
