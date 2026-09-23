@@ -376,11 +376,7 @@ final class Protocol
     /** @param array<string,mixed> $payload */
     private static function decodeBool(array $payload): bool
     {
-        $value = self::required($payload, 'value');
-        if (!is_bool($value)) {
-            throw new ProtocolException('BoolValue.value must be boolean');
-        }
-        return $value;
+        return self::boolScalarField($payload, 'value', 'BoolValue.value', false);
     }
 
     /** @param array<string,mixed> $payload */
@@ -396,7 +392,7 @@ final class Protocol
     /** @param array<string,mixed> $payload */
     private static function decodeFloat64(array $payload): float
     {
-        return self::finiteNumber(self::required($payload, 'value'), 'Float64Value.value');
+        return self::finiteScalarField($payload, 'value', 'Float64Value.value', 0.0);
     }
 
     private static function finiteNumber(mixed $value, string $label): float
@@ -410,7 +406,7 @@ final class Protocol
     /** @param array<string,mixed> $payload */
     private static function decodeInteger(array $payload, bool $signed): int|string
     {
-        $value = self::required($payload, 'value');
+        $value = array_key_exists('value', $payload) ? $payload['value'] : 0;
         if (is_int($value)) {
             if (!$signed && $value < 0) {
                 throw new ProtocolException('UInt64Value.value must be unsigned');
