@@ -6,6 +6,11 @@ on:
     paths:
       - "core/native/**"
       - "core/crates/searchkernel-vespa-bindings/**"
+      - "reference/vespa/NATIVE_ABI_CONTRACT.h"
+      - "reference/vespa/PINNED_VESPA.json"
+      - "reference/vespa/common/verify-common.sh"
+      - "tools/check-native-abi-authorities.py"
+      - "tools/test_check_native_abi_authorities.py"
       - "tools/check_abi_surface.py"
       - "tools/test_check_abi_surface.py"
       - "tools/check-native-bindings.sh"
@@ -19,6 +24,11 @@ on:
     paths:
       - "core/native/**"
       - "core/crates/searchkernel-vespa-bindings/**"
+      - "reference/vespa/NATIVE_ABI_CONTRACT.h"
+      - "reference/vespa/PINNED_VESPA.json"
+      - "reference/vespa/common/verify-common.sh"
+      - "tools/check-native-abi-authorities.py"
+      - "tools/test_check_native_abi_authorities.py"
       - "tools/check_abi_surface.py"
       - "tools/test_check_abi_surface.py"
       - "tools/check-native-bindings.sh"
@@ -63,6 +73,12 @@ jobs:
             echo "::error::The self-hosted runner must provide python3-clang and libclang-dev for /usr/bin/python3."
             exit 1
           fi
+
+      - name: Run ABI authority regression tests
+        run: $ABI_PYTHON tools/test_check_native_abi_authorities.py
+
+      - name: Check native ABI authority agreement
+        run: $ABI_PYTHON tools/check-native-abi-authorities.py
 
       - name: Run ABI surface regression tests
         run: $ABI_PYTHON tools/test_check_abi_surface.py
