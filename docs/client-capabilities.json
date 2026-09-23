@@ -56,6 +56,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 693
+            },
+            {
+              "capability": "query.term",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 750
@@ -487,6 +496,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 694
+            },
+            {
+              "capability": "filter.textual",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 753
@@ -532,6 +550,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "search.sorting",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 695
+            },
             {
               "capability": "search.sorting",
               "scenario": "basic",
@@ -604,6 +631,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "search.pagination",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 696
+            },
             {
               "capability": "search.pagination",
               "scenario": "basic",
@@ -807,6 +843,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 706
+            },
+            {
+              "capability": "result.highlighting",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 758
@@ -932,6 +977,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 697
+            },
+            {
+              "capability": "grouping.structured",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 760
@@ -990,6 +1044,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "grouping.aggregations",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 698
+            },
             {
               "capability": "grouping.aggregations",
               "scenario": "basic",
@@ -1103,6 +1166,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 699
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 763
@@ -1162,6 +1234,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 700
+            },
+            {
+              "capability": "update.arithmetic",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 764
@@ -1189,6 +1270,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "update.create_if_nonexistent",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 701
+            },
             {
               "capability": "update.create_if_nonexistent",
               "scenario": "basic",
@@ -1305,6 +1395,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "query.yql",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 702
+            },
             {
               "capability": "query.yql",
               "scenario": "basic",
@@ -1465,6 +1564,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 703
+            },
+            {
+              "capability": "ranking.profile_selection",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 769
@@ -1529,6 +1637,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 704
+            },
+            {
+              "capability": "ranking.tensor_query_inputs",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 771
@@ -1556,6 +1673,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "ranking.rank_properties",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 705
+            },
             {
               "capability": "ranking.rank_properties",
               "scenario": "basic",
@@ -1625,6 +1751,15 @@
               "scenario": "basic",
               "surface": "php",
               "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 707
+            },
+            {
+              "capability": "result.grouping_tree",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
               "kind": "e2e",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 774
@@ -1652,6 +1787,15 @@
           "id": "basic",
           "title": "Basic behavior",
           "evidence": [
+            {
+              "capability": "result.degradation_metadata",
+              "scenario": "basic",
+              "surface": "php",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/php/tests/run.php",
+              "line": 708
+            },
             {
               "capability": "result.degradation_metadata",
               "scenario": "basic",
