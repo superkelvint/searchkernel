@@ -156,4 +156,57 @@ fi
 grep -q 'published Vespa base is unavailable' "$fixture/missing.err"
 grep -q 'no configured Vespa build outputs found' "$fixture/missing.err"
 
+
+# Private GitHub release assets must use the workflow token. A fake curl keeps
+# this regression hermetic while asserting that the installer supplies auth.
+fake_bin="$fixture/fake-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+auth=false
+output=
+url=
+while (($#)); do
+    case "$1" in
+        -H)
+            [[ "$2" == "Authorization: Bearer \${EXPECTED_GITHUB_TOKEN:?}" ]] && auth=true
+            shift 2
+            ;;
+        -o)
+            output=$2
+            shift 2
+            ;;
+        -*)
+            shift
+            ;;
+        *)
+            url=$1
+            shift
+            ;;
+    esac
+done
+[[ "$auth" == true ]] || { echo "missing GitHub release auth header" >&2; exit 22; }
+[[ -n "$output" && -n "$url" ]]
+case "$url" in
+    *.sha256) cp "\${FIXTURE_ARCHIVE:?}.sha256" "$output" ;;
+    *) cp "\${FIXTURE_ARCHIVE:?}" "$output" ;;
+esac
+SH
+chmod +x "$fake_bin/curl"
+
+private_cache="$fixture/private-cache"
+private_url="https://github.com/superkelvint/searchkernel/releases/download/fixture/private-base.tar.gz"
+PATH="$fake_bin:$PATH" \
+EXPECTED_GITHUB_TOKEN=fixture-token \
+FIXTURE_ARCHIVE="$archive" \
+GITHUB_TOKEN=fixture-token \
+    bash "$clone/tools/install-native-base-artifact.sh" \
+        "$private_url" \
+        "$private_cache" \
+        artifact-regression \
+        x86_64-unknown-linux-gnu \
+        fixture-vespa-commit >/dev/null
+[[ -s "$private_cache/objects/fixture-vespa-commit/lib/libvespalib.so" ]]
+
 echo 'native base artifact regression PASS'
