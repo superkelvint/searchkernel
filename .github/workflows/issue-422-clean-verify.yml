@@ -1,4 +1,5 @@
 name: Issue 422 clean native base verification
+# Validates private-release acquisition from a pristine cache.
 
 on:
   push:
