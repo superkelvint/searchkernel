@@ -26,6 +26,8 @@ use searchkerneld::{rpc, start, ServerConfig};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
+use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Notify;
 use tonic::{Code, Request};
@@ -804,14 +806,24 @@ async fn stale_unix_socket_is_removed_before_binding() {
 #[cfg(unix)]
 #[tokio::test]
 async fn inaccessible_unix_socket_is_not_removed_before_binding() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock must be after the Unix epoch")
+        .as_nanos();
     let path = std::env::temp_dir().join(format!(
-        "searchkerneld-inaccessible-uds-{}.sock",
-        std::process::id()
+        "searchkerneld-inaccessible-uds-{}-{nonce}.sock",
+        std::process::id(),
     ));
     let _ = std::fs::remove_file(&path);
     let listener = UnixListener::bind(&path).expect("create inaccessible UDS listener");
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000))
         .expect("make UDS inaccessible");
+    // The errno reported for a permission-denied Unix socket is platform
+    // dependent. Capture the local probe result so the regression checks that
+    // bind_unix_listener propagates it instead of treating it as stale.
+    let probe_error = UnixStream::connect(&path)
+        .await
+        .expect_err("mode 000 UDS must reject a client connection");
 
     let backend = Arc::new(RecordingBackend::new());
     let (index, dispatcher) = dispatcher(backend);
@@ -820,7 +832,7 @@ async fn inaccessible_unix_socket_is_not_removed_before_binding() {
         .expect_err("inaccessible UDS must not be treated as stale");
     assert!(matches!(
         error,
-        ServerError::Bind(error) if error.kind() == std::io::ErrorKind::PermissionDenied
+        ServerError::Bind(error) if error.kind() == probe_error.kind()
     ));
     assert!(path.exists(), "permission failure removed the UDS path");
 
