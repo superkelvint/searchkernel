@@ -99,6 +99,7 @@ check_fast() {
     cargo check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
     bash "$ROOT/tools/test-flatbuffers-cpp-toolchain.sh"
+    bash "$ROOT/tools/check-flatbuffers-generated.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
     "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check_abi_surface.py" \

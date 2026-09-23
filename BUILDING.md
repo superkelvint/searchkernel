@@ -116,13 +116,36 @@ native build tooling, or real-Vespa acceptance artifacts, run the applicable
 native verifier locally and include the exact command and result in the pull
 request. Do not interpret a green non-native CI run as native verification.
 
-The repository-managed pre-commit hook enforces this split. Staged native-sensitive
-changes run both the real-Vespa gate and the real Python gRPC E2E through
-`tools/run-python-native-e2e.sh`. That runner opts the native E2E test in explicitly
-and bootstraps the native SDK first. Non-native-only Rust or Python changes do not
-trigger native verification solely because their language lane is selected.
-Ordinary Python unittest discovery leaves the real gRPC E2E skipped, so GitHub CI
-does not acquire or build Vespa merely because Python behavioral tests are selected.
+The repository-managed pre-commit hook uses the same change classifier as exact-head
+CI and consumes all of its relevant lanes. The non-native Rust workspace checks
+remain the baseline. Staged Python and TypeScript changes additionally run their
+language suites; portable-contract changes run API conformance; protocol/schema
+inputs run deterministic checked-in generation checks for Rust/Python
+FlatBuffers, BFBS, Rust gRPC, and Python gRPC artifacts.
+
+The expensive native gates remain change-aware and independently classified.
+Changes to the Rust facade, portable IR/filter semantics, native engine/adapter,
+native build surface, or Rust toolchain/dependency inputs run the cumulative
+real-Vespa Rust product-path gate. Changes that can alter the actual daemon gRPC
+execution path (including `searchkerneld`, portable IR/filter semantics, native
+backend layers, the RPC/portable wire contract, dispatcher/protocol code, build
+inputs, and Python gRPC transport) run the real Python -> gRPC -> searchkerneld
+-> native backend E2E
+through `tools/run-python-native-e2e.sh`. That runner opts the native E2E test in
+explicitly and bootstraps the native SDK first. Ordinary Python unittest discovery
+still leaves the real gRPC E2E skipped.
+
+Lane selection is evaluated from both the indexed proposed classifier and the
+current HEAD classifier, never the working-tree copy. Their required lanes are
+unioned: a classifier change can add verification immediately but cannot weaken
+its own commit's existing gates. Because subsequent verification executes from the
+working tree, any staged change that selects a verification lane requires a
+commit-equivalent non-ignored working
+tree: no tracked unstaged changes and no untracked non-ignored files. This prevents
+an unstaged fix, a newly referenced build helper, or another uncommitted file from
+making the staged commit appear green. Stage, ignore, move, or remove those files
+before committing. Documentation-only commits that select no behavioral lane do
+not activate this guard.
 
 
 ## Environment isolation

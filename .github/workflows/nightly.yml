@@ -81,6 +81,7 @@ jobs:
 
       - name: Generated protocol and RPC artifacts
         run: |
+          bash tools/check-flatbuffers-generated.sh
           bash tools/check-flatbuffers-bfbs.sh
           bash tools/check-searchkernel-rpc.sh
           bash tools/check-python-grpc.sh

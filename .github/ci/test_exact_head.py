@@ -138,6 +138,16 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
 
+    def test_workflow_consumes_generated_and_conformance_classifier_outputs(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("generated: ${{ steps.changes.outputs.generated }}", workflow)
+        self.assertIn("conformance: ${{ steps.changes.outputs.conformance }}", workflow)
+        self.assertIn("grpc_e2e: ${{ steps.changes.outputs.grpc_e2e }}", workflow)
+        self.assertIn("if: needs.classify.outputs.generated == 'true'", workflow)
+        self.assertIn("if: needs.classify.outputs.conformance == 'true'", workflow)
+        self.assertIn('require_lane Generated "$GENERATED_REQUIRED" "$GENERATED_RESULT"', workflow)
+        self.assertIn('require_lane Conformance "$CONFORMANCE_REQUIRED" "$CONFORMANCE_RESULT"', workflow)
+
     def test_abi_workflow_installs_rustfmt_for_binding_generation(self) -> None:
         workflow = ABI_WORKFLOW.read_text(encoding="utf-8")
         rust_step = workflow.split("- name: Install Rust toolchain", 1)[1].split(
@@ -232,13 +242,13 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 self.assertEqual("native i" in logged, expect_native)
 
-    def test_precommit_runs_python_native_e2e_only_for_native_sensitive_changes(self) -> None:
+    def test_precommit_runs_python_native_e2e_only_for_grpc_sensitive_changes(self) -> None:
         cases = (
             ("core/native/vespa/abi.cc", True),
             ("core/crates/searchkernel-ir-adapter/src/backend.rs", True),
-            ("clients/python/searchkernel/client.py", False),
-            ("searchkerneld/src/main.rs", False),
-            ("core/crates/searchkernel-ir/src/model.rs", False),
+            ("core/crates/searchkernel/src/query.rs", False),
+            ("searchkerneld/src/main.rs", True),
+            ("core/crates/searchkernel/src/result.rs", False),
             ("docs/architecture.md", False),
         )
         for staged_path, expect_e2e in cases:
@@ -385,7 +395,9 @@ class ExactHeadTests(unittest.TestCase):
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
         (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
-        (repo / "tracked.txt").write_text("original\n", encoding="utf-8")
+        tracked = repo / "core" / "crates" / "searchkernel-ir" / "src" / "tracked.rs"
+        tracked.parent.mkdir(parents=True, exist_ok=True)
+        tracked.write_text("original\n", encoding="utf-8")
 
         log = repo / "hook.log"
         cargo = repo / "fakebin" / "cargo"
@@ -410,7 +422,7 @@ class ExactHeadTests(unittest.TestCase):
         native.parent.mkdir(parents=True)
         native.write_text("changed\n", encoding="utf-8")
         git(repo, "add", "core/native/vespa/abi.cc")
-        (repo / "tracked.txt").write_text("unstaged\n", encoding="utf-8")
+        tracked.write_text("unstaged\n", encoding="utf-8")
 
         env = os.environ.copy()
         env["HOOK_LOG"] = str(log)
@@ -484,43 +496,111 @@ class ExactHeadTests(unittest.TestCase):
                 "rust=true",
                 "python=false",
                 "typescript=false",
-                "native=false",
+                "generated=false",
+                "conformance=true",
+                "native=true",
+                "grpc_e2e=true",
+                "selector=false",
             },
             b"clients/python/searchkernel/ergonomic.py\0": {
                 "rust=false",
                 "python=true",
                 "typescript=false",
+                "generated=false",
+                "conformance=false",
                 "native=false",
+                "grpc_e2e=true",
+                "selector=false",
             },
             b"clients/typescript/src/index.ts\0": {
                 "rust=false",
                 "python=false",
                 "typescript=true",
+                "generated=false",
+                "conformance=false",
                 "native=false",
+                "grpc_e2e=false",
+                "selector=false",
             },
             b"core/native/vespa/abi.cc\0": {
                 "rust=true",
                 "python=false",
                 "typescript=false",
+                "generated=false",
+                "conformance=false",
                 "native=true",
+                "grpc_e2e=true",
+                "selector=false",
+            },
+            b"searchkerneld/src/main.rs\0": {
+                "rust=true",
+                "python=false",
+                "typescript=false",
+                "generated=false",
+                "conformance=false",
+                "native=true",
+                "grpc_e2e=true",
+                "selector=false",
             },
             b"api/searchkernel.fbs\0": {
                 "rust=true",
                 "python=true",
                 "typescript=true",
+                "generated=true",
+                "conformance=true",
                 "native=false",
+                "grpc_e2e=true",
+                "selector=false",
+            },
+            b"core/crates/searchkernel/src/query.rs\0": {
+                "rust=true",
+                "python=false",
+                "typescript=false",
+                "generated=false",
+                "conformance=false",
+                "native=true",
+                "grpc_e2e=false",
+                "selector=false",
+            },
+            b"Cargo.lock\0": {
+                "rust=true",
+                "python=false",
+                "typescript=false",
+                "generated=false",
+                "conformance=false",
+                "native=true",
+                "grpc_e2e=true",
+                "selector=false",
+            },
+            b"dev\0": {
+                "rust=true",
+                "python=false",
+                "typescript=true",
+                "generated=false",
+                "conformance=false",
+                "native=false",
+                "grpc_e2e=true",
+                "selector=true",
             },
             b"docs/architecture.md\0": {
                 "rust=false",
                 "python=false",
                 "typescript=false",
+                "generated=false",
+                "conformance=false",
                 "native=false",
+                "grpc_e2e=false",
+                "selector=false",
             },
             b".githooks/pre-commit\0": {
                 "rust=false",
                 "python=false",
                 "typescript=false",
-                "native=true",
+                "generated=false",
+                "conformance=false",
+                "native=false",
+                "grpc_e2e=false",
+                "selector=true",
             },
         }
         for changed, expected in cases.items():
@@ -539,6 +619,275 @@ class ExactHeadTests(unittest.TestCase):
                         if line.strip()
                     }
                     self.assertEqual(lines, expected)
+
+
+class PreCommitLaneTests(unittest.TestCase):
+    def test_precommit_shell_syntax_is_valid(self) -> None:
+        result = subprocess.run(
+            ["bash", "-n", str(HOOK)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def make_hook_repo(self) -> tuple[Path, tempfile.TemporaryDirectory[str], Path, dict[str, str]]:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+
+        for directory in (
+            ".githooks",
+            ".github/ci",
+            ".github/workflows",
+            "reference/vespa",
+            "reference/api-conformance",
+            "tools",
+            "fakebin",
+            "core/crates/searchkernel-filter/src",
+        ):
+            (repo / directory).mkdir(parents=True, exist_ok=True)
+
+        (repo / ".githooks/pre-commit").write_bytes(HOOK.read_bytes())
+        (repo / ".github/ci/exact_head.py").write_bytes(SCRIPT.read_bytes())
+        (repo / ".github/ci/test_exact_head.py").write_text("raise SystemExit('real selector test should be routed through CI_PYTHON')\n")
+        (repo / ".github/workflows/behavioral-verification.yml").write_text("fixture\n")
+        (repo / "core/crates/searchkernel-filter/src/lib.rs").write_text("original\n")
+
+        log = repo / "hook.log"
+
+        def executable(path: Path, body: str) -> None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + body, encoding="utf-8")
+            path.chmod(0o755)
+
+        executable(
+            repo / "fakebin/cargo",
+            'printf "cargo %s\\n" "$*" >> "$HOOK_LOG"\n',
+        )
+        executable(
+            repo / "fakebin/fake-python",
+            'printf "python %s\\n" "$*" >> "$HOOK_LOG"\n',
+        )
+        executable(
+            repo / "dev",
+            'printf "dev %s\\n" "$*" >> "$HOOK_LOG"\n',
+        )
+        executable(
+            repo / "reference/vespa/verify-through.sh",
+            'printf "native %s\\n" "$*" >> "$HOOK_LOG"\n',
+        )
+        executable(
+            repo / "reference/api-conformance/verify.sh",
+            'printf "conformance\\n" >> "$HOOK_LOG"\n',
+        )
+        executable(
+            repo / "tools/run-python-native-e2e.sh",
+            'printf "python-native-e2e\\n" >> "$HOOK_LOG"\n',
+        )
+        for name in (
+            "check-flatbuffers-generated.sh",
+            "check-flatbuffers-bfbs.sh",
+            "check-searchkernel-rpc.sh",
+            "check-python-grpc.sh",
+        ):
+            executable(
+                repo / "tools" / name,
+                f'printf "{name}\\n" >> "$HOOK_LOG"\n',
+            )
+
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "fixture")
+
+        env = os.environ.copy()
+        env["HOOK_LOG"] = str(log)
+        env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        env["CI_PYTHON"] = str(repo / "fakebin/fake-python")
+        return repo, temp, log, env
+
+    def run_hook_for(self, staged_path: str) -> str:
+        repo, _temp, log, env = self.make_hook_repo()
+        staged = repo / staged_path
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text("changed\n", encoding="utf-8")
+        git(repo, "add", staged_path)
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks/pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        return log.read_text(encoding="utf-8")
+
+    def test_precommit_executes_python_typescript_generated_and_conformance_lanes(self) -> None:
+        python_log = self.run_hook_for("clients/python/searchkernel/client.py")
+        self.assertIn("python -m unittest discover -s clients/python/tests -p test_*.py", python_log)
+        self.assertIn("python-native-e2e", python_log)
+        self.assertNotIn("dev test typescript", python_log)
+
+        typescript_log = self.run_hook_for("clients/typescript/src/index.ts")
+        self.assertIn("dev test typescript", typescript_log)
+        self.assertNotIn("python -m unittest discover", typescript_log)
+
+        protocol_log = self.run_hook_for("api/rpc/searchkernel.proto")
+        for expected in (
+            "check-flatbuffers-generated.sh",
+            "check-flatbuffers-bfbs.sh",
+            "check-searchkernel-rpc.sh",
+            "check-python-grpc.sh",
+            "conformance",
+            "python -m unittest discover -s clients/python/tests -p test_*.py",
+            "dev test typescript",
+            "python-native-e2e",
+        ):
+            self.assertIn(expected, protocol_log)
+
+    def test_precommit_executes_selector_regressions_when_selector_changes(self) -> None:
+        log = self.run_hook_for(".github/workflows/behavioral-verification.yml")
+        self.assertIn("python .github/ci/test_exact_head.py", log)
+        self.assertNotIn("native i", log)
+        self.assertNotIn("python-native-e2e", log)
+
+    def test_precommit_native_daemon_and_facade_paths_run_real_native_and_grpc_e2e(self) -> None:
+        for path in (
+            "searchkerneld/src/main.rs",
+            "core/crates/searchkernel/src/index/native.rs",
+            "core/crates/searchkernel/src/portable_definition.rs",
+        ):
+            with self.subTest(path=path):
+                log = self.run_hook_for(path)
+                self.assertIn("native i", log)
+                self.assertIn("python-native-e2e", log)
+
+        server_log = self.run_hook_for("searchkerneld/src/lib.rs")
+        self.assertNotIn("native i", server_log)
+        self.assertIn("python-native-e2e", server_log)
+
+        rust_facade_log = self.run_hook_for("core/crates/searchkernel/src/query.rs")
+        self.assertIn("native i", rust_facade_log)
+        self.assertNotIn("python-native-e2e", rust_facade_log)
+
+        shared_ir_log = self.run_hook_for("core/crates/searchkernel-ir/src/model.rs")
+        self.assertIn("native i", shared_ir_log)
+        self.assertIn("python-native-e2e", shared_ir_log)
+
+    def test_precommit_trusted_classifier_prevents_same_commit_lane_weakening(self) -> None:
+        repo, _temp, log, env = self.make_hook_repo()
+
+        native = repo / "core/native/vespa/abi.cc"
+        native.parent.mkdir(parents=True, exist_ok=True)
+        native.write_text("changed\n", encoding="utf-8")
+        git(repo, "add", "core/native/vespa/abi.cc")
+
+        classifier = repo / ".github/ci/exact_head.py"
+        classifier.write_text(
+            "#!/usr/bin/env python3\n"
+            "import argparse\n"
+            "p=argparse.ArgumentParser(); p.add_argument('command'); "
+            "p.add_argument('--github-output'); a=p.parse_args(); "
+            "open(a.github_output,'w').write('rust=false\\npython=false\\ntypescript=false\\n"
+            "generated=false\\nconformance=false\\nnative=false\\ngrpc_e2e=false\\nselector=false\\n')\n",
+            encoding="utf-8",
+        )
+        git(repo, "add", ".github/ci/exact_head.py")
+
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks/pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        logged = log.read_text(encoding="utf-8")
+        self.assertIn("native i", logged)
+        self.assertIn("python-native-e2e", logged)
+        self.assertIn("python .github/ci/test_exact_head.py", logged)
+
+    def test_precommit_uses_staged_classifier_and_rejects_unstaged_classifier_edits(self) -> None:
+        repo, _temp, log, env = self.make_hook_repo()
+        hook_path = repo / ".githooks/pre-commit"
+        hook_path.write_text(hook_path.read_text(encoding="utf-8") + "\n# staged selector change\n")
+        git(repo, "add", ".githooks/pre-commit")
+
+        # If the hook incorrectly executes this working-tree classifier, it
+        # would emit no selected lanes and skip the commit-equivalence guard.
+        classifier = repo / ".github/ci/exact_head.py"
+        classifier.write_text(
+            "#!/usr/bin/env python3\n"
+            "import argparse\n"
+            "p=argparse.ArgumentParser(); p.add_argument('command'); "
+            "p.add_argument('--github-output'); a=p.parse_args(); "
+            "open(a.github_output,'w').write('rust=false\\npython=false\\ntypescript=false\\n"
+            "generated=false\\nconformance=false\\nnative=false\\ngrpc_e2e=false\\nselector=false\\n')\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks/pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tracked unstaged changes also exist", result.stdout)
+        self.assertFalse(log.exists(), "verification must stop before running commands")
+
+    def test_precommit_rejects_non_native_unstaged_relevant_changes(self) -> None:
+        repo, _temp, log, env = self.make_hook_repo()
+        staged = repo / "core/crates/searchkernel-ir/src/model.rs"
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text("staged\n", encoding="utf-8")
+        git(repo, "add", "core/crates/searchkernel-ir/src/model.rs")
+        (repo / "core/crates/searchkernel-filter/src/lib.rs").write_text("unstaged\n")
+
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks/pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tracked unstaged changes also exist", result.stdout)
+        self.assertFalse(log.exists(), "verification must stop before running commands")
+
+    def test_precommit_rejects_untracked_files_for_verified_commits(self) -> None:
+        repo, _temp, log, env = self.make_hook_repo()
+        staged = repo / "core/crates/searchkernel-ir/src/model.rs"
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text("staged\n", encoding="utf-8")
+        git(repo, "add", "core/crates/searchkernel-ir/src/model.rs")
+        untracked = repo / "scratch-helper.txt"
+        untracked.write_text("untracked\n", encoding="utf-8")
+
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks/pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("untracked files also exist", result.stdout)
+        self.assertFalse(log.exists(), "verification must stop before running commands")
 
 
 if __name__ == "__main__":

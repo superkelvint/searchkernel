@@ -19,6 +19,9 @@ jobs:
       python: ${{ steps.changes.outputs.python }}
       typescript: ${{ steps.changes.outputs.typescript }}
       native: ${{ steps.changes.outputs.native }}
+      generated: ${{ steps.changes.outputs.generated }}
+      conformance: ${{ steps.changes.outputs.conformance }}
+      grpc_e2e: ${{ steps.changes.outputs.grpc_e2e }}
     steps:
       - name: Check out exact PR head
         uses: actions/checkout@v4
@@ -248,9 +251,106 @@ jobs:
       - name: Verify TypeScript package
         run: npm run test:package --prefix clients/typescript
 
+  generated:
+    name: Generated contracts
+    needs: classify
+    if: needs.classify.outputs.generated == 'true'
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CARGO_TARGET_DIR: target/ci-exact-head-generated
+      SEARCHKERNEL_BUILD_ENV: ci
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
+
+      - name: Reject stale verification checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            exit 1
+          fi
+          echo "Verified exact PR head $actual."
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
+
+      - name: Install Python codegen dependencies
+        run: $CI_PYTHON -m pip install -e 'clients/python[codegen]'
+
+      - name: Verify generated protocol artifacts
+        run: |
+          bash tools/check-flatbuffers-generated.sh
+          bash tools/check-flatbuffers-bfbs.sh
+          bash tools/check-searchkernel-rpc.sh
+          bash tools/check-python-grpc.sh
+
+  conformance:
+    name: Portable API conformance
+    needs: classify
+    if: needs.classify.outputs.conformance == 'true'
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CARGO_TARGET_DIR: target/ci-exact-head-conformance
+      SEARCHKERNEL_BUILD_ENV: ci
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Reject stale verification checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            exit 1
+          fi
+          echo "Verified exact PR head $actual."
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache pinned FlatBuffers toolchain
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Ensure pinned FlatBuffers toolchain
+        run: ./dev install flatbuffers
+
+      - name: Run portable API conformance
+        run: reference/api-conformance/verify.sh
+
   exact-head-gate:
     name: Exact-head gate
-    needs: [classify, rust, python, typescript]
+    needs: [classify, rust, python, typescript, generated, conformance]
     if: always()
     runs-on: [self-hosted, linux, x64]
     steps:
@@ -265,6 +365,11 @@ jobs:
           TYPESCRIPT_REQUIRED: ${{ needs.classify.outputs.typescript }}
           TYPESCRIPT_RESULT: ${{ needs.typescript.result }}
           NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}
+          GENERATED_REQUIRED: ${{ needs.classify.outputs.generated }}
+          GENERATED_RESULT: ${{ needs.generated.result }}
+          CONFORMANCE_REQUIRED: ${{ needs.classify.outputs.conformance }}
+          CONFORMANCE_RESULT: ${{ needs.conformance.result }}
+          GRPC_E2E_SENSITIVE: ${{ needs.classify.outputs.grpc_e2e }}
         run: |
           set -euo pipefail
 
@@ -286,9 +391,14 @@ jobs:
           require_lane Rust "$RUST_REQUIRED" "$RUST_RESULT"
           require_lane Python "$PYTHON_REQUIRED" "$PYTHON_RESULT"
           require_lane TypeScript "$TYPESCRIPT_REQUIRED" "$TYPESCRIPT_RESULT"
+          require_lane Generated "$GENERATED_REQUIRED" "$GENERATED_RESULT"
+          require_lane Conformance "$CONFORMANCE_REQUIRED" "$CONFORMANCE_RESULT"
 
           if [[ "$NATIVE_SENSITIVE" == "true" ]]; then
             echo "::notice title=Native verification is local::Native-sensitive paths changed. CI intentionally does not bootstrap Vespa or run the real-engine gate; local native verification evidence is required by AGENTS.md."
+          fi
+          if [[ "$GRPC_E2E_SENSITIVE" == "true" ]]; then
+            echo "::notice title=Real gRPC E2E is local::gRPC end-to-end-sensitive paths changed. CI does not bootstrap Vespa for the real Python -> gRPC -> searchkerneld -> native backend path; the repository pre-commit hook runs that gate locally."
           fi
 
           echo "All non-native CI behavior required for exact PR head $EXPECTED_HEAD is verified."

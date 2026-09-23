@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
 
+PYTHON_BIN="${CI_PYTHON:-python3}"
+
 if ! git diff --cached --quiet -- docs/capabilities.json; then
     # Do not generate from a worktree version that differs from the staged source;
     # otherwise the committed ledger and its generated views could describe
@@ -17,29 +19,68 @@ if ! git diff --cached --quiet -- docs/capabilities.json; then
     git add docs/CAPABILITIES.md LIMITATIONS.md
 fi
 
-native_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-native.XXXXXX")
-trap 'rm -f -- "$native_selection"' EXIT
-git diff --cached --name-only --no-renames -z \
-    | python3 .github/ci/exact_head.py classify --github-output "$native_selection" >/dev/null
+selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-selection.XXXXXX")
+trusted_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-trusted-selection.XXXXXX")
+staged_classifier=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-classifier.XXXXXX")
+trusted_classifier=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-trusted-classifier.XXXXXX")
+changed_paths=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-paths.XXXXXX")
+trap 'rm -f -- "$selection" "$trusted_selection" "$staged_classifier" "$trusted_classifier" "$changed_paths"' EXIT
 
-native_required=false
-if grep -qx 'native=true' "$native_selection"; then
-    native_required=true
-fi
+# Lane selection is part of the authorization decision. Evaluate the proposed
+# classifier from the index, never the working tree, and union it with HEAD's
+# trusted classifier. The staged classifier may add coverage immediately, but
+# the same commit cannot authorize itself by weakening an existing lane.
+git diff --cached --name-only --no-renames -z > "$changed_paths"
+git show :.github/ci/exact_head.py > "$staged_classifier"
+git show HEAD:.github/ci/exact_head.py > "$trusted_classifier"
+python3 "$staged_classifier" classify --github-output "$selection" < "$changed_paths" >/dev/null
+python3 "$trusted_classifier" classify --github-output "$trusted_selection" < "$changed_paths" >/dev/null
 
-# The real Python gRPC E2E is part of native-sensitive verification. Keep it
-# on the same classifier boundary as the real-Vespa gate so non-native-only
-# Rust/Python changes do not unexpectedly require a Vespa SDK.
-python_native_e2e_required="$native_required"
-
-if [[ "$native_required" == true ]]; then
+# Verification executes from the working tree. Once the staged commit changes
+# anything that selects a verification lane, require a commit-equivalent working
+# tree. Trying to classify the unstaged path itself is insufficient: a staged
+# manifest/build-script change can begin consuming an otherwise arbitrary new
+# file and make the staged commit falsely green.
+if grep -q '=true$' "$selection" || grep -q '=true$' "$trusted_selection"; then
     if ! git diff --quiet; then
-        echo "pre-commit: native/E2E-sensitive changes are staged, but tracked unstaged changes also exist" >&2
-        echo "pre-commit: stage or revert those tracked changes so verification matches the commit" >&2
+        echo "pre-commit: verification-sensitive changes are staged, but tracked unstaged changes also exist" >&2
+        echo "pre-commit: stage or revert tracked changes so verification matches the commit" >&2
+        exit 1
+    fi
+    if [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+        echo "pre-commit: verification-sensitive changes are staged, but untracked files also exist" >&2
+        echo "pre-commit: stage, ignore, move, or remove untracked files so verification matches the commit" >&2
         exit 1
     fi
 fi
 
+lane_required() {
+    grep -qx "$1=true" "$selection" || grep -qx "$1=true" "$trusted_selection"
+}
+
+selector_required=false
+generated_required=false
+conformance_required=false
+python_required=false
+typescript_required=false
+native_required=false
+grpc_e2e_required=false
+
+lane_required selector && selector_required=true
+lane_required generated && generated_required=true
+lane_required conformance && conformance_required=true
+lane_required python && python_required=true
+lane_required typescript && typescript_required=true
+lane_required native && native_required=true
+lane_required grpc_e2e && grpc_e2e_required=true
+
+if [[ "$selector_required" == true && "${SEARCHKERNEL_PRECOMMIT_SELECTOR_TEST:-0}" != "1" ]]; then
+    echo "pre-commit: verification selector changed; running selector regressions"
+    SEARCHKERNEL_PRECOMMIT_SELECTOR_TEST=1 "$PYTHON_BIN" .github/ci/test_exact_head.py
+fi
+
+# Keep the repository-wide non-native Rust gate as the baseline. It is fast,
+# catches cross-crate fallout, and does not require the Vespa SDK.
 echo "pre-commit: checking rustfmt"
 cargo fmt --all --check
 
@@ -49,12 +90,35 @@ cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 echo "pre-commit: running workspace unit tests"
 cargo test --workspace --all-targets --no-default-features
 
+if [[ "$generated_required" == true ]]; then
+    echo "pre-commit: generated contract inputs changed; checking generated artifacts"
+    bash tools/check-flatbuffers-generated.sh
+    bash tools/check-flatbuffers-bfbs.sh
+    bash tools/check-searchkernel-rpc.sh
+    bash tools/check-python-grpc.sh
+fi
+
+if [[ "$conformance_required" == true ]]; then
+    echo "pre-commit: portable contract inputs changed; running API conformance"
+    reference/api-conformance/verify.sh
+fi
+
+if [[ "$python_required" == true ]]; then
+    echo "pre-commit: Python-sensitive changes detected; running Python tests"
+    "$PYTHON_BIN" -m unittest discover -s clients/python/tests -p 'test_*.py'
+fi
+
+if [[ "$typescript_required" == true ]]; then
+    echo "pre-commit: TypeScript-sensitive changes detected; running TypeScript verification"
+    ./dev test typescript
+fi
+
 if [[ "$native_required" == true ]]; then
     echo "pre-commit: native-sensitive changes detected; running local real-Vespa verification"
     ./reference/vespa/verify-through.sh i
 fi
 
-if [[ "$python_native_e2e_required" == true ]]; then
-    echo "pre-commit: native-sensitive changes detected; running Python native gRPC E2E"
+if [[ "$grpc_e2e_required" == true ]]; then
+    echo "pre-commit: gRPC end-to-end-sensitive changes detected; running Python native gRPC E2E"
     bash tools/run-python-native-e2e.sh
 fi

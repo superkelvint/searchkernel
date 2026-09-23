@@ -3,7 +3,9 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 flatc_bin=$(bash "$repo_root/tools/resolve-flatc.sh")
-output="$repo_root/clients/python/searchkernel/_wire_generated"
+output="${PYTHON_FLATBUFFERS_GENERATED_DIR:-$repo_root/clients/python/searchkernel/_wire_generated}"
+
+mkdir -p "$output"
 find "$output" -type f -delete
 find "$output" -depth -type d -empty -delete
 
