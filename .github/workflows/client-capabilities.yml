@@ -54,7 +54,21 @@ jobs:
   verify:
     runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - name: Reject stale checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::expected exact revision $EXPECTED_HEAD, checked out $actual"
+            exit 1
+          fi
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
       - name: Enforce runner-Python workflow policy
@@ -76,12 +90,27 @@ jobs:
       CARGO_TARGET_DIR: target/ci
       SEARCHKERNEL_BUILD_ENV: ci
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - name: Reject stale checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::expected exact revision $EXPECTED_HEAD, checked out $actual"
+            exit 1
+          fi
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
       - name: Create isolated Python environment
         run: |
-          python -m venv "$RUNNER_TEMP/searchkernel-client-venv"
+          "$CI_PYTHON" -m venv "$RUNNER_TEMP/searchkernel-client-venv"
+          echo "CI_PYTHON=$RUNNER_TEMP/searchkernel-client-venv/bin/python" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/searchkernel-client-venv/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v4
         with:
@@ -93,6 +122,38 @@ jobs:
       - run: npm ci --prefix clients/typescript
       - name: Ensure immutable native Vespa base for executable client E2E
         run: ./dev native-sdk ensure
+      - name: Install published immutable Vespa base for client E2E
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if ./dev native-sdk path >/dev/null 2>&1; then
+            echo "Compatible CI Vespa base already installed."
+            exit 0
+          fi
+
+          commit=$("$CI_PYTHON" - <<'PY'
+          import json
+          with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
+              print(json.load(stream)["vespa_commit"])
+          PY
+          )
+          target=$(rustc -vV | sed -n 's/^host: //p')
+          tag="vespa-base-v1-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}"
+          asset="searchkernel-vespa-base-v1-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}.tar.gz"
+          download="$RUNNER_TEMP/searchkernel-native-base"
+          rm -rf "$download"
+          mkdir -p "$download"
+
+          gh release download "$tag" \
+            --repo "${{ github.repository }}" \
+            --pattern "$asset" \
+            --pattern "$asset.sha256" \
+            --dir "$download"
+
+          SK_NATIVE_BASE_ARTIFACT_URL="file://$download/$asset" ./dev native-sdk ensure
+
       - name: Build native searchkerneld for executable client E2E
         run: cargo build -p searchkerneld --features native
       - name: Run executable client E2E lanes
