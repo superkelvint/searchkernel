@@ -21,6 +21,9 @@ for target in     vespa.grouping.yql     vespa.hardening.core     vespa.hardenin
     }
 done
 
+# ./dev performs one-time repository hook setup on first invocation. Warm that
+# setup before comparing its semantic output so a fresh clone remains deterministic.
+"$DEV" verify --list >/dev/null
 dev_list="$("$DEV" verify --list)"
 [[ "$dev_list" == "$list" ]] || {
     echo "./dev verify --list diverges from verify-through --list" >&2
