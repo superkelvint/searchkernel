@@ -233,6 +233,11 @@ $int64Min = new \SearchKernel\Int64('-9223372036854775808');
 same('9223372036854775807', Protocol::value($int64Max)['kind']['value'], 'explicit int64 max stays decimal text');
 same('-9223372036854775808', Protocol::value($int64Min)['kind']['value'], 'explicit int64 min stays decimal text');
 same('Int64Value', Protocol::value($int64Max)['kind_type'], 'explicit int64 discriminator');
+$decodedInt64 = Protocol::decodeValue([
+    'kind_type' => 'Int64Value',
+    'kind' => ['value' => '9223372036854775807'],
+]);
+same('9223372036854775807', (string) $decodedInt64, 'quoted int64 response remains lossless');
 
 $uint64Max = new \SearchKernel\UInt64('18446744073709551615');
 $encodedUInt64 = Protocol::value($uint64Max);
@@ -364,4 +369,4 @@ try {
     // Expected.
 }
 
-echo "PHP portable-value tests PASS\\n";
+echo "PHP portable-value tests PASS\n";
