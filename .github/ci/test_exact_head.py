@@ -267,6 +267,13 @@ class ExactHeadTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 cargo.chmod(0o755)
+                dev = repo / "dev"
+                dev.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                dev.chmod(0o755)
                 native_gate = repo / "reference" / "vespa" / "verify-through.sh"
                 native_gate.write_text(
                     "#!/usr/bin/env bash\n"
@@ -282,7 +289,7 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 python_e2e.chmod(0o755)
 
-                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin")
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev")
                 git(repo, "commit", "-q", "-m", "fixture")
 
                 staged = repo / staged_path
