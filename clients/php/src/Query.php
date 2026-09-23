@@ -505,7 +505,7 @@ final class Query
      */
     private static function valueObject(array $values): array
     {
-        $encoded = Protocol::value(new ValueObject($values));
+        $encoded = Protocol::value(ValueObject::fromArray($values));
         if (($encoded['kind_type'] ?? null) !== 'ValueObject' || !is_array($encoded['kind'] ?? null)) {
             throw new InvalidArgumentException('predicate feature maps must be portable objects');
         }
