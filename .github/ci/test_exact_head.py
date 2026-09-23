@@ -13,6 +13,7 @@ WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
+PERSISTENCE_IMMUTABILITY = SCRIPT.parents[2] / "tools" / "check-persistence-fixture-immutability.sh"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -993,6 +994,40 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertIn(command, log.read_text(encoding="utf-8"))
+
+
+    def test_persistence_immutability_can_check_the_staged_snapshot(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+        fixture = repo / "reference" / "persistence" / "fixtures" / "manifest-v2-storage-v1" / "METADATA.json"
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text("{}\n", encoding="utf-8")
+        script = repo / "tools" / "check-persistence-fixture-immutability.sh"
+        script.parent.mkdir(parents=True)
+        script.write_bytes(PERSISTENCE_IMMUTABILITY.read_bytes())
+        script.chmod(0o755)
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "fixture")
+        fixture.write_text('{"changed": true}\n', encoding="utf-8")
+        git(repo, "add", str(fixture.relative_to(repo)))
+
+        env = os.environ.copy()
+        env["PERSISTENCE_CHECK_INDEX"] = "1"
+        result = subprocess.run(
+            ["bash", str(script), "HEAD"],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("historical persistence fixture is immutable", result.stdout)
 
 
 if __name__ == "__main__":
