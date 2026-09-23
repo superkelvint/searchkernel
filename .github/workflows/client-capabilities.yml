@@ -91,6 +91,8 @@ jobs:
       - run: $CI_PYTHON -m pip install -e clients/python
       - run: $CI_PYTHON tools/check-python-dependencies.py
       - run: npm ci --prefix clients/typescript
+      - name: Ensure immutable native Vespa base for executable client E2E
+        run: ./dev native-sdk ensure
       - name: Build native searchkerneld for executable client E2E
         run: cargo build -p searchkerneld --features native
       - name: Run executable client E2E lanes
