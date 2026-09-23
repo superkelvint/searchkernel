@@ -35,6 +35,10 @@ Search Kernel development commands
   ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify m13            Run a frozen Vespa milestone verifier
   ./dev verify integration   Run the cross-entry-point integration verifier
+  ./dev verify contracts      Verify capability/client contract tooling
+  ./dev verify abi            Verify the public native ABI contract
+  ./dev verify persistence    Verify persistence compatibility
+  ./dev verify issue-queue    Test issue-queue consistency tooling
   ./dev install flatbuffers   Build and install the pinned FlatBuffers toolchain
   ./dev native-sdk ensure     Resolve/build the immutable shared Vespa SDK
   ./dev native-sdk path       Print the SDK object selected for this worktree
@@ -179,11 +183,43 @@ verify_target() {
         api-conformance)
             "$ROOT/reference/api-conformance/verify.sh"
             ;;
+        contracts)
+            "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
+            "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
+            "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
+            ;;
+        abi)
+            local_baseline=$(mktemp)
+            trap 'rm -f -- "$local_baseline"' RETURN
+            git show HEAD:core/native/vespa/searchkernel_vespa.h > "$local_baseline"
+            "$PYTHON" "$ROOT/tools/test_check_abi_surface.py"
+            bash "$ROOT/tools/check-native-bindings.sh"
+            bash "$ROOT/tools/check-layout.sh"
+            "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
+                "$ROOT/core/native/vespa/searchkernel_vespa.h" \
+                --linker-map "$ROOT/core/native/vespa/searchkernel_vespa.map" \
+                --baseline-header "$local_baseline"
+            rm -f -- "$local_baseline"
+            trap - RETURN
+            ;;
+        persistence)
+            bash "$ROOT/tools/check-persistence-fixtures.sh"
+            PERSISTENCE_CHECK_INDEX=1 \
+                bash "$ROOT/tools/check-persistence-fixture-immutability.sh" HEAD
+            cargo test -p searchkernel --test persistence_compatibility --features native -- --nocapture
+            cargo test -p searchkernel --features native --lib persistence_fault_matrix_ -- --nocapture
+            bash "$ROOT/tools/check-persistence-sensitivity.sh"
+            ;;
+        issue-queue)
+            "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
+            ;;
         m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|phase10|searchreply)
             "$ROOT/reference/vespa/verify-through.sh" "$1"
             ;;
         *)
-            echo "usage: ./dev verify m0|...|m13|integration|api-conformance|phase10|searchreply" >&2
+            echo "usage: ./dev verify m0|...|m13|integration|api-conformance|contracts|abi|persistence|issue-queue|phase10|searchreply" >&2
             return 2
             ;;
     esac
