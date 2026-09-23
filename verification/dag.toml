@@ -125,6 +125,7 @@ cache_result = false
 
 [[task]]
 id = "ruby-client"
+legacy_lanes = ["ruby"]
 kind = "aggregate"
 runner = "linux"
 depends_on = ["client-contracts"]
