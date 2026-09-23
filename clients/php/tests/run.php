@@ -552,4 +552,132 @@ same(
     'HTTP transport uses the final response status after redirects/proxy hops',
 );
 
+
+// --------------------------------------------------------------------------
+// Adversarial wire regressions: malformed data must fail closed.
+// --------------------------------------------------------------------------
+
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => Protocol::decodeValue(['kind_type' => 'BoolValue', 'kind' => ['value' => 'false']]),
+    'BoolValue rejects string coercion',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => Protocol::decodeValue(['kind_type' => 'Float64Value', 'kind' => ['value' => 'not-a-number']]),
+    'Float64Value rejects string coercion',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => Protocol::decodeValue(['kind_type' => 'StringValue', 'kind' => ['value' => 7]]),
+    'StringValue rejects non-string payload',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => Protocol::decodeValue(['kind_type' => 'NullValueValue', 'kind' => ['value' => 'FutureNull']]),
+    'NullValueValue validates its enum payload',
+);
+
+$uint64 = new SearchKernel\UInt64('18446744073709551615');
+same(
+    ['kind_type' => 'UInt64Value', 'kind' => ['value' => '18446744073709551615']],
+    Protocol::value($uint64),
+    'uint64 max is explicitly representable',
+);
+throws(
+    InvalidArgumentException::class,
+    static fn () => new SearchKernel\UInt64('18446744073709551616'),
+    'uint64 overflow rejected',
+);
+
+$emptyObject = new SearchKernel\ValueObject();
+same('ValueObject', Protocol::value($emptyObject)['kind_type'], 'empty object distinct from empty list');
+same('ValueList', Protocol::value([])['kind_type'], 'empty list remains a list');
+
+$oddKeys = new SearchKernel\ValueObject([
+    ['key' => '0', 'value' => 'numeric-string-key'],
+    ['key' => '😀', 'value' => 'non-bmp'],
+]);
+$oddWire = Protocol::value($oddKeys);
+same(['0', '😀'], array_column($oddWire['kind']['fields'], 'key'), 'explicit object preserves numeric and non-BMP keys');
+
+throws(
+    InvalidArgumentException::class,
+    static fn () => Tensor::fromWire('tensor<float>(x[1])', 'DenseTensorValues', ['values' => ['bad']]),
+    'dense tensor wire payload validates cell types',
+);
+throws(
+    InvalidArgumentException::class,
+    static fn () => Tensor::fromWire(
+        'tensor<float>(x{})',
+        'SparseTensorCells',
+        ['cells' => [['address' => [['dimension' => 'x', 'label' => 3]], 'value' => 1.0]]],
+    ),
+    'sparse tensor wire payload validates address entries',
+);
+
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => SearchKernelException::fromPayload([
+        'code' => 'InvalidArgument',
+        'message' => 'bad',
+        'retryable' => 'false',
+        'details' => [],
+    ]),
+    'portable Error retryable must be boolean',
+);
+
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => SearchKernel\Hit::fromJson(['id' => 7]),
+    'hit id must be string',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => SearchKernel\Hit::fromJson([
+        'id' => 'doc-1',
+        'highlights' => [[
+            'field' => 'title',
+            'fragments' => [['text' => 'x', 'matches' => [['start_byte' => '0', 'end_byte' => 1]]]],
+        ]],
+    ]),
+    'highlight offsets must be uint32',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => new SearchKernel\Coverage(['full' => ['value' => 'false']]),
+    'coverage optional bool fails closed',
+);
+throws(
+    SearchKernel\ProtocolException::class,
+    static fn () => new SearchKernel\SearchTiming(['search_time_seconds' => ['value' => '0.1']]),
+    'timing optional float fails closed',
+);
+throws(
+    SearchKernel\TransportException::class,
+    static fn () => new SearchKernel\HttpTransport(''),
+    'transport configuration errors use transport domain',
+);
+
+// --------------------------------------------------------------------------
+// Query/grouping facade parity uses the canonical portable request shape.
+// --------------------------------------------------------------------------
+
+$typedRequest = $index
+    ->query(SearchKernel\Query::contains('title', 'fox'))
+    ->group(
+        SearchKernel\Group::by('brand')
+            ->limit(10)
+            ->orderBy(SearchKernel\GroupingOrder::desc(SearchKernel\Agg::count()))
+            ->output(SearchKernel\Agg::count()->as('products'))
+    )
+    ->facet('category')
+    ->aggregate(SearchKernel\Agg::avg('price')->as('avg_price'))
+    ->request();
+
+same('TypedQuery', $typedRequest['query']['source_type'], 'typed query request source');
+same('QueryContains', $typedRequest['query']['source']['query']['expr_type'], 'typed contains discriminator');
+same(3, count($typedRequest['grouping']), 'group + facet + root aggregate lower to grouping requests');
+same('StructuredGroupingSource', $typedRequest['grouping'][0]['source_type'], 'structured grouping source');
+
 echo "PHP client semantic-spine tests PASS\n";
