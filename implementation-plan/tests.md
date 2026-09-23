@@ -48,6 +48,8 @@ section's **Sensitivity verification** gate.
   persistence fault regressions.
 - PR #176 — explicit manifest-v3 reopen compatibility without reinterpreting portable
   caller intent; unknown manifest versions continue to fail closed.
+- PR #380 — property-based semantic invariants for portable, numeric, filter,
+  pagination, boolean query/filter, grouping, facet-lowering, and duplicate-rejection semantics.
 
 GitHub-hosted runner allocation is currently failing before checkout for some exact
 heads (`steps=[]`, `runner_id=0`). That is not treated as passing evidence and does
@@ -351,24 +353,24 @@ Use property tests where invariants are stronger than example cases.
 
 ## Portable semantics
 
-- [ ] API → IR → API → IR is stable for generated supported values.
-- [ ] Schema snapshot generation is deterministic.
-- [ ] Equivalent normalized schemas produce stable snapshots.
-- [ ] Encode → decode preserves supported portable values.
-- [ ] Presence-sensitive fields preserve absent vs present-empty semantics.
-- [ ] Numeric coercion accepts only lossless legal conversions.
-- [ ] Integer coercion always rejects fractional values.
-- [ ] Non-finite floats are always rejected where forbidden.
-- [ ] Filter clause-local bindings can never leak between clauses.
-- [ ] Pagination arithmetic never overflows.
-- [ ] Valid page/offset/limit combinations normalize deterministically.
+- [x] API → IR → API → IR is stable for generated supported values.
+- [x] Schema snapshot generation is deterministic.
+- [x] Equivalent normalized schemas produce stable snapshots.
+- [x] Encode → decode preserves supported portable values.
+- [x] Presence-sensitive fields preserve absent vs present-empty semantics.
+- [x] Numeric coercion accepts only lossless legal conversions.
+- [x] Integer coercion always rejects fractional values.
+- [x] Non-finite floats are always rejected where forbidden.
+- [x] Filter clause-local bindings can never leak between clauses.
+- [x] Pagination arithmetic never overflows.
+- [x] Valid page/offset/limit combinations normalize deterministically.
 
 ## Query/grouping semantics
 
-- [ ] Boolean query/filter normalization preserves tree meaning.
-- [ ] Grouping encode/decode preserves child ordering.
-- [ ] Facet convenience always lowers to the documented grouping shape.
-- [ ] Duplicate aliases/fields/operators are rejected deterministically.
+- [x] Boolean query/filter normalization preserves tree meaning.
+- [x] Grouping encode/decode preserves child ordering.
+- [x] Facet convenience always lowers to the documented grouping shape.
+- [x] Duplicate aliases/fields/operators are rejected deterministically.
 
 **Exit criterion:** high-dimensional pure semantics are defended by generated invariants, not only handpicked examples.
 
@@ -608,7 +610,7 @@ This hardening plan is complete when:
 - [ ] Every alternate semantic representation has a differential-equivalence test.
 - [x] The canonical result tree has a shared recursive cross-language corpus.
 - [ ] All untrusted parser/decoder boundaries have fuzz coverage.
-- [ ] High-dimensional pure semantics have property tests.
+- [x] High-dimensional pure semantics have property tests.
 - [ ] Native ownership/error/decoding paths have direct negative-path coverage.
 - [ ] Sanitizers run continuously.
 - [ ] Rust direct and gRPC real-engine behavior share representative E2E scenarios.
