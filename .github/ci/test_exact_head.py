@@ -617,62 +617,32 @@ class ExactHeadTests(unittest.TestCase):
                     self.assertEqual(lines, expected)
 
 
-    def test_unknown_behavioral_paths_fail_closed_to_all_current_lanes(self) -> None:
-        lines = classify_lines("new-runtime/src/engine.rs")
-        self.assertTrue(lines)
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
+    def assert_unclassified_path_blocks(self, path: str) -> None:
+        for command in ("classify", "plan"):
+            with self.subTest(path=path, command=command):
+                args = (command, "--json") if command == "plan" else (command,)
+                result = run(*args, input_bytes=path.encode() + b"\0")
+                self.assertEqual(result.returncode, 3, result.stdout.decode())
+                output = result.stdout.decode()
+                self.assertIn("Unclassified behavioral paths", output)
+                self.assertIn(path, output)
+
+    def test_unknown_behavioral_path_blocks_authorization(self) -> None:
+        self.assert_unclassified_path_blocks("new-runtime/src/engine.rs")
+
+    def test_new_core_crate_blocks_even_though_broad_rust_pattern_matches(self) -> None:
+        self.assert_unclassified_path_blocks(
+            "core/crates/searchkernel-new/src/lib.rs"
         )
 
-    def test_new_core_crate_fails_closed_even_though_broad_rust_pattern_matches(self) -> None:
-        lines = classify_lines("core/crates/searchkernel-new/src/lib.rs")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_new_client_family_blocks_even_though_contract_pattern_matches(self) -> None:
+        self.assert_unclassified_path_blocks("clients/ruby/lib/searchkernel.rb")
 
-    def test_new_client_family_fails_closed_even_though_contract_pattern_matches(self) -> None:
-        lines = classify_lines("clients/ruby/lib/searchkernel.rb")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_new_api_contract_family_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("api/new_contract.schema")
 
-    def test_unknown_path_trusted_plan_contains_full_active_inventory(self) -> None:
-        result = run(
-            "plan",
-            "--json",
-            input_bytes=b"searchkernel-web/src/new-runtime.ts\0",
-        )
-        self.assertEqual(result.returncode, 0, result.stdout.decode())
-        payload = json.loads(result.stdout.decode())
-        task_ids = {task["id"] for task in payload["tasks"]}
-        for task_id in (
-            "web-dashboard",
-            "vespa-m14",
-            "recovery",
-            "phase9",
-            "c2-historical",
-            "verification-policy",
-            "frontend-harness-selftest",
-            "frontend-verifier-integrity",
-        ):
-            self.assertIn(task_id, task_ids)
-
-    def test_new_api_contract_family_fails_closed(self) -> None:
-        lines = classify_lines("api/new_contract.schema")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
-
-    def test_new_vespa_milestone_fails_closed(self) -> None:
-        lines = classify_lines("reference/vespa/m15/verify-m15.sh")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_new_vespa_milestone_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("reference/vespa/m15/verify-m15.sh")
 
     def test_explicit_non_behavioral_paths_do_not_select_behavioral_lanes(self) -> None:
         for path in (
@@ -689,12 +659,8 @@ class ExactHeadTests(unittest.TestCase):
                     lines,
                 )
 
-    def test_tracked_scratch_like_file_fails_closed(self) -> None:
-        lines = classify_lines("notes.tmp")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_tracked_scratch_like_file_blocks_as_unclassified(self) -> None:
+        self.assert_unclassified_path_blocks("notes.tmp")
 
     def test_behavioral_documentation_overrides_non_behavioral_exemption(self) -> None:
         lines = classify_lines("docs/CAPABILITIES.md")
@@ -704,12 +670,8 @@ class ExactHeadTests(unittest.TestCase):
             lines,
         )
 
-    def test_non_markdown_file_under_docs_still_fails_closed_when_unclassified(self) -> None:
-        lines = classify_lines("docs/new-runtime-policy.json")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_non_markdown_file_under_docs_blocks_when_unclassified(self) -> None:
+        self.assert_unclassified_path_blocks("docs/new-runtime-policy.json")
 
     def test_schema_changes_fan_out_across_protocol_clients_contracts_and_persistence(self) -> None:
         lines = classify_lines("api/searchkernel.fbs")
