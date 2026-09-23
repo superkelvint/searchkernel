@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)" || {
+    echo "verifier must live inside a Search Kernel Git checkout" >&2
+    exit 2
+}
+
+exec "$ROOT/reference/vespa/m2/verify-m2.sh" "$@"

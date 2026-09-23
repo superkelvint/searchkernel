@@ -70,6 +70,52 @@ implement them. The selector chooses profile IDs; CI executes those profiles.
 The planner and executor must not maintain independent hand-written meanings for
 the same profile.
 
+
+### Semantic verifier identity
+
+Verification task identity must describe the invariant or capability being proved,
+not the historical milestone that first introduced it.
+
+Milestone labels such as `M10`, `M13`, and `M14` remain useful provenance and
+may remain as cumulative acceptance closures, but they are not sufficiently
+descriptive identities for independently executable verifier units. The
+authoritative DAG should therefore prefer semantic task IDs such as:
+
+```text
+vespa.linguistics
+vespa.text-indexing
+vespa.persistence.reopen
+vespa.schema-config
+vespa.query-compilation
+vespa.results
+vespa.grouping.recursive
+vespa.grouping.yql
+vespa.ranking
+vespa.search-reply
+vespa.recovery
+vespa.hardening.core
+vespa.hardening.sanitizers
+```
+
+A historical milestone is represented as a DAG aggregate/closure over the
+semantic verifier tasks required by that milestone. For example,
+`milestone.m14` may depend on the semantic M0-M14 capability tasks, but callers
+must also be able to run a focused semantic verifier directly when that is the
+actual verification need.
+
+Repository layout should follow the same rule for active executable verifier
+entry points. Historical frozen milestone specification/oracle artifacts may
+remain under `reference/vespa/mN/`, while current executable semantic verifier
+entry points live under a descriptive hierarchy such as
+`reference/vespa/verifiers/<capability>/`. During migration those semantic
+entry points may delegate to the frozen milestone scripts rather than duplicate
+their implementation.
+
+The DAG records milestone provenance separately from task identity (for example
+an `introduced_by = "M13"` metadata field). Renaming or reorganizing verifier
+entry points must preserve existing acceptance behavior and cumulative milestone
+reachability.
+
 Expected profile families include, subject to inventory:
 
 - baseline Rust formatting/lint/unit tests;
@@ -696,7 +742,9 @@ SearchKernel-specific scheduler/cache/test-distribution system.
 #### SearchKernel verification DAG
 
 - [ ] Define one machine-readable SearchKernel-owned verification DAG as the semantic source of truth, independent of moonrepo.
-- [ ] Represent every surviving Phase 1 verification profile in that DAG with a stable task ID.
+- [ ] Represent every surviving Phase 1 verification profile in that DAG with a stable semantic task ID that describes what it proves rather than the milestone that introduced it.
+- [ ] Represent milestone acceptance such as M14 as explicit DAG aggregate/closure tasks over semantic verifier IDs, with milestone provenance stored as metadata rather than executable-task identity.
+- [ ] Provide focused semantic verifier targets for independently meaningful native/Vespa capabilities so agents and CI need not invoke a whole milestone closure when only one verifier is required.
 - [ ] Encode the verified Phase 1 dependency/subsumption edges in the SearchKernel DAG.
 - [ ] Record the canonical verifier command and runner class for each task in the SearchKernel DAG.
 - [ ] Represent subsystem/path ownership separately from executable task identity so multiple subsystems may share a task without becoming invisible.
