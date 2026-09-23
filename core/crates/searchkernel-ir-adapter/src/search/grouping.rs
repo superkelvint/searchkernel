@@ -1,7 +1,7 @@
 //! Lower V2 grouping into either the existing facet path or the supported
 //! recursive native grouping-plan subset.
 
-use searchkernel_ir::{PortableError, Result};
+use searchkernel_ir::{effective_grouping_output_name, GroupingExpressionIr, PortableError, Result};
 use searchkernel_vespa_engine::{
     FacetRequest, GroupingAggregation, GroupingBinaryOperator, GroupingExpression, GroupingFilter,
     GroupingLevel, GroupingLiteral, GroupingPlan, SearchRequest,
@@ -195,6 +195,7 @@ impl GroupingCompiler {
         });
 
         let mut aliases = BTreeMap::new();
+        let mut semantic_aliases = BTreeMap::<String, GroupingExpressionIr>::new();
         let materializer_index = value.operations.iter().position(|operation| {
             matches!(operation, searchkernel_ir::GroupingOperationIr::Each(_))
         });
@@ -219,11 +220,19 @@ impl GroupingCompiler {
                     | searchkernel_ir::GroupingOperationIr::All(_)
             )
         });
-        self.lower_level_operations(local_operations, level, &mut aliases)?;
+        self.lower_level_operations(
+            local_operations,
+            level,
+            &mut aliases,
+            &mut semantic_aliases,
+        )?;
         if let Some(child) = materializer {
-            for nested in
-                self.lower_level_operations(child.operations.iter(), level, &mut aliases)?
-            {
+            for nested in self.lower_level_operations(
+                child.operations.iter(),
+                level,
+                &mut aliases,
+                &mut semantic_aliases,
+            )? {
                 self.lower_grouping_scope(nested)?;
             }
         }
@@ -235,19 +244,30 @@ impl GroupingCompiler {
         operations: &[searchkernel_ir::GroupingOperationIr],
     ) -> Result<()> {
         let mut aliases = BTreeMap::<String, (GroupingAggregation, usize)>::new();
+        let mut semantic_aliases = BTreeMap::<String, GroupingExpressionIr>::new();
         for operation in operations {
             match operation {
                 searchkernel_ir::GroupingOperationIr::Output(outputs) => {
                     for output in outputs {
                         let aggregation =
                             lower_aggregation_with_aliases(&output.expression, &aliases)?;
+                        let output_name =
+                            effective_grouping_output_name(output, &semantic_aliases).ok_or_else(
+                                || {
+                                    unsupported_grouping(
+                                        "grouping_output_not_supported",
+                                        "native grouping outputs require an aggregation or aggregation alias",
+                                    )
+                                },
+                            )?;
                         self.root_aggregations.push(aggregation);
-                        self.root_output_labels.push(output.label.clone());
+                        self.root_output_labels.push(Some(output_name));
                     }
                 }
                 searchkernel_ir::GroupingOperationIr::Alias { name, expression } => {
                     let aggregation = lower_aggregation(expression)?;
                     aliases.insert(name.clone(), (aggregation, usize::MAX));
+                    semantic_aliases.insert(name.clone(), expression.clone());
                 }
                 searchkernel_ir::GroupingOperationIr::Group(_)
                 | searchkernel_ir::GroupingOperationIr::All(_)
@@ -275,6 +295,7 @@ impl GroupingCompiler {
         operations: impl IntoIterator<Item = &'a searchkernel_ir::GroupingOperationIr>,
         level: usize,
         aliases: &mut BTreeMap<String, (GroupingAggregation, usize)>,
+        semantic_aliases: &mut BTreeMap<String, GroupingExpressionIr>,
     ) -> Result<Vec<&'a searchkernel_ir::GroupingAllIr>> {
         let mut nested = None;
         for operation in operations {
@@ -284,8 +305,17 @@ impl GroupingCompiler {
                     for output in outputs {
                         let aggregation =
                             lower_aggregation_with_aliases(&output.expression, aliases)?;
+                        let output_name =
+                            effective_grouping_output_name(output, semantic_aliases).ok_or_else(
+                                || {
+                                    unsupported_grouping(
+                                        "grouping_output_not_supported",
+                                        "native grouping outputs require an aggregation or aggregation alias",
+                                    )
+                                },
+                            )?;
                         self.levels[level].aggregations.push(aggregation);
-                        self.levels[level].output_labels.push(output.label.clone());
+                        self.levels[level].output_labels.push(Some(output_name));
                         self.levels[level].output_visible.push(true);
                     }
                 }
@@ -296,6 +326,7 @@ impl GroupingCompiler {
                     self.levels[level].output_labels.push(None);
                     self.levels[level].output_visible.push(false);
                     aliases.insert(name.clone(), (aggregation, index));
+                    semantic_aliases.insert(name.clone(), expression.clone());
                 }
                 searchkernel_ir::GroupingOperationIr::Max(value) => {
                     self.levels[level].max_groups = Some(value.map_or(u64::MAX, u64::from));
