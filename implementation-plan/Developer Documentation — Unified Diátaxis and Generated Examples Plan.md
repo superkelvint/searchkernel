@@ -4,6 +4,8 @@
 **Scope:** Developer-facing documentation for Search Kernel clients and the shared product API  
 **Primary objective:** Make Search Kernel unusually easy and pleasant to learn and use while minimizing hand-maintained documentation drift
 
+**Documentation framework:** [`docs/documentation-framework/`](../docs/documentation-framework/README.md) defines the authoritative site-level audiences, information architecture, content ownership, and governance. This plan implements the client-facing documentation system within that framework and must not create an alternative hierarchy.
+
 ---
 
 ## 1. Product goal
