@@ -52,10 +52,7 @@ final class Hit
             throw new ProtocolException('Hit.source must be a string when present');
         }
 
-        $sortValuesNode = $node['sort_values'] ?? [];
-        if (!is_array($sortValuesNode) || !array_is_list($sortValuesNode)) {
-            throw new ProtocolException('Hit.sort_values must be a list');
-        }
+        $sortValuesNode = Protocol::listField($node, 'sort_values', 'Hit.sort_values');
         $sortValues = [];
         foreach ($sortValuesNode as $value) {
             if (!is_array($value)) {
@@ -64,34 +61,33 @@ final class Hit
             $sortValues[] = Protocol::decodeValue($value);
         }
 
-        $highlightNodes = $node['highlights'] ?? [];
-        if (!is_array($highlightNodes) || !array_is_list($highlightNodes)) {
-            throw new ProtocolException('Hit.highlights must be a list');
-        }
+        $highlightNodes = Protocol::listField($node, 'highlights', 'Hit.highlights');
         $highlights = [];
         foreach ($highlightNodes as $highlight) {
             if (!is_array($highlight)) {
                 throw new ProtocolException('highlight must be an object');
             }
-            if (!is_string($highlight['field'] ?? null)
-                || !is_array($highlight['fragments'] ?? [])
-                || !array_is_list($highlight['fragments'] ?? [])
-            ) {
+            if (!is_string($highlight['field'] ?? null)) {
                 throw new ProtocolException('malformed highlight result');
             }
             $fragments = [];
-            foreach ($highlight['fragments'] ?? [] as $fragment) {
+            foreach (Protocol::listField(
+                $highlight,
+                'fragments',
+                'HighlightResult.fragments',
+            ) as $fragment) {
                 if (!is_array($fragment)) {
                     throw new ProtocolException('highlight fragment must be an object');
                 }
-                if (!is_string($fragment['text'] ?? null)
-                    || !is_array($fragment['matches'] ?? [])
-                    || !array_is_list($fragment['matches'] ?? [])
-                ) {
+                if (!is_string($fragment['text'] ?? null)) {
                     throw new ProtocolException('malformed highlight fragment');
                 }
                 $matches = [];
-                foreach ($fragment['matches'] ?? [] as $match) {
+                foreach (Protocol::listField(
+                    $fragment,
+                    'matches',
+                    'HighlightFragment.matches',
+                ) as $match) {
                     if (!is_array($match)) {
                         throw new ProtocolException('highlight match must be an object');
                     }
@@ -118,13 +114,21 @@ final class Hit
 
         return new self(
             $id,
-            Protocol::decodeValueEntries($node['fields'] ?? []),
+            Protocol::decodeValueEntries(
+                Protocol::listField($node, 'fields', 'Hit.fields'),
+            ),
             $relevance,
             $node['source'] ?? null,
-            self::strings($node['types'] ?? []),
-            Protocol::decodeValueEntries($node['match_features'] ?? []),
-            Protocol::decodeValueEntries($node['summary_features'] ?? []),
-            Protocol::decodeValueEntries($node['rank_features'] ?? []),
+            self::strings(Protocol::listField($node, 'types', 'Hit.types')),
+            Protocol::decodeValueEntries(
+                Protocol::listField($node, 'match_features', 'Hit.match_features'),
+            ),
+            Protocol::decodeValueEntries(
+                Protocol::listField($node, 'summary_features', 'Hit.summary_features'),
+            ),
+            Protocol::decodeValueEntries(
+                Protocol::listField($node, 'rank_features', 'Hit.rank_features'),
+            ),
             $sortValues,
             $highlights,
         );
