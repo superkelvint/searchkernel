@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
-use UnexpectedValueException;
 
 final class Hit
 {
@@ -40,55 +39,82 @@ final class Hit
         $relevance = null;
         if (array_key_exists('relevance', $node) && $node['relevance'] !== null) {
             if (!is_array($node['relevance'])) {
-                throw new UnexpectedValueException('hit relevance must be an object');
+                throw new ProtocolException('hit relevance must be an object');
             }
             $relevance = Protocol::decodeRelevance($node['relevance']);
         }
 
+        $id = $node['id'] ?? null;
+        if (!is_string($id)) {
+            throw new ProtocolException('Hit.id must be a string');
+        }
+        if (array_key_exists('source', $node) && $node['source'] !== null && !is_string($node['source'])) {
+            throw new ProtocolException('Hit.source must be a string when present');
+        }
+
+        $sortValuesNode = $node['sort_values'] ?? [];
+        if (!is_array($sortValuesNode)) {
+            throw new ProtocolException('Hit.sort_values must be an array');
+        }
         $sortValues = [];
-        foreach ($node['sort_values'] ?? [] as $value) {
+        foreach ($sortValuesNode as $value) {
             if (!is_array($value)) {
-                throw new UnexpectedValueException('sort values must contain portable Value objects');
+                throw new ProtocolException('sort values must contain portable Value objects');
             }
             $sortValues[] = Protocol::decodeValue($value);
         }
 
+        $highlightNodes = $node['highlights'] ?? [];
+        if (!is_array($highlightNodes)) {
+            throw new ProtocolException('Hit.highlights must be an array');
+        }
         $highlights = [];
-        foreach ($node['highlights'] ?? [] as $highlight) {
+        foreach ($highlightNodes as $highlight) {
             if (!is_array($highlight)) {
-                throw new UnexpectedValueException('highlight must be an object');
+                throw new ProtocolException('highlight must be an object');
+            }
+            if (!is_string($highlight['field'] ?? null) || !is_array($highlight['fragments'] ?? [])) {
+                throw new ProtocolException('malformed highlight result');
             }
             $fragments = [];
             foreach ($highlight['fragments'] ?? [] as $fragment) {
                 if (!is_array($fragment)) {
-                    throw new UnexpectedValueException('highlight fragment must be an object');
+                    throw new ProtocolException('highlight fragment must be an object');
+                }
+                if (!is_string($fragment['text'] ?? null) || !is_array($fragment['matches'] ?? [])) {
+                    throw new ProtocolException('malformed highlight fragment');
                 }
                 $matches = [];
                 foreach ($fragment['matches'] ?? [] as $match) {
                     if (!is_array($match)) {
-                        throw new UnexpectedValueException('highlight match must be an object');
+                        throw new ProtocolException('highlight match must be an object');
                     }
-                    $matches[] = [
-                        (int) ($match['start_byte'] ?? 0),
-                        (int) ($match['end_byte'] ?? 0),
-                    ];
+                    $start = $match['start_byte'] ?? null;
+                    $end = $match['end_byte'] ?? null;
+                    if (!is_int($start) || !is_int($end)
+                        || $start < 0 || $end < 0
+                        || $start > 0xFFFF_FFFF || $end > 0xFFFF_FFFF
+                    ) {
+                        throw new ProtocolException('highlight spans must contain uint32 offsets');
+                    }
+                    $matches[] = [$start, $end];
                 }
                 $fragments[] = [
-                    'text' => (string) ($fragment['text'] ?? ''),
+                    'text' => $fragment['text'],
                     'matches' => $matches,
                 ];
             }
             $highlights[] = [
-                'field' => (string) ($highlight['field'] ?? ''),
+                'field' => $highlight['field'],
                 'fragments' => $fragments,
             ];
         }
 
         return new self(
-            (string) ($node['id'] ?? ''),
+            $id,
             Protocol::decodeValueEntries($node['fields'] ?? []),
             $relevance,
-            isset($node['source']) ? (string) $node['source'] : null,
+            $node['source'] ?? null,
             self::strings($node['types'] ?? []),
             Protocol::decodeValueEntries($node['match_features'] ?? []),
             Protocol::decodeValueEntries($node['summary_features'] ?? []),
@@ -107,11 +133,11 @@ final class Hit
     private static function strings(mixed $values): array
     {
         if (!is_array($values)) {
-            throw new UnexpectedValueException('expected a string array');
+            throw new ProtocolException('expected a string array');
         }
         foreach ($values as $value) {
             if (!is_string($value)) {
-                throw new UnexpectedValueException('expected a string array');
+                throw new ProtocolException('expected a string array');
             }
         }
         return array_values($values);
