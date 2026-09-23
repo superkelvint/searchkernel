@@ -6,6 +6,7 @@ flatc_bin=$(bash "$repo_root/tools/resolve-flatc.sh")
 generated_root=${SEARCHKERNEL_RUST_GENERATED_DIR:-"$repo_root/core/crates/searchkernel-protocol/src/generated"}
 
 # The output directory contains only FlatBuffers-generated files.
+mkdir -p "$generated_root"
 rm -rf "$generated_root/search_kernel"
 
 $flatc_bin \
