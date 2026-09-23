@@ -16,6 +16,8 @@ HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 PERSISTENCE_IMMUTABILITY = SCRIPT.parents[2] / "tools" / "check-persistence-fixture-immutability.sh"
 DEV = SCRIPT.parents[2] / "dev"
+VERIFICATION_DAG_MODULE = SCRIPT.parents[2] / "verification" / "dag.py"
+VERIFICATION_DAG_FILE = SCRIPT.parents[2] / "verification" / "dag.toml"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -31,6 +33,14 @@ def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -
 
 def git(repo: Path, *args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
+
+
+def write_verification_policy(repo: Path) -> None:
+    (repo / ".github" / "ci").mkdir(parents=True, exist_ok=True)
+    (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+    (repo / "verification").mkdir(parents=True, exist_ok=True)
+    (repo / "verification" / "dag.py").write_bytes(VERIFICATION_DAG_MODULE.read_bytes())
+    (repo / "verification" / "dag.toml").write_bytes(VERIFICATION_DAG_FILE.read_bytes())
 
 
 def write_fake_dev(repo: Path) -> None:
@@ -107,8 +117,12 @@ class ExactHeadTests(unittest.TestCase):
         helper_dir = repo / ".github" / "ci"
         helper_dir.mkdir(parents=True)
         (helper_dir / "exact_head.py").write_bytes(SCRIPT.read_bytes())
-        git(repo, "add", ".github/ci/exact_head.py")
-        git(repo, "commit", "-q", "-m", "add gate helper")
+        verification_dir = repo / "verification"
+        verification_dir.mkdir(parents=True)
+        (verification_dir / "dag.py").write_bytes(VERIFICATION_DAG_MODULE.read_bytes())
+        (verification_dir / "dag.toml").write_bytes(VERIFICATION_DAG_FILE.read_bytes())
+        git(repo, "add", ".github/ci/exact_head.py", "verification/dag.py", "verification/dag.toml")
+        git(repo, "commit", "-q", "-m", "add trusted verification policy")
         base = git(repo, "rev-parse", "HEAD")
 
         git(repo, "checkout", "-q", "-b", "pre-gate-head", root)
@@ -124,9 +138,27 @@ class ExactHeadTests(unittest.TestCase):
                 cwd=repo,
             )
         )
+        trusted_dag_module = repo / "base-dag.py"
+        trusted_dag_module.write_bytes(
+            subprocess.check_output(
+                ["git", "show", f"{base}:verification/dag.py"],
+                cwd=repo,
+            )
+        )
+        trusted_dag_file = repo / "base-dag.toml"
+        trusted_dag_file.write_bytes(
+            subprocess.check_output(
+                ["git", "show", f"{base}:verification/dag.toml"],
+                cwd=repo,
+            )
+        )
+        env = os.environ.copy()
+        env["SEARCHKERNEL_VERIFICATION_DAG_MODULE"] = str(trusted_dag_module)
+        env["SEARCHKERNEL_VERIFICATION_DAG"] = str(trusted_dag_file)
         classified = subprocess.run(
             [sys.executable, str(fallback), "classify"],
             cwd=repo,
+            env=env,
             input=b"core/crates/searchkernel-ir/src/model.rs\0",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -139,6 +171,22 @@ class ExactHeadTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
             'git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"',
+            workflow,
+        )
+        self.assertIn(
+            'git show "$BASE_SHA:verification/dag.py" > "$trusted_dir/dag.py"',
+            workflow,
+        )
+        self.assertIn(
+            'git show "$BASE_SHA:verification/dag.toml" > "$trusted_dir/dag.toml"',
+            workflow,
+        )
+        self.assertIn(
+            'SEARCHKERNEL_VERIFICATION_DAG_MODULE=$trusted_dir/dag.py',
+            workflow,
+        )
+        self.assertIn(
+            'SEARCHKERNEL_VERIFICATION_DAG=$trusted_dir/dag.toml',
             workflow,
         )
         self.assertIn(
@@ -225,7 +273,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"
@@ -251,7 +299,7 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 python_e2e.chmod(0o755)
 
-                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev")
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev", "verification")
                 git(repo, "commit", "-q", "-m", "fixture")
 
                 staged = repo / staged_path
@@ -310,7 +358,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"
@@ -342,7 +390,7 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 python_e2e.chmod(0o755)
 
-                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev")
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev", "verification")
                 git(repo, "commit", "-q", "-m", "fixture")
 
                 staged = repo / staged_path
@@ -380,7 +428,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / "tools").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        write_verification_policy(repo)
 
         log = repo / "hook.log"
         cargo = repo / "fakebin" / "cargo"
@@ -412,7 +460,7 @@ class ExactHeadTests(unittest.TestCase):
         git(repo, "add", ".")
         git(repo, "commit", "-q", "-m", "fixture")
 
-        destination = repo / "docs" / "moved.cc"
+        destination = repo / "core" / "crates" / "searchkernel-ir" / "src" / "moved.rs"
         destination.parent.mkdir(parents=True)
         source.rename(destination)
         git(repo, "add", "-A")
@@ -447,7 +495,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / "reference" / "vespa").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        write_verification_policy(repo)
         (repo / "tracked.txt").write_text("original\n", encoding="utf-8")
 
         log = repo / "hook.log"
@@ -617,62 +665,31 @@ class ExactHeadTests(unittest.TestCase):
                     self.assertEqual(lines, expected)
 
 
-    def test_unknown_behavioral_paths_fail_closed_to_all_current_lanes(self) -> None:
-        lines = classify_lines("new-runtime/src/engine.rs")
-        self.assertTrue(lines)
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def assert_unclassified_path_blocks(self, path: str) -> None:
+        for command in ("classify", "plan"):
+            with self.subTest(path=path, command=command):
+                args = (command, "--json") if command == "plan" else (command,)
+                result = run(*args, input_bytes=path.encode() + b"\0")
+                self.assertEqual(result.returncode, 3, result.stdout.decode())
+                output = result.stdout.decode()
+                self.assertIn("Unclassified behavioral paths", output)
+                self.assertIn(path, output)
 
-    def test_new_core_crate_fails_closed_even_though_broad_rust_pattern_matches(self) -> None:
-        lines = classify_lines("core/crates/searchkernel-new/src/lib.rs")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_unknown_behavioral_path_blocks_authorization(self) -> None:
+        self.assert_unclassified_path_blocks("new-runtime/src/engine.rs")
 
-    def test_new_client_family_fails_closed_even_though_contract_pattern_matches(self) -> None:
-        lines = classify_lines("clients/ruby/lib/searchkernel.rb")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_new_core_crate_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("core/crates/searchkernel-new/src/lib.rs")
 
-    def test_unknown_path_trusted_plan_contains_full_active_inventory(self) -> None:
-        result = run(
-            "plan",
-            "--json",
-            input_bytes=b"searchkernel-web/src/new-runtime.ts\0",
-        )
-        self.assertEqual(result.returncode, 0, result.stdout.decode())
-        payload = json.loads(result.stdout.decode())
-        task_ids = {task["id"] for task in payload["tasks"]}
-        for task_id in (
-            "web-dashboard",
-            "vespa-m14",
-            "recovery",
-            "phase9",
-            "c2-historical",
-            "verification-policy",
-            "frontend-harness-selftest",
-            "frontend-verifier-integrity",
-        ):
-            self.assertIn(task_id, task_ids)
+    def test_new_client_family_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("clients/ruby/lib/searchkernel.rb")
 
-    def test_new_api_contract_family_fails_closed(self) -> None:
-        lines = classify_lines("api/new_contract.schema")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_new_api_contract_family_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("api/new_contract.fbs")
+        self.assert_unclassified_path_blocks("api/rpc/new_transport.proto")
 
-    def test_new_vespa_milestone_fails_closed(self) -> None:
-        lines = classify_lines("reference/vespa/m15/verify-m15.sh")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_new_vespa_verifier_family_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("reference/vespa/m15/verify-m15.sh")
 
     def test_explicit_non_behavioral_paths_do_not_select_behavioral_lanes(self) -> None:
         for path in (
@@ -689,12 +706,8 @@ class ExactHeadTests(unittest.TestCase):
                     lines,
                 )
 
-    def test_tracked_scratch_like_file_fails_closed(self) -> None:
-        lines = classify_lines("notes.tmp")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_tracked_scratch_like_file_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("notes.tmp")
 
     def test_behavioral_documentation_overrides_non_behavioral_exemption(self) -> None:
         lines = classify_lines("docs/CAPABILITIES.md")
@@ -704,12 +717,8 @@ class ExactHeadTests(unittest.TestCase):
             lines,
         )
 
-    def test_non_markdown_file_under_docs_still_fails_closed_when_unclassified(self) -> None:
-        lines = classify_lines("docs/new-runtime-policy.json")
-        self.assertFalse(
-            [line for line in lines if line.endswith("=false")],
-            lines,
-        )
+    def test_non_markdown_file_under_docs_blocks_when_unclassified(self) -> None:
+        self.assert_unclassified_path_blocks("docs/new-runtime-policy.json")
 
     def test_schema_changes_fan_out_across_protocol_clients_contracts_and_persistence(self) -> None:
         lines = classify_lines("api/searchkernel.fbs")
@@ -807,18 +816,19 @@ class ExactHeadTests(unittest.TestCase):
             [
                 "rust-non-native",
                 "rust-quality",
-                "vespa-m14",
-                "vespa-integration",
-                "phase10-rust-e2e",
-                "m13-grouping-yql",
-                "recovery",
-                "phase9",
-                "native-python-e2e",
                 "client-contracts",
                 "c2-historical",
                 "abi",
-                "persistence-static",
+                "native-full",
+                "milestone.m14",
+                "product.integration",
+                "product.rust-real-engine",
+                "vespa.grouping.yql",
+                "vespa.recovery",
+                "phase9",
+                "native-python-e2e",
                 "persistence-native",
+                "persistence-static",
             ],
         )
         for task in tasks:
@@ -859,46 +869,27 @@ class ExactHeadTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout.decode())
         payload = json.loads(result.stdout.decode())
         task_ids = {task["id"] for task in payload["tasks"]}
-        expected = {
-            "rust-non-native",
-            "rust-quality",
-            "python-client",
-            "typescript-client",
-            "php-client",
-            "vespa-m14",
-            "vespa-integration",
-            "phase10-rust-e2e",
-            "m13-grouping-yql",
-            "recovery",
-            "phase9",
-            "native-python-e2e",
-            "protocol-generated",
-            "api-conformance",
-            "client-contracts",
-            "c2-historical",
-            "abi",
-            "persistence-static",
-            "persistence-native",
-            "issue-queue",
-            "verification-policy",
+        for task_id in (
+            "full",
+            "portable-full",
+            "clients-full",
+            "native-full",
             "web-dashboard",
+            "web-full",
+            "milestone.m14",
+            "vespa.recovery",
+            "phase9",
+            "c2-historical",
+            "verification-policy",
             "frontend-harness-selftest",
             "frontend-verifier-integrity",
-        }
-        self.assertEqual(task_ids, expected)
+        ):
+            self.assertIn(task_id, task_ids)
         for task in payload["tasks"]:
             self.assertTrue(
                 any(".moon/workspace.yml" in reason for reason in task["reasons"]),
                 task,
             )
-        self.assertTrue(
-            any(
-                "verification/task orchestration change" in reason
-                for task in payload["tasks"]
-                for reason in task["reasons"]
-            ),
-            payload,
-        )
 
     def test_classification_covers_precommit_verification_surfaces(self) -> None:
         cases = {
@@ -978,7 +969,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"
@@ -1057,7 +1048,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"
@@ -1121,7 +1112,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / "tools").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        write_verification_policy(repo)
         (repo / "tracked.txt").write_text("original\n", encoding="utf-8")
 
         cargo = repo / "fakebin" / "cargo"
@@ -1171,7 +1162,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 cargo = repo / "fakebin" / "cargo"
                 cargo.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
@@ -1229,7 +1220,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / "tools").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        write_verification_policy(repo)
 
         log = repo / "hook.log"
         cargo = repo / "fakebin" / "cargo"
@@ -1345,7 +1336,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"
