@@ -208,7 +208,6 @@ same(
     'patch result id',
 );
 $patch = $transport->requests[array_key_last($transport->requests)];
-same('PatchKernelNever', $patch['payload_type'] ?? 'PatchKernelNever', 'guard placeholder overwritten below');
 same('SearchKernel_V2_PatchRequest', $patch['payload_type'], 'patch envelope discriminator');
 same('SetField', $patch['payload']['operations'][0]['operation_type'], 'patch set discriminator');
 same('UnsetField', $patch['payload']['operations'][1]['operation_type'], 'patch unset discriminator');
