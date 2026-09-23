@@ -525,7 +525,7 @@ class ExactHeadTests(unittest.TestCase):
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b".githooks/pre-commit\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=true",
+                "rust=false", "python=false", "typescript=false", "php=false", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=true",
             },
