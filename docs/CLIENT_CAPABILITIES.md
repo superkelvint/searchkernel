@@ -13,7 +13,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 | Capability | Area | Core / backend | Rust | Python | TypeScript | PHP |
 | --- | --- | --- | --- | --- | --- | --- |
-| Term and fielded contains queries (query.term) | query | — | — | — | — | ergonomic · E2E (http) |
+| Term and fielded contains queries (query.term) | query | — | — | — | — | ergonomic · conformance · E2E (http) |
 | True and false query constants (query.boolean_constants) | query | — | — | — | — | — |
 | Comparison queries (query.comparison) | query | — | — | — | — | — |
 | Range queries (query.range) | query | — | — | — | — | — |
@@ -33,33 +33,33 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Rank query composition (query.rank) | query | — | — | — | — | — |
 | userInput and userQuery text parsing (query.user_input_user_query) | query | — | — | — | — | — |
 | Structured filters (filter.structured) | filter | — | — | — | — | — |
-| Textual filter expressions (filter.textual) | filter | — | — | — | ergonomic (node, shared) | ergonomic · E2E (http) |
-| Field sorting (search.sorting) | search | — | ergonomic (native) | — | ergonomic (node, shared) | ergonomic · E2E (http) |
+| Textual filter expressions (filter.textual) | filter | — | — | — | ergonomic (node, shared) | ergonomic · conformance · E2E (http) |
+| Field sorting (search.sorting) | search | — | ergonomic (native) | — | ergonomic (node, shared) | ergonomic · conformance · E2E (http) |
 | First/last missing-value sort placement (search.sort_missing_placement) | search | — | — | — | — | — |
-| Limit and offset pagination (search.pagination) | search | — | ergonomic (native) | — | ergonomic (node, shared) | ergonomic · E2E (http) |
+| Limit and offset pagination (search.pagination) | search | — | ergonomic (native) | — | ergonomic (node, shared) | ergonomic · conformance · E2E (http) |
 | Text search-field selection (search.search_fields) | search | — | — | — | — | — |
 | Document-summary field projection (result.docsum_field_projection) | result | — | ergonomic (native) | ergonomic (grpc) | ergonomic (node, shared) | ergonomic · E2E (http) |
 | Named summary-class selection (result.named_summary_class) | result | — | — | — | — | ergonomic · E2E (http) |
 | Rich document-summary values (scalar subset) (result.rich_docsum_values) | result | — | — | — | — | — |
 | Summary-feature readback (result.summary_features) | result | — | — | — | — | — |
-| Highlighting (result.highlighting) | result | — | ergonomic (native) | ergonomic · conformance (grpc, shared) | conformance (shared) | ergonomic · E2E 1/3 (http) |
+| Highlighting (result.highlighting) | result | — | ergonomic (native) | ergonomic · conformance (grpc, shared) | conformance (shared) | ergonomic · conformance · E2E 1/3 (http) |
 | Dense tensor document readback (result.tensor_document_readback) | result | — | — | — | — | ergonomic · E2E (http) |
 | Typed tensor feature readback (result.tensor_feature_readback) | result | — | — | — | — | — |
-| Structured grouping and faceting (grouping.structured) | grouping | — | — | — | ergonomic (node, shared) | ergonomic · E2E (http) |
+| Structured grouping and faceting (grouping.structured) | grouping | — | — | — | ergonomic (node, shared) | ergonomic · conformance · E2E (http) |
 | Executable grouping expression/function subset (grouping.functions) | grouping | — | — | — | — | — |
-| Grouping aggregations (grouping.aggregations) | grouping | — | — | — | ergonomic (node, shared) | ergonomic · E2E (http) |
+| Grouping aggregations (grouping.aggregations) | grouping | — | — | — | ergonomic (node, shared) | ergonomic · conformance · E2E (http) |
 | Summary aggregation (grouping.summary_aggregation) | grouping | — | — | — | — | ergonomic · E2E (http) |
 | Grouping continuations (grouping.continuations) | grouping | — | — | — | — | — |
 | Raw grouping source (grouping.raw_source) | grouping | — | — | — | — | — |
-| Document insert, upsert, patch, delete, and get (update.document_crud) | update | — | ergonomic (native) | ergonomic (managed-local) | ergonomic (node) | ergonomic · E2E (http) |
-| Arithmetic document updates (update.arithmetic) | update | — | — | — | — | ergonomic · E2E (http) |
-| Create-if-nonexistent document updates (update.create_if_nonexistent) | update | — | — | — | — | ergonomic · E2E (http) |
+| Document insert, upsert, patch, delete, and get (update.document_crud) | update | — | ergonomic (native) | ergonomic (managed-local) | ergonomic (node) | ergonomic · conformance · E2E (http) |
+| Arithmetic document updates (update.arithmetic) | update | — | — | — | — | ergonomic · conformance · E2E (http) |
+| Create-if-nonexistent document updates (update.create_if_nonexistent) | update | — | — | — | — | ergonomic · conformance · E2E (http) |
 | Conditional document mutations (update.conditional) | update | — | — | — | — | — |
 | Collection add/remove updates (update.collection_add_remove) | update | — | — | — | — | — |
 | Matched-element updates (update.matched_element) | update | — | — | — | — | — |
 | Tensor modify updates (update.tensor_modify) | update | — | — | — | — | — |
 | Dense tensor document values (tensor.dense_document_crud) | tensor | — | — | — | — | ergonomic · E2E (http) |
-| YQL query source (query.yql) | query | — | — | — | — | ergonomic · E2E (http) |
+| YQL query source (query.yql) | query | — | — | — | — | ergonomic · conformance · E2E (http) |
 | Analyzed text search with default WeakAnd semantics (query.text_weak_and) | query | — | — | — | — | ergonomic · E2E (http) |
 | Typed analyzed-text query nodes (query.typed_text) | query | — | — | — | — | — |
 | Native in-term queries (query.in_term) | query | — | — | — | — | — |
@@ -68,13 +68,13 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Document-summary schema definitions (schema.document_summaries) | schema | — | — | — | — | — |
 | Array-of-struct document fields (schema.array_struct_fields) | schema | — | — | — | — | — |
 | Position fields and derived geo attributes (schema.position_geo_fields) | schema | — | — | — | — | — |
-| Rank-profile selection (ranking.profile_selection) | ranking | — | — | — | — | ergonomic · E2E (http) |
+| Rank-profile selection (ranking.profile_selection) | ranking | — | — | — | — | ergonomic · conformance · E2E (http) |
 | Numeric scalar query inputs (ranking.numeric_query_inputs) | ranking | — | — | — | — | ergonomic · E2E (http) |
-| Dense tensor query inputs (ranking.tensor_query_inputs) | ranking | — | — | — | — | ergonomic · E2E (http) |
-| Rank properties (ranking.rank_properties) | ranking | — | — | — | — | ergonomic · E2E (http) |
+| Dense tensor query inputs (ranking.tensor_query_inputs) | ranking | — | — | — | — | ergonomic · conformance · E2E (http) |
+| Rank properties (ranking.rank_properties) | ranking | — | — | — | — | ergonomic · conformance · E2E (http) |
 | Match-feature readback (result.match_features) | result | — | — | — | — | ergonomic · E2E (http) |
-| Recursive grouping result trees (result.grouping_tree) | result | — | — | — | — | ergonomic · E2E (http) |
-| Coverage and degradation metadata (result.degradation_metadata) | result | — | — | — | — | ergonomic · E2E (http) |
+| Recursive grouping result trees (result.grouping_tree) | result | — | — | — | — | ergonomic · conformance · E2E (http) |
+| Coverage and degradation metadata (result.degradation_metadata) | result | — | — | — | — | ergonomic · conformance · E2E (http) |
 | Embedded single-node Vespa scope (platform.embedded_vespa_scope) | platform | — | — | — | — | — |
 
 ## Scenario evidence
@@ -82,6 +82,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Term and fielded contains queries (query.term)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L693)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L750)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L750)
 
@@ -136,6 +137,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Textual filter expressions (filter.textual)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L694)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L753)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L753)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L40)
@@ -144,6 +146,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Field sorting (search.sorting)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L695)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L754)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L754)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L217)
@@ -153,6 +156,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Limit and offset pagination (search.pagination)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L696)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L755)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L755)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L218)
@@ -178,6 +182,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Highlighting (result.highlighting)
 
 - **Basic structured dynamic-teaser highlighting** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L706)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L758)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L758)
   - python / shared / conformance — [clients/python/tests/test_results.py](../clients/python/tests/test_results.py#L222)
@@ -194,6 +199,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Structured grouping and faceting (grouping.structured)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L697)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L760)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L760)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L45)
@@ -202,6 +208,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Grouping aggregations (grouping.aggregations)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L698)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L761)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L761)
   - typescript / node / ergonomic — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L46)
@@ -216,6 +223,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Document insert, upsert, patch, delete, and get (update.document_crud)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L699)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L763)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L763)
   - python / managed-local / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L257)
@@ -225,12 +233,14 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Arithmetic document updates (update.arithmetic)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L700)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L764)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L764)
 
 ### Create-if-nonexistent document updates (update.create_if_nonexistent)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L701)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L765)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L765)
 
@@ -243,6 +253,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### YQL query source (query.yql)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L702)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L767)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L767)
 
@@ -255,6 +266,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Rank-profile selection (ranking.profile_selection)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L703)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L769)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L769)
 
@@ -267,12 +279,14 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Dense tensor query inputs (ranking.tensor_query_inputs)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L704)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L771)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L771)
 
 ### Rank properties (ranking.rank_properties)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L705)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L772)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L772)
 
@@ -285,12 +299,14 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 ### Recursive grouping result trees (result.grouping_tree)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L707)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L774)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L774)
 
 ### Coverage and degradation metadata (result.degradation_metadata)
 
 - **Basic behavior** (basic)
+  - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L708)
   - php / http / e2e — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L775)
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L775)
 
