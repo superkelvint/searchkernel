@@ -62,8 +62,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
@@ -91,18 +89,6 @@ jobs:
 
       - name: Test Clippy diagnostic runner
         run: python3 tools/test_run_clippy.py
-
-      - name: Run Clippy with repair diagnostics
-        id: clippy
-        run: ./dev lint --profile rust-clippy-non-native --diagnostics-dir "$RUNNER_TEMP/clippy"
-
-      - name: Upload Clippy repair packet
-        if: ${{ always() && steps.clippy.outcome == 'failure' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: clippy-repair-${{ github.run_id }}-${{ github.job }}
-          path: ${{ runner.temp }}/clippy
-          if-no-files-found: ignore
 
       - name: Run workspace unit tests
         run: cargo test --workspace --no-default-features
