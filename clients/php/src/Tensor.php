@@ -30,6 +30,9 @@ final class Tensor
      */
     public static function sparse(string $typeSpec, array $cells): self
     {
+        if (!array_is_list($cells)) {
+            throw new InvalidArgumentException('sparse tensor cells must be a list');
+        }
         $encoded = [];
         foreach ($cells as $cell) {
             if (!is_array($cell)
@@ -50,6 +53,9 @@ final class Tensor
      */
     public static function mixed(string $typeSpec, array $blocks): self
     {
+        if (!array_is_list($blocks)) {
+            throw new InvalidArgumentException('mixed tensor blocks must be a list');
+        }
         $encoded = [];
         foreach ($blocks as $block) {
             if (!is_array($block)
