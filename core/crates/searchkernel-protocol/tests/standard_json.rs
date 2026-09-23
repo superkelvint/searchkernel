@@ -84,6 +84,38 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
 }
 
 #[test]
+fn standard_json_printer_may_omit_default_scalar_members() {
+    let input = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_InsertRequest",
+      "payload": {
+        "document": {
+          "id": "zero-values",
+          "fields": [
+            {"key":"bool","value":{"kind_type":"BoolValue","kind":{"value":false}}},
+            {"key":"i64","value":{"kind_type":"Int64Value","kind":{"value":0}}},
+            {"key":"u64","value":{"kind_type":"UInt64Value","kind":{"value":0}}},
+            {"key":"f64","value":{"kind_type":"Float64Value","kind":{"value":0.0}}}
+          ]
+        }
+      }
+    }"#;
+
+    let bytes = request_json_to_flatbuffer(input).expect("default scalar request JSON");
+    let printed = request_flatbuffer_to_json(&bytes).expect("canonical request JSON");
+    let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+    let fields = value["payload"]["document"]["fields"]
+        .as_array()
+        .expect("document fields");
+
+    for field in fields {
+        assert_eq!(field["value"]["kind"], serde_json::json!({}));
+    }
+
+    request_json_to_flatbuffer(&printed).expect("default-scalar printed JSON remains readable");
+}
+
+#[test]
 fn standard_json_accepts_lossless_decimal_strings_for_64_bit_scalars() {
     let input = br#"{
       "protocol_version": 2,
