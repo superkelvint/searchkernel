@@ -538,6 +538,12 @@ class ExactHeadTests(unittest.TestCase):
                 "typescript=false",
                 "native=true",
             },
+            b"tools/check-native-abi-authorities.py\0": {
+                "rust=false",
+                "python=false",
+                "typescript=false",
+                "native=true",
+            },
         }
         for changed, expected in cases.items():
             with self.subTest(changed=changed):
