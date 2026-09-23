@@ -519,6 +519,37 @@ def _is_known_behavioral_path(path: str) -> bool:
     return any(_matches(path, LANE_PATTERNS[lane]) for lane in LANES)
 
 
+def _is_unclassified_behavioral_path(
+    path: str, *, allow_local_scratch: bool = False
+) -> bool:
+    if _is_non_behavioral_exempt(path, allow_local_scratch=allow_local_scratch):
+        return False
+    if _matches(path, ELEVATED_VERIFICATION_PATTERNS):
+        return False
+    if _matches(path, BUILD_SYSTEM_PATTERNS):
+        return False
+    return not _is_known_behavioral_path(path)
+
+
+def find_unclassified_behavioral_paths(
+    paths: Iterable[str], *, allow_local_scratch: bool = False
+) -> list[str]:
+    normalized = sorted(
+        {
+            path.strip().replace("\\", "/")
+            for path in paths
+            if path.strip()
+        }
+    )
+    return [
+        path
+        for path in normalized
+        if _is_unclassified_behavioral_path(
+            path, allow_local_scratch=allow_local_scratch
+        )
+    ]
+
+
 def _requires_full_task_set(path: str) -> bool:
     if _is_non_behavioral_exempt(path):
         return False
@@ -747,6 +778,21 @@ def main() -> int:
         return assert_exact_head(args.expected, args.repo)
 
     changed_paths = _read_changed_paths()
+    allow_local_scratch = (
+        args.command == "classify" and args.allow_local_scratch
+    )
+    unclassified = find_unclassified_behavioral_paths(
+        changed_paths, allow_local_scratch=allow_local_scratch
+    )
+    if unclassified:
+        print(
+            "::error title=Unclassified behavioral paths::"
+            "Verification policy does not know how to authorize these paths. "
+            "Update trusted CI policy before merging:"
+        )
+        for path in unclassified:
+            print(f"  {path}")
+        return 3
 
     if args.command == "plan":
         plan = build_task_plan(changed_paths)
