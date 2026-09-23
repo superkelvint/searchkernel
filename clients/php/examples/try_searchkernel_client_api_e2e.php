@@ -743,3 +743,34 @@ same(['shoe-2'], ids($updatedSearch), 'replacement searchable');
 
 heading('29. INITIAL PHP CLIENT API E2E CHECKS PASSED');
 echo "Real-engine PHP facade scenario complete; harness will restart searchkerneld for reopen checks.\n";
+
+/*
+Executable capability evidence from this real-engine showcase.
+
+SKC: query.term/basic kinds=ergonomic,e2e runtime=http
+SKC: query.boolean/basic kinds=ergonomic,e2e runtime=http
+SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=http
+SKC: filter.textual/basic kinds=ergonomic,e2e runtime=http
+SKC: search.sorting/basic kinds=ergonomic,e2e runtime=http
+SKC: search.pagination/basic kinds=ergonomic,e2e runtime=http
+SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=http
+SKC: result.named_summary_class/basic kinds=ergonomic,e2e runtime=http
+SKC: result.highlighting/basic kinds=ergonomic,e2e runtime=http
+SKC: result.tensor_document_readback/basic kinds=ergonomic,e2e runtime=http
+SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=http
+SKC: grouping.aggregations/basic kinds=ergonomic,e2e runtime=http
+SKC: grouping.summary_aggregation/basic kinds=ergonomic,e2e runtime=http
+SKC: update.document_crud/basic kinds=ergonomic,e2e runtime=http
+SKC: update.arithmetic/basic kinds=ergonomic,e2e runtime=http
+SKC: update.create_if_nonexistent/basic kinds=ergonomic,e2e runtime=http
+SKC: tensor.dense_document_crud/basic kinds=ergonomic,e2e runtime=http
+SKC: query.yql/basic kinds=ergonomic,e2e runtime=http
+SKC: query.text_weak_and/basic kinds=ergonomic,e2e runtime=http
+SKC: ranking.profile_selection/basic kinds=ergonomic,e2e runtime=http
+SKC: ranking.numeric_query_inputs/basic kinds=ergonomic,e2e runtime=http
+SKC: ranking.tensor_query_inputs/basic kinds=ergonomic,e2e runtime=http
+SKC: ranking.rank_properties/basic kinds=ergonomic,e2e runtime=http
+SKC: result.match_features/basic kinds=ergonomic,e2e runtime=http
+SKC: result.grouping_tree/basic kinds=ergonomic,e2e runtime=http
+SKC: result.degradation_metadata/basic kinds=ergonomic,e2e runtime=http
+*/
