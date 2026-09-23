@@ -253,6 +253,49 @@ same('Increment', $update['payload']['operations'][4]['operation']['operator'], 
 same(['value' => false], $update['payload']['create'], 'update create presence preserved');
 same('version == 7', $update['payload']['condition'], 'update condition preserved');
 
+same(
+    'doc-1',
+    $index->update('doc-1')
+        ->matchElement('people', 'alice', SearchKernel\MatchedUpdate::increment(2))
+        ->tensorModify(
+            'embedding',
+            'replace',
+            Tensor::sparse('tensor<float>(x{})', [[
+                'address' => ['x' => 'alice'],
+                'value' => 0.75,
+            ]]),
+            false,
+        )
+        ->execute(),
+    'advanced update result id',
+);
+$advancedUpdate = $transport->requests[array_key_last($transport->requests)];
+same('MatchUpdate', $advancedUpdate['payload']['operations'][0]['operation_type'], 'match update discriminator');
+same(
+    'ArithmeticUpdate',
+    $advancedUpdate['payload']['operations'][0]['operation']['update']['operation_type'],
+    'matched arithmetic discriminator',
+);
+same(
+    'Increment',
+    $advancedUpdate['payload']['operations'][0]['operation']['update']['operation']['operator'],
+    'matched arithmetic operator',
+);
+same('TensorModifyUpdate', $advancedUpdate['payload']['operations'][1]['operation_type'], 'tensor modify discriminator');
+same('Replace', $advancedUpdate['payload']['operations'][1]['operation']['operator'], 'tensor modify operator');
+same('SparseTensorCells', $advancedUpdate['payload']['operations'][1]['operation']['payload_type'], 'tensor modify payload union');
+same(['value' => false], $advancedUpdate['payload']['operations'][1]['operation']['create'], 'tensor modify create presence');
+
+throws(
+    \InvalidArgumentException::class,
+    static fn () => $index->update('doc-1')->tensorModify(
+        'embedding',
+        'replace',
+        Tensor::dense('tensor<float>(x[1])', [1.0]),
+    ),
+    'tensor modify rejects dense payloads not represented by the canonical union',
+);
+
 // --------------------------------------------------------------------------
 // Search request facade and canonical namespaces.
 // --------------------------------------------------------------------------
@@ -1055,6 +1098,8 @@ SKC: grouping.raw_source/basic kinds=conformance runtime=http
 SKC: update.document_crud/basic kinds=conformance runtime=http
 SKC: update.arithmetic/basic kinds=conformance runtime=http
 SKC: update.create_if_nonexistent/basic kinds=conformance runtime=http
+SKC: update.matched_element/basic kinds=conformance runtime=http
+SKC: update.tensor_modify/basic kinds=conformance runtime=http
 SKC: query.yql/basic kinds=conformance runtime=http
 SKC: ranking.profile_selection/basic kinds=conformance runtime=http
 SKC: ranking.tensor_query_inputs/basic kinds=conformance runtime=http
