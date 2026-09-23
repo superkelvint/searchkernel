@@ -687,4 +687,25 @@ same('QueryContains', $typedRequest['query']['source']['query']['expr_type'], 't
 same(3, count($typedRequest['grouping']), 'group + facet + root aggregate lower to grouping requests');
 same('StructuredGroupingSource', $typedRequest['grouping'][0]['source_type'], 'structured grouping source');
 
+/*
+Canonical portable request/result conformance evidence.
+
+SKC: query.term/basic kinds=conformance runtime=http
+SKC: filter.textual/basic kinds=conformance runtime=http
+SKC: search.sorting/basic kinds=conformance runtime=http
+SKC: search.pagination/basic kinds=conformance runtime=http
+SKC: grouping.structured/basic kinds=conformance runtime=http
+SKC: grouping.aggregations/basic kinds=conformance runtime=http
+SKC: update.document_crud/basic kinds=conformance runtime=http
+SKC: update.arithmetic/basic kinds=conformance runtime=http
+SKC: update.create_if_nonexistent/basic kinds=conformance runtime=http
+SKC: query.yql/basic kinds=conformance runtime=http
+SKC: ranking.profile_selection/basic kinds=conformance runtime=http
+SKC: ranking.tensor_query_inputs/basic kinds=conformance runtime=http
+SKC: ranking.rank_properties/basic kinds=conformance runtime=http
+SKC: result.highlighting/basic kinds=conformance runtime=http
+SKC: result.grouping_tree/basic kinds=conformance runtime=http
+SKC: result.degradation_metadata/basic kinds=conformance runtime=http
+*/
+
 echo "PHP client semantic-spine tests PASS\n";
