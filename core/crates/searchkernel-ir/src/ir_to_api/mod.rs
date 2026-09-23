@@ -40,3 +40,12 @@ pub use schema::{describe_result_offset, describe_result_to_api, index_definitio
 pub use search::{
     inspect_query_result_offset, inspect_query_result_to_api, search_request_ir_to_api,
 };
+
+
+#[cfg(test)]
+pub(crate) fn request_value_ir_to_api_for_test(value: &ir::RequestValueIr) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let value = request_value_offset(&mut builder, value);
+    builder.finish(value, None);
+    builder.finished_data().to_vec()
+}
