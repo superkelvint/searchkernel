@@ -292,7 +292,13 @@ jobs:
           echo "Verified exact PR head $actual."
 
       - name: Verify Ruby runtime
-        run: ruby --version
+        run: |
+          set -euo pipefail
+          if [[ ! -d clients/ruby ]]; then
+            echo "Ruby client is only pre-registered on this base; no Ruby runtime is required yet."
+            exit 0
+          fi
+          ruby --version
 
       - name: Run Ruby behavioral tests
         run: |
