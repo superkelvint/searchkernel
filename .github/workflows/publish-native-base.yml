@@ -2,7 +2,7 @@ name: Publish native Vespa base
 
 on:
   push:
-    branches: [main, codex/issue-226]
+    branches: [main, codex/issue-226, codex/issue-422]
     paths:
       - "core/native/vespa/manifest.json"
       - "core/native/vespa/build-sdk.sh"
