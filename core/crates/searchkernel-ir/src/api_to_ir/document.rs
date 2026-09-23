@@ -168,10 +168,66 @@ impl IndexContext {
                                     )?,
                                 })
                             }
-                            _ => Err(PortableError::unsupported(
-                                "update_operation_not_supported",
-                                Some("operations.operation"),
-                                "the current native DocumentUpdate adapter supports assign, clear, and arithmetic operations only",
+                            api::UpdateOperationKind::AddUpdate => {
+                                operation.operation_as_add_update().ok_or_else(|| {
+                                    invalid(
+                                        "invalid_update_operation",
+                                        Some("operations"),
+                                        "update operation must contain an add payload",
+                                    )
+                                })?;
+                                Err(PortableError::unsupported(
+                                    "update_operation_not_supported",
+                                    Some("operations.operation"),
+                                    "the current native DocumentUpdate adapter supports assign, clear, and arithmetic operations only",
+                                ))
+                            }
+                            api::UpdateOperationKind::RemoveUpdate => {
+                                operation.operation_as_remove_update().ok_or_else(|| {
+                                    invalid(
+                                        "invalid_update_operation",
+                                        Some("operations"),
+                                        "update operation must contain a remove payload",
+                                    )
+                                })?;
+                                Err(PortableError::unsupported(
+                                    "update_operation_not_supported",
+                                    Some("operations.operation"),
+                                    "the current native DocumentUpdate adapter supports assign, clear, and arithmetic operations only",
+                                ))
+                            }
+                            api::UpdateOperationKind::MatchUpdate => {
+                                operation.operation_as_match_update().ok_or_else(|| {
+                                    invalid(
+                                        "invalid_update_operation",
+                                        Some("operations"),
+                                        "update operation must contain a match payload",
+                                    )
+                                })?;
+                                Err(PortableError::unsupported(
+                                    "update_operation_not_supported",
+                                    Some("operations.operation"),
+                                    "the current native DocumentUpdate adapter supports assign, clear, and arithmetic operations only",
+                                ))
+                            }
+                            api::UpdateOperationKind::TensorModifyUpdate => {
+                                operation.operation_as_tensor_modify_update().ok_or_else(|| {
+                                    invalid(
+                                        "invalid_update_operation",
+                                        Some("operations"),
+                                        "update operation must contain a tensor-modify payload",
+                                    )
+                                })?;
+                                Err(PortableError::unsupported(
+                                    "update_operation_not_supported",
+                                    Some("operations.operation"),
+                                    "the current native DocumentUpdate adapter supports assign, clear, and arithmetic operations only",
+                                ))
+                            }
+                            _ => Err(invalid(
+                                "invalid_update_operation",
+                                Some("operations"),
+                                "update operation must select an operation",
                             )),
                         }
                     })

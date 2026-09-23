@@ -1,0 +1,20 @@
+{
+  "category": "write",
+  "description": "Represented AddUpdate remains explicitly unsupported.",
+  "id": "write.update-add-unsupported",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "add": {
+          "field": "tags",
+          "value": {
+            "string": "sale"
+          }
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}

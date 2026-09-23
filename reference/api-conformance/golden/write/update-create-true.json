@@ -1,0 +1,14 @@
+{
+  "ok": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "unset": {
+          "field": "category"
+        }
+      }
+    ],
+    "condition": null,
+    "create": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "unsupported",
+    "details": [
+      {
+        "code": "update_field_path_not_supported",
+        "path": "operations[0].target.path"
+      }
+    ],
+    "retryable": false
+  }
+}

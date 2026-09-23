@@ -1,0 +1,19 @@
+{
+  "ok": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "set": {
+          "field": "brand",
+          "value": {
+            "single": {
+              "string": "Sony"
+            }
+          }
+        }
+      }
+    ],
+    "condition": null,
+    "create": null
+  }
+}

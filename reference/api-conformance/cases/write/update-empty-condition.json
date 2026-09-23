@@ -1,0 +1,18 @@
+{
+  "category": "write",
+  "description": "Empty mutation condition normalizes to absent while update remains valid.",
+  "id": "write.update-empty-condition",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "condition": "",
+    "operations": [
+      {
+        "unset": {
+          "field": "brand"
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}

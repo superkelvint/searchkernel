@@ -3104,6 +3104,12 @@ impl WireBuilder {
         let object = input
             .as_object()
             .ok_or("update operation must be an object")?;
+        if object.get("_union").and_then(JsonValue::as_str) == Some("NONE") {
+            return Ok(api::UpdateOperation::create(
+                &mut self.builder,
+                &api::UpdateOperationArgs::default(),
+            ));
+        }
         let (target, operation_type, operation) = if let Some(value) = object.get("set") {
             let target = value
                 .get("field")
@@ -3132,6 +3138,68 @@ impl WireBuilder {
                 target,
                 api::UpdateOperationKind::ClearUpdate,
                 clear.as_union_value(),
+            )
+        } else if let Some(value) = object.get("add") {
+            let target = value
+                .get("field")
+                .and_then(JsonValue::as_str)
+                .map(|value| self.field_path(value));
+            let payload = value
+                .get("value")
+                .map(|value| self.value(value))
+                .transpose()?;
+            let add = api::AddUpdate::create(
+                &mut self.builder,
+                &api::AddUpdateArgs { value: payload },
+            );
+            (
+                target,
+                api::UpdateOperationKind::AddUpdate,
+                add.as_union_value(),
+            )
+        } else if let Some(value) = object.get("remove") {
+            let target = value
+                .get("field")
+                .and_then(JsonValue::as_str)
+                .map(|value| self.field_path(value));
+            let payload = value
+                .get("value")
+                .map(|value| self.value(value))
+                .transpose()?;
+            let remove = api::RemoveUpdate::create(
+                &mut self.builder,
+                &api::RemoveUpdateArgs { value: payload },
+            );
+            (
+                target,
+                api::UpdateOperationKind::RemoveUpdate,
+                remove.as_union_value(),
+            )
+        } else if let Some(value) = object.get("match") {
+            let target = value
+                .get("field")
+                .and_then(JsonValue::as_str)
+                .map(|value| self.field_path(value));
+            let payload =
+                api::MatchUpdate::create(&mut self.builder, &api::MatchUpdateArgs::default());
+            (
+                target,
+                api::UpdateOperationKind::MatchUpdate,
+                payload.as_union_value(),
+            )
+        } else if let Some(value) = object.get("tensor_modify") {
+            let target = value
+                .get("field")
+                .and_then(JsonValue::as_str)
+                .map(|value| self.field_path(value));
+            let payload = api::TensorModifyUpdate::create(
+                &mut self.builder,
+                &api::TensorModifyUpdateArgs::default(),
+            );
+            (
+                target,
+                api::UpdateOperationKind::TensorModifyUpdate,
+                payload.as_union_value(),
             )
         } else {
             let (name, operator) = [
@@ -3185,5 +3253,25 @@ fn parse_float(value: &JsonValue) -> StdResult<f64, String> {
         JsonValue::String(value) if value == "Infinity" => Ok(f64::INFINITY),
         JsonValue::String(value) if value == "-Infinity" => Ok(f64::NEG_INFINITY),
         _ => Err("invalid float64".to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod update_conformance_regression_tests {
+    use super::*;
+
+    #[test]
+    fn frozen_update_presence_detects_false_to_absent_normalization() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../reference/api-conformance");
+        let case = read_json(&root.join("cases/write/update-condition-create-false.json"))
+            .expect("read frozen update case");
+        let mut wrong_golden =
+            read_json(&root.join("golden/write/update-condition-create-false.json"))
+                .expect("read frozen update golden");
+        wrong_golden["ok"]["create"] = JsonValue::Null;
+        let error = run_case(&root, &case, &wrong_golden)
+            .expect_err("normalizing present false to absent must fail conformance");
+        assert!(error.contains("golden mismatch"));
     }
 }

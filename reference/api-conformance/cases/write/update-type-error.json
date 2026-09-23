@@ -1,0 +1,20 @@
+{
+  "category": "write",
+  "description": "Assign validates the target field value type.",
+  "id": "write.update-type-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "set": {
+          "field": "price",
+          "value": {
+            "string": "not-a-number"
+          }
+        }
+      }
+    ]
+  },
+  "operation": "update_to_ir"
+}
