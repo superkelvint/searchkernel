@@ -40,6 +40,7 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
     "python": (
         "api/**",
         "clients/python/**",
+        "core/crates/searchkernel-ir/**",
         "reference/client-contracts/**",
         "tools/check-client-contracts.py",
         "tools/test_check_client_contracts.py",
@@ -50,6 +51,7 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
     "typescript": (
         "api/**",
         "clients/typescript/**",
+        "core/crates/searchkernel-ir/**",
         "reference/client-contracts/**",
         "tools/check-client-contracts.py",
         "tools/test_check_client_contracts.py",
