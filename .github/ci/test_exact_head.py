@@ -237,7 +237,8 @@ class ExactHeadTests(unittest.TestCase):
             ("core/native/vespa/abi.cc", True),
             ("core/crates/searchkernel-ir-adapter/src/backend.rs", True),
             ("clients/python/searchkernel/client.py", False),
-            ("searchkerneld/src/main.rs", False),
+            ("searchkerneld/src/main.rs", True),
+            ("core/crates/searchkernel/src/index/native.rs", True),
             ("core/crates/searchkernel-ir/src/model.rs", False),
             ("docs/architecture.md", False),
         )
@@ -481,46 +482,36 @@ class ExactHeadTests(unittest.TestCase):
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
             b"core/crates/searchkernel-ir/src/model.rs\0": {
-                "rust=true",
-                "python=false",
-                "typescript=false",
-                "native=false",
+                "rust=true", "python=false", "typescript=false", "native=false",
+                "protocol=false", "api_conformance=false", "verification=false",
             },
             b"clients/python/searchkernel/ergonomic.py\0": {
-                "rust=false",
-                "python=true",
-                "typescript=false",
-                "native=false",
+                "rust=false", "python=true", "typescript=false", "native=false",
+                "protocol=false", "api_conformance=false", "verification=false",
             },
             b"clients/typescript/src/index.ts\0": {
-                "rust=false",
-                "python=false",
-                "typescript=true",
-                "native=false",
+                "rust=false", "python=false", "typescript=true", "native=false",
+                "protocol=false", "api_conformance=false", "verification=false",
             },
             b"core/native/vespa/abi.cc\0": {
-                "rust=true",
-                "python=false",
-                "typescript=false",
-                "native=true",
+                "rust=true", "python=false", "typescript=false", "native=true",
+                "protocol=false", "api_conformance=false", "verification=false",
             },
             b"api/searchkernel.fbs\0": {
-                "rust=true",
-                "python=true",
-                "typescript=true",
-                "native=false",
+                "rust=true", "python=true", "typescript=true", "native=false",
+                "protocol=true", "api_conformance=false", "verification=false",
+            },
+            b"reference/api-conformance/golden/example.json\0": {
+                "rust=false", "python=false", "typescript=false", "native=false",
+                "protocol=false", "api_conformance=true", "verification=false",
             },
             b"docs/architecture.md\0": {
-                "rust=false",
-                "python=false",
-                "typescript=false",
-                "native=false",
+                "rust=false", "python=false", "typescript=false", "native=false",
+                "protocol=false", "api_conformance=false", "verification=false",
             },
             b".githooks/pre-commit\0": {
-                "rust=false",
-                "python=false",
-                "typescript=false",
-                "native=true",
+                "rust=false", "python=false", "typescript=false", "native=true",
+                "protocol=false", "api_conformance=false", "verification=true",
             },
         }
         for changed, expected in cases.items():
