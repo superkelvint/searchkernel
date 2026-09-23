@@ -46,6 +46,127 @@ extern "C" int searchkernel_query_outlives_engine_regression(const char *data_di
     return 0;
 }
 
+extern "C" int searchkernel_query_single_use_regression(const char *data_dir,
+                                                               const char *config_dir) {
+    uint8_t error[SK_ERROR_MESSAGE_CAPACITY] = {};
+    sk_engine *engine = nullptr;
+    if (sk_engine_open(data_dir, config_dir, &engine, error, sizeof(error)) !=
+        SK_NATIVE_STATUS_OK) {
+        return 1;
+    }
+
+    auto make_true_query = [&](sk_query **out) -> int32_t {
+        if (sk_query_create(engine, out, error, sizeof(error)) != SK_NATIVE_STATUS_OK) {
+            return 2;
+        }
+        if (sk_query_add_true(*out, error, sizeof(error)) != SK_NATIVE_STATUS_OK) {
+            sk_query_destroy(*out);
+            *out = nullptr;
+            return 3;
+        }
+        return 0;
+    };
+
+    sk_query *query = nullptr;
+    if (const auto code = make_true_query(&query); code != 0) {
+        sk_engine_destroy(engine);
+        return code;
+    }
+
+    sk_text_result *text_result = nullptr;
+    if (sk_engine_search_query(engine, query, "default", "*", &text_result, error,
+                               sizeof(error)) != SK_NATIVE_STATUS_OK ||
+        !text_result) {
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        if (text_result) sk_text_result_destroy(text_result);
+        return 4;
+    }
+    sk_text_result_destroy(text_result);
+    text_result = nullptr;
+
+    if (sk_engine_search_query(engine, query, "default", "*", &text_result, error,
+                               sizeof(error)) != SK_NATIVE_STATUS_INVALID_ARGUMENT ||
+        text_result != nullptr) {
+        if (text_result) sk_text_result_destroy(text_result);
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 5;
+    }
+    if (sk_query_add_true(query, error, sizeof(error)) !=
+        SK_NATIVE_STATUS_INVALID_ARGUMENT) {
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 6;
+    }
+    sk_query_destroy(query);
+
+    query = nullptr;
+    if (const auto code = make_true_query(&query); code != 0) {
+        sk_engine_destroy(engine);
+        return code + 10;
+    }
+    if (sk_engine_search_query(nullptr, query, "default", "*", &text_result, error,
+                               sizeof(error)) != SK_NATIVE_STATUS_INVALID_ARGUMENT) {
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 14;
+    }
+    if (sk_query_add_true(query, error, sizeof(error)) !=
+        SK_NATIVE_STATUS_INVALID_ARGUMENT) {
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 15;
+    }
+    sk_query_destroy(query);
+
+    query = nullptr;
+    if (const auto code = make_true_query(&query); code != 0) {
+        sk_engine_destroy(engine);
+        return code + 20;
+    }
+    sk_generic_search_request *request = nullptr;
+    if (sk_generic_search_request_create("default", 10, 0, SK_SUMMARY_NONE, &request,
+                                         error, sizeof(error)) != SK_NATIVE_STATUS_OK) {
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 24;
+    }
+    sk_generic_search_result *generic_result = nullptr;
+    if (sk_engine_search_generic(engine, query, request, &generic_result, error,
+                                 sizeof(error)) != SK_NATIVE_STATUS_OK ||
+        !generic_result) {
+        if (generic_result) sk_generic_search_result_destroy(generic_result);
+        sk_generic_search_request_destroy(request);
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 25;
+    }
+    sk_generic_search_result_destroy(generic_result);
+    generic_result = nullptr;
+    if (sk_query_add_true(query, error, sizeof(error)) !=
+        SK_NATIVE_STATUS_INVALID_ARGUMENT) {
+        sk_generic_search_request_destroy(request);
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 26;
+    }
+    if (sk_engine_search_generic(engine, query, request, &generic_result, error,
+                                 sizeof(error)) != SK_NATIVE_STATUS_INVALID_ARGUMENT ||
+        generic_result != nullptr) {
+        if (generic_result) sk_generic_search_result_destroy(generic_result);
+        sk_generic_search_request_destroy(request);
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 27;
+    }
+
+    sk_generic_search_request_destroy(request);
+    sk_query_destroy(query);
+    sk_engine_destroy(engine);
+    return 0;
+}
+
 namespace {
 
 struct CommaDecimalNumPut final : std::num_put<char> {

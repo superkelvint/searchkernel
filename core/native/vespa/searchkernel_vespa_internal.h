@@ -626,6 +626,17 @@ struct NativeQueryState {
     mutable search::SerializedQueryTreeSP serialized_tree;
     std::optional<std::string> same_element_parent;
     uint32_t next_term_id = 1;
+    mutable std::atomic_bool consumed = false;
+
+    bool consume() const noexcept {
+        return !consumed.exchange(true, std::memory_order_acq_rel);
+    }
+
+    void ensure_active() const {
+        if (consumed.load(std::memory_order_acquire)) {
+            throw std::invalid_argument("query handle has already been consumed");
+        }
+    }
 
     const search::SerializedQueryTreeSP &serialized_query_tree() const {
         if (!serialized_tree) {
@@ -644,6 +655,7 @@ struct NativeQueryState {
     }
 
     int32_t allocate_term_id() {
+        ensure_active();
         if (next_term_id > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
             throw std::invalid_argument("query term ID cannot be represented by Vespa");
         }

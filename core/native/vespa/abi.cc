@@ -2804,6 +2804,10 @@ extern "C" int32_t sk_engine_search_generic(
     sk_generic_search_result **out_result, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     if (out_result) *out_result = nullptr;
+    if (query && !query->consume()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query handle has already been consumed");
+    }
     if (!engine || !engine->impl || !query || !request || !out_result) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "generic search arguments are invalid");
@@ -3341,7 +3345,10 @@ extern "C" int32_t sk_query_add_true(sk_query *query, uint8_t *error,
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "query true arguments are invalid");
     }
-    return invoke(error, error_capacity, [&] { query->builder.add_true_node(); });
+    return invoke(error, error_capacity, [&] {
+        query->ensure_active();
+        query->builder.add_true_node();
+    });
 }
 
 extern "C" int32_t sk_query_add_text(sk_query *query, uint32_t kind,
@@ -3477,6 +3484,7 @@ extern "C" int32_t sk_query_add_weak_and(
                          "weak-and query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
+        query->ensure_active();
         if (child_count < 1 || child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
             throw std::invalid_argument("weak-and query child count is invalid");
         }
@@ -3497,6 +3505,7 @@ extern "C" int32_t sk_query_add_rank(
                          "rank query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
+        query->ensure_active();
         if (child_count < 1 || child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
             throw std::invalid_argument("rank query child count is invalid");
         }
@@ -3576,6 +3585,7 @@ extern "C" int32_t sk_query_add_labeled(
                          "labeled query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
+        query->ensure_active();
         if (unique_id < 0 || !std::isfinite(score)) {
             throw std::invalid_argument("labeled query id and score are invalid");
         }
@@ -4144,6 +4154,10 @@ extern "C" int32_t sk_engine_search_query(const sk_engine *engine,
                                            uint32_t error_capacity) SK_NOEXCEPT {
     if (out_result) {
         *out_result = nullptr;
+    }
+    if (query && !query->consume()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query handle has already been consumed");
     }
     if (!engine || !engine->impl || !query || !rank_profile || !source || !out_result) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,

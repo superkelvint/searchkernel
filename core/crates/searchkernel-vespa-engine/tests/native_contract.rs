@@ -116,6 +116,10 @@ unsafe extern "C" {
         data_dir: *const std::os::raw::c_char,
         config_dir: *const std::os::raw::c_char,
     ) -> i32;
+    fn searchkernel_query_single_use_regression(
+        data_dir: *const std::os::raw::c_char,
+        config_dir: *const std::os::raw::c_char,
+    ) -> i32;
 }
 
 fn replace_once(path: &Path, before: &str, after: &str) {
@@ -160,6 +164,30 @@ fn generated_text_configuration_enables_real_bm25() {
     assert!(scores["repeated"] > scores["single"]);
     engine.close().expect("close BM25 engine");
 
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn safe_engine_search_builds_a_fresh_native_query_for_each_execution() {
+    let (config, data) = compile_config("safe-query-single-use", &text_schema());
+    let engine = Engine::open(&data, &config).expect("open safe query single-use config");
+    engine
+        .put(Document::new("doc-1").field("title", "fox").field("qty", 1_i64))
+        .expect("insert safe query document");
+
+    let request = SearchRequest::new(Query::Term {
+        field: "title".into(),
+        text: "fox".into(),
+    });
+    for attempt in 0..2 {
+        let result = engine
+            .search(request.clone())
+            .unwrap_or_else(|error| panic!("safe wrapper search {attempt} failed: {error:?}"));
+        assert_eq!(result.total_hits, 1);
+    }
+
+    engine.close().expect("close safe query single-use engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }
@@ -498,6 +526,25 @@ fn yql_search_uses_the_same_query_as_typed_search() {
     engine.close().expect("close source-equivalence engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
+}
+
+#[cfg(feature = "native-contract-tests")]
+#[test]
+fn native_query_handles_are_single_use_across_success_failure_and_materialization() {
+    let (config_path, data_path) = compile_config(
+        "query-single-use",
+        &Schema::new("typea").field(Field::new("title", FieldType::Text).indexed()),
+    );
+    let config = CString::new(config_path.to_str().expect("config path is UTF-8")).unwrap();
+    let data = CString::new(data_path.to_str().expect("data path is UTF-8")).unwrap();
+    let result =
+        unsafe { searchkernel_query_single_use_regression(data.as_ptr(), config.as_ptr()) };
+    assert_eq!(
+        result, 0,
+        "query single-use regression failed with code {result}"
+    );
+    let _ = fs::remove_dir_all(config_path);
+    let _ = fs::remove_dir_all(data_path);
 }
 
 #[cfg(feature = "native-contract-tests")]
