@@ -53,8 +53,8 @@ final class Hit
         }
 
         $sortValuesNode = $node['sort_values'] ?? [];
-        if (!is_array($sortValuesNode)) {
-            throw new ProtocolException('Hit.sort_values must be an array');
+        if (!is_array($sortValuesNode) || !array_is_list($sortValuesNode)) {
+            throw new ProtocolException('Hit.sort_values must be a list');
         }
         $sortValues = [];
         foreach ($sortValuesNode as $value) {
@@ -65,15 +65,18 @@ final class Hit
         }
 
         $highlightNodes = $node['highlights'] ?? [];
-        if (!is_array($highlightNodes)) {
-            throw new ProtocolException('Hit.highlights must be an array');
+        if (!is_array($highlightNodes) || !array_is_list($highlightNodes)) {
+            throw new ProtocolException('Hit.highlights must be a list');
         }
         $highlights = [];
         foreach ($highlightNodes as $highlight) {
             if (!is_array($highlight)) {
                 throw new ProtocolException('highlight must be an object');
             }
-            if (!is_string($highlight['field'] ?? null) || !is_array($highlight['fragments'] ?? [])) {
+            if (!is_string($highlight['field'] ?? null)
+                || !is_array($highlight['fragments'] ?? [])
+                || !array_is_list($highlight['fragments'] ?? [])
+            ) {
                 throw new ProtocolException('malformed highlight result');
             }
             $fragments = [];
@@ -81,7 +84,10 @@ final class Hit
                 if (!is_array($fragment)) {
                     throw new ProtocolException('highlight fragment must be an object');
                 }
-                if (!is_string($fragment['text'] ?? null) || !is_array($fragment['matches'] ?? [])) {
+                if (!is_string($fragment['text'] ?? null)
+                    || !is_array($fragment['matches'] ?? [])
+                    || !array_is_list($fragment['matches'] ?? [])
+                ) {
                     throw new ProtocolException('malformed highlight fragment');
                 }
                 $matches = [];
@@ -132,8 +138,8 @@ final class Hit
     /** @return list<string> */
     private static function strings(mixed $values): array
     {
-        if (!is_array($values)) {
-            throw new ProtocolException('expected a string array');
+        if (!is_array($values) || !array_is_list($values)) {
+            throw new ProtocolException('expected a string list');
         }
         foreach ($values as $value) {
             if (!is_string($value)) {
