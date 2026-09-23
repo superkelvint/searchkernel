@@ -541,5 +541,226 @@ class ExactHeadTests(unittest.TestCase):
                     self.assertEqual(lines, expected)
 
 
+    def test_classification_covers_precommit_verification_surfaces(self) -> None:
+        cases = {
+            b"searchkerneld/src/main.rs\0": {"native=true"},
+            b"core/crates/searchkernel/src/index/native.rs\0": {"native=true"},
+            b"core/crates/searchkernel/src/index/manifest.rs\0": {"native=true"},
+            b"core/crates/searchkernel/src/portable_definition.rs\0": {"native=true"},
+            b"api/rpc/searchkernel.proto\0": {"protocol=true"},
+            b"api/searchkernel.fbs\0": {"protocol=true"},
+            b"reference/api-conformance/golden/example.json\0": {"api_conformance=true"},
+            b".githooks/pre-commit\0": {"verification=true"},
+            b".github/ci/exact_head.py\0": {"verification=true"},
+            b".github/ci/test_exact_head.py\0": {"verification=true"},
+        }
+        for changed, required in cases.items():
+            with self.subTest(changed=changed):
+                with tempfile.NamedTemporaryFile() as output_file:
+                    result = run(
+                        "classify",
+                        "--github-output",
+                        output_file.name,
+                        input_bytes=changed,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout.decode())
+                    lines = set(
+                        Path(output_file.name).read_text(encoding="utf-8").splitlines()
+                    )
+                    self.assertTrue(required <= lines, (changed, required, lines))
+
+    def test_precommit_consumes_non_rust_behavioral_lanes(self) -> None:
+        cases = (
+            ("clients/python/searchkernel/client.py", "dev test python"),
+            ("clients/typescript/src/index.ts", "dev test typescript"),
+            ("api/rpc/searchkernel.proto", "dev check-protocol"),
+            ("api/searchkernel.fbs", "dev check-protocol"),
+            ("reference/api-conformance/golden/example.json", "dev verify api-conformance"),
+        )
+        for staged_path, expected in cases:
+            with self.subTest(staged_path=staged_path):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                repo = Path(temp.name)
+                git(repo, "init", "-q")
+                git(repo, "config", "user.name", "CI Test")
+                git(repo, "config", "user.email", "ci@example.invalid")
+
+                (repo / ".githooks").mkdir(parents=True)
+                (repo / ".github" / "ci").mkdir(parents=True)
+                (repo / "reference" / "vespa").mkdir(parents=True)
+                (repo / "tools").mkdir(parents=True)
+                (repo / "fakebin").mkdir(parents=True)
+                (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+
+                log = repo / "hook.log"
+                cargo = repo / "fakebin" / "cargo"
+                cargo.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                cargo.chmod(0o755)
+                dev = repo / "dev"
+                dev.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                dev.chmod(0o755)
+                native_gate = repo / "reference" / "vespa" / "verify-through.sh"
+                native_gate.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'native %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                native_gate.chmod(0o755)
+                python_e2e = repo / "tools" / "run-python-native-e2e.sh"
+                python_e2e.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'python-native-e2e\\n' >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                python_e2e.chmod(0o755)
+
+                git(repo, "add", ".")
+                git(repo, "commit", "-q", "-m", "fixture")
+                staged = repo / staged_path
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                staged.write_text("changed\n", encoding="utf-8")
+                git(repo, "add", staged_path)
+
+                env = os.environ.copy()
+                env["HOOK_LOG"] = str(log)
+                env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+                env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
+                result = subprocess.run(
+                    ["bash", str(repo / ".githooks" / "pre-commit")],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout)
+                logged = log.read_text(encoding="utf-8")
+                self.assertIn(expected, logged)
+
+    def test_precommit_treats_native_facade_and_daemon_entrypoint_as_native(self) -> None:
+        for staged_path in (
+            "searchkerneld/src/main.rs",
+            "core/crates/searchkernel/src/index/native.rs",
+            "core/crates/searchkernel/src/index/manifest.rs",
+            "core/crates/searchkernel/src/portable_definition.rs",
+        ):
+            with self.subTest(staged_path=staged_path):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                repo = Path(temp.name)
+                git(repo, "init", "-q")
+                git(repo, "config", "user.name", "CI Test")
+                git(repo, "config", "user.email", "ci@example.invalid")
+                (repo / ".githooks").mkdir(parents=True)
+                (repo / ".github" / "ci").mkdir(parents=True)
+                (repo / "reference" / "vespa").mkdir(parents=True)
+                (repo / "tools").mkdir(parents=True)
+                (repo / "fakebin").mkdir(parents=True)
+                (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+
+                log = repo / "hook.log"
+                cargo = repo / "fakebin" / "cargo"
+                cargo.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                cargo.chmod(0o755)
+                native_gate = repo / "reference" / "vespa" / "verify-through.sh"
+                native_gate.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'native %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                native_gate.chmod(0o755)
+                python_e2e = repo / "tools" / "run-python-native-e2e.sh"
+                python_e2e.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf 'python-native-e2e\\n' >> \"$HOOK_LOG\"\n",
+                    encoding="utf-8",
+                )
+                python_e2e.chmod(0o755)
+                git(repo, "add", ".")
+                git(repo, "commit", "-q", "-m", "fixture")
+
+                staged = repo / staged_path
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                staged.write_text("changed\n", encoding="utf-8")
+                git(repo, "add", staged_path)
+
+                env = os.environ.copy()
+                env["HOOK_LOG"] = str(log)
+                env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+                env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
+                result = subprocess.run(
+                    ["bash", str(repo / ".githooks" / "pre-commit")],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout)
+                logged = log.read_text(encoding="utf-8")
+                self.assertIn("native i", logged)
+                self.assertIn("python-native-e2e", logged)
+
+    def test_precommit_rejects_tracked_unstaged_changes_for_non_native_commits(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+        (repo / ".githooks").mkdir(parents=True)
+        (repo / ".github" / "ci").mkdir(parents=True)
+        (repo / "reference" / "vespa").mkdir(parents=True)
+        (repo / "tools").mkdir(parents=True)
+        (repo / "fakebin").mkdir(parents=True)
+        (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        (repo / "tracked.txt").write_text("original\n", encoding="utf-8")
+
+        cargo = repo / "fakebin" / "cargo"
+        cargo.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        cargo.chmod(0o755)
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "fixture")
+
+        staged = repo / "docs" / "readme.md"
+        staged.parent.mkdir(parents=True)
+        staged.write_text("changed\n", encoding="utf-8")
+        git(repo, "add", "docs/readme.md")
+        (repo / "tracked.txt").write_text("unstaged\n", encoding="utf-8")
+
+        env = os.environ.copy()
+        env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks" / "pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tracked unstaged changes", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
