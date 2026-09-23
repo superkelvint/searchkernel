@@ -40,6 +40,14 @@ class VerificationDagTests(unittest.TestCase):
         self.assertFalse(verification_dag.matching_subsystems(current, probe))
         self.assertFalse(verification_dag.matching_exemptions(current, probe))
 
+    def test_ruby_client_family_has_explicit_verification_ownership(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+        probe = "clients/ruby/lib/searchkernel.rb"
+        owners = verification_dag.matching_subsystems(current, probe)
+        self.assertEqual([owner.id for owner in owners], ["client-ruby"])
+        self.assertEqual(owners[0].requires, ("ruby-client", "client-contracts"))
+        self.assertIn("ruby-client", verification_dag.task_closure(current, ("full",)))
+
     def test_unknown_task_reference_is_rejected(self) -> None:
         source = DAG_PATH.read_text(encoding="utf-8")
         mutated = source.replace(

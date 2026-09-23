@@ -17,7 +17,7 @@ schema_version = 1
 unknown_behavior = "block"
 full_roots = ["full"]
 legacy_lane_names = [
-  "rust", "python", "typescript", "php", "native", "protocol",
+  "rust", "python", "typescript", "php", "ruby", "native", "protocol",
   "api_conformance", "contracts", "abi", "persistence",
   "issue_queue", "verification",
 ]
@@ -89,6 +89,14 @@ depends_on = []
 cache_result = false
 
 [[task]]
+id = "rust-remote-client"
+kind = "aggregate"
+runner = "linux"
+depends_on = ["rust-non-native", "protocol-generated", "client-contracts"]
+cache_result = false
+notes = "Pre-registered ownership for the Rust remote-client ingress. The product change replaces this aggregate with its focused executable verifier."
+
+[[task]]
 id = "python-client"
 legacy_lanes = ["python"]
 kind = "command"
@@ -114,6 +122,15 @@ runner = "linux"
 command = "./dev test php"
 depends_on = []
 cache_result = false
+
+[[task]]
+id = "ruby-client"
+legacy_lanes = ["ruby"]
+kind = "aggregate"
+runner = "linux"
+depends_on = ["client-contracts"]
+cache_result = false
+notes = "Pre-registered ownership for the Ruby client ingress. The first Ruby product PR replaces this aggregate with ./dev test ruby."
 
 [[task]]
 id = "protocol-generated"
@@ -561,6 +578,7 @@ depends_on = [
   "python-client",
   "typescript-client",
   "php-client",
+  "ruby-client",
   "client-contracts",
   "c2-historical",
 ]
@@ -571,6 +589,7 @@ id = "portable-full"
 kind = "aggregate"
 runner = "linux"
 depends_on = [
+  "rust-remote-client",
   "rust-non-native",
   "rust-quality",
   "protocol-generated",
@@ -640,6 +659,7 @@ id = "generated-protocol-artifacts"
 paths = [
   "core/crates/searchkernel-protocol/src/generated/**",
   "core/crates/searchkernel-protocol/bfbs/**",
+  "core/crates/searchkernel-rpc/src/generated/**",
   "searchkerneld/src/generated/**",
   "clients/python/searchkernel/_wire_generated/**",
   "clients/python/searchkernel/rpc/**",
@@ -684,6 +704,15 @@ paths = ["core/crates/searchkernel-vespa-engine/**"]
 requires = ["rust-non-native", "client-contracts", "native-full"]
 
 [[subsystem]]
+id = "searchkernel-rpc-client"
+paths = [
+  "core/crates/searchkernel-rpc/**",
+  "core/crates/searchkernel/src/remote.rs",
+  "searchkerneld/tests/rust_remote_client.rs",
+]
+requires = ["rust-remote-client", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
+
+[[subsystem]]
 id = "searchkernel-rust-api"
 paths = ["core/crates/searchkernel/**"]
 requires = ["rust-non-native", "rust-quality", "client-contracts"]
@@ -722,6 +751,11 @@ requires = ["typescript-client", "client-contracts", "web-portable-client"]
 id = "client-php"
 paths = ["clients/php/**"]
 requires = ["php-client", "client-contracts"]
+
+[[subsystem]]
+id = "client-ruby"
+paths = ["clients/ruby/**"]
+requires = ["ruby-client", "client-contracts"]
 
 [[subsystem]]
 id = "persistence"
