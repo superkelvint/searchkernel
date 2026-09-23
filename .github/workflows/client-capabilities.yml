@@ -134,7 +134,7 @@ jobs:
       - name: Install immutable native Vespa base for executable client E2E
         env:
           GH_TOKEN: ${{ github.token }}
-          SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache
+          SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache-${{ github.run_id }}
         run: |
           set -euo pipefail
 
@@ -234,10 +234,10 @@ jobs:
 
       - name: Build native searchkerneld for executable client E2E
         env:
-          SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache
+          SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache-${{ github.run_id }}
         run: cargo build -p searchkerneld --features native
       - name: Run executable client E2E lanes
         env:
-          SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache
+          SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache-${{ github.run_id }}
           SEARCHKERNEL_LOCAL_HOST: ${{ github.workspace }}/target/ci/debug/searchkerneld
         run: $CI_PYTHON tools/check-client-contracts.py --run-e2e
