@@ -58,7 +58,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 693
+              "line": 752
             },
             {
               "capability": "query.term",
@@ -498,7 +498,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 694
+              "line": 753
             },
             {
               "capability": "filter.textual",
@@ -557,7 +557,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 695
+              "line": 754
             },
             {
               "capability": "search.sorting",
@@ -638,7 +638,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 696
+              "line": 755
             },
             {
               "capability": "search.pagination",
@@ -845,7 +845,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 706
+              "line": 765
             },
             {
               "capability": "result.highlighting",
@@ -979,7 +979,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 697
+              "line": 756
             },
             {
               "capability": "grouping.structured",
@@ -1051,7 +1051,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 698
+              "line": 757
             },
             {
               "capability": "grouping.aggregations",
@@ -1168,7 +1168,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 699
+              "line": 758
             },
             {
               "capability": "update.document_crud",
@@ -1236,7 +1236,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 700
+              "line": 759
             },
             {
               "capability": "update.arithmetic",
@@ -1277,7 +1277,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 701
+              "line": 760
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -1402,7 +1402,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 702
+              "line": 761
             },
             {
               "capability": "query.yql",
@@ -1566,7 +1566,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 703
+              "line": 762
             },
             {
               "capability": "ranking.profile_selection",
@@ -1639,7 +1639,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 704
+              "line": 763
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -1680,7 +1680,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 705
+              "line": 764
             },
             {
               "capability": "ranking.rank_properties",
@@ -1753,7 +1753,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 707
+              "line": 766
             },
             {
               "capability": "result.grouping_tree",
@@ -1794,7 +1794,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 708
+              "line": 767
             },
             {
               "capability": "result.degradation_metadata",
