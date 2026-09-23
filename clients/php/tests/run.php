@@ -811,6 +811,80 @@ same('QueryContains', $typedRequest['query']['source']['query']['expr_type'], 't
 same(3, count($typedRequest['grouping']), 'group + facet + root aggregate lower to grouping requests');
 same('StructuredGroupingSource', $typedRequest['grouping'][0]['source_type'], 'structured grouping source');
 
+$advancedGroup = SearchKernel\Group::by(
+    SearchKernel\G::fn('time.year', SearchKernel\G::field('published_at')),
+)
+    ->unlimited()
+    ->precision(100)
+    ->alias('revenue', SearchKernel\Agg::sum('price'))
+    ->orderBy(SearchKernel\GroupingOrder::desc(SearchKernel\G::aliasRef('revenue')))
+    ->filter(SearchKernel\Gf::range(SearchKernel\G::field('price'), 10, 100))
+    ->keep(SearchKernel\Gf::regex(SearchKernel\G::field('brand'), '^A'))
+    ->where(SearchKernel\G::field('in_stock'))
+    ->output(
+        SearchKernel\G::aliasRef('revenue')->as('revenue'),
+        SearchKernel\Agg::xor('flags')->as('flags_xor'),
+        SearchKernel\Agg::quantiles('price', 0.5, 0.9)->as('price_quantiles'),
+        SearchKernel\Agg::count()->multiply(2)->as('double_count'),
+    )
+    ->continuation('opaque-token')
+    ->toRequest();
+
+same('StructuredGroupingSource', $advancedGroup['source_type'], 'advanced grouping remains structured');
+same(['opaque-token'], $advancedGroup['continuations'], 'grouping continuation remains opaque');
+same(
+    'GroupingFunctionExpression',
+    $advancedGroup['source']['root']['operations'][0]['operation']['expression']['expr_type'],
+    'grouping function expression',
+);
+$advancedGroupBody = $advancedGroup['source']['root']['operations'][1]['operation']['operations'];
+$advancedGroupKinds = array_column($advancedGroupBody, 'operation_type');
+same(
+    [
+        'GroupingAliasOperation',
+        'GroupingMaxOperation',
+        'GroupingPrecisionOperation',
+        'GroupingOrderOperation',
+        'GroupingFilterOperation',
+        'GroupingKeepOperation',
+        'GroupingWhereOperation',
+        'GroupingOutputOperation',
+    ],
+    $advancedGroupKinds,
+    'advanced grouping operation ordering',
+);
+same(
+    'InfiniteGroupingMax',
+    $advancedGroupBody[1]['operation']['value_type'],
+    'explicit unlimited group uses infinite max rather than omitting max',
+);
+same(
+    'GroupingFilterRange',
+    $advancedGroupBody[4]['operation']['filter']['expr_type'],
+    'grouping filter range',
+);
+same(
+    'GroupingFilterRegex',
+    $advancedGroupBody[5]['operation']['filter']['expr_type'],
+    'grouping keep regex',
+);
+same(
+    'GroupingBinaryExpression',
+    $advancedGroupBody[7]['operation']['outputs'][3]['expression']['expr_type'],
+    'grouping arithmetic output',
+);
+same(
+    'QuantilesAggregation',
+    $advancedGroupBody[7]['operation']['outputs'][2]['expression']['expr']['aggregation_type'],
+    'quantiles aggregation',
+);
+
+$facetPrecision = $index->browse()
+    ->facet('brand', 'brands', 20, 'value_asc', 200)
+    ->request();
+$facetBody = $facetPrecision['grouping'][0]['source']['root']['operations'][1]['operation']['operations'];
+same('GroupingPrecisionOperation', $facetBody[1]['operation_type'], 'facet precision lowers explicitly');
+
 $queryExpr = static function (array $query): array {
     $expr = $query['source']['query'] ?? null;
     if (!is_array($expr)) {
@@ -974,7 +1048,10 @@ SKC: search.sorting/basic kinds=conformance runtime=http
 SKC: search.search_fields/basic kinds=conformance runtime=http
 SKC: search.pagination/basic kinds=conformance runtime=http
 SKC: grouping.structured/basic kinds=conformance runtime=http
+SKC: grouping.functions/basic kinds=conformance runtime=http
 SKC: grouping.aggregations/basic kinds=conformance runtime=http
+SKC: grouping.continuations/basic kinds=conformance runtime=http
+SKC: grouping.raw_source/basic kinds=conformance runtime=http
 SKC: update.document_crud/basic kinds=conformance runtime=http
 SKC: update.arithmetic/basic kinds=conformance runtime=http
 SKC: update.create_if_nonexistent/basic kinds=conformance runtime=http
