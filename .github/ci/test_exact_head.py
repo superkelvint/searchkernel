@@ -505,7 +505,7 @@ class ExactHeadTests(unittest.TestCase):
                 "protocol=false", "api_conformance=false", "verification=false",
             },
             b"api/searchkernel.fbs\0": {
-                "rust=true", "python=true", "typescript=true", "php=false", "native=false",
+                "rust=true", "python=true", "typescript=true", "php=true", "native=false",
                 "protocol=true", "api_conformance=false", "verification=false",
             },
             b"reference/api-conformance/golden/example.json\0": {
