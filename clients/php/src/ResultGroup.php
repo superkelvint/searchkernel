@@ -31,26 +31,28 @@ final class ResultGroup
             'to' => is_array($limits['to'] ?? null) ? Protocol::decodeValue($limits['to']) : null,
         ] : null;
 
-        $this->continuations = [];
+        $continuations = [];
         foreach ($node['continuations'] ?? [] as $entry) {
             if (!is_array($entry) || !is_string($entry['key'] ?? null) || !is_string($entry['value'] ?? null)) {
                 throw new UnexpectedValueException('malformed continuation entry');
             }
-            if (array_key_exists($entry['key'], $this->continuations)) {
+            if (array_key_exists($entry['key'], $continuations)) {
                 throw new UnexpectedValueException('duplicate continuation key: ' . $entry['key']);
             }
-            $this->continuations[$entry['key']] = $entry['value'];
+            $continuations[$entry['key']] = $entry['value'];
         }
+        $this->continuations = $continuations;
 
-        $this->children = [];
+        $children = [];
         foreach ($node['children'] ?? [] as $child) {
             if (!is_array($child)) {
                 throw new UnexpectedValueException('malformed ResultGroup child');
             }
-            $this->children[] = self::decodeNode($child);
+            $children[] = self::decodeNode($child);
         }
-        $this->hits = array_values(array_filter($this->children, static fn ($child): bool => $child instanceof Hit));
-        $this->groups = array_values(array_filter($this->children, static fn ($child): bool => $child instanceof self));
+        $this->children = $children;
+        $this->hits = array_values(array_filter($children, static fn ($child): bool => $child instanceof Hit));
+        $this->groups = array_values(array_filter($children, static fn ($child): bool => $child instanceof self));
     }
 
     public readonly ?string $id;
