@@ -107,6 +107,20 @@ final class RecordingTransport implements Transport
                 'payload_type' => 'SearchKernel_V2_DescribeResult',
                 'payload' => ['index' => ['name' => 'test']],
             ],
+            'SearchKernel_V2_AnalyzeRequest' => [
+                'payload_type' => 'SearchKernel_V2_AnalyzeResult',
+                'payload' => ['tokens' => [[
+                    'surface' => 'Running',
+                    'term' => 'run',
+                    'position' => 0,
+                    'start_byte' => 0,
+                    'end_byte' => 7,
+                ]]],
+            ],
+            'SearchKernel_V2_InspectQueryRequest' => [
+                'payload_type' => 'SearchKernel_V2_InspectQueryResult',
+                'payload' => ['resolved_request' => $payload['request'] ?? []],
+            ],
             default => throw new RuntimeException('unexpected test request type: ' . $requestType),
         };
 
@@ -245,6 +259,8 @@ same('version == 7', $update['payload']['condition'], 'update condition preserve
 
 $request = $index
     ->search('brown fox')
+    ->searchField('title', 3.0)
+    ->searchField('description')
     ->filter('price <= :value', ['value' => 120])
     ->filter('rating >= :value', ['value' => 4])
     ->sort('price', 'desc', 'last')
@@ -261,6 +277,13 @@ $request = $index
     ->request();
 
 same('SearchKernelTextQuery', $request['query']['source_type'], 'search query source');
+same('title', $request['search_fields']['fields'][0]['field'], 'weighted search field');
+same(['value' => 3.0], $request['search_fields']['fields'][0]['weight'], 'search field weight presence');
+same('description', $request['search_fields']['fields'][1]['field'], 'unweighted search field');
+truth(
+    !array_key_exists('weight', $request['search_fields']['fields'][1]),
+    'absent search-field weight stays absent',
+);
 same(2, count($request['filters']['textual']), 'repeated filters remain separate clauses');
 same('value', $request['filters']['textual'][0]['bindings'][0]['key'], 'first clause binding key');
 same(120, $request['filters']['textual'][0]['bindings'][0]['value']['kind']['value'], 'first clause binding value');
@@ -288,6 +311,42 @@ same(
 $yql = $index->yql('select * from sources * where title contains text(@q)', ['q' => 'fox'])->request();
 same('YqlQuery', $yql['query']['source_type'], 'YQL source discriminator');
 same('q', $yql['query']['source']['parameters'][0]['key'], 'YQL parameter namespace');
+
+$resolved = $index->search('inspect me')->limit(5)->inspect();
+same('SearchKernelTextQuery', $resolved['query']['source_type'], 'inspect returns server-resolved request');
+same(['value' => 5], $resolved['limit'], 'inspect sends configured search controls');
+$inspectRequest = $transport->requests[array_key_last($transport->requests)];
+same('SearchKernel_V2_InspectQueryRequest', $inspectRequest['payload_type'], 'inspect request discriminator');
+
+$tokens = $index->analyze('Running')->field('title')->language('en')->execute();
+same('run', $tokens[0]['term'], 'analyze result term');
+same(7, $tokens[0]['end_byte'], 'analyze result byte span');
+$analyzeRequest = $transport->requests[array_key_last($transport->requests)];
+same('SearchKernel_V2_AnalyzeRequest', $analyzeRequest['payload_type'], 'analyze request discriminator');
+same('AnalyzeFieldTarget', $analyzeRequest['payload']['target']['target_type'], 'analyze field target');
+same('en', $analyzeRequest['payload']['language'], 'analyze language');
+
+$badAnalyze = new Index(new class implements Transport {
+    public function execute(array $request): array
+    {
+        return [
+            'protocol_version' => 2,
+            'payload_type' => 'SearchKernel_V2_AnalyzeResult',
+            'payload' => ['tokens' => [[
+                'surface' => 'bad',
+                'term' => 'bad',
+                'position' => '0',
+                'start_byte' => 0,
+                'end_byte' => 3,
+            ]]],
+        ];
+    }
+});
+throws(
+    ProtocolException::class,
+    static fn () => $badAnalyze->analyze('bad')->execute(),
+    'malformed analyze token fails closed',
+);
 
 throws(
     \InvalidArgumentException::class,
