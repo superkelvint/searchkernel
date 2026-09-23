@@ -91,15 +91,18 @@ final class Hit
                     if (!is_array($match)) {
                         throw new ProtocolException('highlight match must be an object');
                     }
-                    $start = $match['start_byte'] ?? null;
-                    $end = $match['end_byte'] ?? null;
-                    if (!is_int($start) || !is_int($end)
-                        || $start < 0 || $end < 0
-                        || $start > 0xFFFF_FFFF || $end > 0xFFFF_FFFF
-                    ) {
-                        throw new ProtocolException('highlight spans must contain uint32 offsets');
-                    }
-                    $matches[] = [$start, $end];
+                    $matches[] = [
+                        Protocol::uint32ScalarField(
+                            $match,
+                            'start_byte',
+                            'HighlightSpan.start_byte',
+                        ),
+                        Protocol::uint32ScalarField(
+                            $match,
+                            'end_byte',
+                            'HighlightSpan.end_byte',
+                        ),
+                    ];
                 }
                 $fragments[] = [
                     'text' => $fragment['text'],
