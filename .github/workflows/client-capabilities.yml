@@ -121,6 +121,8 @@ jobs:
       - run: $CI_PYTHON tools/check-python-dependencies.py
       - run: npm ci --prefix clients/typescript
       - name: Ensure immutable native Vespa base for executable client E2E
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: ./dev native-sdk ensure
       - name: Install published immutable Vespa base for client E2E
         env:
