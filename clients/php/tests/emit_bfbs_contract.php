@@ -230,3 +230,27 @@ emitCase('response', 'default-sparse-tensor-zero', Protocol::envelope('GetResult
         ),
     ]),
 ]));
+
+
+emitCase('request', 'insert-empty-string-bytes', Protocol::envelope('InsertRequest', [
+    'document' => Protocol::document([
+        '_id' => 'empty-values',
+        'title' => '',
+        'raw' => new Bytes(''),
+    ]),
+]));
+
+emitCase('response', 'portable-zero-values', Protocol::envelope('SearchResult', [
+    'root' => [
+        'node_type' => 'Hit',
+        'node' => [
+            'id' => 'zero-values',
+            'fields' => [
+                ['key' => 'bool', 'value' => Protocol::value(false)],
+                ['key' => 'float', 'value' => Protocol::value(0.0)],
+                ['key' => 'int', 'value' => Protocol::value(0)],
+                ['key' => 'uint', 'value' => Protocol::value(UInt64::fromDecimal('0'))],
+            ],
+        ],
+    ],
+]));
