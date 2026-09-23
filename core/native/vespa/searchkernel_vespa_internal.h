@@ -557,6 +557,9 @@ struct LocalSearchRequestState {
     std::vector<std::pair<std::string, std::string>> query_tensors;
     std::vector<std::pair<std::string, std::string>> rank_properties;
     std::vector<LocalGroupingRequestState> groupings;
+    // Generic requests own copies of structured plans, so the opaque plan
+    // handles used to build them may be released before the match begins.
+    std::vector<std::unique_ptr<sk_grouping_plan>> grouping_plans;
 };
 
 struct LocalHighlightSpanState {
@@ -592,6 +595,7 @@ struct LocalSearchResultState {
     std::vector<sk_feature_value> match_feature_values;
     std::vector<std::string> issues;
     std::vector<LocalGroupingResultState> groupings;
+    std::vector<std::unique_ptr<sk_grouping_tree_result>> grouping_trees;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
     std::shared_ptr<const FailpointController> failpoints;
     std::shared_ptr<const ResultFaultController> result_faults;

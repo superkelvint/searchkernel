@@ -8,6 +8,7 @@ use crate::native::{
     add_attribute_document_value, add_attribute_update_value, add_document_field,
     add_text_annotation, add_text_array_annotation, add_update_field, attribute_document_create,
     attribute_update_create, engine_group_tree, engine_group_tree_with_request,
+    generic_search_request_add_grouping_plan,
     grouping_aggregation_average, grouping_aggregation_count, grouping_aggregation_for_expression,
     grouping_aggregation_quantiles, grouping_aggregation_summary,
     grouping_expression_aggregation_reference, grouping_expression_attribute,
@@ -646,6 +647,18 @@ impl Engine {
         self.execute_search(&request)
     }
 
+    /// Execute one M-layer match request with all structured grouping plans
+    /// attached to that request. Vespa serializes every grouping response in
+    /// the same match reply, so callers cannot observe different generations
+    /// between hits and sibling grouping plans.
+    pub fn search_with_grouping_plans(
+        &self,
+        request: SearchRequest,
+        plans: &[GroupingPlan],
+    ) -> Result<SearchResult, Error> {
+        self.execute_search_with_grouping_plans(&request, plans)
+    }
+
     /// Retrieve the complete document through Vespa's document retriever.
     pub fn get(&self, document_id: &str) -> Result<Option<Document>, Error> {
         let document_id = cstring(document_id)?;
@@ -977,6 +990,14 @@ impl Engine {
     }
 
     fn execute_search(&self, request: &SearchRequest) -> Result<SearchResult, Error> {
+        self.execute_search_with_grouping_plans(request, &[])
+    }
+
+    fn execute_search_with_grouping_plans(
+        &self,
+        request: &SearchRequest,
+        plans: &[GroupingPlan],
+    ) -> Result<SearchResult, Error> {
         validate_search_ranking_inputs(request)?;
         query::validate_query(&request.query)?;
         self.validate_search_fields(request)?;
@@ -989,6 +1010,13 @@ impl Engine {
         }
         let native_query = self.create_native_query(&request.query, request.language)?;
         let native_request = self.create_native_search_request(request)?;
+        let native_plans = plans
+            .iter()
+            .map(|plan| self.create_native_grouping_plan(plan))
+            .collect::<Result<Vec<_>, _>>()?;
+        for plan in &native_plans {
+            generic_search_request_add_grouping_plan(native_request.0, plan)?;
+        }
         let mut native_result = ptr::null_mut();
         let mut error = NativeError::new();
         let status = unsafe {
@@ -1003,6 +1031,27 @@ impl Engine {
         };
         check(status, &error)?;
         read_generic_search_result(require_ptr(native_result, "generic search result")?)
+    }
+
+    fn create_native_grouping_plan(
+        &self,
+        plan: &GroupingPlan,
+    ) -> Result<crate::native::NativeGroupingPlan, Error> {
+        self.validate_grouping_plan(plan)?;
+        let native_plan = grouping_plan_create()?;
+        grouping_plan_set_all(&native_plan, plan.group_all)?;
+        for aggregation in &plan.root_aggregations {
+            add_root_grouping_aggregation(&native_plan, aggregation)?;
+        }
+        for level in &plan.levels {
+            let classifier = grouping_expression(&level.classifier)?;
+            let native_level = grouping_plan_add_level(&native_plan, &classifier)?;
+            add_grouping_level_configuration(native_level, level)?;
+            for aggregation in &level.aggregations {
+                add_grouping_aggregation(native_level, aggregation)?;
+            }
+        }
+        Ok(native_plan)
     }
 
     pub fn group(

@@ -106,6 +106,19 @@ fn native_grouping(levels: &[(&str, Vec<GroupingExpressionIr>)]) -> GroupingRequ
     }
 }
 
+fn contains_group_value(node: &ResultNode, value: &Value) -> bool {
+    match node {
+        ResultNode::Hit(_) => false,
+        ResultNode::Group(group) => {
+            group.value.as_ref() == Some(value)
+                || group
+                    .children
+                    .iter()
+                    .any(|child| contains_group_value(child, value))
+        }
+    }
+}
+
 fn count_expression() -> GroupingExpressionIr {
     GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count))
 }
@@ -1321,6 +1334,120 @@ fn typed_query_b_remaining_operators_lower_to_existing_vespa_nodes() {
             target_num_hits: 100,
         }
     );
+}
+
+#[test]
+fn structured_groupings_share_the_primary_search_snapshot() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-grouping-snapshot-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("grouping_snapshot")
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        )
+        .field(Field::new("qty", FieldType::Integer).attribute().summary());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile grouping snapshot schema");
+    let engine = Engine::open(&data, &config).expect("open grouping snapshot engine");
+    let document = |id: &str, category: &str, qty: i64| {
+        InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse(id).expect("valid document ID"),
+            std::collections::BTreeMap::from([
+                (
+                    field("category"),
+                    FieldValueIr::Single(ScalarValueIr::String(category.to_owned())),
+                ),
+                (
+                    field("qty"),
+                    FieldValueIr::Single(ScalarValueIr::Int64(qty)),
+                ),
+            ]),
+        ))
+    };
+    let baseline = VespaBackend::from_engine(engine);
+    baseline
+        .insert(document("doc:old", "old", 1))
+        .expect("insert baseline document");
+    let probe = std::sync::Arc::new(SearchGroupingProbe {
+        after_primary: std::sync::Barrier::new(2),
+        continue_search: std::sync::Barrier::new(2),
+    });
+    let backend = std::sync::Arc::new(VespaBackend::with_search_grouping_probe(
+        baseline.engine,
+        probe.clone(),
+    ));
+    let request = SearchRequestIr::new(
+        QueryIr::MatchAll,
+        Vec::new(),
+        None,
+        Vec::new(),
+        10,
+        0,
+        searchkernel_ir::ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_grouping(vec![
+        native_grouping(&[("category", vec![count_expression()])]),
+        native_grouping(&[("qty", vec![count_expression()])]),
+    ]);
+    let searching = std::sync::Arc::clone(&backend);
+    let search = std::thread::spawn(move || searching.search(request));
+    probe.after_primary.wait();
+    backend
+        .insert(document("doc:new", "new", 99))
+        .expect("insert interleaved document");
+    probe.continue_search.wait();
+    let result = search
+        .join()
+        .expect("search thread")
+        .expect("search with structured groupings");
+    let ResultNode::Group(root_group) = result.root else {
+        panic!("search result root must be a group");
+    };
+    assert_eq!(
+        root_group
+            .children
+            .iter()
+            .filter_map(|child| match child {
+                ResultNode::Hit(hit) => Some(hit.id.as_str()),
+                ResultNode::Group(_) => None,
+            })
+            .collect::<Vec<_>>(),
+        vec!["doc:old"]
+    );
+    let grouping_nodes = root_group
+        .children
+        .iter()
+        .filter(|child| matches!(child, ResultNode::Group(_)))
+        .collect::<Vec<_>>();
+    assert_eq!(grouping_nodes.len(), 2);
+    assert!(grouping_nodes
+        .iter()
+        .all(|node| !contains_group_value(node, &Value::String("new".to_owned()))));
+    assert!(grouping_nodes
+        .iter()
+        .all(|node| !contains_group_value(node, &Value::Int64(99))));
+
+    let backend = std::sync::Arc::try_unwrap(backend)
+        .unwrap_or_else(|_| panic!("no outstanding backend owners"));
+    backend
+        .engine
+        .close()
+        .expect("close grouping snapshot engine");
+    std::fs::remove_dir_all(root).expect("remove grouping snapshot index");
 }
 
 #[test]

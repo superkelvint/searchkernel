@@ -934,6 +934,24 @@ impl Drop for NativeGenericSearchRequest {
     }
 }
 
+pub(crate) fn generic_search_request_add_grouping_plan(
+    request: NonNull<sys::sk_generic_search_request>,
+    plan: &NativeGroupingPlan,
+) -> Result<(), Error> {
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_generic_search_request_add_grouping_plan(
+                request.as_ptr(),
+                plan.0.as_ptr(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )
+}
+
 pub(crate) struct NativeGroupingPlan(pub(crate) NonNull<sys::sk_grouping_plan>);
 impl Drop for NativeGroupingPlan {
     fn drop(&mut self) {
@@ -2384,6 +2402,27 @@ pub(crate) fn read_generic_search_result(
     for grouping_index in 0..grouping_count {
         facets.push(read_search_facet(result.0.as_ptr(), grouping_index)?);
     }
+    let grouping_tree_count = unsafe {
+        sys::sk_generic_search_result_grouping_tree_count(result.0.as_ptr())
+    };
+    let mut groupings = Vec::with_capacity(grouping_tree_count as usize);
+    for grouping_index in 0..grouping_tree_count {
+        let mut root = ptr::null();
+        let mut error = NativeError::new();
+        check(
+            unsafe {
+                sys::sk_generic_search_result_grouping_tree_root(
+                    result.0.as_ptr(),
+                    grouping_index,
+                    &mut root,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            },
+            &error,
+        )?;
+        groupings.push(grouping_tree_node(root, false)?);
+    }
     Ok(SearchResult {
         total_hits: total_hit_count,
         // SearchReply exposes no result-side hit-count accuracy bit.  Coverage
@@ -2394,6 +2433,7 @@ pub(crate) fn read_generic_search_result(
         total_hits_relation: TotalHitsRelation::Unknown,
         hits,
         facets,
+        groupings,
         coverage,
         issues,
     })

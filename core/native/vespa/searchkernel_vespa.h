@@ -174,10 +174,9 @@ typedef struct sk_grouping_filter sk_grouping_filter;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* This ABI revision adds dense tensor document assignment, primitive readback,
-   and document-update string-array annotations on top of the previous tensor
-   query/document insertion surface. */
-#define SK_NATIVE_ABI_VERSION 12U
+/* ABI revision 13 adds structured grouping-plan input and structured grouping
+   tree output to the generic search surface. */
+#define SK_NATIVE_ABI_VERSION 13U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -763,6 +762,11 @@ SK_API int32_t sk_generic_search_request_add_grouping(
     sk_generic_search_request *request, const char *group_field,
     uint32_t max_groups, uint32_t order, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Add a structured grouping plan to this same native match request. The
+ * request copies the plan and owns it thereafter. */
+SK_API int32_t sk_generic_search_request_add_grouping_plan(
+    sk_generic_search_request *request, const sk_grouping_plan *plan,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_generic_search_request_destroy(sk_generic_search_request *request) SK_NOEXCEPT;
 SK_API int32_t sk_engine_search_generic(
     const sk_engine *engine, const sk_query *query,
@@ -841,6 +845,12 @@ SK_API int32_t sk_generic_search_result_match_feature_value_ref(
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API uint32_t sk_generic_search_result_grouping_count(
     const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_grouping_tree_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_result_grouping_tree_root(
+    const sk_generic_search_result *result, uint32_t grouping_index,
+    const sk_grouping_tree_node **out_root, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API uint32_t sk_generic_search_result_group_count(
     const sk_generic_search_result *result, uint32_t grouping_index) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_group(
