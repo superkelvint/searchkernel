@@ -166,8 +166,9 @@ calculation may be useful for local developer feedback and execution
 optimization, but it is not authoritative for deciding whether a candidate has
 tested itself sufficiently.
 
-The **SearchKernel verification DAG** is repository-owned policy and must exist
-independently of moonrepo. It defines the semantic task IDs, dependency edges,
+The **SearchKernel verification DAG** is repository-owned policy and lives at
+`verification/dag.toml`. It must exist independently of moonrepo. It defines
+the semantic task IDs, dependency edges, subsystem/path ownership,
 subsumption/closure relationships, runner class, and canonical verifier command
 for each verification unit. The trusted selector returns task IDs plus reasons
 against that DAG.
