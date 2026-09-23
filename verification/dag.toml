@@ -532,6 +532,17 @@ paths = [
 requires = ["web-full"]
 
 [[subsystem]]
+id = "web-static-bundle"
+paths = ["searchkernel-web/dist/**"]
+requires = ["web-static-serving-e2e"]
+
+[[subsystem]]
+id = "web-tracked-package-artifact"
+paths = ["searchkernel-web/skw.zip"]
+requires = ["web-full"]
+notes = "Tracked archive is conservatively behavioral until explicitly retired or classified as immutable/reference-only."
+
+[[subsystem]]
 id = "frontend-acceptance-harness"
 paths = ["tools/frontend-harness/**"]
 requires = ["frontend-harness-selftest", "frontend-verifier-integrity"]
