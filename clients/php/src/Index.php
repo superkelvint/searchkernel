@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace SearchKernel;
 
 use InvalidArgumentException;
-use UnexpectedValueException;
 
 final class Index
 {
@@ -56,7 +55,7 @@ final class Index
             return null;
         }
         if (!is_array($document)) {
-            throw new UnexpectedValueException('GetResult.document must be an object or null');
+            throw new ProtocolException('GetResult.document must be an object or null');
         }
         return Protocol::decodeDocument($document);
     }
@@ -139,7 +138,7 @@ final class Index
         $payload = $this->client->describe();
         $index = $payload['index'] ?? null;
         if (!is_array($index)) {
-            throw new UnexpectedValueException('DescribeResult.index must be an object');
+            throw new ProtocolException('DescribeResult.index must be an object');
         }
         return $index;
     }
