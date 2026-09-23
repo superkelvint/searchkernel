@@ -5491,7 +5491,6 @@ fn typed_query_geo_and_predicate_validity_is_rejected_in_ir() {
     }
 }
 
-
 #[test]
 fn bfbs_json_bridge_preserves_empty_portable_values_into_ir() {
     use searchkernel_protocol::protocol::v2 as wire;

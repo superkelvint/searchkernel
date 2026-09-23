@@ -131,7 +131,9 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                         "{name}: empty StringValue must survive BFBS JSON parsing"
                     );
                     assert_eq!(
-                        field("raw")["value"]["kind"]["value"].as_array().map(Vec::len),
+                        field("raw")["value"]["kind"]["value"]
+                            .as_array()
+                            .map(Vec::len),
                         Some(0),
                         "{name}: empty BytesValue must survive BFBS JSON parsing"
                     );
