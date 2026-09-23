@@ -828,6 +828,28 @@ class ExactHeadTests(unittest.TestCase):
                 task,
             )
 
+    def test_trusted_plan_is_deterministic_across_input_order_and_duplicates(self) -> None:
+        forward = run(
+            "plan",
+            "--json",
+            input_bytes=(
+                b"core/native/vespa/abi.cc\0"
+                b"api/searchkernel.fbs\0"
+                b"core/native/vespa/abi.cc\0"
+            ),
+        )
+        reverse = run(
+            "plan",
+            "--json",
+            input_bytes=(
+                b"api/searchkernel.fbs\0"
+                b"core/native/vespa/abi.cc\0"
+            ),
+        )
+        self.assertEqual(forward.returncode, 0, forward.stdout.decode())
+        self.assertEqual(reverse.returncode, 0, reverse.stdout.decode())
+        self.assertEqual(forward.stdout, reverse.stdout)
+
     def test_candidate_moon_configuration_cannot_reduce_trusted_task_set(self) -> None:
         result = run(
             "plan",
