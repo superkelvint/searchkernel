@@ -100,6 +100,13 @@ run_typescript_tests() {
     npm run test:package --prefix "$ROOT/clients/typescript"
 }
 
+run_php_tests() {
+    php "$ROOT/clients/php/tests/run.php"
+    cargo test -p searchkernel-protocol --test php_json_contract -- --ignored
+    bash "$ROOT/clients/php/tests/verify_package.sh"
+}
+
+
 check_fast() {
     cargo fmt --all --check
     cargo check --workspace --all-targets --no-default-features
@@ -137,6 +144,7 @@ check_all() {
     cargo test --workspace --all-targets --all-features
     run_python_tests
     run_typescript_tests
+    run_php_tests
 }
 
 regen_protocol() {
@@ -167,7 +175,7 @@ test_target() {
             run_typescript_tests
             ;;
         php)
-            php "$ROOT/clients/php/tests/run.php"
+            run_php_tests
             ;;
         *)
             echo "usage: ./dev test ir|rust-api|python|typescript|php" >&2
