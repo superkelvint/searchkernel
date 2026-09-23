@@ -859,7 +859,388 @@ Prefer boring, standard tooling where it can satisfy the requirements.
 
 ---
 
-## 17. Implementation sequence
+## 17. Dogfooding documentation search with Search Kernel
+
+Search Kernel documentation search should itself be a first-class Search Kernel application.
+
+The purpose is not merely branding. The documentation search workload should continuously exercise real product surfaces and reveal developer-experience, relevance, deployment, client, persistence, and result-fidelity problems.
+
+The core rule is:
+
+> **Documentation search uses the normal Search Kernel product path. Do not create a docs-specific embedded search server or a second bespoke daemon.**
+
+### 17.1 Hosting model
+
+The documentation site is expected to be static and may be hosted on GitHub Pages.
+
+GitHub Pages cannot host `searchkerneld`, so production search has two separately deployed pieces:
+
+```text
+GitHub Pages
+docs.searchkernel.dev
+        │
+        │ browser request
+        ▼
+public Search Kernel serving edge
+        │
+        ▼
+normal searchkerneld
+        │
+        ▼
+verified docs index
+```
+
+The preferred long-term architecture is for the browser to use the normal supported browser/TypeScript client against a **generic restricted/read-only `searchkerneld` serving mode**.
+
+Conceptually:
+
+```text
+GitHub Pages
+    ↓
+Search Kernel browser/TypeScript client
+    ↓
+HTTPS
+    ↓
+searchkerneld
+    restricted/read-only serving policy
+    ↓
+searchkernel-docs index
+```
+
+This must be a general Search Kernel deployment capability, not a documentation-specific mode.
+
+A serving policy may constrain, for example:
+
+```text
+allowed operations:
+    search
+    optionally get/analyze if later justified
+
+allowed indexes:
+    searchkernel-docs
+
+disallowed:
+    create
+    schema mutation
+    insert/upsert/patch/delete
+    arbitrary administrative operations
+```
+
+The exact policy syntax is not fixed by this plan.
+
+If Search Kernel cannot yet safely expose a public read-only index, that is a legitimate product/deployment ergonomics gap discovered by dogfooding. Prefer closing that general gap rather than bypassing it with a private docs-only server.
+
+### 17.2 Temporary edge-proxy fallback
+
+Until restricted/read-only public serving is available directly in `searchkerneld`, a stateless edge proxy may sit between GitHub Pages and a privately reachable `searchkerneld`.
+
+Conceptually:
+
+```text
+GitHub Pages
+    ↓
+stateless edge proxy
+    ↓
+normal searchkerneld
+    ↓
+docs index
+```
+
+The proxy may own only edge/security policy such as:
+
+- allowed origin/CORS;
+- maximum query length;
+- maximum result count;
+- rate limiting;
+- request timeout;
+- fixed target index;
+- allowed operation set.
+
+The proxy must not own:
+
+- indexing;
+- persistence;
+- ranking;
+- filter semantics;
+- query parsing semantics;
+- result semantics;
+- a second Search Kernel runtime;
+- a docs-specific search implementation.
+
+Its purpose is temporary containment of the public surface, not a second search service.
+
+### 17.3 Search corpus contract
+
+The docs build should emit a deterministic Search Kernel ingestion corpus as an ordinary generated artifact, for example:
+
+```text
+docs source
+    ↓
+docs generator
+    ├── static site
+    ├── API reference
+    └── docs-search.jsonl
+```
+
+Search Kernel indexes the documentation model. It should not scrape rendered HTML or understand Markdown/MDX itself.
+
+Index **semantic sections**, not arbitrary token chunks and not entire pages only.
+
+A search document may represent:
+
+- a meaningful H2/H3 section;
+- an API reference symbol;
+- an error code/reference entry;
+- another independently navigable semantic unit.
+
+Illustrative fields:
+
+```text
+id
+url
+page_id
+title
+heading
+breadcrumbs
+kind
+diataxis_mode
+body
+aliases
+capabilities
+symbols
+languages
+version
+code
+```
+
+Stable URLs and semantic IDs are required so a search result always lands at a meaningful location.
+
+### 17.4 Lexical-first relevance
+
+Start with excellent lexical developer search before adding semantic/vector retrieval.
+
+Developer queries often contain high-value exact tokens such as:
+
+```text
+SearchBuilder
+filter()
+MissingPolicy
+nearestNeighbor
+SK_INVALID_FIELD
+bigint
+grouping
+BM25
+YQL
+```
+
+The initial relevance model should strongly prefer exact symbols, titles, headings, aliases, and then body/code content.
+
+Hybrid/vector retrieval may be added later only after the lexical baseline is strong and the relevance suite demonstrates measurable benefit.
+
+Do not make embeddings foundational merely because Search Kernel supports vectors.
+
+### 17.5 Search Kernel features to dogfood
+
+Use normal Search Kernel capabilities where they materially improve docs search:
+
+- BM25/text matching for lexical retrieval;
+- field-aware ranking for symbols, titles, headings, aliases, body, and code;
+- highlighting for snippets;
+- filters for documentation version, language-specific material, and content kind;
+- grouping where useful to collapse multiple matching sections from the same page;
+- facets where they improve exploration;
+- stored fields/result projection for efficient result rendering;
+- persistence/reopen for immutable deployed indexes;
+- vector/hybrid retrieval later, if relevance evidence justifies it.
+
+Do not use a feature merely to claim dogfood coverage.
+
+### 17.6 Language preference and search
+
+The global documentation language preference should influence search without hiding shared content.
+
+For a TypeScript user, for example:
+
+```text
+shared prose              searchable normally
+TypeScript-specific docs  preferred where relevant
+Python/PHP-only details   deprioritized unless query intent requires them
+```
+
+A generic query such as `filter results` should still find the shared guide.
+
+A language-specific query such as `bigint` should strongly surface the relevant TypeScript material.
+
+### 17.7 Immutable documentation index deployments
+
+Treat each documentation search index as an immutable deployment artifact.
+
+Conceptually:
+
+```text
+build docs
+    ↓
+generate docs-search corpus
+    ↓
+create fresh Search Kernel index
+    ↓
+bulk ingest
+    ↓
+close
+    ↓
+reopen
+    ↓
+run relevance/acceptance suite
+    ↓
+publish verified index artifact
+    ↓
+deploy/promote
+```
+
+Production docs search should not depend on incremental content mutation during ordinary operation.
+
+Each deployed index should carry a traceability manifest including at least:
+
+```text
+docs commit SHA
+Search Kernel version/commit
+schema version
+corpus hash
+document count
+docs version
+```
+
+This makes deployment skew and relevance regressions diagnosable.
+
+### 17.8 Relevance regression suite
+
+Create a curated corpus of real developer-intent queries and expected destinations.
+
+Examples:
+
+```text
+"filter by price"
+    → filtering guide
+
+"SearchBuilder filter"
+    → SearchBuilder.filter reference
+
+"typescript bigint"
+    → TypeScript numeric-value documentation
+
+"unknown field"
+    → relevant error/reference page
+
+"facet"
+    → facets/grouping guide
+
+"group by category"
+    → grouping guide
+
+"nearest neighbor"
+    → vector-search guide
+
+"update only one field"
+    → patch-document guide
+
+"yql"
+    → YQL escape-hatch documentation
+```
+
+For strong navigational queries, the expected result should normally be rank 1.
+
+For broader informational queries, define bounded top-N expectations.
+
+Aggregate metrics such as MRR or NDCG may supplement these checks, but they must not replace understandable per-query acceptance expectations.
+
+This suite should make relevance regressions visible whenever Search Kernel matching, ranking, analysis, grouping, highlighting, or result behavior changes.
+
+### 17.9 Multi-client dogfooding
+
+The production browser path should use the normal browser/TypeScript client where supported.
+
+The same verified documentation index should also serve as a realistic client-conformance workload in CI/nightly verification:
+
+```text
+docs index
+    ├── Rust smoke/relevance queries
+    ├── TypeScript smoke/relevance queries
+    ├── Python smoke queries
+    └── PHP smoke queries
+```
+
+Equivalent portable requests should yield equivalent result identities and portable semantics where the clients support the same capability.
+
+This complements small conformance fixtures with a meaningful real-world corpus.
+
+### 17.10 Graceful degradation
+
+Static documentation must not depend on the search service being healthy.
+
+```text
+page rendering/navigation   independent
+documentation URLs          independent
+API reference               independent
+search                      enhanced service
+```
+
+A search outage may remove Cmd-K/search temporarily, but it must never make the documentation itself unavailable.
+
+### 17.11 Dogfooding feedback is product evidence
+
+When building or operating the docs search application exposes friction in:
+
+- public read-only serving;
+- browser transport;
+- client ergonomics;
+- index lifecycle;
+- snapshot deployment;
+- highlighting;
+- grouping;
+- ranking;
+- result projection;
+- errors;
+- operational packaging;
+
+treat that friction as evidence about the general Search Kernel product.
+
+Do not paper over general product gaps with docs-specific semantic code.
+
+### 17.12 Search dogfood rollout
+
+#### DS0 — Corpus contract
+
+Define semantic search-document units, stable IDs, metadata, aliases, language/version fields, and deterministic corpus generation.
+
+#### DS1 — Lexical relevance
+
+Implement and tune lexical search across title, heading, symbols, aliases, body, and code. Add highlighting and the initial relevance regression corpus.
+
+#### DS2 — Production serving path
+
+Serve the verified docs index through normal `searchkerneld`.
+
+Prefer a generic restricted/read-only public serving mode. Until it exists, use only a stateless policy proxy in front of normal `searchkerneld`.
+
+#### DS3 — Immutable index release pipeline
+
+Build, close, reopen, verify, manifest, and promote immutable documentation index artifacts alongside the static GitHub Pages documentation release.
+
+#### DS4 — Richer product features
+
+Add grouping, facets, phrase/proximity/fuzzy behavior, and other Search Kernel features only where they improve actual documentation-search UX.
+
+#### DS5 — Hybrid retrieval
+
+Evaluate vector/hybrid retrieval against the existing lexical relevance suite. Adopt it only when it produces demonstrated relevance gains without regressing exact developer queries.
+
+#### DS6 — Multi-client conformance workload
+
+Use the same real docs index in Rust, TypeScript, Python, PHP, and future client verification as capabilities become executable/ergonomic.
+
+---
+
+## 18. Implementation sequence
 
 ### D0 — Freeze documentation architecture
 
@@ -983,7 +1364,7 @@ Do not delete useful historical material until an equivalent canonical page exis
 
 ---
 
-## 18. Initial acceptance criteria
+## 19. Initial acceptance criteria
 
 The first useful documentation-system milestone is complete when:
 
@@ -997,11 +1378,17 @@ The first useful documentation-system milestone is complete when:
 8. at least one Get Started tutorial, several Guides, several Concepts, and the initial Reference pages follow the Diátaxis-inspired structure;
 9. the client-docs verifier exists in the authoritative verification DAG;
 10. generated/reference output is reproducible and drift is rejected;
-11. package READMEs point to the unified documentation rather than becoming separate documentation trees.
+11. package READMEs point to the unified documentation rather than becoming separate documentation trees;
+12. the docs build emits a deterministic semantic search corpus;
+13. documentation search uses the normal Search Kernel/searchkerneld product path rather than a bespoke docs search daemon;
+14. public search is restricted to an explicitly allowed read-only operation/index surface, either directly in searchkerneld or temporarily through a stateless policy proxy;
+15. the deployed docs index is built, closed, reopened, and verified before promotion;
+16. a curated relevance regression suite protects real developer-intent queries;
+17. static documentation remains usable when the search service is unavailable.
 
 ---
 
-## 19. Non-goals
+## 20. Non-goals
 
 This plan does not authorize:
 
@@ -1013,11 +1400,14 @@ This plan does not authorize:
 - exposing generated FlatBuffers objects as the primary teaching API;
 - duplicating the same conceptual prose for every SDK;
 - claiming an unsupported ergonomic capability merely because the low-level FlatBuffers model can represent it;
-- making documentation generation depend on rebuilding Vespa for ordinary prose/reference changes.
+- making documentation generation depend on rebuilding Vespa for ordinary prose/reference changes;
+- creating a docs-specific embedded Search Kernel server or second bespoke search daemon;
+- putting ranking, indexing, persistence, query semantics, or result semantics into a temporary edge proxy;
+- exposing unrestricted public mutation/admin access merely to avoid designing a proper restricted/read-only serving surface.
 
 ---
 
-## 20. Long-term quality bar
+## 21. Long-term quality bar
 
 The intended end state is:
 
@@ -1035,6 +1425,12 @@ idiomatic executable examples per language
 generated API reference
         +
 canonical capability evidence
+        +
+Search Kernel-powered documentation search
+        +
+normal searchkerneld deployment path
+        +
+relevance regression evidence
         +
 CI that rejects stale documentation
 ```
