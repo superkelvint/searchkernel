@@ -491,35 +491,43 @@ class ExactHeadTests(unittest.TestCase):
         cases = {
             b"core/crates/searchkernel-ir/src/model.rs\0": {
                 "rust=true", "python=false", "typescript=false", "php=false", "native=false",
-                "protocol=false", "api_conformance=false", "verification=false",
+                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
+                "persistence=false", "issue_queue=false", "verification=false",
             },
             b"clients/python/searchkernel/ergonomic.py\0": {
                 "rust=false", "python=true", "typescript=false", "php=false", "native=false",
-                "protocol=false", "api_conformance=false", "verification=false",
+                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
+                "persistence=false", "issue_queue=false", "verification=false",
             },
             b"clients/typescript/src/index.ts\0": {
                 "rust=false", "python=false", "typescript=true", "php=false", "native=false",
-                "protocol=false", "api_conformance=false", "verification=false",
+                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
+                "persistence=false", "issue_queue=false", "verification=false",
             },
             b"core/native/vespa/abi.cc\0": {
                 "rust=true", "python=false", "typescript=false", "php=false", "native=true",
-                "protocol=false", "api_conformance=false", "verification=false",
+                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
+                "persistence=true", "issue_queue=false", "verification=false",
             },
             b"api/searchkernel.fbs\0": {
                 "rust=true", "python=true", "typescript=true", "php=true", "native=false",
-                "protocol=true", "api_conformance=false", "verification=false",
+                "protocol=true", "api_conformance=false", "contracts=false", "abi=false",
+                "persistence=true", "issue_queue=false", "verification=false",
             },
             b"reference/api-conformance/golden/example.json\0": {
                 "rust=false", "python=false", "typescript=false", "php=false", "native=false",
-                "protocol=false", "api_conformance=true", "verification=false",
+                "protocol=false", "api_conformance=true", "contracts=false", "abi=false",
+                "persistence=false", "issue_queue=false", "verification=false",
             },
             b"docs/architecture.md\0": {
                 "rust=false", "python=false", "typescript=false", "php=false", "native=false",
-                "protocol=false", "api_conformance=false", "verification=false",
+                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
+                "persistence=false", "issue_queue=false", "verification=false",
             },
             b".githooks/pre-commit\0": {
                 "rust=false", "python=false", "typescript=false", "php=false", "native=true",
-                "protocol=false", "api_conformance=false", "verification=true",
+                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
+                "persistence=false", "issue_queue=false", "verification=true",
             },
         }
         for changed, expected in cases.items():
