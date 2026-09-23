@@ -31,14 +31,24 @@ final class ResultGroup
         if ($limits !== null && !is_array($limits)) {
             throw new ProtocolException('ResultGroup.limits must be an object');
         }
+        if (is_array($limits)) {
+            foreach (['from', 'to'] as $key) {
+                if (array_key_exists($key, $limits)
+                    && $limits[$key] !== null
+                    && !is_array($limits[$key])
+                ) {
+                    throw new ProtocolException('ResultGroup.limits.' . $key . ' must be a portable Value');
+                }
+            }
+        }
         $this->limits = is_array($limits) ? [
             'from' => is_array($limits['from'] ?? null) ? Protocol::decodeValue($limits['from']) : null,
             'to' => is_array($limits['to'] ?? null) ? Protocol::decodeValue($limits['to']) : null,
         ] : null;
 
         $continuationEntries = $node['continuations'] ?? [];
-        if (!is_array($continuationEntries)) {
-            throw new ProtocolException('ResultGroup.continuations must be an array');
+        if (!is_array($continuationEntries) || !array_is_list($continuationEntries)) {
+            throw new ProtocolException('ResultGroup.continuations must be a list');
         }
         $continuations = [];
         foreach ($continuationEntries as $entry) {
@@ -53,8 +63,8 @@ final class ResultGroup
         $this->continuations = $continuations;
 
         $childEntries = $node['children'] ?? [];
-        if (!is_array($childEntries)) {
-            throw new ProtocolException('ResultGroup.children must be an array');
+        if (!is_array($childEntries) || !array_is_list($childEntries)) {
+            throw new ProtocolException('ResultGroup.children must be a list');
         }
         $children = [];
         foreach ($childEntries as $child) {
@@ -120,8 +130,8 @@ final class ResultGroup
     /** @return list<string> */
     private static function strings(mixed $values): array
     {
-        if (!is_array($values)) {
-            throw new ProtocolException('expected a string array');
+        if (!is_array($values) || !array_is_list($values)) {
+            throw new ProtocolException('expected a string list');
         }
         foreach ($values as $value) {
             if (!is_string($value)) {
