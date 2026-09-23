@@ -21,7 +21,7 @@ Transport is plumbing around that model. It must not become another semantic imp
 1. **FlatBuffers is the sole canonical portable domain contract.**
 2. **`searchkernel-ir` is the sole portable semantic boundary.** Defaults, validation, normalization, and explicit request meaning are resolved through `*_to_ir()`.
 3. **Rust remains directly embedded.** The first-party Rust API does not call gRPC and does not serialize through the portable wire path merely to reach the local engine.
-4. **First-party non-Rust clients use gRPC.** The normal local transport is gRPC over a Unix-domain socket on Unix-like systems, with TCP available where appropriate.
+4. **First-party non-Rust clients use canonical FlatBuffers through thin transports.** gRPC carrying FlatBuffer bytes remains the default local/native transport. An explicitly selected HTTP edge may carry standard schema-derived FlatBuffers JSON, but it must immediately convert through the official BFBS-backed JSON bridge to the same canonical FlatBuffer envelope and dispatcher.
 5. **Protobuf is transport framing only.** It does not duplicate the Search Kernel domain model.
 6. **The only required native FFI boundary is Rust ↔ Vespa C++.** The former portable client C ABI and per-language native transports are not part of the final architecture.
 7. **Language SDKs are thin façades.** `flatc` generates FlatBuffers model types; standard gRPC tooling generates RPC stubs; Search Kernel hand-writes only the small idiomatic layer worth owning.
@@ -356,14 +356,16 @@ because a new client language or schema field is introduced.
 
 ---
 
-## JSON and browser access
+## JSON and HTTP/browser access
 
-JSON is not a separate Search Kernel API. Standard FlatBuffers JSON may remain
-useful for:
+JSON is not a separate Search Kernel API. The only portable JSON representation
+is standard FlatBuffers JSON derived from the canonical schema/BFBS.
+
+It is useful for:
 
 ```text
-debugging
-fixtures
+explicitly selected HTTP language clients
+debugging and fixtures
 CLI/manual inspection
 admin/dashboard APIs
 browser-facing gateways
@@ -373,18 +375,27 @@ JSON Schema/OpenAPI-style documentation
 The boundary is always:
 
 ```text
-JSON
+standard FlatBuffers JSON
     ↓
-    official schema-aware FlatBuffers JSON parser/printer
+official schema-aware BFBS-backed FlatBuffers JSON parser/printer
     ↓
-FlatBuffers
+canonical FlatBuffer envelope bytes
+    ↓
+shared dispatcher
     ↓
 *_to_ir()
 ```
 
-Never implement an independent `JSON → IR` semantic path.
+Never implement an independent `JSON → IR` semantic path. Never define a
+parallel REST/domain JSON schema for Search Kernel operations.
 
-Browser transport is a separate edge concern. The dashboard may use a small HTTP/JSON gateway, gRPC-Web/Connect-style bridge, or another browser-compatible mechanism without changing the portable domain semantics.
+The generic HTTP endpoint is intentionally operation-agnostic: operation identity
+remains the FlatBuffers envelope discriminator. This means adding a portable
+operation should not require adding a new HTTP route.
+
+Browser transport is a separate edge concern. The dashboard may use the same
+HTTP/JSON edge, gRPC-Web/Connect-style bridge, or another browser-compatible
+mechanism without changing portable domain semantics.
 
 ---
 
@@ -545,7 +556,7 @@ It does not define its own:
 
 Rust applications may embed the engine directly.
 
-Other languages normally run the same engine through a local `searchkerneld` process, preferably over a Unix-domain socket where supported. This process boundary is a language interoperability mechanism, not a distributed-search architecture.
+Other languages normally run the same engine through a local `searchkerneld` process. Native/runtime clients default to binary FlatBuffers over gRPC, preferably over a Unix-domain socket where supported; explicitly selected HTTP clients use standard FlatBuffers JSON over the generic HTTP edge. This process boundary is a language interoperability mechanism, not a distributed-search architecture.
 
 If the underlying Vespa engine exposes a capability, Search Kernel may expose it.
 
