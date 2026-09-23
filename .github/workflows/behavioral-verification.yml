@@ -56,6 +56,16 @@ jobs:
           git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"
           echo "TRUSTED_EXACT_HEAD_HELPER=$trusted_dir/exact_head.py" >> "$GITHUB_ENV"
 
+          # The verification DAG becomes part of the trusted base policy bundle
+          # once the base revision contains it. This conditional is only needed
+          # to bootstrap the first DAG-consuming selector revision.
+          if git cat-file -e "$BASE_SHA:verification/dag.py" 2>/dev/null; then
+            git show "$BASE_SHA:verification/dag.py" > "$trusted_dir/dag.py"
+            git show "$BASE_SHA:verification/dag.toml" > "$trusted_dir/dag.toml"
+            echo "SEARCHKERNEL_VERIFICATION_DAG_MODULE=$trusted_dir/dag.py" >> "$GITHUB_ENV"
+            echo "SEARCHKERNEL_VERIFICATION_DAG=$trusted_dir/dag.toml" >> "$GITHUB_ENV"
+          fi
+
           if [[ -f .github/ci/exact_head.py && -f .github/ci/test_exact_head.py ]]; then
             regression_dir="$PWD/.github/ci"
           else
@@ -74,6 +84,11 @@ jobs:
 
       - name: Verify exact-head CI regressions
         run: $CI_PYTHON "$EXACT_HEAD_TEST"
+
+      - name: Verify candidate verification DAG integrity and coverage
+        run: |
+          $CI_PYTHON verification/dag.py check --repo "$PWD"
+          $CI_PYTHON verification/test_dag.py
 
       - name: Classify changed behavior
         id: changes
