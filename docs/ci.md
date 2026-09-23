@@ -166,10 +166,17 @@ calculation may be useful for local developer feedback and execution
 optimization, but it is not authoritative for deciding whether a candidate has
 tested itself sufficiently.
 
-The canonical task graph should therefore be declarative and mechanical. A
-profile/task owns one command and may depend on other tasks, while the trusted
-selector returns task IDs plus reasons. GitHub Actions should not maintain a
-second handwritten meaning for those tasks.
+The **SearchKernel verification DAG** is repository-owned policy and must exist
+independently of moonrepo. It defines the semantic task IDs, dependency edges,
+subsumption/closure relationships, runner class, and canonical verifier command
+for each verification unit. The trusted selector returns task IDs plus reasons
+against that DAG.
+
+moonrepo is an execution adapter over this SearchKernel-owned DAG. It may mirror
+the dependency edges for scheduling, but moon configuration is not the semantic
+source of truth and must be mechanically checked against the authoritative
+SearchKernel DAG. GitHub Actions likewise must not maintain a second handwritten
+meaning for those tasks.
 
 For Rust test-heavy tasks, prefer cargo-nextest over bespoke test scheduling.
 Where one compiled Rust test corpus is executed on several workers, prefer
@@ -622,16 +629,25 @@ moonrepo or candidate-controlled task configuration.
 Use standard tools for generic orchestration rather than building a
 SearchKernel-specific scheduler/cache/test-distribution system.
 
+#### SearchKernel verification DAG
+
+- [ ] Define one machine-readable SearchKernel-owned verification DAG as the semantic source of truth, independent of moonrepo.
+- [ ] Represent every surviving Phase 1 verification profile in that DAG with a stable task ID.
+- [ ] Encode the verified Phase 1 dependency/subsumption edges in the SearchKernel DAG.
+- [ ] Record the canonical verifier command and runner class for each task in the SearchKernel DAG.
+- [ ] Make the trusted selector validate emitted task IDs against the SearchKernel DAG.
+- [ ] Define the authoritative full-suite root/closure in the SearchKernel DAG.
+- [ ] Add mechanical closure checks so every surviving verifier is represented and reachable where required.
+
 #### moonrepo
 
 - [ ] Introduce moonrepo with a pinned version/toolchain identity.
-- [ ] Represent every surviving verification profile as one canonical moon task.
-- [ ] Encode task dependencies from the verified Phase 1 closure graph.
+- [ ] Materialize one moon task for every executable task in the SearchKernel verification DAG.
+- [ ] Mirror SearchKernel DAG dependencies into moon only for execution scheduling; moon is not the semantic authority.
 - [ ] Keep repository verifier scripts as task commands where they remain the authoritative acceptance entry point.
-- [ ] Add a mechanical check that every task ID emitted by the trusted selector exists in the moon graph.
-- [ ] Add a mechanical check that every required full-suite verifier is reachable from the full-suite root.
-- [ ] Make pre-commit and developer tooling invoke the same canonical tasks rather than duplicating commands.
-- [ ] Make the developer/agent `test-plan` interface print trusted task IDs and reasons.
+- [ ] Add a mechanical equivalence check that moon task IDs, commands, runner classes, and dependency edges match the SearchKernel DAG.
+- [ ] Make pre-commit and developer tooling invoke the same canonical SearchKernel task IDs rather than duplicating commands.
+- [ ] Make the developer/agent `test-plan` interface print trusted SearchKernel task IDs and reasons.
 - [ ] Make the developer/agent `test-affected` interface execute the trusted task set through moon.
 - [ ] Ensure arbitrary issue/PR shell text can add evidence but never becomes executable CI authority.
 
@@ -676,15 +692,16 @@ block native CI on adopting Nix.
 - [ ] After native CI is green, evaluate Nix plus Cachix/Attic as a replacement for ad-hoc immutable prerequisite distribution.
 - [ ] Treat a smaller purpose-built verifier bundle as a later optimization rather than a prerequisite for CI enablement.
 
-### Phase 5: connect trusted policy to the moon task graph
+### Phase 5: connect trusted policy to execution
 
-- [ ] Extend the trusted base-owned selector to emit every required canonical moon task ID.
-- [ ] Have CI execute exactly the trusted task set through moon against candidate code.
+- [ ] Extend the trusted base-owned selector to emit every required canonical SearchKernel verification task ID.
+- [ ] Resolve dependencies/closure from the trusted SearchKernel verification DAG, not from moon.
+- [ ] Have CI execute exactly the trusted SearchKernel task set through moon against candidate code.
 - [ ] Add GitHub Actions worker placement for non-native tasks.
 - [ ] Add self-hosted worker placement for native real-engine tasks.
 - [ ] Add native client/gRPC end-to-end tasks.
 - [ ] Add Vespa milestone/oracle tasks.
-- [ ] Keep task dependencies in the moon graph instead of duplicating them in GitHub Actions YAML.
+- [ ] Keep semantic task dependencies in the SearchKernel verification DAG; mirror them into moon for scheduling and never duplicate them in GitHub Actions YAML.
 - [ ] Run candidate policy/task-graph self-tests plus conservative/full verification when verification infrastructure changes.
 - [ ] Preserve exact-head evidence for every required task.
 - [ ] Detect base drift so stale evidence cannot authorize a changed merge candidate.
@@ -752,14 +769,15 @@ The verification system itself needs regression tests proving at least:
 The design is complete when:
 
 1. every surviving repository verifier/test family is represented in the
-   verified inventory and canonical moon task graph;
+   verified inventory and authoritative SearchKernel verification DAG, with
+   moon mechanically equivalent as an execution projection;
 2. PR CI independently and fail-closed selects all required task IDs from
    trusted base policy, while candidate-controlled moon configuration cannot
    reduce that mandatory set;
 3. all selected tasks, including real native/Vespa paths, execute in CI against
    the exact candidate head;
-4. one mechanically checked full-suite moon root reaches the complete intended
-   verifier closure;
+4. one mechanically checked SearchKernel full-suite root reaches the complete
+   intended verifier closure, and moon's execution projection matches it;
 5. Rust test execution uses cargo-nextest where appropriate, including
    partition/archive reuse when it materially reduces duplicate compilation;
 6. Rust/C/C++ compilation uses sccache where appropriate without weakening
