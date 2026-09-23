@@ -136,7 +136,6 @@ pub enum HighlightingIr {
     },
 }
 
-
 /// Return the canonical portable result-field name for a grouping output.
 ///
 /// Explicit labels win. Unlabeled aggregation outputs use one backend-independent

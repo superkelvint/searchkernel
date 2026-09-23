@@ -1,7 +1,9 @@
 //! Lower V2 grouping into either the existing facet path or the supported
 //! recursive native grouping-plan subset.
 
-use searchkernel_ir::{effective_grouping_output_name, GroupingExpressionIr, PortableError, Result};
+use searchkernel_ir::{
+    effective_grouping_output_name, GroupingExpressionIr, PortableError, Result,
+};
 use searchkernel_vespa_engine::{
     FacetRequest, GroupingAggregation, GroupingBinaryOperator, GroupingExpression, GroupingFilter,
     GroupingLevel, GroupingLiteral, GroupingPlan, SearchRequest,
@@ -220,12 +222,7 @@ impl GroupingCompiler {
                     | searchkernel_ir::GroupingOperationIr::All(_)
             )
         });
-        self.lower_level_operations(
-            local_operations,
-            level,
-            &mut aliases,
-            &mut semantic_aliases,
-        )?;
+        self.lower_level_operations(local_operations, level, &mut aliases, &mut semantic_aliases)?;
         if let Some(child) = materializer {
             for nested in self.lower_level_operations(
                 child.operations.iter(),
