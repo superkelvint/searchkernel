@@ -89,6 +89,8 @@ jobs:
       - run: $CI_PYTHON -m pip install -e clients/python
       - run: $CI_PYTHON tools/check-python-dependencies.py
       - run: npm ci --prefix clients/typescript
+      - name: Build native searchkerneld for executable client E2E
+        run: cargo build -p searchkerneld --features native
       - name: Run executable client E2E lanes
         env:
           SEARCHKERNEL_LOCAL_HOST: ${{ github.workspace }}/target/ci/debug/searchkerneld
