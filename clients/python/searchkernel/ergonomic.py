@@ -1172,13 +1172,15 @@ class SearchResults:
             if len(fields) != 1:
                 return
             count = fields[0]
-            expected_count_kind = (
-                ValueKind.Int64Value if generic_child else ValueKind.UInt64Value
+            accepted_count_kinds = (
+                (ValueKind.Int64Value, ValueKind.UInt64Value)
+                if generic_child
+                else (ValueKind.UInt64Value,)
             )
             if (
                 count.key != "count"
                 or count.value is None
-                or count.value.kindType != expected_count_kind
+                or count.value.kindType not in accepted_count_kinds
             ):
                 return
             count_value = _python_value(count.value)
