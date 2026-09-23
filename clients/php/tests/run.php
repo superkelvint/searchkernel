@@ -230,6 +230,20 @@ try {
     Protocol::expectPayload([
         'protocol_version' => 2,
         'payload_type' => 'SearchKernel_V2_Error',
+        'payload' => [
+            'code' => 'InvalidArgument',
+            'message' => 'default retryable',
+        ],
+    ], 'SearchResult');
+    throw new RuntimeException('portable error did not throw');
+} catch (SearchKernelException $error) {
+    same(false, $error->retryable, 'omitted FlatBuffers bool uses schema default false');
+}
+
+try {
+    Protocol::expectPayload([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_Error',
         'payload' => ['message' => 'missing code'],
     ], 'SearchResult');
     throw new RuntimeException('malformed portable error did not fail closed');
