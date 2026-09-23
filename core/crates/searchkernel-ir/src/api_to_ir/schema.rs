@@ -251,6 +251,7 @@ pub fn resolve_index_definition(input: IndexDefinitionInput) -> Result<IndexDefi
         input.fields,
         input.schema_fields,
         input.default_search_fields,
+        "default_search_fields",
     )?;
     assemble_index_definition(ResolvedIndexDefinition {
         name,
@@ -370,6 +371,7 @@ fn resolve_index_definition_fields(
     fields: Vec<UnresolvedFieldInput>,
     schema_fields: Vec<UnresolvedFieldInput>,
     default_search_fields: Option<Vec<RustSearchFieldInput>>,
+    default_search_fields_path: &str,
 ) -> Result<ResolvedIndexFields> {
     if fields.is_empty() {
         return Err(invalid(
@@ -435,7 +437,9 @@ fn resolve_index_definition_fields(
         .chain(schema_fields.iter())
         .collect::<Vec<_>>();
     let default_search_fields = match default_search_fields {
-        Some(selection) => resolve_default_search_fields(selection, &all_fields)?,
+        Some(selection) => {
+            resolve_default_search_fields(selection, &all_fields, default_search_fields_path)?
+        },
         None => all_fields
             .iter()
             .filter(|field| field.capabilities.searchable)
@@ -456,11 +460,12 @@ fn resolve_index_definition_fields(
 fn resolve_default_search_fields(
     selection: Vec<RustSearchFieldInput>,
     fields: &[&FieldIr],
+    path_prefix: &str,
 ) -> Result<Vec<SearchFieldIr>> {
     let mut output = Vec::with_capacity(selection.len());
     let mut seen = BTreeSet::new();
     for (index, input) in selection.into_iter().enumerate() {
-        let path = format!("default_search_fields[{index}]");
+        let path = format!("{path_prefix}[{index}]");
         let field_name = FieldName::parse(input.field.clone()).map_err(|_| {
             invalid(
                 "invalid_field_name",
@@ -855,7 +860,13 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
         fields,
         schema_fields,
         default_search_fields,
-    } = resolve_index_definition_fields(name, fields, schema_fields, default_search_fields)?;
+    } = resolve_index_definition_fields(
+        name,
+        fields,
+        schema_fields,
+        default_search_fields,
+        "default_search_fields.fields",
+    )?;
     let all_fields = fields
         .iter()
         .chain(schema_fields.iter())
