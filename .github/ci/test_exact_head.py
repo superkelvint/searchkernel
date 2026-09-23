@@ -10,6 +10,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
+ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 
@@ -136,6 +137,13 @@ class ExactHeadTests(unittest.TestCase):
             "Native-sensitive paths changed. CI intentionally does not bootstrap Vespa",
             workflow,
         )
+
+    def test_abi_workflow_installs_rustfmt_for_binding_generation(self) -> None:
+        workflow = ABI_WORKFLOW.read_text(encoding="utf-8")
+        rust_step = workflow.split("- name: Install Rust toolchain", 1)[1].split(
+            "- name: Verify self-hosted ABI dependencies", 1
+        )[0]
+        self.assertIn("components: rustfmt", rust_step)
 
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
