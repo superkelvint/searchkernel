@@ -542,10 +542,12 @@ The policy uses these rules:
 The explicit non-behavioral exemptions are deliberately narrow: repository and
 nested README/AGENTS documentation, Markdown/text files under `docs/**`,
 Markdown under `implementation-plan/**` and `audits/**`, license/notice and
-ignore files, and common local scratch suffixes such as `.tmp`, `.log`, and
-`.swp`. Behavioral ledgers/configuration already mapped by a known lane (for
-example `docs/capabilities.json`) still select that lane. Unknown non-document
-files under documentation directories fail closed.
+ignore files. Common local scratch suffixes such as `.tmp`, `.log`, and
+`.swp` are exempted only by pre-commit's **untracked-file** check; once tracked,
+they fail closed like any other unknown file. Behavioral ledgers/configuration
+already mapped by a known lane (for example `docs/capabilities.json`) still
+select that lane. Unknown non-document files under documentation directories
+fail closed.
 
 CI continues to execute the classifier copied from the trusted PR base revision.
 The authoritative diff is produced with rename detection disabled:
