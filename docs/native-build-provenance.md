@@ -1,8 +1,10 @@
 # Native build provenance
 
 For day-to-day commands and prerequisite handling, start with
-[`BUILDING.md`](../BUILDING.md). This document records the native artifact
-identity and reuse model.
+[`BUILDING.md`](../BUILDING.md). For the operator procedure that publishes a
+new immutable Vespa base and rolls it out to self-hosted Actions runners, see
+[`publishing-vespa-base.md`](publishing-vespa-base.md). This document records
+the native artifact identity and reuse model.
 
 Search Kernel separates the immutable pinned Vespa base from Search Kernel-owned
 build artifacts.
