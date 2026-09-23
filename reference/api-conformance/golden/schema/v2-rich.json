@@ -3,8 +3,8 @@
     "code": "invalid_argument",
     "details": [
       {
-        "code": "invalid_type_combination",
-        "path": "fields[0].matching"
+        "code": "ambiguous_indexing_script",
+        "path": "fields[0].indexing_script"
       }
     ],
     "retryable": false
