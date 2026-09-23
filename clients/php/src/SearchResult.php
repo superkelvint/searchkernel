@@ -135,8 +135,8 @@ final class SearchResult
         $timing = is_array($payload['timing'] ?? null) ? new SearchTiming($payload['timing']) : null;
 
         $errorEntries = $payload['errors'] ?? [];
-        if (!is_array($errorEntries)) {
-            throw new ProtocolException('SearchResult.errors must be an array');
+        if (!is_array($errorEntries) || !array_is_list($errorEntries)) {
+            throw new ProtocolException('SearchResult.errors must be a list');
         }
         $errors = [];
         foreach ($errorEntries as $error) {
