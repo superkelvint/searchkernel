@@ -8,10 +8,10 @@
 extern "C" {
 #endif
 
-/* ABI v12 uses only opaque handles and fixed-width primitive arguments. */
+/* ABI v13 uses only opaque handles and fixed-width primitive arguments. */
 typedef struct sk_engine sk_engine;
 
-#define SK_NATIVE_ABI_VERSION 12U
+#define SK_NATIVE_ABI_VERSION 13U
 #define SK_NATIVE_STATUS_TYPE_ERROR 6
 
 /* Vespa FeatureSet::Value is DOUBLE or DATA. DATA is an opaque borrowed byte
@@ -97,6 +97,29 @@ int32_t sk_feature_value_data(
     const sk_feature_value *value,
     const uint8_t **out_data,
     size_t *out_size,
+    uint8_t *out_error,
+    uint32_t out_error_capacity);
+
+/* ABI v13 structured grouping additions. The plan and result tree remain
+ * opaque; requests copy plans and result tree nodes are borrowed from the
+ * owning search result. */
+typedef struct sk_generic_search_request sk_generic_search_request;
+typedef struct sk_grouping_plan sk_grouping_plan;
+typedef struct sk_grouping_tree_node sk_grouping_tree_node;
+
+int32_t sk_generic_search_request_add_grouping_plan(
+    sk_generic_search_request *request,
+    const sk_grouping_plan *plan,
+    uint8_t *out_error,
+    uint32_t out_error_capacity);
+
+uint32_t sk_generic_search_result_grouping_tree_count(
+    const sk_generic_search_result *result);
+
+int32_t sk_generic_search_result_grouping_tree_root(
+    const sk_generic_search_result *result,
+    uint32_t grouping_index,
+    const sk_grouping_tree_node **out_root,
     uint8_t *out_error,
     uint32_t out_error_capacity);
 
