@@ -199,7 +199,7 @@ url=
 while (($#)); do
     case "$1" in
         -H)
-            [[ "$2" == "Authorization: Bearer \${EXPECTED_GITHUB_TOKEN:?}" ]] && auth=true
+            [[ "$2" == "Authorization: Bearer ${EXPECTED_GITHUB_TOKEN:?}" ]] && auth=true
             shift 2
             ;;
         -o)
@@ -218,8 +218,8 @@ done
 [[ "$auth" == true ]] || { echo "missing GitHub release auth header" >&2; exit 22; }
 [[ -n "$output" && -n "$url" ]]
 case "$url" in
-    *.sha256) cp "\${FIXTURE_ARCHIVE:?}.sha256" "$output" ;;
-    *) cp "\${FIXTURE_ARCHIVE:?}" "$output" ;;
+    *.sha256) cp "${FIXTURE_ARCHIVE:?}.sha256" "$output" ;;
+    *) cp "${FIXTURE_ARCHIVE:?}" "$output" ;;
 esac
 SH
 chmod +x "$fake_bin/curl"
