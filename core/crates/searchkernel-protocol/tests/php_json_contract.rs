@@ -1,9 +1,43 @@
-use std::{path::PathBuf, process::Command};
+use std::{
+    io::Write,
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 use searchkernel_protocol::json::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
     response_json_to_flatbuffer,
 };
+
+fn assert_php_consumes_printed_response(repo_root: &std::path::Path, name: &str, json: &[u8]) {
+    let script = repo_root.join("clients/php/tests/consume_bfbs_response.php");
+    let mut child = Command::new("php")
+        .arg(&script)
+        .arg(name)
+        .current_dir(repo_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|error| panic!("{name}: start PHP BFBS response consumer: {error}"));
+
+    child
+        .stdin
+        .take()
+        .expect("PHP consumer stdin")
+        .write_all(json)
+        .unwrap_or_else(|error| panic!("{name}: write BFBS-printed JSON to PHP: {error}"));
+
+    let output = child
+        .wait_with_output()
+        .unwrap_or_else(|error| panic!("{name}: wait for PHP BFBS response consumer: {error}"));
+    assert!(
+        output.status.success(),
+        "{name}: PHP rejected canonical BFBS-printed response:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
 
 #[test]
 #[ignore = "requires the PHP runtime; run explicitly from client verification"]
@@ -85,13 +119,14 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                 response_json_to_flatbuffer(&printed).unwrap_or_else(|error| {
                     panic!("{name}: BFBS-printed response is not readable: {error}")
                 });
+                assert_php_consumes_printed_response(&repo_root, name, &printed);
             }
             _ => unreachable!(),
         }
     }
 
     assert!(
-        count >= 8,
-        "expected representative PHP BFBS coverage, saw only {count} fixtures"
+        count >= 14,
+        "expected representative bidirectional PHP/BFBS coverage, saw only {count} fixtures"
     );
 }
