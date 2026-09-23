@@ -22,12 +22,16 @@ final class Tensor
     /** @param array<string,mixed> $payload */
     public static function fromWire(string $typeSpec, string $payloadType, array $payload): self
     {
-        return match ($payloadType) {
-            'DenseTensorValues' => self::denseFromWire($typeSpec, $payload),
-            'SparseTensorCells' => self::sparseFromWire($typeSpec, $payload),
-            'MixedTensorBlocks' => self::mixedFromWire($typeSpec, $payload),
-            default => throw new InvalidArgumentException('unsupported tensor payload type: ' . $payloadType),
-        };
+        try {
+            return match ($payloadType) {
+                'DenseTensorValues' => self::denseFromWire($typeSpec, $payload),
+                'SparseTensorCells' => self::sparseFromWire($typeSpec, $payload),
+                'MixedTensorBlocks' => self::mixedFromWire($typeSpec, $payload),
+                default => throw new ProtocolException('unsupported tensor payload type: ' . $payloadType),
+            };
+        } catch (InvalidArgumentException|\TypeError $error) {
+            throw new ProtocolException('malformed TensorValue payload', 0, $error);
+        }
     }
 
     /** @param list<int|float> $values */
