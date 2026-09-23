@@ -625,6 +625,20 @@ class ExactHeadTests(unittest.TestCase):
             lines,
         )
 
+    def test_new_core_crate_fails_closed_even_though_broad_rust_pattern_matches(self) -> None:
+        lines = classify_lines("core/crates/searchkernel-new/src/lib.rs")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_new_client_family_fails_closed_even_though_contract_pattern_matches(self) -> None:
+        lines = classify_lines("clients/ruby/lib/searchkernel.rb")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
     def test_explicit_non_behavioral_paths_do_not_select_behavioral_lanes(self) -> None:
         for path in ("docs/architecture.md", "notes.tmp", "nested/README.md"):
             with self.subTest(path=path):
