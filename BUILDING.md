@@ -122,8 +122,9 @@ workspace tests. Staged Python, TypeScript, and PHP changes additionally run
 their client suites; canonical API changes select all affected first-party
 clients; protocol/schema changes verify checked-in FlatBuffers/gRPC
 artifacts for Rust, Python, and TypeScript; API-conformance changes run the
-conformance verifier; and hook/classifier changes run the selector regression
-suite.
+conformance verifier; capability/client-contract, ABI-surface, persistence, and
+issue-queue verifier changes run their focused checks; and hook/classifier
+changes run the selector regression suite.
 
 Staged native-sensitive changes run both the real-Vespa gate and the real Python
 gRPC E2E through `tools/run-python-native-e2e.sh`. Native-sensitive paths include
