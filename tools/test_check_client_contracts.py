@@ -146,6 +146,7 @@ class ClientContractTests(unittest.TestCase):
         path = self.root / "reference" / "client-contracts" / "catalog.json"
         catalog = json.loads(json.dumps(CATALOG))
         catalog["surfaces"]["rust"].pop("e2e_lanes")
+        catalog["surfaces"]["rust"].pop("required_e2e_runtimes")
         path.write_text(json.dumps(catalog), encoding="utf-8")
         (self.root / "rust-tests" / "e2e.rs").write_text(
             "// SKC: result.highlighting/basic kinds=e2e runtime=native\n",
