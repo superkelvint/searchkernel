@@ -8,6 +8,8 @@ use UnexpectedValueException;
 
 final class SearchResult
 {
+    /** @var array<string,list<array{value:mixed,count:int|string}>> */
+    public array $facets = [];
     /**
      * @param list<Hit> $hits
      * @param list<ResultGroup> $groups
@@ -30,6 +32,57 @@ final class SearchResult
         public readonly array $aggregations,
         public readonly array $continuations,
     ) {}
+
+    public function projectFacet(string $resultName, string $expectedField): void
+    {
+        $candidates = array_values(array_filter(
+            $this->groups,
+            static fn (ResultGroup $group): bool =>
+                ($group->id === $expectedField || $group->id === null)
+                && $group->label === $resultName
+                && $group->value === null
+                && $group->fields === []
+                && $group->continuations === []
+                && $group->source === null
+                && $group->types === []
+                && $group->relevance === null
+                && $group->limits === null
+                && $group->metadata === []
+                && count($group->groups) === count($group->children),
+        ));
+        if (count($candidates) !== 1) {
+            return;
+        }
+
+        $buckets = [];
+        foreach ($candidates[0]->groups as $child) {
+            $optimized = $child->id === null && $child->label === null;
+            $generic = $child->id === 'grouping-0' && $child->label === $resultName;
+            if ((!$optimized && !$generic)
+                || $child->children !== []
+                || $child->continuations !== []
+                || $child->source !== null
+                || $child->types !== []
+                || $child->relevance !== null
+                || $child->limits !== null
+                || $child->metadata !== []
+                || count($child->fields) !== 1
+                || !array_key_exists('count', $child->fields)
+            ) {
+                return;
+            }
+            $count = $child->fields['count'];
+            if (!is_int($count) && !is_string($count)) {
+                return;
+            }
+            if ($generic && is_int($count) && $count < 0) {
+                return;
+            }
+            $buckets[] = ['value' => $child->value, 'count' => $count];
+        }
+
+        $this->facets[$resultName] = $buckets;
+    }
 
     /** @param array<string, mixed> $payload */
     public static function fromPayload(array $payload): self
