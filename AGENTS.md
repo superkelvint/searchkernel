@@ -694,10 +694,11 @@ CI covers the non-native Rust/FlatBuffers/client/transport surface.
 
 For any change that can affect native execution, including changes under
 `core/native/**`, `searchkernel-vespa-bindings`,
-`searchkernel-vespa-engine`, `searchkernel-ir-adapter`, native build tooling,
-or `reference/vespa/**`, the implementation agent MUST run the applicable
-native/real-engine verification locally before handing the pull request to the
-CTO. The pull request must include the exact native commands run and their
+`searchkernel-vespa-engine`, `searchkernel-ir-adapter`, the native-only
+`searchkernel` facade/index lifecycle path, the `searchkerneld` native
+entrypoint, native build tooling, or `reference/vespa/**`, the implementation
+agent MUST run the applicable native/real-engine verification locally before
+handing the pull request to the CTO. The pull request must include the exact native commands run and their
 results.
 
 A green CI run is therefore not evidence that native behavior was exercised.
