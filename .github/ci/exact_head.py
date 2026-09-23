@@ -120,6 +120,10 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
         "tools/test_check_client_contracts.py",
         "tools/check-python-dependencies.py",
         "tools/test_python_dependency_contract.py",
+        ".github/ci/select-python.sh",
+        ".github/ci/check-python-workflows.sh",
+        ".github/workflows/client-capabilities.yml",
+        "dev",
     ),
     "abi": (
         "core/native/vespa/searchkernel_vespa.h",
@@ -130,6 +134,8 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
         "tools/check-native-bindings.sh",
         "tools/check-native-bindings/**",
         "tools/check-layout.sh",
+        ".github/workflows/abi-surface.yml",
+        "dev",
     ),
     "persistence": (
         "api/**",
@@ -160,7 +166,10 @@ LANE_PATTERNS: dict[str, tuple[str, ...]] = {
         "AGENTS.md",
         "tools/check-issue-queue.py",
         "tools/test_check_issue_queue.py",
+        ".github/ci/select-python.sh",
+        ".github/ci/check-python-workflows.sh",
         ".github/workflows/issue-queue.yml",
+        "dev",
     ),
     "verification": (
         ".githooks/pre-commit",
