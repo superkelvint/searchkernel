@@ -14,6 +14,27 @@ esac
 
 [[ -n "$TARGET" ]] || { echo "could not determine Rust target; set SK_NATIVE_TARGET" >&2; exit 1; }
 
+PINNED_VESPA_COMMIT=$(python3 - "$ROOT/core/native/vespa/manifest.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    print(json.load(stream)["vespa_commit"])
+PY
+)
+[[ "$PINNED_VESPA_COMMIT" =~ ^[0-9a-fA-F]{40}$ || "$PINNED_VESPA_COMMIT" == fixture-* ]] || {
+    echo "invalid pinned Vespa checkout hash '$PINNED_VESPA_COMMIT'" >&2
+    exit 1
+}
+
+MACHINE_CACHE_HOME=${XDG_CACHE_HOME:-${HOME:?HOME must be set when XDG_CACHE_HOME is unset}/.cache}
+CACHE_BASE=${SK_NATIVE_CACHE_DIR:-$MACHINE_CACHE_HOME/searchkernel/native-sdk-cache}
+# Share the prerequisite across independent clones, but never across an
+# incompatible declared build environment or native target. The pinned Vespa
+# checkout remains the immutable object key inside this compatibility namespace.
+CACHE_ROOT=$CACHE_BASE/$BUILD_ENV/$TARGET
+OBJECT=$CACHE_ROOT/objects/$PINNED_VESPA_COMMIT
+CHECKOUT_LINK=$CACHE_ROOT/checkouts/$PINNED_VESPA_COMMIT
+
 configured_marker() {
     local vespa_root=$1
     [[ -f "$vespa_root/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt" &&
@@ -25,6 +46,72 @@ has_vespa_libraries() {
     find "$root" -type f -name 'libvespa*.so*' -print -quit 2>/dev/null | grep -q .
 }
 
+published_base_url() {
+    local tag asset
+    if [[ -n "${SK_NATIVE_BASE_ARTIFACT_URL:-}" ]]; then
+        printf '%s\n' "$SK_NATIVE_BASE_ARTIFACT_URL"
+        return
+    fi
+    tag="vespa-base-v1-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"
+    asset="searchkernel-vespa-base-v1-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
+    printf 'https://github.com/superkelvint/searchkernel/releases/download/%s/%s\n' "$tag" "$asset"
+}
+
+verify_published_toolchain_marker() {
+    local vespa_root=$1
+    local marker="$vespa_root/.searchkernel-vespa-artifact.json"
+    [[ -f "$marker" ]] || return 1
+    python3 - "$marker" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
+import json
+import sys
+
+path, build_env, target, commit = sys.argv[1:]
+try:
+    with open(path, encoding="utf-8") as stream:
+        marker = json.load(stream)
+except (OSError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"invalid published Vespa toolchain marker {path}: {exc}") from exc
+expected = {
+    "format_version": 1,
+    "build_environment": build_env,
+    "native_target": target,
+    "vespa_commit": commit,
+}
+for key, value in expected.items():
+    if marker.get(key) != value:
+        raise SystemExit(
+            f"published Vespa toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
+        )
+PY
+}
+
+build_configured_vespa_libraries() {
+    local vespa_root=$1
+    local jobs=1
+    local target=searchcore_embedded_crud_spike_app
+
+    [[ -f "$vespa_root/CMakeCache.txt" ]] || return 1
+    command -v cmake >/dev/null 2>&1 || {
+        echo "configured Vespa build at '$vespa_root' is missing shared libraries and cmake is unavailable" >&2
+        return 1
+    }
+
+    if command -v nproc >/dev/null 2>&1; then
+        jobs=$(nproc)
+    fi
+
+    echo "Vespa shared libraries are missing; building configured target '$target' once under $vespa_root" >&2
+    cmake --build "$vespa_root" --target "$target" --parallel "$jobs" || {
+        echo "failed to build configured Vespa target '$target' under '$vespa_root'" >&2
+        return 1
+    }
+
+    if ! has_vespa_libraries "$vespa_root"; then
+        echo "configured Vespa target '$target' completed without producing libvespa*.so* below '$vespa_root'" >&2
+        return 1
+    fi
+}
+
 fingerprint_field() {
     local file=$1
     local field=$2
@@ -33,25 +120,22 @@ fingerprint_field() {
 
 compatible_full_sdk() {
     local sdk=$1
-    local wanted_commit=$2
-    local wanted_config=$3
-    local pinned_commit=$4
-    local fingerprint="$sdk/native-build-fingerprint-v2.txt"
+    local pinned_commit=$2
     local manifest="$sdk/manifest.json"
+    local fingerprint="$sdk/native-build-fingerprint-v2.txt"
 
-    [[ -f "$fingerprint" && -f "$manifest" && -d "$sdk/lib" ]] || return 1
+    [[ -f "$manifest" && -f "$fingerprint" && -d "$sdk/lib" ]] || return 1
     grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$manifest" && return 1
     grep -Eq '"vespa_commit"[[:space:]]*:[[:space:]]*"'"$pinned_commit"'"' "$manifest" || return 1
+    grep -q '^fingerprint-version=3$' "$fingerprint" || return 1
+    [[ "$(fingerprint_field "$fingerprint" fingerprint.scope)" == full ]] || return 1
+    [[ "$(fingerprint_field "$fingerprint" build.environment)" == "$BUILD_ENV" ]] || return 1
+    [[ "$(fingerprint_field "$fingerprint" cargo.target)" == "$TARGET" ]] || return 1
     has_vespa_libraries "$sdk/lib" || return 1
-    [[ "$(fingerprint_field "$fingerprint" vespa.commit)" == "$wanted_commit" ]] || return 1
-    [[ "$(fingerprint_field "$fingerprint" vespa.config)" == "$wanted_config" ]] || return 1
 }
-
-resolve_vespa_library_root() {
+resolve_prebuilt_vespa_library_root() {
     local vespa_root=$1
-    local wanted_commit=$2
-    local wanted_config=$3
-    local pinned_commit=$4
+    local pinned_commit=$2
     local worktree_root candidate worktree
 
     if has_vespa_libraries "$vespa_root"; then
@@ -66,7 +150,7 @@ resolve_vespa_library_root() {
                 "$worktree_root/core/native/sdk/linux-x86_64" \
                 "$worktree_root/target/host/native-sdk/linux-x86_64" \
                 "$worktree_root/target/native-sdk-package"; do
-                if compatible_full_sdk "$candidate" "$wanted_commit" "$wanted_config" "$pinned_commit"; then
+                if compatible_full_sdk "$candidate" "$pinned_commit"; then
                     echo "using Vespa shared libraries from compatible full SDK: $candidate/lib" >&2
                     printf '%s\n' "$candidate/lib"
                     return
@@ -80,20 +164,36 @@ resolve_vespa_library_root() {
             "$worktree/core/native/sdk/linux-x86_64" \
             "$worktree/target/host/native-sdk/linux-x86_64" \
             "$worktree/target/native-sdk-package"; do
-            if compatible_full_sdk "$candidate" "$wanted_commit" "$wanted_config" "$pinned_commit"; then
+            if compatible_full_sdk "$candidate" "$pinned_commit"; then
                 echo "using Vespa shared libraries from compatible sibling full SDK: $candidate/lib" >&2
                 printf '%s\n' "$candidate/lib"
                 return
             fi
         done
     done < <(git -C "$ROOT" worktree list --porcelain | sed -n 's/^worktree //p')
-
-    echo "configured Vespa metadata was found at '$vespa_root', but its shared libraries are missing" >&2
-    echo "no compatible full SDK was available to seed the immutable Vespa base" >&2
-    echo "restore/build the pinned Vespa native prerequisite once, then rerun './dev native-sdk ensure'" >&2
     return 1
 }
 
+resolve_vespa_library_root() {
+    local vespa_root=$1
+    local pinned_commit=$2
+    local prebuilt
+
+    if prebuilt=$(resolve_prebuilt_vespa_library_root "$vespa_root" "$pinned_commit"); then
+        printf '%s\n' "$prebuilt"
+        return
+    fi
+
+    if build_configured_vespa_libraries "$vespa_root"; then
+        printf '%s\n' "$vespa_root"
+        return
+    fi
+
+    echo "configured Vespa metadata was found at '$vespa_root', but its shared libraries are missing" >&2
+    echo "no compatible full SDK was available and the configured Vespa target could not be built" >&2
+    echo "repair the configured upstream/vespa build, then rerun './dev native-sdk ensure'" >&2
+    return 1
+}
 vespa_identity() {
     local worktree=$1
     local vespa_root="$worktree/upstream/vespa"
@@ -110,6 +210,64 @@ vespa_identity() {
     fi
 }
 
+verify_pinned_vespa_checkout() {
+    local vespa_root=$1
+    local top actual
+
+    if [[ -f "$vespa_root/.searchkernel-vespa-artifact.json" ]]; then
+        verify_published_toolchain_marker "$vespa_root"
+        return
+    fi
+
+    top=$(git -C "$vespa_root" rev-parse --show-toplevel 2>/dev/null || true)
+    if [[ -z "$top" ]]; then
+        echo "configured Vespa toolchain has no Git or published-artifact provenance: $vespa_root" >&2
+        return 1
+    fi
+    if [[ "$(cd -- "$top" && pwd)" != "$(cd -- "$vespa_root" && pwd)" ]]; then
+        # Test/legacy layouts may track upstream/vespa inside another repository.
+        # Production standalone Vespa checkouts are verified by their Git HEAD.
+        return 0
+    fi
+
+    actual=$(git -C "$vespa_root" rev-parse HEAD)
+    if [[ "$actual" != "$PINNED_VESPA_COMMIT" ]]; then
+        echo "configured Vespa checkout is $actual, expected pinned checkout $PINNED_VESPA_COMMIT" >&2
+        return 1
+    fi
+    if ! git -C "$vespa_root" diff --quiet --ignore-submodules -- ||
+       ! git -C "$vespa_root" diff --cached --quiet --ignore-submodules --; then
+        echo "configured Vespa checkout has modified tracked source at pinned checkout $PINNED_VESPA_COMMIT" >&2
+        return 1
+    fi
+}
+registered_vespa_root() {
+    [[ -L "$CHECKOUT_LINK" || -d "$CHECKOUT_LINK" ]] || return 1
+    local candidate
+    candidate=$(readlink -f "$CHECKOUT_LINK" 2>/dev/null || true)
+    [[ -n "$candidate" && -d "$candidate" ]] || return 1
+    configured_marker "$candidate" || return 1
+    verify_pinned_vespa_checkout "$candidate" || return 1
+    printf '%s\n' "$candidate"
+}
+
+register_vespa_root() {
+    local vespa_root=$1
+    local resolved existing tmp
+    resolved=$(cd -- "$vespa_root" && pwd -P)
+    mkdir -p "$CACHE_ROOT/checkouts"
+
+    existing=$(registered_vespa_root 2>/dev/null || true)
+    if [[ "$existing" == "$resolved" ]]; then
+        return
+    fi
+
+    tmp="$CACHE_ROOT/checkouts/.tmp-$PINNED_VESPA_COMMIT-$BASHPID"
+    rm -f "$tmp"
+    ln -s "$resolved" "$tmp"
+    mv -Tf "$tmp" "$CHECKOUT_LINK"
+}
+
 resolve_vespa_root() {
     if [[ -n "${VESPA_ROOT:-}" ]]; then
         configured_marker "$VESPA_ROOT" || {
@@ -122,6 +280,13 @@ resolve_vespa_root() {
 
     if configured_marker "$ROOT/upstream/vespa"; then
         printf '%s\n' "$ROOT/upstream/vespa"
+        return
+    fi
+
+    local registered
+    registered=$(registered_vespa_root 2>/dev/null || true)
+    if [[ -n "$registered" ]]; then
+        printf '%s\n' "$registered"
         return
     fi
 
@@ -143,50 +308,12 @@ resolve_vespa_root() {
     return 1
 }
 
-COMMON_GIT_DIR=$(git -C "$ROOT" rev-parse --git-common-dir)
-if [[ "$COMMON_GIT_DIR" != /* ]]; then
-    COMMON_GIT_DIR=$(cd -- "$ROOT/$COMMON_GIT_DIR" && pwd)
-fi
-CACHE_BASE=${SK_NATIVE_CACHE_DIR:-$COMMON_GIT_DIR/searchkernel/native-sdk-cache}
-CACHE_ROOT=$CACHE_BASE/$BUILD_ENV/$TARGET
-mkdir -p "$CACHE_ROOT/objects" "$CACHE_ROOT/locks" "$CACHE_ROOT/build"
-
-VESPA_BUILD_ROOT=$(resolve_vespa_root)
 if [[ "$MODE" == vespa-root ]]; then
+    VESPA_BUILD_ROOT=$(resolve_vespa_root)
+    verify_pinned_vespa_checkout "$VESPA_BUILD_ROOT"
     printf '%s\n' "$VESPA_BUILD_ROOT"
     exit 0
 fi
-
-VESPA_METADATA=$(python3 "$ROOT/tools/native-build-fingerprint.py" \
-    --root "$ROOT" \
-    --vespa-root "$VESPA_BUILD_ROOT" \
-    --target "$TARGET" \
-    --scope base)
-WANTED_VESPA_COMMIT=$(printf '%s' "$VESPA_METADATA" | awk -F '\t' '$1 == "vespa.commit" { print $2; exit }')
-WANTED_VESPA_CONFIG=$(printf '%s' "$VESPA_METADATA" | awk -F '\t' '$1 == "vespa.config" { print $2; exit }')
-PINNED_VESPA_COMMIT=$(python3 - "$ROOT/core/native/vespa/manifest.json" <<'PY'
-import json
-import sys
-with open(sys.argv[1], encoding="utf-8") as stream:
-    print(json.load(stream)["vespa_commit"])
-PY
-)
-[[ -n "$WANTED_VESPA_COMMIT" && -n "$WANTED_VESPA_CONFIG" && -n "$PINNED_VESPA_COMMIT" ]] || {
-    echo "native provenance did not expose Vespa commit/config identity" >&2
-    exit 1
-}
-VESPA_LIBRARY_ROOT=$(resolve_vespa_library_root \
-    "$VESPA_BUILD_ROOT" "$WANTED_VESPA_COMMIT" "$WANTED_VESPA_CONFIG" "$PINNED_VESPA_COMMIT")
-
-FINGERPRINT=$(VESPA_LIBRARY_ROOT="$VESPA_LIBRARY_ROOT" \
-    python3 "$ROOT/tools/native-build-fingerprint.py" \
-        --root "$ROOT" \
-        --vespa-root "$VESPA_BUILD_ROOT" \
-        --target "$TARGET" \
-        --scope base)
-DIGEST=$(printf '%s' "$FINGERPRINT" | sed -n 's/^sha256=//p' | head -1)
-[[ ${#DIGEST} -eq 64 ]] || { echo "native fingerprint did not produce a SHA-256 digest" >&2; exit 1; }
-OBJECT=$CACHE_ROOT/objects/$DIGEST
 
 validate_link_closure() {
     local sdk=$1
@@ -263,30 +390,65 @@ validate_link_closure() {
 }
 
 valid_object() {
-    [[ -f "$OBJECT/manifest.json" &&
-       -f "$OBJECT/native-build-fingerprint-v2.txt" ]] || return 1
+    [[ -f "$OBJECT/manifest.json" && -d "$OBJECT/lib" ]] || return 1
+    # libvespalib is the fundamental runtime DSO for the embedded adapter.
+    # Merely having some other libvespa*.so in the directory is not a valid
+    # base and would allow a partially deleted cache object to pass validation.
+    [[ -s "$OBJECT/lib/libvespalib.so" ]] || return 1
     [[ ! -e "$OBJECT/lib/libsearchkernel_vespa.so" &&
        ! -e "$OBJECT/include/searchkernel_vespa.h" ]] || return 1
     grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$OBJECT/manifest.json" || return 1
-    grep -q "^fingerprint-version=3$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
-    grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt" || return 1
+    grep -Eq '"vespa_commit"[[:space:]]*:[[:space:]]*"'"$PINNED_VESPA_COMMIT"'"' "$OBJECT/manifest.json" || return 1
     validate_link_closure "$OBJECT"
 }
 
-if valid_object; then
+valid_install() {
+    valid_object && registered_vespa_root >/dev/null
+}
+install_published_base() {
+    [[ "${SK_NATIVE_DISABLE_PUBLISHED_BASE:-0}" != 1 ]] || return 10
+    local installer url installed status
+    installer="$ROOT/tools/install-native-base-artifact.sh"
+    [[ -f "$installer" ]] || {
+        echo "published Vespa base installer is missing: $installer" >&2
+        return 1
+    }
+    url=$(published_base_url)
+    if installed=$(bash "$installer" "$url" "$CACHE_ROOT" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"); then
+        verify_pinned_vespa_checkout "$installed"
+        register_vespa_root "$installed"
+        valid_install || {
+            echo "published Vespa base installed but failed final cache validation" >&2
+            return 1
+        }
+        echo "installed published Vespa base for $BUILD_ENV/$TARGET/$PINNED_VESPA_COMMIT" >&2
+        return 0
+    else
+        status=$?
+        [[ "$status" -eq 10 ]] && return 10
+        return "$status"
+    fi
+}
+
+if valid_install; then
     printf '%s\n' "$OBJECT"
     exit 0
 fi
 
 if [[ "$MODE" == path ]]; then
-    echo "native SDK cache miss for fingerprint $DIGEST" >&2
-    echo "run './dev native-sdk ensure' only when native verification is required" >&2
+    if valid_object; then
+        echo "native Vespa base exists for checkout $PINNED_VESPA_COMMIT, but its configured checkout registration is missing" >&2
+    else
+        echo "native Vespa base is not installed for checkout $PINNED_VESPA_COMMIT" >&2
+    fi
+    echo "run './dev native-sdk ensure' from the one configured Vespa checkout when provisioning this machine" >&2
     exit 1
 fi
 
-LOCK=$CACHE_ROOT/locks/$DIGEST.lock
+mkdir -p "$CACHE_ROOT/objects" "$CACHE_ROOT/locks" "$CACHE_ROOT/build" "$CACHE_ROOT/checkouts"
+LOCK=$CACHE_ROOT/locks/$PINNED_VESPA_COMMIT.lock
 command -v flock >/dev/null 2>&1 || {
-    echo "native SDK cache requires flock for cross-worktree build serialization" >&2
+    echo "native SDK cache requires flock for machine-wide build serialization" >&2
     exit 1
 }
 exec 9>"$LOCK"
@@ -295,23 +457,58 @@ flock -w 300 9 || {
     exit 1
 }
 
-TMP=$CACHE_ROOT/objects/.tmp-$DIGEST-$
-BUILD=$CACHE_ROOT/build/$DIGEST-$
+TMP=$CACHE_ROOT/objects/.tmp-$PINNED_VESPA_COMMIT-$
+BUILD=$CACHE_ROOT/build/$PINNED_VESPA_COMMIT-$
 cleanup() {
     rm -rf "$TMP" "$BUILD"
 }
 trap cleanup EXIT INT TERM
 
-if valid_object; then
+if valid_install; then
     printf '%s\n' "$OBJECT"
     exit 0
 fi
 
+# Prefer an already-configured local source when it can seed the immutable base
+# without rebuilding Vespa. If no prebuilt local source exists, acquire the
+# canonical published base before falling back to an explicit local Vespa build.
+VESPA_BUILD_ROOT=$(resolve_vespa_root 2>/dev/null || true)
+VESPA_LIBRARY_ROOT=
+if [[ -n "$VESPA_BUILD_ROOT" ]]; then
+    verify_pinned_vespa_checkout "$VESPA_BUILD_ROOT"
+    register_vespa_root "$VESPA_BUILD_ROOT"
+    if valid_object; then
+        printf '%s\n' "$OBJECT"
+        exit 0
+    fi
+    VESPA_LIBRARY_ROOT=$(resolve_prebuilt_vespa_library_root "$VESPA_BUILD_ROOT" "$PINNED_VESPA_COMMIT" || true)
+fi
+
+if [[ -z "$VESPA_LIBRARY_ROOT" && "${SK_NATIVE_DISABLE_PUBLISHED_BASE:-0}" != 1 ]]; then
+    if install_published_base; then
+        printf '%s\n' "$OBJECT"
+        exit 0
+    else
+        status=$?
+        if [[ "$status" -ne 10 ]]; then
+            exit "$status"
+        fi
+    fi
+fi
+
+if [[ -z "$VESPA_BUILD_ROOT" ]]; then
+    VESPA_BUILD_ROOT=$(resolve_vespa_root)
+    verify_pinned_vespa_checkout "$VESPA_BUILD_ROOT"
+    register_vespa_root "$VESPA_BUILD_ROOT"
+fi
+if [[ -z "$VESPA_LIBRARY_ROOT" ]]; then
+    VESPA_LIBRARY_ROOT=$(resolve_vespa_library_root "$VESPA_BUILD_ROOT" "$PINNED_VESPA_COMMIT")
+fi
 if [[ -e "$OBJECT" ]]; then
     QUARANTINE_ROOT="$CACHE_ROOT/quarantine"
     mkdir -p "$QUARANTINE_ROOT"
-    QUARANTINED="$QUARANTINE_ROOT/$DIGEST.$(date +%s).$BASHPID"
-    echo "native SDK cache object '$OBJECT' failed validation; quarantining and rebuilding under the cache lock" >&2
+    QUARANTINED="$QUARANTINE_ROOT/$PINNED_VESPA_COMMIT.$(date +%s).$BASHPID"
+    echo "native SDK cache object '$OBJECT' failed validation; quarantining and rebuilding under the checkout lock" >&2
     # Published objects are mode-locked read-only. Once validation has failed
     # and this digest lock is held, make only the object directory itself
     # owner-writable so it can be retired from the published namespace. Do not
@@ -332,8 +529,12 @@ SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
 SK_NATIVE_BASE_ONLY=1 \
     "$BUILDER"
 
-grep -q "^sha256=$DIGEST$" "$TMP/native-build-fingerprint-v2.txt" || {
-    echo "built SDK fingerprint does not match requested cache key $DIGEST" >&2
+grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$TMP/manifest.json" || {
+    echo "built native package is not a Vespa base" >&2
+    exit 1
+}
+grep -Eq '"vespa_commit"[[:space:]]*:[[:space:]]*"'"$PINNED_VESPA_COMMIT"'"' "$TMP/manifest.json" || {
+    echo "built Vespa base does not match checkout $PINNED_VESPA_COMMIT" >&2
     exit 1
 }
 
@@ -343,8 +544,9 @@ validate_link_closure "$TMP" || {
 }
 
 # Cache objects are immutable after publication. Build into private staging and
-# publish only into a previously absent fingerprint key; no process ever builds
-# directly inside a published object.
-chmod -R a-w "$TMP"
+# publish only into the checkout-hash key; no process ever builds
+# directly inside a published object. Keep the staging tree writable until it
+# has been renamed because this filesystem rejects renames of read-only trees.
 mv "$TMP" "$OBJECT"
+chmod -R a-w "$OBJECT"
 printf '%s\n' "$OBJECT"

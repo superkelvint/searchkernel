@@ -4,8 +4,8 @@ Search Kernel builds Rust code against pinned native prerequisites. FlatBuffers
 C++ 25.12.19 is installed once as a clone-wide toolchain and is never rebuilt by
 ordinary Cargo commands. The default native feature links a small Search Kernel-owned Vespa adapter
 against an immutable pinned Vespa/runtime base. Cargo build outputs, including
-the adapter, remain environment-local; third-party native prerequisites are
-shared safely across Git worktrees.
+the adapter, remain environment-local; the Vespa base is installed once in a
+machine-global cache and reused by independent clones and worktrees.
 
 ## Authority and failure handling
 
@@ -86,14 +86,15 @@ resolve a read-only shared Vespa base, build the Search Kernel adapter locally,
 and run a real compile/link probe against the combined adapter + base before Rust
 links. Search Kernel source changes never rebuild or repackage the Vespa base.
 
-The base cache is stored below the repository's Git common directory, so all
-worktrees from one clone can reuse matching objects without sharing mutable Cargo
-build directories. Published base objects contain Vespa/runtime libraries only:
-no `libsearchkernel_vespa.so` and no Search Kernel ABI header. The base identity
-tracks the pinned Vespa/config identity plus the actual Vespa, dependency, and
-runtime library bytes that will be published, partitioned by target/environment.
-The active Rust/C++ compiler, adapter source, failpoints, sanitizer, coverage,
-FlatBuffers version, and adapter-only flags do not change the base key.
+The base cache is machine-global by default under
+`${XDG_CACHE_HOME:-$HOME/.cache}/searchkernel/native-sdk-cache`, so independent
+Git clones and worktrees on the same machine reuse the same immutable base.
+Published base objects contain Vespa/runtime libraries only: no
+`libsearchkernel_vespa.so` and no Search Kernel ABI header. The machine-global cache is partitioned by declared build environment and
+native target. Within that compatibility namespace, the object key is exactly
+the pinned Vespa checkout hash from `core/native/vespa/manifest.json`. There is
+no second base fingerprint derived from DSO bytes, dependency/runtime bytes,
+compiler state, adapter source, or per-clone state.
 
 The no-default-features workspace command exercises the Rust and FlatBuffers
 paths without requiring the optional Vespa SDK:
@@ -130,9 +131,9 @@ Supported workflows use these independent target roots:
 
 | Environment | Cargo target root | Vespa SDK namespace |
 | --- | --- | --- |
-| Host | `target/host` | `<git-common-dir>/searchkernel/native-sdk-cache/host/<target>/objects/<fingerprint>` |
-| Project container | `target/devcontainer` | `.../native-sdk-cache/devcontainer/<target>/objects/<fingerprint>` |
-| CI | `target/ci` | `.../native-sdk-cache/ci/<target>/objects/<fingerprint>` |
+| Host | `target/host` | `<machine-cache>/searchkernel/native-sdk-cache/host/<target>/objects/<vespa-checkout-hash>` |
+| Project container | `target/devcontainer` | `<machine-cache>/searchkernel/native-sdk-cache/devcontainer/<target>/objects/<vespa-checkout-hash>` |
+| CI | `target/ci` | `<machine-cache>/searchkernel/native-sdk-cache/ci/<target>/objects/<vespa-checkout-hash>` |
 
 The project container sets `CARGO_TARGET_DIR=target/devcontainer`. The CI ABI
 workflow sets `CARGO_TARGET_DIR=target/ci`. Do not manually mount or restore a
@@ -149,11 +150,13 @@ SEARCHKERNEL_BUILD_ENV=my-native-environment \
 ```
 
 `CARGO_TARGET_DIR` remains the isolation boundary for Cargo/FlatBuffers build
-outputs. The Vespa base resolver separately partitions its shared object store by
-`SEARCHKERNEL_BUILD_ENV` and target, then keys base objects by base-scope
-provenance. `SK_NATIVE_SDK` bypasses this split model for a deliberately
-managed full SDK; full-package provenance still includes Search Kernel adapter
-source and adapter-only native flags.
+outputs. The Vespa base resolver separately partitions its machine-global store
+by `SEARCHKERNEL_BUILD_ENV` and native target, then addresses the immutable
+object inside that compatibility namespace by the pinned Vespa checkout hash.
+Compiler identity and Search Kernel adapter source/flags do not create another
+Vespa-base key. `SK_NATIVE_SDK` bypasses this split
+model for a deliberately managed full SDK; full-package provenance still
+includes Search Kernel adapter source and adapter-only native flags.
 
 ## FlatBuffers
 
@@ -230,16 +233,22 @@ build (or after a declared base-input change):
 ./dev native-sdk path
 ```
 
-If the current worktree lacks untracked configured Vespa build outputs, the
-resolver searches sibling Git worktrees for a configured `upstream/vespa`
-with the same pinned Vespa identity. Configuration metadata alone is not treated
-as a usable library build. If that tree no longer contains its built
-`libvespa*.so*` files (for example after the immutable-base split), the resolver
-may seed the new base from an existing self-contained full SDK in the same clone,
-but only when that SDK's recorded Vespa commit and config identity match the
-selected pinned tree. The selected DSO bytes are part of the base fingerprint.
-This lets an isolated agent worktree reuse the clone's already-built native
-prerequisite without copying or rebuilding Vespa.
+The resolver first checks the machine-global object for the pinned Vespa checkout
+hash and the machine-global registration of the one configured checkout with that
+same hash. A fresh independent Git clone therefore reuses the installed base and
+the already-configured immutable checkout; it does not need to clone, configure,
+or build Vespa itself.
+
+Only when provisioning or repairing a genuinely missing/corrupt machine base
+does `./dev native-sdk ensure` use the configured `upstream/vespa` checkout
+or a compatible pre-split full SDK. A standalone provisioning checkout must have
+Git HEAD equal to the pinned Vespa checkout hash. If the configured checkout has
+the required CMake metadata but its `libvespa*.so*` outputs are absent, `ensure`
+builds the configured `searchcore_embedded_crud_spike_app` target once, then
+packages the resulting Vespa/runtime closure into the immutable base. `ensure`
+registers that checkout path once in the machine-global cache for compatible
+clones on the machine. A compatible pre-split full SDK is accepted when its
+manifest records that same checkout hash.
 
 A direct SDK build is still useful for native adapter qualification or an
 explicitly managed SDK:
@@ -254,9 +263,9 @@ SK_NATIVE_BUILD_DIR="$PWD/target/host/native-sdk-build" \
 
 The selected Vespa checkout must have the configured CMake outputs and
 dependency installation expected by `build-sdk.sh`. The explicit `./dev native-sdk ensure` bootstrap builds
-only the immutable Vespa/runtime base, serializes builders per base fingerprint,
-validates runtime closure, marks the completed base read-only, and publishes it
-atomically. Ordinary Cargo then compiles/relinks only Search Kernel's adapter
+only the immutable Vespa/runtime base, serializes provisioning per Vespa checkout
+hash, validates runtime closure, marks the completed base read-only, and publishes
+it atomically. Ordinary Cargo then compiles/relinks only Search Kernel's adapter
 against that base. A direct `build-sdk.sh` invocation still produces the full
 self-contained release/qualification SDK, with full-package provenance including
 adapter source and flags.
@@ -283,20 +292,36 @@ Vespa readiness is informational for ordinary non-native development and becomes
 a prerequisite only when the requested verification actually uses the native
 feature.
 
-The resolver discovers a configured pinned Vespa build from the current or a
-matching sibling worktree, discovers its repository-local `vespa-deps`, and
-lets the SDK builder discover the matching LLVM/libffi runtime from the same
-clone. A configured tree that contains only CMake metadata but no Vespa DSOs is
-not enough to publish a base. In that migration case, a compatible pre-split
-full SDK may supply the Vespa DSOs; otherwise `ensure` fails before staging with
-a concrete prerequisite diagnostic. The resulting Vespa/dependency/runtime
-bytes are part of the native cache identity.
+The resolver first checks the machine-global base and registered toolchain
+keyed by the checked-in Vespa checkout hash. Normal agent clones therefore need
+no clone-local Vespa tree when that machine has already been provisioned.
+
+On a cache miss, `ensure` prefers a compatible already-built local source. If
+none exists, it acquires the canonical published immutable base for the current
+build-environment/native-target/Vespa-pin namespace before considering a local
+Vespa build. The default artifact is a GitHub release asset named
+`searchkernel-vespa-base-v1-<environment>-<target>-<vespa-commit>.tar.gz`;
+`SK_NATIVE_BASE_ARTIFACT_URL` may point at an explicitly managed mirror. The
+download is checksum-verified, its manifest must exactly match the environment,
+target and pin, and unsafe archive entries are rejected before publication.
+
+The published artifact contains the immutable Vespa/runtime base plus the
+read-only Vespa header/config/dependency-header toolchain required to compile
+Search Kernel's local `abi.cc` adapter. It never contains the Search Kernel
+adapter itself.
+`tools/package-native-base-artifact.sh` creates this bundle, and
+`.github/workflows/publish-native-base.yml` publishes the canonical host asset
+from `main`. Only when the published artifact is unavailable may an
+already-configured pinned Vespa checkout be used as the explicit last-resort
+bootstrap; if its DSOs are absent, `ensure` may build the configured
+`searchcore_embedded_crud_spike_app` target once. A compatible pre-split full
+SDK remains a faster local seed when available.
 
 A published SDK object is reused only after its bundled runtime dependency
-closure validates. If an otherwise matching immutable cache object is incomplete
-or corrupt, the resolver acquires that digest's cache lock, moves the bad object
-to quarantine for diagnosis, rebuilds into private staging, validates the new
-SDK, and atomically republishes it. Consumers never rebuild or mutate a published
+closure validates. If the checkout-hash object is incomplete or corrupt, the
+resolver acquires that checkout's lock, moves the bad object to quarantine for
+diagnosis, rebuilds into private staging, validates the new SDK, and atomically
+republishes it. Consumers never rebuild or mutate a published
 object in place.
 
 Therefore an agent encountering missing `libvespa_*.so`, LLVM, or other SDK
@@ -321,21 +346,15 @@ remains an independent final check that the resolved SDK is consumable.
 `/tmp/<repository>-<task-name>` on `agent/<task-name>` from the current
 `HEAD`; it does not copy uncommitted changes.
 
-Temporary worktrees also do not copy the pinned, read-only Vespa checkout. When
-local verification needs the canonical checkout, link the shared read-only
-inputs into the worktree:
+Temporary worktrees and independent clones do not need their own pinned Vespa
+checkout when the machine has been provisioned for the same build environment
+and native target. `./dev native-sdk path`
+resolves the shared base, and the native adapter build resolves the one registered
+configured checkout for the same pinned hash.
 
-```bash
-mkdir -p /tmp/searchkern2-<task-name>/upstream
-ln -s /home/kelvin/projects/searchkern2/upstream/vespa \
-  /tmp/searchkern2-<task-name>/upstream/vespa
-ln -s /home/kelvin/projects/searchkern2/lib64 \
-  /tmp/searchkern2-<task-name>/lib64
-```
-
-If a destination already exists, verify that it points to the canonical shared
-directory instead of replacing it. Do not modify or commit the shared
-read-only directories from a task worktree.
+Configure Vespa only in the one provisioning checkout (or when intentionally
+performing Vespa/native qualification work). Do not copy or clone Vespa into
+each task checkout.
 
 ## Standard Rust verification
 

@@ -35,7 +35,7 @@ fn main() {
                 base.display()
             )
         });
-        verify_shared_cache_object(&base).unwrap_or_else(|error| {
+        verify_shared_cache_object(&manifest_dir, &base).unwrap_or_else(|error| {
             panic!(
                 "immutable Vespa base prerequisite is invalid: {error}\nRun './dev native-sdk ensure' to bootstrap or repair it."
             )
@@ -351,7 +351,7 @@ fn build_local_adapter(
 }
 
 #[cfg(feature = "native")]
-fn verify_shared_cache_object(sdk: &Path) -> Result<(), String> {
+fn verify_shared_cache_object(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
     if sdk.join("lib/libsearchkernel_vespa.so").exists()
         || sdk.join("include/searchkernel_vespa.h").exists()
     {
@@ -360,6 +360,22 @@ fn verify_shared_cache_object(sdk: &Path) -> Result<(), String> {
             sdk.display()
         ));
     }
+
+    let root = manifest_dir.join("../../..");
+    let source_manifest_path = root.join("core/native/vespa/manifest.json");
+    let source_manifest = fs::read_to_string(&source_manifest_path).map_err(|error| {
+        format!(
+            "read pinned Vespa manifest '{}': {error}",
+            source_manifest_path.display()
+        )
+    })?;
+    let pinned = manifest_string_field(&source_manifest, "vespa_commit").ok_or_else(|| {
+        format!(
+            "pinned Vespa manifest '{}' has no vespa_commit",
+            source_manifest_path.display()
+        )
+    })?;
+
     let manifest_path = sdk.join("manifest.json");
     let manifest = fs::read_to_string(&manifest_path).map_err(|error| {
         format!(
@@ -374,50 +390,40 @@ fn verify_shared_cache_object(sdk: &Path) -> Result<(), String> {
             manifest_path.display()
         ));
     }
-    let fingerprint_path = sdk.join("native-build-fingerprint-v2.txt");
-    let recorded = fs::read_to_string(&fingerprint_path).map_err(|error| {
-        format!(
-            "read shared native SDK provenance '{}': {error}",
-            fingerprint_path.display()
-        )
-    })?;
-    if !recorded.lines().any(|line| line == "fingerprint-version=3") {
+    let recorded_checkout =
+        manifest_string_field(&manifest, "vespa_commit").ok_or_else(|| {
+            format!(
+                "shared Vespa base manifest '{}' has no vespa_commit",
+                manifest_path.display()
+            )
+        })?;
+    if recorded_checkout != pinned {
         return Err(format!(
-            "shared Vespa base provenance '{}' is not fingerprint schema v3",
-            fingerprint_path.display()
+            "shared Vespa base '{}' is for checkout {recorded_checkout}, expected {pinned}",
+            sdk.display()
         ));
     }
-    if !recorded
-        .lines()
-        .any(|line| line == "fingerprint.scope\tbase")
-    {
-        return Err(format!(
-            "shared Vespa base provenance '{}' is not base scope",
-            fingerprint_path.display()
-        ));
-    }
-    let digest = fingerprint_digest(&recorded).ok_or_else(|| {
-        format!(
-            "shared native SDK provenance '{}' is malformed",
-            fingerprint_path.display()
-        )
-    })?;
+
     let object_name = sdk
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            format!(
-                "shared native SDK path '{}' has no object key",
-                sdk.display()
-            )
-        })?;
-    if object_name != digest {
+        .ok_or_else(|| format!("shared Vespa base path '{}' has no checkout key", sdk.display()))?;
+    if object_name != pinned {
         return Err(format!(
-            "shared native SDK object '{}' does not match recorded fingerprint {digest}",
+            "shared Vespa base object '{}' does not match pinned checkout {pinned}",
             sdk.display()
         ));
     }
     Ok(())
+}
+
+#[cfg(feature = "native")]
+fn manifest_string_field<'a>(manifest: &'a str, field: &str) -> Option<&'a str> {
+    let key = format!("\"{field}\"");
+    let (_, after_key) = manifest.split_once(&key)?;
+    let (_, after_colon) = after_key.split_once(':')?;
+    let value = after_colon.trim_start().strip_prefix('"')?;
+    value.split_once('"').map(|(value, _)| value)
 }
 
 #[cfg(feature = "native")]

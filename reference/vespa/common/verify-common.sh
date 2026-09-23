@@ -7,12 +7,35 @@ COMMON_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REFERENCE_ROOT="$(cd "$COMMON_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$REFERENCE_ROOT/../.." && pwd)"
 PIN_FILE="$REFERENCE_ROOT/PINNED_VESPA.json"
-SDK="${SK_NATIVE_SDK:-$REPO_ROOT/core/native/sdk/linux-x86_64}"
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target/vespa-verifier/cargo}"
-if [[ -d "$SDK" ]]; then
-  SDK="$(cd "$SDK" && pwd -P)"
+if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
+  SDK="$SK_NATIVE_SDK"
+  if [[ -d "$SDK" ]]; then
+    SDK="$(cd "$SDK" && pwd -P)"
+  fi
+  export SK_NATIVE_SDK="$SDK"
+else
+  # Native verifier scripts need a Search Kernel adapter/header/manifest view,
+  # but the pinned Vespa/runtime closure is a machine-global prerequisite.
+  # Build only the small adapter locally and leave Cargo on the shared-base path.
+  unset SK_NATIVE_SDK
+  BASE_SDK=$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" path)
+  VESPA_ROOT=$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)
+  SDK="$CARGO_TARGET_DIR/native-verifier-sdk"
+  SDK_BUILD="$CARGO_TARGET_DIR/native-verifier-sdk-build"
+  SK_NATIVE_SDK="$SDK" \
+  SK_NATIVE_BUILD_DIR="$SDK_BUILD" \
+  SK_NATIVE_BASE_SDK="$BASE_SDK" \
+  SK_NATIVE_ADAPTER_ONLY=1 \
+  SK_NATIVE_REGENERATE_BINDINGS=0 \
+  SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
+  VESPA_ROOT="$VESPA_ROOT" \
+    bash "$REPO_ROOT/core/native/vespa/build-sdk.sh" >/dev/null
 fi
-export SK_NATIVE_SDK="$SDK"
+if [[ -z "${VESPA_ROOT:-}" ]]; then
+  VESPA_ROOT=$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)
+fi
+export VESPA_ROOT
 export CARGO_TARGET_DIR
 
 expected_vespa_revision() {
@@ -32,7 +55,7 @@ fail_verification() {
 }
 
 require_pinned_vespa() {
-  local vespa="$REPO_ROOT/upstream/vespa"
+  local vespa="$VESPA_ROOT"
   local expected actual
   expected="$(expected_vespa_revision)"
   [[ -d "$vespa/.git" || -f "$vespa/.git" ]] ||
