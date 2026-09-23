@@ -95,7 +95,7 @@ runner = "linux"
 command = "cargo test -p searchkerneld --test rust_remote_client --no-default-features"
 depends_on = ["rust-quality", "protocol-generated", "client-contracts"]
 cache_result = false
-notes = "Registered before #457 lands. The command becomes executable when the Rust remote-client integration test is introduced."
+notes = "Registered before the Rust remote-client product change lands. The command becomes executable when the integration test is introduced."
 
 [[task]]
 id = "python-client"
