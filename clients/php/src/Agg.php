@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
+use InvalidArgumentException;
+
 final class Agg
 {
     public static function count(): GroupingExpression
@@ -31,9 +33,30 @@ final class Agg
         return self::fieldAggregation('MaxAggregation', $field);
     }
 
+    public static function xor(string $field): GroupingExpression
+    {
+        return self::fieldAggregation('XorAggregation', $field);
+    }
+
     public static function stddev(string $field): GroupingExpression
     {
         return self::fieldAggregation('StdDevAggregation', $field);
+    }
+
+    public static function quantiles(string $field, float ...$quantiles): GroupingExpression
+    {
+        if ($quantiles === []) {
+            throw new InvalidArgumentException('quantiles requires at least one quantile');
+        }
+        foreach ($quantiles as $quantile) {
+            if (!is_finite($quantile)) {
+                throw new InvalidArgumentException('quantiles must be finite');
+            }
+        }
+        return self::aggregation('QuantilesAggregation', [
+            'quantiles' => $quantiles,
+            'expression' => G::field($field)->model,
+        ]);
     }
 
     public static function summary(string $summary = ''): GroupingExpression
