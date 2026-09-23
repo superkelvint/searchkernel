@@ -100,7 +100,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 - **Basic behavior** (basic)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L372)
-  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L416)
+  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L417)
 
 ### Nearest-neighbor vector search (query.nearest_neighbor)
 
@@ -117,7 +117,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 - **Basic behavior** (basic)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L373)
-  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L417)
+  - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L418)
 
 ### Textual filter expressions (filter.textual)
 
