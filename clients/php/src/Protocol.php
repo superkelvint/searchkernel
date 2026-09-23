@@ -91,6 +91,23 @@ final class Protocol
                 'kind' => ['value' => $value],
             ];
         }
+        if ($value instanceof Bytes) {
+            $bytes = unpack('C*', $value->value);
+            return [
+                'kind_type' => 'BytesValue',
+                'kind' => ['value' => $bytes === false ? [] : array_values($bytes)],
+            ];
+        }
+        if ($value instanceof Tensor) {
+            return [
+                'kind_type' => 'TensorValue',
+                'kind' => [
+                    'type_spec' => $value->typeSpec,
+                    'payload_type' => $value->payloadType,
+                    'payload' => $value->payload,
+                ],
+            ];
+        }
         if (is_array($value)) {
             if (array_is_list($value)) {
                 return [
@@ -189,11 +206,14 @@ final class Protocol
             'BoolValue' => (bool) self::required($payload, 'value'),
             'Int64Value', 'UInt64Value' => self::required($payload, 'value'),
             'Float64Value' => (float) self::required($payload, 'value'),
+            'NonFiniteFloatValue' => self::decodeNonFiniteFloat($payload),
             'StringValue' => (string) self::required($payload, 'value'),
+            'BytesValue' => self::decodeBytes($payload),
             'ValueList' => self::decodeValueList($payload),
             'ValueObject' => self::decodeValueEntries($payload['fields'] ?? []),
+            'TensorValue' => self::decodeTensor($payload),
             default => throw new UnexpectedValueException(
-                'unsupported portable Value kind in first PHP slice: ' . $type
+                'unsupported portable Value kind: ' . $type
             ),
         };
     }
@@ -233,6 +253,47 @@ final class Protocol
             },
             $values,
         );
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function decodeNonFiniteFloat(array $payload): float
+    {
+        return match (self::required($payload, 'kind')) {
+            'NaN' => NAN,
+            'PositiveInfinity' => INF,
+            'NegativeInfinity' => -INF,
+            default => throw new UnexpectedValueException('unknown non-finite float kind'),
+        };
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function decodeBytes(array $payload): Bytes
+    {
+        $values = self::required($payload, 'value');
+        if (!is_array($values)) {
+            throw new UnexpectedValueException('BytesValue.value must be an array');
+        }
+        $binary = '';
+        foreach ($values as $value) {
+            if (!is_int($value) || $value < 0 || $value > 255) {
+                throw new UnexpectedValueException('BytesValue members must be uint8 values');
+            }
+            $binary .= chr($value);
+        }
+        return new Bytes($binary);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function decodeTensor(array $payload): Tensor
+    {
+        $typeSpec = self::required($payload, 'type_spec');
+        $payloadType = self::required($payload, 'payload_type');
+        $tensorPayload = self::required($payload, 'payload');
+        if (!is_string($typeSpec) || !is_string($payloadType) || !is_array($tensorPayload)) {
+            throw new UnexpectedValueException('malformed TensorValue payload');
+        }
+
+        return Tensor::fromWire($typeSpec, $payloadType, $tensorPayload);
     }
 
     /** @param array<string, mixed> $payload */
