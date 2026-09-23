@@ -19,6 +19,15 @@ final class Tensor
         }
     }
 
+    /** @param array<string,mixed> $payload */
+    public static function fromWire(string $typeSpec, string $payloadType, array $payload): self
+    {
+        if (!in_array($payloadType, ['DenseTensorValues', 'SparseTensorCells', 'MixedTensorBlocks'], true)) {
+            throw new InvalidArgumentException('unsupported tensor payload type: ' . $payloadType);
+        }
+        return new self($typeSpec, $payloadType, $payload);
+    }
+
     /** @param list<int|float> $values */
     public static function dense(string $typeSpec, array $values): self
     {
