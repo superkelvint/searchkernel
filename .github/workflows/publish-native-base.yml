@@ -98,7 +98,7 @@ jobs:
           PY
           )
           target=$(rustc -vV | sed -n 's/^host: //p')
-          echo "tag=vespa-base-v1-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}" >> "$GITHUB_OUTPUT"
+          echo "tag=vespa-base-v2-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}" >> "$GITHUB_OUTPUT"
 
       - name: Publish release asset
         env:
