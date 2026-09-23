@@ -48,6 +48,12 @@ class VerificationDagTests(unittest.TestCase):
         self.assertEqual(owners[0].requires, ("ruby-client", "client-contracts"))
         self.assertIn("ruby-client", verification_dag.task_closure(current, ("full",)))
 
+    def test_preregistered_ruby_client_does_not_select_unimplemented_lane(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+        closure = verification_dag.task_closure(current, ("full",))
+        lanes = verification_dag.legacy_lanes_for_tasks(current, closure)
+        self.assertFalse(lanes["ruby"])
+
     def test_unknown_task_reference_is_rejected(self) -> None:
         source = DAG_PATH.read_text(encoding="utf-8")
         mutated = source.replace(
