@@ -141,6 +141,7 @@ pub enum HighlightingIr {
 /// Explicit labels win. Unlabeled aggregation outputs use one backend-independent
 /// name derived from canonical IR so semantic validation and result projection
 /// cannot disagree after native lowering changes enum/type spellings.
+#[doc(hidden)]
 pub fn effective_grouping_output_name(
     output: &GroupingOutputIr,
     aliases: &std::collections::BTreeMap<String, GroupingExpressionIr>,
