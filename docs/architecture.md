@@ -98,10 +98,13 @@ The Rust product API does not go through gRPC, protobuf, JSON, or a portable cli
 
 ### Non-Rust languages
 
-First-party non-Rust clients use the daemon:
+First-party non-Rust clients use the daemon. There are two permitted transport
+representations, both terminating at the same canonical FlatBuffer dispatcher.
+
+The default native/runtime path is binary FlatBuffers over generated gRPC:
 
 ```text
-Python / Go / Java / Node / PHP / ...
+Python / Go / Java / Node / ...
     │
     ▼
 small idiomatic language facade
@@ -122,19 +125,49 @@ Unix-domain socket by default / TCP where appropriate
 searchkerneld
     │
     ▼
-verify canonical FlatBuffer envelope
-    │
-    ▼
 shared request dispatcher
     │
     ▼
-searchkernel-ir / *_to_ir
-    │
-    ▼
-Search Kernel IR
+searchkernel-ir / *_to_ir()
 ```
 
-The language facade may make the API pleasant. It may not redefine Search Kernel semantics.
+For runtimes where HTTP deployment simplicity is an explicit product goal, a
+client may instead use standard FlatBuffers JSON over the generic HTTP execute
+edge:
+
+```text
+PHP / explicitly selected HTTP clients
+    │
+    ▼
+small idiomatic language facade
+    │
+    ▼
+standard FlatBuffers JSON RequestEnvelope
+    │
+    ▼
+POST /v1/execute
+    │
+    ▼
+official BFBS-backed FlatBuffers JSON parser
+    │
+    ▼
+canonical RequestEnvelope FlatBuffer bytes
+    │
+    ▼
+the same shared request dispatcher
+    │
+    ▼
+searchkernel-ir / *_to_ir()
+```
+
+Responses use the inverse path through the official FlatBuffers JSON printer.
+HTTP is therefore a representation/transport choice, not a second Search Kernel
+API.
+
+The language facade may make the API pleasant. It may not redefine Search Kernel
+semantics. In particular, an HTTP client must not introduce REST operation
+models, custom JSON DTOs, defaults, validation, filter parsing, or result
+semantics that differ from the canonical FlatBuffers/IR path.
 
 ---
 
