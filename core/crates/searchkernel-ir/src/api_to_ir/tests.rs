@@ -2194,6 +2194,22 @@ fn match_all_search(grouping: Vec<GroupingInput>) -> SearchIntent {
     }
 }
 
+fn root_output_grouping(
+    label: Option<&str>,
+    aggregation: GroupingAggregationIr,
+) -> GroupingRequestIr {
+    GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                label: label.map(ToOwned::to_owned),
+                expression: GroupingExpressionIr::Aggregation(Box::new(aggregation)),
+            }])],
+            label: None,
+        },
+        continuations: Vec::new(),
+    }
+}
+
 #[test]
 fn search_resolver_validates_facet_fields_and_duplicates_against_schema() {
     let mut context = context();
@@ -2404,6 +2420,157 @@ fn search_resolver_rejects_grouping_output_name_collisions() {
     )
     .expect_err("duplicate grouping output names must fail in the canonical resolver");
     assert_eq!(error.details[0].code, "grouping_output_name_collision");
+}
+
+#[test]
+fn search_resolver_rejects_root_output_name_collisions_across_groupings() {
+    let grouping = || root_output_grouping(Some("metric"), GroupingAggregationIr::Count);
+
+    let error = resolve_search(
+        &context(),
+        match_all_search(vec![
+            GroupingInput::Structured(grouping()),
+            GroupingInput::Structured(grouping()),
+        ]),
+    )
+    .expect_err("root output names must be unique across grouping requests");
+
+    assert_eq!(error.details[0].code, "grouping_output_name_collision");
+    assert_eq!(
+        error.details[0].path.as_deref(),
+        Some("grouping[1].root.operations[0].outputs[0]")
+    );
+}
+
+#[test]
+fn search_resolver_rejects_explicit_and_implicit_root_output_name_collisions() {
+    let explicit = root_output_grouping(Some("count"), GroupingAggregationIr::Count);
+    let implicit = root_output_grouping(None, GroupingAggregationIr::Count);
+
+    let error = resolve_search(
+        &context(),
+        match_all_search(vec![
+            GroupingInput::Structured(explicit),
+            GroupingInput::Structured(implicit),
+        ]),
+    )
+    .expect_err("explicit and implicit root names must share one namespace");
+
+    assert_eq!(error.details[0].code, "grouping_output_name_collision");
+    assert_eq!(
+        error.details[0].path.as_deref(),
+        Some("grouping[1].root.operations[0].outputs[0]")
+    );
+}
+
+#[test]
+fn flatbuffer_grouping_ingress_rejects_the_same_cross_request_collision() {
+    let request = SearchRequestIr::new(
+        QueryIr::MatchAll,
+        Vec::new(),
+        None,
+        Vec::new(),
+        20,
+        0,
+        ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_grouping(vec![
+        root_output_grouping(Some("metric"), GroupingAggregationIr::Count),
+        root_output_grouping(Some("metric"), GroupingAggregationIr::Count),
+    ]);
+    let bytes = crate::search_request_ir_to_api(&request);
+    let request =
+        crate::__flatbuffers::root::<api::SearchRequest>(&bytes).expect("encoded grouping request");
+
+    let error = context()
+        .search_to_ir(request)
+        .expect_err("portable ingress must use cross-request root validation");
+    assert_eq!(error.details[0].code, "grouping_output_name_collision");
+    assert_eq!(
+        error.details[0].path.as_deref(),
+        Some("grouping[1].root.operations[0].outputs[0]")
+    );
+}
+
+#[test]
+fn search_resolver_accepts_distinct_root_output_names_across_groupings() {
+    let request = resolve_search(
+        &context(),
+        match_all_search(vec![
+            GroupingInput::Structured(root_output_grouping(
+                Some("total_count"),
+                GroupingAggregationIr::Count,
+            )),
+            GroupingInput::Structured(root_output_grouping(
+                Some("average_price"),
+                GroupingAggregationIr::Avg(GroupingExpressionIr::Attribute("price".to_owned())),
+            )),
+        ]),
+    )
+    .expect("distinct root names must remain valid");
+
+    assert_eq!(request.grouping().len(), 2);
+}
+
+#[test]
+fn search_resolver_does_not_compare_nested_group_outputs_across_groupings() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+    let grouping = || GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                        label: None,
+                        expression: GroupingExpressionIr::Aggregation(Box::new(
+                            GroupingAggregationIr::Count,
+                        )),
+                    }])],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    resolve_search(
+        &context,
+        match_all_search(vec![
+            GroupingInput::Structured(grouping()),
+            GroupingInput::Structured(grouping()),
+        ]),
+    )
+    .expect("nested group output names do not share the flattened root namespace");
+}
+
+#[test]
+fn search_resolver_does_not_compare_facet_outputs_with_root_outputs() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+    let request = resolve_search(
+        &context,
+        match_all_search(vec![
+            GroupingInput::Facet(FacetInput {
+                field: "brand".to_owned(),
+                name: None,
+                limit: None,
+                sort: None,
+            }),
+            GroupingInput::Structured(root_output_grouping(
+                Some("count"),
+                GroupingAggregationIr::Count,
+            )),
+        ]),
+    )
+    .expect("facet output names do not share the flattened root namespace");
+
+    assert_eq!(request.grouping().len(), 2);
 }
 
 #[test]
