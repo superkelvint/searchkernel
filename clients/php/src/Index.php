@@ -24,7 +24,7 @@ final class Index
     public function insert(array $document): string
     {
         $payload = $this->client->insert(['document' => Protocol::document($document)]);
-        return (string) ($payload['id'] ?? '');
+        return self::resultId($payload, 'InsertResult');
     }
 
     /** @param array<string, mixed> $document */
@@ -35,7 +35,7 @@ final class Index
             $request['condition'] = $condition;
         }
         $payload = $this->client->upsert($request);
-        return (string) ($payload['id'] ?? '');
+        return self::resultId($payload, 'UpsertResult');
     }
 
     /**
@@ -68,7 +68,12 @@ final class Index
             $request['condition'] = $condition;
         }
         $payload = $this->client->delete($request);
-        return (bool) ($payload['deleted'] ?? false);
+        self::resultId($payload, 'DeleteResult');
+        $deleted = $payload['deleted'] ?? null;
+        if (!is_bool($deleted)) {
+            throw new ProtocolException('DeleteResult.deleted must be a boolean');
+        }
+        return $deleted;
     }
 
     public function patch(string $id): PatchBuilder
@@ -149,7 +154,7 @@ final class Index
     public function executePatch(string $id, array $operations): string
     {
         $payload = $this->client->patch(['id' => $id, 'operations' => $operations]);
-        return (string) ($payload['id'] ?? '');
+        return self::resultId($payload, 'PatchResult');
     }
 
     /** @internal
@@ -169,7 +174,7 @@ final class Index
             $request['create'] = ['value' => $create];
         }
         $payload = $this->client->update($request);
-        return (string) ($payload['id'] ?? '');
+        return self::resultId($payload, 'UpdateResult');
     }
 
     /** @internal
@@ -202,6 +207,16 @@ final class Index
     {
         $payload = $this->client->search($request);
         return SearchResult::fromPayload($payload);
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function resultId(array $payload, string $resultType): string
+    {
+        $id = $payload['id'] ?? null;
+        if (!is_string($id) || $id === '') {
+            throw new ProtocolException($resultType . '.id must be a non-empty string');
+        }
+        return $id;
     }
 
     private static function id(string $id): void
