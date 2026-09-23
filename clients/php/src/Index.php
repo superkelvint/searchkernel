@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
+use InvalidArgumentException;
+
 final class Index
 {
-    public function __construct(private readonly HttpTransport $transport) {}
+    private readonly Client $client;
+
+    public function __construct(Transport $transport)
+    {
+        $this->client = new Client($transport);
+    }
 
     public static function connect(string $baseUrl): self
     {
@@ -16,73 +23,207 @@ final class Index
     /** @param array<string, mixed> $document */
     public function insert(array $document): string
     {
-        $payload = $this->execute(
-            'InsertRequest',
-            ['document' => Protocol::document($document)],
-            'InsertResult',
-        );
-        return (string) ($payload['id'] ?? '');
+        $payload = $this->client->insert(['document' => Protocol::document($document)]);
+        return self::resultId($payload, 'InsertResult');
     }
 
     /** @param array<string, mixed> $document */
-    public function upsert(array $document): string
+    public function upsert(array $document, ?string $condition = null): string
     {
-        $payload = $this->execute(
-            'UpsertRequest',
-            ['document' => Protocol::document($document)],
-            'UpsertResult',
-        );
-        return (string) ($payload['id'] ?? '');
+        $request = ['document' => Protocol::document($document)];
+        if ($condition !== null) {
+            $request['condition'] = $condition;
+        }
+        $payload = $this->client->upsert($request);
+        return self::resultId($payload, 'UpsertResult');
     }
 
-    /** @return array<string, mixed>|null */
-    public function get(string $id): ?array
+    /**
+     * @param list<string>|null $fields
+     * @return array<string, mixed>|null
+     */
+    public function get(string $id, ?array $fields = null): ?array
     {
-        $payload = $this->execute('GetRequest', ['id' => $id], 'GetResult');
+        self::id($id);
+        $request = ['id' => $id];
+        if ($fields !== null) {
+            $request['projection'] = ['fields' => array_values($fields)];
+        }
+        $payload = $this->client->get($request);
         $document = $payload['document'] ?? null;
         if ($document === null) {
             return null;
         }
         if (!is_array($document)) {
-            throw new \UnexpectedValueException('GetResult.document must be an object or null');
+            throw new ProtocolException('GetResult.document must be an object or null');
         }
         return Protocol::decodeDocument($document);
     }
 
-    public function delete(string $id): bool
+    public function delete(string $id, ?string $condition = null): bool
     {
-        $payload = $this->execute('DeleteRequest', ['id' => $id], 'DeleteResult');
-        return (bool) ($payload['deleted'] ?? false);
+        self::id($id);
+        $request = ['id' => $id];
+        if ($condition !== null) {
+            $request['condition'] = $condition;
+        }
+        $payload = $this->client->delete($request);
+        self::resultId($payload, 'DeleteResult');
+        return Protocol::boolScalarField(
+            $payload,
+            'deleted',
+            'DeleteResult.deleted',
+            false,
+        );
+    }
+
+    public function patch(string $id): PatchBuilder
+    {
+        self::id($id);
+        return new PatchBuilder($this, $id);
+    }
+
+    public function update(string $id): UpdateBuilder
+    {
+        self::id($id);
+        return new UpdateBuilder($this, $id);
     }
 
     public function search(string $text): SearchBuilder
     {
-        return new SearchBuilder($this, $text);
+        if (trim($text) === '') {
+            throw new InvalidArgumentException('search text must not be empty; use browse() for match-all');
+        }
+        return new SearchBuilder($this, [
+            'source_type' => 'SearchKernelTextQuery',
+            'source' => ['text' => $text],
+        ]);
     }
 
-    /** @internal */
-    public function executeSearch(string $text, ?int $limit): SearchResult
+    public function browse(): SearchBuilder
     {
-        $request = [
-            'query' => [
-                'source_type' => 'SearchKernelTextQuery',
-                'source' => ['text' => $text],
-            ],
-        ];
-        if ($limit !== null) {
-            $request['limit'] = ['value' => $limit];
-        }
+        return new SearchBuilder($this, [
+            'source_type' => 'MatchAllQuery',
+            'source' => [],
+        ]);
+    }
 
-        $payload = $this->execute('SearchRequest', $request, 'SearchResult');
+    /** @param array<string,mixed> $query */
+    public function query(array $query): SearchBuilder
+    {
+        if (($query['source_type'] ?? null) !== 'TypedQuery') {
+            throw new InvalidArgumentException('query() expects a Query helper result');
+        }
+        return new SearchBuilder($this, $query);
+    }
+
+    /** @param array<string,mixed> $parameters */
+    public function yql(string $source, array $parameters = []): YqlBuilder
+    {
+        if (trim($source) === '') {
+            throw new InvalidArgumentException('YQL source must not be empty');
+        }
+        $query = [
+            'source_type' => 'YqlQuery',
+            'source' => ['source' => $source],
+        ];
+        if ($parameters !== []) {
+            $query['source']['parameters'] = Protocol::valueEntries($parameters);
+        }
+        return new YqlBuilder($this, $query);
+    }
+
+    public function analyze(string $text): AnalyzeBuilder
+    {
+        return new AnalyzeBuilder($this, $text);
+    }
+
+    /** @return array<string,mixed> */
+    public function describe(): array
+    {
+        $payload = $this->client->describe();
+        $index = $payload['index'] ?? null;
+        if (!is_array($index)) {
+            throw new ProtocolException('DescribeResult.index must be an object');
+        }
+        return $index;
+    }
+
+    /** @internal
+     *  @param list<array<string,mixed>> $operations
+     */
+    public function executePatch(string $id, array $operations): string
+    {
+        $payload = $this->client->patch(['id' => $id, 'operations' => $operations]);
+        return self::resultId($payload, 'PatchResult');
+    }
+
+    /** @internal
+     *  @param list<array<string,mixed>> $operations
+     */
+    public function executeUpdate(
+        string $id,
+        array $operations,
+        ?string $condition,
+        ?bool $create,
+    ): string {
+        $request = ['id' => $id, 'operations' => $operations];
+        if ($condition !== null) {
+            $request['condition'] = $condition;
+        }
+        if ($create !== null) {
+            $request['create'] = ['value' => $create];
+        }
+        $payload = $this->client->update($request);
+        return self::resultId($payload, 'UpdateResult');
+    }
+
+    /** @internal
+     *  @param array<string,mixed> $request
+     *  @return array<string,mixed>
+     */
+    public function executeAnalyzeRequest(array $request): array
+    {
+        return $this->client->analyze($request);
+    }
+
+    /** @internal
+     *  @param array<string,mixed> $request
+     *  @return array<string,mixed>
+     */
+    public function inspectSearchRequest(array $request): array
+    {
+        $payload = $this->client->inspectQuery(['request' => $request]);
+        $resolved = $payload['resolved_request'] ?? null;
+        if (!is_array($resolved)) {
+            throw new ProtocolException('InspectQueryResult.resolved_request must be an object');
+        }
+        return $resolved;
+    }
+
+    /** @internal
+     *  @param array<string,mixed> $request
+     */
+    public function executeSearchRequest(array $request): SearchResult
+    {
+        $payload = $this->client->search($request);
         return SearchResult::fromPayload($payload);
     }
 
-    /** @param array<string, mixed> $payload
-     *  @return array<string, mixed>
-     */
-    private function execute(string $requestType, array $payload, string $responseType): array
+    /** @param array<string,mixed> $payload */
+    private static function resultId(array $payload, string $resultType): string
     {
-        $response = $this->transport->execute(Protocol::envelope($requestType, $payload));
-        return Protocol::expectPayload($response, $responseType);
+        $id = $payload['id'] ?? null;
+        if (!is_string($id) || $id === '') {
+            throw new ProtocolException($resultType . '.id must be a non-empty string');
+        }
+        return $id;
+    }
+
+    private static function id(string $id): void
+    {
+        if ($id === '') {
+            throw new InvalidArgumentException('document id must be a non-empty string');
+        }
     }
 }
