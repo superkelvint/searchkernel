@@ -760,5 +760,58 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("tracked unstaged changes", result.stdout)
 
 
+    def test_precommit_rejects_relevant_untracked_files_but_not_scratch_files(self) -> None:
+        cases = (
+            ("core/crates/searchkernel-ir/src/untracked.rs", True),
+            ("notes.tmp", False),
+        )
+        for untracked_path, expect_rejection in cases:
+            with self.subTest(untracked_path=untracked_path):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                repo = Path(temp.name)
+                git(repo, "init", "-q")
+                git(repo, "config", "user.name", "CI Test")
+                git(repo, "config", "user.email", "ci@example.invalid")
+                (repo / ".githooks").mkdir(parents=True)
+                (repo / ".github" / "ci").mkdir(parents=True)
+                (repo / "reference" / "vespa").mkdir(parents=True)
+                (repo / "tools").mkdir(parents=True)
+                (repo / "fakebin").mkdir(parents=True)
+                (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+
+                cargo = repo / "fakebin" / "cargo"
+                cargo.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+                cargo.chmod(0o755)
+                git(repo, "add", ".")
+                git(repo, "commit", "-q", "-m", "fixture")
+
+                staged = repo / "docs" / "readme.md"
+                staged.parent.mkdir(parents=True)
+                staged.write_text("changed\n", encoding="utf-8")
+                git(repo, "add", "docs/readme.md")
+
+                untracked = repo / untracked_path
+                untracked.parent.mkdir(parents=True, exist_ok=True)
+                untracked.write_text("untracked\n", encoding="utf-8")
+
+                env = os.environ.copy()
+                env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+                env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
+                result = subprocess.run(
+                    ["bash", str(repo / ".githooks" / "pre-commit")],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    text=True,
+                )
+                self.assertEqual(result.returncode != 0, expect_rejection, result.stdout)
+                if expect_rejection:
+                    self.assertIn("behaviorally relevant untracked files", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
