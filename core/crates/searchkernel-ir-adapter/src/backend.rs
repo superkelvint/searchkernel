@@ -12,9 +12,11 @@ use searchkernel_ir::{
     SearchRequestIr, SearchResult, TotalHitsRelation, UpdateArithmeticOperatorIr,
     UpdateOperationIr, UpdateRequestIr, UpdateResult, UpsertRequestIr, UpsertResult,
 };
+#[cfg(test)]
+use searchkernel_vespa_engine::GroupingAggregation;
 use searchkernel_vespa_engine::{
-    DocumentUpdate, Engine, FieldValue, GroupingAggregation, GroupingExpression, GroupingOutput,
-    GroupingPlan, GroupingResult, GroupingResultValue, MatchFeatureValue, ScalarValue,
+    DocumentUpdate, Engine, FieldValue, GroupingOutput, GroupingPlan, GroupingResult,
+    GroupingResultValue, MatchFeatureValue, ScalarValue,
     TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
 use std::sync::Mutex;
