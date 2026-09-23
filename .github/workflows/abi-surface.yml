@@ -48,8 +48,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Verify self-hosted ABI dependencies
         run: |
+          if ! command -v cargo >/dev/null 2>&1 || ! command -v rustc >/dev/null 2>&1; then
+            echo "::error::Rust toolchain installation did not expose cargo and rustc."
+            exit 1
+          fi
           if ! "$ABI_PYTHON" -c 'import clang.cindex'; then
             echo "::error::The self-hosted runner must provide python3-clang and libclang-dev for /usr/bin/python3."
             exit 1
