@@ -639,6 +639,25 @@ class ExactHeadTests(unittest.TestCase):
             lines,
         )
 
+    def test_unknown_path_trusted_plan_contains_full_active_inventory(self) -> None:
+        result = run(
+            "plan",
+            "--json",
+            input_bytes=b"searchkernel-web/src/new-runtime.ts\0",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout.decode())
+        payload = json.loads(result.stdout.decode())
+        task_ids = {task["id"] for task in payload["tasks"]}
+        for task_id in (
+            "web-dashboard",
+            "vespa-m14",
+            "recovery",
+            "phase9",
+            "c2-historical",
+            "verification-policy",
+        ):
+            self.assertIn(task_id, task_ids)
+
     def test_explicit_non_behavioral_paths_do_not_select_behavioral_lanes(self) -> None:
         for path in (
             "docs/architecture.md",
@@ -765,10 +784,18 @@ class ExactHeadTests(unittest.TestCase):
             [task["id"] for task in tasks],
             [
                 "rust-non-native",
+                "rust-quality",
+                "vespa-m14",
                 "vespa-integration",
+                "phase10-rust-e2e",
+                "m13-grouping-yql",
+                "recovery",
+                "phase9",
                 "native-python-e2e",
                 "client-contracts",
+                "c2-historical",
                 "abi",
+                "persistence-static",
                 "persistence-native",
             ],
         )
@@ -790,18 +817,27 @@ class ExactHeadTests(unittest.TestCase):
         task_ids = {task["id"] for task in payload["tasks"]}
         expected = {
             "rust-non-native",
+            "rust-quality",
             "python-client",
             "typescript-client",
             "php-client",
+            "vespa-m14",
             "vespa-integration",
+            "phase10-rust-e2e",
+            "m13-grouping-yql",
+            "recovery",
+            "phase9",
             "native-python-e2e",
             "protocol-generated",
             "api-conformance",
             "client-contracts",
+            "c2-historical",
             "abi",
+            "persistence-static",
             "persistence-native",
             "issue-queue",
             "verification-policy",
+            "web-dashboard",
         }
         self.assertEqual(task_ids, expected)
         for task in payload["tasks"]:
