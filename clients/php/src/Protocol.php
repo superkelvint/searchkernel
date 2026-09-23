@@ -55,6 +55,22 @@ final class Protocol
         return $entries;
     }
 
+    /** @param array<string,string> $values
+     *  @return list<array{key:string,value:string}>
+     */
+    public static function stringEntries(array $values): array
+    {
+        ksort($values, SORT_STRING);
+        $entries = [];
+        foreach ($values as $key => $value) {
+            if (!is_string($key) || !is_string($value)) {
+                throw new InvalidArgumentException('string entry maps require string keys and values');
+            }
+            $entries[] = ['key' => $key, 'value' => $value];
+        }
+        return $entries;
+    }
+
     /** @return array<string, mixed> */
     public static function value(mixed $value): array
     {
