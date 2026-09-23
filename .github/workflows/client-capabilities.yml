@@ -55,6 +55,14 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          coverage: none
+          tools: none
+        env:
+          runner: self-hosted
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
       - name: Enforce runner-Python workflow policy
@@ -64,6 +72,8 @@ jobs:
       - run: $CI_PYTHON tools/test_check_capabilities.py
       - run: $CI_PYTHON tools/test_check_client_contracts.py
       - run: $CI_PYTHON tools/test_python_dependency_contract.py
+      - name: Run PHP first-slice tests
+        run: php clients/php/tests/run.php
 
   e2e:
     name: Executable E2E evidence
