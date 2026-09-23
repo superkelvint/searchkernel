@@ -936,6 +936,76 @@ truth(
 );
 
 // --------------------------------------------------------------------------
+// FlatBuffers JSON printer default-scalar semantics.
+// --------------------------------------------------------------------------
+
+$defaultDeleteIndex = new Index(new FixedResponseTransport([
+    'protocol_version' => 2,
+    'payload_type' => 'SearchKernel_V2_DeleteResult',
+    'payload' => ['id' => 'doc-default'],
+]));
+same(false, $defaultDeleteIndex->delete('doc-default'), 'omitted DeleteResult.deleted defaults false');
+
+$defaultError = SearchKernelException::fromPayload([
+    'code' => 'InvalidArgument',
+    'message' => 'not retryable',
+    'details' => [],
+]);
+same(false, $defaultError->retryable, 'omitted Error.retryable defaults false');
+
+$defaultAnalyzeIndex = new Index(new FixedResponseTransport([
+    'protocol_version' => 2,
+    'payload_type' => 'SearchKernel_V2_AnalyzeResult',
+    'payload' => ['tokens' => [[
+        'surface' => 'fox',
+        'term' => 'fox',
+        'end_byte' => 3,
+    ]]],
+]));
+$defaultTokens = $defaultAnalyzeIndex->analyze('fox')->execute();
+same(0, $defaultTokens[0]['position'], 'omitted AnalyzedToken.position defaults zero');
+same(0, $defaultTokens[0]['start_byte'], 'omitted AnalyzedToken.start_byte defaults zero');
+same(3, $defaultTokens[0]['end_byte'], 'present AnalyzedToken.end_byte preserved');
+
+$defaultHighlight = SearchKernel\Hit::fromJson([
+    'id' => 'doc-default',
+    'highlights' => [[
+        'field' => 'title',
+        'fragments' => [[
+            'text' => 'fox',
+            'matches' => [['end_byte' => 3]],
+        ]],
+    ]],
+]);
+same(
+    [[0, 3]],
+    $defaultHighlight->highlights[0]['fragments'][0]['matches'],
+    'omitted HighlightSpan.start_byte defaults zero',
+);
+
+same(
+    0.0,
+    Protocol::decodeRelevance([
+        'value_type' => 'FiniteRelevance',
+        'value' => [],
+    ]),
+    'omitted FiniteRelevance.value defaults zero',
+);
+
+$defaultSparseTensor = Tensor::fromWire(
+    'tensor<float>(x{})',
+    'SparseTensorCells',
+    ['cells' => [[
+        'address' => [['dimension' => 'x', 'label' => 'alice']],
+    ]]],
+);
+same(
+    0.0,
+    $defaultSparseTensor->payload['cells'][0]['value'],
+    'omitted TensorCell.value defaults zero',
+);
+
+// --------------------------------------------------------------------------
 // Query/grouping facade parity uses the canonical portable request shape.
 // --------------------------------------------------------------------------
 
