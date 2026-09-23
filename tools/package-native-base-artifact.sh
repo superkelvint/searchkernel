@@ -79,6 +79,48 @@ cp -aL "$BASE/." "$BUNDLE/base/"
 ) | tar -C "$BUNDLE/toolchain/upstream/vespa" -xf -
 cp -aL "$DEPS/include/." "$BUNDLE/toolchain/vespa-deps/include/"
 
+# The adapter link command also contains Vespa production static archives.
+# A clean consumer has no configured Vespa build tree, so every production .a
+# referenced by link.txt must travel with the published toolchain. Preserve
+# each archive at its Vespa-root-relative path so the harvested relative link
+# arguments continue to resolve without rewriting producer build topology.
+python3 - "$LINK_FILE" "$VESPA_ROOT" "$BUNDLE/toolchain/upstream/vespa" <<'PY'
+import pathlib
+import shlex
+import shutil
+import sys
+
+link_file = pathlib.Path(sys.argv[1]).resolve()
+vespa_root = pathlib.Path(sys.argv[2]).resolve()
+destination_root = pathlib.Path(sys.argv[3])
+
+tokens = shlex.split(link_file.read_text(encoding="utf-8"))
+for token in tokens:
+    if not token.endswith(".a"):
+        continue
+    if pathlib.Path(token).name == "libsearchcore_test.a":
+        continue
+
+    source = pathlib.Path(token)
+    if not source.is_absolute():
+        source = link_file.parent / source
+    source = source.resolve()
+
+    try:
+        relative = source.relative_to(vespa_root)
+    except ValueError as exc:
+        raise SystemExit(
+            f"adapter link references static archive outside Vespa root: {token}"
+        ) from exc
+
+    if not source.is_file():
+        raise SystemExit(f"adapter link static archive is missing: {source}")
+
+    destination = destination_root / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+PY
+
 # Configured metadata may contain absolute producer-machine paths. Normalize
 # those paths to the canonical placeholders already understood by build-sdk.sh
 # so the packaged toolchain remains relocatable on a fresh machine.
@@ -102,7 +144,7 @@ import json
 import sys
 bundle_path, marker_path, build_env, target, commit = sys.argv[1:]
 data = {
-    "format_version": 1,
+    "format_version": 2,
     "build_environment": build_env,
     "native_target": target,
     "vespa_commit": commit,
@@ -113,7 +155,7 @@ for path in (bundle_path, marker_path):
         stream.write("\n")
 PY
 
-ASSET="searchkernel-vespa-base-v1-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
+ASSET="searchkernel-vespa-base-v2-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
 ARCHIVE=$OUT_DIR/$ASSET
 rm -f "$ARCHIVE" "$ARCHIVE.sha256"
 (
