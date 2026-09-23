@@ -280,6 +280,20 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("RUBY_RESULT: ${{ needs.ruby.result }}", gate)
         self.assertIn('require_lane Ruby "$RUBY_REQUIRED" "$RUBY_RESULT"', gate)
 
+    def test_preregistered_ruby_lane_guards_runtime_before_invocation(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        ruby = workflow.split("\n  ruby:\n", 1)[1].split(
+            "\n  exact-head-gate:\n", 1
+        )[0]
+        runtime = ruby.split("- name: Verify Ruby runtime", 1)[1].split(
+            "- name: Run Ruby behavioral tests", 1
+        )[0]
+        guard = 'if [[ ! -d clients/ruby ]]'
+        self.assertIn(guard, runtime)
+        self.assertIn("ruby --version", runtime)
+        self.assertLess(runtime.index(guard), runtime.index("ruby --version"))
+        self.assertNotIn("run: ruby --version", runtime)
+
     def test_precommit_runs_native_gate_only_for_native_sensitive_staged_paths(self) -> None:
         for staged_path, expect_native in (
             ("core/native/vespa/abi.cc", True),
