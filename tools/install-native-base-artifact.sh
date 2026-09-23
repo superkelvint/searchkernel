@@ -220,7 +220,16 @@ mkdir -p "$CACHE_ROOT/objects" "$CACHE_ROOT/toolchains"
 retire_existing "$OBJECT" object
 retire_existing "$TOOLCHAIN" toolchain
 
-mv "$BASE" "$OBJECT"
-mv "$BUNDLE/toolchain" "$TOOLCHAIN"
+# Do not rename directly out of the extracted bundle. Published base trees
+# intentionally preserve read-only directory modes, so their archive parent may
+# not be a valid rename source on every filesystem. Copy into writable staging
+# directories under the cache, then atomically publish those staging roots.
+OBJECT_STAGE=$TMP/object-stage
+TOOLCHAIN_STAGE=$TMP/toolchain-stage
+mkdir -p "$OBJECT_STAGE" "$TOOLCHAIN_STAGE"
+cp -a "$BASE/." "$OBJECT_STAGE/"
+cp -a "$BUNDLE/toolchain/." "$TOOLCHAIN_STAGE/"
+mv "$OBJECT_STAGE" "$OBJECT"
+mv "$TOOLCHAIN_STAGE" "$TOOLCHAIN"
 chmod -R a-w "$OBJECT" "$TOOLCHAIN"
 printf '%s\n' "$TOOLCHAIN/upstream/vespa"
