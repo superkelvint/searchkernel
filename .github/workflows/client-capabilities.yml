@@ -82,10 +82,6 @@ jobs:
       - run: $CI_PYTHON tools/test_check_capabilities.py
       - run: $CI_PYTHON tools/test_check_client_contracts.py
       - run: $CI_PYTHON tools/test_python_dependency_contract.py
-      - name: Run PHP semantic/wire tests
-        run: php clients/php/tests/run.php
-      - name: Verify PHP standard FlatBuffers JSON against canonical BFBS
-        run: cargo test -p searchkernel-protocol --test php_json_contract -- --ignored
       - name: Ensure Composer
         run: |
           set -euo pipefail
@@ -97,8 +93,8 @@ jobs:
           curl -fsSL https://getcomposer.org/installer -o "$installer"
           php "$installer" --quiet --install-dir="$RUNNER_TEMP" --filename=composer
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Verify PHP Composer package consumer
-        run: bash clients/php/tests/verify_package.sh
+      - name: Run canonical PHP client verification task
+        run: ./dev test php
 
   e2e:
     name: Executable E2E evidence
