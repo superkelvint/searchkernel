@@ -54,6 +54,9 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
       - name: Enforce runner-Python workflow policy
