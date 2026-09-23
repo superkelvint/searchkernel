@@ -141,6 +141,16 @@ class SearchResultFacetProjectionTest(unittest.TestCase):
         )
         self.assertEqual(result.facets, {"brands": [{"value": "Acme", "count": 3}]})
 
+        raw = self.exact_facet_result(
+            label="brands", count=int64_count(-1), native=True
+        )
+        result = (
+            SearchBuilder(SimpleNamespace(client=Client()), None)
+            .facet("brand", name="brands")
+            .execute()
+        )
+        self.assertEqual(result.facets, {})
+
     def test_missing_or_wrong_count_does_not_project(self):
         missing = self.exact_facet_result(count=ValueEntryT(key="other", value=value(3)))
         wrong_type = self.exact_facet_result(count=ValueEntryT(key="count", value=value(3)))
