@@ -674,7 +674,7 @@ fn validate_root_output_names(
                 for (output_index, output) in outputs.iter().enumerate() {
                     let output_path = format!("{operation_path}.outputs[{output_index}]");
                     if let Some(name) =
-                        crate::model::effective_crate::model::effective_grouping_output_name(output, &aliases)
+                        crate::model::effective_grouping_output_name(output, &aliases)
                     {
                         if !names.insert(name) {
                             return Err(invalid(
