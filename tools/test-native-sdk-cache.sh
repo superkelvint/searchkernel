@@ -12,6 +12,14 @@ bash -n "$source_root/tools/package-native-base-artifact.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
 bash "$source_root/tools/test-native-base-artifact.sh"
 
+# The resolver executes the SDK builder directly. Git mode is therefore part of
+# the build contract: a content-identical 0644 checkout fails before any native
+# provisioning can begin.
+if [[ ! -x "$source_root/core/native/vespa/build-sdk.sh" ]]; then
+    echo 'native SDK builder must be tracked executable' >&2
+    exit 1
+fi
+
 # Cargo must not bootstrap or repair the immutable Vespa base. The default
 # build-script path is read-only; mutation belongs to ./dev native-sdk ensure.
 grep -q 'resolve_shared_native_sdk(&manifest_dir, &target, "path")' \
