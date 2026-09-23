@@ -340,6 +340,20 @@ def validate_dag(dag: VerificationDag) -> None:
     for task_id in dag.tasks:
         visit(task_id, [])
 
+    full_closure = set(task_closure(dag, dag.full_roots))
+    required_by_behavioral = {
+        task_id
+        for subsystem in dag.subsystems
+        if subsystem.behavioral
+        for task_id in subsystem.requires
+    }
+    unreachable_required = sorted(required_by_behavioral - full_closure)
+    if unreachable_required:
+        raise DagError(
+            "behavioral subsystem tasks are not reachable from full_roots: "
+            + ", ".join(unreachable_required)
+        )
+
 
 def matches(path: str, patterns: Iterable[str]) -> bool:
     normalized = path.strip().replace("\\", "/")
