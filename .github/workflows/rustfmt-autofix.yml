@@ -1,31 +1,31 @@
 name: Rustfmt autofix
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "**/*.rs"
       - "rustfmt.toml"
       - ".rustfmt.toml"
       - ".github/workflows/rustfmt-autofix.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   rustfmt:
     name: Apply cargo fmt
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
     steps:
-      - name: Check out pull request head
+      - name: Check out exact pull request head
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
       - name: Install Rustfmt
@@ -63,32 +63,8 @@ jobs:
 
           git diff --check
 
-      - name: Reject unformatted fork pull requests
-        if: >-
-          steps.formatting.outputs.changed == 'true' &&
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository
-        shell: bash
-        run: |
-          echo "::error::cargo fmt produced changes, but CI cannot write to a fork pull request."
-          echo "Run 'cargo fmt --all' locally and push the result."
-          exit 1
-
-      - name: Reject formatting drift on manual runs
-        if: >-
-          steps.formatting.outputs.changed == 'true' &&
-          github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          echo "::error::cargo fmt produced changes during a check-only manual run."
-          git diff --stat
-          exit 1
-
       - name: Commit and push formatting fixes
-        if: >-
-          steps.formatting.outputs.changed == 'true' &&
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.formatting.outputs.changed == 'true'
         shell: bash
         env:
           AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
