@@ -32,8 +32,10 @@ final class Tensor
     {
         $encoded = [];
         foreach ($cells as $cell) {
-            if (!is_array($cell) || !array_key_exists('address', $cell) || !array_key_exists('value', $cell)) {
-                throw new InvalidArgumentException('sparse tensor cells require address and value');
+            if (!is_array($cell)
+                || !is_array($cell['address'] ?? null)
+                || !array_key_exists('value', $cell)) {
+                throw new InvalidArgumentException('sparse tensor cells require an address map and value');
             }
             $encoded[] = [
                 'address' => self::address($cell['address']),
@@ -50,8 +52,10 @@ final class Tensor
     {
         $encoded = [];
         foreach ($blocks as $block) {
-            if (!is_array($block) || !array_key_exists('address', $block) || !array_key_exists('values', $block)) {
-                throw new InvalidArgumentException('mixed tensor blocks require address and values');
+            if (!is_array($block)
+                || !is_array($block['address'] ?? null)
+                || !is_array($block['values'] ?? null)) {
+                throw new InvalidArgumentException('mixed tensor blocks require an address map and values list');
             }
             $encoded[] = [
                 'address' => self::address($block['address']),
