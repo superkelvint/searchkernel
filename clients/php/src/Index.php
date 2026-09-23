@@ -69,11 +69,12 @@ final class Index
         }
         $payload = $this->client->delete($request);
         self::resultId($payload, 'DeleteResult');
-        $deleted = $payload['deleted'] ?? null;
-        if (!is_bool($deleted)) {
-            throw new ProtocolException('DeleteResult.deleted must be a boolean');
-        }
-        return $deleted;
+        return Protocol::boolScalarField(
+            $payload,
+            'deleted',
+            'DeleteResult.deleted',
+            false,
+        );
     }
 
     public function patch(string $id): PatchBuilder
