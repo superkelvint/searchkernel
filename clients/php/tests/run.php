@@ -14,6 +14,7 @@ spl_autoload_register(static function (string $class): void {
 });
 
 use SearchKernel\Bytes;
+use SearchKernel\Client;
 use SearchKernel\Coverage;
 use SearchKernel\HttpTransport;
 use SearchKernel\Index;
@@ -1173,5 +1174,46 @@ SKC: result.highlighting/basic kinds=conformance runtime=http
 SKC: result.grouping_tree/basic kinds=conformance runtime=http
 SKC: result.degradation_metadata/basic kinds=conformance runtime=http
 */
+
+
+$expectedOperations = [
+    'insert' => ['InsertRequest', 'InsertResult'],
+    'upsert' => ['UpsertRequest', 'UpsertResult'],
+    'patch' => ['PatchRequest', 'PatchResult'],
+    'update' => ['UpdateRequest', 'UpdateResult'],
+    'delete' => ['DeleteRequest', 'DeleteResult'],
+    'get' => ['GetRequest', 'GetResult'],
+    'search' => ['SearchRequest', 'SearchResult'],
+    'analyze' => ['AnalyzeRequest', 'AnalyzeResult'],
+    'describe' => ['DescribeRequest', 'DescribeResult'],
+    'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
+];
+same(array_keys($expectedOperations), Protocol::operations(), 'low-level portable operation list');
+foreach ($expectedOperations as $operation => $types) {
+    same($types, Protocol::operation($operation), 'low-level operation mapping: ' . $operation);
+}
+
+$lowLevelTransport = new RecordingTransport();
+$lowLevel = new Client($lowLevelTransport);
+same('doc-low', $lowLevel->insert(['document' => ['id' => 'doc-low', 'fields' => []]])['id'], 'low-level insert');
+same('doc-low', $lowLevel->upsert(['document' => ['id' => 'doc-low', 'fields' => []]])['id'], 'low-level upsert');
+same('doc-low', $lowLevel->patch(['id' => 'doc-low', 'operations' => []])['id'], 'low-level patch');
+same('doc-low', $lowLevel->update(['id' => 'doc-low', 'operations' => []])['id'], 'low-level update');
+same(true, $lowLevel->delete(['id' => 'doc-low'])['deleted'], 'low-level delete');
+same(null, $lowLevel->get(['id' => 'doc-low'])['document'], 'low-level get');
+same('Exact', $lowLevel->search(['query' => ['source_type' => 'MatchAllQuery', 'source' => []]])['total_hits']['relation'], 'low-level search');
+same('Running', $lowLevel->analyze(['text' => 'Running'])['tokens'][0]['surface'], 'low-level analyze');
+same('test', $lowLevel->describe()['index']['name'], 'low-level describe');
+same(
+    'MatchAllQuery',
+    $lowLevel->inspectQuery(['request' => ['query' => ['source_type' => 'MatchAllQuery', 'source' => []]]])['resolved_request']['query']['source_type'],
+    'low-level inspect query',
+);
+
+throws(
+    InvalidArgumentException::class,
+    static fn () => Protocol::operation('future_operation'),
+    'unknown low-level operation fails closed',
+);
 
 echo "PHP client semantic-spine tests PASS\n";
