@@ -40,6 +40,8 @@ on:
       - "tools/test-native-environment-fingerprint.sh"
       - "tools/resolve-native-sdk.sh"
       - "tools/test-native-sdk-cache.sh"
+      - "tools/run_clippy.py"
+      - "tools/test_run_clippy.py"
   workflow_dispatch:
 
 concurrency:
