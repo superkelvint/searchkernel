@@ -452,6 +452,14 @@ where
 }
 
 fn admission_response(request: &HttpRequest<BoxBody>) -> HttpResponse<BoxBody> {
+    if request.uri().path() == JSON_EXECUTE_PATH {
+        return http_body_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "text/plain; charset=utf-8",
+            Bytes::from_static(b"Search Kernel request admission limit reached"),
+        );
+    }
+
     let status = Status::resource_exhausted("Search Kernel request admission limit reached");
     if request
         .headers()
