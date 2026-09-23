@@ -14,6 +14,7 @@ ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 PERSISTENCE_IMMUTABILITY = SCRIPT.parents[2] / "tools" / "check-persistence-fixture-immutability.sh"
+DEV = SCRIPT.parents[2] / "dev"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -155,6 +156,14 @@ class ExactHeadTests(unittest.TestCase):
             "- name: Verify self-hosted ABI dependencies", 1
         )[0]
         self.assertIn("components: rustfmt", rust_step)
+
+    def test_dev_abi_verifier_uses_repository_header_without_sdk_dependency(self) -> None:
+        source = DEV.read_text(encoding="utf-8")
+        self.assertIn(
+            'SK_NATIVE_ABI_HEADER="$ROOT/core/native/vespa/searchkernel_vespa.h" \\\n'
+            '                bash "$ROOT/tools/check-native-bindings.sh"',
+            source,
+        )
 
     def test_precommit_checks_staged_native_abi_authorities(self) -> None:
         hook = HOOK.read_text(encoding="utf-8")
