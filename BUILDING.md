@@ -41,7 +41,7 @@ verification, generation, and acceptance lanes:
 ./dev test rust-api
 ./dev test python
 ./dev regen protocol
-./dev verify m13
+./dev verify m14
 ./dev verify integration
 ./dev install flatbuffers
 ./dev native-sdk ensure
@@ -116,9 +116,12 @@ native build tooling, or real-Vespa acceptance artifacts, run the applicable
 native verifier locally and include the exact command and result in the pull
 request. Do not interpret a green non-native CI run as native verification.
 
-The repository-managed pre-commit hook enforces this split. Staged native-sensitive
-changes run both the real-Vespa gate and the real Python gRPC E2E through
-`tools/run-python-native-e2e.sh`. That runner opts the native E2E test in explicitly
+The repository-managed pre-commit hook enforces this split. When any checked-in
+native ABI authority is staged, it first checks the Git index with
+`tools/check-native-abi-authorities.py --git-index`, so a version bump cannot
+commit with stale manifests, Rust constants, reference contracts, or pinned
+metadata. Staged native-sensitive changes then run both the real-Vespa gate and
+the real Python gRPC E2E through `tools/run-python-native-e2e.sh`. That runner opts the native E2E test in explicitly
 and bootstraps the native SDK first. Non-native-only Rust or Python changes do not
 trigger native verification solely because their language lane is selected.
 Ordinary Python unittest discovery leaves the real gRPC E2E skipped, so GitHub CI

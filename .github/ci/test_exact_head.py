@@ -145,6 +145,22 @@ class ExactHeadTests(unittest.TestCase):
         )[0]
         self.assertIn("components: rustfmt", rust_step)
 
+    def test_precommit_checks_staged_native_abi_authorities(self) -> None:
+        hook = HOOK.read_text(encoding="utf-8")
+        self.assertIn(
+            "python3 tools/check-native-abi-authorities.py --git-index",
+            hook,
+        )
+        for authority in (
+            "core/native/vespa/searchkernel_vespa.h",
+            "core/native/vespa/manifest.json",
+            "core/crates/searchkernel-vespa-bindings/src/abi.rs",
+            "core/crates/searchkernel-vespa-bindings/src/bindings.rs",
+            "reference/vespa/NATIVE_ABI_CONTRACT.h",
+            "reference/vespa/PINNED_VESPA.json",
+        ):
+            self.assertIn(authority, hook)
+
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         typescript = workflow.split("\n  typescript:\n", 1)[1].split(
@@ -517,6 +533,12 @@ class ExactHeadTests(unittest.TestCase):
                 "native=false",
             },
             b".githooks/pre-commit\0": {
+                "rust=false",
+                "python=false",
+                "typescript=false",
+                "native=true",
+            },
+            b"tools/check-native-abi-authorities.py\0": {
                 "rust=false",
                 "python=false",
                 "typescript=false",
