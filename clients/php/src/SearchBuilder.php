@@ -20,17 +20,26 @@ class SearchBuilder
     private array $facets = [];
     /** @var list<GroupingOutput> */
     private array $aggregates = [];
+    /** @var list<array<string,mixed>> */
+    private array $rawGroupings = [];
     /** @var list<string>|null */
     private ?array $fields = null;
     /** @var list<string>|null */
     private ?array $highlights = null;
-    /** @var array<string,mixed> */
+    /** @var array<string,array{type:string,value:mixed}> */
     private array $inputs = [];
     /** @var array<string,string> */
     private array $rankProperties = [];
     /** @var array<string,mixed> */
     private array $properties = [];
+    /** @var array<string,mixed> */
+    private array $queryModel = [];
     private ?string $summary = null;
+    private ?string $presentationFormat = null;
+    private ?bool $bolding = null;
+    private ?bool $presentationTiming = null;
+    private ?string $queryProfile = null;
+    private ?string $searchChain = null;
     private ?string $ranking = null;
     private ?int $limit = null;
     private ?int $offset = null;
@@ -144,6 +153,30 @@ class SearchBuilder
         ]);
     }
 
+    public function format(string $format): self
+    {
+        if ($format === '') {
+            throw new InvalidArgumentException('presentation format must not be empty');
+        }
+        $copy = clone $this;
+        $copy->presentationFormat = $format;
+        return $copy;
+    }
+
+    public function bolding(bool $enabled): self
+    {
+        $copy = clone $this;
+        $copy->bolding = $enabled;
+        return $copy;
+    }
+
+    public function timing(bool $enabled): self
+    {
+        $copy = clone $this;
+        $copy->presentationTiming = $enabled;
+        return $copy;
+    }
+
     public function fields(string ...$fields): self
     {
         $copy = clone $this;
@@ -162,6 +195,15 @@ class SearchBuilder
     {
         $copy = clone $this;
         $copy->highlights = $fields;
+        return $copy;
+    }
+
+    public function facets(string ...$fields): self
+    {
+        $copy = $this;
+        foreach ($fields as $field) {
+            $copy = $copy->facet($field);
+        }
         return $copy;
     }
 
@@ -201,6 +243,19 @@ class SearchBuilder
         return $copy;
     }
 
+    public function rawGrouping(string $expression): self
+    {
+        if (trim($expression) === '') {
+            throw new InvalidArgumentException('raw grouping expression must not be empty');
+        }
+        $copy = clone $this;
+        $copy->rawGroupings[] = [
+            'source_type' => 'RawGroupingSource',
+            'source' => ['expression' => $expression],
+        ];
+        return $copy;
+    }
+
     public function ranking(string $profile): self
     {
         if ($profile === '') {
@@ -217,7 +272,30 @@ class SearchBuilder
             throw new InvalidArgumentException('query input name must not be empty');
         }
         $copy = clone $this;
-        $copy->inputs[$name] = $value;
+        $copy->inputs[$name] = ['type' => 'LiteralQueryInput', 'value' => $value];
+        return $copy;
+    }
+
+    public function inputExpr(string $name, string $expression): self
+    {
+        if ($name === '' || trim($expression) === '') {
+            throw new InvalidArgumentException('expression query input requires a name and expression');
+        }
+        $copy = clone $this;
+        $copy->inputs[$name] = ['type' => 'ExpressionQueryInput', 'value' => $expression];
+        return $copy;
+    }
+
+    /** @param array<string,mixed> $properties */
+    public function rankProperties(array $properties): self
+    {
+        $copy = $this;
+        foreach ($properties as $name => $value) {
+            if (!is_string($name)) {
+                throw new InvalidArgumentException('rank property names must be strings');
+            }
+            $copy = $copy->rankProperty($name, $value);
+        }
         return $copy;
     }
 
@@ -228,6 +306,99 @@ class SearchBuilder
         }
         $copy = clone $this;
         $copy->rankProperties[$name] = (string) $value;
+        return $copy;
+    }
+
+    /** @param array<string,mixed> $properties */
+    public function properties(array $properties): self
+    {
+        $copy = $this;
+        foreach ($properties as $name => $value) {
+            if (!is_string($name)) {
+                throw new InvalidArgumentException('property names must be strings');
+            }
+            $copy = $copy->property($name, $value);
+        }
+        return $copy;
+    }
+
+    public function language(string $language): self
+    {
+        return $this->withQueryModel('language', $language);
+    }
+
+    public function locale(string $locale): self
+    {
+        return $this->withQueryModel('locale', $locale);
+    }
+
+    public function defaultIndex(string $field): self
+    {
+        return $this->withQueryModel('default_index', $field);
+    }
+
+    public function sources(string ...$sources): self
+    {
+        return $this->withQueryModel('sources', $sources);
+    }
+
+    public function restrict(string ...$documentTypes): self
+    {
+        return $this->withQueryModel('restrict', $documentTypes);
+    }
+
+    public function searchPath(string $path): self
+    {
+        return $this->withQueryModel('search_path', $path);
+    }
+
+    public function searchGroup(int $group): self
+    {
+        self::uint32($group, 'search group');
+        return $this->withQueryModel('search_group', ['value' => $group]);
+    }
+
+    public function queryString(string $query): self
+    {
+        return $this->withQueryModel('query_string', $query);
+    }
+
+    public function queryModelType(
+        string $composite = '',
+        string $tokenization = '',
+        string $syntax = '',
+        string $profile = '',
+        ?bool $yqlDefault = null,
+    ): self {
+        $type = [
+            'composite' => $composite,
+            'tokenization' => $tokenization,
+            'syntax' => $syntax,
+            'profile' => $profile,
+        ];
+        if ($yqlDefault !== null) {
+            $type['is_yql_default'] = ['value' => $yqlDefault];
+        }
+        return $this->withQueryModel('type', $type);
+    }
+
+    public function queryProfile(string $profile): self
+    {
+        if ($profile === '') {
+            throw new InvalidArgumentException('query profile must not be empty');
+        }
+        $copy = clone $this;
+        $copy->queryProfile = $profile;
+        return $copy;
+    }
+
+    public function searchChain(string $chain): self
+    {
+        if ($chain === '') {
+            throw new InvalidArgumentException('search chain must not be empty');
+        }
+        $copy = clone $this;
+        $copy->searchChain = $chain;
         return $copy;
     }
 
@@ -343,6 +514,7 @@ class SearchBuilder
         if ($this->aggregates !== []) {
             $grouping[] = Group::rootAggregationRequest($this->aggregates);
         }
+        array_push($grouping, ...$this->rawGroupings);
         if ($grouping !== []) {
             $request['grouping'] = $grouping;
         }
@@ -356,11 +528,14 @@ class SearchBuilder
             $inputs = $this->inputs;
             ksort($inputs, SORT_STRING);
             $request['inputs'] = [];
-            foreach ($inputs as $name => $value) {
+            foreach ($inputs as $name => $input) {
+                $payload = $input['type'] === 'ExpressionQueryInput'
+                    ? ['expression' => (string) $input['value']]
+                    : ['value' => Protocol::value($input['value'])];
                 $request['inputs'][] = [
                     'name' => $name,
-                    'input_type' => 'LiteralQueryInput',
-                    'input' => ['value' => Protocol::value($value)],
+                    'input_type' => $input['type'],
+                    'input' => $payload,
                 ];
             }
         }
@@ -384,8 +559,27 @@ class SearchBuilder
         if ($this->highlights !== null) {
             $presentation['highlighting'] = ['fields' => $this->highlights];
         }
+        if ($this->presentationFormat !== null) {
+            $presentation['format'] = $this->presentationFormat;
+        }
+        if ($this->bolding !== null) {
+            $presentation['bolding'] = ['value' => $this->bolding];
+        }
+        if ($this->presentationTiming !== null) {
+            $presentation['timing'] = ['value' => $this->presentationTiming];
+        }
         if ($presentation !== []) {
             $request['presentation'] = $presentation;
+        }
+
+        if ($this->queryModel !== []) {
+            $request['query_model'] = $this->queryModel;
+        }
+        if ($this->queryProfile !== null) {
+            $request['query_profile'] = $this->queryProfile;
+        }
+        if ($this->searchChain !== null) {
+            $request['search_chain'] = $this->searchChain;
         }
 
         if ($this->properties !== []) {
@@ -393,6 +587,13 @@ class SearchBuilder
         }
 
         return $request;
+    }
+
+    private function withQueryModel(string $key, mixed $value): self
+    {
+        $copy = clone $this;
+        $copy->queryModel[$key] = $value;
+        return $copy;
     }
 
     /** @param array<string,mixed> $sort */
