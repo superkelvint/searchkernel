@@ -124,8 +124,9 @@ fn standard_json_accepts_lossless_decimal_strings_for_64_bit_scalars() {
         "document": {
           "id": "full-width-integers",
           "fields": [
-            {"key":"i64","value":{"kind_type":"Int64Value","kind":{"value":"9223372036854775807"}}},
-            {"key":"u64","value":{"kind_type":"UInt64Value","kind":{"value":"18446744073709551615"}}}
+            {"key":"i64_min","value":{"kind_type":"Int64Value","kind":{"value":"-9223372036854775808"}}},
+            {"key":"i64_max","value":{"kind_type":"Int64Value","kind":{"value":"9223372036854775807"}}},
+            {"key":"u64_max","value":{"kind_type":"UInt64Value","kind":{"value":"18446744073709551615"}}}
           ]
         }
       }
@@ -140,10 +141,14 @@ fn standard_json_accepts_lossless_decimal_strings_for_64_bit_scalars() {
 
     assert_eq!(
         fields[0]["value"]["kind"]["value"].as_i64(),
+        Some(i64::MIN)
+    );
+    assert_eq!(
+        fields[1]["value"]["kind"]["value"].as_i64(),
         Some(i64::MAX)
     );
     assert_eq!(
-        fields[1]["value"]["kind"]["value"].as_u64(),
+        fields[2]["value"]["kind"]["value"].as_u64(),
         Some(u64::MAX)
     );
 }
