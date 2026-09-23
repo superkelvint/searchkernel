@@ -43,13 +43,19 @@ ranking/grouping semantics, request normalization, or backend behavior.
 The current branch covers the public operations exercised by the canonical
 client E2E:
 
-- `Index::connect()`, insert/upsert/get/delete, patch and advanced update;
-- search, browse, typed query, and raw YQL entry points;
-- textual filters with clause-local typed bindings;
-- field/relevance/feature sorting, projection, highlighting, offset/limit/page;
-- ranking profiles, query inputs, rank properties, and generic properties;
-- facets, root aggregations, structured/nested grouping, aliases, ordering,
-  grouping keep filters, and summary aggregation;
+- `Index::connect()`, insert/upsert/get/delete, patch and advanced update,
+  including matched-element and tensor-modify request unions;
+- search, browse, typed query, raw YQL, analyze, describe, and query inspection;
+- textual filters with clause-local typed bindings and explicit search-field
+  selection/weights;
+- field/relevance/feature/raw sorting, projection, highlighting,
+  offset/limit/page, timeout, and presentation controls;
+- ranking profiles, literal/expression query inputs, rank properties, generic
+  properties, query-model controls, query profile, and search chain;
+- facets, root aggregations, raw grouping, structured/nested grouping,
+  functions, aliases, arithmetic, ordering, finite/infinite limits, precision,
+  grouping filter/keep/where, continuation request tokens, and summary/XOR/
+  quantile aggregations;
 - recursive hit/group result decoding, facets/aggregations projections,
   match/rank features, coverage/degradation, timing, result errors, and
   continuations;
@@ -59,10 +65,17 @@ client E2E:
 - strict transport, protocol, and portable-error domains with malformed wire
   data rejected rather than coerced.
 
-The typed query/grouping helper vocabulary is intentionally the subset required
-by the current canonical E2E. New ergonomic helpers must continue to lower
-directly to the canonical FlatBuffers JSON shapes rather than implementing
-query/grouping semantics in PHP.
+Typed-query helpers cover the canonical boolean, comparison/range/IN,
+phrase/proximity, weighted retrieval, rank, labels/non-empty, geo,
+nearest-neighbor, predicate, user-input, text, and annotation families. These
+helpers and the grouping facade only construct canonical portable unions;
+validation, defaults, normalization, and backend capability decisions remain
+server-owned.
+
+`YqlBuilder` is intentionally narrower than `SearchBuilder`: it exposes
+request-level controls that may coexist with raw YQL (properties, grouping,
+ranking, inputs, pagination, timeout, execute/inspect) and does not expose
+competing high-level filter, sort, search-field, or projection methods.
 
 ## Lifecycle boundary
 
