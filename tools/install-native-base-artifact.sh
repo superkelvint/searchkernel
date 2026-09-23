@@ -173,7 +173,7 @@ bundle = read(bundle_path)
 base = read(base_path)
 marker = read(marker_path)
 expected = {
-    "format_version": 1,
+    "format_version": 2,
     "build_environment": build_env,
     "native_target": target,
     "vespa_commit": commit,
@@ -207,6 +207,43 @@ CONFIGURED_DIR=$VESPA_ROOT/searchcore/src/tests/proton/documentdb/CMakeFiles/sea
 }
 [[ -d "$DEPS/include" ]] || { echo "published Vespa base is missing dependency headers" >&2; exit 1; }
 mkdir -p "$DEPS/lib64"
+
+# A published toolchain is link-complete only when every production static
+# archive referenced by the harvested Vespa link command is present. This
+# deliberately rejects the old v1 shape that could appear valid until the
+# consumer reached the final adapter link.
+python3 - "$CONFIGURED_DIR/link.txt" "$VESPA_ROOT" <<'PY'
+import pathlib
+import shlex
+import sys
+
+link_file = pathlib.Path(sys.argv[1]).resolve()
+vespa_root = pathlib.Path(sys.argv[2]).resolve()
+
+for token in shlex.split(link_file.read_text(encoding="utf-8")):
+    if not token.endswith(".a"):
+        continue
+    if pathlib.Path(token).name == "libsearchcore_test.a":
+        continue
+
+    if token.startswith("/work/vespa/"):
+        archive = vespa_root / token[len("/work/vespa/"):]
+    else:
+        archive = pathlib.Path(token)
+        if not archive.is_absolute():
+            archive = link_file.parent / archive
+
+    archive = archive.resolve()
+    try:
+        archive.relative_to(vespa_root)
+    except ValueError as exc:
+        raise SystemExit(
+            f"published Vespa link references static archive outside packaged toolchain: {token}"
+        ) from exc
+
+    if not archive.is_file():
+        raise SystemExit(f"published Vespa base is missing adapter static archive: {token}")
+PY
 
 retire_existing() {
     local path=$1
