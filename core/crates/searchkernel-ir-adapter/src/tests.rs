@@ -217,6 +217,44 @@ fn canonical_two_level_grouping_lowers_to_linear_attribute_plan() {
 }
 
 #[test]
+fn grouping_range_rejects_integer_bounds_that_round_as_f64() {
+    let request = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("category".into())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Filter(GroupingFilterIr::Range {
+                            expression: Box::new(GroupingExpressionIr::Attribute("price".into())),
+                            lower: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                                9_007_199_254_740_993,
+                            ))),
+                            upper: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                                9_007_199_254_740_994,
+                            ))),
+                            include_lower: true,
+                            include_upper: false,
+                        }),
+                        GroupingOperationIr::Output(vec![GroupingOutputIr {
+                            label: None,
+                            expression: count_expression(),
+                        }]),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = lower_groupings(&[request])
+        .expect_err("integer grouping bounds must not be silently rounded to f64");
+    assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    assert_eq!(error.details[0].code, "grouping_filter_bound_precision_loss");
+}
+
+#[test]
 fn semantically_different_all_each_trees_do_not_share_lowering() {
     let canonical = native_grouping(&[("category", vec![count_expression()])]);
     let mut all_materialization = canonical.clone();
@@ -1566,6 +1604,132 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     assert_eq!(qty_two.value, Some(Value::Int64(2)));
     assert_eq!(qty_two.fields["count"], Value::Int64(1));
     assert_eq!(qty_two.fields["average(price)"], Value::Float64(5.0));
+
+    let safe_integer_boundary = (1_i64 << 53) - 1;
+    let adjacent_integer = 1_i64 << 53;
+    for (id, price) in [
+        ("doc:safe-boundary", safe_integer_boundary),
+        ("doc:adjacent-boundary", adjacent_integer),
+    ] {
+        backend
+            .insert(InsertRequestIr::new(DocumentIr::new(
+                DocumentId::parse(id).unwrap(),
+                std::collections::BTreeMap::from([
+                    (
+                        field("title"),
+                        FieldValueIr::Single(ScalarValueIr::String(id.to_owned())),
+                    ),
+                    (
+                        field("price"),
+                        FieldValueIr::Single(ScalarValueIr::Int64(price)),
+                    ),
+                    (
+                        field("sku"),
+                        FieldValueIr::Single(ScalarValueIr::String(id.to_owned())),
+                    ),
+                    (
+                        field("category"),
+                        FieldValueIr::Single(ScalarValueIr::String("precision".to_owned())),
+                    ),
+                    (
+                        field("qty"),
+                        FieldValueIr::Single(ScalarValueIr::Int64(1)),
+                    ),
+                ]),
+            )))
+            .expect("insert precision-boundary document");
+    }
+
+    let mut safe_precision_grouping = native_grouping(&[("price", vec![count_expression()])]);
+    let each = safe_precision_grouping
+        .root
+        .operations
+        .iter_mut()
+        .find_map(|operation| match operation {
+            GroupingOperationIr::Each(each) => Some(each),
+            _ => None,
+        })
+        .expect("safe precision grouping has an each operation");
+    each.operations.insert(
+        0,
+        GroupingOperationIr::Filter(GroupingFilterIr::Range {
+            expression: Box::new(GroupingExpressionIr::Attribute("price".into())),
+            lower: Box::new(GroupingExpressionIr::Literal(RequestValueIr::Int64(
+                safe_integer_boundary,
+            ))),
+            upper: Box::new(GroupingExpressionIr::Literal(RequestValueIr::Int64(
+                safe_integer_boundary,
+            ))),
+            include_lower: true,
+            include_upper: true,
+        }),
+    );
+    let result = backend
+        .search(
+            comparison
+                .clone()
+                .with_query(QueryIr::MatchAll)
+                .with_grouping(vec![safe_precision_grouping]),
+        )
+        .expect("execute grouping at the last contiguous exact integer boundary");
+    let ResultNode::Group(group) = result.root else {
+        panic!("search root must be a group");
+    };
+    let grouping = group
+        .children
+        .iter()
+        .find_map(|node| match node {
+            ResultNode::Group(grouping) => Some(grouping),
+            ResultNode::Hit(_) => None,
+        })
+        .expect("precision grouping result");
+    assert_eq!(grouping.children.len(), 1);
+    let ResultNode::Group(boundary_group) = &grouping.children[0] else {
+        panic!("precision result child must be a group");
+    };
+    assert_eq!(
+        boundary_group.value,
+        Some(Value::Int64(safe_integer_boundary))
+    );
+    assert_eq!(boundary_group.fields["count"], Value::Int64(1));
+
+    let mut precision_grouping = native_grouping(&[("price", vec![count_expression()])]);
+    let each = precision_grouping
+        .root
+        .operations
+        .iter_mut()
+        .find_map(|operation| match operation {
+            GroupingOperationIr::Each(each) => Some(each),
+            _ => None,
+        })
+        .expect("precision grouping has an each operation");
+    each.operations.insert(
+        0,
+        GroupingOperationIr::Filter(GroupingFilterIr::Range {
+            expression: Box::new(GroupingExpressionIr::Attribute("price".into())),
+            lower: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                9_007_199_254_740_992,
+            ))),
+            upper: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                9_007_199_254_740_993,
+            ))),
+            include_lower: true,
+            include_upper: false,
+        }),
+    );
+    let error = backend
+        .search(
+            comparison
+                .clone()
+                .with_query(QueryIr::MatchAll)
+                .with_grouping(vec![precision_grouping]),
+        )
+        .expect_err("precision-losing grouping bounds must fail before native execution");
+    assert_eq!(error.code, ErrorCode::Unsupported);
+    assert_eq!(
+        error.details[0].code,
+        "grouping_filter_bound_precision_loss"
+    );
 
     let mut invalid_topology = native_grouping(&[(
         "category",

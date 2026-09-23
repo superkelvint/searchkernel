@@ -2337,6 +2337,68 @@ fn flatbuffer_grouping_ingress_uses_canonical_alias_validation() {
 }
 
 #[test]
+fn grouping_range_integer_bounds_round_trip_through_portable_ir() {
+    let lower = 9_007_199_254_740_993;
+    let upper = 9_007_199_254_740_994;
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("price".into())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Filter(GroupingFilterIr::Range {
+                            expression: Box::new(GroupingExpressionIr::Attribute("price".into())),
+                            lower: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                                lower,
+                            ))),
+                            upper: Box::new(GroupingExpressionIr::Literal(RequestValueIr::UInt64(
+                                upper,
+                            ))),
+                            include_lower: true,
+                            include_upper: false,
+                        }),
+                        GroupingOperationIr::Output(vec![GroupingOutputIr {
+                            label: None,
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        }]),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+    let request = SearchRequestIr::new(
+        QueryIr::MatchAll,
+        Vec::new(),
+        None,
+        Vec::new(),
+        20,
+        0,
+        ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_grouping(vec![grouping]);
+    let bytes = crate::search_request_ir_to_api(&request);
+    let api_request =
+        crate::__flatbuffers::root::<api::SearchRequest>(&bytes).expect("encoded search request");
+
+    let mut context = context();
+    context.definition.fields[1].capabilities.groupable = true;
+    let round_trip = context
+        .search_to_ir(api_request)
+        .expect("portable grouping should resolve");
+
+    assert_eq!(round_trip.grouping(), request.grouping());
+}
+
+#[test]
 fn search_resolver_rejects_unknown_grouping_alias_references() {
     let mut context = context();
     context.definition.fields[0].capabilities.groupable = true;

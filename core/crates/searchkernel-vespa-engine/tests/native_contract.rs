@@ -1,7 +1,8 @@
 #![cfg(feature = "native")]
 
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Document, Engine, Field, FieldType, Query, RangeBound, RankProfile, Schema,
+    ConfigCompiler, Document, Engine, Field, FieldType, GroupingAggregation, GroupingExpression,
+    GroupingFilter, GroupingLevel, GroupingPlan, Query, RangeBound, RankProfile, Schema,
     SearchRequest,
 };
 use std::collections::BTreeMap;
@@ -618,6 +619,68 @@ fn low_level_query_range_accepts_full_signed_i64_domain() {
     assert_eq!(result.hits[0].document_id, "minimum");
 
     engine.close().expect("close signed range engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn low_level_grouping_range_preserves_safe_i64_boundary_against_adjacent_value() {
+    // Keep this proof at the engine boundary: the portable adapter rejects
+    // unsafe grouping bounds before native execution, while the Long field
+    // here can ingest the adjacent 64-bit values needed to test Vespa itself.
+    const SAFE_BOUNDARY: i64 = (1_i64 << 53) - 1;
+    let (config, data) = compile_config(
+        "grouping-safe-boundary",
+        &Schema::new("typea")
+            .field(
+                Field::new("category", FieldType::String)
+                    .attribute()
+                    .summary(),
+            )
+            .field(Field::new("qty", FieldType::Long).attribute().summary()),
+    );
+    let engine = Engine::open(&data, &config).expect("open grouping boundary config");
+    for (id, qty) in [
+        ("below", SAFE_BOUNDARY - 1),
+        ("boundary", SAFE_BOUNDARY),
+        ("adjacent", SAFE_BOUNDARY + 1),
+    ] {
+        engine
+            .put(Document::new(id).field("category", "all").field("qty", qty))
+            .expect("insert grouping boundary document");
+    }
+
+    let result = engine
+        .group(
+            &Query::True,
+            &GroupingPlan::new().level(
+                GroupingLevel::new(GroupingExpression::attribute("category"))
+                    .aggregation(GroupingAggregation::Count)
+                    .filter(GroupingFilter::Range {
+                        expression: GroupingExpression::attribute("qty"),
+                        lower: SAFE_BOUNDARY as f64,
+                        upper: SAFE_BOUNDARY as f64,
+                        include_lower: true,
+                        include_upper: true,
+                    }),
+            ),
+        )
+        .expect("execute grouping boundary filter");
+    assert_eq!(result.groups.len(), 1);
+    assert_eq!(
+        result.groups[0].key,
+        Some(searchkernel_vespa_engine::GroupingResultValue::String(
+            "all".to_owned()
+        ))
+    );
+    assert_eq!(
+        result.groups[0].outputs,
+        vec![searchkernel_vespa_engine::GroupingOutput::Value(
+            searchkernel_vespa_engine::GroupingResultValue::Integer(1),
+        )]
+    );
+
+    engine.close().expect("close grouping boundary engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }
