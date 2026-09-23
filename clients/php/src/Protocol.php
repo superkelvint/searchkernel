@@ -86,6 +86,36 @@ final class Protocol
     /** @return array<string, mixed> */
     public static function value(mixed $value): array
     {
+        if ($value instanceof Int64) {
+            return [
+                'kind_type' => 'Int64Value',
+                'kind' => ['value' => $value->value],
+            ];
+        }
+        if ($value instanceof UInt64) {
+            return [
+                'kind_type' => 'UInt64Value',
+                'kind' => ['value' => $value->value],
+            ];
+        }
+        if ($value instanceof Bytes) {
+            return [
+                'kind_type' => 'BytesValue',
+                'kind' => ['value' => $value->octets()],
+            ];
+        }
+        if ($value instanceof NonFiniteFloat) {
+            return [
+                'kind_type' => 'NonFiniteFloatValue',
+                'kind' => ['kind' => $value->kind],
+            ];
+        }
+        if ($value instanceof Tensor) {
+            return [
+                'kind_type' => 'TensorValue',
+                'kind' => $value->toJson(),
+            ];
+        }
         if ($value === null) {
             return [
                 'kind_type' => 'NullValueValue',
@@ -106,7 +136,9 @@ final class Protocol
         }
         if (is_float($value)) {
             if (!is_finite($value)) {
-                throw new InvalidArgumentException('portable float values must be finite');
+                throw new InvalidArgumentException(
+                    'use NonFiniteFloat for explicit NaN or infinity portable values'
+                );
             }
             return [
                 'kind_type' => 'Float64Value',
@@ -133,7 +165,7 @@ final class Protocol
         }
 
         throw new InvalidArgumentException(
-            'unsupported PHP value; first HTTP/JSON slice supports null, bool, int, float, string, list, and associative array'
+            'unsupported PHP value; use portable wrapper types for uint64, bytes, non-finite floats, and tensors'
         );
     }
 
@@ -217,16 +249,18 @@ final class Protocol
         }
 
         return match ($type) {
-            'NullValueValue' => null,
-            'BoolValue' => (bool) self::required($payload, 'value'),
-            'Int64Value', 'UInt64Value' => self::required($payload, 'value'),
-            'Float64Value' => (float) self::required($payload, 'value'),
-            'StringValue' => (string) self::required($payload, 'value'),
+            'NullValueValue' => self::decodeNull($payload),
+            'BoolValue' => self::requiredBool($payload, 'value'),
+            'Int64Value' => self::decodeInt64(self::required($payload, 'value')),
+            'UInt64Value' => self::decodeUInt64(self::required($payload, 'value')),
+            'Float64Value' => self::decodeFloat64(self::required($payload, 'value')),
+            'NonFiniteFloatValue' => self::decodeNonFiniteFloat($payload),
+            'StringValue' => self::requiredString($payload, 'value'),
+            'BytesValue' => self::decodeBytes($payload),
             'ValueList' => self::decodeValueList($payload),
             'ValueObject' => self::decodeValueEntries($payload['fields'] ?? []),
-            default => throw new ProtocolException(
-                'unsupported portable Value kind in first PHP slice: ' . $type
-            ),
+            'TensorValue' => Tensor::fromJson($payload),
+            default => throw new ProtocolException('unsupported portable Value kind: ' . $type),
         };
     }
 
@@ -265,6 +299,95 @@ final class Protocol
             },
             $values,
         );
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function decodeNull(array $payload): null
+    {
+        if (self::required($payload, 'value') !== 'Null') {
+            throw new ProtocolException('NullValueValue.value must be Null');
+        }
+        return null;
+    }
+
+    private static function decodeInt64(mixed $value): int|Int64
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if (!is_string($value)) {
+            throw new ProtocolException('Int64Value.value must be an integer or decimal string');
+        }
+        try {
+            return new Int64($value);
+        } catch (InvalidArgumentException $error) {
+            throw new ProtocolException($error->getMessage(), 0, $error);
+        }
+    }
+
+    private static function decodeUInt64(mixed $value): UInt64
+    {
+        if (!is_int($value) && !is_string($value)) {
+            throw new ProtocolException('UInt64Value.value must be an integer or decimal string');
+        }
+        try {
+            return UInt64::of($value);
+        } catch (InvalidArgumentException $error) {
+            throw new ProtocolException($error->getMessage(), 0, $error);
+        }
+    }
+
+    private static function decodeFloat64(mixed $value): float
+    {
+        if (!is_int($value) && !is_float($value)) {
+            throw new ProtocolException('Float64Value.value must be a number');
+        }
+        $value = (float) $value;
+        if (!is_finite($value)) {
+            throw new ProtocolException('Float64Value.value must be finite');
+        }
+        return $value;
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function decodeNonFiniteFloat(array $payload): NonFiniteFloat
+    {
+        $kind = self::requiredString($payload, 'kind');
+        try {
+            return new NonFiniteFloat($kind);
+        } catch (InvalidArgumentException $error) {
+            throw new ProtocolException($error->getMessage(), 0, $error);
+        }
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function decodeBytes(array $payload): Bytes
+    {
+        $octets = self::required($payload, 'value');
+        if (!is_array($octets) || !array_is_list($octets)) {
+            throw new ProtocolException('BytesValue.value must be a byte list');
+        }
+        return Bytes::fromOctets($octets);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function requiredBool(array $payload, string $key): bool
+    {
+        $value = self::required($payload, $key);
+        if (!is_bool($value)) {
+            throw new ProtocolException('portable union field ' . $key . ' must be a boolean');
+        }
+        return $value;
+    }
+
+    /** @param array<string, mixed> $payload */
+    private static function requiredString(array $payload, string $key): string
+    {
+        $value = self::required($payload, $key);
+        if (!is_string($value)) {
+            throw new ProtocolException('portable union field ' . $key . ' must be a string');
+        }
+        return $value;
     }
 
     /** @param array<string, mixed> $payload */
