@@ -10,17 +10,20 @@ require $argv[1] . '/vendor/autoload.php';
 
 use SearchKernel\Agg;
 use SearchKernel\AnalyzeBuilder;
+use SearchKernel\Client;
 use SearchKernel\CoverageDegraded;
 use SearchKernel\Group;
 use SearchKernel\MatchedUpdate;
 use SearchKernel\Index;
 use SearchKernel\Protocol;
+use SearchKernel\Transport;
 use SearchKernel\Query;
 use SearchKernel\UInt64;
 use SearchKernel\ValueObject;
 
 foreach ([
     AnalyzeBuilder::class,
+    Client::class,
     CoverageDegraded::class,
     Index::class,
     MatchedUpdate::class,
@@ -49,6 +52,25 @@ if (($query['source_type'] ?? null) !== 'TypedQuery') {
 $grouping = Group::by('brand')->limit(10)->output(Agg::count()->as('products'))->toRequest();
 if (($grouping['source_type'] ?? null) !== 'StructuredGroupingSource') {
     throw new RuntimeException('packaged grouping facade is not usable');
+}
+
+
+$transport = new class implements Transport {
+    public function execute(array $request): array
+    {
+        if (($request['payload_type'] ?? null) !== 'SearchKernel_V2_DescribeRequest') {
+            throw new RuntimeException('unexpected packaged low-level request');
+        }
+        return [
+            'protocol_version' => 2,
+            'payload_type' => 'SearchKernel_V2_DescribeResult',
+            'payload' => ['index' => ['name' => 'packaged']],
+        ];
+    }
+};
+$client = new Client($transport);
+if (($client->describe()['index']['name'] ?? null) !== 'packaged') {
+    throw new RuntimeException('packaged low-level client is not usable');
 }
 
 echo "PHP external Composer consumer PASS\n";
