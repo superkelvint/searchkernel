@@ -80,6 +80,17 @@ jobs:
       - run: $CI_PYTHON tools/test_python_dependency_contract.py
       - name: Run PHP semantic/wire tests
         run: php clients/php/tests/run.php
+      - name: Ensure Composer
+        run: |
+          set -euo pipefail
+          if command -v composer >/dev/null 2>&1; then
+            composer --version
+            exit 0
+          fi
+          installer="$RUNNER_TEMP/composer-setup.php"
+          curl -fsSL https://getcomposer.org/installer -o "$installer"
+          php "$installer" --quiet --install-dir="$RUNNER_TEMP" --filename=composer
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: Verify PHP Composer package consumer
         run: bash clients/php/tests/verify_package.sh
 
