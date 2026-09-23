@@ -108,7 +108,7 @@ expected="$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-u
 [[ -f "$after/lib/libvespalib.so.hardlink" ]]
 [[ "$(stat -c %i "$after/lib/libvespalib.so")" == "$(stat -c %i "$after/lib/libvespalib.so.hardlink")" ]]
 [[ ! -e "$after/lib/libsearchkernel_vespa.so" ]]
-[[ -z "$(find "$after" -perm /222 -print -quit)" ]]
+[[ -z "$(find "$after" ! -type l -perm /222 -print -quit)" ]]
 grep -q 'installed published Vespa base' "$fixture/install.err"
 
 warm=$(run_resolver path)
