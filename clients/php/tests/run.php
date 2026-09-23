@@ -181,6 +181,16 @@ try {
 
 try {
     Protocol::expectPayload([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_SearchResult',
+    ], 'SearchResult');
+    throw new RuntimeException('missing response union payload did not throw');
+} catch (\SearchKernel\ProtocolException) {
+    // Expected.
+}
+
+try {
+    Protocol::expectPayload([
         'protocol_version' => 999,
         'payload_type' => 'SearchKernel_V2_SearchResult',
         'payload' => [],
