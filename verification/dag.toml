@@ -1,21 +1,18 @@
 # SearchKernel verification DAG.
 #
 # This file is the semantic source of truth for verification ownership.
-# It is intentionally independent of GitHub Actions, moonrepo, nextest, or any
-# other execution engine.
-#
-# Rules:
-# - new behavioral subsystems MUST be added here before they can be
-#   merge-authorized;
-# - unknown behavioral paths fail closed;
-# - execution tools may project this DAG, but may not redefine its semantics;
-# - aggregate tasks have no command and exist only to express closure.
-#
-# First-pass schema. Consumers must reject unknown schema_version values.
+# Execution systems may project this graph, but must not redefine it.
+# Historical selector IDs are aliases only; semantic task IDs describe what
+# verification proves.
 
 schema_version = 1
 unknown_behavior = "block"
+runner_classes = ["linux", "self-hosted-native", "mixed"]
 full_roots = ["full"]
+
+# depends_on means an execution prerequisite.
+# subsumes means this command already executes/proves the referenced task
+# closure, so an executor must not schedule that task redundantly.
 
 # ---------------------------------------------------------------------------
 # Tasks
@@ -86,11 +83,12 @@ depends_on = []
 cache_result = false
 
 [[task]]
-id = "c2-historical"
+id = "legacy.c2"
 kind = "command"
 runner = "linux"
 command = "reference/clients/c2/verify-c2.sh"
 depends_on = []
+disposition = "retained-pending-phase6-disposition"
 cache_result = false
 
 [[task]]
@@ -118,7 +116,7 @@ depends_on = ["persistence-static"]
 cache_result = false
 
 [[task]]
-id = "native-python-e2e"
+id = "product.python-native-e2e"
 kind = "command"
 runner = "self-hosted-native"
 command = "tools/run-python-native-e2e.sh"
@@ -126,51 +124,348 @@ depends_on = []
 cache_result = false
 
 [[task]]
-id = "vespa-m14"
+id = "vespa.native-sdk"
 kind = "command"
 runner = "self-hosted-native"
-command = "./dev verify m14"
+command = "./dev verify vespa.native-sdk"
 depends_on = []
 cache_result = false
 
 [[task]]
-id = "vespa-integration"
+id = "vespa.rust-ownership"
 kind = "command"
 runner = "self-hosted-native"
-command = "./dev verify integration"
+command = "./dev verify vespa.rust-ownership"
+depends_on = []
+subsumes = ["vespa.native-sdk"]
+cache_result = false
+
+[[task]]
+id = "vespa.document-mutation"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.document-mutation"
+depends_on = []
+subsumes = ["vespa.rust-ownership"]
+cache_result = false
+
+[[task]]
+id = "vespa.linguistics"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.linguistics"
+depends_on = []
+subsumes = ["vespa.document-mutation"]
+cache_result = false
+
+[[task]]
+id = "vespa.text-indexing"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.text-indexing"
+depends_on = []
+subsumes = ["vespa.linguistics"]
+cache_result = false
+
+[[task]]
+id = "vespa.persistence.reopen"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.persistence.reopen"
+depends_on = []
+subsumes = ["vespa.text-indexing"]
+cache_result = false
+
+[[task]]
+id = "vespa.schema-config"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.schema-config"
+depends_on = []
+subsumes = ["vespa.persistence.reopen"]
+cache_result = false
+
+[[task]]
+id = "vespa.query-compilation"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.query-compilation"
+depends_on = []
+subsumes = ["vespa.schema-config"]
+cache_result = false
+
+[[task]]
+id = "vespa.results"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.results"
+depends_on = []
+subsumes = ["vespa.query-compilation"]
+cache_result = false
+
+[[task]]
+id = "vespa.grouping.recursive"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.grouping.recursive"
 depends_on = []
 cache_result = false
 
 [[task]]
-id = "phase10-rust-e2e"
+id = "vespa.grouping"
 kind = "command"
 runner = "self-hosted-native"
-command = "./dev verify phase10"
+command = "./dev verify vespa.grouping"
+depends_on = []
+subsumes = ["vespa.results", "vespa.grouping.recursive"]
+cache_result = false
+
+[[task]]
+id = "vespa.search-reply"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.search-reply"
 depends_on = []
 cache_result = false
 
 [[task]]
-id = "m13-grouping-yql"
+id = "vespa.ranking.feature-values"
 kind = "command"
 runner = "self-hosted-native"
-command = "reference/vespa/m13/grouping-yql/verify-grouping-yql.sh"
+command = "./dev verify vespa.ranking.feature-values"
 depends_on = []
 cache_result = false
 
 [[task]]
-id = "recovery"
+id = "vespa.ranking"
 kind = "command"
 runner = "self-hosted-native"
-command = "reference/vespa/recovery/verify-recovery.sh"
+command = "./dev verify vespa.ranking"
+depends_on = []
+subsumes = ["vespa.grouping", "vespa.search-reply", "vespa.ranking.feature-values"]
+cache_result = false
+
+[[task]]
+id = "vespa.hardening.core"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.hardening.core"
 depends_on = []
 cache_result = false
 
 [[task]]
-id = "phase9"
+id = "vespa.hardening.stress"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.hardening.stress"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.hardening.sanitizers"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.hardening.sanitizers"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "vespa.hardening"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.hardening"
+depends_on = []
+subsumes = ["vespa.ranking", "vespa.hardening.core", "vespa.hardening.stress", "vespa.hardening.sanitizers"]
+cache_result = false
+
+[[task]]
+id = "vespa.nearest-neighbor.query"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.nearest-neighbor.query"
+depends_on = []
+subsumes = ["vespa.hardening"]
+cache_result = false
+
+[[task]]
+id = "vespa.tensor.document-crud"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.tensor.document-crud"
+depends_on = []
+subsumes = ["vespa.nearest-neighbor.query"]
+cache_result = false
+
+[[task]]
+id = "vespa.nearest-neighbor.hnsw"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.nearest-neighbor.hnsw"
+depends_on = []
+subsumes = ["vespa.tensor.document-crud"]
+cache_result = false
+
+[[task]]
+id = "vespa.grouping.yql"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.grouping.yql"
+depends_on = []
+subsumes = ["vespa.grouping.recursive"]
+cache_result = false
+
+[[task]]
+id = "vespa.recovery"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify vespa.recovery"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "product.rust-real-engine"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify product.rust-real-engine"
+depends_on = []
+cache_result = false
+
+[[task]]
+id = "product.integration"
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev verify product.integration"
+depends_on = []
+subsumes = ["vespa.tensor.document-crud", "product.rust-real-engine"]
+cache_result = false
+
+[[task]]
+id = "legacy.phase9"
 kind = "command"
 runner = "self-hosted-native"
 command = "reference/vespa/phase9/verify-phase9.sh"
 depends_on = []
+subsumes = ["vespa.tensor.document-crud", "vespa.grouping.recursive", "abi"]
+disposition = "retained-pending-phase6-disposition"
+cache_result = false
+
+[[task]]
+id = "milestone.m0"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.native-sdk"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m1"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.rust-ownership"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m2"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.document-mutation"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m3"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.linguistics"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m4"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.text-indexing"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m5"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.persistence.reopen"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m6"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.schema-config"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m7"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.query-compilation"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m8"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.results"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m9"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.grouping"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m10"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.ranking"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m11"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.hardening"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m12"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.nearest-neighbor.query"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m13"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.tensor.document-crud"]
+required_in_full = false
+cache_result = false
+
+[[task]]
+id = "milestone.m14"
+kind = "aggregate"
+runner = "self-hosted-native"
+depends_on = ["vespa.nearest-neighbor.hnsw"]
 cache_result = false
 
 [[task]]
@@ -182,16 +477,20 @@ depends_on = []
 cache_result = false
 
 [[task]]
+id = "verification-dag"
+kind = "command"
+runner = "linux"
+command = "./dev verify verification-dag"
+depends_on = []
+cache_result = false
+
+[[task]]
 id = "verification-policy"
 kind = "command"
 runner = "linux"
 command = "python3 .github/ci/test_exact_head.py"
-depends_on = []
+depends_on = ["verification-dag"]
 cache_result = false
-
-# SearchKernel Web is deliberately decomposed. Several subsystems share the same
-# executable task today, but retain separate subsystem ownership below so new
-# feature families cannot appear invisibly.
 
 [[task]]
 id = "web-unit"
@@ -225,11 +524,11 @@ cache_result = false
 
 [[task]]
 id = "web-static-serving-e2e"
-kind = "aggregate"
+kind = "unverified"
 runner = "linux"
 depends_on = ["web-build"]
+reason = "No concrete searchkerneld static/API/SPA routing E2E command is implemented yet."
 cache_result = false
-notes = "First pass: add the concrete searchkerneld static/API/SPA routing E2E command when implemented."
 
 [[task]]
 id = "frontend-harness-selftest"
@@ -251,80 +550,81 @@ cache_result = false
 id = "web-full"
 kind = "aggregate"
 runner = "linux"
-depends_on = [
-  "web-portable-client",
-  "web-admin-client",
-  "web-static-serving-e2e",
-  "frontend-harness-selftest",
-  "frontend-verifier-integrity",
-]
+depends_on = ["web-portable-client", "web-admin-client", "web-static-serving-e2e", "frontend-harness-selftest", "frontend-verifier-integrity"]
 cache_result = false
 
-# Compatibility aggregate for the existing trusted task vocabulary. Phase 3
-# should migrate the selector from this coarse name to subsystem-specific tasks.
 [[task]]
 id = "web-dashboard"
 kind = "aggregate"
 runner = "linux"
 depends_on = ["web-full"]
+required_in_full = false
+notes = "Compatibility identity for the current trusted selector; migrate selector to subsystem-specific tasks."
 cache_result = false
 
 [[task]]
 id = "native-full"
 kind = "aggregate"
-runner = "self-hosted-native"
-depends_on = [
-  "vespa-m14",
-  "vespa-integration",
-  "phase10-rust-e2e",
-  "m13-grouping-yql",
-  "recovery",
-  "phase9",
-  "native-python-e2e",
-  "persistence-native",
-  "abi",
-]
+runner = "mixed"
+depends_on = ["milestone.m14", "product.integration", "vespa.grouping.yql", "vespa.recovery", "legacy.phase9", "product.python-native-e2e", "persistence-native", "abi"]
 cache_result = false
 
 [[task]]
 id = "clients-full"
 kind = "aggregate"
 runner = "linux"
-depends_on = [
-  "python-client",
-  "typescript-client",
-  "php-client",
-  "client-contracts",
-  "c2-historical",
-]
+depends_on = ["python-client", "typescript-client", "php-client", "client-contracts", "legacy.c2"]
 cache_result = false
 
 [[task]]
 id = "portable-full"
 kind = "aggregate"
 runner = "linux"
-depends_on = [
-  "rust-non-native",
-  "rust-quality",
-  "protocol-generated",
-  "api-conformance",
-  "client-contracts",
-]
+depends_on = ["rust-non-native", "rust-quality", "protocol-generated", "api-conformance", "client-contracts"]
 cache_result = false
 
 [[task]]
 id = "full"
 kind = "aggregate"
 runner = "mixed"
-depends_on = [
-  "portable-full",
-  "clients-full",
-  "native-full",
-  "web-full",
-  "issue-queue",
-  "verification-policy",
-]
+depends_on = ["portable-full", "clients-full", "native-full", "web-full", "issue-queue", "verification-policy"]
 cache_result = false
+
+# ---------------------------------------------------------------------------
+# Trusted-selector compatibility aliases
+# ---------------------------------------------------------------------------
+
+[[selector_alias]]
+id = "vespa-m14"
+target = "milestone.m14"
+
+[[selector_alias]]
+id = "vespa-integration"
+target = "product.integration"
+
+[[selector_alias]]
+id = "phase10-rust-e2e"
+target = "product.rust-real-engine"
+
+[[selector_alias]]
+id = "m13-grouping-yql"
+target = "vespa.grouping.yql"
+
+[[selector_alias]]
+id = "recovery"
+target = "vespa.recovery"
+
+[[selector_alias]]
+id = "phase9"
+target = "legacy.phase9"
+
+[[selector_alias]]
+id = "native-python-e2e"
+target = "product.python-native-e2e"
+
+[[selector_alias]]
+id = "c2-historical"
+target = "legacy.c2"
 
 # ---------------------------------------------------------------------------
 # Subsystems
@@ -402,7 +702,7 @@ requires = ["abi", "native-full"]
 [[subsystem]]
 id = "searchkerneld"
 paths = ["searchkerneld/**"]
-requires = ["rust-non-native", "rust-quality", "native-python-e2e", "web-static-serving-e2e"]
+requires = ["rust-non-native", "rust-quality", "product.python-native-e2e", "web-static-serving-e2e"]
 
 [[subsystem]]
 id = "client-python"
@@ -427,7 +727,7 @@ paths = [
   "core/crates/searchkernel/tests/persistence_compatibility.rs",
   "core/crates/searchkernel-ir/src/snapshot.rs",
 ]
-requires = ["persistence-native", "recovery"]
+requires = ["persistence-native", "vespa.recovery"]
 
 [[subsystem]]
 id = "vespa-verifiers"
@@ -436,7 +736,7 @@ requires = ["native-full"]
 
 [[subsystem]]
 id = "verification-control-plane"
-paths = [".github/ci/**", ".github/workflows/**", ".githooks/**", "dev", "verification/**"]
+paths = [".github/ci/**", ".github/workflows/**", ".githooks/**", "dev", "verification/**", "tools/check-verification-dag.py", "tools/test_check_verification_dag.py"]
 requires = ["verification-policy", "full"]
 
 # --- SearchKernel Web subsystem ownership ---
