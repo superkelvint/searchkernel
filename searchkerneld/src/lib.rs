@@ -21,9 +21,13 @@ use std::{
 
 use base64::Engine as _;
 use bytes::Bytes;
-use http::{header::CONTENT_TYPE, Request as HttpRequest, Response as HttpResponse, StatusCode};
-use http_body_util::Full;
+use http::{
+    header::{ALLOW, CONTENT_TYPE},
+    Method, Request as HttpRequest, Response as HttpResponse, StatusCode,
+};
+use http_body_util::{BodyExt, Full};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
+use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 use tokio::{
@@ -54,6 +58,9 @@ use rpc::{
 /// frames. Tonic's default decode limit is 4 MiB, which is too small for
 /// legitimate documents and tensor payloads.
 pub const MAX_GRPC_MESSAGE_SIZE: usize = 256 * 1024 * 1024;
+
+/// HTTP/JSON edge endpoint carrying standard FlatBuffers JSON envelopes.
+pub const JSON_EXECUTE_PATH: &str = "/v1/execute";
 
 /// Default maximum number of native dispatches that may execute concurrently.
 pub const DEFAULT_EXECUTION_LIMIT: usize = 16;
@@ -176,6 +183,25 @@ impl SearchKernelTransport {
             .dispatch(payload)
             .map_err(|error| Box::new(dispatch_error_status(error)))
     }
+
+    fn dispatch_json(&self, json: &[u8]) -> Result<Vec<u8>, (StatusCode, String)> {
+        let request = request_json_to_flatbuffer(json).map_err(|error| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("invalid Search Kernel FlatBuffers JSON request: {error}"),
+            )
+        })?;
+        let response = self
+            .dispatcher
+            .dispatch(&request)
+            .map_err(dispatch_error_http)?;
+        response_flatbuffer_to_json(&response).map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("encode Search Kernel FlatBuffers JSON response: {error}"),
+            )
+        })
+    }
 }
 
 async fn run_blocking<T, F>(execution_limit: Arc<Semaphore>, operation: F) -> Result<T, Box<Status>>
@@ -233,14 +259,137 @@ fn dispatch_error_status(error: DispatchError) -> Status {
     }
 }
 
+fn dispatch_error_http(error: DispatchError) -> (StatusCode, String) {
+    match error {
+        DispatchError::InvalidRequest => (
+            StatusCode::BAD_REQUEST,
+            "invalid Search Kernel request FlatBuffer".to_owned(),
+        ),
+        DispatchError::UnsupportedProtocol(version) => (
+            StatusCode::PRECONDITION_FAILED,
+            format!("unsupported Search Kernel protocol version {version}"),
+        ),
+        DispatchError::UnsupportedOperation(operation) => (
+            StatusCode::NOT_IMPLEMENTED,
+            format!("unsupported Search Kernel operation discriminator {operation}"),
+        ),
+        DispatchError::Closed => (
+            StatusCode::CONFLICT,
+            "Search Kernel target is closed".to_owned(),
+        ),
+    }
+}
+
+fn http_body_response(
+    status: StatusCode,
+    content_type: &'static str,
+    body: impl Into<Bytes>,
+) -> HttpResponse<BoxBody> {
+    HttpResponse::builder()
+        .status(status)
+        .header(CONTENT_TYPE, content_type)
+        .body(tonic::body::boxed(Full::new(body.into())))
+        .expect("static HTTP response must be valid")
+}
+
+async fn json_execute_response(
+    request: HttpRequest<BoxBody>,
+    transport: SearchKernelTransport,
+) -> HttpResponse<BoxBody> {
+    if request.method() != Method::POST {
+        return HttpResponse::builder()
+            .status(StatusCode::METHOD_NOT_ALLOWED)
+            .header(ALLOW, "POST")
+            .header(CONTENT_TYPE, "text/plain; charset=utf-8")
+            .body(tonic::body::boxed(Full::new(Bytes::from_static(
+                b"POST required",
+            ))))
+            .expect("static method response must be valid");
+    }
+
+    let is_json = request
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"));
+    if !is_json {
+        return http_body_response(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "text/plain; charset=utf-8",
+            Bytes::from_static(b"content-type must be application/json"),
+        );
+    }
+
+    let mut body = request.into_body();
+    let mut json = Vec::new();
+    while let Some(frame) = body.frame().await {
+        let frame = match frame {
+            Ok(frame) => frame,
+            Err(error) => {
+                return http_body_response(
+                    StatusCode::BAD_REQUEST,
+                    "text/plain; charset=utf-8",
+                    format!("read HTTP request body: {error}"),
+                )
+            }
+        };
+        if let Some(data) = frame.data_ref() {
+            let Some(next_len) = json.len().checked_add(data.len()) else {
+                return http_body_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "text/plain; charset=utf-8",
+                    Bytes::from_static(b"Search Kernel JSON request is too large"),
+                );
+            };
+            if next_len > MAX_GRPC_MESSAGE_SIZE {
+                return http_body_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "text/plain; charset=utf-8",
+                    Bytes::from_static(b"Search Kernel JSON request is too large"),
+                );
+            }
+            json.extend_from_slice(data);
+        }
+    }
+
+    let execution_limit = transport.execution_limit.clone();
+    let result = run_blocking(execution_limit, move || transport.dispatch_json(&json)).await;
+    match result {
+        Err(status) => http_body_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "text/plain; charset=utf-8",
+            status.message().to_owned(),
+        ),
+        Ok(Err((status, message))) => {
+            http_body_response(status, "text/plain; charset=utf-8", message)
+        }
+        Ok(Ok(response)) if response.len() > MAX_GRPC_MESSAGE_SIZE => http_body_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "text/plain; charset=utf-8",
+            Bytes::from_static(b"Search Kernel JSON response exceeds transport limit"),
+        ),
+        Ok(Ok(response)) => {
+            http_body_response(StatusCode::OK, "application/json", Bytes::from(response))
+        }
+    }
+}
+
 #[derive(Clone)]
 struct AdmissionLayer {
     semaphore: Arc<Semaphore>,
+    json_transport: Option<SearchKernelTransport>,
 }
 
 impl AdmissionLayer {
-    fn new(semaphore: Arc<Semaphore>) -> Self {
-        Self { semaphore }
+    fn new(
+        semaphore: Arc<Semaphore>,
+        json_transport: Option<SearchKernelTransport>,
+    ) -> Self {
+        Self {
+            semaphore,
+            json_transport,
+        }
     }
 }
 
@@ -251,6 +400,7 @@ impl<S> Layer<S> for AdmissionLayer {
         AdmissionService {
             inner: service,
             semaphore: self.semaphore.clone(),
+            json_transport: self.json_transport.clone(),
         }
     }
 }
@@ -259,6 +409,7 @@ impl<S> Layer<S> for AdmissionLayer {
 struct AdmissionService<S> {
     inner: S,
     semaphore: Arc<Semaphore>,
+    json_transport: Option<SearchKernelTransport>,
 }
 
 impl<S> Service<HttpRequest<BoxBody>> for AdmissionService<S>
@@ -280,6 +431,17 @@ where
             let response = admission_response(&request);
             return Box::pin(async move { Ok(response) });
         };
+
+        if request.uri().path() == JSON_EXECUTE_PATH {
+            if let Some(transport) = self.json_transport.clone() {
+                return Box::pin(async move {
+                    let response = json_execute_response(request, transport).await;
+                    drop(permit);
+                    Ok(response)
+                });
+            }
+        }
+
         let future = self.inner.call(request);
         Box::pin(async move {
             let result = future.await;
@@ -736,7 +898,10 @@ where
         if grpc_web {
             tonic::transport::Server::builder()
                 .accept_http1(true)
-                .layer(AdmissionLayer::new(admission_limit.clone()))
+                .layer(AdmissionLayer::new(
+                    admission_limit.clone(),
+                    Some(service.clone()),
+                ))
                 .layer(GrpcWebLayer::new())
                 .add_service(
                     SearchKernelServer::new(service)
@@ -747,7 +912,7 @@ where
                 .await
         } else {
             tonic::transport::Server::builder()
-                .layer(AdmissionLayer::new(admission_limit))
+                .layer(AdmissionLayer::new(admission_limit, None))
                 .add_service(
                     SearchKernelServer::new(service)
                         .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
