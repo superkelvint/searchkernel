@@ -423,6 +423,15 @@ final class Protocol
         return $digits;
     }
 
+    public static function decodeInt64Scalar(mixed $value, string $label): int|string
+    {
+        try {
+            return self::decodeInteger(['value' => $value], true);
+        } catch (ProtocolException $error) {
+            throw new ProtocolException($label . ': ' . $error->getMessage(), 0, $error);
+        }
+    }
+
     public static function decodeUInt64Scalar(mixed $value, string $label): int|string
     {
         try {
