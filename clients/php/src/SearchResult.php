@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
-use UnexpectedValueException;
 
 final class SearchResult
 {
@@ -90,7 +89,7 @@ final class SearchResult
         $root = null;
         if (array_key_exists('root', $payload) && $payload['root'] !== null) {
             if (!is_array($payload['root'])) {
-                throw new UnexpectedValueException('SearchResult.root must be a ResultNode object');
+                throw new ProtocolException('SearchResult.root must be a ResultNode object');
             }
             $root = ResultGroup::decodeNode($payload['root']);
         }
@@ -114,21 +113,35 @@ final class SearchResult
 
         $totalHits = 0;
         $relation = 'Unknown';
-        if (is_array($payload['total_hits'] ?? null)) {
-            $totalHits = $payload['total_hits']['value'] ?? 0;
-            if (!is_int($totalHits) && !is_string($totalHits)) {
-                throw new UnexpectedValueException('total_hits.value must be an integer or lossless decimal string');
+        if (array_key_exists('total_hits', $payload) && $payload['total_hits'] !== null) {
+            if (!is_array($payload['total_hits'])) {
+                throw new ProtocolException('SearchResult.total_hits must be an object');
             }
-            $relation = (string) ($payload['total_hits']['relation'] ?? 'Unknown');
+            $totalHits = array_key_exists('value', $payload['total_hits'])
+                ? Protocol::decodeUInt64Scalar($payload['total_hits']['value'], 'TotalHits.value')
+                : 0;
+            $relation = array_key_exists('relation', $payload['total_hits'])
+                ? Protocol::decodeStringScalar($payload['total_hits']['relation'], 'TotalHits.relation')
+                : 'Unknown';
         }
 
+        if (array_key_exists('coverage', $payload) && $payload['coverage'] !== null && !is_array($payload['coverage'])) {
+            throw new ProtocolException('SearchResult.coverage must be an object');
+        }
+        if (array_key_exists('timing', $payload) && $payload['timing'] !== null && !is_array($payload['timing'])) {
+            throw new ProtocolException('SearchResult.timing must be an object');
+        }
         $coverage = is_array($payload['coverage'] ?? null) ? new Coverage($payload['coverage']) : null;
         $timing = is_array($payload['timing'] ?? null) ? new SearchTiming($payload['timing']) : null;
 
+        $errorEntries = $payload['errors'] ?? [];
+        if (!is_array($errorEntries)) {
+            throw new ProtocolException('SearchResult.errors must be an array');
+        }
         $errors = [];
-        foreach ($payload['errors'] ?? [] as $error) {
+        foreach ($errorEntries as $error) {
             if (!is_array($error)) {
-                throw new UnexpectedValueException('SearchResult.errors must contain objects');
+                throw new ProtocolException('SearchResult.errors must contain objects');
             }
             $errors[] = new ResultIssue($error);
         }
@@ -136,7 +149,7 @@ final class SearchResult
         $trace = null;
         if (array_key_exists('trace', $payload) && $payload['trace'] !== null) {
             if (!is_array($payload['trace'])) {
-                throw new UnexpectedValueException('SearchResult.trace must be a portable Value');
+                throw new ProtocolException('SearchResult.trace must be a portable Value');
             }
             $trace = Protocol::decodeValue($payload['trace']);
         }
