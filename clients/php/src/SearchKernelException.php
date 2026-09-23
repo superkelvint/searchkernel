@@ -23,7 +23,7 @@ final class SearchKernelException extends RuntimeException
     {
         $code = $payload['code'] ?? null;
         $message = $payload['message'] ?? null;
-        $retryable = $payload['retryable'] ?? null;
+        $retryable = $payload['retryable'] ?? false;
         $details = $payload['details'] ?? [];
 
         if (!is_string($code) || $code === '') {
