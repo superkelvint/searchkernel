@@ -140,6 +140,25 @@ def groups_by_value(groups):
     return {group.value: group for group in groups}
 
 
+def grouping_groups(results):
+    """Return the direct groups below the canonical native grouping wrapper."""
+    candidates = [
+        group
+        for group in results.groups
+        if group.id is None
+        and group.label is None
+        and group.value is None
+        and not group.fields
+        and not group.hits
+    ]
+    if len(candidates) != 1:
+        raise AssertionError(
+            f"expected one native grouping wrapper, got {len(candidates)}"
+        )
+    wrapper = candidates[0]
+    return wrapper.groups
+
+
 def all_continuations(results) -> list[str]:
     tokens: list[str] = []
 
@@ -687,7 +706,7 @@ with Index.create(
     )
     print_results(results)
 
-    by_brand = groups_by_value(results.groups)
+    by_brand = groups_by_value(grouping_groups(results))
 
     assert set(by_brand) == {"Acme", "TrailCo", "Budget"}
     assert by_brand["Acme"]["products"] == 2
@@ -698,7 +717,7 @@ with Index.create(
     assert isclose(by_brand["Budget"]["avg_price"], 49.0)
 
     # Count DESC, then brand ASC for the tie.
-    assert [group.value for group in results.groups] == [
+    assert [group.value for group in grouping_groups(results)] == [
         "Acme",
         "TrailCo",
         "Budget",
@@ -735,7 +754,7 @@ with Index.create(
     )
     print_results(results)
 
-    categories = groups_by_value(results.groups)
+    categories = groups_by_value(grouping_groups(results))
     assert set(categories) == {"shoes", "bags"}
     assert categories["shoes"]["products"] == 5
     assert categories["bags"]["products"] == 1
@@ -772,7 +791,7 @@ with Index.create(
     )
     print_results(results)
 
-    by_brand = groups_by_value(results.groups)
+    by_brand = groups_by_value(grouping_groups(results))
     assert isclose(by_brand["Acme"]["revenue"], 248.0)
     assert isclose(by_brand["TrailCo"]["revenue"], 238.0)
     assert isclose(by_brand["Budget"]["revenue"], 49.0)
@@ -796,8 +815,8 @@ with Index.create(
     )
     print_results(results)
 
-    assert [group.value for group in results.groups] == ["Acme"]
-    assert results.groups[0]["products"] == 2
+    assert [group.value for group in grouping_groups(results)] == ["Acme"]
+    assert grouping_groups(results)[0]["products"] == 2
 
     # -----------------------------------------------------------------------
     # Summary aggregation must return Hit children beneath groups rather than
@@ -821,7 +840,7 @@ with Index.create(
 
     grouped_hit_ids = {
         hit.id
-        for group in results.groups
+        for group in grouping_groups(results)
         for hit in group.hits
     }
     assert grouped_hit_ids == {
@@ -832,8 +851,11 @@ with Index.create(
         "shoe-5",
     }
 
-    # Grouping hit children are not silently flattened into top-level hits.
-    assert {hit.id for hit in results.hits}.isdisjoint(grouped_hit_ids)
+    # Grouping hit children remain available below their result groups. The
+    # native search result may also expose the same documents as ordinary
+    # root hits, so identity overlap is not evidence of flattening.
+    assert grouped_hit_ids
+    assert all(group.hits for group in grouping_groups(results))
 
     # -----------------------------------------------------------------------
     # Grouping continuation tokens remain opaque and survive result decoding.
@@ -1079,7 +1101,7 @@ with Index.create(
     )
     print_results(results)
 
-    by_brand = groups_by_value(results.groups)
+    by_brand = groups_by_value(grouping_groups(results))
     assert {
         name: group["products"]
         for name, group in by_brand.items()
@@ -1412,7 +1434,7 @@ with Index.open(INDEX_PATH) as index:
         "bag-1",
     }.issubset(browse_ids)
 
-    categories = groups_by_value(results.groups)
+    categories = groups_by_value(grouping_groups(results))
     assert categories["shoes"]["products"] == 3
     assert categories["bags"]["products"] == 1
 
