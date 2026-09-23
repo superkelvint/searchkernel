@@ -251,7 +251,10 @@ fn grouping_range_rejects_integer_bounds_that_round_as_f64() {
     let error = lower_groupings(&[request])
         .expect_err("integer grouping bounds must not be silently rounded to f64");
     assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
-    assert_eq!(error.details[0].code, "grouping_filter_bound_precision_loss");
+    assert_eq!(
+        error.details[0].code,
+        "grouping_filter_bound_precision_loss"
+    );
 }
 
 #[test]
@@ -1631,10 +1634,7 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
                         field("category"),
                         FieldValueIr::Single(ScalarValueIr::String("precision".to_owned())),
                     ),
-                    (
-                        field("qty"),
-                        FieldValueIr::Single(ScalarValueIr::Int64(1)),
-                    ),
+                    (field("qty"), FieldValueIr::Single(ScalarValueIr::Int64(1))),
                 ]),
             )))
             .expect("insert precision-boundary document");
