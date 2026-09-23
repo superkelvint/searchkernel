@@ -640,7 +640,13 @@ class ExactHeadTests(unittest.TestCase):
         )
 
     def test_explicit_non_behavioral_paths_do_not_select_behavioral_lanes(self) -> None:
-        for path in ("docs/architecture.md", "notes.tmp", "nested/README.md"):
+        for path in (
+            "docs/architecture.md",
+            "notes.tmp",
+            "nested/README.md",
+            "core/README.md",
+            "core/native/README.md",
+        ):
             with self.subTest(path=path):
                 lines = classify_lines(path)
                 self.assertTrue(lines)
@@ -648,6 +654,14 @@ class ExactHeadTests(unittest.TestCase):
                     [line for line in lines if line.endswith("=true")],
                     lines,
                 )
+
+    def test_behavioral_documentation_overrides_non_behavioral_exemption(self) -> None:
+        lines = classify_lines("docs/CAPABILITIES.md")
+        self.assertIn("contracts=true", lines)
+        self.assertTrue(
+            any(line.endswith("=true") for line in lines),
+            lines,
+        )
 
     def test_non_markdown_file_under_docs_still_fails_closed_when_unclassified(self) -> None:
         lines = classify_lines("docs/new-runtime-policy.json")
