@@ -92,7 +92,7 @@ cache_result = false
 id = "rust-remote-client"
 kind = "command"
 runner = "linux"
-command = "cargo test -p searchkernel --test remote_client --features remote"
+command = "cargo test -p searchkerneld --test rust_remote_client --no-default-features"
 depends_on = ["rust-quality", "protocol-generated", "client-contracts"]
 cache_result = false
 notes = "Registered before #457 lands. The command becomes executable when the Rust remote-client integration test is introduced."
@@ -698,7 +698,7 @@ id = "searchkernel-rpc-client"
 paths = [
   "core/crates/searchkernel-rpc/**",
   "core/crates/searchkernel/src/remote.rs",
-  "core/crates/searchkernel/tests/remote_client.rs",
+  "searchkerneld/tests/rust_remote_client.rs",
 ]
 requires = ["rust-remote-client", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
 
