@@ -87,24 +87,27 @@ final class AnalyzeBuilder
             if (!is_array($token)
                 || !is_string($token['surface'] ?? null)
                 || !is_string($token['term'] ?? null)
-                || !is_int($token['position'] ?? null)
-                || !is_int($token['start_byte'] ?? null)
-                || !is_int($token['end_byte'] ?? null)
-                || $token['position'] < 0
-                || $token['start_byte'] < 0
-                || $token['end_byte'] < 0
-                || $token['position'] > 0xFFFF_FFFF
-                || $token['start_byte'] > 0xFFFF_FFFF
-                || $token['end_byte'] > 0xFFFF_FFFF
             ) {
                 throw new ProtocolException('malformed AnalyzeResult token');
             }
             $decoded[] = [
                 'surface' => $token['surface'],
                 'term' => $token['term'],
-                'position' => $token['position'],
-                'start_byte' => $token['start_byte'],
-                'end_byte' => $token['end_byte'],
+                'position' => Protocol::uint32ScalarField(
+                    $token,
+                    'position',
+                    'AnalyzedToken.position',
+                ),
+                'start_byte' => Protocol::uint32ScalarField(
+                    $token,
+                    'start_byte',
+                    'AnalyzedToken.start_byte',
+                ),
+                'end_byte' => Protocol::uint32ScalarField(
+                    $token,
+                    'end_byte',
+                    'AnalyzedToken.end_byte',
+                ),
             ];
         }
 
