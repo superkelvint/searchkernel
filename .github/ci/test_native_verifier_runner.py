@@ -49,6 +49,17 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(needle, source)
 
+    def test_supports_client_e2e_bundle_inside_alma(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "client-e2e)",
+            "python3 tools/check-python-dependencies.py",
+            "cargo build -p searchkerneld --features native",
+            'SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"',
+            "python3 tools/check-client-contracts.py --run-e2e",
+        ):
+            self.assertIn(needle, source)
+
     def test_supports_422_closure_bundle(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("closure-422)", source)

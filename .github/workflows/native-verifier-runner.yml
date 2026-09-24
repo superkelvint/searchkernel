@@ -200,6 +200,16 @@ jobs:
               tools/run-python-native-e2e.sh
               ./dev verify persistence
               ;;
+            client-e2e)
+              python3 tools/check-python-dependencies.py
+              command -v php >/dev/null 2>&1 || {
+                echo "required client E2E command is unavailable: php" >&2
+                exit 1
+              }
+              cargo build -p searchkerneld --features native
+              SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld" \
+                python3 tools/check-client-contracts.py --run-e2e
+              ;;
             closure-422)
               ./dev verify m14
               ./dev verify product.rust-real-engine

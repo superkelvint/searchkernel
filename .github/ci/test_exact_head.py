@@ -215,16 +215,22 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
 
-    def test_client_capabilities_uses_trusted_base_native_fetch_helper(self) -> None:
+    def test_client_capabilities_routes_native_e2e_through_alma(self) -> None:
         workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
-        install_step = workflow.split(
-            "- name: Install newest immutable native Vespa base for executable client E2E", 1
-        )[1].split("- name: Select C++23 compiler", 1)[0]
-        self.assertIn('BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}', install_step)
-        self.assertIn('git fetch --no-tags --depth=1 origin "$BASE_SHA"', install_step)
-        self.assertIn('git show "$BASE_SHA:tools/fetch-native-base.sh" > "$trusted_fetch"', install_step)
-        self.assertIn('artifact=$("$trusted_fetch" ci)', install_step)
-        self.assertNotIn("artifact=$(tools/fetch-native-base.sh ci)", install_step)
+        verify = workflow.split("\n  verify:\n", 1)[1].split("\n  e2e:\n", 1)[0]
+        e2e = workflow.split("\n  e2e:\n", 1)[1]
+        self.assertIn("uses: dtolnay/rust-toolchain@stable", verify)
+        self.assertIn(
+            "uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main",
+            e2e,
+        )
+        self.assertIn(
+            'revision: ${{ github.event.pull_request.head.sha || github.sha }}',
+            e2e,
+        )
+        self.assertIn("target: client-e2e", e2e)
+        self.assertNotIn("Install newest immutable native Vespa base", workflow)
+        self.assertNotIn("sudo apt-get", e2e)
 
     def test_workflow_keeps_native_signal_without_running_native_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
