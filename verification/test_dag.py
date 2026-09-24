@@ -196,9 +196,14 @@ class VerificationDagTests(unittest.TestCase):
                 task = current.tasks[task_id]
                 self.assertEqual(set(task.subsumes), set(expected))
                 script = (ROOT / script_path).read_text(encoding="utf-8")
+                active_script = "\n".join(
+                    line
+                    for line in script.splitlines()
+                    if line.strip() and not line.lstrip().startswith("#")
+                )
                 for proved_task, marker in expected.items():
                     with self.subTest(task=task_id, proves=proved_task):
-                        self.assertIn(marker, script)
+                        self.assertIn(marker, active_script)
 
     def test_full_proof_closure_covers_every_semantic_vespa_target(self) -> None:
         current = verification_dag.load_dag(DAG_PATH)
