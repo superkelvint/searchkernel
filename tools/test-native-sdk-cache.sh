@@ -9,7 +9,18 @@ source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 bash -n "$source_root/tools/resolve-native-sdk.sh"
 bash -n "$source_root/tools/install-native-base-artifact.sh"
 bash -n "$source_root/tools/package-native-base-artifact.sh"
+bash -n "$source_root/tools/fetch-native-base.sh"
+bash -n "$source_root/tools/actions-runner-setup.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
+if grep -Eq 'vespa-base-v[0-9]+|searchkernel-vespa-base-v[0-9]+' \
+    "$source_root/tools/actions-runner-setup.sh"; then
+    echo 'Actions runner setup must not hard-code a native-base generation' >&2
+    exit 1
+fi
+grep -Fq 'tools/fetch-native-base.sh "$BUILD_ENV"' \
+    "$source_root/tools/actions-runner-setup.sh"
+grep -Fq 'SK_NATIVE_BASE_ARTIFACT_URL="file:///native-artifacts/$ARTIFACT_NAME"' \
+    "$source_root/tools/actions-runner-setup.sh"
 bash "$source_root/tools/test-native-base-artifact.sh"
 
 # The resolver executes the SDK builder directly. Git mode is therefore part of
@@ -30,6 +41,8 @@ if grep -Eq 'resolve_shared_native_sdk\([^\n]*"ensure"\)' \
     exit 1
 fi
 grep -q "./dev native-sdk ensure" \
+    "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
+grep -q '.searchkernel-native-base-artifact.json' \
     "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
 
 verify_common="$source_root/reference/vespa/common/verify-common.sh"
