@@ -95,6 +95,6 @@ fi
 # helpers and the recursive result decoders. Extract those concrete bodies and
 # inspect only executable source: comments and string literals are masked before
 # matching so documentation cannot satisfy this anti-shortcut verifier.
-python3 "reference/vespa/m9-general-grouping-verifier/check-structure-python-1.py" "$NATIVE_CPP"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/check-structure-python-1.py" "$NATIVE_CPP"
 
 echo "recursive grouping ABI structure checks passed"
