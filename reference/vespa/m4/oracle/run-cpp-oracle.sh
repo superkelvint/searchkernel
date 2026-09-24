@@ -26,18 +26,7 @@ EOF
   echo "Rebuild the oracle with oracle/build-cpp-oracle.sh." >&2
   exit 1
 }
-python3 - "$PROVENANCE" "$ROOT/reference/vespa/PINNED_VESPA.json" <<'PY'
-import json
-import sys
-
-provenance = {}
-for line in open(sys.argv[1], encoding="utf-8"):
-    key, value = line.rstrip("\n").split("=", 1)
-    provenance[key] = value
-expected = json.load(open(sys.argv[2], encoding="utf-8"))["commit"]
-if provenance.get("vespa_commit") != expected:
-    raise SystemExit("M4 C++ oracle was not built from the pinned Vespa revision")
-PY
+python3 "reference/vespa/m4/oracle/run-cpp-oracle-python-1.py" "$PROVENANCE" "$ROOT/reference/vespa/PINNED_VESPA.json"
 
 # If already running in the Vespa build container, keep all Proton runtime
 # state in container-local /tmp. Never write engine state into the repository.
