@@ -171,9 +171,23 @@ echo AFTER_GUARD
         self.assertNotIn("AFTER_GUARD", stale.stdout)
         self.assertIn("Superseded native verification", stale.stdout)
 
+        malformed = self._run_embedded_head_guard(
+            '{"head":{"sha":"aaaaaaaa"}}'
+        )
+        self.assertNotEqual(malformed.returncode, 0, malformed.stdout)
+        self.assertNotIn("AFTER_GUARD", malformed.stdout)
+
         failed = self._run_embedded_head_guard("", curl_exit=22)
         self.assertNotEqual(failed.returncode, 0, failed.stdout)
         self.assertNotIn("AFTER_GUARD", failed.stdout)
+
+        manual = self._run_embedded_head_guard(
+            "",
+            pr_number="",
+            curl_exit=22,
+        )
+        self.assertEqual(manual.returncode, 0, manual.stdout)
+        self.assertIn("AFTER_GUARD", manual.stdout)
 
     def test_superseded_pr_heads_stop_before_each_expensive_native_phase(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
@@ -212,12 +226,17 @@ echo AFTER_GUARD
 
 
     def test_pr_callers_grant_live_head_lookup_permission(self) -> None:
-        for workflow in (BEHAVIORAL_WORKFLOW, CLIENT_CAPABILITIES_WORKFLOW):
+        callers: list[Path] = []
+        for workflow in sorted(WORKFLOWS.glob("*.yml")):
             source = workflow.read_text(encoding="utf-8")
-            self.assertIn("native-verifier-runner.yml@main", source)
-            self.assertIn("permissions:", source)
-            self.assertIn("contents: read", source)
-            self.assertIn("pull-requests: read", source)
+            if "native-verifier-runner.yml@main" not in source:
+                continue
+            callers.append(workflow)
+            header = source.split("\njobs:", 1)[0]
+            self.assertIn("permissions:", header, workflow)
+            self.assertIn("contents: read", header, workflow)
+            self.assertIn("pull-requests: read", header, workflow)
+        self.assertTrue(callers, "expected at least one native-verifier caller")
 
 
 if __name__ == "__main__":
