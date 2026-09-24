@@ -149,12 +149,30 @@ jobs:
           unset SK_NATIVE_SDK || true
           unset SEARCHKERNEL_VERIFY_LIVE_ORACLE || true
 
+          if [[ "$VERIFIER_TARGET" == "closure-422" ]]; then
+            # #422 acceptance is deliberately cold. Persistent Cargo/rustup
+            # downloads may be reused, but native-base objects and candidate
+            # build outputs must start empty and disappear with ALMA_WORKTREE.
+            export SK_NATIVE_CACHE_DIR="$ALMA_WORKTREE/.native-cache"
+            export CARGO_TARGET_DIR="$ALMA_WORKTREE/target/closure-422"
+            rm -rf "$SK_NATIVE_CACHE_DIR" "$CARGO_TARGET_DIR"
+            [[ ! -e "$SK_NATIVE_CACHE_DIR" ]]
+            [[ ! -e upstream/vespa/.git ]]
+          fi
+
           pin=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["vespa_commit"])' core/native/vespa/manifest.json)
           target=$(rustc -vV | sed -n 's/^host: //p')
           artifact=$(find /native-artifacts -maxdepth 1 -type f -name "searchkernel-vespa-base-v*-ci-${target}-${pin}.tar.gz" -print | sort -V | tail -n 1)
           if [[ -z "$artifact" || ! -s "$artifact" || ! -s "${artifact}.sha256" ]]; then
             echo "no staged published CI native base for Vespa $pin and target $target" >&2
             echo "run tools/actions-runner-setup.sh on this runner after publishing the base" >&2
+            exit 1
+          fi
+
+          expected_sha=$(awk 'NF {print $1; exit}' "${artifact}.sha256")
+          actual_sha=$(sha256sum "$artifact" | awk '{print $1}')
+          if [[ -z "$expected_sha" || "$actual_sha" != "$expected_sha" ]]; then
+            echo "native base checksum mismatch for $artifact" >&2
             exit 1
           fi
 
@@ -165,6 +183,21 @@ jobs:
           flock 9
 
           ./dev native-sdk ensure
+
+          if [[ "$VERIFIER_TARGET" == "closure-422" ]]; then
+            published_vespa=$(bash tools/resolve-native-sdk.sh vespa-root)
+            case "$published_vespa" in
+              "$SK_NATIVE_CACHE_DIR"/*/toolchains/*/upstream/vespa) ;;
+              *)
+                echo "closure-422 resolved Vespa outside the isolated published cache: $published_vespa" >&2
+                exit 1
+                ;;
+            esac
+            [[ -f "$published_vespa/.searchkernel-vespa-artifact.json" ]] || {
+              echo "closure-422 published provenance marker is missing: $published_vespa" >&2
+              exit 1
+            }
+          fi
 
           case "$VERIFIER_TARGET" in
             native-full)
@@ -182,9 +215,22 @@ jobs:
               ./dev verify persistence
               ;;
             closure-422)
+              cargo build -p searchkerneld --features native
+              daemon="$CARGO_TARGET_DIR/debug/searchkerneld"
+              [[ -x "$daemon" ]] || {
+                echo "closure-422 did not produce native searchkerneld: $daemon" >&2
+                exit 1
+              }
+
               ./dev verify m14
               ./dev verify product.rust-real-engine
               ./dev verify integration
+
+              command -v php >/dev/null
+              python3 tools/check-python-dependencies.py
+              export PYTHONPATH="$ALMA_WORKTREE/clients/python${PYTHONPATH:+:$PYTHONPATH}"
+              SEARCHKERNEL_LOCAL_HOST="$daemon" \
+                bash clients/php/examples/run_searchkernel_client_api_e2e.sh
               ;;
             *)
               ./dev verify "$VERIFIER_TARGET"
