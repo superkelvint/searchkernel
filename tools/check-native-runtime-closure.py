@@ -4,30 +4,10 @@
 from __future__ import annotations
 
 import pathlib
-import re
 import shutil
-import subprocess
 import sys
 
-
-# These are part of the GNU/Linux C/C++ runtime baseline for the supported
-# x86_64-unknown-linux-gnu native target. Product/dependency DSOs such as
-# libxml2, libz, OpenSSL, ICU, etc. are intentionally *not* allowed here:
-# if a Vespa DSO needs one of those, the native-base artifact must bundle it.
-SYSTEM_BASELINE = {
-    "libc.so.6",
-    "libdl.so.2",
-    "libgcc_s.so.1",
-    "libm.so.6",
-    "libpthread.so.0",
-    "libresolv.so.2",
-    "librt.so.1",
-    "libstdc++.so.6",
-    "libutil.so.1",
-}
-
-NEEDED_RE = re.compile(r"\(NEEDED\).*Shared library: \[(?P<name>[^\]]+)\]")
-
+from native_runtime_closure import SYSTEM_BASELINE, is_elf, needed_libraries
 
 def die(message: str) -> "NoReturn":
     raise SystemExit(message)
@@ -109,7 +89,11 @@ def validate(libdir: pathlib.Path, extra_elfs: list[pathlib.Path]) -> None:
 
     missing: list[tuple[pathlib.Path, str]] = []
     for payload in sorted(inspected, key=lambda item: str(item)):
-        for needed in sorted(needed_libraries(payload, readelf)):
+        try:
+            needed_names = needed_libraries(payload, readelf)
+        except RuntimeError as exc:
+            die(str(exc))
+        for needed in sorted(needed_names):
             if needed in SYSTEM_BASELINE or needed in available:
                 continue
             missing.append((payload, needed))
