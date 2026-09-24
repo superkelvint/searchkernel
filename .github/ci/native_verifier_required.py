@@ -20,7 +20,6 @@ NATIVE_PATTERNS = (
     "Cargo.lock",
     ".cargo/**",
     "rust-toolchain*",
-    "dev",
     "core/crates/searchkernel-ir-adapter/**",
     "core/crates/searchkernel-vespa-bindings/**",
     "core/crates/searchkernel-vespa-engine/**",
