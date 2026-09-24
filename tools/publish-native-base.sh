@@ -25,11 +25,7 @@ done
 [[ -x ./dev ]] || die "./dev is missing or not executable"
 gh api "repos/$REPO" >/dev/null 2>&1 || die "gh authentication cannot access $REPO"
 
-PINNED_VESPA_COMMIT="$(python3 - <<'PY'
-import json
-with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
-    print(json.load(stream)["vespa_commit"])
-PY
+PINNED_VESPA_COMMIT="$(python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/publish-native-base-python-1.py"
 )"
 [[ "$PINNED_VESPA_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] || die "invalid pinned Vespa commit: $PINNED_VESPA_COMMIT"
 TARGET="${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
@@ -113,67 +109,12 @@ augment_static_closure() {
     local bundle="$1"
     local packaged_vespa="$bundle/toolchain/upstream/vespa"
     local packaged_deps="$bundle/toolchain/vespa-deps"
-    python3 - "$REAL_LINK_FILE" "$REAL_VESPA_ROOT" "$REAL_DEPS" "$packaged_vespa" "$packaged_deps" <<'PY'
-import pathlib, shlex, shutil, sys
-link_file = pathlib.Path(sys.argv[1]).resolve()
-vespa_root = pathlib.Path(sys.argv[2]).resolve()
-deps_root = pathlib.Path(sys.argv[3]).resolve()
-packaged_vespa = pathlib.Path(sys.argv[4])
-packaged_deps = pathlib.Path(sys.argv[5])
-link_cwd = link_file.parent.parent.parent
-seen = set()
-count = 0
-for token in shlex.split(link_file.read_text(encoding="utf-8")):
-    if not token.endswith(".a") or pathlib.Path(token).name == "libsearchcore_test.a":
-        continue
-    source = pathlib.Path(token)
-    if not source.is_absolute():
-        source = link_cwd / source
-    source = source.resolve(strict=True)
-    if str(source) in seen:
-        continue
-    seen.add(str(source))
-    try:
-        rel = source.relative_to(vespa_root)
-        dest = packaged_vespa / rel
-    except ValueError:
-        try:
-            rel = source.relative_to(deps_root)
-            dest = packaged_deps / rel
-        except ValueError as exc:
-            raise SystemExit(f"adapter static archive is outside declared roots: {source}") from exc
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, dest)
-    count += 1
-if count == 0:
-    raise SystemExit("canonical adapter link command contained no production static archives")
-print(f"packaged {count} production static archives")
-PY
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/publish-native-base-python-2.py" "$REAL_LINK_FILE" "$REAL_VESPA_ROOT" "$REAL_DEPS" "$packaged_vespa" "$packaged_deps"
 }
 
 stamp_generation() {
     local bundle="$1" build_env="$2"
-    python3 - "$bundle/manifest.json" "$bundle/toolchain/upstream/vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
-import json, sys
-bundle, marker, expected_format, generation, env, target, commit = sys.argv[1:]
-expected_format = int(expected_format)
-generation = int(generation)
-for path in (bundle, marker):
-    with open(path, encoding="utf-8") as stream:
-        data = json.load(stream)
-    if data.get("format_version") != expected_format:
-        raise SystemExit(
-            f"refusing to publish stale native-base schema from {path}: "
-            f"expected format_version {expected_format}, found {data.get('format_version')!r}"
-        )
-    if data.get("build_environment") != env or data.get("native_target") != target or data.get("vespa_commit") != commit:
-        raise SystemExit(f"artifact metadata identity mismatch in {path}")
-    data["artifact_generation"] = generation
-    data["adapter_static_link_closure"] = True
-    with open(path, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, indent=2, sort_keys=True)
-        stream.write("\n")
-PY
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/publish-native-base-python-3.py" "$bundle/manifest.json" "$bundle/toolchain/upstream/vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT"
 }
 
 verify_bundle() {
@@ -181,50 +122,8 @@ verify_bundle() {
     local base="$bundle/base" vespa="$bundle/toolchain/upstream/vespa" deps="$bundle/toolchain/vespa-deps"
     [[ -d "$base/lib" && -f "$vespa/$MARKER_REL" && -f "$vespa/$FLAGS_REL" && -d "$deps/include" ]] || die "$label: incomplete bundle"
     mkdir -p "$deps/lib64"
-    python3 - "$bundle/manifest.json" "$vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
-import json
-import sys
-
-bundle_path, marker_path, expected_format, generation, build_env, target, commit = sys.argv[1:]
-expected_format = int(expected_format)
-generation = int(generation)
-for path in (bundle_path, marker_path):
-    with open(path, encoding="utf-8") as stream:
-        data = json.load(stream)
-    expected = {
-        "format_version": expected_format,
-        "artifact_generation": generation,
-        "build_environment": build_env,
-        "native_target": target,
-        "vespa_commit": commit,
-        "adapter_static_link_closure": True,
-    }
-    for key, value in expected.items():
-        if data.get(key) != value:
-            raise SystemExit(
-                f"published metadata mismatch in {path}: "
-                f"{key} expected {value!r}, found {data.get(key)!r}"
-            )
-PY
-    python3 - "$vespa/$MARKER_REL" "$vespa" "$deps" <<'PY'
-import pathlib, shlex, sys
-link_file = pathlib.Path(sys.argv[1])
-vespa = pathlib.Path(sys.argv[2])
-deps = pathlib.Path(sys.argv[3])
-text = link_file.read_text(encoding="utf-8").replace("/work/vespa", str(vespa)).replace("/opt/vespa-deps", str(deps))
-cwd = link_file.parent.parent.parent
-missing = []
-for token in shlex.split(text):
-    if not token.endswith(".a") or pathlib.Path(token).name == "libsearchcore_test.a":
-        continue
-    path = pathlib.Path(token)
-    if not path.is_absolute():
-        path = cwd / path
-    if not path.exists():
-        missing.append(str(path))
-if missing:
-    raise SystemExit("packaged static-link closure is incomplete:\n  " + "\n  ".join(missing))
-PY
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/publish-native-base-python-4.py" "$bundle/manifest.json" "$vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT"
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/publish-native-base-python-5.py" "$vespa/$MARKER_REL" "$vespa" "$deps"
     local verify_root="$TMP/verify-${build_env}-${label}"
     rm -rf "$verify_root"
     mkdir -p "$verify_root"
