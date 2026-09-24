@@ -5,7 +5,7 @@ M14="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 [[ -x "$M14/oracle/target/m14_cpp_oracle" ]] || { echo 'build the reviewed M14 oracle first' >&2; exit 2; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
-  id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
+  id="$(python3 "$M14/../../../tools/json-cli.py" get "$scenario" id)"
   "$M14/oracle/run-cpp-oracle.sh" "$scenario" | "$M14/canonicalize_behavior.py" > "$M14/expected/$id.json"
 done
 cfg="$TMP/config"; data="$TMP/data"
