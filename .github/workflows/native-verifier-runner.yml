@@ -118,6 +118,20 @@ jobs:
 
           export PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
           export LD_LIBRARY_PATH="/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+          # Keep exact-head verification hermetic from runner-global Cargo
+          # configuration. In particular, a stale [env] SK_NATIVE_SDK entry in
+          # /root/.cargo/config* must not make Cargo treat the verifier-owned
+          # adapter SDK as an explicit full SDK. Reuse only the expensive
+          # registry/git caches from the persistent runner.
+          export CARGO_HOME="$ALMA_WORKTREE/.cargo-home"
+          mkdir -p "$CARGO_HOME"
+          for cache in registry git; do
+            if [[ -e "/root/.cargo/$cache" && ! -e "$CARGO_HOME/$cache" ]]; then
+              ln -s "/root/.cargo/$cache" "$CARGO_HOME/$cache"
+            fi
+          done
+
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=safe.directory
           export GIT_CONFIG_VALUE_0="$ALMA_WORKTREE"
