@@ -127,7 +127,7 @@ def main() -> int:
             path = bundle / name
             if not path.is_file():
                 raise SystemExit(f"bundler did not copy recursive runtime dependency {name}")
-            if path.read_bytes()[:4] != b"\\x7fELF":
+            if path.read_bytes()[:4] != b"\x7fELF":
                 raise SystemExit(f"bundled runtime dependency is not ELF: {name}")
 
         complete = subprocess.run(
