@@ -13,8 +13,30 @@ fi
 
 cd "$ROOT"
 
-sanitize_ca_overrides() {
-    local name value
+configure_ca_bundle() {
+    local name value bundle=
+    local candidate
+
+    for name in SSL_CERT_FILE REQUESTS_CA_BUNDLE CURL_CA_BUNDLE PIP_CERT; do
+        value=${!name:-}
+        if [[ -n "$value" && -f "$value" ]]; then
+            bundle=$value
+            break
+        fi
+    done
+
+    if [[ -z "$bundle" ]]; then
+        for candidate in \
+            /etc/pki/tls/certs/ca-bundle.crt \
+            /etc/ssl/certs/ca-certificates.crt \
+            /etc/ssl/cert.pem; do
+            if [[ -f "$candidate" ]]; then
+                bundle=$candidate
+                break
+            fi
+        done
+    fi
+
     for name in SSL_CERT_FILE REQUESTS_CA_BUNDLE CURL_CA_BUNDLE PIP_CERT; do
         value=${!name:-}
         if [[ -n "$value" && ! -f "$value" ]]; then
@@ -22,12 +44,24 @@ sanitize_ca_overrides() {
             unset "$name"
         fi
     done
+
+    if [[ -n "$bundle" ]]; then
+        # Override pip's own config as well as inherited request-library
+        # settings. PIP_CERT propagates into pip's isolated build subprocesses,
+        # which is where a stale /etc/ssl/certs/ca-certificates.crt setting can
+        # otherwise reappear inside the AlmaLinux development container.
+        export PIP_CERT="$bundle"
+        export REQUESTS_CA_BUNDLE="$bundle"
+        export SSL_CERT_FILE="$bundle"
+        export CURL_CA_BUNDLE="$bundle"
+    fi
 }
 
-# Host/container environments sometimes leak distro-specific CA paths (for
-# example Debian's /etc/ssl/certs/ca-certificates.crt into AlmaLinux). Those
-# break pip/curl even when the system trust store is otherwise healthy.
-sanitize_ca_overrides
+# Host/container environments can carry distro-specific CA settings (for
+# example Debian's /etc/ssl/certs/ca-certificates.crt into AlmaLinux). Normalize
+# them once so every networked repair operation, including pip build isolation,
+# uses the trust store that actually exists in this environment.
+configure_ca_bundle
 
 ensure_hooks() {
     local configured
