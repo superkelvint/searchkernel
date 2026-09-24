@@ -142,5 +142,5 @@ jobs:
 
           # Always qualify the destination as a branch ref. Without this prefix,
           # a pathological branch name such as "refs/heads/main" could be
-          # interpreted as the protected destination rather than the PR branch.
+          # interpreted as that full destination rather than the PR branch.
           git push "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
