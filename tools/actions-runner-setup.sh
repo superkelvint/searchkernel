@@ -406,9 +406,12 @@ if ! rustup toolchain list | grep -q "^stable"; then
 fi
 
 rustup default stable >/dev/null
+rustup component add rustfmt clippy >/dev/null
 
 rustc --version
 cargo --version
+rustfmt --version
+cargo clippy --version
 
 ###############################################################################
 # FlatBuffers
@@ -618,6 +621,25 @@ else
 fi
 
 ###############################################################################
+# Native verifier prerequisites
+###############################################################################
+
+say "Checking native verifier prerequisites"
+
+if ! command -v rg >/dev/null 2>&1; then
+    dnf install -y epel-release
+    dnf install -y ripgrep
+fi
+if ! command -v nm >/dev/null 2>&1 || ! command -v readelf >/dev/null 2>&1; then
+    dnf install -y binutils
+fi
+
+for cmd in rg nm readelf ldd; do
+    command -v "$cmd" >/dev/null 2>&1 ||
+        die "native verifier prerequisite is unavailable: $cmd"
+done
+
+###############################################################################
 # Doctor
 ###############################################################################
 
@@ -644,17 +666,46 @@ BINARY="$CARGO_TARGET_DIR/debug/searchkerneld"
     die "searchkerneld binary not produced: $BINARY"
 
 ###############################################################################
+# Clean-runner native acceptance
+###############################################################################
+
+say "Running clean-runner native verifier acceptance"
+
+PINNED_VESPA_COMMIT="$(python3 - <<'PY'
+import json
+with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
+    print(json.load(stream)["vespa_commit"])
+PY
+)"
+CACHE_NAMESPACE="${SDK_PATH%/objects/$PINNED_VESPA_COMMIT}"
+PUBLISHED_VESPA_ROOT="$CACHE_NAMESPACE/toolchains/$PINNED_VESPA_COMMIT/upstream/vespa"
+
+[[ -f "$PUBLISHED_VESPA_ROOT/.searchkernel-vespa-artifact.json" ]] ||
+    die "published native-base toolchain provenance is missing: $PUBLISHED_VESPA_ROOT"
+
+# Force the acceptance run through the published toolchain even if the checkout
+# mounted at /work happens to contain a developer's configured upstream/vespa
+# tree. live_oracle_enabled() must therefore select frozen-oracle replay.
+export VESPA_ROOT="$PUBLISHED_VESPA_ROOT"
+unset SK_NATIVE_SDK || true
+unset SEARCHKERNEL_VERIFY_LIVE_ORACLE || true
+
+./dev verify m14
+./dev verify product.rust-real-engine
+./dev verify integration
+
+###############################################################################
 # Result
 ###############################################################################
 
-say "Build succeeded"
+say "Build and native verification succeeded"
 
 ls -lh "$BINARY"
 file "$BINARY"
 
 echo
 echo "============================================================"
-echo "SearchKernel native searchkerneld build SUCCESS"
+echo "SearchKernel native searchkerneld + verifier acceptance SUCCESS"
 echo "============================================================"
 echo
 echo "Binary:"
