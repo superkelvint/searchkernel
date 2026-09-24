@@ -110,11 +110,7 @@ while read -r id path expected; do
     echo "M14 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1
   }
-done < <(python3 - "$ERRORS" <<'PY'
-import json,sys
-for case in json.load(open(sys.argv[1],encoding='utf-8'))['cases']:
-    print(case['id'],case['path'],case['expected'])
-PY
+done < <(python3 "reference/vespa/m14/verify-m14-python-1.py" "$ERRORS"
 )
 
 echo 'M14 HNSW approximate-NN verification passed'
