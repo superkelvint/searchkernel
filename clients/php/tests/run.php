@@ -1422,4 +1422,223 @@ throws(
     'unknown TotalHits relation fails closed',
 );
 
+// --------------------------------------------------------------------------
+// Public-constructor branch coverage.
+// --------------------------------------------------------------------------
+// These assertions intentionally exercise sibling helpers that share lowering
+// code but carry branch-specific operators, union tags, or presence semantics.
+
+$fromArrayObject = ValueObject::fromArray(['z' => 2, 'a' => 1]);
+same(
+    ['a', 'z'],
+    array_column($fromArrayObject->entries, 'key'),
+    'ValueObject::fromArray canonicalizes object key order',
+);
+throws(
+    \InvalidArgumentException::class,
+    static fn () => ValueObject::fromArray([0 => 'numeric-key']),
+    'ValueObject::fromArray rejects PHP integer keys rather than changing portable object keys',
+);
+
+$mixedTensor = Tensor::mixed('tensor<float>(a{},z{},x[2])', [[
+    'address' => ['z' => 'last', 'a' => 'first'],
+    'values' => [1, 2.5],
+]]);
+$mixedTensorWire = Protocol::value($mixedTensor);
+same('TensorValue', $mixedTensorWire['kind_type'], 'mixed tensor uses TensorValue union');
+same('MixedTensorBlocks', $mixedTensorWire['kind']['payload_type'], 'mixed tensor payload discriminator');
+same(
+    ['a', 'z'],
+    array_column($mixedTensorWire['kind']['payload']['blocks'][0]['address'], 'dimension'),
+    'mixed tensor mapped address is canonical dimension order',
+);
+same(
+    [1.0, 2.5],
+    Tensor::fromWire(
+        'tensor<float>(m{},x[2])',
+        'MixedTensorBlocks',
+        ['blocks' => [[
+            'address' => [['dimension' => 'm', 'label' => 'key']],
+            'values' => [1, 2.5],
+        ]]],
+    )->payload['blocks'][0]['values'],
+    'mixed tensor wire decoder validates and preserves block values',
+);
+
+foreach ([
+    'ne' => 'Ne',
+    'lt' => 'Lt',
+    'lte' => 'Lte',
+    'gt' => 'Gt',
+    'gte' => 'Gte',
+] as $comparisonMethod => $comparisonOperator) {
+    $comparison = SearchKernel\Query::{$comparisonMethod}('price', 10);
+    same('QueryComparison', $queryExpr($comparison)['expr_type'], $comparisonMethod . ' comparison type');
+    same(
+        $comparisonOperator,
+        $queryExpr($comparison)['expr']['op'],
+        $comparisonMethod . ' comparison operator',
+    );
+}
+$queryOr = SearchKernel\Query::anyOf(
+    SearchKernel\Query::alwaysTrue(),
+    SearchKernel\Query::alwaysFalse(),
+);
+same('QueryOr', $queryExpr($queryOr)['expr_type'], 'boolean OR query');
+same(
+    'QueryTrue',
+    $queryExpr($queryOr)['expr']['clauses'][0]['expr_type'],
+    'alwaysTrue query branch',
+);
+
+$constructorSearch = $index
+    ->search('fox')
+    ->searchFields('title', 'body')
+    ->sortFeature('nativeRank', 'asc')
+    ->rawSort('price * -1', 'desc')
+    ->offset(0)
+    ->limit(5)
+    ->request();
+same(
+    ['title', 'body'],
+    array_column($constructorSearch['search_fields']['fields'], 'field'),
+    'searchFields convenience preserves caller order',
+);
+same(
+    'RankFeatureSortTarget',
+    $constructorSearch['sort'][0]['target']['target_type'],
+    'rank-feature sort target discriminator',
+);
+same('Asc', $constructorSearch['sort'][0]['direction'], 'rank-feature sort direction');
+same(
+    'RawSortTarget',
+    $constructorSearch['sort'][1]['target']['target_type'],
+    'raw sort target discriminator',
+);
+same('Desc', $constructorSearch['sort'][1]['direction'], 'raw sort direction');
+same(['value' => 0], $constructorSearch['offset'], 'explicit zero offset remains present');
+same(['value' => 5], $constructorSearch['limit'], 'explicit limit remains present');
+
+$yqlOffset = $index
+    ->yql('select * from sources * where true')
+    ->offset(0)
+    ->limit(5)
+    ->request();
+same(['value' => 0], $yqlOffset['offset'], 'YQL explicit zero offset remains present');
+same(['value' => 5], $yqlOffset['limit'], 'YQL explicit limit remains present');
+
+$index->analyze('Running')
+    ->analyzer('custom', 7, ['mode' => 'strict'])
+    ->language('en')
+    ->execute();
+$analyzeWithAnalyzer = $transport->requests[array_key_last($transport->requests)];
+same(
+    'Analyzer',
+    $analyzeWithAnalyzer['payload']['target']['target_type'],
+    'analyze explicit analyzer target discriminator',
+);
+same(
+    7,
+    $analyzeWithAnalyzer['payload']['target']['target']['version'],
+    'analyze explicit analyzer version',
+);
+same(
+    'mode',
+    $analyzeWithAnalyzer['payload']['target']['target']['options'][0]['key'],
+    'analyze options use canonical value-entry encoding',
+);
+same('en', $analyzeWithAnalyzer['payload']['language'], 'analyze language preserved');
+
+$branchUpdateId = $index->update('doc-branch')
+    ->decrement('inventory', 2)
+    ->divide('price', 4)
+    ->execute();
+same('doc-branch', $branchUpdateId, 'branch arithmetic update result id');
+$branchUpdate = $transport->requests[array_key_last($transport->requests)];
+same(
+    'Decrement',
+    $branchUpdate['payload']['operations'][0]['operation']['operator'],
+    'update decrement operator',
+);
+same(
+    'Divide',
+    $branchUpdate['payload']['operations'][1]['operation']['operator'],
+    'update divide operator',
+);
+same(
+    'Decrement',
+    SearchKernel\MatchedUpdate::decrement(3)->toWire()['operation']['operator'],
+    'matched update decrement operator',
+);
+same(
+    'Divide',
+    SearchKernel\MatchedUpdate::divide(3)->toWire()['operation']['operator'],
+    'matched update divide operator',
+);
+
+$groupField = SearchKernel\G::field('price');
+foreach ([
+    [$groupField->plus(1), 'Add'],
+    [$groupField->minus(1), 'Subtract'],
+    [$groupField->divide(2), 'Divide'],
+    [$groupField->modulo(3), 'Modulo'],
+] as [$groupExpression, $groupOperator]) {
+    same('GroupingBinaryExpression', $groupExpression->model['expr_type'], $groupOperator . ' grouping expression type');
+    same($groupOperator, $groupExpression->model['expr']['op'], $groupOperator . ' grouping operator');
+}
+same(
+    'Negative',
+    $groupField->negate()->model['expr']['op'],
+    'grouping negate operator',
+);
+same(
+    'Positive',
+    SearchKernel\GroupingOrder::asc($groupField)->expression->model['expr']['op'],
+    'ascending grouping order uses positive unary expression',
+);
+same(
+    'GroupingMemberExpression',
+    SearchKernel\G::member(SearchKernel\G::field('profile'), 'country')->model['expr_type'],
+    'grouping member expression discriminator',
+);
+same(
+    'GroupingMapLookupExpression',
+    SearchKernel\G::lookup(SearchKernel\G::field('attributes'), 'color')->model['expr_type'],
+    'grouping map lookup expression discriminator',
+);
+$bucket = SearchKernel\G::bucket(10, 20, false, true)->model;
+same('GroupingBucketExpression', $bucket['expr_type'], 'grouping bucket expression discriminator');
+same(['value' => false], $bucket['expr']['include_lower'], 'bucket lower inclusion presence');
+same(['value' => true], $bucket['expr']['include_upper'], 'bucket upper inclusion presence');
+
+$isTrue = SearchKernel\Gf::isTrue(SearchKernel\G::field('in_stock'));
+$filterOr = SearchKernel\Gf::anyOf(
+    $isTrue,
+    SearchKernel\Gf::regex(SearchKernel\G::field('brand'), '^A'),
+);
+same('GroupingFilterOr', $filterOr['expr_type'], 'grouping filter OR discriminator');
+same('GroupingFilterIsTrue', $filterOr['expr']['clauses'][0]['expr_type'], 'grouping is-true filter');
+
+foreach ([
+    SearchKernel\Agg::min('price') => 'MinAggregation',
+    SearchKernel\Agg::max('price') => 'MaxAggregation',
+    SearchKernel\Agg::stddev('price') => 'StdDevAggregation',
+] as $aggregation => $aggregationType) {
+    same(
+        $aggregationType,
+        $aggregation->model['expr']['aggregation_type'],
+        $aggregationType . ' discriminator',
+    );
+}
+
+$nestedGroup = SearchKernel\Group::by('brand')
+    ->subgroup(SearchKernel\Group::by('category'))
+    ->toRequest();
+$nestedGroupBody = $nestedGroup['source']['root']['operations'][1]['operation']['operations'];
+same(
+    'GroupingAllOperation',
+    $nestedGroupBody[0]['operation_type'],
+    'subgroup lowers through GroupingAllOperation',
+);
+
 echo "PHP client semantic-spine tests PASS\n";
