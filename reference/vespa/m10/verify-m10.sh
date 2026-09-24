@@ -59,7 +59,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
 done
 
 ERRORS="$SCRIPT_DIR/scenarios/errors.json"
-python3 "reference/vespa/m10/verify-m10-python-1.py" "$ERRORS"  > "$TMP/error-jobs"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-m10-python-1.py" "$ERRORS"  > "$TMP/error-jobs"
 while read -r id expected; do
   cfg="$TMP/error-$id-cfg"; data="$TMP/error-$id-data"; mkdir -p "$data"
   actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m10-error -- "$ERRORS" "$id" "$cfg" "$data")"
