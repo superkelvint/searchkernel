@@ -62,7 +62,7 @@ def needed_libraries(path: pathlib.Path, readelf: str) -> set[str]:
     }
 
 
-def validate(libdir: pathlib.Path) -> None:
+def validate(libdir: pathlib.Path, extra_elfs: list[pathlib.Path]) -> None:
     if not libdir.is_dir():
         die("native runtime lib directory does not exist: {}".format(libdir))
 
@@ -97,8 +97,18 @@ def validate(libdir: pathlib.Path) -> None:
     if not payloads:
         die("native runtime lib directory contains no ELF shared libraries: {}".format(libdir))
 
+    inspected = set(payloads)
+    for extra in extra_elfs:
+        try:
+            resolved = extra.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            die("invalid extra native ELF {}: {}".format(extra, exc))
+        if not resolved.is_file() or not is_elf(resolved):
+            die("extra native runtime input is not an ELF file: {}".format(extra))
+        inspected.add(resolved)
+
     missing: list[tuple[pathlib.Path, str]] = []
-    for payload in sorted(payloads, key=lambda item: str(item)):
+    for payload in sorted(inspected, key=lambda item: str(item)):
         for needed in sorted(needed_libraries(payload, readelf)):
             if needed in SYSTEM_BASELINE or needed in available:
                 continue
@@ -116,14 +126,17 @@ def validate(libdir: pathlib.Path) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         print(
-            "usage: tools/check-native-runtime-closure.py <lib-directory>",
+            "usage: tools/check-native-runtime-closure.py <lib-directory> [extra-elf ...]",
             file=sys.stderr,
         )
         return 2
 
-    validate(pathlib.Path(sys.argv[1]))
+    validate(
+        pathlib.Path(sys.argv[1]),
+        [pathlib.Path(value) for value in sys.argv[2:]],
+    )
     print("native runtime dependency closure: PASS")
     return 0
 
