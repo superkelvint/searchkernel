@@ -36,11 +36,7 @@ for s in "$M8"/scenarios/[0-9][0-9]-*.json; do
  echo "M8 freezing $id" >&2
  CURRENT_TMP="$(mktemp)"
  run_oracle "$M8/oracle/run-cpp-oracle.sh" "$s" > "$CURRENT_TMP"
- python3 - "$CURRENT_TMP" "$M8/expected/$id.json" <<'PY'
-import json,sys
-obj=json.load(open(sys.argv[1],encoding='utf-8'))
-open(sys.argv[2],'w',encoding='utf-8').write(json.dumps(obj,sort_keys=True,separators=(',',':'))+'\n')
-PY
+ python3 "reference/vespa/m8/freeze-goldens-python-1.py" "$CURRENT_TMP" "$M8/expected/$id.json"
  rm -f "$CURRENT_TMP"
  CURRENT_TMP=
 done
