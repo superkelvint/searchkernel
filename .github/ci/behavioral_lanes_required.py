@@ -21,7 +21,6 @@ LANES = ("rust", "python", "typescript", "ruby")
 # Portable/client-contract changes can alter every first-party facade's behavior.
 ALL_LANE_PATTERNS = (
     "api/**",
-    "dev",
     "tools/check-capabilities.py",
     "tools/check-client-contracts.py",
     "tools/test_check_capabilities.py",
@@ -39,33 +38,12 @@ MULTI_LANE_PATTERNS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (
         (
             "api/rpc/searchkernel.proto",
-            "core/crates/searchkernel-protocol/src/generated/**",
             "core/crates/searchkernel-protocol/bfbs/**",
-            "core/crates/searchkernel-rpc/src/generated/**",
-            "searchkerneld/src/generated/**",
-            "clients/python/searchkernel/_wire_generated/**",
-            "clients/python/searchkernel/rpc/**",
-            "clients/typescript/src/generated/**",
-            "tools/rpc-codegen/**",
             "tools/generate-flatbuffers-bfbs.sh",
-            "tools/generate-python-flatbuffers.sh",
-            "tools/generate-python-grpc.sh",
-            "tools/generate-searchkernel-protocol.sh",
-            "tools/generate-searchkernel-rpc.sh",
-            "tools/generate-typescript-flatbuffers.sh",
-            "tools/generate-typescript-grpc-web.sh",
             "tools/check-flatbuffers-bfbs.sh",
             "tools/check-flatbuffers-cpp.sh",
-            "tools/check-python-flatbuffers-boundary.py",
-            "tools/check-python-flatbuffers-generated.sh",
-            "tools/check-python-grpc.sh",
-            "tools/check-searchkernel-protocol-generated.sh",
-            "tools/check-searchkernel-rpc.sh",
-            "tools/check-typescript-generated.sh",
-            "tools/patch-python-flatbuffers-object-api.py",
             "tools/resolve-flatc.sh",
             "tools/test-flatbuffers-cpp-toolchain.sh",
-            "tools/test-typescript-generation.sh",
         ),
         ("rust", "python", "typescript"),
     ),
@@ -91,6 +69,11 @@ LANE_PATTERNS = {
         "tools/test_check_search_semantic_entry_points.py",
         "tools/run_clippy.py",
         "tools/test_run_clippy.py",
+        "tools/rpc-codegen/**",
+        "tools/generate-searchkernel-protocol.sh",
+        "tools/generate-searchkernel-rpc.sh",
+        "tools/check-searchkernel-protocol-generated.sh",
+        "tools/check-searchkernel-rpc.sh",
     ),
     "python": (
         "clients/python/**",
@@ -99,6 +82,8 @@ LANE_PATTERNS = {
         "tools/test-python-*.py",
         "tools/test_python_*.py",
         "tools/run-python-*.sh",
+        "tools/generate-python-*.sh",
+        "tools/patch-python-*.py",
     ),
     "typescript": (
         "clients/typescript/**",
@@ -122,6 +107,8 @@ NON_BEHAVIORAL_PATTERNS = (
     "implementation-plan/**",
     "clients/*.md",
     "clients/php/**",
+    "verification/dag.toml",
+    "tools/check-layout.sh",
     ".gitignore",
     ".rgignore",
 )
@@ -137,10 +124,19 @@ def _matches(path: str, patterns: Iterable[str]) -> str | None:
 def classify(paths: Iterable[str]) -> tuple[dict[str, bool], dict[str, list[str]]]:
     selected = {lane: False for lane in LANES}
     reasons = {lane: [] for lane in LANES}
+    dev_changed = False
 
     for raw_path in paths:
         path = raw_path.strip().replace("\\", "/")
         if not path:
+            continue
+
+        # `dev` is a shared command wrapper. When it changes alongside a
+        # clearly owned product surface, keep verification scoped to those
+        # already-selected lanes instead of fanning out every language. A
+        # standalone `dev` change still fails closed below.
+        if path == "dev":
+            dev_changed = True
             continue
 
         if _matches(path, NON_BEHAVIORAL_PATTERNS) is not None:
@@ -181,6 +177,20 @@ def classify(paths: Iterable[str]) -> tuple[dict[str, bool], dict[str, list[str]
             for lane in LANES:
                 selected[lane] = True
                 reasons[lane].append(f"{path} (unclassified: conservative fallback)")
+
+    if dev_changed:
+        already_selected = [lane for lane in LANES if selected[lane]]
+        if already_selected:
+            for lane in already_selected:
+                reasons[lane].append(
+                    "dev (supports already-selected product lane; no cross-language broadening)"
+                )
+        else:
+            for lane in LANES:
+                selected[lane] = True
+                reasons[lane].append(
+                    "dev (standalone shared developer-tooling change: conservative fallback)"
+                )
 
     return selected, reasons
 
