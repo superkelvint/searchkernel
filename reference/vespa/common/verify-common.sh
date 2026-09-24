@@ -8,7 +8,9 @@ REFERENCE_ROOT="$(cd "$COMMON_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$REFERENCE_ROOT/../.." && pwd)"
 PIN_FILE="$REFERENCE_ROOT/PINNED_VESPA.json"
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target/vespa-verifier/cargo}"
+SK_NATIVE_SDK_WAS_EXPLICIT=0
 if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
+  SK_NATIVE_SDK_WAS_EXPLICIT=1
   SDK="$SK_NATIVE_SDK"
   if [[ -d "$SDK" ]]; then
     SDK="$(cd "$SDK" && pwd -P)"
@@ -32,8 +34,15 @@ else
   VESPA_ROOT="$VESPA_ROOT" \
     bash "$REPO_ROOT/core/native/vespa/build-sdk.sh" >/dev/null
 fi
-SK_NATIVE_SDK="$SDK"
-export SK_NATIVE_SDK
+if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
+  SK_NATIVE_SDK="$SDK"
+  export SK_NATIVE_SDK
+else
+  # The verifier-owned SDK is for direct probes and fixtures. Cargo must stay
+  # on the shared-base path so build.rs creates its revision-local adapter and
+  # never mistakes this adapter-only SDK for a full explicit SDK.
+  unset SK_NATIVE_SDK
+fi
 if [[ -z "${VESPA_ROOT:-}" ]]; then
   VESPA_ROOT=$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)
 fi
