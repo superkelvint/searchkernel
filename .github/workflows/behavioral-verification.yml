@@ -46,7 +46,8 @@ jobs:
           echo "Verified exact PR head $actual."
 
       - name: Test candidate behavioral lane selector
-        run: "$CI_PYTHON" .github/ci/test_behavioral_lanes_required.py
+        run: |
+          "$CI_PYTHON" .github/ci/test_behavioral_lanes_required.py
 
       - name: Compute base-to-head changed paths
         env:
