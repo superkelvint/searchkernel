@@ -287,20 +287,19 @@ class ExactHeadTests(unittest.TestCase):
             "\n  exact-head-gate:\n", 1
         )[0]
         self.assertIn("if: needs.classify.outputs.ruby == 'true'", ruby)
-        self.assertIn("uses: ruby/setup-ruby@v1", ruby)
+        self.assertNotIn("uses: ruby/setup-ruby@v1", ruby)
+        self.assertIn("Verify provisioned Ruby", ruby)
+        self.assertIn("Gem::Version.new(RUBY_VERSION)", ruby)
         self.assertIn("uses: dtolnay/rust-toolchain@stable", ruby)
         self.assertIn("./dev install flatbuffers", ruby)
         self.assertIn("ruby --version", ruby)
         self.assertIn("./dev test ruby", ruby)
         classify = workflow.split("\n  classify:\n", 1)[1].split("\n  rust:\n", 1)[0]
         self.assertNotIn("uses: ruby/setup-ruby@v1", classify)
-        no_client_guard = ruby.index("if [[ ! -d clients/ruby ]]")
-        runtime_probe = ruby.index("ruby --version")
-        self.assertLess(
-            no_client_guard,
-            runtime_probe,
-            "pre-registered Ruby verification must not require a Ruby runtime before a Ruby client exists",
-        )
+        provisioned_probe = ruby.split("- name: Verify provisioned Ruby", 1)[1].split(
+            "- name: Install Rust toolchain", 1
+        )[0]
+        self.assertIn("hashFiles('clients/ruby/**')", provisioned_probe)
         gate = workflow.split("\n  exact-head-gate:\n", 1)[1]
         self.assertIn("RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}", gate)
         self.assertIn("RUBY_RESULT: ${{ needs.ruby.result }}", gate)
