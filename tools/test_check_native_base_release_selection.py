@@ -22,6 +22,10 @@ def release(
     published=True,
     archive=True,
     checksum=True,
+    archive_state="uploaded",
+    checksum_state="uploaded",
+    archive_size=123,
+    checksum_size=64,
 ):
     tag = "vespa-base-v{}-{}-{}-{}".format(
         generation, BUILD_ENV, TARGET, COMMIT
@@ -31,9 +35,11 @@ def release(
     )
     assets = []
     if archive:
-        assets.append({"name": asset, "state": "uploaded", "size": 123})
+        assets.append({"name": asset, "state": archive_state, "size": archive_size})
     if checksum:
-        assets.append({"name": asset + ".sha256", "state": "uploaded", "size": 64})
+        assets.append(
+            {"name": asset + ".sha256", "state": checksum_state, "size": checksum_size}
+        )
     return {
         "tag_name": tag,
         "draft": draft,
@@ -81,7 +87,14 @@ def main():
     assert select(releases) == 2
 
     releases.append(release(5, draft=True))
+    releases.append(release(6, archive_state="new"))
+    releases.append(release(7, checksum_state="new"))
+    releases.append(release(8, archive_size=0))
+    releases.append(release(9, checksum_size=0))
     assert select(releases) == 2
+
+    releases.append(release(10))
+    assert select(releases) == 10
 
     print("native-base release selection regression: PASS")
     return 0
