@@ -110,7 +110,7 @@ while read -r id path expected; do
     echo "M14 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1
   }
-done < <(python3 "reference/vespa/m14/verify-m14-python-1.py" "$ERRORS"
+done < <(python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-m14-python-1.py" "$ERRORS"
 )
 
 echo 'M14 HNSW approximate-NN verification passed'
