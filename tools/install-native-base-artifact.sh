@@ -172,13 +172,13 @@ def read(path):
 bundle = read(bundle_path)
 base = read(base_path)
 marker = read(marker_path)
-expected = {
-    "format_version": 1,
+
+expected_identity = {
     "build_environment": build_env,
     "native_target": target,
     "vespa_commit": commit,
 }
-for key, value in expected.items():
+for key, value in expected_identity.items():
     if bundle.get(key) != value:
         raise SystemExit(
             f"published Vespa base {key} mismatch: expected {value!r}, found {bundle.get(key)!r}"
@@ -187,6 +187,36 @@ for key, value in expected.items():
         raise SystemExit(
             f"published Vespa toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
         )
+
+generation = bundle.get("artifact_generation")
+if not isinstance(generation, int) or generation < 1:
+    raise SystemExit("published Vespa base has no valid artifact_generation")
+if marker.get("artifact_generation") != generation:
+    raise SystemExit(
+        "published Vespa base/toolchain artifact_generation mismatch: "
+        f"{generation!r} vs {marker.get('artifact_generation')!r}"
+    )
+
+bundle_format = bundle.get("format_version")
+marker_format = marker.get("format_version")
+if bundle_format != marker_format:
+    raise SystemExit(
+        "published Vespa base/toolchain format_version mismatch: "
+        f"{bundle_format!r} vs {marker_format!r}"
+    )
+
+legacy_link_complete = (
+    bundle_format == 1
+    and generation == 2
+    and bundle.get("adapter_static_link_closure") is True
+    and marker.get("adapter_static_link_closure") is True
+)
+if bundle_format != 2 and not legacy_link_complete:
+    raise SystemExit(
+        "unsupported published Vespa base format: "
+        f"format_version={bundle_format!r}, artifact_generation={generation!r}"
+    )
+
 if base.get("kind") != "vespa-base" or base.get("vespa_commit") != commit:
     raise SystemExit("published Vespa base manifest does not match the pinned Vespa checkout")
 PY
@@ -207,6 +237,45 @@ CONFIGURED_DIR=$VESPA_ROOT/searchcore/src/tests/proton/documentdb/CMakeFiles/sea
 }
 [[ -d "$DEPS/include" ]] || { echo "published Vespa base is missing dependency headers" >&2; exit 1; }
 mkdir -p "$DEPS/lib64"
+
+# A published toolchain is link-complete only when every production static
+# archive referenced by the harvested Vespa link command is present. This
+# deliberately rejects the old v1 shape that could appear valid until the
+# consumer reached the final adapter link.
+python3 - "$CONFIGURED_DIR/link.txt" "$VESPA_ROOT" <<'PY'
+import pathlib
+import shlex
+import sys
+
+link_file = pathlib.Path(sys.argv[1]).resolve()
+vespa_root = pathlib.Path(sys.argv[2]).resolve()
+
+for token in shlex.split(link_file.read_text(encoding="utf-8")):
+    if not token.endswith(".a"):
+        continue
+    if pathlib.Path(token).name == "libsearchcore_test.a":
+        continue
+
+    if token.startswith("/work/vespa/"):
+        archive = vespa_root / token[len("/work/vespa/"):]
+    else:
+        archive = pathlib.Path(token)
+        if not archive.is_absolute():
+            # CMake evaluates link.txt arguments from the target directory,
+            # one level above CMakeFiles/<target>.dir.
+            archive = link_file.parent.parent.parent / archive
+
+    archive = archive.resolve()
+    try:
+        archive.relative_to(vespa_root)
+    except ValueError as exc:
+        raise SystemExit(
+            f"published Vespa link references static archive outside packaged toolchain: {token}"
+        ) from exc
+
+    if not archive.is_file():
+        raise SystemExit(f"published Vespa base is missing adapter static archive: {token}")
+PY
 
 retire_existing() {
     local path=$1
@@ -232,6 +301,12 @@ OBJECT_STAGE=$TMP/object-stage
 TOOLCHAIN_STAGE=$TMP/toolchain-stage
 mkdir -p "$OBJECT_STAGE" "$TOOLCHAIN_STAGE"
 cp -a "$BASE/." "$OBJECT_STAGE/"
+# The object path is keyed by Vespa checkout rather than release generation.
+# Preserve the published generation inside the object so Cargo can watch this
+# stable file and rebuild only the local adapter when ensure atomically refreshes
+# the base in place.
+chmod u+rwx "$OBJECT_STAGE"
+cp "$BUNDLE_MANIFEST" "$OBJECT_STAGE/.searchkernel-native-base-artifact.json"
 cp -a "$BUNDLE/toolchain/." "$TOOLCHAIN_STAGE/"
 # cp -a preserves the immutable source root mode onto the staging root on GNU
 # coreutils. Make only those staging directory entries writable long enough for

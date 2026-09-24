@@ -67,8 +67,15 @@ run_lane() {
   local lane="$1"
   local sdk="$TARGET/$lane/sdk"
   local build="$TARGET/$lane/native-build"
-  SK_NATIVE_SDK="$sdk" SK_NATIVE_BUILD_DIR="$build" \
-    "$ROOT/core/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
+  if using_published_vespa_toolchain; then
+    M11_BASE_SDK="$(resolved_native_base_sdk)"
+    SK_NATIVE_BASE_SDK="$M11_BASE_SDK" SK_NATIVE_ADAPTER_ONLY=1 VESPA_DEPS="$VESPA_DEPS" \
+      SK_NATIVE_SDK="$sdk" SK_NATIVE_BUILD_DIR="$build" \
+      "$ROOT/core/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
+  else
+    SK_NATIVE_SDK="$sdk" SK_NATIVE_BUILD_DIR="$build" \
+      "$ROOT/core/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
+  fi
   export SK_NATIVE_SDK="$sdk"
   export CARGO_TARGET_DIR="$CARGO_TARGET_DIR"
   export RUSTFLAGS="$M11_BASE_RUSTFLAGS -C link-arg=-Wl,-rpath,$sdk/lib"

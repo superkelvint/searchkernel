@@ -32,6 +32,7 @@ native_required=false
 python_required=false
 typescript_required=false
 php_required=false
+ruby_required=false
 protocol_required=false
 api_conformance_required=false
 contracts_required=false
@@ -44,6 +45,7 @@ lane_required native && native_required=true
 lane_required python && python_required=true
 lane_required typescript && typescript_required=true
 lane_required php && php_required=true
+lane_required ruby && ruby_required=true
 lane_required protocol && protocol_required=true
 lane_required api_conformance && api_conformance_required=true
 lane_required contracts && contracts_required=true
@@ -84,7 +86,10 @@ if [[ -n "$(git diff --cached --name-only --no-renames -- \
     core/crates/searchkernel-vespa-bindings/src/abi.rs \
     core/crates/searchkernel-vespa-bindings/src/bindings.rs \
     reference/vespa/NATIVE_ABI_CONTRACT.h \
-    reference/vespa/PINNED_VESPA.json)" ]]; then
+    reference/vespa/PINNED_VESPA.json \
+    reference/vespa/m0/expected/01-native-open-close.json \
+    reference/vespa/m0/scenarios/01-native-open-close.json \
+    reference/vespa/phase9/expected/01-additive-handles.json)" ]]; then
     abi_authority_required=true
 fi
 
@@ -97,7 +102,7 @@ echo "pre-commit: checking rustfmt"
 cargo fmt --all --check
 
 echo "pre-commit: running clippy"
-cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+./dev lint --profile rust-clippy-non-native
 
 echo "pre-commit: running workspace unit tests"
 cargo test --workspace --all-targets --no-default-features
@@ -150,6 +155,11 @@ fi
 if [[ "$php_required" == true ]]; then
     echo "pre-commit: PHP-sensitive changes detected; running PHP client tests"
     ./dev test php
+fi
+
+if [[ "$ruby_required" == true ]]; then
+    echo "pre-commit: Ruby-sensitive changes detected; running Ruby client tests"
+    ./dev test ruby
 fi
 
 if [[ "$native_required" == true ]]; then
