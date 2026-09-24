@@ -689,6 +689,11 @@ unset SEARCHKERNEL_VERIFY_LIVE_ORACLE || true
 ./dev verify product.rust-real-engine
 ./dev verify integration
 
+say "Running PHP real-engine E2E"
+
+SEARCHKERNEL_LOCAL_HOST="$BINARY" \
+    bash clients/php/examples/run_searchkernel_client_api_e2e.sh
+
 ###############################################################################
 # Result
 ###############################################################################
