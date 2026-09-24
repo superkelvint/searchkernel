@@ -24,7 +24,8 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             'docker cp "$GITHUB_WORKSPACE/." "$NATIVE_CONTAINER:$ALMA_WORKTREE"',
             'git -c safe.directory="$ALMA_WORKTREE" -C "$ALMA_WORKTREE" rev-parse HEAD',
             './dev native-sdk ensure',
-            "dnf install -y python3-clang",
+            "dnf install -y clang python3-clang",
+            "command -v clang",
             "python3 -c 'import clang.cindex'",
             './dev verify "$VERIFIER_TARGET"',
         ):
