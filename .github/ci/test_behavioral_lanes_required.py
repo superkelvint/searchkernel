@@ -37,6 +37,26 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
     def test_rust_local_change_selects_only_rust(self) -> None:
         self.assert_lanes(["core/crates/searchkernel-filter/src/lib.rs"], {"rust"})
 
+    def test_generated_protocol_artifacts_preserve_cross_language_closure(self) -> None:
+        paths = [
+            "core/crates/searchkernel-protocol/src/generated/request_generated.rs",
+            "core/crates/searchkernel-protocol/bfbs/searchkernel.bfbs",
+            "core/crates/searchkernel-rpc/src/generated/searchkernel.rs",
+            "searchkerneld/src/generated/searchkernel.rs",
+            "clients/python/searchkernel/_wire_generated/request.py",
+            "clients/python/searchkernel/rpc/searchkernel_pb2.py",
+            "clients/typescript/src/generated/searchkernel.ts",
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                self.assert_lanes([path], {"rust", "python", "typescript"})
+
+    def test_ruby_json_contract_selects_rust_and_ruby(self) -> None:
+        self.assert_lanes(
+            ["core/crates/searchkernel-protocol/tests/ruby_json_contract.rs"],
+            {"rust", "ruby"},
+        )
+
     def test_multiple_client_changes_union_lanes(self) -> None:
         self.assert_lanes(
             [
