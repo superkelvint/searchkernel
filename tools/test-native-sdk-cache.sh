@@ -13,6 +13,8 @@ bash -n "$source_root/tools/publish-native-base.sh"
 bash -n "$source_root/tools/fetch-native-base.sh"
 bash -n "$source_root/tools/actions-runner-setup.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
+bash -n "$source_root/tools/test-native-actions-runner-container.sh"
+bash -n "$source_root/tools/test-fetch-native-base.sh"
 python3 "$source_root/tools/test_check_native_base_release_selection.py"
 python3 "$source_root/tools/test_check_native_runtime_closure.py"
 python3 "$source_root/tools/test_bundle_native_runtime_closure.py"
@@ -84,6 +86,8 @@ if grep -Fq '/work/target/ci' "$source_root/tools/actions-runner-setup.sh"; then
     exit 1
 fi
 bash "$source_root/tools/test-native-base-artifact.sh"
+bash "$source_root/tools/test-fetch-native-base.sh"
+bash "$source_root/tools/test-native-actions-runner-container.sh"
 bash "$source_root/reference/vespa/common/test-published-provenance.sh"
 
 # The resolver executes the SDK builder directly. Git mode is therefore part of

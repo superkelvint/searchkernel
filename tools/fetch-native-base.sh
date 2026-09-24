@@ -29,13 +29,26 @@ with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
     print(json.load(stream)["vespa_commit"])
 PY
 )"
-if [[ -n "${SK_NATIVE_TARGET:-}" ]]; then
-    TARGET=$SK_NATIVE_TARGET
-else
-    command -v rustc >/dev/null 2>&1 || die "rustc is required unless SK_NATIVE_TARGET is set"
-    TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+TARGET=${SK_NATIVE_TARGET:-}
+if [[ -z "$TARGET" ]] && command -v rustc >/dev/null 2>&1; then
+    TARGET="$(rustc -vV 2>/dev/null | sed -n 's/^host: //p' || true)"
 fi
-[[ -n "$TARGET" ]] || die "could not determine Rust target"
+if [[ -z "$TARGET" ]]; then
+    # Native-base download only needs the artifact target, not a Rust compiler.
+    # The self-hosted CI fleet is explicitly Linux x86_64, so keep that
+    # harness path independent of whether host rustc happens to be usable.
+    command -v uname >/dev/null 2>&1 ||
+        die "cannot determine native target without rustc or uname; set SK_NATIVE_TARGET explicitly"
+    case "$(uname -s):$(uname -m)" in
+        Linux:x86_64|Linux:amd64)
+            TARGET=x86_64-unknown-linux-gnu
+            ;;
+        *)
+            die "cannot determine native target without rustc; set SK_NATIVE_TARGET explicitly"
+            ;;
+    esac
+fi
+
 
 DISCOVERY_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 if [[ -z "$DISCOVERY_TOKEN" ]]; then
