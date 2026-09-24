@@ -668,7 +668,7 @@ id = "runner-bootstrap"
 legacy_lanes = ["verification"]
 kind = "command"
 runner = "linux"
-command = "bash -n tools/ci/runner-bootstrap/install.sh tools/ci/runner-bootstrap/verify.sh tools/ci/runner-bootstrap/package.sh && bash tools/ci/runner-bootstrap/install.sh --help >/dev/null"
+command = "bash tools/ci/runner-bootstrap/test.sh"
 depends_on = []
 cache_result = false
 
