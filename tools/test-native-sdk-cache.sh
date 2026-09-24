@@ -19,6 +19,18 @@ grep -Fq 'tools/install-native-base-artifact.sh' "$source_root/tools/publish-nat
 grep -Fq 'verify_archive_consumer "$ARCHIVE"' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'verify_archive_consumer "$REMOTE/$ASSET"' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'data["searchkernel_commit"] = source_commit' "$source_root/tools/publish-native-base.sh"
+grep -Fq 'section "Revalidating publication source"' "$source_root/tools/publish-native-base.sh"
+python3 - "$source_root/tools/publish-native-base.sh" <<'PY'
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+section = text.index('section "Revalidating publication source"')
+preflight = text.index('section "Publication preflight"', section)
+between = text[section:preflight]
+if "require_canonical_main" not in between:
+    raise SystemExit("publisher must revalidate canonical main immediately before publication preflight")
+PY
 bash -n "$source_root/reference/vespa/common/verify-common.sh"
 bash -n "$source_root/reference/vespa/common/test-published-provenance.sh"
 if grep -Eq 'vespa-base-v[0-9]+|searchkernel-vespa-base-v[0-9]+' \
