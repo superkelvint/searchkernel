@@ -13,35 +13,6 @@ def die(message: str) -> "NoReturn":
     raise SystemExit(message)
 
 
-def is_elf(path: pathlib.Path) -> bool:
-    try:
-        with path.open("rb") as stream:
-            return stream.read(4) == b"\x7fELF"
-    except OSError:
-        return False
-
-
-def needed_libraries(path: pathlib.Path, readelf: str) -> set[str]:
-    completed = subprocess.run(
-        [readelf, "-d", str(path)],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if completed.returncode != 0:
-        die(
-            "could not inspect native runtime dependencies for {}:\n{}".format(
-                path, completed.stderr.strip()
-            )
-        )
-    return {
-        match.group("name")
-        for line in completed.stdout.splitlines()
-        if (match := NEEDED_RE.search(line)) is not None
-    }
-
-
 def validate(libdir: pathlib.Path, extra_elfs: list[pathlib.Path]) -> None:
     if not libdir.is_dir():
         die("native runtime lib directory does not exist: {}".format(libdir))
