@@ -175,22 +175,24 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
     def test_unknown_behavioral_path_fails_closed_to_all_lanes(self) -> None:
         self.assert_lanes(["integrations/new-runtime/bridge.rs"], set(POLICY.LANES))
 
-    def test_behavioral_workflow_uses_current_trusted_target_policy(self) -> None:
+    def test_behavioral_workflow_uses_current_merge_base_and_trusted_policy(self) -> None:
         source = BEHAVIORAL_WORKFLOW.read_text(encoding="utf-8")
         for needle in (
             'rust: ${{ steps.behavioral.outputs.rust }}',
             'python: ${{ steps.behavioral.outputs.python }}',
             'typescript: ${{ steps.behavioral.outputs.typescript }}',
             'ruby: ${{ steps.behavioral.outputs.ruby }}',
+            'PR_NUMBER: ${{ github.event.pull_request.number }}',
             'BASE_REF: ${{ github.event.pull_request.base.ref }}',
-            'git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA"',
-            'run: |',
-            '"$CI_PYTHON" .github/ci/test_behavioral_lanes_required.py',
+            '+refs/pull/$PR_NUMBER/head:refs/searchkernel/ci-head',
+            '+refs/heads/$BASE_REF:refs/searchkernel/ci-base',
+            'diff_base_sha=$(git merge-base refs/searchkernel/ci-head refs/searchkernel/ci-base || true)',
+            'git diff --name-only --no-renames "$diff_base_sha" "$HEAD_SHA"',
+            'policy_sha=$(git rev-parse refs/searchkernel/ci-base)',
+            'CHANGES_RESOLVED: ${{ steps.changes.outputs.resolved }}',
+            'POLICY_SHA: ${{ steps.changes.outputs.policy_sha }}',
             'selector="$RUNNER_TEMP/behavioral_lanes_required.py"',
-            'git fetch --no-tags --depth=1 origin "refs/heads/$BASE_REF"',
-            'policy_sha=$(git rev-parse FETCH_HEAD)',
-            'git cat-file -e "$policy_sha:.github/ci/behavioral_lanes_required.py"',
-            'git show "$policy_sha:.github/ci/behavioral_lanes_required.py" > "$selector"',
+            'git show "$POLICY_SHA:.github/ci/behavioral_lanes_required.py" > "$selector"',
             'cp .github/ci/behavioral_lanes_required.py "$selector"',
             '"$CI_PYTHON" "$selector" --github-output "$GITHUB_OUTPUT"',
             'echo "rust=true"',

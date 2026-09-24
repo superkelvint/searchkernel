@@ -69,52 +69,95 @@ jobs:
         id: fixed
         run: echo "tooling=true" >> "$GITHUB_OUTPUT"
 
-      - name: Select non-native invariant lanes
-        id: behavioral
+      - name: Resolve changed paths against current target
+        id: changes
         env:
           EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
 
+          changes_file="$RUNNER_TEMP/searchkernel-changed-paths.txt"
+          : > "$changes_file"
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ -z "${PR_NUMBER:-}" || -z "${BASE_REF:-}" || -z "${HEAD_SHA:-}" ]]; then
+              echo "resolved=false" >> "$GITHUB_OUTPUT"
+              echo "Unable to resolve PR target/head metadata; selectors will fail closed."
+              exit 0
+            fi
+
+            git fetch --no-tags --depth=256 --filter=blob:none origin \
+              "+refs/pull/$PR_NUMBER/head:refs/searchkernel/ci-head" \
+              "+refs/heads/$BASE_REF:refs/searchkernel/ci-base"
+
+            fetched_head=$(git rev-parse refs/searchkernel/ci-head)
+            policy_sha=$(git rev-parse refs/searchkernel/ci-base)
+            if [[ "${fetched_head,,}" != "${HEAD_SHA,,}" ]]; then
+              echo "resolved=false" >> "$GITHUB_OUTPUT"
+              echo "PR head moved while planning ($HEAD_SHA -> $fetched_head); selectors will fail closed."
+              exit 0
+            fi
+
+            diff_base_sha=$(git merge-base refs/searchkernel/ci-head refs/searchkernel/ci-base || true)
+            if [[ -z "$diff_base_sha" ]]; then
+              git fetch --no-tags --deepen=1024 --filter=blob:none origin \
+                "+refs/pull/$PR_NUMBER/head:refs/searchkernel/ci-head" \
+                "+refs/heads/$BASE_REF:refs/searchkernel/ci-base"
+              diff_base_sha=$(git merge-base refs/searchkernel/ci-head refs/searchkernel/ci-base || true)
+            fi
+            if [[ -z "$diff_base_sha" ]]; then
+              echo "resolved=false" >> "$GITHUB_OUTPUT"
+              echo "Could not resolve PR merge base; selectors will fail closed."
+              exit 0
+            fi
+
+            git diff --name-only --no-renames "$diff_base_sha" "$HEAD_SHA" > "$changes_file"
+            {
+              echo "resolved=true"
+              echo "policy_sha=$policy_sha"
+              echo "diff_base_sha=$diff_base_sha"
+            } >> "$GITHUB_OUTPUT"
+            echo "Changed paths use merge base $diff_base_sha; trusted policy uses $BASE_REF at $policy_sha."
+            exit 0
+          fi
+
           if [[ -z "${BASE_SHA:-}" || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo "resolved=false" >> "$GITHUB_OUTPUT"
+            echo "No usable push base revision; selectors will fail closed."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$changes_file"
+          echo "resolved=true" >> "$GITHUB_OUTPUT"
+
+      - name: Select non-native invariant lanes
+        id: behavioral
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGES_RESOLVED: ${{ steps.changes.outputs.resolved }}
+          POLICY_SHA: ${{ steps.changes.outputs.policy_sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$CHANGES_RESOLVED" != "true" ]]; then
             {
               echo "rust=true"
               echo "python=true"
               echo "typescript=true"
               echo "ruby=true"
             } >> "$GITHUB_OUTPUT"
-            echo "No usable base revision; requiring every non-native product lane."
+            echo "Changed paths are unresolved; requiring every non-native product lane."
             exit 0
           fi
 
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/searchkernel-changed-paths.txt"
-
           selector="$RUNNER_TEMP/behavioral_lanes_required.py"
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            # Keep the diff base stable for path calculation, but load policy
-            # from the current trusted target branch. This lets CI-routing fixes
-            # on main apply immediately to older PRs without letting a PR
-            # authorize its own exemptions.
-            if [[ -z "${BASE_REF:-}" ]]; then
-              {
-                echo "rust=true"
-                echo "python=true"
-                echo "typescript=true"
-                echo "ruby=true"
-              } >> "$GITHUB_OUTPUT"
-              echo "No trusted target branch ref; requiring every non-native product lane."
-              exit 0
-            fi
-            git fetch --no-tags --depth=1 origin "refs/heads/$BASE_REF"
-            policy_sha=$(git rev-parse FETCH_HEAD)
-            if git cat-file -e "$policy_sha:.github/ci/behavioral_lanes_required.py" 2>/dev/null; then
-              git show "$policy_sha:.github/ci/behavioral_lanes_required.py" > "$selector"
-              echo "Behavioral lane policy loaded from $BASE_REF at $policy_sha."
-            else
+            if [[ -z "${POLICY_SHA:-}" ]] || ! git cat-file -e "$POLICY_SHA:.github/ci/behavioral_lanes_required.py" 2>/dev/null; then
               {
                 echo "rust=true"
                 echo "python=true"
@@ -124,9 +167,9 @@ jobs:
               echo "Trusted target branch lacks behavioral lane selection; requiring every non-native product lane."
               exit 0
             fi
+            git show "$POLICY_SHA:.github/ci/behavioral_lanes_required.py" > "$selector"
+            echo "Behavioral lane policy loaded from trusted target at $POLICY_SHA."
           else
-            # On trusted main/push execution, the checked-in selector is the
-            # repository policy for the revision under verification.
             cp .github/ci/behavioral_lanes_required.py "$selector"
           fi
 
@@ -136,40 +179,26 @@ jobs:
         id: native
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CHANGES_RESOLVED: ${{ steps.changes.outputs.resolved }}
+          POLICY_SHA: ${{ steps.changes.outputs.policy_sha }}
         run: |
           set -euo pipefail
 
-          if [[ -z "${BASE_SHA:-}" || "$BASE_SHA" =~ ^0+$ ]]; then
+          if [[ "$CHANGES_RESOLVED" != "true" ]]; then
             echo "required=true" >> "$GITHUB_OUTPUT"
-            echo "Native verifier required: true (no usable base revision)"
+            echo "Native verifier required: true (changed paths unresolved)"
             exit 0
           fi
 
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/searchkernel-changed-paths.txt"
-
           selector="$RUNNER_TEMP/native_verifier_required.py"
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            # Native policy also comes from the current trusted target branch;
-            # the candidate PR can never use its own selector to exempt itself.
-            if [[ -z "${BASE_REF:-}" ]]; then
-              echo "required=true" >> "$GITHUB_OUTPUT"
-              echo "Native verifier required: true (no trusted target branch ref)"
-              exit 0
-            fi
-            git fetch --no-tags --depth=1 origin "refs/heads/$BASE_REF"
-            policy_sha=$(git rev-parse FETCH_HEAD)
-            if git cat-file -e "$policy_sha:.github/ci/native_verifier_required.py" 2>/dev/null; then
-              git show "$policy_sha:.github/ci/native_verifier_required.py" > "$selector"
-              echo "Native verifier policy loaded from $BASE_REF at $policy_sha."
-            else
+            if [[ -z "${POLICY_SHA:-}" ]] || ! git cat-file -e "$POLICY_SHA:.github/ci/native_verifier_required.py" 2>/dev/null; then
               echo "required=true" >> "$GITHUB_OUTPUT"
               echo "Native verifier required: true (trusted target branch lacks selector)"
               exit 0
             fi
+            git show "$POLICY_SHA:.github/ci/native_verifier_required.py" > "$selector"
+            echo "Native verifier policy loaded from trusted target at $POLICY_SHA."
           else
             cp .github/ci/native_verifier_required.py "$selector"
           fi
