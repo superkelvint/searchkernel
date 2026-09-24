@@ -38,6 +38,21 @@ def main():
             encoding="utf-8",
         )
 
+        (root / "base.c").write_text(
+            "int searchkernel_fixture_base(void) { return 1; }\n",
+            encoding="utf-8",
+        )
+        base = bundle / "libsearchkernel_fixture_base.so.1"
+        run(
+            cc,
+            "-shared",
+            "-fPIC",
+            "-Wl,-soname,libsearchkernel_fixture_base.so.1",
+            "-o",
+            str(base),
+            str(root / "base.c"),
+        )
+
         dep = producer / "libsearchkernel_fixture_dep.so.1"
         run(
             cc,
@@ -51,7 +66,7 @@ def main():
         link_name = producer / "libsearchkernel_fixture_dep.so"
         link_name.symlink_to(dep.name)
 
-        consumer = bundle / "libsearchkernel_fixture_consumer.so.1"
+        consumer = root / "libsearchkernel_fixture_consumer.so.1"
         run(
             cc,
             "-shared",
@@ -67,7 +82,7 @@ def main():
         )
 
         missing = subprocess.run(
-            [sys.executable, str(CHECKER), str(bundle)],
+            [sys.executable, str(CHECKER), str(bundle), str(consumer)],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -84,7 +99,7 @@ def main():
         # must not satisfy the runtime loader contract.
         (bundle / dep.name).write_text("INPUT(/host/lib/escape.so)\n", encoding="utf-8")
         fake = subprocess.run(
-            [sys.executable, str(CHECKER), str(bundle)],
+            [sys.executable, str(CHECKER), str(bundle), str(consumer)],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -95,7 +110,7 @@ def main():
 
         shutil.copy2(dep, bundle / dep.name)
         complete = subprocess.run(
-            [sys.executable, str(CHECKER), str(bundle)],
+            [sys.executable, str(CHECKER), str(bundle), str(consumer)],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
