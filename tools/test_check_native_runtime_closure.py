@@ -79,6 +79,20 @@ def main():
                 "checker rejected incomplete bundle for the wrong reason:\n" + missing.stderr
             )
 
+        # A filename alone is not closure. A GNU linker script, placeholder,
+        # truncated file, or other non-ELF payload with the required SONAME
+        # must not satisfy the runtime loader contract.
+        (bundle / dep.name).write_text("INPUT(/host/lib/escape.so)\n", encoding="utf-8")
+        fake = subprocess.run(
+            [sys.executable, str(CHECKER), str(bundle)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if fake.returncode == 0:
+            raise SystemExit("checker accepted a non-ELF runtime dependency placeholder")
+        (bundle / dep.name).unlink()
+
         shutil.copy2(dep, bundle / dep.name)
         complete = subprocess.run(
             [sys.executable, str(CHECKER), str(bundle)],
