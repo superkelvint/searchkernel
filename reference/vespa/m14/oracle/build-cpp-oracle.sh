@@ -19,7 +19,7 @@ mkdir -p "$TARGET_DIR"
 OBJ="$(mktemp "${TMPDIR:-/tmp}/searchkernel-m14-hnsw-oracle.XXXXXX.o")"
 trap 'rm -f "$OBJ"' EXIT
 export M14_DIRECT_VESPA="$VESPA" M14_DIRECT_ORACLE="$ORACLE" M14_DIRECT_OBJ="$OBJ" M14_DIRECT_OUT="$OUT" M14_DIRECT_COMPILE_DB="$COMPILE_DB" M14_DIRECT_LINK_TXT="$LINK_TXT"
-python3 "reference/vespa/m14/oracle/build-cpp-oracle-python-1.py"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/build-cpp-oracle-python-1.py"
 [[ -x "$OUT" ]] || die "oracle executable was not produced"
 printf 'vespa_commit=%s\n' "$(expected_vespa_revision)" > "$OUT.provenance"
 echo "M14 direct C++ oracle: $OUT" >&2
