@@ -341,6 +341,38 @@ raises(SearchKernel::TransportError, "connection failure is transport error") do
   SearchKernel::HttpTransport.new("http://127.0.0.1:#{closed_port}", timeout: 0.1).execute({})
 end
 
+raises(ArgumentError, "client rejects objects that do not implement transport execute") do
+  SearchKernel::Client.new(Object.new)
+end
+
+raises(ArgumentError, "empty HTTP base URL rejects") { SearchKernel::HttpTransport.new("") }
+raises(ArgumentError, "non-string HTTP base URL rejects") { SearchKernel::HttpTransport.new(123) }
+raises(ArgumentError, "fragment in base URL rejects") do
+  SearchKernel::HttpTransport.new("http://example.test#fragment")
+end
+raises(ArgumentError, "zero timeout rejects") do
+  SearchKernel::HttpTransport.new("http://example.test", timeout: 0)
+end
+raises(ArgumentError, "non-finite timeout rejects") do
+  SearchKernel::HttpTransport.new("http://example.test", timeout: Float::INFINITY)
+end
+raises(ArgumentError, "zero message limit rejects") do
+  SearchKernel::HttpTransport.new("http://example.test", max_message_bytes: 0)
+end
+raises(ArgumentError, "negative message limit rejects") do
+  SearchKernel::HttpTransport.new("http://example.test", max_message_bytes: -1)
+end
+
+with_http_server(body: success_response) do |base_url, state|
+  transport = SearchKernel::HttpTransport.new("#{base_url}/tenant/search/")
+  transport.execute(SearchKernel::Protocol.request_envelope(:search, { "query" => {} }))
+  same(
+    "POST /tenant/search/v1/execute HTTP/1.1",
+    state[:request_line],
+    "HTTP transport appends execute path after configured base path"
+  )
+end
+
 raises(ArgumentError, "invalid HTTP scheme rejects") { SearchKernel::HttpTransport.new("ftp://example.test") }
 raises(ArgumentError, "query in base URL rejects") { SearchKernel::HttpTransport.new("http://example.test?x=1") }
 raises(ArgumentError, "userinfo in base URL rejects") { SearchKernel::HttpTransport.new("http://user:pass@example.test") }
@@ -365,6 +397,17 @@ with_raw_http_server("this is not HTTP\r\n") do |base_url|
   assert(
     error.message.start_with?("Search Kernel HTTP transport failed:"),
     "malformed HTTP response is wrapped in the transport error domain"
+  )
+end
+
+large_error_body = ("a" * SearchKernel::HttpTransport::ERROR_BODY_LIMIT) + "SECRET-TAIL"
+with_http_server(status: 503, body: large_error_body, content_type: "text/plain") do |base_url, _state|
+  error = raises(SearchKernel::TransportError, "large HTTP error body is bounded in diagnostics") do
+    SearchKernel::HttpTransport.new(base_url, timeout: 1).execute({})
+  end
+  assert(
+    !error.message.include?("SECRET-TAIL"),
+    "transport error diagnostic must not expose bytes beyond the bounded error snippet"
   )
 end
 
