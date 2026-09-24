@@ -129,19 +129,7 @@ if [ ! -d "$FIXTURE" ]; then
     echo "persisted M5 fixture is missing: $FIXTURE" >&2
     exit 1
 fi
-python3 - "$ROOT/m5/fixtures/persisted-v1/METADATA.json" "$SDK/manifest.json" <<'PY'
-import json
-import sys
-
-metadata = json.load(open(sys.argv[1]))
-manifest = json.load(open(sys.argv[2]))
-if metadata["created_by_native_abi"] != 4:
-    raise SystemExit("fixture provenance was rewritten")
-if metadata["created_by_vespa_revision"] != manifest["vespa_commit"]:
-    raise SystemExit("fixture/Vespa revision metadata mismatch")
-if metadata["target"] != "linux-x86_64":
-    raise SystemExit("fixture target is not explicitly recorded")
-PY
+python3 "reference/vespa/m5/verify-m5-python-1.py" "$ROOT/m5/fixtures/persisted-v1/METADATA.json" "$SDK/manifest.json"
 cp -a "$FIXTURE" "$TARGET/fixture"
 run_driver verify-final "$TARGET/fixture" > "$TARGET/fixture.json"
 compare "$ROOT/m5/expected/graceful-final.json" "$TARGET/fixture.json"
