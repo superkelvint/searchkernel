@@ -27,6 +27,11 @@ The fields mean:
 Kinds are independent. A low-level gRPC E2E can prove `e2e` without proving
 that the ergonomic facade exposes the feature.
 
+Surfaces whose production runtime must have executable real-backend coverage
+declare `required_e2e_runtimes` in the catalog. Every listed runtime must be
+covered by a registered `e2e_lanes` command; an empty or missing lane is a
+registry error rather than a vacuous PASS.
+
 Every capability gets a default `basic` scenario. The catalog adds explicit
 sub-scenarios when a capability needs finer acceptance tracking. Highlighting,
 for example, separately tracks basic highlighting, literal HTML preservation,
