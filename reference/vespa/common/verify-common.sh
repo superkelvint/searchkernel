@@ -96,7 +96,7 @@ require_pinned_vespa() {
        -f "$vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make" ]] ||
       fail_verification "published Vespa toolchain is missing canonical adapter compile/link metadata: $vespa"
 
-    python3 - "$marker" "$build_env" "$target" "$expected" <<'PY'
+    if ! python3 - "$marker" "$build_env" "$target" "$expected" <<'PY'
 import json
 import sys
 
@@ -125,6 +125,9 @@ if not isinstance(generation, int) or generation < 1:
 if marker.get("adapter_static_link_closure") is not True:
     raise SystemExit("published Vespa provenance does not certify adapter static-link closure")
 PY
+    then
+      fail_verification "published Vespa provenance validation failed: $marker"
+    fi
     return
   fi
 
