@@ -26,7 +26,7 @@ EOF
   echo "Rebuild the oracle with oracle/build-cpp-oracle.sh." >&2
   exit 1
 }
-python3 "reference/vespa/m4/oracle/run-cpp-oracle-python-1.py" "$PROVENANCE" "$ROOT/reference/vespa/PINNED_VESPA.json"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/run-cpp-oracle-python-1.py" "$PROVENANCE" "$ROOT/reference/vespa/PINNED_VESPA.json"
 
 # If already running in the Vespa build container, keep all Proton runtime
 # state in container-local /tmp. Never write engine state into the repository.
