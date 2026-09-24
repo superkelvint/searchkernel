@@ -288,7 +288,10 @@ jobs:
           fi
           command -v clang >/dev/null
           python3 -c 'import clang.cindex' >/dev/null
-          rustup component add rustfmt clippy >/dev/null
+          command -v cargo >/dev/null
+          command -v rustc >/dev/null
+          command -v rustfmt >/dev/null
+          command -v cargo-clippy >/dev/null
 
           unset VESPA_ROOT || true
           unset VESPA_LIBRARY_ROOT || true
