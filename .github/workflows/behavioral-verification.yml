@@ -393,7 +393,9 @@ jobs:
   exact-head-gate:
     name: Invariant gate
     needs: [classify, rust, python, typescript, ruby, tooling, native]
-    if: always()
+    # Aggregate dependency failures, but do not strand a superseded workflow
+    # after GitHub cancels it in favor of a newer PR head.
+    if: ${{ always() && !cancelled() }}
     runs-on: [self-hosted, linux, x64]
     steps:
       - name: Require every selected invariant lane
