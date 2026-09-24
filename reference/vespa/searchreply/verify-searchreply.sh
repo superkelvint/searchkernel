@@ -6,6 +6,12 @@ ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
+RUN_LIVE_ORACLE=0
+if live_oracle_enabled; then
+  RUN_LIVE_ORACLE=1
+else
+  announce_frozen_oracle_replay
+fi
 
 "$SCRIPT_DIR/total-hit-accuracy/verify-total-hit-accuracy.sh"
 
@@ -26,7 +32,9 @@ cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml"
 CONFIG_BIN="$CARGO_TARGET_DIR/debug/searchkernel-searchreply-config"
 [[ -x "$CONFIG_BIN" ]] || fail_verification "SearchReply config compiler was not built: $CONFIG_BIN"
 
-"$SCRIPT_DIR/oracle/build-cpp-oracle.sh"
+if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+  "$SCRIPT_DIR/oracle/build-cpp-oracle.sh"
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -43,24 +51,39 @@ require_native_driver "$PROBE" \
   sk_generic_search_result_degradation_flags \
   sk_generic_search_result_issue_message
 
-LD_LIBRARY_PATH="$SK_NATIVE_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  "$SCRIPT_DIR/oracle/run-cpp-oracle.sh" "$SCRIPT_DIR/scenario.json" \
-  "$TMP/config" "$TMP/oracle-data" > "$TMP/oracle.json"
-python3 "$ROOT/reference/vespa/common/compare_json.py" \
-  "$SCRIPT_DIR/expected/searchreply.json" "$TMP/oracle.json"
+if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+  LD_LIBRARY_PATH="$SK_NATIVE_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    "$SCRIPT_DIR/oracle/run-cpp-oracle.sh" "$SCRIPT_DIR/scenario.json" \
+    "$TMP/config" "$TMP/oracle-data" > "$TMP/oracle.json"
+  python3 "$ROOT/reference/vespa/common/compare_json.py" \
+    "$SCRIPT_DIR/expected/searchreply.json" "$TMP/oracle.json"
+fi
 LD_LIBRARY_PATH="$SK_NATIVE_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   "$PROBE" "$TMP/data" "$TMP/config" > "$TMP/native.json"
 python3 "$ROOT/reference/vespa/common/compare_json.py" \
   "$SCRIPT_DIR/expected/searchreply.json" "$TMP/native.json"
-python3 "$ROOT/reference/vespa/common/compare_json.py" \
-  "$TMP/oracle.json" "$TMP/native.json"
+if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+  python3 "$ROOT/reference/vespa/common/compare_json.py" \
+    "$TMP/oracle.json" "$TMP/native.json"
+fi
 
 HARDENING_SDK="${SK_NATIVE_HARDENING_SDK:-$ROOT/target/vespa-verifier/searchreply/sdk/hardening}"
-SK_NATIVE_SDK="$HARDENING_SDK" \
-SK_NATIVE_BUILD_DIR="$ROOT/target/vespa-verifier/searchreply/native-build/hardening" \
-SK_NATIVE_ENABLE_FAILPOINTS=1 \
-SK_NATIVE_REGENERATE_BINDINGS=0 \
-  "$ROOT/core/native/vespa/build-sdk.sh"
+if using_published_vespa_toolchain; then
+  SEARCHREPLY_BASE_SDK="$(resolved_native_base_sdk)"
+  SK_NATIVE_SDK="$HARDENING_SDK" \
+  SK_NATIVE_BUILD_DIR="$ROOT/target/vespa-verifier/searchreply/native-build/hardening" \
+  SK_NATIVE_BASE_SDK="$SEARCHREPLY_BASE_SDK" \
+  SK_NATIVE_ADAPTER_ONLY=1 \
+  SK_NATIVE_ENABLE_FAILPOINTS=1 \
+  SK_NATIVE_REGENERATE_BINDINGS=0 \
+    "$ROOT/core/native/vespa/build-sdk.sh"
+else
+  SK_NATIVE_SDK="$HARDENING_SDK" \
+  SK_NATIVE_BUILD_DIR="$ROOT/target/vespa-verifier/searchreply/native-build/hardening" \
+  SK_NATIVE_ENABLE_FAILPOINTS=1 \
+  SK_NATIVE_REGENERATE_BINDINGS=0 \
+    "$ROOT/core/native/vespa/build-sdk.sh"
+fi
 HARDENING_PROBE="$TMP/searchreply_metadata_hardening_probe"
 "${CXX:-c++}" -std=gnu++23 -O0 -g -Wall -Wextra -Werror -pthread \
   -I"$HARDENING_SDK/include" "$SCRIPT_DIR/native-probe/searchreply_metadata_hardening_probe.cpp" \

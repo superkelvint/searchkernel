@@ -6,6 +6,12 @@ cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 
 require_pinned_vespa
+RUN_LIVE_ORACLE=0
+if live_oracle_enabled; then
+  RUN_LIVE_ORACLE=1
+else
+  announce_frozen_oracle_replay
+fi
 "$DIR/validate.py"
 "$DIR/check-structure.sh"
 python3 "$DIR/test-check-structure.py"
@@ -15,17 +21,15 @@ EXPECTED="$DIR/expected/recursive-two-level.json"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# 1. The frozen expected output must still agree with the independently built
-# pinned-Vespa C++ oracle.
-[[ -x "$DIR/oracle/target/m9_recursive_grouping_oracle" ]] || \
-  fail_verification "direct oracle is missing; build it with oracle/build-cpp-oracle.sh"
-"$DIR/oracle/run-cpp-oracle.sh" "$SCENARIO" \
-  | "$DIR/canonicalize.py" > "$TMP/oracle.json"
-python3 "$ROOT/reference/vespa/common/compare_json.py" "$EXPECTED" "$TMP/oracle.json"
+if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+  [[ -x "$DIR/oracle/target/m9_recursive_grouping_oracle" ]] || \
+    fail_verification "direct oracle is missing; build it with oracle/build-cpp-oracle.sh"
+  "$DIR/oracle/run-cpp-oracle.sh" "$SCENARIO" \
+    | "$DIR/canonicalize.py" > "$TMP/oracle.json"
+  python3 "$ROOT/reference/vespa/common/compare_json.py" "$EXPECTED" "$TMP/oracle.json"
+fi
 
-# 2. Compile a plain C consumer against the packaged native SDK. This freezes
-# the actual C ABI rather than a Rust wrapper around it.
-SDK="${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}"
+# Compile a plain C consumer against the verifier SDK prepared by verify-common.
 cc -std=c11 -Wall -Wextra -Werror \
   -I"$SDK/include" \
   "$DIR/native-probe/probe.c" \
@@ -72,8 +76,10 @@ for mode in typed convenience; do
     | "$DIR/canonicalize.py" > "$TMP/native-$mode.json"
   python3 "$ROOT/reference/vespa/common/compare_json.py" \
     "$EXPECTED" "$TMP/native-$mode.json"
-  python3 "$ROOT/reference/vespa/common/compare_json.py" \
-    "$TMP/oracle.json" "$TMP/native-$mode.json"
+  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+    python3 "$ROOT/reference/vespa/common/compare_json.py" \
+      "$TMP/oracle.json" "$TMP/native-$mode.json"
+  fi
 done
 python3 "$ROOT/reference/vespa/common/compare_json.py" \
   "$TMP/native-typed.json" "$TMP/native-convenience.json"
