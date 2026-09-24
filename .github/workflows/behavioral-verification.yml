@@ -256,12 +256,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
 
-      - name: Set up Ruby
+      - name: Verify provisioned Ruby
         if: ${{ hashFiles('clients/ruby/**') != '' }}
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-          bundler: none
+        run: |
+          set -euo pipefail
+          ruby --version
+          gem --version
+          ruby -rrubygems -e 'abort "Ruby >= 3.1 is required" if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")'
 
       - name: Install Rust toolchain
         if: ${{ hashFiles('clients/ruby/**') != '' }}
