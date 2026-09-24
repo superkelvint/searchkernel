@@ -14,12 +14,7 @@ esac
 
 [[ -n "$TARGET" ]] || { echo "could not determine Rust target; set SK_NATIVE_TARGET" >&2; exit 1; }
 
-PINNED_VESPA_COMMIT=$(python3 - "$ROOT/core/native/vespa/manifest.json" <<'PY'
-import json
-import sys
-with open(sys.argv[1], encoding="utf-8") as stream:
-    print(json.load(stream)["vespa_commit"])
-PY
+PINNED_VESPA_COMMIT=$(python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resolve-native-sdk-python-1.py" "$ROOT/core/native/vespa/manifest.json"
 )
 [[ "$PINNED_VESPA_COMMIT" =~ ^[0-9a-fA-F]{40}$ || "$PINNED_VESPA_COMMIT" == fixture-* ]] || {
     echo "invalid pinned Vespa checkout hash '$PINNED_VESPA_COMMIT'" >&2
@@ -60,80 +55,11 @@ has_published_install() {
 
 artifact_generation_from_url() {
     local url=$1
-    python3 - "$url" <<'PY'
-import re
-import sys
-from urllib.parse import urlparse
-
-name = urlparse(sys.argv[1]).path.rsplit("/", 1)[-1]
-match = re.match(r"^searchkernel-vespa-base-v([0-9]+)-.+\.tar\.gz$", name)
-if not match:
-    raise SystemExit(
-        "SK_NATIVE_BASE_ARTIFACT_URL must use a canonical generation-bearing "
-        "asset name, or SK_NATIVE_BASE_ARTIFACT_GENERATION must be set"
-    )
-print(match.group(1))
-PY
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resolve-native-sdk-python-2.py" "$url"
 }
 
 latest_published_generation() {
-    python3 - "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
-import json
-import os
-import re
-import sys
-import urllib.error
-import urllib.request
-
-build_env, target, commit = sys.argv[1:]
-repo = os.environ.get("SEARCHKERNEL_GITHUB_REPO", "superkelvint/searchkernel")
-token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-pattern = re.compile(
-    r"^vespa-base-v([0-9]+)-"
-    + re.escape(build_env)
-    + "-"
-    + re.escape(target)
-    + "-"
-    + re.escape(commit)
-    + r"$"
-)
-versions = []
-page = 1
-while True:
-    url = f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}"
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "searchkernel-native-base-resolver",
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    request = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(request) as response:
-            releases = json.load(response)
-    except urllib.error.HTTPError as exc:
-        hint = "set GH_TOKEN/GITHUB_TOKEN or SK_NATIVE_BASE_ARTIFACT_URL"
-        raise SystemExit(
-            f"could not discover published native-base generations ({exc.code}); {hint}"
-        ) from exc
-    if not isinstance(releases, list):
-        raise SystemExit("GitHub releases response was not a list")
-    for release in releases:
-        match = pattern.match(str(release.get("tag_name", "")))
-        if match:
-            versions.append(int(match.group(1)))
-    if len(releases) < 100:
-        break
-    page += 1
-
-if not versions:
-    raise SystemExit(
-        "no published native-base generation exists for "
-        f"{build_env}/{target}/{commit}"
-    )
-print(max(versions))
-PY
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resolve-native-sdk-python-3.py" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"
 }
 
 resolve_published_base_identity() {
@@ -169,22 +95,7 @@ installed_published_generation() {
     local marker
     marker=$(published_toolchain_marker_path)
     [[ -f "$marker" ]] || return 1
-    python3 - "$marker" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    marker = json.load(stream)
-generation = marker.get("artifact_generation")
-if generation is None:
-    # Migration compatibility for v1/v2 artifacts published before generation
-    # became explicit metadata. Their format version matched their release
-    # generation.
-    generation = marker.get("format_version")
-if not isinstance(generation, int) or generation < 1:
-    raise SystemExit("published native-base marker has no valid artifact generation")
-print(generation)
-PY
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resolve-native-sdk-python-4.py" "$marker"
 }
 
 published_install_is_current() {
@@ -199,32 +110,7 @@ verify_published_toolchain_marker() {
     local vespa_root=$1
     local marker="$vespa_root/.searchkernel-vespa-artifact.json"
     [[ -f "$marker" ]] || return 1
-    python3 - "$marker" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
-import json
-import sys
-
-path, build_env, target, commit = sys.argv[1:]
-try:
-    with open(path, encoding="utf-8") as stream:
-        marker = json.load(stream)
-except (OSError, json.JSONDecodeError) as exc:
-    raise SystemExit(f"invalid published Vespa toolchain marker {path}: {exc}") from exc
-expected = {
-    "build_environment": build_env,
-    "native_target": target,
-    "vespa_commit": commit,
-}
-for key, value in expected.items():
-    if marker.get(key) != value:
-        raise SystemExit(
-            f"published Vespa toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
-        )
-
-# Installed cache markers may come from an older artifact schema. At this
-# stage only provenance identity is authoritative; generation freshness is
-# evaluated separately and newly downloaded artifacts are validated by the
-# installer before publication into the cache.
-PY
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resolve-native-sdk-python-5.py" "$marker" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"
 }
 
 build_configured_vespa_libraries() {
