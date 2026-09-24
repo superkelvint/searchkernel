@@ -174,14 +174,55 @@ find_clang_python() {
     return 1
 }
 
+find_clang_pythonpath() {
+    local cindex package_root
+
+    if command -v rpm >/dev/null 2>&1; then
+        cindex=$(rpm -ql python3-clang 2>/dev/null |
+            sed -n '/\/clang\/cindex\.py$/p' | head -n 1)
+        if [[ -n "$cindex" && -f "$cindex" ]]; then
+            package_root=$(dirname -- "$(dirname -- "$cindex")")
+            printf '%s\n' "$package_root"
+            return 0
+        fi
+    fi
+
+    cindex=$(find /usr/lib /usr/lib64 /usr/local/lib \
+        -type f -path '*/site-packages/clang/cindex.py' -print -quit 2>/dev/null || true)
+    if [[ -n "$cindex" ]]; then
+        package_root=$(dirname -- "$(dirname -- "$cindex")")
+        printf '%s\n' "$package_root"
+        return 0
+    fi
+    return 1
+}
+
 run_abi_python() {
-    local python
-    python=$(find_clang_python) || {
-        echo 'error: no Python interpreter with working clang.cindex bindings was found' >&2
-        echo 'run ./dev doctor to install/repair the ABI verification toolchain' >&2
-        return 1
-    }
-    "$python" "$@"
+    local python clang_pythonpath effective_pythonpath
+
+    if python=$(find_clang_python); then
+        "$python" "$@"
+        return
+    fi
+
+    # AlmaLinux may install python3-clang for the distro Python while Search
+    # Kernel intentionally uses a newer repo-local Python. The clang bindings
+    # are pure Python, so expose the distro package to the repo interpreter
+    # rather than forcing the client/tooling environment onto the distro
+    # interpreter.
+    clang_pythonpath=$(find_clang_pythonpath || true)
+    if [[ -n "$clang_pythonpath" ]]; then
+        effective_pythonpath="$clang_pythonpath${PYTHONPATH:+:$PYTHONPATH}"
+        if PYTHONPATH="$effective_pythonpath" "$PYTHON" -c 'import clang.cindex' >/dev/null 2>&1 &&
+           PYTHONPATH="$effective_pythonpath" "$PYTHON" "$ROOT/tools/check_abi_surface.py" --help >/dev/null 2>&1; then
+            PYTHONPATH="$effective_pythonpath" "$PYTHON" "$@"
+            return
+        fi
+    fi
+
+    echo 'error: no usable Python/libclang binding combination was found' >&2
+    echo 'run ./dev doctor to install/repair the ABI verification toolchain' >&2
+    return 1
 }
 
 run_typescript_generation_check() {
@@ -705,7 +746,7 @@ doctor_python() {
 doctor_system_tools() {
     command -v rg >/dev/null 2>&1 || return 1
     command -v clang >/dev/null 2>&1 || return 1
-    find_clang_python >/dev/null 2>&1
+    run_abi_python "$ROOT/tools/check_abi_surface.py" --help >/dev/null 2>&1
 }
 
 doctor_repair_system_tools() {
@@ -727,8 +768,8 @@ doctor_repair_system_tools() {
 
     command -v rg >/dev/null 2>&1 || return 1
     command -v clang >/dev/null 2>&1 || return 1
-    find_clang_python >/dev/null 2>&1 || {
-        echo 'clang packages are installed, but no Python interpreter can import clang.cindex' >&2
+    run_abi_python "$ROOT/tools/check_abi_surface.py" --help >/dev/null 2>&1 || {
+        echo 'clang packages are installed, but the ABI checker still cannot load clang.cindex' >&2
         return 1
     }
 }
