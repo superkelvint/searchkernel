@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-invariants-${{ github.event.pull_request.number || github.ref }}
@@ -373,6 +374,7 @@ jobs:
 
       - name: Run semantic verifier routing regression
         run: bash reference/vespa/verifiers/test-routing.sh
+
   native:
     name: Native invariant
     needs: classify
@@ -429,4 +431,4 @@ jobs:
           require_lane Tooling "$TOOLING_REQUIRED" "$TOOLING_RESULT"
           require_lane Native "$NATIVE_SENSITIVE" "$NATIVE_RESULT"
 
-          echo "All selected invariant verification for exact PR head $EXPECTED_HEAD is verified."
+          echo "All selected invariant verification for exact head $EXPECTED_HEAD passed."
