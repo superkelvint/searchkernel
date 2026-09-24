@@ -161,6 +161,13 @@ Coding agents should run the plan and report exact commands/results. CI
 independently recomputes the authoritative plan from the trusted base policy and
 the actual candidate diff.
 
+Lint execution follows the same repository-owned-command rule. The canonical
+workspace Clippy profiles run through `./dev lint`; CI requests a diagnostics
+directory so failures produce a repair packet with rendered output,
+machine-readable Cargo/Clippy diagnostics, a lint-vs-build failure
+classification, and the exact local reproduction command. CI uploads that
+packet when Clippy fails and also writes the summary to the Actions job summary.
+
 Issue acceptance requirements should prefer repository-owned profile IDs or
 clear acceptance behavior rather than arbitrary shell supplied by issue text.
 Arbitrary agent-reported commands remain evidence only.
@@ -328,10 +335,10 @@ not wall-clock measurements. Actual timing belongs in Phase 7.
 | Profile ID | Canonical/current entry point | Current trigger/semantic scope | Dependencies and subsumption | Prerequisites / runner | Mutable state / parallelization | Current CI | Trust boundary | Runtime class |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `rust-non-native` | `cargo test --workspace --all-targets --no-default-features` | Current `rust` lane: root Cargo metadata, `.cargo/**`, `api/**`, `core/**`, `searchkerneld/**`, `dev` | Independent baseline; does not prove native/all-features behavior | Rust + pinned FlatBuffers; any Linux runner | Cargo target/cache only; separate target roots per job | PR behavioral, unit, nightly | Candidate code; lane selection must come from trusted base | medium |
-| `rust-quality` | `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --no-default-features -- -D warnings` | Broad Rust/build changes | Independent baseline; repeated inside several native milestone verifiers via `run_workspace_quality` with all features | Rust; native all-feature variant needs native SDK | Cargo target only | Nightly; pre-commit | Candidate code | medium |
+| `rust-quality` | `cargo fmt --all --check`; `./dev lint --profile rust-clippy-non-native` | Broad Rust/build changes | Independent baseline; repeated inside several native milestone verifiers via `run_workspace_quality` with all features | Rust; native all-feature variant needs native SDK | Cargo target only | Nightly; pre-commit | Candidate code | medium |
 | `python-client` | `./dev test python` | Current `python` lane: `api/**`, `clients/python/**`, client contracts and Python generation/check tooling | Includes Python generated checks plus unittest discovery; ordinary discovery skips real native gRPC E2E unless opt-in | Python runtime + package deps + FlatBuffers tools | Temp/package state; isolate venv where possible | PR behavioral, nightly | Candidate code; base-owned selection | fast-medium |
 | `typescript-client` | `./dev test typescript` | Current `typescript` lane: `api/**`, TS client, client contracts and TS generators | Includes generation regression, generated check, typecheck, Vitest, package verification | Node 22, Rust/FlatBuffers for semantic generation, npm deps | `dist`, generated/temp files; safe with per-job checkout | PR behavioral | Candidate code; base-owned selection | medium |
-| `php-client` | `./dev test php` | Current `php` lane: `api/**`, PHP client, client contracts | Standalone first-slice test runner | PHP runtime | Minimal mutable state | Client-capabilities workflow; not behavioral exact-head executor | Candidate code; base-owned selection | fast |
+| `php-client` | `./dev test php` | PHP client plus canonical schema/BFBS bridge changes that can affect the HTTP-first wire contract | PHP semantic/wire suite + PHP-emitted standard FlatBuffers JSON round-trip through the official BFBS bridge + Composer package-consumer verification | PHP runtime, Rust toolchain, pinned FlatBuffers/BFBS bridge, Composer | Cargo/package temp state only | Client-capabilities exact-head verify job; selected by verification DAG for `clients/php/**`, portable schema, and protocol bridge changes | Candidate code; base-owned selection | fast-medium |
 | `protocol-generated` | `./dev check-protocol` | Current `protocol` lane: schemas, BFBS/generated Rust/Python/TS/RPC artifacts and generators | Runs BFBS, protocol, RPC, Python FlatBuffers/gRPC, TS generated checks | pinned flatc/FlatBuffers C++; Python codegen deps; Node for TS generated checks | Regeneration checks should not mutate committed tree | Nightly partially; pre-commit; not a dedicated exact-head job | Candidate artifacts; selection from base; policy/generator changes elevated | fast-medium |
 | `api-conformance` | `./dev verify api-conformance` / `reference/api-conformance/verify.sh` | Current `api_conformance` lane only maps `reference/api-conformance/**` | `verify.sh -> verify-fixtures.sh -> validate_suite.py`, backend-free guard, then `searchkernel-conformance`; parameterized `verify-adapter.sh` is separate | Rust + Python; no Vespa | Temporary Cargo output | Unit workflow | Candidate verifier normally; verifier/expected changes require elevated review | medium |
 | `client-contracts` | `./dev verify contracts` | Current `contracts` lane: clients, public Rust API, Vespa-engine capability docs/ledgers, contract tooling | Capabilities check/tests + client-contract check/tests + Python dependency contract | Python; executable E2E additionally needs Rust/Node/client deps | E2E starts processes/uses temp state through checker; job-local | Client-capabilities, nightly | Candidate code; contract/checker changes need elevated review | fast-medium |
@@ -742,10 +749,10 @@ SearchKernel-specific scheduler/cache/test-distribution system.
 #### SearchKernel verification DAG
 
 - [x] Define one machine-readable SearchKernel-owned verification DAG as the semantic source of truth, independent of moonrepo.
-- [ ] Represent every surviving Phase 1 verification profile in that DAG with a stable semantic task ID that describes what it proves rather than the milestone that introduced it.
-- [ ] Represent milestone acceptance such as M14 as explicit DAG aggregate/closure tasks over semantic verifier IDs, with milestone provenance stored as metadata rather than executable-task identity.
+- [x] Represent every surviving Phase 1 verification profile in that DAG with a stable semantic task ID that describes what it proves rather than the milestone that introduced it.
+- [x] Represent milestone acceptance such as M14 as explicit DAG aggregate/closure tasks over semantic verifier IDs, with milestone provenance stored as metadata rather than executable-task identity.
 - [x] Provide focused semantic verifier targets for independently meaningful native/Vespa capabilities so agents and CI need not invoke a whole milestone closure when only one verifier is required.
-- [ ] Encode the verified Phase 1 dependency/subsumption edges in the SearchKernel DAG.
+- [x] Encode the verified Phase 1 dependency/subsumption edges in the SearchKernel DAG.
 - [x] Record the canonical verifier command and runner class for each task in the SearchKernel DAG.
 - [x] Represent subsystem/path ownership separately from executable task identity so multiple subsystems may share a task without becoming invisible.
 - [x] Decompose `searchkernel-web` into the subsystem inventory above rather than one opaque dashboard node.
@@ -753,7 +760,7 @@ SearchKernel-specific scheduler/cache/test-distribution system.
 - [x] Add a mechanical check that a newly introduced top-level subsystem or `searchkernel-web/src/features/*` family is rejected until DAG ownership is added.
 - [x] Make the trusted selector validate emitted task IDs against the SearchKernel DAG.
 - [x] Define the authoritative full-suite root/closure in the SearchKernel DAG, including the active web closure.
-- [ ] Add mechanical closure checks so every surviving verifier and supported product subsystem is represented and reachable where required.
+- [x] Add mechanical closure checks so every surviving verifier and supported product subsystem is represented and reachable where required.
 
 #### moonrepo
 

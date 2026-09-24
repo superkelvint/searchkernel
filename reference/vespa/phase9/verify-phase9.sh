@@ -3,15 +3,8 @@ set -euo pipefail
 PHASE9="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$PHASE9/../../.." && pwd)"
 cd "$ROOT"
-export SK_NATIVE_SDK="${SK_NATIVE_SDK:-$ROOT/target/vespa-verifier/phase9/sdk}"
-export VESPA_EXTRA_LIB_DIR="${VESPA_EXTRA_LIB_DIR:-$ROOT/core/native/sdk/linux-x86_64/lib}"
-export VESPA_AWS_LIB_DIR="${VESPA_AWS_LIB_DIR:-$ROOT/core/native/sdk/linux-x86_64/lib}"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
-if [[ ! -f "$SDK/lib/libsearchkernel_vespa.so" ]]; then
-  SK_NATIVE_REGENERATE_BINDINGS=0 \
-    "$ROOT/core/native/vespa/build-sdk.sh"
-fi
 require_sdk_manifest "$SDK/manifest.json"
 
 TMP="$(mktemp -d)"
@@ -23,10 +16,20 @@ SK_NATIVE_SDK="$SDK" "$ROOT/tools/check-native-bindings.sh"
 # Phase 9 validates the current ABI toolchain and debug information against an
 # isolated build of the same current source. It is intentionally not a claim
 # of compatibility with the historical ABI-10 probe.
-SK_NATIVE_SDK="$TMP/current-sdk" \
-SK_NATIVE_BUILD_DIR="$TMP/current-build" \
-SK_NATIVE_REGENERATE_BINDINGS=0 \
-  "$ROOT/core/native/vespa/build-sdk.sh"
+if using_published_vespa_toolchain; then
+  PHASE9_BASE_SDK="$(resolved_native_base_sdk)"
+  SK_NATIVE_SDK="$TMP/current-sdk" \
+  SK_NATIVE_BUILD_DIR="$TMP/current-build" \
+  SK_NATIVE_BASE_SDK="$PHASE9_BASE_SDK" \
+  SK_NATIVE_ADAPTER_ONLY=1 \
+  SK_NATIVE_REGENERATE_BINDINGS=0 \
+    "$ROOT/core/native/vespa/build-sdk.sh"
+else
+  SK_NATIVE_SDK="$TMP/current-sdk" \
+  SK_NATIVE_BUILD_DIR="$TMP/current-build" \
+  SK_NATIVE_REGENERATE_BINDINGS=0 \
+    "$ROOT/core/native/vespa/build-sdk.sh"
+fi
 "$ROOT/tools/check-native-abi.sh" \
   "$TMP/current-sdk/lib/libsearchkernel_vespa.so" \
   "$SDK/lib/libsearchkernel_vespa.so" \
@@ -35,8 +38,11 @@ SK_NATIVE_REGENERATE_BINDINGS=0 \
 # Keep the cumulative gates in the phase9 acceptance path. The extra library
 # directories are needed when a pinned-Vespa oracle was built outside its
 # original container image.
-VESPA_LIBS="$(find "$ROOT/upstream/vespa" -type d \( -path '*/src/vespa/*' -o -path '*/testlib' -o -path '*/test' -o -path '*/features' -o -path '*/memoryindex' \) -print | paste -sd: -)"
-VESPA_DEPS_LIB="${VESPA_DEPS_LIB_DIR:-$ROOT/vespa-deps/lib64}"
+VESPA_LIBS=""
+if live_oracle_enabled; then
+  VESPA_LIBS="$(find "$VESPA_ROOT" -type d \( -path '*/src/vespa/*' -o -path '*/testlib' -o -path '*/test' -o -path '*/features' -o -path '*/memoryindex' \) -print | paste -sd: -)"
+fi
+VESPA_DEPS_LIB="${VESPA_DEPS_LIB_DIR:-${VESPA_DEPS:+$VESPA_DEPS/lib64}}"
 export LD_LIBRARY_PATH="$SDK/lib${VESPA_DEPS_LIB:+:$VESPA_DEPS_LIB}${VESPA_LIBS:+:$VESPA_LIBS}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 "$ROOT/reference/vespa/verify-through.sh" m13

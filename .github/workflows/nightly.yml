@@ -40,8 +40,20 @@ jobs:
       - name: Compile every non-native target
         run: cargo check --workspace --all-targets --no-default-features
 
+      - name: Test Clippy diagnostic runner
+        run: python3 tools/test_run_clippy.py
+
       - name: Clippy every non-native target
-        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+        id: clippy
+        run: ./dev lint --profile rust-clippy-non-native --diagnostics-dir "$RUNNER_TEMP/clippy"
+
+      - name: Upload Clippy repair packet
+        if: ${{ always() && steps.clippy.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: clippy-repair-${{ github.run_id }}-${{ github.job }}
+          path: ${{ runner.temp }}/clippy
+          if-no-files-found: ignore
 
       - name: Test every non-native target
         env:
@@ -114,8 +126,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: clients/typescript/package-lock.json
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4
         with:

@@ -12,6 +12,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
+CLIENT_CAPABILITIES_WORKFLOW = SCRIPT.parents[1] / "workflows" / "client-capabilities.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 PERSISTENCE_IMMUTABILITY = SCRIPT.parents[2] / "tools" / "check-persistence-fixture-immutability.sh"
@@ -47,7 +48,9 @@ def write_fake_dev(repo: Path) -> None:
     dev = repo / "dev"
     dev.write_text(
         "#!/usr/bin/env bash\n"
-        "printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+        "if [[ -n \"${HOOK_LOG:-}\" ]]; then\n"
+        "  printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n"
+        "fi\n",
         encoding="utf-8",
     )
     dev.chmod(0o755)
@@ -212,6 +215,17 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
 
+    def test_client_capabilities_uses_trusted_base_native_fetch_helper(self) -> None:
+        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
+        install_step = workflow.split(
+            "- name: Install newest immutable native Vespa base for executable client E2E", 1
+        )[1].split("- name: Select C++23 compiler", 1)[0]
+        self.assertIn('BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}', install_step)
+        self.assertIn('git fetch --no-tags --depth=1 origin "$BASE_SHA"', install_step)
+        self.assertIn('git show "$BASE_SHA:tools/fetch-native-base.sh" > "$trusted_fetch"', install_step)
+        self.assertIn('artifact=$("$trusted_fetch" ci)', install_step)
+        self.assertNotIn("artifact=$(tools/fetch-native-base.sh ci)", install_step)
+
     def test_workflow_keeps_native_signal_without_running_native_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("\n  native:\n", workflow)
@@ -254,8 +268,22 @@ class ExactHeadTests(unittest.TestCase):
             "core/crates/searchkernel-vespa-bindings/src/bindings.rs",
             "reference/vespa/NATIVE_ABI_CONTRACT.h",
             "reference/vespa/PINNED_VESPA.json",
+            "reference/vespa/m0/expected/01-native-open-close.json",
+            "reference/vespa/m0/scenarios/01-native-open-close.json",
+            "reference/vespa/phase9/expected/01-additive-handles.json",
         ):
             self.assertIn(authority, hook)
+
+    def test_runner_python_selection_never_uses_bare_system_python(self) -> None:
+        root = SCRIPT.parents[2]
+        selector = (root / ".github" / "ci" / "select-python.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("sys.prefix != sys.base_prefix", selector)
+        self.assertIn('-m venv "$venv_dir"', selector)
+        self.assertIn("CI_PYTHON=$selected", selector)
+        self.assertIn("python3-venv", selector)
+        self.assertIn("sudo -n apt-get", selector)
 
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -273,8 +301,20 @@ class ExactHeadTests(unittest.TestCase):
             "\n  exact-head-gate:\n", 1
         )[0]
         self.assertIn("if: needs.classify.outputs.ruby == 'true'", ruby)
+        self.assertNotIn("uses: ruby/setup-ruby@v1", ruby)
+        self.assertIn("Ensure provisioned Ruby", ruby)
+        self.assertIn("sudo -n apt-get install -y --no-install-recommends ruby-full", ruby)
+        self.assertIn("Gem::Version.new(RUBY_VERSION)", ruby)
+        self.assertIn("uses: dtolnay/rust-toolchain@stable", ruby)
+        self.assertIn("./dev install flatbuffers", ruby)
         self.assertIn("ruby --version", ruby)
         self.assertIn("./dev test ruby", ruby)
+        classify = workflow.split("\n  classify:\n", 1)[1].split("\n  rust:\n", 1)[0]
+        self.assertNotIn("uses: ruby/setup-ruby@v1", classify)
+        provisioned_probe = ruby.split("- name: Ensure provisioned Ruby", 1)[1].split(
+            "- name: Install Rust toolchain", 1
+        )[0]
+        self.assertIn("hashFiles('clients/ruby/**')", provisioned_probe)
         gate = workflow.split("\n  exact-head-gate:\n", 1)[1]
         self.assertIn("RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}", gate)
         self.assertIn("RUBY_RESULT: ${{ needs.ruby.result }}", gate)
@@ -350,7 +390,7 @@ class ExactHeadTests(unittest.TestCase):
                 logged = log.read_text(encoding="utf-8")
                 self.assertIn("cargo fmt --all --check", logged)
                 self.assertIn(
-                    "cargo clippy --workspace --all-targets --no-default-features -- -D warnings",
+                    "dev lint --profile rust-clippy-non-native",
                     logged,
                 )
                 self.assertIn(
@@ -857,15 +897,16 @@ class ExactHeadTests(unittest.TestCase):
                 "rust-non-native",
                 "rust-quality",
                 "client-contracts",
-                "c2-historical",
+                "portable-ir-boundary",
                 "abi",
                 "native-full",
                 "milestone.m14",
+                "vespa.nearest-neighbor.hnsw",
                 "product.integration",
                 "product.rust-real-engine",
                 "vespa.grouping.yql",
                 "vespa.recovery",
-                "phase9",
+                "native-additive-regression",
                 "native-python-e2e",
                 "persistence-native",
                 "persistence-static",
@@ -918,8 +959,8 @@ class ExactHeadTests(unittest.TestCase):
             "web-full",
             "milestone.m14",
             "vespa.recovery",
-            "phase9",
-            "c2-historical",
+            "native-additive-regression",
+            "portable-ir-boundary",
             "verification-policy",
             "frontend-harness-selftest",
             "frontend-verifier-integrity",
@@ -1207,6 +1248,7 @@ class ExactHeadTests(unittest.TestCase):
                 cargo = repo / "fakebin" / "cargo"
                 cargo.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
                 cargo.chmod(0o755)
+                write_fake_dev(repo)
                 git(repo, "add", ".")
                 git(repo, "commit", "-q", "-m", "fixture")
 
@@ -1302,6 +1344,72 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("dev test php", log.read_text(encoding="utf-8"))
 
 
+    def test_ruby_client_changes_select_and_execute_ruby_tests(self) -> None:
+        with tempfile.NamedTemporaryFile() as output_file:
+            result = run(
+                "classify",
+                "--github-output",
+                output_file.name,
+                input_bytes=b"clients/ruby/lib/searchkernel.rb\0",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout.decode())
+            lines = set(Path(output_file.name).read_text(encoding="utf-8").splitlines())
+            self.assertIn("ruby=true", lines)
+
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+        (repo / ".githooks").mkdir(parents=True)
+        (repo / ".github" / "ci").mkdir(parents=True)
+        (repo / "reference" / "vespa").mkdir(parents=True)
+        (repo / "tools").mkdir(parents=True)
+        (repo / "fakebin").mkdir(parents=True)
+        (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+        write_verification_policy(repo)
+
+        log = repo / "hook.log"
+        cargo = repo / "fakebin" / "cargo"
+        cargo.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        cargo.chmod(0o755)
+        dev = repo / "dev"
+        dev.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        dev.chmod(0o755)
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "fixture")
+
+        staged = repo / "clients" / "ruby" / "lib" / "searchkernel.rb"
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text("# frozen_string_literal: true\n", encoding="utf-8")
+        git(repo, "add", "clients/ruby/lib/searchkernel.rb")
+
+        env = os.environ.copy()
+        env["HOOK_LOG"] = str(log)
+        env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks" / "pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("dev test ruby", log.read_text(encoding="utf-8"))
+
+
     def test_precommit_source_is_valid_and_each_major_gate_occurs_once(self) -> None:
         root = SCRIPT.parents[2]
         for shell_source in (
@@ -1324,7 +1432,7 @@ class ExactHeadTests(unittest.TestCase):
         source = HOOK.read_text(encoding="utf-8")
         for needle in (
             'cargo fmt --all --check',
-            'cargo clippy --workspace --all-targets --no-default-features -- -D warnings',
+            './dev lint --profile rust-clippy-non-native',
             'cargo test --workspace --all-targets --no-default-features',
             './dev check-protocol',
             './dev verify api-conformance',
@@ -1335,6 +1443,7 @@ class ExactHeadTests(unittest.TestCase):
             './dev test python',
             './dev test typescript',
             './dev test php',
+            './dev test ruby',
             './reference/vespa/verify-through.sh i',
             'bash tools/run-python-native-e2e.sh',
         ):

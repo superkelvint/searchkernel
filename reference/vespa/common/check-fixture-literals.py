@@ -26,6 +26,11 @@ def load(path: Path):
     return [json.loads(path.read_text(encoding="utf-8"))]
 
 
+def is_test_source(path: Path) -> bool:
+    stem = path.stem
+    return stem.startswith("test_") or stem.endswith(("_test", "_tests"))
+
+
 def source_files(path: Path):
     if path.is_file():
         yield path
@@ -34,6 +39,8 @@ def source_files(path: Path):
         relative_parts = child.relative_to(path).parts
         if child.is_file() and not any(part in {"target", "__pycache__", "test", "tests"}
                                        for part in relative_parts[:-1]):
+            if is_test_source(child):
+                continue
             # The Vespa-compatible stemmer dictionary legitimately contains
             # individual English fixture terms such as "brown".
             if child.name == "data.rs":
