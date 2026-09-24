@@ -58,15 +58,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify provisioned Rust toolchain
-        run: |
-          set -euo pipefail
-          command -v cargo
-          command -v rustc
-          command -v rustfmt
-          cargo --version
-          rustc --version
-          rustfmt --version
+      - name: Ensure runner Rust toolchain
+        run: bash .github/ci/ensure-runner-rust.sh rustfmt
 
       - name: Verify self-hosted ABI dependencies
         run: |
