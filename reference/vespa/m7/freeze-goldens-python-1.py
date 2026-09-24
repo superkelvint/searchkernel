@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+import json,sys
+print(json.dumps(json.load(open(sys.argv[1])),sort_keys=True,separators=(',',':')))
