@@ -84,17 +84,7 @@ REAL_DEPS="$(cd "$REAL_DEPS" && pwd -P)"
 section "Determining next native-base generation"
 ARTIFACT_GENERATION="$(
     gh api --paginate "repos/${REPO}/releases?per_page=100" --jq '.[].tag_name' |
-    python3 -c '
-import re, sys
-target, commit = sys.argv[1:]
-pat = re.compile(r"^vespa-base-v([0-9]+)-(?:host|ci)-" + re.escape(target) + "-" + re.escape(commit) + r"$")
-versions = []
-for raw in sys.stdin:
-    m = pat.match(raw.strip())
-    if m:
-        versions.append(int(m.group(1)))
-print(max(versions, default=0) + 1)
-' "$TARGET" "$PINNED_VESPA_COMMIT"
+    python3 "$ROOT/tools/native-base-generation.py" next --target "$TARGET" --commit "$PINNED_VESPA_COMMIT"
 )"
 [[ "$ARTIFACT_GENERATION" =~ ^[1-9][0-9]*$ ]] || die "failed to determine next artifact generation"
 echo "Publishing generation v${ARTIFACT_GENERATION}"
