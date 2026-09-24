@@ -11,7 +11,7 @@ require_sdk_manifest "$SDK/manifest.json"
 NATIVE_LIBRARY="$SDK/lib/libsearchkernel_vespa.so"
 [[ -f "$NATIVE_LIBRARY" ]] || fail_verification "native SDK library is missing: $NATIVE_LIBRARY"
 printf 'Phase 10 native provenance: SDK=%s ABI=' "$SDK"
-python3 "reference/vespa/phase10/verify-phase10-python-1.py" "$SDK/manifest.json"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-phase10-python-1.py" "$SDK/manifest.json"
 printf 'library_sha256='
 sha256sum "$NATIVE_LIBRARY" | awk '{print $1}'
 
