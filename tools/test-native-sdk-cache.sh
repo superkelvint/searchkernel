@@ -20,6 +20,21 @@ grep -Fq 'verify_archive_consumer "$ARCHIVE"' "$source_root/tools/publish-native
 grep -Fq 'verify_archive_consumer "$REMOTE/$ASSET"' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'data["searchkernel_commit"] = source_commit' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'section "Revalidating publication source"' "$source_root/tools/publish-native-base.sh"
+grep -Fq -- '--draft' "$source_root/tools/publish-native-base.sh"
+grep -Fq -- '--target "$SOURCE_COMMIT"' "$source_root/tools/publish-native-base.sh"
+python3 - "$source_root/tools/publish-native-base.sh" <<'PY'
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+draft_upload = text.index('gh release create "$TAG"')
+remote_verify = text.index('section "Post-publish verification"')
+publish_verified = text.index('section "Publishing verified native-base releases"')
+if not (draft_upload < remote_verify < publish_verified):
+    raise SystemExit(
+        "native-base release must stay draft through remote verification and publish only afterward"
+    )
+PY
 python3 - "$source_root/tools/publish-native-base.sh" <<'PY'
 import pathlib
 import sys
