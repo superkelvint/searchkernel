@@ -19,10 +19,10 @@ jobs:
     name: Plan invariant lanes
     runs-on: [self-hosted, linux, x64]
     outputs:
-      rust: ${{ steps.fixed.outputs.rust }}
-      python: ${{ steps.fixed.outputs.python }}
-      typescript: ${{ steps.fixed.outputs.typescript }}
-      ruby: ${{ steps.fixed.outputs.ruby }}
+      rust: ${{ steps.behavioral.outputs.rust }}
+      python: ${{ steps.behavioral.outputs.python }}
+      typescript: ${{ steps.behavioral.outputs.typescript }}
+      ruby: ${{ steps.behavioral.outputs.ruby }}
       tooling: ${{ steps.fixed.outputs.tooling }}
       native: ${{ steps.native.outputs.required }}
     steps:
@@ -59,16 +59,60 @@ jobs:
       - name: Enforce canonical CI evidence ownership
         run: $CI_PYTHON .github/ci/check-ci-evidence-ownership.py
 
-      - name: Use fixed invariant lanes while DAG authorization is offline
-        id: fixed
+      - name: Test candidate behavioral lane selector
         run: |
-          {
-            echo "rust=true"
-            echo "python=true"
-            echo "typescript=true"
-            echo "ruby=true"
-            echo "tooling=true"
-          } >> "$GITHUB_OUTPUT"
+          "$CI_PYTHON" .github/ci/test_behavioral_lanes_required.py
+
+      - name: Keep tooling invariant fixed while DAG authorization is offline
+        id: fixed
+        run: echo "tooling=true" >> "$GITHUB_OUTPUT"
+
+      - name: Select non-native invariant lanes
+        id: behavioral
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${BASE_SHA:-}" || "$BASE_SHA" =~ ^0+$ ]]; then
+            {
+              echo "rust=true"
+              echo "python=true"
+              echo "typescript=true"
+              echo "ruby=true"
+            } >> "$GITHUB_OUTPUT"
+            echo "No usable base revision; requiring every non-native product lane."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/searchkernel-changed-paths.txt"
+
+          selector="$RUNNER_TEMP/behavioral_lanes_required.py"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            # Pull requests are authorized by policy from the trusted base.
+            # During bootstrap, bases that predate this selector fail closed.
+            if git cat-file -e "$BASE_SHA:.github/ci/behavioral_lanes_required.py" 2>/dev/null; then
+              git show "$BASE_SHA:.github/ci/behavioral_lanes_required.py" > "$selector"
+            else
+              {
+                echo "rust=true"
+                echo "python=true"
+                echo "typescript=true"
+                echo "ruby=true"
+              } >> "$GITHUB_OUTPUT"
+              echo "Trusted base predates behavioral lane selection; requiring every non-native product lane."
+              exit 0
+            fi
+          else
+            # On trusted main/push execution, the checked-in selector is the
+            # repository policy for the revision under verification.
+            cp .github/ci/behavioral_lanes_required.py "$selector"
+          fi
+
+          "$CI_PYTHON" "$selector" --github-output "$GITHUB_OUTPUT" < "$RUNNER_TEMP/searchkernel-changed-paths.txt"
 
       - name: Select native verifier lane
         id: native
