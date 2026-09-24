@@ -12,6 +12,8 @@ bash -n "$source_root/tools/package-native-base-artifact.sh"
 bash -n "$source_root/tools/fetch-native-base.sh"
 bash -n "$source_root/tools/actions-runner-setup.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
+bash -n "$source_root/reference/vespa/common/verify-common.sh"
+bash -n "$source_root/reference/vespa/common/test-published-provenance.sh"
 if grep -Eq 'vespa-base-v[0-9]+|searchkernel-vespa-base-v[0-9]+' \
     "$source_root/tools/actions-runner-setup.sh"; then
     echo 'Actions runner setup must not hard-code a native-base generation' >&2
@@ -30,6 +32,7 @@ if grep -Fq '/work/target/ci' "$source_root/tools/actions-runner-setup.sh"; then
     exit 1
 fi
 bash "$source_root/tools/test-native-base-artifact.sh"
+bash "$source_root/reference/vespa/common/test-published-provenance.sh"
 
 # The resolver executes the SDK builder directly. Git mode is therefore part of
 # the build contract: a content-identical 0644 checkout fails before any native

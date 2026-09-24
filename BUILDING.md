@@ -446,6 +446,43 @@ product code.
 
 ## Native build verification
 
+### Clean-runner real-engine verification
+
+A provisioned runner does not need an `upstream/vespa` source checkout to run
+Search Kernel's real-engine verifier targets. The published native-base
+toolchain is accepted as pinned Vespa provenance when its environment, target,
+release generation, pinned commit, static-link closure, and canonical adapter
+compile/link metadata all validate.
+
+Provision the base, then run verifier targets normally:
+
+```bash
+./dev native-sdk ensure
+./dev verify m14
+./dev verify product.rust-real-engine
+./dev verify integration
+```
+
+On a published-toolchain runner, these targets execute the real SearchKernel /
+Vespa engine and compare behavior against the checked-in frozen expected corpus.
+They do not rebuild or rerun the upstream Java/C++ oracle implementations.
+
+A qualification machine with the clean configured pinned Vespa source checkout
+continues to run live upstream oracles by default. To require qualification mode
+explicitly:
+
+```bash
+SEARCHKERNEL_VERIFY_LIVE_ORACLE=required ./dev verify m14
+```
+
+That fails closed when only a published toolchain is available.
+`SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip` deliberately replays the frozen corpus
+even on a source qualification host.
+
+The distinction is intentional: qualification proves that frozen expected
+behavior still agrees with the pinned upstream oracle; clean-runner verification
+proves that the current Search Kernel real-engine path still agrees with that
+qualified contract.
 
 Run the focused native provenance checks and the normal workspace checks:
 

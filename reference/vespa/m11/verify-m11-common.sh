@@ -24,12 +24,24 @@ if not manifest.get("hardening_failpoints", False):
 PY
   else
     mkdir -p "$(dirname "$M11_SDK")" "$M11_BUILD"
-    SK_NATIVE_SDK="$M11_SDK" \
-    SK_NATIVE_BUILD_DIR="$M11_BUILD" \
-    VESPA_DEPS="$M11_DEPS" \
-      SK_NATIVE_REGENERATE_BINDINGS=0 \
-      SK_NATIVE_ENABLE_FAILPOINTS=1 \
-      "$ROOT/core/native/vespa/build-sdk.sh"
+    if using_published_vespa_toolchain; then
+      M11_BASE_SDK="$(resolved_native_base_sdk)"
+      SK_NATIVE_SDK="$M11_SDK" \
+      SK_NATIVE_BUILD_DIR="$M11_BUILD" \
+      SK_NATIVE_BASE_SDK="$M11_BASE_SDK" \
+      SK_NATIVE_ADAPTER_ONLY=1 \
+      VESPA_DEPS="$M11_DEPS" \
+        SK_NATIVE_REGENERATE_BINDINGS=0 \
+        SK_NATIVE_ENABLE_FAILPOINTS=1 \
+        "$ROOT/core/native/vespa/build-sdk.sh"
+    else
+      SK_NATIVE_SDK="$M11_SDK" \
+      SK_NATIVE_BUILD_DIR="$M11_BUILD" \
+      VESPA_DEPS="$M11_DEPS" \
+        SK_NATIVE_REGENERATE_BINDINGS=0 \
+        SK_NATIVE_ENABLE_FAILPOINTS=1 \
+        "$ROOT/core/native/vespa/build-sdk.sh"
+    fi
   fi
   [[ -d "$M11_SDK_CONFIG" ]] || fail_verification "missing M11 SDK config: $M11_SDK_CONFIG"
   require_sdk_manifest "$M11_SDK/manifest.json"

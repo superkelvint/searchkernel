@@ -1,10 +1,90 @@
 use serde_json::{Value as Json, json};
-use std::{fs, path::Path};
+use std::{collections::BTreeMap, fs, path::Path};
 
-use searchkernel_vespa_engine::{Engine, Query, SearchRequest, TensorValue};
+use searchkernel_vespa_engine::{
+    ConfigCompiler, DistanceMetric, Document, Engine, Field, FieldType, Query, RankProfile, Schema,
+    SearchRequest, TensorValue,
+};
 
 pub fn load(path: &Path) -> Json {
     serde_json::from_slice(&fs::read(path).expect("read scenario")).expect("parse scenario")
+}
+
+fn fixture_tensor(root: &Json, values: &Json) -> TensorValue {
+    TensorValue::dense(
+        root["fixture"]["tensor_field"]["type_spec"]
+            .as_str()
+            .expect("fixture tensor type"),
+        values
+            .as_array()
+            .expect("fixture tensor values")
+            .iter()
+            .map(|value| value.as_f64().expect("finite fixture tensor cell"))
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub fn fixture_schema(root: &Json) -> Schema {
+    let fixture = &root["fixture"];
+    let field = &fixture["tensor_field"];
+    let field_name = field["name"].as_str().expect("fixture tensor field");
+    let type_spec = field["type_spec"].as_str().expect("fixture tensor type");
+
+    let mut query_inputs = BTreeMap::<String, String>::new();
+    for step in root["steps"].as_array().expect("steps") {
+        for input in step["inputs"].as_array().expect("inputs") {
+            let name = input["name"].as_str().expect("query input name").to_owned();
+            let input_type = input["type_spec"]
+                .as_str()
+                .expect("query input type")
+                .to_owned();
+            if let Some(previous) = query_inputs.insert(name.clone(), input_type.clone()) {
+                assert_eq!(
+                    previous, input_type,
+                    "query input {name} changed type across M12 steps"
+                );
+            }
+        }
+    }
+
+    let mut rank = RankProfile::new("m12_nn").first_phase(format!("closeness({field_name})"));
+    for (name, input_type) in query_inputs {
+        rank = rank.query_input(name, input_type);
+    }
+
+    Schema::new(
+        fixture["document_type"]
+            .as_str()
+            .expect("fixture document type"),
+    )
+    .field(
+        Field::new(field_name, FieldType::Tensor(type_spec.to_owned()))
+            .attribute()
+            .distance_metric(DistanceMetric::Euclidean),
+    )
+    .rank_profile(rank)
+}
+
+pub fn prepare_fixture(
+    root: &Json,
+    config: &Path,
+    data: &Path,
+) -> searchkernel_vespa_engine::Result<()> {
+    ConfigCompiler::default().compile_to(&fixture_schema(root), config)?;
+    let engine = Engine::open(data, config)?;
+    let field = root["fixture"]["tensor_field"]["name"]
+        .as_str()
+        .expect("fixture tensor field");
+    for document in root["fixture"]["documents"]
+        .as_array()
+        .expect("fixture documents")
+    {
+        engine.put(
+            Document::new(document["id"].as_str().expect("fixture document id"))
+                .field(field, fixture_tensor(root, &document["values"])),
+        )?;
+    }
+    engine.close()
 }
 
 fn dense_tensor(input: &Json) -> TensorValue {
