@@ -149,6 +149,40 @@ run_python_tests() {
     "$PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
 }
 
+find_clang_python() {
+    local candidate resolved
+    local -a candidates=()
+
+    [[ -n "${ABI_PYTHON:-}" ]] && candidates+=("$ABI_PYTHON")
+    candidates+=("$PYTHON")
+    [[ -x /usr/bin/python3 ]] && candidates+=("/usr/bin/python3")
+    command -v python3 >/dev/null 2>&1 && candidates+=("$(command -v python3)")
+
+    for candidate in "${candidates[@]}"; do
+        if [[ "$candidate" == */* ]]; then
+            resolved=$candidate
+        else
+            resolved=$(command -v "$candidate" 2>/dev/null || true)
+        fi
+        [[ -n "$resolved" && -x "$resolved" ]] || continue
+        if "$resolved" -c 'import clang.cindex' >/dev/null 2>&1; then
+            printf '%s\n' "$resolved"
+            return 0
+        fi
+    done
+    return 1
+}
+
+run_abi_python() {
+    local python
+    python=$(find_clang_python) || {
+        echo 'error: no Python interpreter with working clang.cindex bindings was found' >&2
+        echo 'run ./dev doctor to install/repair the ABI verification toolchain' >&2
+        return 1
+    }
+    "$python" "$@"
+}
+
 run_typescript_generation_check() {
     bash "$ROOT/tools/check-typescript-generated.sh"
 }
@@ -197,7 +231,7 @@ check_fast() {
     bash "$ROOT/reference/vespa/verifiers/test-routing.sh"
     "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check-native-abi-authorities.py"
-    "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
+    run_abi_python "$ROOT/tools/check_abi_surface.py" \
         "$ROOT/core/native/vespa/searchkernel_vespa.h"
     "$PYTHON" "$ROOT/tools/check-python-flatbuffers-boundary.py"
     "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
@@ -383,12 +417,12 @@ verify_target() {
             git show HEAD:core/native/vespa/searchkernel_vespa.h > "$local_baseline"
             "$PYTHON" "$ROOT/tools/test_check_native_abi_authorities.py"
             "$PYTHON" "$ROOT/tools/check-native-abi-authorities.py"
-            "$PYTHON" "$ROOT/tools/test_check_abi_surface.py"
+            run_abi_python "$ROOT/tools/test_check_abi_surface.py"
             SK_NATIVE_ABI_HEADER="$ROOT/core/native/vespa/searchkernel_vespa.h" \
                 bash "$ROOT/tools/check-native-bindings.sh"
             bash "$ROOT/tools/check-layout.sh"
             bash "$ROOT/tools/test-native-sdk-cache.sh"
-            "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
+            run_abi_python "$ROOT/tools/check_abi_surface.py" \
                 "$ROOT/core/native/vespa/searchkernel_vespa.h" \
                 --linker-map "$ROOT/core/native/vespa/searchkernel_vespa.map" \
                 --baseline-header "$local_baseline"
@@ -670,11 +704,7 @@ doctor_python() {
 doctor_system_tools() {
     command -v rg >/dev/null 2>&1 || return 1
     command -v clang >/dev/null 2>&1 || return 1
-
-    # The ABI checker runs under the repository Python environment. The
-    # supported AlmaLinux container exposes clang.cindex from the distro
-    # python3-clang package, so the venv must be able to see system packages.
-    "$PYTHON" -c 'import clang.cindex' >/dev/null 2>&1
+    find_clang_python >/dev/null 2>&1
 }
 
 doctor_repair_system_tools() {
@@ -696,19 +726,10 @@ doctor_repair_system_tools() {
 
     command -v rg >/dev/null 2>&1 || return 1
     command -v clang >/dev/null 2>&1 || return 1
-
-    # If doctor previously created an isolated venv, recreate that repo-local
-    # environment with system site packages so distro-matched clang bindings
-    # are visible. This venv is ignored and owned by ./dev doctor.
-    if [[ -x "$ROOT/venv/bin/python" ]] &&
-       ! "$ROOT/venv/bin/python" -c 'import clang.cindex' >/dev/null 2>&1 &&
-       python3 -c 'import clang.cindex' >/dev/null 2>&1; then
-        rm -rf "$ROOT/venv"
-        python3 -m venv --system-site-packages "$ROOT/venv"
-        PYTHON="$ROOT/venv/bin/python"
-    fi
-
-    "$PYTHON" -c 'import clang.cindex' >/dev/null 2>&1
+    find_clang_python >/dev/null 2>&1 || {
+        echo 'clang packages are installed, but no Python interpreter can import clang.cindex' >&2
+        return 1
+    }
 }
 
 doctor_repair_flatbuffers() {
