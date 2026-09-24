@@ -1,21 +1,55 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Provision the persistent SearchKernel native build container used on self-hosted
-# Actions runners. Re-running this script is the supported update path: it
-# discovers the newest published CI native-base generation, refreshes the
-# container's checkout-keyed native cache when necessary, and otherwise reuses
-# all persistent toolchain/cache volumes.
+###############################################################################
+# SearchKernel native searchkerneld builder
+#
+# Run from anywhere inside a SearchKernel checkout.
+#
+# HOST responsibilities:
+#   - Docker
+#   - gh, already authenticated
+#   - download private SearchKernel native-base artifacts
+#
+# CONTAINER responsibilities:
+#   - Vespa AlmaLinux build environment
+#   - CMake and build utilities
+#   - Rust
+#   - FlatBuffers 25.12.19
+#   - native SDK installation
+#   - searchkerneld build
+#
+# The container is persistent. We deliberately DO NOT use --rm.
+#
+# Therefore:
+#   - dnf packages are installed once
+#   - FlatBuffers is installed once
+#   - Cargo/rustup/native SDK caches persist
+#
+# GitHub credentials are NEVER passed into the container.
+###############################################################################
 
-CONTAINER_NAME="${SEARCHKERNEL_NATIVE_CONTAINER:-searchkernel-native}"
+REPO="superkelvint/searchkernel"
+
 IMAGE="${SEARCHKERNEL_NATIVE_IMAGE:-docker.io/vespaengine/vespa-dev-almalinux-8:latest}"
-BUILD_ENV="ci"
-NATIVE_TARGET="${SK_NATIVE_TARGET:-x86_64-unknown-linux-gnu}"
+CONTAINER_NAME="${SEARCHKERNEL_NATIVE_CONTAINER:-searchkernel-native}"
+
+BUILD_ENV="${SEARCHKERNEL_BUILD_ENV:-ci}"
+TARGET="${SEARCHKERNEL_NATIVE_TARGET:-x86_64-unknown-linux-gnu}"
+
 CARGO_VOLUME="${SEARCHKERNEL_CARGO_VOLUME:-searchkernel-cargo}"
 RUSTUP_VOLUME="${SEARCHKERNEL_RUSTUP_VOLUME:-searchkernel-rustup}"
 NATIVE_CACHE_VOLUME="${SEARCHKERNEL_NATIVE_CACHE_VOLUME:-searchkernel-native-cache}"
 
-fail() {
+HOST_ARTIFACT_CACHE="${SEARCHKERNEL_ARTIFACT_CACHE:-$HOME/.cache/searchkernel/native-artifacts}"
+
+FLATBUFFERS_VERSION="25.12.19"
+
+###############################################################################
+# Helpers
+###############################################################################
+
+die() {
     echo "ERROR: $*" >&2
     exit 1
 }
@@ -25,148 +59,628 @@ section() {
     echo "==> $*"
 }
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" ||
-    fail "run this from inside a SearchKernel checkout"
-ROOT="$(cd "$ROOT" && pwd -P)"
-cd "$ROOT"
+###############################################################################
+# Find SearchKernel repository
+###############################################################################
 
-for cmd in docker gh git python3 sha256sum; do
-    command -v "$cmd" >/dev/null 2>&1 || fail "missing required host command: $cmd"
+SCRIPT_DIR="$(
+    cd "$(dirname "${BASH_SOURCE[0]}")" &&
+    pwd -P
+)"
+
+if REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
+    :
+elif REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+    :
+else
+    die "this script must be run from inside a SearchKernel checkout"
+fi
+
+REPO_ROOT="$(cd "$REPO_ROOT" && pwd -P)"
+
+[[ -f "$REPO_ROOT/Cargo.toml" ]] ||
+    die "Cargo.toml not found at repository root"
+
+[[ -x "$REPO_ROOT/dev" ]] ||
+    die "./dev is missing or not executable"
+
+###############################################################################
+# Host prerequisites
+###############################################################################
+
+section "Checking host"
+
+for cmd in docker gh python3 sha256sum; do
+    command -v "$cmd" >/dev/null 2>&1 ||
+        die "host is missing required command: $cmd"
 done
-
-gh api repos/superkelvint/searchkernel >/dev/null 2>&1 ||
-    fail "gh authentication cannot access superkelvint/searchkernel"
 
 docker info >/dev/null 2>&1 ||
-    fail "Docker is not available to the current user"
+    die "docker is not usable by the current user"
 
-ARTIFACT_CACHE="${SEARCHKERNEL_ARTIFACT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/searchkernel/native-artifacts}"
-mkdir -p "$ARTIFACT_CACHE"
-ARTIFACT_CACHE="$(cd "$ARTIFACT_CACHE" && pwd -P)"
+gh api "repos/$REPO" >/dev/null 2>&1 ||
+    die "host gh authentication cannot access $REPO"
 
-section "Fetching newest published CI native base"
-ARTIFACT="$({
-    SEARCHKERNEL_ARTIFACT_CACHE="$ARTIFACT_CACHE" \
-    SK_NATIVE_TARGET="$NATIVE_TARGET" \
-        tools/fetch-native-base.sh "$BUILD_ENV"
-})"
-[[ -s "$ARTIFACT" ]] || fail "native-base fetcher returned an invalid artifact: $ARTIFACT"
-ARTIFACT_NAME="$(basename "$ARTIFACT")"
+echo "Repository:"
+echo "  $REPO_ROOT"
 
-section "Preparing persistent container"
-docker pull "$IMAGE"
-for volume in "$CARGO_VOLUME" "$RUSTUP_VOLUME" "$NATIVE_CACHE_VOLUME"; do
-    docker volume inspect "$volume" >/dev/null 2>&1 || docker volume create "$volume" >/dev/null
+echo "Container:"
+echo "  $CONTAINER_NAME"
+
+echo "Image:"
+echo "  $IMAGE"
+
+echo "Private GitHub access OK"
+
+###############################################################################
+# Read pinned Vespa identity from SearchKernel
+###############################################################################
+
+section "Reading pinned native-base identity"
+
+MANIFEST="$REPO_ROOT/core/native/vespa/manifest.json"
+
+[[ -f "$MANIFEST" ]] ||
+    die "missing native manifest: $MANIFEST"
+
+VESPA_COMMIT="$(
+    python3 - "$MANIFEST" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    print(json.load(stream)["vespa_commit"])
+PY
+)"
+
+[[ -n "$VESPA_COMMIT" ]] ||
+    die "could not determine pinned Vespa commit"
+
+mkdir -p "$HOST_ARTIFACT_CACHE"
+HOST_ARTIFACT_CACHE="$(cd "$HOST_ARTIFACT_CACHE" && pwd -P)"
+
+section "Fetching newest published native base"
+
+ARCHIVE="$(
+    SEARCHKERNEL_ARTIFACT_CACHE="$HOST_ARTIFACT_CACHE" \
+    SK_NATIVE_TARGET="$TARGET" \
+        "$REPO_ROOT/tools/fetch-native-base.sh" "$BUILD_ENV"
+)"
+
+[[ -s "$ARCHIVE" ]] ||
+    die "native-base fetcher returned an invalid artifact: $ARCHIVE"
+
+ARCHIVE_NAME="$(basename "$ARCHIVE")"
+CHECKSUM="${ARCHIVE}.sha256"
+CHECKSUM_NAME="$(basename "$CHECKSUM")"
+
+[[ -s "$CHECKSUM" ]] ||
+    die "native-base checksum is missing: $CHECKSUM"
+
+echo "Build environment: $BUILD_ENV"
+echo "Target:            $TARGET"
+echo "Vespa commit:      $VESPA_COMMIT"
+echo "Native base:       $ARCHIVE_NAME"
+
+###############################################################################
+# Persistent Docker volumes
+###############################################################################
+
+section "Ensuring persistent Docker volumes"
+
+for volume in \
+    "$CARGO_VOLUME" \
+    "$RUSTUP_VOLUME" \
+    "$NATIVE_CACHE_VOLUME"
+do
+    if docker volume inspect "$volume" >/dev/null 2>&1; then
+        echo "Reusing $volume"
+    else
+        docker volume create "$volume" >/dev/null
+        echo "Created $volume"
+    fi
 done
 
-container_matches_checkout() {
-    local mounted
-    mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/work"}}{{.Source}}{{end}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)"
-    [[ "$mounted" == "$ROOT" ]]
-}
-
-container_matches_artifact_cache() {
-    local mounted
-    mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/native-artifacts"}}{{.Source}}{{end}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)"
-    [[ "$mounted" == "$ARTIFACT_CACHE" ]]
-}
+###############################################################################
+# Persistent native build container
+###############################################################################
 
 if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-    if ! container_matches_checkout || ! container_matches_artifact_cache; then
-        echo "Existing $CONTAINER_NAME uses different bind mounts; recreating it." >&2
-        docker rm -f "$CONTAINER_NAME" >/dev/null
+    section "Reusing persistent native container"
+
+    EXISTING_WORK_MOUNT="$(
+        docker inspect \
+            --format '{{range .Mounts}}{{if eq .Destination "/work"}}{{.Source}}{{end}}{{end}}' \
+            "$CONTAINER_NAME"
+    )"
+
+    if [[ "$EXISTING_WORK_MOUNT" != "$REPO_ROOT" ]]; then
+        cat >&2 <<EOF
+
+ERROR: existing container '$CONTAINER_NAME' belongs to another checkout.
+
+Existing /work:
+  $EXISTING_WORK_MOUNT
+
+Current checkout:
+  $REPO_ROOT
+
+Remove it once with:
+
+  docker rm -f $CONTAINER_NAME
+
+Then rerun this script.
+
+EOF
+        exit 1
     fi
-fi
 
-if ! docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-    docker run -d \
+    RUNNING="$(
+        docker inspect \
+            --format '{{.State.Running}}' \
+            "$CONTAINER_NAME"
+    )"
+
+    if [[ "$RUNNING" != "true" ]]; then
+        docker start "$CONTAINER_NAME" >/dev/null
+    fi
+
+else
+    section "Creating persistent native container"
+
+    docker run \
+        -d \
         --name "$CONTAINER_NAME" \
-        --hostname "$CONTAINER_NAME" \
-        --workdir /work \
-        --volume "$ROOT:/work" \
-        --volume "$ARTIFACT_CACHE:/native-artifacts:ro" \
-        --volume "$CARGO_VOLUME:/root/.cargo" \
-        --volume "$RUSTUP_VOLUME:/root/.rustup" \
-        --volume "$NATIVE_CACHE_VOLUME:/root/.cache/searchkernel" \
+        --privileged \
+        --pids-limit=-1 \
+        -v "$REPO_ROOT:/work" \
+        -v "$HOST_ARTIFACT_CACHE:/native-artifacts:ro" \
+        -v "$CARGO_VOLUME:/root/.cargo" \
+        -v "$RUSTUP_VOLUME:/root/.rustup" \
+        -v "$NATIVE_CACHE_VOLUME:/root/.cache/searchkernel" \
+        -e "SEARCHKERNEL_BUILD_ENV=$BUILD_ENV" \
+        -e "CARGO_TARGET_DIR=/work/target/ci" \
+        -e "PATH=/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+        -e "LD_LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib" \
+        -w /work \
         "$IMAGE" \
-        /bin/bash -lc 'while :; do sleep 3600; done' >/dev/null
-elif [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME")" != "true" ]]; then
-    docker start "$CONTAINER_NAME" >/dev/null
+        /bin/bash -lc 'exec sleep infinity' \
+        >/dev/null
+
+    echo "Created $CONTAINER_NAME"
 fi
 
-section "Provisioning container toolchain"
-docker exec "$CONTAINER_NAME" /bin/bash -lc '
-set -euo pipefail
+###############################################################################
+# Container setup + native build
+###############################################################################
 
-if command -v dnf >/dev/null 2>&1; then
-    dnf install -y \
-        cmake \
-        curl \
-        git \
-        libxml2-devel \
-        make \
-        ninja-build \
-        pkgconf-pkg-config \
-        python3 \
-        python3-pip \
-        tar \
-        zstd >/dev/null
-fi
+section "Preparing container and building searchkerneld"
 
-if [[ -f /opt/rh/gcc-toolset-15/enable ]]; then
-    source /opt/rh/gcc-toolset-15/enable
-fi
-
-c++ --version
-cat > /tmp/searchkernel-cxx23.cc <<'CPP'
-#include <format>
-#include <string>
-int main() {
-    std::string value = std::format("{}", 42);
-    return value == "42" ? 0 : 1;
-}
-CPP
-c++ -std=c++23 /tmp/searchkernel-cxx23.cc -o /tmp/searchkernel-cxx23
-/tmp/searchkernel-cxx23
-rm -f /tmp/searchkernel-cxx23.cc /tmp/searchkernel-cxx23
-
-if ! command -v rustup >/dev/null 2>&1; then
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-fi
-source /root/.cargo/env
-rustup toolchain install stable --profile minimal --no-self-update
-rustup default stable
-
-git config --global --add safe.directory /work
-
-cd /work
-SEARCHKERNEL_BUILD_ENV=ci ./dev install flatbuffers
-'
-
-section "Installing newest native base into persistent runner cache"
 docker exec \
-    -e SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
-    -e SK_NATIVE_TARGET="$NATIVE_TARGET" \
-    -e SK_NATIVE_BASE_ARTIFACT_URL="file:///native-artifacts/$ARTIFACT_NAME" \
-    -e CARGO_TARGET_DIR=/work/target/ci \
+    -e "SK_NATIVE_ARCHIVE_NAME=$ARCHIVE_NAME" \
+    -e "SEARCHKERNEL_BUILD_ENV=$BUILD_ENV" \
+    -e "CARGO_TARGET_DIR=/work/target/ci" \
     "$CONTAINER_NAME" \
     /bin/bash -lc '
 set -euo pipefail
-if [[ -f /opt/rh/gcc-toolset-15/enable ]]; then
-    source /opt/rh/gcc-toolset-15/enable
-fi
-source /root/.cargo/env
+
+say() {
+    echo
+    echo "==> $*"
+}
+
+die() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
 cd /work
-./dev native-sdk ensure >/dev/null
-./dev native-sdk path
+
+git config --global --add safe.directory /work >/dev/null 2>&1 || true
+
+export PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+export LD_LIBRARY_PATH="/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+export SEARCHKERNEL_BUILD_ENV="${SEARCHKERNEL_BUILD_ENV:-ci}"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/work/target/ci}"
+
+unset VESPA_ROOT || true
+unset SK_NATIVE_SDK || true
+
+###############################################################################
+# OS prerequisites -- install only if actually missing
+###############################################################################
+
+say "Checking container OS prerequisites"
+
+NEED_DNF=0
+
+for cmd in \
+    cmake \
+    curl \
+    file \
+    git \
+    make \
+    python3 \
+    sha256sum \
+    tar
+do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        NEED_DNF=1
+        break
+    fi
+done
+
+if [[ "$NEED_DNF" == "1" ]]; then
+    say "Installing missing container OS prerequisites once"
+
+    dnf install -y \
+        cmake \
+        curl \
+        file \
+        git \
+        gzip \
+        make \
+        python3 \
+        tar \
+        which
+
+    dnf clean all
+else
+    echo "Container OS prerequisites already installed"
+fi
+
+for cmd in \
+    cmake \
+    curl \
+    file \
+    git \
+    make \
+    python3 \
+    sha256sum \
+    tar
+do
+    command -v "$cmd" >/dev/null 2>&1 ||
+        die "required container command is unavailable: $cmd"
+done
+
+###############################################################################
+# Vespa compiler
+###############################################################################
+
+say "Checking Vespa C++ toolchain"
+
+command -v c++ >/dev/null 2>&1 ||
+    die "C++ compiler unavailable"
+
+c++ --version | head -n 1
+
+cat >/tmp/searchkernel-cxx-probe.cc <<'"'"'EOF'"'"'
+#include <format>
+#include <string>
+
+int main() {
+    auto result = std::format("{}", 42);
+    return result == "42" ? 0 : 1;
+}
+EOF
+
+c++ \
+    -std=gnu++23 \
+    /tmp/searchkernel-cxx-probe.cc \
+    -o /tmp/searchkernel-cxx-probe
+
+/tmp/searchkernel-cxx-probe
+
+rm -f \
+    /tmp/searchkernel-cxx-probe.cc \
+    /tmp/searchkernel-cxx-probe
+
+echo "C++23 + std::format OK"
+
+###############################################################################
+# Rust
+###############################################################################
+
+say "Checking Rust"
+
+if ! command -v rustup >/dev/null 2>&1; then
+    echo "Installing Rust once"
+
+    curl \
+        --proto "=https" \
+        --tlsv1.2 \
+        --silent \
+        --show-error \
+        --fail \
+        https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal
+fi
+
+export PATH="/root/.cargo/bin:$PATH"
+
+if ! rustup toolchain list | grep -q "^stable"; then
+    rustup toolchain install stable --profile minimal
+fi
+
+rustup default stable >/dev/null
+
+rustc --version
+cargo --version
+
+###############################################################################
+# FlatBuffers
+###############################################################################
+
+FLATBUFFERS_VERSION="25.12.19"
+FLATBUFFERS_PREFIX="/usr/local"
+
+flatbuffers_ok() {
+    [[ -x "$FLATBUFFERS_PREFIX/bin/flatc" ]] || return 1
+
+    [[ "$(
+        "$FLATBUFFERS_PREFIX/bin/flatc" --version 2>/dev/null || true
+    )" == "flatc version $FLATBUFFERS_VERSION" ]] || return 1
+
+    [[ -f "$FLATBUFFERS_PREFIX/include/flatbuffers/base.h" ]] || return 1
+    [[ -f "$FLATBUFFERS_PREFIX/include/flatbuffers/idl.h" ]] || return 1
+    [[ -f "$FLATBUFFERS_PREFIX/lib/libflatbuffers.a" ]] || return 1
+}
+
+if flatbuffers_ok; then
+    say "Reusing FlatBuffers $FLATBUFFERS_VERSION"
+else
+    say "Installing FlatBuffers $FLATBUFFERS_VERSION once"
+
+    FB_TMP="$(mktemp -d /tmp/searchkernel-flatbuffers.XXXXXX)"
+
+    trap '\''rm -rf "$FB_TMP"'\'' EXIT
+
+    curl \
+        --fail \
+        --location \
+        --silent \
+        --show-error \
+        "https://github.com/google/flatbuffers/archive/refs/tags/v${FLATBUFFERS_VERSION}.tar.gz" \
+        -o "$FB_TMP/flatbuffers.tar.gz"
+
+    mkdir -p "$FB_TMP/source"
+
+    tar \
+        -xzf "$FB_TMP/flatbuffers.tar.gz" \
+        --strip-components=1 \
+        -C "$FB_TMP/source"
+
+    cmake \
+        -S "$FB_TMP/source" \
+        -B "$FB_TMP/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$FLATBUFFERS_PREFIX" \
+        -DCMAKE_INSTALL_LIBDIR=lib \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DFLATBUFFERS_BUILD_TESTS=OFF
+
+    cmake \
+        --build "$FB_TMP/build" \
+        --parallel "$(nproc)"
+
+    cmake --install "$FB_TMP/build"
+
+    rm -rf "$FB_TMP"
+    trap - EXIT
+
+    flatbuffers_ok ||
+        die "FlatBuffers installation failed validation"
+fi
+
+flatc --version
+
+###############################################################################
+# Native Vespa base
+###############################################################################
+
+say "Refreshing SearchKernel native base"
+
+ARTIFACT="/native-artifacts/${SK_NATIVE_ARCHIVE_NAME}"
+
+[[ -f "$ARTIFACT" ]] ||
+    die "host-provided native archive is missing: $ARTIFACT"
+
+[[ -f "${ARTIFACT}.sha256" ]] ||
+    die "host-provided checksum is missing: ${ARTIFACT}.sha256"
+
+export SK_NATIVE_BASE_ARTIFACT_URL="file://${ARTIFACT}"
+
+# Always run ensure during provisioning. It compares the installed artifact
+# generation with the host-selected release and atomically refreshes the shared
+# native cache only when a newer generation is available.
+./dev native-sdk ensure
+
+SDK_PATH="$(./dev native-sdk path)"
+
+[[ -n "$SDK_PATH" ]] ||
+    die "native SDK resolver returned an empty path"
+
+[[ -d "$SDK_PATH" ]] ||
+    die "native SDK does not exist: $SDK_PATH"
+
+[[ -f "$SDK_PATH/manifest.json" ]] ||
+    die "native SDK manifest is missing"
+
+echo
+echo "Native SDK:"
+echo "  $SDK_PATH"
+
+###############################################################################
+# Node / TypeScript
+###############################################################################
+
+say "Checking Node.js / TypeScript"
+
+node_ok() {
+    command -v node >/dev/null 2>&1 || return 1
+    command -v npm >/dev/null 2>&1 || return 1
+
+    local version major minor
+
+    version="$(node -p "process.versions.node")"
+
+    IFS=. read -r major minor _ <<< "$version"
+
+    (( major > 20 || (major == 20 && minor >= 19) ))
+}
+
+if ! node_ok; then
+    say "Installing Node.js 20"
+
+    dnf module reset -y nodejs || true
+    dnf module enable -y nodejs:20
+    dnf install -y nodejs npm
+
+    node_ok ||
+        die "Node.js >=20.19 is required"
+fi
+
+echo "Node:"
+node --version
+npm --version
+
+# npm ci is only necessary when node_modules is absent.
+if [[ ! -x /work/clients/typescript/node_modules/.bin/tsc ]]; then
+    say "Installing TypeScript dependencies"
+
+    npm ci --prefix /work/clients/typescript
+else
+    echo "TypeScript dependencies already installed"
+fi
+
+
+###############################################################################
+# Python client dependencies
+###############################################################################
+
+say "Checking Python client dependencies"
+
+PYTHON_DEPS_OK=0
+
+if python3 /work/tools/check-python-dependencies.py >/dev/null 2>&1; then
+    PYTHON_DEPS_OK=1
+fi
+
+if [[ "$PYTHON_DEPS_OK" == "0" ]]; then
+    say "Installing Python client dependencies"
+
+    python3 -m pip install \
+        --upgrade \
+        --disable-pip-version-check \
+        -e /work/clients/python
+
+    python3 /work/tools/check-python-dependencies.py ||
+        die "Python dependency installation did not satisfy SearchKernel"
+else
+    echo "Python dependencies already satisfied"
+fi
+
+
+###############################################################################
+# PHP
+###############################################################################
+
+say "Checking PHP"
+
+php_ok() {
+    command -v php >/dev/null 2>&1 || return 1
+
+    php -r "exit(version_compare(PHP_VERSION, \"8.1.0\", \">=\") ? 0 : 1);"
+}
+
+if php_ok; then
+    echo "PHP already installed:"
+    php --version | head -n 1
+else
+    say "Installing PHP >= 8.1"
+
+    dnf install -y \
+        epel-release \
+        https://rpms.remirepo.net/enterprise/remi-release-8.rpm
+
+    dnf module reset -y php
+    dnf module enable -y php:remi-8.3
+
+    dnf install -y php-cli
+
+    php_ok ||
+        die "PHP >= 8.1 unavailable after installation"
+
+    php --version | head -n 1
+fi
+
+###############################################################################
+# Doctor
+###############################################################################
+
+say "Running SearchKernel doctor"
+
+unset VESPA_ROOT || true
+unset SK_NATIVE_SDK || true
+
+./dev doctor
+
+###############################################################################
+# searchkerneld
+###############################################################################
+
+say "Building native searchkerneld"
+
+cargo build \
+    -p searchkerneld \
+    --features native
+
+BINARY="$CARGO_TARGET_DIR/debug/searchkerneld"
+
+[[ -x "$BINARY" ]] ||
+    die "searchkerneld binary not produced: $BINARY"
+
+###############################################################################
+# Result
+###############################################################################
+
+say "Build succeeded"
+
+ls -lh "$BINARY"
+file "$BINARY"
+
+echo
+echo "============================================================"
+echo "SearchKernel native searchkerneld build SUCCESS"
+echo "============================================================"
+echo
+echo "Binary:"
+echo "  $BINARY"
+echo
+echo "Native SDK:"
+echo "  $SDK_PATH"
+echo
 '
 
-section "Runner native environment ready"
-echo "Container:      $CONTAINER_NAME"
-echo "Image:          $IMAGE"
-echo "Checkout:       $ROOT -> /work"
-echo "Native base:    $ARTIFACT_NAME"
-echo "Artifact cache: $ARTIFACT_CACHE -> /native-artifacts (read-only)"
+###############################################################################
+# Host summary
+###############################################################################
+
+section "Done"
+
+echo "searchkerneld:"
+echo "  $REPO_ROOT/target/ci/debug/searchkerneld"
+
 echo
-echo "Build searchkerneld with:"
-echo "  docker exec $CONTAINER_NAME /bin/bash -lc 'source /opt/rh/gcc-toolset-15/enable 2>/dev/null || true; source /root/.cargo/env; cd /work; SEARCHKERNEL_BUILD_ENV=ci CARGO_TARGET_DIR=target/ci cargo build -p searchkerneld --features native'"
+echo "Persistent container:"
+echo "  $CONTAINER_NAME"
+
+echo
+echo "Enter it manually with:"
+echo "  docker exec -it $CONTAINER_NAME /bin/bash"
+
+echo
+echo "Destroy/rebuild the native environment with:"
+echo "  docker rm -f $CONTAINER_NAME"
