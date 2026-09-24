@@ -269,6 +269,8 @@ class ExactHeadTests(unittest.TestCase):
             "reference/vespa/NATIVE_ABI_CONTRACT.h",
             "reference/vespa/PINNED_VESPA.json",
             "reference/vespa/m0/expected/01-native-open-close.json",
+            "reference/vespa/m0/scenarios/01-native-open-close.json",
+            "reference/vespa/phase9/expected/01-additive-handles.json",
         ):
             self.assertIn(authority, hook)
 
