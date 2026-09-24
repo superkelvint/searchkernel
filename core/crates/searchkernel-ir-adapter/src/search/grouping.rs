@@ -699,60 +699,6 @@ fn exact_integer_grouping_bound(value: i128) -> Result<f64> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn grouping_filter_bound_preserves_exact_integers_and_rejects_precision_loss() {
-        let two_to_53 = 1_i64 << 53;
-        let exact = [
-            (two_to_53 - 1, (two_to_53 - 1) as f64),
-            (-(two_to_53 - 1), (-(two_to_53 - 1) as f64)),
-        ];
-        for (value, expected) in exact {
-            let expression = searchkernel_ir::GroupingExpressionIr::Literal(
-                searchkernel_ir::RequestValueIr::Int64(value),
-            );
-            assert_eq!(
-                grouping_filter_bound(&expression).expect("exact integer bound"),
-                expected,
-                "integer bound {value} should remain exact"
-            );
-        }
-
-        let exact_unsigned = searchkernel_ir::GroupingExpressionIr::Literal(
-            searchkernel_ir::RequestValueIr::UInt64((two_to_53 - 1) as u64),
-        );
-        assert_eq!(
-            grouping_filter_bound(&exact_unsigned).expect("exact unsigned integer bound"),
-            (two_to_53 - 1) as f64
-        );
-
-        let rejected = [
-            searchkernel_ir::RequestValueIr::Int64(two_to_53),
-            searchkernel_ir::RequestValueIr::Int64(two_to_53 + 1),
-            searchkernel_ir::RequestValueIr::Int64(-two_to_53),
-            searchkernel_ir::RequestValueIr::Int64(-(two_to_53 + 1)),
-            searchkernel_ir::RequestValueIr::Int64(i64::MIN),
-            searchkernel_ir::RequestValueIr::Int64(i64::MAX),
-            searchkernel_ir::RequestValueIr::UInt64(two_to_53 as u64),
-            searchkernel_ir::RequestValueIr::UInt64((two_to_53 + 1) as u64),
-            searchkernel_ir::RequestValueIr::UInt64(u64::MAX),
-        ];
-        for value in rejected {
-            let expression = searchkernel_ir::GroupingExpressionIr::Literal(value);
-            let error = grouping_filter_bound(&expression)
-                .expect_err("an inexact integer bound must be rejected");
-            assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
-            assert_eq!(
-                error.details[0].code,
-                "grouping_filter_bound_precision_loss"
-            );
-        }
-    }
-}
-
 fn unsupported_grouping(code: &'static str, message: &'static str) -> PortableError {
     PortableError::unsupported(code, Some("grouping"), message)
 }
@@ -826,4 +772,58 @@ pub(crate) fn facet_lowering(value: &searchkernel_ir::GroupingRequestIr) -> Opti
         limit: *limit,
         order,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grouping_filter_bound_preserves_exact_integers_and_rejects_precision_loss() {
+        let two_to_53 = 1_i64 << 53;
+        let exact = [
+            (two_to_53 - 1, (two_to_53 - 1) as f64),
+            (-(two_to_53 - 1), (-(two_to_53 - 1) as f64)),
+        ];
+        for (value, expected) in exact {
+            let expression = searchkernel_ir::GroupingExpressionIr::Literal(
+                searchkernel_ir::RequestValueIr::Int64(value),
+            );
+            assert_eq!(
+                grouping_filter_bound(&expression).expect("exact integer bound"),
+                expected,
+                "integer bound {value} should remain exact"
+            );
+        }
+
+        let exact_unsigned = searchkernel_ir::GroupingExpressionIr::Literal(
+            searchkernel_ir::RequestValueIr::UInt64((two_to_53 - 1) as u64),
+        );
+        assert_eq!(
+            grouping_filter_bound(&exact_unsigned).expect("exact unsigned integer bound"),
+            (two_to_53 - 1) as f64
+        );
+
+        let rejected = [
+            searchkernel_ir::RequestValueIr::Int64(two_to_53),
+            searchkernel_ir::RequestValueIr::Int64(two_to_53 + 1),
+            searchkernel_ir::RequestValueIr::Int64(-two_to_53),
+            searchkernel_ir::RequestValueIr::Int64(-(two_to_53 + 1)),
+            searchkernel_ir::RequestValueIr::Int64(i64::MIN),
+            searchkernel_ir::RequestValueIr::Int64(i64::MAX),
+            searchkernel_ir::RequestValueIr::UInt64(two_to_53 as u64),
+            searchkernel_ir::RequestValueIr::UInt64((two_to_53 + 1) as u64),
+            searchkernel_ir::RequestValueIr::UInt64(u64::MAX),
+        ];
+        for value in rejected {
+            let expression = searchkernel_ir::GroupingExpressionIr::Literal(value);
+            let error = grouping_filter_bound(&expression)
+                .expect_err("an inexact integer bound must be rejected");
+            assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+            assert_eq!(
+                error.details[0].code,
+                "grouping_filter_bound_precision_loss"
+            );
+        }
+    }
 }
