@@ -96,8 +96,13 @@ jobs:
       - run: $CI_PYTHON tools/test_check_capabilities.py
       - run: $CI_PYTHON tools/test_check_client_contracts.py
       - run: $CI_PYTHON tools/test_python_dependency_contract.py
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Verify provisioned Rust toolchain
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          cargo --version
+          rustc --version
       - name: Ensure Composer
         run: |
           set -euo pipefail
