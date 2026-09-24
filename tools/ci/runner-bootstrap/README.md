@@ -12,7 +12,7 @@ Host responsibilities:
 - GitHub CLI and basic utilities
 - Rust/rustfmt/clippy for host-side non-native CI
 - Python + libclang for host-side protocol/ABI tooling
-- Node/npm and PHP for host-side client checks
+- Node/npm, PHP, and pinned Ruby 3.3.6 for host-side client checks
 - FlatBuffers 25.12.19 for host-side protocol builds
 - persistent host cache/state directories
 
@@ -42,6 +42,11 @@ sudo ./install.sh \
 The runner user is added to the Docker group. The Actions service is started
 after group membership is configured, so workflow jobs can invoke Docker
 directly.
+
+Ruby is cached under the persistent runner cache and reused by CI. If the host
+distribution Ruby is older than the client's supported floor (Ruby 3.1), the
+bootstrap and behavioral workflow use the checksum-pinned Ruby 3.3.6 source
+release rather than weakening the client contract.
 
 The bootstrap creates persistent host state under:
 
