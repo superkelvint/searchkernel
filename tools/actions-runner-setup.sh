@@ -125,13 +125,7 @@ MANIFEST="$REPO_ROOT/core/native/vespa/manifest.json"
     die "missing native manifest: $MANIFEST"
 
 VESPA_COMMIT="$(
-    python3 - "$MANIFEST" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    print(json.load(stream)["vespa_commit"])
-PY
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/actions-runner-setup-python-1.py" "$MANIFEST"
 )"
 
 [[ -n "$VESPA_COMMIT" ]] ||
