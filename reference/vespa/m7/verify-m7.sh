@@ -4,6 +4,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"; cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
+RUN_LIVE_ORACLE=0
+if live_oracle_enabled; then
+  RUN_LIVE_ORACLE=1
+else
+  announce_frozen_oracle_replay
+fi
 "$SCRIPT_DIR/validate_scenarios.py"
 "$SCRIPT_DIR/validate_expected.py"
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do check_fixture_literals --keys text,value,yql "$s" "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src" "$ROOT/core/native/vespa"; done
@@ -14,8 +20,10 @@ cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m7
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
  id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
- "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$s" | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin),sort_keys=True,separators=(",",":")))' > "$TMP/java-$id.json"
- "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/java-$id.json"
+ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+   "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$s" | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin),sort_keys=True,separators=(",",":")))' > "$TMP/java-$id.json"
+   "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/java-$id.json"
+ fi
  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m7-driver -- canonical "$s" > "$TMP/canon-$id.json"
  python3 - "$SCRIPT_DIR/expected/$id.json" "$TMP/canon-$id.json" <<'PY_CANON'
 import json,sys

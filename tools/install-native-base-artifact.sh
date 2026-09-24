@@ -172,13 +172,13 @@ def read(path):
 bundle = read(bundle_path)
 base = read(base_path)
 marker = read(marker_path)
-expected = {
-    "format_version": 2,
+
+expected_identity = {
     "build_environment": build_env,
     "native_target": target,
     "vespa_commit": commit,
 }
-for key, value in expected.items():
+for key, value in expected_identity.items():
     if bundle.get(key) != value:
         raise SystemExit(
             f"published Vespa base {key} mismatch: expected {value!r}, found {bundle.get(key)!r}"
@@ -187,6 +187,7 @@ for key, value in expected.items():
         raise SystemExit(
             f"published Vespa toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
         )
+
 generation = bundle.get("artifact_generation")
 if not isinstance(generation, int) or generation < 1:
     raise SystemExit("published Vespa base has no valid artifact_generation")
@@ -195,6 +196,27 @@ if marker.get("artifact_generation") != generation:
         "published Vespa base/toolchain artifact_generation mismatch: "
         f"{generation!r} vs {marker.get('artifact_generation')!r}"
     )
+
+bundle_format = bundle.get("format_version")
+marker_format = marker.get("format_version")
+if bundle_format != marker_format:
+    raise SystemExit(
+        "published Vespa base/toolchain format_version mismatch: "
+        f"{bundle_format!r} vs {marker_format!r}"
+    )
+
+legacy_link_complete = (
+    bundle_format == 1
+    and generation == 2
+    and bundle.get("adapter_static_link_closure") is True
+    and marker.get("adapter_static_link_closure") is True
+)
+if bundle_format != 2 and not legacy_link_complete:
+    raise SystemExit(
+        "unsupported published Vespa base format: "
+        f"format_version={bundle_format!r}, artifact_generation={generation!r}"
+    )
+
 if base.get("kind") != "vespa-base" or base.get("vespa_commit") != commit:
     raise SystemExit("published Vespa base manifest does not match the pinned Vespa checkout")
 PY

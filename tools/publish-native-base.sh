@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO="${SEARCHKERNEL_GITHUB_REPO:-superkelvint/searchkernel}"
 MODE="${1:-all}"
+ARTIFACT_FORMAT_VERSION=2
 
 case "$MODE" in
     ci) BUILD_ENVS=(ci) ;;
@@ -159,17 +160,24 @@ PY
 
 stamp_generation() {
     local bundle="$1" build_env="$2"
-    python3 - "$bundle/manifest.json" "$bundle/toolchain/upstream/vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT" "$SOURCE_COMMIT" <<'PY'
+    python3 - "$bundle/manifest.json" "$bundle/toolchain/upstream/vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT" "$SOURCE_COMMIT" <<'PY'
 import json, sys
-bundle, marker, generation, env, target, commit, source_commit = sys.argv[1:]
+bundle, marker, expected_format, generation, env, target, commit, source_commit = sys.argv[1:]
+expected_format = int(expected_format)
+generation = int(generation)
 for path in (bundle, marker):
     with open(path, encoding="utf-8") as stream:
         data = json.load(stream)
-    data["artifact_generation"] = int(generation)
-    data["adapter_static_link_closure"] = True
-    data["searchkernel_commit"] = source_commit
+    if data.get("format_version") != expected_format:
+        raise SystemExit(
+            f"refusing to publish stale native-base schema from {path}: "
+            f"expected format_version {expected_format}, found {data.get('format_version')!r}"
+        )
     if data.get("build_environment") != env or data.get("native_target") != target or data.get("vespa_commit") != commit:
         raise SystemExit(f"artifact metadata identity mismatch in {path}")
+    data["artifact_generation"] = generation
+    data["adapter_static_link_closure"] = True
+    data["searchkernel_commit"] = source_commit
     with open(path, "w", encoding="utf-8") as stream:
         json.dump(data, stream, indent=2, sort_keys=True)
         stream.write("\n")
@@ -181,6 +189,32 @@ verify_bundle() {
     local base="$bundle/base" vespa="$bundle/toolchain/upstream/vespa" deps="$bundle/toolchain/vespa-deps"
     [[ -d "$base/lib" && -f "$vespa/$MARKER_REL" && -f "$vespa/$FLAGS_REL" && -d "$deps/include" ]] || die "$label: incomplete bundle"
     mkdir -p "$deps/lib64"
+    python3 - "$bundle/manifest.json" "$vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT" "$SOURCE_COMMIT" <<'PY'
+import json
+import sys
+
+bundle_path, marker_path, expected_format, generation, build_env, target, commit, source_commit = sys.argv[1:]
+expected_format = int(expected_format)
+generation = int(generation)
+for path in (bundle_path, marker_path):
+    with open(path, encoding="utf-8") as stream:
+        data = json.load(stream)
+    expected = {
+        "format_version": expected_format,
+        "artifact_generation": generation,
+        "build_environment": build_env,
+        "native_target": target,
+        "vespa_commit": commit,
+        "adapter_static_link_closure": True,
+        "searchkernel_commit": source_commit,
+    }
+    for key, value in expected.items():
+        if data.get(key) != value:
+            raise SystemExit(
+                f"published metadata mismatch in {path}: "
+                f"{key} expected {value!r}, found {data.get(key)!r}"
+            )
+PY
     python3 - "$vespa/$MARKER_REL" "$vespa" "$deps" <<'PY'
 import pathlib, shlex, sys
 link_file = pathlib.Path(sys.argv[1])
@@ -224,7 +258,6 @@ PY
     printf '%s\n' "$output"
     ! printf '%s\n' "$output" | grep -q 'not found' || die "$label: unresolved runtime dependencies"
 }
-
 verify_archive_consumer() {
     local archive="$1" build_env="$2" label="$3"
     local cache="$TMP/consumer-cache-${build_env}-${label}"
@@ -234,7 +267,8 @@ verify_archive_consumer() {
     rm -rf "$cache" "$verify_root"
     mkdir -p "$cache" "$verify_root"
 
-    vespa="$(bash tools/install-native-base-artifact.sh         "file://$archive" "$cache" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT")"
+    vespa="$(bash "$ROOT/tools/install-native-base-artifact.sh" \
+        "file://$archive" "$cache" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT")"
     base="$cache/objects/$PINNED_VESPA_COMMIT"
     deps="$cache/toolchains/$PINNED_VESPA_COMMIT/vespa-deps"
 
@@ -244,15 +278,31 @@ verify_archive_consumer() {
         die "$label: installer did not publish complete consumer cache"
 
     mkdir -p "$deps/lib64"
-    env -u LD_PRELOAD         SEARCHKERNEL_BUILD_ENV="$build_env"         SK_NATIVE_TARGET="$TARGET"         SK_NATIVE_ADAPTER_ONLY=1         SK_NATIVE_BASE_SDK="$base"         SK_NATIVE_SDK="$verify_root/sdk"         SK_NATIVE_BUILD_DIR="$verify_root/build"         SK_NATIVE_REGENERATE_BINDINGS=0         SK_NATIVE_SKIP_BINDINGS_CHECK=1         VESPA_ROOT="$vespa"         VESPA_DEPS="$deps"         VESPA_DEPS_INCLUDE_DIR="$deps/include"         VESPA_DEPS_LIB_DIR="$deps/lib64"         VESPA_EXTRA_LIB_DIR="$base/lib"         bash core/native/vespa/build-sdk.sh
+    env -u LD_PRELOAD \
+        SEARCHKERNEL_BUILD_ENV="$build_env" \
+        SK_NATIVE_TARGET="$TARGET" \
+        SK_NATIVE_ADAPTER_ONLY=1 \
+        SK_NATIVE_BASE_SDK="$base" \
+        SK_NATIVE_SDK="$verify_root/sdk" \
+        SK_NATIVE_BUILD_DIR="$verify_root/build" \
+        SK_NATIVE_REGENERATE_BINDINGS=0 \
+        SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
+        VESPA_ROOT="$vespa" \
+        VESPA_DEPS="$deps" \
+        VESPA_DEPS_INCLUDE_DIR="$deps/include" \
+        VESPA_DEPS_LIB_DIR="$deps/lib64" \
+        VESPA_EXTRA_LIB_DIR="$base/lib" \
+        bash "$ROOT/core/native/vespa/build-sdk.sh"
 
     [[ -s "$verify_root/sdk/lib/libsearchkernel_vespa.so" ]] ||
         die "$label: consumer-path adapter build produced no library"
-    output="$(env -u LD_PRELOAD LD_LIBRARY_PATH="$base/lib"         ldd "$verify_root/sdk/lib/libsearchkernel_vespa.so")"
+    output="$(env -u LD_PRELOAD LD_LIBRARY_PATH="$base/lib" \
+        ldd "$verify_root/sdk/lib/libsearchkernel_vespa.so")"
     printf '%s\n' "$output"
     ! printf '%s\n' "$output" | grep -q 'not found' ||
         die "$label: consumer-path adapter has unresolved runtime dependencies"
 }
+
 
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     section "Building $BUILD_ENV artifact"
