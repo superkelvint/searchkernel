@@ -717,12 +717,16 @@ doctor_repair_python() {
 }
 
 doctor_repair_native_sdk() {
-    if doctor_native_sdk >/dev/null 2>&1 && doctor_vespa >/dev/null 2>&1; then
+    # A valid selected SDK is sufficient to build and run Search Kernel. A
+    # configured/pinned Vespa source checkout is only needed when provisioning
+    # or rebuilding the shared native base; do not force a private GitHub
+    # release lookup merely to satisfy source-provenance bookkeeping.
+    if doctor_native_sdk >/dev/null 2>&1; then
         return 0
     fi
     echo 'REPAIR native SDK'
     native_sdk_command ensure >/dev/null
-    doctor_native_sdk && doctor_vespa
+    doctor_native_sdk
 }
 
 doctor_repair_generated_protocol() {
@@ -804,7 +808,13 @@ doctor() {
     doctor_check 'TypeScript generated protocol present/current' doctor_typescript
     doctor_check 'native SDK present' doctor_native_sdk
     doctor_check 'native ABI versions agree' doctor_native_abi
-    doctor_check 'pinned Vespa checkout registered' doctor_vespa
+    if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
+        printf 'INFO  pinned Vespa checkout registration not required with explicit SK_NATIVE_SDK\n'
+    elif doctor_vespa >"$diagnostics" 2>&1; then
+        printf 'PASS  pinned Vespa checkout registered\n'
+    else
+        printf 'INFO  pinned Vespa checkout not registered; only needed to rebuild/provision the native base\n'
+    fi
     doctor_check 'Python dependencies present' doctor_python
     doctor_check 'searchkerneld built' doctor_searchkerneld
 
