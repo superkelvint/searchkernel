@@ -12,6 +12,7 @@ bash -n "$source_root/tools/package-native-base-artifact.sh"
 bash -n "$source_root/tools/fetch-native-base.sh"
 bash -n "$source_root/tools/actions-runner-setup.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
+python3 "$source_root/tools/test-native-base-release-selection.py"
 if grep -Eq 'vespa-base-v[0-9]+|searchkernel-vespa-base-v[0-9]+' \
     "$source_root/tools/actions-runner-setup.sh"; then
     echo 'Actions runner setup must not hard-code a native-base generation' >&2

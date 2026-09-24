@@ -37,32 +37,13 @@ else
 fi
 [[ -n "$TARGET" ]] || die "could not determine Rust target"
 
+DISCOVERY_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+if [[ -z "$DISCOVERY_TOKEN" ]]; then
+    DISCOVERY_TOKEN="$(gh auth token)"
+fi
 GENERATION="$(
-    gh api --paginate "repos/${REPO}/releases?per_page=100" --jq '.[].tag_name' |
-    python3 -c '
-import re
-import sys
-
-build_env, target, commit = sys.argv[1:]
-pattern = re.compile(
-    r"^vespa-base-v([0-9]+)-"
-    + re.escape(build_env)
-    + "-"
-    + re.escape(target)
-    + "-"
-    + re.escape(commit)
-    + r"$"
-)
-versions = []
-for raw in sys.stdin:
-    match = pattern.match(raw.strip())
-    if match:
-        versions.append(int(match.group(1)))
-if not versions:
-    raise SystemExit(1)
-print(max(versions))
-' "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"
-)" || die "no published native-base generation exists for $BUILD_ENV/$TARGET/$PINNED_VESPA_COMMIT"
+    GH_TOKEN="$DISCOVERY_TOKEN"         python3 "$ROOT/tools/select-native-base-generation.py"             "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"             --repo "$REPO"
+)" || die "no complete published native-base generation exists for $BUILD_ENV/$TARGET/$PINNED_VESPA_COMMIT"
 
 TAG="vespa-base-v${GENERATION}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"
 ASSET="searchkernel-vespa-base-v${GENERATION}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
