@@ -313,6 +313,10 @@ do
     fi
 done
 
+if [[ "$NEED_DNF" == "0" ]] && ! python3 -c 'import clang.cindex' >/dev/null 2>&1; then
+    NEED_DNF=1
+fi
+
 if [[ "$NEED_DNF" == "1" ]]; then
     say "Installing missing container OS prerequisites once"
 
@@ -324,6 +328,7 @@ if [[ "$NEED_DNF" == "1" ]]; then
         gzip \
         make \
         python3 \
+        python3-clang \
         tar \
         which
 
@@ -345,6 +350,9 @@ do
     command -v "$cmd" >/dev/null 2>&1 ||
         die "required container command is unavailable: $cmd"
 done
+
+python3 -c 'import clang.cindex' >/dev/null 2>&1 ||
+    die "python3 clang.cindex bindings are unavailable"
 
 ###############################################################################
 # Vespa compiler
