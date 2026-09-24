@@ -16,6 +16,17 @@ SPEC.loader.exec_module(MODULE)
 
 
 class FixtureLiteralCheckerTests(unittest.TestCase):
+    def test_recognizes_cpp_and_header_test_sources(self):
+        for name in (
+            "native_adapter_coverage_test.cpp",
+            "searchkernel_vespa_test.h",
+            "test_adapter.cc",
+            "adapter_tests.cpp",
+        ):
+            with self.subTest(name=name):
+                self.assertTrue(MODULE.is_test_source(Path(name)))
+        self.assertFalse(MODULE.is_test_source(Path("search.cc")))
+
     def test_strips_plain_test_cfg(self):
         source = 'const production = "fixture";\n#[cfg(test)]\nmod tests { const value = "fixture"; }\n'
         self.assertEqual(MODULE.strip_rust_test_code(source), 'const production = "fixture";\n')

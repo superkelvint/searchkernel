@@ -6,6 +6,12 @@ ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
+RUN_LIVE_ORACLE=0
+if live_oracle_enabled; then
+  RUN_LIVE_ORACLE=1
+else
+  announce_frozen_oracle_replay
+fi
 
 TRACE="$SCRIPT_DIR/SOURCE_TRACE.md"
 grep -q 'totalHitCount' "$TRACE"
@@ -15,12 +21,14 @@ grep -q 'nearest_neighbor_blueprint.cpp' "$TRACE"
 grep -q 'match_phase_limiter.h' "$TRACE"
 grep -q 'Unknown' "$TRACE"
 
-grep -q 'r.totalHitCount = result.totalHits()' \
-  "$ROOT/upstream/vespa/searchcore/src/vespa/searchcore/proton/matching/result_processor.cpp"
-grep -q 'degradeMatchPhase' \
-  "$ROOT/upstream/vespa/searchcore/src/vespa/searchcore/proton/matching/matcher.cpp"
-grep -q 'approximate_nns_timed_out_queries' \
-  "$ROOT/upstream/vespa/searchcore/src/vespa/searchcore/proton/matching/matcher.cpp"
+if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+  grep -q 'r.totalHitCount = result.totalHits()' \
+    "$VESPA_ROOT/searchcore/src/vespa/searchcore/proton/matching/result_processor.cpp"
+  grep -q 'degradeMatchPhase' \
+    "$VESPA_ROOT/searchcore/src/vespa/searchcore/proton/matching/matcher.cpp"
+  grep -q 'approximate_nns_timed_out_queries' \
+    "$VESPA_ROOT/searchcore/src/vespa/searchcore/proton/matching/matcher.cpp"
+fi
 grep -q 'TotalHitsRelation::Unknown' \
   "$ROOT/core/crates/searchkernel-vespa-engine/src/native.rs"
 grep -q 'VespaTotalHitsRelation::Unknown' \

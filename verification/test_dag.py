@@ -44,10 +44,27 @@ class VerificationDagTests(unittest.TestCase):
 
     def test_ruby_client_family_has_explicit_verification_ownership(self) -> None:
         current = verification_dag.load_dag(DAG_PATH)
-        probe = "clients/ruby/lib/searchkernel.rb"
-        owners = verification_dag.matching_subsystems(current, probe)
-        self.assertEqual([owner.id for owner in owners], ["client-ruby"])
-        self.assertEqual(owners[0].requires, ("ruby-client", "client-contracts"))
+
+        client_owners = verification_dag.matching_subsystems(
+            current, "clients/ruby/lib/searchkernel.rb"
+        )
+        self.assertEqual([owner.id for owner in client_owners], ["client-ruby"])
+        self.assertEqual(
+            client_owners[0].requires, ("ruby-client", "client-contracts")
+        )
+
+        contract_owners = verification_dag.matching_subsystems(
+            current, "core/crates/searchkernel-protocol/tests/ruby_json_contract.rs"
+        )
+        contract_owner_ids = {owner.id for owner in contract_owners}
+        self.assertIn("searchkernel-protocol", contract_owner_ids)
+        self.assertIn("client-ruby", contract_owner_ids)
+        ruby_owner = next(owner for owner in contract_owners if owner.id == "client-ruby")
+        self.assertEqual(ruby_owner.requires, ("ruby-client", "client-contracts"))
+
+        task = current.tasks["ruby-client"]
+        self.assertEqual(task.kind, "command")
+        self.assertEqual(task.command, "./dev test ruby")
         self.assertIn("ruby-client", verification_dag.task_closure(current, ("full",)))
 
     def test_semantic_vespa_router_targets_are_all_represented_in_dag(self) -> None:
