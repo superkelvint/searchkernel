@@ -74,7 +74,7 @@ for runtime_dir in "$DEPS/lib64" "$DEPS/lib"; do
 done
 python3 "$ROOT/tools/bundle-native-runtime-closure.py" \
     "$BUNDLE/base/lib" "${runtime_search_args[@]}"
-python3 "$ROOT/tools/check-native-runtime-closure.py" "$BUNDLE/base/lib"
+python3 "$ROOT/tools/check-native-runtime-closure.py" "$BUNDLE/base/lib" >&2
 
 # Package the immutable Vespa source/header surface plus generated header-like
 # files and the exact compile/link metadata used by the adapter build. Heavy
