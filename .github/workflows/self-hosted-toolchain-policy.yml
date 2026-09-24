@@ -1,0 +1,33 @@
+name: Self-hosted toolchain policy
+
+on:
+  pull_request_target:
+    paths:
+      - ".github/workflows/**"
+      - ".github/ci/check-self-hosted-rust-workflows.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  immutable-rust:
+    name: Immutable Rust toolchain policy
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Check out trusted policy
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: policy
+          persist-credentials: false
+
+      - name: Check out candidate tree
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Enforce immutable self-hosted Rust policy from trusted base
+        run: python3 policy/.github/ci/check-self-hosted-rust-workflows.py candidate
