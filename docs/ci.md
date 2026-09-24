@@ -742,10 +742,10 @@ SearchKernel-specific scheduler/cache/test-distribution system.
 #### SearchKernel verification DAG
 
 - [x] Define one machine-readable SearchKernel-owned verification DAG as the semantic source of truth, independent of moonrepo.
-- [ ] Represent every surviving Phase 1 verification profile in that DAG with a stable semantic task ID that describes what it proves rather than the milestone that introduced it.
-- [ ] Represent milestone acceptance such as M14 as explicit DAG aggregate/closure tasks over semantic verifier IDs, with milestone provenance stored as metadata rather than executable-task identity.
+- [x] Represent every surviving Phase 1 verification profile in that DAG with a stable semantic task ID that describes what it proves rather than the milestone that introduced it.
+- [x] Represent milestone acceptance such as M14 as explicit DAG aggregate/closure tasks over semantic verifier IDs, with milestone provenance stored as metadata rather than executable-task identity.
 - [x] Provide focused semantic verifier targets for independently meaningful native/Vespa capabilities so agents and CI need not invoke a whole milestone closure when only one verifier is required.
-- [ ] Encode the verified Phase 1 dependency/subsumption edges in the SearchKernel DAG.
+- [x] Encode the verified Phase 1 dependency/subsumption edges in the SearchKernel DAG.
 - [x] Record the canonical verifier command and runner class for each task in the SearchKernel DAG.
 - [x] Represent subsystem/path ownership separately from executable task identity so multiple subsystems may share a task without becoming invisible.
 - [x] Decompose `searchkernel-web` into the subsystem inventory above rather than one opaque dashboard node.
@@ -753,7 +753,7 @@ SearchKernel-specific scheduler/cache/test-distribution system.
 - [x] Add a mechanical check that a newly introduced top-level subsystem or `searchkernel-web/src/features/*` family is rejected until DAG ownership is added.
 - [x] Make the trusted selector validate emitted task IDs against the SearchKernel DAG.
 - [x] Define the authoritative full-suite root/closure in the SearchKernel DAG, including the active web closure.
-- [ ] Add mechanical closure checks so every surviving verifier and supported product subsystem is represented and reachable where required.
+- [x] Add mechanical closure checks so every surviving verifier and supported product subsystem is represented and reachable where required.
 
 #### moonrepo
 
