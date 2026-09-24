@@ -117,7 +117,7 @@ jobs:
           pin=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["vespa_commit"])' core/native/vespa/manifest.json)
           target=$(docker exec "$NATIVE_CONTAINER" /bin/bash -lc "rustc -vV | sed -n 's/^host: //p'")
           [[ -n "$target" ]] || {
-            echo "::error::could not determine host Rust target for native-base selection"
+            echo "::error::could not determine AlmaLinux Rust target for native-base selection"
             exit 1
           }
 
@@ -318,6 +318,16 @@ jobs:
               reference/vespa/phase9/verify-phase9.sh
               tools/run-python-native-e2e.sh
               ./dev verify persistence
+              ;;
+            client-e2e)
+              python3 tools/check-python-dependencies.py
+              command -v php >/dev/null 2>&1 || {
+                echo "required client E2E command is unavailable: php" >&2
+                exit 1
+              }
+              cargo build -p searchkerneld --features native
+              SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld" \
+                python3 tools/check-client-contracts.py --run-e2e
               ;;
             closure-422)
               cargo build -p searchkerneld --features native
