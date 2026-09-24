@@ -71,6 +71,8 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
             'typescript: ${{ steps.behavioral.outputs.typescript }}',
             'ruby: ${{ steps.behavioral.outputs.ruby }}',
             'git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA"',
+            'run: |',
+            '"$CI_PYTHON" .github/ci/test_behavioral_lanes_required.py',
             'git cat-file -e "$BASE_SHA:.github/ci/behavioral_lanes_required.py"',
             'git show "$BASE_SHA:.github/ci/behavioral_lanes_required.py"',
             '"$CI_PYTHON" "$RUNNER_TEMP/behavioral_lanes_required.py" --github-output "$GITHUB_OUTPUT"',
