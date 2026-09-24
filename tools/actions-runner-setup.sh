@@ -671,12 +671,7 @@ BINARY="$CARGO_TARGET_DIR/debug/searchkerneld"
 
 say "Running clean-runner native verifier acceptance"
 
-PINNED_VESPA_COMMIT="$(python3 - <<'PY'
-import json
-with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
-    print(json.load(stream)["vespa_commit"])
-PY
-)"
+PINNED_VESPA_COMMIT="$(python3 -c "import json; print(json.load(open(\"core/native/vespa/manifest.json\", encoding=\"utf-8\"))[\"vespa_commit\"])")"
 CACHE_NAMESPACE="${SDK_PATH%/objects/$PINNED_VESPA_COMMIT}"
 PUBLISHED_VESPA_ROOT="$CACHE_NAMESPACE/toolchains/$PINNED_VESPA_COMMIT/upstream/vespa"
 
