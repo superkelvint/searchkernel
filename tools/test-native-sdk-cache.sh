@@ -19,6 +19,15 @@ python3 "$source_root/tools/test_bundle_native_runtime_closure.py"
 grep -Fq 'bundle-native-runtime-closure.py' "$source_root/tools/package-native-base-artifact.sh"
 grep -Fq 'check-native-runtime-closure.py' "$source_root/tools/package-native-base-artifact.sh"
 grep -Fq 'check-native-runtime-closure.py" "$BUNDLE/base/lib" >&2' "$source_root/tools/package-native-base-artifact.sh"
+for publisher_input in \
+    tools/package-native-base-artifact.sh \
+    tools/bundle-native-runtime-closure.py \
+    tools/check-native-runtime-closure.py \
+    tools/native_runtime_closure.py \
+    tools/native-base-release-selection.py \
+    tools/publish-native-base.sh; do
+    grep -Fq -- "- \"$publisher_input\"" "$source_root/.github/workflows/publish-native-base.yml"
+done
 grep -Fq 'git/ref/heads/main' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'tools/install-native-base-artifact.sh' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'check-native-runtime-closure.py' "$source_root/tools/publish-native-base.sh"
