@@ -80,7 +80,7 @@ resolved_native_base_sdk() {
 }
 
 expected_vespa_revision() {
-  python3 "reference/vespa/common/verify-common-python-1.py" "$PIN_FILE"
+  python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-common-python-1.py" "$PIN_FILE"
 }
 
 fail_verification() {
@@ -103,7 +103,7 @@ require_pinned_vespa() {
        -f "$vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make" ]] ||
       fail_verification "published Vespa toolchain is missing canonical adapter compile/link metadata: $vespa"
 
-    if ! python3 "reference/vespa/common/verify-common-python-2.py" "$marker" "$build_env" "$target" "$expected"
+    if ! python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-common-python-2.py" "$marker" "$build_env" "$target" "$expected"
     then
       fail_verification "published Vespa provenance validation failed: $marker"
     fi
