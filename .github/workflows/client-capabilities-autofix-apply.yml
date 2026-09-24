@@ -70,6 +70,10 @@ jobs:
 
           allowed_regex='^(LIMITATIONS\.md|docs/CAPABILITIES\.md|docs/CLIENT_CAPABILITIES\.md|docs/client-capabilities\.json)$'
           changed="$(git diff --name-only)"
+          if [[ -z "$changed" ]]; then
+            echo "::error::non-empty prepared patch applied without producing a diff"
+            exit 1
+          fi
           unexpected="$(printf '%s\n' "$changed" | grep -Ev "$allowed_regex" || true)"
           if [[ -n "$unexpected" ]]; then
             echo "::error::prepared patch touched files outside the generated-artifact allowlist:"
@@ -136,4 +140,7 @@ jobs:
 
           git -c core.hooksPath=/dev/null -c commit.gpgsign=false commit -m "chore: regenerate client capabilities"
 
-          git push "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"
+          # Always qualify the destination as a branch ref. Without this prefix,
+          # a pathological branch name such as "refs/heads/main" could be
+          # interpreted as the protected destination rather than the PR branch.
+          git push "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
