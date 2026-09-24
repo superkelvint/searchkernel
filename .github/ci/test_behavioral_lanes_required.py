@@ -51,6 +51,20 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assert_lanes([path], {"rust", "python", "typescript"})
 
+    def test_protocol_codegen_and_checks_preserve_cross_language_closure(self) -> None:
+        paths = [
+            "api/rpc/searchkernel.proto",
+            "tools/rpc-codegen/generate.py",
+            "tools/generate-python-grpc.sh",
+            "tools/generate-typescript-flatbuffers.sh",
+            "tools/check-python-grpc.sh",
+            "tools/check-typescript-generated.sh",
+            "tools/test-typescript-generation.sh",
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                self.assert_lanes([path], {"rust", "python", "typescript"})
+
     def test_ruby_json_contract_selects_rust_and_ruby(self) -> None:
         self.assert_lanes(
             ["core/crates/searchkernel-protocol/tests/ruby_json_contract.rs"],
