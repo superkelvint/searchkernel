@@ -19,7 +19,7 @@ jobs:
       python: ${{ steps.fixed.outputs.python }}
       typescript: ${{ steps.fixed.outputs.typescript }}
       ruby: ${{ steps.fixed.outputs.ruby }}
-      native: ${{ steps.fixed.outputs.native }}
+      native: ${{ steps.native.outputs.required }}
     steps:
       - name: Check out exact PR head
         uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
-      - name: Use fixed behavioral lanes while DAG authorization is offline
+      - name: Use fixed non-native behavioral lanes while DAG authorization is offline
         id: fixed
         run: |
           {
@@ -53,8 +53,30 @@ jobs:
             echo "python=true"
             echo "typescript=true"
             echo "ruby=true"
-            echo "native=false"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Select native verifier lane from trusted base policy
+        id: native
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/searchkernel-changed-paths.txt"
+
+          # Use the selector from the trusted base commit. A pull request may
+          # change the selector, but it cannot use that change to exempt itself.
+          git show "$BASE_SHA:.github/ci/native_verifier_required.py" > "$RUNNER_TEMP/native_verifier_required.py"
+          required=$("$CI_PYTHON" "$RUNNER_TEMP/native_verifier_required.py" < "$RUNNER_TEMP/searchkernel-changed-paths.txt")
+          if [[ "$required" != "true" && "$required" != "false" ]]; then
+            echo "::error::native verifier selector returned invalid value '$required'"
+            exit 1
+          fi
+
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+          echo "Native verifier required: $required"
 
   rust:
     name: Rust behavior
@@ -285,9 +307,18 @@ jobs:
           ruby --version
           ./dev test ruby
 
+  native:
+    name: Native verification
+    needs: classify
+    if: needs.classify.outputs.native == 'true'
+    uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main
+    with:
+      revision: ${{ github.event.pull_request.head.sha }}
+      target: native-full
+
   exact-head-gate:
     name: Exact-head gate
-    needs: [classify, rust, python, typescript, ruby]
+    needs: [classify, rust, python, typescript, ruby, native]
     if: always()
     runs-on: [self-hosted, linux, x64]
     steps:
@@ -304,6 +335,7 @@ jobs:
           RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}
           RUBY_RESULT: ${{ needs.ruby.result }}
           NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}
+          NATIVE_RESULT: ${{ needs.native.result }}
         run: |
           set -euo pipefail
 
@@ -326,9 +358,6 @@ jobs:
           require_lane Python "$PYTHON_REQUIRED" "$PYTHON_RESULT"
           require_lane TypeScript "$TYPESCRIPT_REQUIRED" "$TYPESCRIPT_RESULT"
           require_lane Ruby "$RUBY_REQUIRED" "$RUBY_RESULT"
+          require_lane Native "$NATIVE_SENSITIVE" "$NATIVE_RESULT"
 
-          if [[ "$NATIVE_SENSITIVE" == "true" ]]; then
-            echo "::notice title=Native verification is local::Native-sensitive paths changed. CI intentionally does not bootstrap Vespa or run the real-engine gate; local native verification evidence is required by AGENTS.md."
-          fi
-
-          echo "All non-native CI behavior required for exact PR head $EXPECTED_HEAD is verified."
+          echo "All selected behavioral verification for exact PR head $EXPECTED_HEAD is verified."
