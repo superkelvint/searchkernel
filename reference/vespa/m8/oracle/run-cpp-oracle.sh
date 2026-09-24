@@ -8,14 +8,7 @@ BIN="$SCRIPT_DIR/target/m8_cpp_oracle"; SRC="$SCRIPT_DIR/m8_local_oracle.cpp"; P
 IMAGE="${M8_VESPA_DEV_IMAGE:-docker.io/vespaengine/vespa-dev-almalinux-8:latest}"
 [[ -x "$BIN" ]] || fail_verification "M8 C++ oracle binary missing; build explicitly with oracle/build-cpp-oracle.sh"
 [[ -s "$PROV" && -f "$SRC" ]] || fail_verification "M8 oracle provenance/source missing"
-python3 - "$PROV" "$ROOT/reference/vespa/PINNED_VESPA.json" <<'PY'
-import json,sys
-p={}
-for line in open(sys.argv[1],encoding='utf-8'):
- k,v=line.rstrip('\n').split('=',1); p[k]=v
-expected=json.load(open(sys.argv[2],encoding='utf-8'))['commit']
-if p.get('vespa_commit')!=expected: raise SystemExit('M8 oracle not built from pinned Vespa revision')
-PY
+python3 "reference/vespa/m8/oracle/run-cpp-oracle-python-1.py" "$PROV" "$ROOT/reference/vespa/PINNED_VESPA.json"
 scenario_abs="$(cd "$(dirname "$SCENARIO")" && pwd -P)/$(basename "$SCENARIO")"
 case "$scenario_abs" in "$ROOT"/*) rel="${scenario_abs#"$ROOT"/}";; *) fail_verification "scenario must be inside repository";; esac
 if [[ -f /.dockerenv ]]; then
