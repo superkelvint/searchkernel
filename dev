@@ -24,6 +24,7 @@ usage() {
 Search Kernel development commands
 
   ./dev check                 Run the full repository quality and test suite
+  ./dev universe              Run every repository test, E2E lane, and verifier
   ./dev check-fast            Run formatting, compile, and boundary checks
   ./dev check-protocol        Verify generated FlatBuffers/gRPC artifacts
   ./dev lint --profile <id>   Run a canonical Clippy verification profile
@@ -171,6 +172,94 @@ check_all() {
     run_typescript_tests
     run_php_tests
     run_ruby_tests
+}
+
+run_tool_regression_tests() {
+    local test_script
+
+    "$PYTHON" -m unittest discover -s "$ROOT/tools" -p 'test_*.py'
+    while IFS= read -r test_script; do
+        bash "$test_script"
+    done < <(find "$ROOT/tools" -maxdepth 1 -type f -name 'test-*.sh' -print | sort)
+}
+
+run_all_semantic_verifiers() {
+    local target
+    local -a targets=()
+
+    mapfile -t targets < <(
+        "$ROOT/reference/vespa/verify-through.sh" --list |
+            awk '
+                /^Semantic verifier targets:/ { semantic = 1; next }
+                /^Milestone aggregate targets:/ { semantic = 0 }
+                semantic && NF { print $1 }
+            '
+    )
+
+    (("${#targets[@]}" > 0)) || {
+        echo 'error: no semantic verifier targets discovered' >&2
+        return 1
+    }
+
+    for target in "${targets[@]}"; do
+        echo
+        echo "==> universe: verify $target"
+        verify_target "$target"
+    done
+}
+
+universe() {
+    echo '==> universe: provisioning native SDK'
+    native_sdk_command ensure
+
+    echo
+    echo '==> universe: repository checks'
+    check_fast
+    bash "$ROOT/tools/check-vespa-bindings.sh"
+    check_protocol
+    lint_target --profile rust-clippy-all-features
+
+    echo
+    echo '==> universe: every Rust test, including ignored and doctests'
+    cargo test --workspace --all-targets --all-features -- --include-ignored
+    cargo test --workspace --all-features --doc
+
+    echo
+    echo '==> universe: every client unit/package suite'
+    run_python_tests
+    run_typescript_tests
+    run_php_tests
+    run_ruby_tests
+
+    echo
+    echo '==> universe: tooling regression tests'
+    run_tool_regression_tests
+
+    echo
+    echo '==> universe: focused repository verifiers'
+    verify_target api-conformance
+    verify_target contracts
+    verify_target abi
+    verify_target persistence
+    verify_target issue-queue
+
+    echo
+    echo '==> universe: executable client E2E lanes'
+    "$PYTHON" "$ROOT/tools/check-client-contracts.py" --run-e2e
+    if [[ -x "$ROOT/tools/run-python-native-e2e.sh" ]]; then
+        bash "$ROOT/tools/run-python-native-e2e.sh"
+    fi
+
+    echo
+    echo '==> universe: every canonical semantic Vespa verifier'
+    run_all_semantic_verifiers
+
+    echo
+    echo '==> universe: cumulative milestone closure'
+    verify_target milestone.m14
+
+    echo
+    echo 'Search Kernel universe: PASS'
 }
 
 regen_protocol() {
@@ -603,6 +692,9 @@ case "${1:-help}" in
         ;;
     check)
         check_all
+        ;;
+    universe)
+        universe
         ;;
     check-fast)
         check_fast
