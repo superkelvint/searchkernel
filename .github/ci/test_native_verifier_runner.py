@@ -5,6 +5,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "native-verifier-runner.yml"
+BEHAVIORAL_WORKFLOW = ROOT / ".github" / "workflows" / "behavioral-verification.yml"
+CLIENT_CAPABILITIES_WORKFLOW = ROOT / ".github" / "workflows" / "client-capabilities.yml"
 
 
 class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
@@ -88,6 +90,50 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(needle, source)
         self.assertNotIn("SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip", source)
+
+
+    def test_superseded_pr_heads_stop_before_each_expensive_native_phase(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "pull-requests: read",
+            'PR_NUMBER: ${{ github.event.pull_request.number }}',
+            "assert_current_pr_head()",
+            "curl --fail --silent --show-error",
+            'python3 -c \'import json,sys; print(json.load(sys.stdin).get("head", {}).get("sha", ""))\'',
+            "env -u GH_TOKEN",
+            "Superseded native verification",
+            "run_native_phase()",
+            "assert_current_pr_head preflight",
+            "run_native_phase native-sdk",
+            "run_native_phase native-full-abi",
+            "run_native_phase native-full-hnsw",
+            "run_native_phase native-full-product-integration",
+            "run_native_phase native-full-rust-real-engine",
+            "run_native_phase native-full-grouping-yql",
+            "run_native_phase native-full-recovery",
+            "run_native_phase native-full-phase9",
+            "run_native_phase native-full-python-e2e",
+            "run_native_phase native-full-persistence",
+            "run_native_phase client-e2e-build",
+            "run_native_phase client-e2e-run",
+            "run_native_phase closure-422-build",
+            "run_native_phase closure-422-m14",
+            "run_native_phase closure-422-rust-real-engine",
+            "run_native_phase closure-422-integration",
+            "run_native_phase closure-422-php-e2e",
+            "run_native_phase requested-target",
+            "flock 9",
+        ):
+            self.assertIn(needle, source)
+
+
+    def test_pr_callers_grant_live_head_lookup_permission(self) -> None:
+        for workflow in (BEHAVIORAL_WORKFLOW, CLIENT_CAPABILITIES_WORKFLOW):
+            source = workflow.read_text(encoding="utf-8")
+            self.assertIn("native-verifier-runner.yml@main", source)
+            self.assertIn("permissions:", source)
+            self.assertIn("contents: read", source)
+            self.assertIn("pull-requests: read", source)
 
 
 if __name__ == "__main__":
