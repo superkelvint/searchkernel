@@ -90,11 +90,7 @@ while read -r id expected path; do
     echo "M12 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1
   }
-done < <(python3 - "$ERRORS" <<'PY'
-import json,sys
-for c in json.load(open(sys.argv[1],encoding='utf-8'))['cases']:
-    print(c['id'],c['expected_error'],c['path'])
-PY
+done < <(python3 "reference/vespa/m12/verify-m12-python-1.py" "$ERRORS"
 )
 
 echo 'M12 verification passed'
