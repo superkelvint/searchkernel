@@ -44,7 +44,7 @@ export M8_DIRECT_OUT="$OUT"
 export M8_DIRECT_COMPILE_DB="$COMPILE_DB"
 export M8_DIRECT_LINK_TXT="$LINK_TXT"
 
-python3 "reference/vespa/m8/oracle/build-cpp-oracle-python-1.py"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/build-cpp-oracle-python-1.py"
 
 [[ -x "$OUT" ]] || die "expected executable was not produced: $OUT"
 
