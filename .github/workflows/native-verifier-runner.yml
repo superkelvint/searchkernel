@@ -152,6 +152,12 @@ jobs:
           rustup component add rustfmt clippy >/dev/null
 
           unset VESPA_ROOT || true
+          unset VESPA_LIBRARY_ROOT || true
+          unset VESPA_DEPS || true
+          unset VESPA_DEPS_LIB_DIR || true
+          unset VESPA_DEPS_INCLUDE_DIR || true
+          unset VESPA_EXTRA_LIB_DIR || true
+          unset VESPA_AWS_LIB_DIR || true
           unset SK_NATIVE_SDK || true
           unset SEARCHKERNEL_VERIFY_LIVE_ORACLE || true
 
