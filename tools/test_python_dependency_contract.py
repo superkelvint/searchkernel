@@ -26,6 +26,10 @@ class PythonDependencyContractTests(unittest.TestCase):
     def test_tooling_uses_the_shared_policy(self) -> None:
         dev = (ROOT / "dev").read_text(encoding="utf-8")
         self.assertIn(
+            'PYTHON=$(bash "$ROOT/tools/resolve-python.sh")',
+            dev,
+        )
+        self.assertIn(
             '"$PYTHON" "$ROOT/tools/check-python-dependencies.py"',
             dev,
         )
@@ -34,11 +38,13 @@ class PythonDependencyContractTests(unittest.TestCase):
         for relative in (
             "tools/check-python-grpc.sh",
             "tools/generate-python-grpc.sh",
+            "tools/generate-python-flatbuffers.sh",
         ):
             text = (ROOT / relative).read_text(encoding="utf-8")
-            self.assertIn(
-                'python3 "$root/tools/check-python-dependencies.py" --codegen',
+            self.assertIn("resolve-python.sh", text, relative)
+            self.assertNotRegex(
                 text,
+                r"(?m)^\\s*python3\\s",
                 relative,
             )
 
