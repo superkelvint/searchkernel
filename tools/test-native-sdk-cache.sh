@@ -17,9 +17,11 @@ if grep -Eq 'vespa-base-v[0-9]+|searchkernel-vespa-base-v[0-9]+' \
     echo 'Actions runner setup must not hard-code a native-base generation' >&2
     exit 1
 fi
-grep -Fq 'tools/fetch-native-base.sh "$BUILD_ENV"' \
+grep -Fq '"$REPO_ROOT/tools/fetch-native-base.sh" "$BUILD_ENV"' \
     "$source_root/tools/actions-runner-setup.sh"
-grep -Fq 'SK_NATIVE_BASE_ARTIFACT_URL="file:///native-artifacts/$ARTIFACT_NAME"' \
+grep -Fq 'ARTIFACT="/native-artifacts/${SK_NATIVE_ARCHIVE_NAME}"' \
+    "$source_root/tools/actions-runner-setup.sh"
+grep -Fq 'export SK_NATIVE_BASE_ARTIFACT_URL="file://${ARTIFACT}"' \
     "$source_root/tools/actions-runner-setup.sh"
 bash "$source_root/tools/test-native-base-artifact.sh"
 
