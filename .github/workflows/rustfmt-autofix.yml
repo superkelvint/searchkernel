@@ -87,6 +87,8 @@ jobs:
           git -c core.hooksPath=/dev/null -c commit.gpgsign=false \
             commit -m "style: apply cargo fmt"
 
+          # Qualify the destination explicitly as a branch ref so a pathological
+          # source branch name cannot be interpreted as another full ref.
           git push \
             "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            "HEAD:${HEAD_REF}"
+            "HEAD:refs/heads/${HEAD_REF}"

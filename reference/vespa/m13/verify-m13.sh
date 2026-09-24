@@ -7,6 +7,12 @@ cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 
 require_pinned_vespa
+RUN_LIVE_ORACLE=0
+if live_oracle_enabled; then
+  RUN_LIVE_ORACLE=1
+else
+  announce_frozen_oracle_replay
+fi
 require_sdk_manifest "$SDK/manifest.json"
 
 # M13 is cumulative: the previous dense-query milestone must remain green.
@@ -46,8 +52,10 @@ LOW="$CARGO_TARGET_DIR/debug/searchkernel-m13-driver"
 ADAPTER="$CARGO_TARGET_DIR/debug/searchkernel-m13-adapter-driver"
 ERROR="$CARGO_TARGET_DIR/debug/searchkernel-m13-error"
 ORACLE="$M13/oracle/target/m13_cpp_oracle"
-[[ -x "$ORACLE" ]] || fail_verification \
-  "M13 direct oracle is not built; run oracle/build-cpp-oracle.sh"
+if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+  [[ -x "$ORACLE" ]] || fail_verification \
+    "M13 direct oracle is not built; run oracle/build-cpp-oracle.sh"
+fi
 require_native_driver "$LOW" \
   sk_document_add_tensor_dense \
   sk_document_update_assign_tensor_dense \
@@ -72,15 +80,19 @@ DEFINITION_BIN="$($M13/prepare-portable-definition.sh "$DEFINITION_DIR")"
 for scenario in "$M13"/scenarios/[0-9][0-9]-*.json; do
   id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
 
-  "$M13/oracle/run-cpp-oracle.sh" "$scenario" >"$TMP/$id-oracle.json"
-  "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-oracle.json"
+  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+    "$M13/oracle/run-cpp-oracle.sh" "$scenario" >"$TMP/$id-oracle.json"
+    "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-oracle.json"
+  fi
 
   low_config="$TMP/$id-low-config"
   low_data="$TMP/$id-low-data"
   LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     "$LOW" "$scenario" "$low_config" "$low_data" >"$TMP/$id-low.json"
   "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-low.json"
-  "$M13/compare.py" "$TMP/$id-oracle.json" <"$TMP/$id-low.json"
+  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+    "$M13/compare.py" "$TMP/$id-oracle.json" <"$TMP/$id-low.json"
+  fi
 
   adapter_config="$TMP/$id-adapter-config"
   adapter_data="$TMP/$id-adapter-data"
@@ -88,7 +100,9 @@ for scenario in "$M13"/scenarios/[0-9][0-9]-*.json; do
     "$ADAPTER" "$scenario" "$DEFINITION_BIN" "$adapter_config" "$adapter_data" \
     >"$TMP/$id-adapter.json"
   "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-adapter.json"
-  "$M13/compare.py" "$TMP/$id-oracle.json" <"$TMP/$id-adapter.json"
+  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+    "$M13/compare.py" "$TMP/$id-oracle.json" <"$TMP/$id-adapter.json"
+  fi
 done
 
 ERRORS="$M13/scenarios/errors.json"

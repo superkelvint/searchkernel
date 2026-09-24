@@ -14,6 +14,12 @@ namespace {
 flatbuffers::IDLOptions json_options() {
   flatbuffers::IDLOptions options;
   options.strict_json = true;
+  // Search Kernel portable semantics distinguish a present empty string/vector
+  // from an absent field. FlatBuffers' JSON parser defaults compact empty
+  // strings/vectors to null, which would erase that distinction before the
+  // canonical *_to_ir() layer sees the request.
+  options.set_empty_strings_to_null = false;
+  options.set_empty_vectors_to_null = false;
   return options;
 }
 

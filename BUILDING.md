@@ -37,6 +37,7 @@ verification, generation, and acceptance lanes:
 ```text
 ./dev doctor
 ./dev check-fast
+./dev lint --profile rust-clippy-non-native
 ./dev test ir
 ./dev test rust-api
 ./dev test python
@@ -63,13 +64,17 @@ environment failure:
 The normal host workflow uses `target/host` automatically through
 `.cargo/config.toml`. Ordinary `./dev check-fast`, standalone Rust API
 tests, and non-native workspace checks do not populate the Vespa SDK cache.
-Before the first native link (and after a declared Vespa-base input changes),
-bootstrap or repair the immutable base explicitly with `./dev native-sdk ensure`.
-Ordinary Cargo builds resolve that base through the read-only `path` lookup and
-build only Search Kernel's `abi.cc` adapter into the Cargo target's `OUT_DIR`.
-If the base is missing or incompatible, Cargo fails with the
-`./dev native-sdk ensure` remediation; Cargo never builds or repairs the shared
-Vespa base. `./dev native-sdk path` is diagnostic-only and never mutates it.
+Before the first native link, run `./dev native-sdk ensure`. Provisioning
+should run this command on every runner/bootstrap cycle: `ensure` checks whether
+a newer published native-base generation exists for the same environment, target
+and pinned Vespa checkout and atomically refreshes the machine cache when needed.
+No manual cache deletion is required. Ordinary Cargo builds use the read-only
+`path` lookup and never perform network access or mutate the shared base.
+
+Cargo builds only Search Kernel's `abi.cc` adapter into the target's `OUT_DIR`.
+Published generation changes are recorded in a stable receipt inside the shared
+base; Cargo watches that receipt and rebuilds only the local adapter after an
+automatic base refresh. `cargo clean` is not required.
 
 A fresh or isolated worktree is not expected to already contain a built
 `searchkerneld` binary. If `./dev doctor` reports it as informational,
@@ -321,24 +326,46 @@ The resolver first checks the machine-global base and registered toolchain
 keyed by the checked-in Vespa checkout hash. Normal agent clones therefore need
 no clone-local Vespa tree when that machine has already been provisioned.
 
-On a cache miss, `ensure` prefers a compatible already-built local source. If
-none exists, it acquires the canonical published immutable base for the current
-build-environment/native-target/Vespa-pin namespace before considering a local
-Vespa build. The default artifact is a GitHub release asset named
-`searchkernel-vespa-base-v1-<environment>-<target>-<vespa-commit>.tar.gz`;
-`SK_NATIVE_BASE_ARTIFACT_URL` may point at an explicitly managed mirror. The
-download is checksum-verified, its manifest must exactly match the environment,
-target and pin, and unsafe archive entries are rejected before publication.
+On a cache miss, `ensure` prefers a compatible already-built local source. For
+an already-installed published base, `ensure` also discovers the highest
+published release generation matching the current build environment, native
+target and pinned Vespa checkout. Release names are generation-bearing:
+
+`searchkernel-vespa-base-v<generation>-<environment>-<target>-<vespa-commit>.tar.gz`
+
+The generation is discovered automatically; callers do not supply or hard-code
+it. If the installed published generation is older, `ensure` acquires the
+checkout lock and atomically replaces the object/toolchain at the same
+checkout-keyed cache path. `./dev native-sdk path` stays strictly offline and
+never performs this refresh.
+
+`SK_NATIVE_BASE_ARTIFACT_URL` may point at an explicitly managed mirror. A
+canonical generation-bearing filename is sufficient for automatic freshness
+comparison; mirrors using another filename may provide
+`SK_NATIVE_BASE_ARTIFACT_GENERATION`. Downloads are checksum-verified, their
+manifests must exactly match the environment, target and pin, and unsafe archive
+entries are rejected before publication.
 
 The published artifact contains the immutable Vespa/runtime base plus the
 read-only Vespa header/config/dependency-header toolchain required to compile
 Search Kernel's local `abi.cc` adapter. It never contains the Search Kernel
 adapter itself.
-`tools/package-native-base-artifact.sh` creates this bundle, and
-`.github/workflows/publish-native-base.yml` publishes the canonical host asset
-from `main`. Only when the published artifact is unavailable may an
-already-configured pinned Vespa checkout be used as the explicit last-resort
-bootstrap; if its DSOs are absent, `ensure` may build the configured
+`tools/package-native-base-artifact.sh` creates the bundle, and
+`.github/workflows/publish-native-base.yml` invokes
+`tools/publish-native-base.sh` from `main`. The publisher allocates the next
+generation once and publishes matching host and CI assets under that generation.
+
+For credential-isolated containers, run `tools/fetch-native-base.sh ci` on the
+host during every provisioning cycle. It uses the host's GitHub credentials,
+reuses a checksum-verified local download when current, and prints the newest
+artifact path. Mount that artifact cache read-only and pass the resulting
+`file://` path as `SK_NATIVE_BASE_ARTIFACT_URL`; the container never needs a
+GitHub token, and `./dev native-sdk ensure` refreshes its shared cache whenever
+the host-selected generation advances.
+
+Only when the published artifact is unavailable may an already-configured pinned
+Vespa checkout be used as the explicit last-resort bootstrap; if its DSOs are
+absent, `ensure` may build the configured
 `searchcore_embedded_crud_spike_app` target once. A compatible pre-split full
 SDK remains a faster local seed when available.
 
@@ -396,7 +423,7 @@ run the full workspace checks:
 
 ```text
 cargo fmt --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+./dev lint --profile rust-clippy-all-features
 cargo test --workspace --all-targets --all-features
 ```
 
@@ -404,14 +431,58 @@ Use the no-default-features lane when intentionally verifying Rust/FlatBuffers
 without the optional Vespa SDK:
 
 ```text
-cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+./dev lint --profile rust-clippy-non-native
 cargo test --workspace --all-targets --no-default-features
 ```
 
 There must be zero compiler and Clippy warnings.
 
+The canonical workspace lint profiles are owned by `./dev lint`. In CI, the
+runner also writes a repair packet containing the complete rendered diagnostics,
+machine-readable Cargo/Clippy messages, the failure classification, and the exact
+reproduction command. A `BUILD_OR_COMPILE_FAILURE` packet means no Clippy lint
+was observed before the build failed; run `./dev doctor` before changing
+product code.
+
 ## Native build verification
 
+### Clean-runner real-engine verification
+
+A provisioned runner does not need an `upstream/vespa` source checkout to run
+Search Kernel's real-engine verifier targets. The published native-base
+toolchain is accepted as pinned Vespa provenance when its environment, target,
+release generation, pinned commit, static-link closure, and canonical adapter
+compile/link metadata all validate.
+
+Provision the base, then run verifier targets normally:
+
+```bash
+./dev native-sdk ensure
+./dev verify m14
+./dev verify product.rust-real-engine
+./dev verify integration
+```
+
+On a published-toolchain runner, these targets execute the real SearchKernel /
+Vespa engine and compare behavior against the checked-in frozen expected corpus.
+They do not rebuild or rerun the upstream Java/C++ oracle implementations.
+
+A qualification machine with the clean configured pinned Vespa source checkout
+continues to run live upstream oracles by default. To require qualification mode
+explicitly:
+
+```bash
+SEARCHKERNEL_VERIFY_LIVE_ORACLE=required ./dev verify m14
+```
+
+That fails closed when only a published toolchain is available.
+`SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip` deliberately replays the frozen corpus
+even on a source qualification host.
+
+The distinction is intentional: qualification proves that frozen expected
+behavior still agrees with the pinned upstream oracle; clean-runner verification
+proves that the current Search Kernel real-engine path still agrees with that
+qualified contract.
 
 Run the focused native provenance checks and the normal workspace checks:
 
