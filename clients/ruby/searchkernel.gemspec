@@ -12,5 +12,5 @@ Gem::Specification.new do |spec|
   spec.files = Dir.chdir(__dir__) { Dir["lib/**/*.rb", "README.md"] }
   spec.require_paths = ["lib"]
   spec.required_ruby_version = ">= 3.1"
-  spec.license = nil
+  spec.license = "Apache-2.0"
 end
