@@ -9,7 +9,7 @@ import tempfile
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SELECTOR = os.path.join(ROOT, "tools", "select-native-base-generation.py")
+SELECTOR = os.path.join(ROOT, "tools", "native-base-release-selection.py")
 BUILD_ENV = "ci"
 TARGET = "x86_64-unknown-linux-gnu"
 COMMIT = "a" * 40

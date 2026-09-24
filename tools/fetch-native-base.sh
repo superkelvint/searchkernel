@@ -42,7 +42,7 @@ if [[ -z "$DISCOVERY_TOKEN" ]]; then
     DISCOVERY_TOKEN="$(gh auth token)"
 fi
 GENERATION="$(
-    GH_TOKEN="$DISCOVERY_TOKEN"         python3 "$ROOT/tools/select-native-base-generation.py"             "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"             --repo "$REPO"
+    GH_TOKEN="$DISCOVERY_TOKEN"         python3 "$ROOT/tools/native-base-release-selection.py"             "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"             --repo "$REPO"
 )" || die "no complete published native-base generation exists for $BUILD_ENV/$TARGET/$PINNED_VESPA_COMMIT"
 
 TAG="vespa-base-v${GENERATION}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"

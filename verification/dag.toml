@@ -1214,7 +1214,6 @@ paths = [
   "tools/native-contract-tests/**",
   "tools/*native-sdk*.sh",
   "tools/*native-base*.sh",
-  "tools/*native-base*.py",
   "tools/*shared-library*.sh",
   "tools/copy-shared-library-into-sdk.sh",
   "tools/install-native-base-artifact.sh",

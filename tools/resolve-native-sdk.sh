@@ -77,7 +77,7 @@ PY
 }
 
 latest_published_generation() {
-    python3 "$ROOT/tools/select-native-base-generation.py"         "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"
+    python3 "$ROOT/tools/native-base-release-selection.py"         "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"
 }
 
 resolve_published_base_identity() {
