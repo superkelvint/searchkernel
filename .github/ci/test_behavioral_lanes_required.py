@@ -80,6 +80,93 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
             {"python", "typescript"},
         )
 
+    def test_dev_change_does_not_broaden_an_owned_client_change(self) -> None:
+        cases = {
+            "clients/python/searchkernel/client.py": {"python"},
+            "clients/typescript/src/client.ts": {"typescript"},
+            "clients/ruby/lib/searchkernel.rb": {"ruby"},
+        }
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                self.assert_lanes([path, "dev"], expected)
+
+    def test_dev_only_change_still_fails_closed(self) -> None:
+        self.assert_lanes(["dev"], set(POLICY.LANES))
+
+    def test_ruby_contract_plus_dev_does_not_run_other_clients(self) -> None:
+        self.assert_lanes(
+            [
+                "clients/ruby/lib/searchkernel/value.rb",
+                "clients/ruby/test/run.rb",
+                "core/crates/searchkernel-protocol/tests/ruby_json_contract.rs",
+                "dev",
+            ],
+            {"rust", "ruby"},
+        )
+
+    def test_rust_rpc_codegen_and_generated_artifacts_stay_in_rust_lane(self) -> None:
+        paths = [
+            "core/crates/searchkernel-rpc/src/generated/rpc.rs",
+            "searchkerneld/src/generated/rpc.rs",
+            "tools/rpc-codegen/src/main.rs",
+            "tools/generate-searchkernel-rpc.sh",
+            "tools/check-searchkernel-rpc.sh",
+            "tools/generate-searchkernel-protocol.sh",
+            "tools/check-searchkernel-protocol-generated.sh",
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                self.assert_lanes([path], {"rust"})
+
+    def test_language_owned_generated_artifacts_stay_in_owner_lane(self) -> None:
+        cases = {
+            "clients/python/searchkernel/_wire_generated/request.py": {"python"},
+            "clients/python/searchkernel/rpc/searchkernel_pb2.py": {"python"},
+            "clients/typescript/src/generated/searchkernel.ts": {"typescript"},
+            "tools/generate-python-grpc.sh": {"python"},
+            "tools/check-python-grpc.sh": {"python"},
+            "tools/generate-typescript-grpc-web.sh": {"typescript"},
+            "tools/check-typescript-generated.sh": {"typescript"},
+        }
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                self.assert_lanes([path], expected)
+
+    def test_suspended_dag_and_layout_checks_do_not_select_product_lanes(self) -> None:
+        self.assert_lanes(
+            ["verification/dag.toml", "tools/check-layout.sh"],
+            set(),
+        )
+
+    def test_remote_rust_client_regression_does_not_select_other_clients(self) -> None:
+        self.assert_lanes(
+            [
+                "Cargo.lock",
+                "Cargo.toml",
+                "core/crates/searchkernel-ir/src/api_to_ir/mod.rs",
+                "core/crates/searchkernel-ir/src/api_to_ir/result.rs",
+                "core/crates/searchkernel-ir/src/ir_to_api/mod.rs",
+                "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
+                "core/crates/searchkernel-ir/src/lib.rs",
+                "core/crates/searchkernel-rpc/Cargo.toml",
+                "core/crates/searchkernel-rpc/src/generated/rpc.rs",
+                "core/crates/searchkernel-rpc/src/lib.rs",
+                "core/crates/searchkernel/Cargo.toml",
+                "core/crates/searchkernel/src/index/mod.rs",
+                "core/crates/searchkernel/src/lib.rs",
+                "core/crates/searchkernel/src/remote.rs",
+                "core/crates/searchkernel/tests/remote_client.rs",
+                "searchkerneld/Cargo.toml",
+                "searchkerneld/src/lib.rs",
+                "searchkerneld/tests/grpc.rs",
+                "tools/check-layout.sh",
+                "tools/check-searchkernel-rpc.sh",
+                "tools/generate-searchkernel-rpc.sh",
+                "verification/dag.toml",
+            ],
+            {"rust"},
+        )
+
     def test_portable_api_change_selects_all_lanes(self) -> None:
         self.assert_lanes(["api/searchkernel_request.fbs"], set(POLICY.LANES))
 
