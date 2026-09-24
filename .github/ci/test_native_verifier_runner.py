@@ -101,7 +101,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             "env -u GH_TOKEN",
             "Superseded native verification",
             "run_native_phase()",
-            "run_native_phase prepare",
+            "assert_current_pr_head preflight",
             "run_native_phase native-sdk",
             "run_native_phase native-full-abi",
             "run_native_phase native-full-hnsw",
