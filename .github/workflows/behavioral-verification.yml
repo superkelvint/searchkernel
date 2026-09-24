@@ -412,6 +412,11 @@ jobs:
           fi
           echo "Verified exact head $actual."
 
+      - name: Validate developer command wrapper
+        run: |
+          bash -n dev
+          bash dev help >/dev/null
+
       - name: Run native SDK packaging regression
         run: bash tools/test-native-sdk-packaging.sh
 

@@ -46,6 +46,7 @@ class NativeVerifierRequiredTests(unittest.TestCase):
             "clients/python/searchkernel/client.py",
             "clients/typescript/src/client.ts",
             "clients/ruby/lib/searchkernel.rb",
+            "dev",
             "searchkernel-web/src/features/overview/index.tsx",
             "core/crates/searchkernel-filter/src/lib.rs",
             "core/crates/searchkernel-dispatch/src/lib.rs",
@@ -56,6 +57,16 @@ class NativeVerifierRequiredTests(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path):
                 self.assertIsNone(POLICY.matching_rule(path))
+
+    def test_ruby_client_plus_dev_does_not_consume_native_runner(self) -> None:
+        matches = POLICY.classify(
+            [
+                "clients/ruby/lib/searchkernel/value.rb",
+                "core/crates/searchkernel-protocol/tests/ruby_json_contract.rs",
+                "dev",
+            ]
+        )
+        self.assertEqual(matches, [])
 
     def test_rename_safe_diff_can_classify_deleted_native_path(self) -> None:
         # CI uses git diff --no-renames, so a move out of a native-sensitive
