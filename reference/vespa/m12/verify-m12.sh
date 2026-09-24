@@ -53,7 +53,7 @@ trap 'rm -rf "$TMP" "$DEFINITION_DIR"' EXIT
 DEFINITION_BIN="$($M12/prepare-portable-definition.sh "$DEFINITION_DIR")"
 
 for s in "$M12"/scenarios/[0-9][0-9]-*.json; do
-  id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
+  id="$(python3 "$ROOT/tools/json-cli.py" get "$s" id)"
 
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$M12/oracle/run-cpp-oracle.sh" "$s" | "$M12/canonicalize.py" > "$TMP/oracle-$id.json"
