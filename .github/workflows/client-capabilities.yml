@@ -145,9 +145,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache-${{ github.run_id }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
         run: |
           set -euo pipefail
-          artifact=$(tools/fetch-native-base.sh ci)
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          trusted_fetch="$RUNNER_TEMP/searchkernel-fetch-native-base.sh"
+          git show "$BASE_SHA:tools/fetch-native-base.sh" > "$trusted_fetch"
+          chmod +x "$trusted_fetch"
+          artifact=$("$trusted_fetch" ci)
           SK_NATIVE_BASE_ARTIFACT_URL="file://$artifact" ./dev native-sdk ensure
       - name: Select C++23 compiler for Search Kernel adapter
         run: |
