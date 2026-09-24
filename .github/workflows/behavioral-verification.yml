@@ -270,12 +270,45 @@ jobs:
     needs: classify
     if: needs.classify.outputs.ruby == 'true'
     runs-on: [self-hosted, linux, x64]
+    env:
+      CARGO_TARGET_DIR: target/ci-exact-head-ruby
+      SEARCHKERNEL_BUILD_ENV: ci
+      CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - name: Check out exact PR head
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
+
+      - name: Set up Ruby
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler: none
+
+      - name: Install Rust toolchain
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/ci-exact-head-ruby"
+          shared-key: exact-head-ruby
+
+      - name: Cache pinned FlatBuffers toolchain
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Ensure pinned FlatBuffers toolchain
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        run: ./dev install flatbuffers
 
       - name: Reject stale verification checkout
         env:

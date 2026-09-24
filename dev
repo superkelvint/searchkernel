@@ -32,6 +32,7 @@ Search Kernel development commands
   ./dev test python           Test the Python client
   ./dev test typescript       Test the TypeScript client and generated contract
   ./dev test php              Test the PHP client
+  ./dev test ruby             Test the Ruby client and packaged gem
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify vespa.grouping.yql  Run one semantic verifier target
@@ -109,6 +110,26 @@ run_php_tests() {
     bash "$ROOT/clients/php/tests/verify_package.sh"
 }
 
+run_ruby_tests() {
+    ruby -I"$ROOT/clients/ruby/lib" "$ROOT/clients/ruby/test/run.rb"
+    cargo test -p searchkernel-protocol --test ruby_json_contract -- --ignored
+
+    local package_dir gem_home status
+    package_dir=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ruby-package.XXXXXX")
+    gem_home=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ruby-gem-home.XXXXXX")
+    status=0
+    (
+        cd "$ROOT/clients/ruby"
+        gem build searchkernel.gemspec --output "$package_dir/searchkernel.gem" >/dev/null
+        GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
+            gem install --local "$package_dir/searchkernel.gem" --no-document >/dev/null
+        GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
+            ruby -e 'require "searchkernel"; abort unless SearchKernel::Protocol::VERSION == 2'
+    ) || status=$?
+    rm -rf -- "$package_dir" "$gem_home"
+    return "$status"
+}
+
 check_fast() {
     cargo fmt --all --check
     cargo check --workspace --all-targets --no-default-features
@@ -148,6 +169,7 @@ check_all() {
     run_python_tests
     run_typescript_tests
     run_php_tests
+    run_ruby_tests
 }
 
 regen_protocol() {
@@ -184,8 +206,11 @@ test_target() {
         php)
             run_php_tests
             ;;
+        ruby)
+            run_ruby_tests
+            ;;
         *)
-            echo "usage: ./dev test ir|rust-api|python|typescript|php" >&2
+            echo "usage: ./dev test ir|rust-api|python|typescript|php|ruby" >&2
             return 2
             ;;
     esac
