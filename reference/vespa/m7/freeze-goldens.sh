@@ -10,7 +10,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   id="$(python3 "$ROOT/tools/json-cli.py" get "$s" id)"
   raw="$(mktemp)"
   if ! "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$s" > "$raw"; then echo "M7 Java oracle failed: $id" >&2; rm -f "$raw"; exit 1; fi
-  python3 "reference/vespa/m7/freeze-goldens-python-1.py" "$raw" > "$SCRIPT_DIR/expected/$id.json"
+  python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/freeze-goldens-python-1.py" "$raw" > "$SCRIPT_DIR/expected/$id.json"
   rm -f "$raw"
 done
 "$SCRIPT_DIR/validate_expected.py"
