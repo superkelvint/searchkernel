@@ -165,7 +165,8 @@ find_clang_python() {
             resolved=$(command -v "$candidate" 2>/dev/null || true)
         fi
         [[ -n "$resolved" && -x "$resolved" ]] || continue
-        if "$resolved" -c 'import clang.cindex' >/dev/null 2>&1; then
+        if "$resolved" -c 'import clang.cindex' >/dev/null 2>&1 &&
+           "$resolved" "$ROOT/tools/check_abi_surface.py" --help >/dev/null 2>&1; then
             printf '%s\n' "$resolved"
             return 0
         fi
