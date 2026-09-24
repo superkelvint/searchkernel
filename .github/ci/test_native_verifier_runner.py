@@ -229,9 +229,12 @@ echo AFTER_GUARD
 
     def test_pr_callers_grant_live_head_lookup_permission(self) -> None:
         callers: list[Path] = []
-        for workflow in sorted(WORKFLOWS.glob("*.yml")):
+        workflows = sorted(
+            [*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")]
+        )
+        for workflow in workflows:
             source = workflow.read_text(encoding="utf-8")
-            if "native-verifier-runner.yml@main" not in source:
+            if "native-verifier-runner.yml@" not in source:
                 continue
             callers.append(workflow)
             header = source.split("\njobs:", 1)[0]
