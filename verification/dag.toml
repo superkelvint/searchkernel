@@ -653,6 +653,15 @@ command = "python3 .github/ci/test_exact_head.py"
 depends_on = []
 cache_result = false
 
+[[task]]
+id = "runner-bootstrap"
+legacy_lanes = ["verification"]
+kind = "command"
+runner = "linux"
+command = "bash -n tools/ci/runner-bootstrap/install.sh tools/ci/runner-bootstrap/verify.sh tools/ci/runner-bootstrap/package.sh && bash tools/ci/runner-bootstrap/install.sh --help >/dev/null"
+depends_on = []
+cache_result = false
+
 # SearchKernel Web is deliberately decomposed. Several subsystems share the same
 # executable task today, but retain separate subsystem ownership below so new
 # feature families cannot appear invisibly.
@@ -1027,6 +1036,11 @@ requires = ["native-full"]
 id = "verification-control-plane"
 paths = [".github/ci/**", ".github/workflows/**", ".githooks/**", "dev", "verification/**"]
 requires = ["verification-policy", "full"]
+
+[[subsystem]]
+id = "ci-runner-bootstrap"
+paths = ["tools/ci/runner-bootstrap/**"]
+requires = ["runner-bootstrap"]
 
 # --- SearchKernel Web subsystem ownership ---
 
