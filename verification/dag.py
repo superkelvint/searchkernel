@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class DagError(RuntimeError):
@@ -27,6 +27,8 @@ class Task:
     runner: str
     command: str | None
     depends_on: tuple[str, ...]
+    subsumes: tuple[str, ...]
+    provenance: tuple[str, ...]
     legacy_lanes: tuple[str, ...]
     cache_result: bool
 
@@ -206,6 +208,12 @@ def load_dag(path: Path) -> VerificationDag:
         elif command is not None:
             raise DagError(f"task {task_id}: aggregate task must not define command")
         depends_on = _optional_tuple_of_strings(entry.get("depends_on"), f"task {task_id}.depends_on")
+        subsumes = _optional_tuple_of_strings(
+            entry.get("subsumes"), f"task {task_id}.subsumes"
+        )
+        provenance = _optional_tuple_of_strings(
+            entry.get("provenance"), f"task {task_id}.provenance"
+        )
         legacy_lanes = _optional_tuple_of_strings(
             entry.get("legacy_lanes"), f"task {task_id}.legacy_lanes"
         )
@@ -218,6 +226,8 @@ def load_dag(path: Path) -> VerificationDag:
             runner=runner,
             command=command if isinstance(command, str) else None,
             depends_on=depends_on,
+            subsumes=subsumes,
+            provenance=provenance,
             legacy_lanes=legacy_lanes,
             cache_result=cache_result,
         )
@@ -308,9 +318,14 @@ def validate_dag(dag: VerificationDag) -> None:
     for task in dag.tasks.values():
         if task.id in task.depends_on:
             raise DagError(f"task {task.id}: cannot depend on itself")
+        if task.id in task.subsumes:
+            raise DagError(f"task {task.id}: cannot subsume itself")
         for dependency in task.depends_on:
             if dependency not in dag.tasks:
                 raise DagError(f"task {task.id}: unknown dependency {dependency}")
+        for proof in task.subsumes:
+            if proof not in dag.tasks:
+                raise DagError(f"task {task.id}: unknown subsumed task {proof}")
         for lane in task.legacy_lanes:
             if lane not in lane_names:
                 raise DagError(f"task {task.id}: unknown legacy lane {lane}")
@@ -328,11 +343,12 @@ def validate_dag(dag: VerificationDag) -> None:
             return
         if task_id in visiting:
             cycle = " -> ".join([*stack, task_id])
-            raise DagError(f"task dependency cycle: {cycle}")
+            raise DagError(f"task dependency/proof cycle: {cycle}")
         visiting.add(task_id)
         stack.append(task_id)
-        for dependency in dag.tasks[task_id].depends_on:
-            visit(dependency, stack)
+        task = dag.tasks[task_id]
+        for related in (*task.depends_on, *task.subsumes):
+            visit(related, stack)
         stack.pop()
         visiting.remove(task_id)
         visited.add(task_id)
@@ -340,19 +356,50 @@ def validate_dag(dag: VerificationDag) -> None:
     for task_id in dag.tasks:
         visit(task_id, [])
 
-    full_closure = set(task_closure(dag, dag.full_roots))
+    full_proof_closure = set(proof_closure(dag, dag.full_roots))
     required_by_behavioral = {
         task_id
         for subsystem in dag.subsystems
         if subsystem.behavioral
         for task_id in subsystem.requires
     }
-    unreachable_required = sorted(required_by_behavioral - full_closure)
-    if unreachable_required:
+    unproved_required = sorted(required_by_behavioral - full_proof_closure)
+    if unproved_required:
         raise DagError(
-            "behavioral subsystem tasks are not reachable from full_roots: "
-            + ", ".join(unreachable_required)
+            "behavioral subsystem tasks are not proved by full_roots: "
+            + ", ".join(unproved_required)
         )
+    unproved_tasks = sorted(set(dag.tasks) - full_proof_closure)
+    if unproved_tasks:
+        raise DagError(
+            "tasks are not proved by full_roots: "
+            + ", ".join(unproved_tasks)
+        )
+
+
+def proof_closure(dag: VerificationDag, roots: Iterable[str]) -> tuple[str, ...]:
+    """Return semantic proof closure without forcing redundant execution.
+
+    depends_on edges are executable prerequisites. subsumes edges mean that
+    successfully executing a task proves the referenced task's contract too.
+    """
+    ordered: list[str] = []
+    emitted: set[str] = set()
+
+    def add(task_id: str) -> None:
+        if task_id in emitted:
+            return
+        emitted.add(task_id)
+        ordered.append(task_id)
+        task = dag.tasks[task_id]
+        for related in (*task.depends_on, *task.subsumes):
+            add(related)
+
+    for root in roots:
+        if root not in dag.tasks:
+            raise DagError(f"unknown task root: {root}")
+        add(root)
+    return tuple(ordered)
 
 
 def matches(path: str, patterns: Iterable[str]) -> bool:
