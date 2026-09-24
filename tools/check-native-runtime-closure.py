@@ -71,7 +71,7 @@ def validate(libdir: pathlib.Path) -> None:
         die("native runtime closure validation requires readelf")
 
     root = libdir.resolve()
-    available = {entry.name for entry in libdir.iterdir()}
+    available: set[str] = set()
     payloads: dict[pathlib.Path, set[str]] = {}
 
     for entry in libdir.iterdir():
@@ -91,6 +91,7 @@ def validate(libdir: pathlib.Path) -> None:
 
         if not resolved.is_file() or not is_elf(resolved):
             continue
+        available.add(entry.name)
         payloads.setdefault(resolved, set()).add(entry.name)
 
     if not payloads:
