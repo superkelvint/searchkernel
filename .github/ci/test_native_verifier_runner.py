@@ -196,6 +196,8 @@ echo AFTER_GUARD
             'PR_NUMBER: ${{ github.event.pull_request.number }}',
             "assert_current_pr_head()",
             "curl --fail --silent --show-error",
+            "--connect-timeout 5",
+            "--max-time 15",
             'python3 -c \'import json,sys; data=json.load(sys.stdin); print(data.get("head", {}).get("sha", ""), data.get("state", ""))\'',
             'if [[ "$state" != "open" ]]; then',
             "env -u GH_TOKEN",
