@@ -93,7 +93,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
-apt-get install -y --no-install-recommends   ca-certificates curl git gh jq sudo tar gzip unzip zip file procps time   docker.io   build-essential cmake ninja-build pkg-config   clang llvm lld libclang-dev python3-clang   python3 python3-venv python3-pip python3-dev   php-cli
+apt-get install -y --no-install-recommends   ca-certificates curl git gh jq sudo tar gzip unzip zip file procps time   docker.io   build-essential cmake ninja-build pkg-config   clang llvm lld libclang-dev python3-clang   python3 python3-venv python3-pip python3-dev   php-cli ruby-full
 
 systemctl enable --now docker
 
@@ -206,6 +206,9 @@ run_user bash -lc '
   node --version
   npm --version
   php --version | head -n 1
+  ruby -rrubygems -e '"'"'abort "Ruby >= 3.1 is required" if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")'"'"'
+  ruby --version
+  gem --version
   flatc --version
 '
 
