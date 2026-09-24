@@ -249,7 +249,7 @@ class ClientContractTests(unittest.TestCase):
         script.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
         dev = repo / "dev"
-        dev.write_text("#!/usr/bin/env bash\\nexit 0\\n", encoding="utf-8")
+        dev.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
         dev.chmod(0o755)
 
         fakebin = fixture / "bin"
