@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-verifier-provenance.XXXXXX")"
 cleanup() { rm -rf "$fixture"; }
 trap cleanup EXIT
