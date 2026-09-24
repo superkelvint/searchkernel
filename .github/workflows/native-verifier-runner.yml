@@ -242,6 +242,35 @@ jobs:
           if ! command -v jq >/dev/null 2>&1; then
             dnf install -y jq
           fi
+
+          assert_current_pr_head() {
+            local phase=$1
+            if [[ -z "${PR_NUMBER:-}" ]]; then
+              return 0
+            fi
+
+            local response current
+            response=$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $HEAD_CHECK_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
+            current=$(jq -r '.head.sha // empty' <<<"$response")
+            if [[ -z "$current" ]]; then
+              echo "::error::could not resolve current head for PR #$PR_NUMBER before $phase"
+              exit 1
+            fi
+
+            if [[ "${current,,}" != "${EXPECTED_HEAD,,}" ]]; then
+              echo "::notice title=Superseded native verification::PR #$PR_NUMBER now points to $current; stopping obsolete native verification for $EXPECTED_HEAD before $phase."
+              exit 0
+            fi
+
+            echo "PR #$PR_NUMBER still points to $EXPECTED_HEAD before $phase."
+          }
+
+          assert_current_pr_head preflight
+
           if ! command -v rg >/dev/null 2>&1; then
             dnf install -y epel-release
             dnf install -y ripgrep
@@ -315,32 +344,6 @@ jobs:
           # before starting the next expensive phase.
           exec 9>/tmp/searchkernel-native-ci.lock
           flock 9
-
-          assert_current_pr_head() {
-            local phase=$1
-            if [[ -z "${PR_NUMBER:-}" ]]; then
-              return 0
-            fi
-
-            local response current
-            response=$(curl --fail --silent --show-error \
-              -H "Authorization: Bearer $HEAD_CHECK_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
-            current=$(jq -r '.head.sha // empty' <<<"$response")
-            if [[ -z "$current" ]]; then
-              echo "::error::could not resolve current head for PR #$PR_NUMBER before $phase"
-              exit 1
-            fi
-
-            if [[ "${current,,}" != "${EXPECTED_HEAD,,}" ]]; then
-              echo "::notice title=Superseded native verification::PR #$PR_NUMBER now points to $current; stopping obsolete native verification for $EXPECTED_HEAD before $phase."
-              exit 0
-            fi
-
-            echo "PR #$PR_NUMBER still points to $EXPECTED_HEAD before $phase."
-          }
 
           run_native_phase() {
             local phase=$1
