@@ -210,7 +210,6 @@ try:
 except (OSError, json.JSONDecodeError) as exc:
     raise SystemExit(f"invalid published Vespa toolchain marker {path}: {exc}") from exc
 expected = {
-    "format_version": 2,
     "build_environment": build_env,
     "native_target": target,
     "vespa_commit": commit,
@@ -220,6 +219,19 @@ for key, value in expected.items():
         raise SystemExit(
             f"published Vespa toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
         )
+
+format_version = marker.get("format_version")
+legacy_v2 = (
+    format_version == 1
+    and marker.get("artifact_generation") == 2
+    and marker.get("adapter_static_link_closure") is True
+)
+if format_version != 2 and not legacy_v2:
+    raise SystemExit(
+        "unsupported published Vespa toolchain format: "
+        f"format_version={format_version!r}, "
+        f"artifact_generation={marker.get('artifact_generation')!r}"
+    )
 PY
 }
 
