@@ -3,7 +3,13 @@ set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 EXPECTED_FLATBUFFERS_VERSION=25.12.19
-PYTHON=${PYTHON:-python3}
+if [[ -n "${PYTHON:-}" ]]; then
+    :
+elif [[ -x "$ROOT/venv/bin/python" ]]; then
+    PYTHON="$ROOT/venv/bin/python"
+else
+    PYTHON=python3
+fi
 
 cd "$ROOT"
 
@@ -49,7 +55,7 @@ Search Kernel development commands
   ./dev native-sdk path       Print the SDK object selected for this worktree
   ./dev hooks install        Install the repository-managed Git hooks
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
-  ./dev doctor                Diagnose local build and verification prerequisites
+  ./dev doctor                Repair and verify local build/verification prerequisites
 
 Environment overrides used by the underlying tools, including FLATC_PATH,
 FLATBUFFERS_CPP_ROOT, FLATBUFFERS_INSTALL_PREFIX, SK_NATIVE_SDK, and
@@ -608,7 +614,83 @@ doctor_vespa() {
 }
 
 doctor_python() {
-    "$PYTHON" "$ROOT/tools/check-python-dependencies.py"
+    "$PYTHON" "$ROOT/tools/check-python-dependencies.py" --codegen
+}
+
+doctor_repair_flatbuffers() {
+    if doctor_flatc >/dev/null 2>&1 && doctor_flatbuffers_cpp >/dev/null 2>&1; then
+        return 0
+    fi
+    echo 'REPAIR FlatBuffers toolchain'
+    install_flatbuffers
+    DOCTOR_FLATC=$(find_flatc)
+    doctor_flatc && doctor_flatbuffers_cpp
+}
+
+doctor_repair_typescript() {
+    if doctor_typescript >/dev/null 2>&1; then
+        return 0
+    fi
+    command -v npm >/dev/null 2>&1 || {
+        echo 'cannot repair TypeScript dependencies: npm is not installed' >&2
+        return 1
+    }
+    echo 'REPAIR TypeScript dependencies'
+    npm ci --prefix "$ROOT/clients/typescript"
+    doctor_typescript
+}
+
+doctor_repair_python() {
+    if doctor_python >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local bootstrap_python=$PYTHON
+    local venv_python="$ROOT/venv/bin/python"
+
+    command -v "$bootstrap_python" >/dev/null 2>&1 || {
+        echo "cannot repair Python dependencies: $bootstrap_python is not available" >&2
+        return 1
+    }
+
+    echo 'REPAIR Python dependencies'
+    if [[ ! -x "$venv_python" ]]; then
+        "$bootstrap_python" -m venv "$ROOT/venv" || {
+            echo "cannot create repository Python environment at $ROOT/venv" >&2
+            return 1
+        }
+    fi
+
+    "$venv_python" -m pip install         --disable-pip-version-check         -e "$ROOT/clients/python[codegen]"
+    PYTHON=$venv_python
+    doctor_python
+}
+
+doctor_repair_native_sdk() {
+    if doctor_native_sdk >/dev/null 2>&1 && doctor_vespa >/dev/null 2>&1; then
+        return 0
+    fi
+    echo 'REPAIR native SDK'
+    native_sdk_command ensure >/dev/null
+    doctor_native_sdk && doctor_vespa
+}
+
+doctor_repair_generated_protocol() {
+    if doctor_generated_protocol >/dev/null 2>&1; then
+        return 0
+    fi
+    echo 'REPAIR generated protocol artifacts'
+    regen_protocol
+    doctor_generated_protocol
+}
+
+doctor_repair_searchkerneld() {
+    if doctor_searchkerneld >/dev/null 2>&1; then
+        return 0
+    fi
+    echo 'REPAIR searchkerneld'
+    cargo build -p searchkerneld
+    doctor_searchkerneld
 }
 
 doctor_searchkerneld() {
@@ -634,48 +716,52 @@ doctor() {
             printf 'PASS  %s\n' "$label"
         else
             printf 'FAIL  %s\n' "$label"
-            sed -n '1,3p' "$diagnostics" | sed 's/^/      /'
+            sed -n '1,6p' "$diagnostics" | sed 's/^/      /'
             status=1
         fi
     }
 
-    doctor_optional() {
+    repair() {
         local label=$1
-        local remediation=$2
-        shift 2
-        if "$@" >"$diagnostics" 2>&1; then
-            printf 'PASS  %s\n' "$label"
-        else
-            printf 'INFO  %s\n' "$label"
-            printf '      %s\n' "$remediation"
+        shift
+        if ! "$@"; then
+            echo "REPAIR FAILED  $label" >&2
+            status=1
         fi
     }
 
     echo "Search Kernel doctor"
+
+    doctor_hooks >/dev/null 2>&1 || status=1
+    doctor_cargo >/dev/null 2>&1 || status=1
+
+    if doctor_cargo >/dev/null 2>&1; then
+        repair 'FlatBuffers toolchain' doctor_repair_flatbuffers
+        repair 'TypeScript dependencies' doctor_repair_typescript
+        repair 'Python dependencies' doctor_repair_python
+        repair 'native SDK' doctor_repair_native_sdk
+        repair 'generated protocol artifacts' doctor_repair_generated_protocol
+        repair 'searchkerneld' doctor_repair_searchkerneld
+    fi
+
+    echo
+    echo 'Verification'
     doctor_check 'repository Git hooks configured' doctor_hooks
     doctor_check 'cargo present' doctor_cargo
     doctor_check 'flatc correct version' doctor_flatc
     doctor_check 'FlatBuffers C++ correct version' doctor_flatbuffers_cpp
     doctor_check 'generated protocol present/current' doctor_generated_protocol
     doctor_check 'TypeScript generated protocol present/current' doctor_typescript
-    doctor_optional 'native SDK present' \
-        'Only required for native/all-features verification; populate with: ./dev native-sdk ensure' \
-        doctor_native_sdk
-    doctor_optional 'native ABI versions agree' \
-        'Only checked when a native SDK is present/required.' \
-        doctor_native_abi
-    doctor_optional 'pinned Vespa checkout registered' \
-        'Only required for native/all-features verification; provision once with: ./dev native-sdk ensure' \
-        doctor_vespa
+    doctor_check 'native SDK present' doctor_native_sdk
+    doctor_check 'native ABI versions agree' doctor_native_abi
+    doctor_check 'pinned Vespa checkout registered' doctor_vespa
     doctor_check 'Python dependencies present' doctor_python
-    doctor_optional 'searchkerneld built' \
-        'Build it with: cargo build -p searchkerneld' \
-        doctor_searchkerneld
+    doctor_check 'searchkerneld built' doctor_searchkerneld
 
     if ((status == 0)); then
-        echo 'Doctor: all prerequisites passed'
+        echo 'Doctor: environment repaired and all prerequisites passed'
     else
-        echo 'Doctor: one or more prerequisites failed' >&2
+        echo 'Doctor: one or more prerequisites could not be repaired' >&2
     fi
     rm -f "$diagnostics"
     return "$status"
