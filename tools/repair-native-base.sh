@@ -20,11 +20,7 @@ for cmd in gh git python3 rustc sha256sum tar ldd; do command -v "$cmd" >/dev/nu
 [[ -x ./dev ]] || die "./dev is missing or not executable"
 gh api "repos/$REPO" >/dev/null 2>&1 || die "gh authentication cannot access $REPO"
 
-PINNED_VESPA_COMMIT="$(python3 - <<'PY'
-import json
-with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
-    print(json.load(stream)["vespa_commit"])
-PY
+PINNED_VESPA_COMMIT="$(python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/repair-native-base-python-1.py"
 )"
 TARGET="${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 MARKER_REL="searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt"
@@ -104,27 +100,8 @@ for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     BUNDLE="$STAGE/searchkernel-vespa-base"
     PACKAGED_VESPA="$BUNDLE/toolchain/upstream/vespa"
     PACKAGED_DEPS="$BUNDLE/toolchain/vespa-deps"
-    python3 - "$REAL_LINK_FILE" "$REAL_VESPA_ROOT" "$REAL_DEPS" "$PACKAGED_VESPA" "$PACKAGED_DEPS" <<'PY'
-import pathlib, shlex, shutil, sys
-link=pathlib.Path(sys.argv[1]).resolve(); vr=pathlib.Path(sys.argv[2]).resolve(); dr=pathlib.Path(sys.argv[3]).resolve(); pv=pathlib.Path(sys.argv[4]); pd=pathlib.Path(sys.argv[5]); cwd=link.parent.parent.parent
-for token in shlex.split(link.read_text(encoding="utf-8")):
-    if not token.endswith(".a") or pathlib.Path(token).name == "libsearchcore_test.a": continue
-    src=pathlib.Path(token)
-    if not src.is_absolute(): src=cwd/src
-    src=src.resolve(strict=True)
-    try: dst=pv/src.relative_to(vr)
-    except ValueError:
-        try: dst=pd/src.relative_to(dr)
-        except ValueError as exc: raise SystemExit(f"static archive outside declared roots: {src}") from exc
-    dst.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(src,dst)
-PY
-    python3 - "$BUNDLE/manifest.json" "$PACKAGED_VESPA/.searchkernel-vespa-artifact.json" "$GENERATION" <<'PY'
-import json, sys
-for path in sys.argv[1:3]:
-    with open(path, encoding="utf-8") as f: data=json.load(f)
-    data["artifact_generation"]=int(sys.argv[3]); data["adapter_static_link_closure"]=True
-    with open(path,"w",encoding="utf-8") as f: json.dump(data,f,indent=2,sort_keys=True); f.write("\n")
-PY
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/repair-native-base-python-2.py" "$REAL_LINK_FILE" "$REAL_VESPA_ROOT" "$REAL_DEPS" "$PACKAGED_VESPA" "$PACKAGED_DEPS"
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/repair-native-base-python-3.py" "$BUNDLE/manifest.json" "$PACKAGED_VESPA/.searchkernel-vespa-artifact.json" "$GENERATION"
     REPAIRED="$TMP/$ASSET"
     (cd "$STAGE" && tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -czf "$REPAIRED" searchkernel-vespa-base)
     (cd "$TMP" && sha256sum "$ASSET" > "$ASSET.sha256")
