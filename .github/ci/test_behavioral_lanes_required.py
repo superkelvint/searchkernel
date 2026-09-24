@@ -83,7 +83,7 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
         self.assertNotIn("verification/dag.toml", source)
 
     def test_windows_separators_are_normalized(self) -> None:
-        self.assert_lanes([r"clients\\python\\searchkernel\\client.py"], {"python"})
+        self.assert_lanes([r"clients\python\searchkernel\client.py"], {"python"})
 
 
 if __name__ == "__main__":
