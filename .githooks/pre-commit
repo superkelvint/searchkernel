@@ -87,7 +87,9 @@ if [[ -n "$(git diff --cached --name-only --no-renames -- \
     core/crates/searchkernel-vespa-bindings/src/bindings.rs \
     reference/vespa/NATIVE_ABI_CONTRACT.h \
     reference/vespa/PINNED_VESPA.json \
-    reference/vespa/m0/expected/01-native-open-close.json)" ]]; then
+    reference/vespa/m0/expected/01-native-open-close.json \
+    reference/vespa/m0/scenarios/01-native-open-close.json \
+    reference/vespa/phase9/expected/01-additive-handles.json)" ]]; then
     abi_authority_required=true
 fi
 
