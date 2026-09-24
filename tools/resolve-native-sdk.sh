@@ -46,15 +46,153 @@ has_vespa_libraries() {
     find "$root" -type f -name 'libvespa*.so*' -print -quit 2>/dev/null | grep -q .
 }
 
-published_base_url() {
-    local tag asset
+PUBLISHED_BASE_RESOLVED=0
+PUBLISHED_BASE_GENERATION=
+PUBLISHED_BASE_URL=
+
+published_toolchain_marker_path() {
+    printf '%s\n' "$CACHE_ROOT/toolchains/$PINNED_VESPA_COMMIT/upstream/vespa/.searchkernel-vespa-artifact.json"
+}
+
+has_published_install() {
+    [[ -f "$(published_toolchain_marker_path)" ]]
+}
+
+artifact_generation_from_url() {
+    local url=$1
+    python3 - "$url" <<'PY'
+import re
+import sys
+from urllib.parse import urlparse
+
+name = urlparse(sys.argv[1]).path.rsplit("/", 1)[-1]
+match = re.match(r"^searchkernel-vespa-base-v([0-9]+)-.+\.tar\.gz$", name)
+if not match:
+    raise SystemExit(
+        "SK_NATIVE_BASE_ARTIFACT_URL must use a canonical generation-bearing "
+        "asset name, or SK_NATIVE_BASE_ARTIFACT_GENERATION must be set"
+    )
+print(match.group(1))
+PY
+}
+
+latest_published_generation() {
+    python3 - "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+
+build_env, target, commit = sys.argv[1:]
+repo = os.environ.get("SEARCHKERNEL_GITHUB_REPO", "superkelvint/searchkernel")
+token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+pattern = re.compile(
+    r"^vespa-base-v([0-9]+)-"
+    + re.escape(build_env)
+    + "-"
+    + re.escape(target)
+    + "-"
+    + re.escape(commit)
+    + r"$"
+)
+versions = []
+page = 1
+while True:
+    url = f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "searchkernel-native-base-resolver",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request) as response:
+            releases = json.load(response)
+    except urllib.error.HTTPError as exc:
+        hint = "set GH_TOKEN/GITHUB_TOKEN or SK_NATIVE_BASE_ARTIFACT_URL"
+        raise SystemExit(
+            f"could not discover published native-base generations ({exc.code}); {hint}"
+        ) from exc
+    if not isinstance(releases, list):
+        raise SystemExit("GitHub releases response was not a list")
+    for release in releases:
+        match = pattern.match(str(release.get("tag_name", "")))
+        if match:
+            versions.append(int(match.group(1)))
+    if len(releases) < 100:
+        break
+    page += 1
+
+if not versions:
+    raise SystemExit(
+        "no published native-base generation exists for "
+        f"{build_env}/{target}/{commit}"
+    )
+print(max(versions))
+PY
+}
+
+resolve_published_base_identity() {
+    [[ "$PUBLISHED_BASE_RESOLVED" == 0 ]] || return 0
+
+    local generation tag asset
+
     if [[ -n "${SK_NATIVE_BASE_ARTIFACT_URL:-}" ]]; then
-        printf '%s\n' "$SK_NATIVE_BASE_ARTIFACT_URL"
-        return
+        if [[ -n "${SK_NATIVE_BASE_ARTIFACT_GENERATION:-}" ]]; then
+            generation=$SK_NATIVE_BASE_ARTIFACT_GENERATION
+            [[ "$generation" =~ ^[1-9][0-9]*$ ]] || {
+                echo "invalid SK_NATIVE_BASE_ARTIFACT_GENERATION '$generation'" >&2
+                return 1
+            }
+        else
+            generation=$(artifact_generation_from_url "$SK_NATIVE_BASE_ARTIFACT_URL")
+        fi
+        PUBLISHED_BASE_GENERATION=$generation
+        PUBLISHED_BASE_URL=$SK_NATIVE_BASE_ARTIFACT_URL
+        PUBLISHED_BASE_RESOLVED=1
+        return 0
     fi
-    tag="vespa-base-v2-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"
-    asset="searchkernel-vespa-base-v2-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
-    printf 'https://github.com/superkelvint/searchkernel/releases/download/%s/%s\n' "$tag" "$asset"
+
+    generation=$(latest_published_generation)
+    tag="vespa-base-v${generation}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"
+    asset="searchkernel-vespa-base-v${generation}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
+    PUBLISHED_BASE_GENERATION=$generation
+    PUBLISHED_BASE_URL="https://github.com/superkelvint/searchkernel/releases/download/${tag}/${asset}"
+    PUBLISHED_BASE_RESOLVED=1
+}
+
+installed_published_generation() {
+    local marker
+    marker=$(published_toolchain_marker_path)
+    [[ -f "$marker" ]] || return 1
+    python3 - "$marker" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    marker = json.load(stream)
+generation = marker.get("artifact_generation")
+if generation is None:
+    # Migration compatibility for v1/v2 artifacts published before generation
+    # became explicit metadata. Their format version matched their release
+    # generation.
+    generation = marker.get("format_version")
+if not isinstance(generation, int) or generation < 1:
+    raise SystemExit("published native-base marker has no valid artifact generation")
+print(generation)
+PY
+}
+
+published_install_is_current() {
+    local installed
+    has_published_install || return 1
+    resolve_published_base_identity || return 1
+    installed=$(installed_published_generation) || return 1
+    (( installed >= PUBLISHED_BASE_GENERATION ))
 }
 
 verify_published_toolchain_marker() {
@@ -407,21 +545,21 @@ valid_install() {
 }
 install_published_base() {
     [[ "${SK_NATIVE_DISABLE_PUBLISHED_BASE:-0}" != 1 ]] || return 10
-    local installer url installed status
+    local installer installed status
     installer="$ROOT/tools/install-native-base-artifact.sh"
     [[ -f "$installer" ]] || {
         echo "published Vespa base installer is missing: $installer" >&2
         return 1
     }
-    url=$(published_base_url)
-    if installed=$(bash "$installer" "$url" "$CACHE_ROOT" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"); then
+    resolve_published_base_identity || return 1
+    if installed=$(bash "$installer" "$PUBLISHED_BASE_URL" "$CACHE_ROOT" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"); then
         verify_pinned_vespa_checkout "$installed"
         register_vespa_root "$installed"
         valid_install || {
             echo "published Vespa base installed but failed final cache validation" >&2
             return 1
         }
-        echo "installed published Vespa base for $BUILD_ENV/$TARGET/$PINNED_VESPA_COMMIT" >&2
+        echo "installed published Vespa base generation v$PUBLISHED_BASE_GENERATION for $BUILD_ENV/$TARGET/$PINNED_VESPA_COMMIT" >&2
         return 0
     else
         status=$?
@@ -431,8 +569,15 @@ install_published_base() {
 }
 
 if valid_install; then
-    printf '%s\n' "$OBJECT"
-    exit 0
+    if [[ "$MODE" != ensure || "${SK_NATIVE_DISABLE_PUBLISHED_BASE:-0}" == 1 ]] || ! has_published_install; then
+        printf '%s\n' "$OBJECT"
+        exit 0
+    fi
+    if published_install_is_current; then
+        printf '%s\n' "$OBJECT"
+        exit 0
+    fi
+    echo "published native-base cache is older than the desired generation; refresh required" >&2
 fi
 
 if [[ "$MODE" == path ]]; then
@@ -465,8 +610,22 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if valid_install; then
-    printf '%s\n' "$OBJECT"
-    exit 0
+    if [[ "${SK_NATIVE_DISABLE_PUBLISHED_BASE:-0}" == 1 ]] || ! has_published_install; then
+        printf '%s\n' "$OBJECT"
+        exit 0
+    fi
+    if published_install_is_current; then
+        printf '%s\n' "$OBJECT"
+        exit 0
+    fi
+    echo "refreshing published native-base cache to generation v$PUBLISHED_BASE_GENERATION" >&2
+    if install_published_base; then
+        printf '%s\n' "$OBJECT"
+        exit 0
+    fi
+    status=$?
+    echo "failed to refresh published native-base cache to the desired generation" >&2
+    exit "$status"
 fi
 
 # Prefer an already-configured local source when it can seed the immutable base

@@ -31,6 +31,8 @@ if grep -Eq 'resolve_shared_native_sdk\([^\n]*"ensure"\)' \
 fi
 grep -q "./dev native-sdk ensure" \
     "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
+grep -q '.searchkernel-native-base-artifact.json' \
+    "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
 
 verify_common="$source_root/reference/vespa/common/verify-common.sh"
 if grep -Fq 'core/native/sdk/linux-x86_64' "$verify_common"; then

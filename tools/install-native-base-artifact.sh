@@ -187,6 +187,14 @@ for key, value in expected.items():
         raise SystemExit(
             f"published Vespa toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
         )
+generation = bundle.get("artifact_generation")
+if not isinstance(generation, int) or generation < 1:
+    raise SystemExit("published Vespa base has no valid artifact_generation")
+if marker.get("artifact_generation") != generation:
+    raise SystemExit(
+        "published Vespa base/toolchain artifact_generation mismatch: "
+        f"{generation!r} vs {marker.get('artifact_generation')!r}"
+    )
 if base.get("kind") != "vespa-base" or base.get("vespa_commit") != commit:
     raise SystemExit("published Vespa base manifest does not match the pinned Vespa checkout")
 PY
@@ -271,6 +279,12 @@ OBJECT_STAGE=$TMP/object-stage
 TOOLCHAIN_STAGE=$TMP/toolchain-stage
 mkdir -p "$OBJECT_STAGE" "$TOOLCHAIN_STAGE"
 cp -a "$BASE/." "$OBJECT_STAGE/"
+# The object path is keyed by Vespa checkout rather than release generation.
+# Preserve the published generation inside the object so Cargo can watch this
+# stable file and rebuild only the local adapter when ensure atomically refreshes
+# the base in place.
+chmod u+rwx "$OBJECT_STAGE"
+cp "$BUNDLE_MANIFEST" "$OBJECT_STAGE/.searchkernel-native-base-artifact.json"
 cp -a "$BUNDLE/toolchain/." "$TOOLCHAIN_STAGE/"
 # cp -a preserves the immutable source root mode onto the staging root on GNU
 # coreutils. Make only those staging directory entries writable long enough for
