@@ -36,7 +36,7 @@ for s in "$M8"/scenarios/[0-9][0-9]-*.json; do
  echo "M8 freezing $id" >&2
  CURRENT_TMP="$(mktemp)"
  run_oracle "$M8/oracle/run-cpp-oracle.sh" "$s" > "$CURRENT_TMP"
- python3 "reference/vespa/m8/freeze-goldens-python-1.py" "$CURRENT_TMP" "$M8/expected/$id.json"
+ python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/freeze-goldens-python-1.py" "$CURRENT_TMP" "$M8/expected/$id.json"
  rm -f "$CURRENT_TMP"
  CURRENT_TMP=
 done
