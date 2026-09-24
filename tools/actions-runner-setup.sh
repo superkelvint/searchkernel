@@ -307,7 +307,7 @@ do
     fi
 done
 
-if [[ "$NEED_DNF" == "0" ]] && { ! command -v clang >/dev/null 2>&1 || ! python3 -c "import clang.cindex" >/dev/null 2>&1; }; then
+if [[ "$NEED_DNF" == "0" ]] && { ! command -v clang >/dev/null 2>&1 || ! python3 "$SCRIPT_DIR/check-python-import.py" clang.cindex >/dev/null 2>&1; }; then
     NEED_DNF=1
 fi
 
@@ -348,7 +348,7 @@ done
 
 command -v clang >/dev/null 2>&1 ||
     die "clang frontend is unavailable"
-python3 -c "import clang.cindex" >/dev/null 2>&1 ||
+python3 "$SCRIPT_DIR/check-python-import.py" clang.cindex >/dev/null 2>&1 ||
     die "python3 clang.cindex bindings are unavailable"
 
 ###############################################################################
