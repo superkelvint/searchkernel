@@ -117,12 +117,7 @@ C
         -Wl,-soname,libvespalib.so \
         -o "$sdk/lib/libvespalib.so"
 fi
-pinned=$(python3 - "$root/core/native/vespa/manifest.json" <<'PY'
-import json
-import sys
-with open(sys.argv[1], encoding="utf-8") as stream:
-    print(json.load(stream)["vespa_commit"])
-PY
+pinned=$(python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/test-native-sdk-cache-python-1.py" "$root/core/native/vespa/manifest.json"
 )
 printf '{"kind":"vespa-base","vespa_commit":"%s"}\n' "$pinned" >"$sdk/manifest.json"
 common=$(git -C "$root" rev-parse --git-common-dir)
