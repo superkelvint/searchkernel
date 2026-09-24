@@ -13,6 +13,6 @@ source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
 [[ -x "$BIN" ]] || fail_verification "SearchReply C++ oracle binary missing; build it explicitly"
 [[ -s "$PROV" ]] || fail_verification "SearchReply oracle provenance is missing"
-python3 "reference/vespa/searchreply/oracle/run-cpp-oracle-python-1.py" "$PROV" "$ROOT/reference/vespa/PINNED_VESPA.json"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/run-cpp-oracle-python-1.py" "$PROV" "$ROOT/reference/vespa/PINNED_VESPA.json"
 
 exec "$BIN" "$SCENARIO" "$DATA_DIR" "$CONFIG_DIR"
