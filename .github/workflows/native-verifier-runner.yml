@@ -138,6 +138,10 @@ jobs:
           if ! command -v nm >/dev/null 2>&1 || ! command -v readelf >/dev/null 2>&1; then
             dnf install -y binutils
           fi
+          if ! python3 -c 'import clang.cindex' >/dev/null 2>&1; then
+            dnf install -y python3-clang
+          fi
+          python3 -c 'import clang.cindex' >/dev/null
           rustup component add rustfmt clippy >/dev/null
 
           unset VESPA_ROOT || true
