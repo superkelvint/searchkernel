@@ -582,13 +582,20 @@ fi
 VESPA_BUILD_ROOT=$(resolve_vespa_root 2>/dev/null || true)
 VESPA_LIBRARY_ROOT=
 if [[ -n "$VESPA_BUILD_ROOT" ]]; then
-    verify_pinned_vespa_checkout "$VESPA_BUILD_ROOT"
-    register_vespa_root "$VESPA_BUILD_ROOT"
-    if valid_object; then
-        printf '%s\n' "$OBJECT"
-        exit 0
+    if verify_pinned_vespa_checkout "$VESPA_BUILD_ROOT"; then
+        register_vespa_root "$VESPA_BUILD_ROOT"
+        if valid_object; then
+            printf '%s\n' "$OBJECT"
+            exit 0
+        fi
+        VESPA_LIBRARY_ROOT=$(resolve_prebuilt_vespa_library_root "$VESPA_BUILD_ROOT" "$PINNED_VESPA_COMMIT" || true)
+    else
+        # A configured local tree without trustworthy provenance is not a fatal
+        # condition. It is simply not eligible to seed the immutable cache.
+        # Fall through to the canonical published native base instead.
+        echo "ignoring unverified local Vespa toolchain at '$VESPA_BUILD_ROOT'; trying published native base" >&2
+        VESPA_BUILD_ROOT=
     fi
-    VESPA_LIBRARY_ROOT=$(resolve_prebuilt_vespa_library_root "$VESPA_BUILD_ROOT" "$PINNED_VESPA_COMMIT" || true)
 fi
 
 if [[ -z "$VESPA_LIBRARY_ROOT" && "${SK_NATIVE_DISABLE_PUBLISHED_BASE:-0}" != 1 ]]; then
