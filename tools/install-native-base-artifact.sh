@@ -207,6 +207,7 @@ if bundle_format != marker_format:
 
 legacy_link_complete = (
     bundle_format == 1
+    and generation == 2
     and bundle.get("adapter_static_link_closure") is True
     and marker.get("adapter_static_link_closure") is True
 )

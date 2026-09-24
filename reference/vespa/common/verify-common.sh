@@ -8,7 +8,9 @@ REFERENCE_ROOT="$(cd "$COMMON_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$REFERENCE_ROOT/../.." && pwd)"
 PIN_FILE="$REFERENCE_ROOT/PINNED_VESPA.json"
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target/vespa-verifier/cargo}"
+SK_NATIVE_SDK_WAS_EXPLICIT=0
 if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
+  SK_NATIVE_SDK_WAS_EXPLICIT=1
   SDK="$SK_NATIVE_SDK"
   if [[ -d "$SDK" ]]; then
     SDK="$(cd "$SDK" && pwd -P)"
@@ -32,8 +34,15 @@ else
   VESPA_ROOT="$VESPA_ROOT" \
     bash "$REPO_ROOT/core/native/vespa/build-sdk.sh" >/dev/null
 fi
-SK_NATIVE_SDK="$SDK"
-export SK_NATIVE_SDK
+if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
+  SK_NATIVE_SDK="$SDK"
+  export SK_NATIVE_SDK
+else
+  # The verifier-owned SDK is for direct probes and fixtures. Cargo must stay
+  # on the shared-base path so build.rs creates its revision-local adapter and
+  # never mistakes this adapter-only SDK for a full explicit SDK.
+  unset SK_NATIVE_SDK
+fi
 if [[ -z "${VESPA_ROOT:-}" ]]; then
   VESPA_ROOT=$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)
 fi
@@ -108,7 +117,6 @@ except (OSError, json.JSONDecodeError) as exc:
     raise SystemExit(f"invalid published Vespa provenance marker {path}: {exc}") from exc
 
 expected = {
-    "format_version": 2,
     "build_environment": build_env,
     "native_target": target,
     "vespa_commit": commit,
@@ -124,6 +132,14 @@ if not isinstance(generation, int) or generation < 1:
     raise SystemExit("published Vespa provenance has no valid artifact_generation")
 if marker.get("adapter_static_link_closure") is not True:
     raise SystemExit("published Vespa provenance does not certify adapter static-link closure")
+
+format_version = marker.get("format_version")
+legacy_generation_2 = format_version == 1 and generation == 2
+if format_version != 2 and not legacy_generation_2:
+    raise SystemExit(
+        "unsupported published Vespa provenance format: "
+        f"format_version={format_version!r}, artifact_generation={generation!r}"
+    )
 PY
     then
       fail_verification "published Vespa provenance validation failed: $marker"

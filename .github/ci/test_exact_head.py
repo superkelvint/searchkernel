@@ -268,8 +268,22 @@ class ExactHeadTests(unittest.TestCase):
             "core/crates/searchkernel-vespa-bindings/src/bindings.rs",
             "reference/vespa/NATIVE_ABI_CONTRACT.h",
             "reference/vespa/PINNED_VESPA.json",
+            "reference/vespa/m0/expected/01-native-open-close.json",
+            "reference/vespa/m0/scenarios/01-native-open-close.json",
+            "reference/vespa/phase9/expected/01-additive-handles.json",
         ):
             self.assertIn(authority, hook)
+
+    def test_runner_python_selection_never_uses_bare_system_python(self) -> None:
+        root = SCRIPT.parents[2]
+        selector = (root / ".github" / "ci" / "select-python.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("sys.prefix != sys.base_prefix", selector)
+        self.assertIn('-m venv "$venv_dir"', selector)
+        self.assertIn("CI_PYTHON=$selected", selector)
+        self.assertIn("python3-venv", selector)
+        self.assertIn("sudo -n apt-get", selector)
 
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -287,20 +301,20 @@ class ExactHeadTests(unittest.TestCase):
             "\n  exact-head-gate:\n", 1
         )[0]
         self.assertIn("if: needs.classify.outputs.ruby == 'true'", ruby)
-        self.assertIn("uses: ruby/setup-ruby@v1", ruby)
+        self.assertNotIn("uses: ruby/setup-ruby@v1", ruby)
+        self.assertIn("Ensure provisioned Ruby", ruby)
+        self.assertIn("sudo -n apt-get install -y --no-install-recommends ruby-full", ruby)
+        self.assertIn("Gem::Version.new(RUBY_VERSION)", ruby)
         self.assertIn("uses: dtolnay/rust-toolchain@stable", ruby)
         self.assertIn("./dev install flatbuffers", ruby)
         self.assertIn("ruby --version", ruby)
         self.assertIn("./dev test ruby", ruby)
         classify = workflow.split("\n  classify:\n", 1)[1].split("\n  rust:\n", 1)[0]
         self.assertNotIn("uses: ruby/setup-ruby@v1", classify)
-        no_client_guard = ruby.index("if [[ ! -d clients/ruby ]]")
-        runtime_probe = ruby.index("ruby --version")
-        self.assertLess(
-            no_client_guard,
-            runtime_probe,
-            "pre-registered Ruby verification must not require a Ruby runtime before a Ruby client exists",
-        )
+        provisioned_probe = ruby.split("- name: Ensure provisioned Ruby", 1)[1].split(
+            "- name: Install Rust toolchain", 1
+        )[0]
+        self.assertIn("hashFiles('clients/ruby/**')", provisioned_probe)
         gate = workflow.split("\n  exact-head-gate:\n", 1)[1]
         self.assertIn("RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}", gate)
         self.assertIn("RUBY_RESULT: ${{ needs.ruby.result }}", gate)

@@ -108,6 +108,38 @@ for path in sys.argv[1:]:
         stream.write("\n")
 PY
 
+# Schema-1 compatibility is deliberately pinned to the canonical generation 2.
+# A later generation must use the current schema even if it carries the closure
+# attestation.
+python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
+import json
+import sys
+for path in sys.argv[1:]:
+    with open(path, encoding="utf-8") as stream:
+        data = json.load(stream)
+    data["artifact_generation"] = 3
+    with open(path, "w", encoding="utf-8") as stream:
+        json.dump(data, stream, sort_keys=True)
+        stream.write("\n")
+PY
+bad_legacy_generation="$fixture/searchkernel-vespa-base-v3-legacy-schema-artifact-regression-x86_64-unknown-linux-gnu-fixture-vespa-commit.tar.gz"
+(
+    cd "$bundle_parent"
+    tar -czf "$bad_legacy_generation" searchkernel-vespa-base
+)
+sha256sum "$bad_legacy_generation" >"$bad_legacy_generation.sha256"
+python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
+import json
+import sys
+for path in sys.argv[1:]:
+    with open(path, encoding="utf-8") as stream:
+        data = json.load(stream)
+    data["artifact_generation"] = 2
+    with open(path, "w", encoding="utf-8") as stream:
+        json.dump(data, stream, sort_keys=True)
+        stream.write("\n")
+PY
+
 cache_home="$fixture/cache-home"
 
 run_resolver() {
@@ -132,6 +164,17 @@ if run_resolver ensure artifact-regression x86_64-unknown-linux-gnu "file://$bad
     exit 1
 fi
 grep -q 'unsupported published Vespa base format' "$fixture/bad-legacy.err"
+[[ ! -e "$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-unknown-linux-gnu/objects/fixture-vespa-commit" ]]
+[[ ! -e "$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-unknown-linux-gnu/toolchains/fixture-vespa-commit" ]]
+rm -rf "$cache_home"
+
+# A schema-1 artifact from any generation other than the canonical v2 must be
+# rejected even if it claims complete static-link closure.
+if run_resolver ensure artifact-regression x86_64-unknown-linux-gnu "file://$bad_legacy_generation" >"$fixture/bad-legacy-generation.out" 2>"$fixture/bad-legacy-generation.err"; then
+    echo 'schema-1 non-v2 artifact unexpectedly installed' >&2
+    exit 1
+fi
+grep -q 'unsupported published Vespa base format' "$fixture/bad-legacy-generation.err"
 [[ ! -e "$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-unknown-linux-gnu/objects/fixture-vespa-commit" ]]
 [[ ! -e "$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-unknown-linux-gnu/toolchains/fixture-vespa-commit" ]]
 rm -rf "$cache_home"
