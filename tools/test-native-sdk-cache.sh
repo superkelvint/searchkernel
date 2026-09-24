@@ -32,6 +32,8 @@ grep -Fq 'export VESPA_ROOT="$PUBLISHED_VESPA_ROOT"' \
 grep -Fq './dev verify m14' "$source_root/tools/actions-runner-setup.sh"
 grep -Fq './dev verify product.rust-real-engine' "$source_root/tools/actions-runner-setup.sh"
 grep -Fq './dev verify integration' "$source_root/tools/actions-runner-setup.sh"
+grep -Fq 'bash clients/php/examples/run_searchkernel_client_api_e2e.sh' \
+    "$source_root/tools/actions-runner-setup.sh"
 if grep -Fq 'SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip' "$source_root/tools/actions-runner-setup.sh"; then
     echo 'Actions runner acceptance must prove automatic published-toolchain oracle replay, not force skip mode' >&2
     exit 1
