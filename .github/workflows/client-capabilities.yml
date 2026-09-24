@@ -27,7 +27,7 @@ on:
       - ".github/ci/select-python.sh"
       - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/client-capabilities.yml"
-      - ".github/workflows/native-alma.yml"
+      - "dev"
       - ".github/workflows/client-capabilities-autofix-prepare.yml"
       - ".github/workflows/client-capabilities-autofix-apply.yml"
   push:
@@ -57,7 +57,6 @@ on:
       - ".github/ci/select-python.sh"
       - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/client-capabilities.yml"
-      - ".github/workflows/native-alma.yml"
       - ".github/workflows/client-capabilities-autofix-prepare.yml"
       - ".github/workflows/client-capabilities-autofix-apply.yml"
   workflow_dispatch:
@@ -85,9 +84,6 @@ jobs:
             echo "::error::expected exact revision $EXPECTED_HEAD, checked out $actual"
             exit 1
           fi
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
       - name: Enforce runner-Python workflow policy
@@ -113,7 +109,7 @@ jobs:
 
   e2e:
     name: Executable E2E evidence
-    uses: ./.github/workflows/native-alma.yml
+    uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main
     with:
-      expected_head: ${{ github.event.pull_request.head.sha || github.sha }}
-      suite: client-e2e
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
+      target: client-e2e

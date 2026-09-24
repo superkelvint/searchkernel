@@ -63,6 +63,18 @@ if grep -Fq 'core/native/sdk/linux-x86_64' "$verify_common"; then
 fi
 grep -Fq 'tools/resolve-native-sdk.sh" path' "$verify_common"
 grep -Fq 'tools/resolve-native-sdk.sh" vespa-root' "$verify_common"
+grep -Fq 'SK_NATIVE_SDK_WAS_EXPLICIT=0' "$verify_common"
+grep -Fq 'unset SK_NATIVE_SDK' "$verify_common"
+# The synthesized verifier adapter must remain a shell-local view. Ordinary
+# SearchReply probes consume $SDK; exporting it through SK_NATIVE_SDK would
+# make Cargo mistake it for a full explicit SDK.
+searchreply_verify="$source_root/reference/vespa/searchreply/verify-searchreply.sh"
+if grep -Fq 'SK_NATIVE_SDK="$SDK"' "$searchreply_verify"; then
+    echo 'SearchReply must not export the synthesized verifier SDK to Cargo' >&2
+    exit 1
+fi
+grep -Fq -- '-I"$SDK/include"' "$searchreply_verify"
+grep -Fq 'LD_LIBRARY_PATH="$SDK/lib' "$searchreply_verify"
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-sdk-cache.XXXXXX")
 cleanup_fixture() {
     chmod -R u+w "$fixture" 2>/dev/null || true

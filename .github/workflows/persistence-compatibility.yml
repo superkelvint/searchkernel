@@ -28,7 +28,7 @@ on:
       - "tools/check-persistence-fixture-immutability.sh"
       - "tools/check-persistence-sensitivity.sh"
       - ".github/workflows/persistence-compatibility.yml"
-      - ".github/workflows/native-alma.yml"
+      - "dev"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -68,13 +68,9 @@ jobs:
           BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: bash tools/check-persistence-fixture-immutability.sh "$BASE_REF"
 
-      - name: Native verification
-        run: echo "::notice::Real-Vespa persistence verification runs in the AlmaLinux native job below."
-
   native:
-    name: Real-Vespa persistence
-    needs: fixtures
-    uses: ./.github/workflows/native-alma.yml
+    name: Real-Vespa persistence compatibility
+    uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main
     with:
-      expected_head: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      suite: persistence
+      revision: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      target: persistence

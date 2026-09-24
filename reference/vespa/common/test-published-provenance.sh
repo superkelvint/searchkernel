@@ -18,13 +18,15 @@ marker="$published/.searchkernel-vespa-artifact.json"
 write_marker() {
   local commit=$1
   local closure=$2
-  python3 - "$marker" "$commit" "$closure" <<'PY'
+  local format_version=${3:-2}
+  local generation=${4:-7}
+  python3 - "$marker" "$commit" "$closure" "$format_version" "$generation" <<'PY'
 import json
 import sys
-path, commit, closure = sys.argv[1:]
+path, commit, closure, format_version, generation = sys.argv[1:]
 data = {
-    "format_version": 2,
-    "artifact_generation": 7,
+    "format_version": int(format_version),
+    "artifact_generation": int(generation),
     "adapter_static_link_closure": closure == "true",
     "build_environment": "verifier-regression",
     "native_target": "x86_64-unknown-linux-gnu",
@@ -57,6 +59,26 @@ if (
   echo "published toolchain unexpectedly allowed required live-oracle mode" >&2
   exit 1
 fi
+
+# The currently published v2 artifact is the one grandfathered schema-1
+# generation. Keep this compatibility exact: only generation 2 with the
+# static-link-closure attestation is accepted.
+write_marker fixture-vespa-commit true 1 2
+require_pinned_vespa
+
+write_marker fixture-vespa-commit true 1 3
+if (require_pinned_vespa) >/dev/null 2>&1; then
+  echo "published verifier provenance accepted schema-1 generation 3" >&2
+  exit 1
+fi
+
+write_marker fixture-vespa-commit false 1 2
+if (require_pinned_vespa) >/dev/null 2>&1; then
+  echo "published verifier provenance accepted unattested schema-1 generation 2" >&2
+  exit 1
+fi
+
+write_marker fixture-vespa-commit true
 
 write_marker wrong-commit true
 if (require_pinned_vespa) >/dev/null 2>&1; then

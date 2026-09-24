@@ -26,6 +26,9 @@ node --version
 npm --version
 php -r '"'"'exit(version_compare(PHP_VERSION, "8.1.0", ">=") ? 0 : 1);'"'"'
 php --version | head -n 1
+ruby -rrubygems -e '"'"'abort "Ruby >= 3.1 is required" if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")'"'"'
+ruby --version
+gem --version
 flatc --version
 '
 

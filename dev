@@ -249,6 +249,28 @@ verify_target() {
             rm -f -- "$local_baseline"
             trap - RETURN
             ;;
+        client-e2e)
+            client_venv=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-client-e2e.XXXXXX")
+            trap 'rm -rf -- "$client_venv"' RETURN
+            "$PYTHON" -m venv "$client_venv"
+            "$client_venv/bin/python" -m pip install -e "$ROOT/clients/python"
+            "$client_venv/bin/python" "$ROOT/tools/check-python-dependencies.py"
+            npm ci --prefix "$ROOT/clients/typescript"
+            cargo build -p searchkerneld --features native
+            target_root="${CARGO_TARGET_DIR:-target/host}"
+            case "$target_root" in
+                /*) host_binary="$target_root/debug/searchkerneld" ;;
+                *) host_binary="$ROOT/$target_root/debug/searchkerneld" ;;
+            esac
+            if [[ ! -x "$host_binary" ]]; then
+                echo "client E2E host binary missing after build: $host_binary" >&2
+                return 1
+            fi
+            SEARCHKERNEL_LOCAL_HOST="$host_binary" \
+                "$client_venv/bin/python" "$ROOT/tools/check-client-contracts.py" --run-e2e
+            rm -rf -- "$client_venv"
+            trap - RETURN
+            ;;
         persistence)
             bash "$ROOT/tools/check-persistence-fixtures.sh"
             PERSISTENCE_CHECK_INDEX=1 \
@@ -264,7 +286,7 @@ verify_target() {
             "$ROOT/reference/vespa/verify-through.sh" "$1"
             ;;
         *)
-            echo "usage: ./dev verify <semantic-target>|milestone.mN|mN|integration|api-conformance|contracts|abi|persistence|issue-queue" >&2
+            echo "usage: ./dev verify <semantic-target>|milestone.mN|mN|integration|api-conformance|contracts|abi|persistence|client-e2e|issue-queue" >&2
             echo "       ./dev verify --list" >&2
             return 2
             ;;

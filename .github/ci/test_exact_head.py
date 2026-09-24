@@ -14,7 +14,7 @@ WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
 CLIENT_CAPABILITIES_WORKFLOW = SCRIPT.parents[1] / "workflows" / "client-capabilities.yml"
 PERSISTENCE_WORKFLOW = SCRIPT.parents[1] / "workflows" / "persistence-compatibility.yml"
-NATIVE_ALMA_WORKFLOW = SCRIPT.parents[1] / "workflows" / "native-alma.yml"
+NATIVE_VERIFIER_WORKFLOW = SCRIPT.parents[1] / "workflows" / "native-verifier-runner.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 PERSISTENCE_IMMUTABILITY = SCRIPT.parents[2] / "tools" / "check-persistence-fixture-immutability.sh"
@@ -217,81 +217,50 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
 
-    def test_behavioral_ruby_uses_self_hosted_runner_ruby(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        ruby = workflow.split("\n  ruby:\n", 1)[1].split("\n  native:\n", 1)[0]
-        self.assertNotIn("ruby/setup-ruby@", ruby)
-        self.assertIn("command -v ruby", ruby)
-        self.assertIn('Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")', ruby)
+    def test_native_sensitive_workflows_use_trusted_alma_runner(self) -> None:
+        behavioral = WORKFLOW.read_text(encoding="utf-8")
+        native = behavioral.split("\n  native:\n", 1)[1].split("\n  exact-head-gate:\n", 1)[0]
+        self.assertIn(
+            "uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main",
+            native,
+        )
+        self.assertIn("target: native-full", native)
+        self.assertIn('revision: ${{ github.event.pull_request.head.sha }}', native)
 
-    def test_client_capabilities_installs_rust_before_php_contract_tests(self) -> None:
-        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
-        verify = workflow.split("\n  verify:\n", 1)[1].split("\n  e2e:\n", 1)[0]
-        install = verify.index("- name: Install Rust toolchain")
-        php = verify.index("- name: Run canonical PHP client verification task")
-        self.assertLess(install, php)
-        self.assertIn("uses: dtolnay/rust-toolchain@stable", verify)
-
-    def test_client_capabilities_native_bootstrap_does_not_use_candidate_fetch_helper(self) -> None:
-        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
-        e2e = workflow.split("\n  e2e:\n", 1)[1]
-        self.assertIn("uses: ./.github/workflows/native-alma.yml", e2e)
-        self.assertIn("suite: client-e2e", e2e)
-
-        alma = NATIVE_ALMA_WORKFLOW.read_text(encoding="utf-8")
-        self.assertNotIn("tools/fetch-native-base.sh", alma)
-        self.assertIn("/native-artifacts", alma)
-        self.assertIn("./dev native-sdk ensure", alma)
-
-    def test_native_sensitive_workflows_use_persistent_alma_runner(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("\n  native:\n", workflow)
-        native = workflow.split("\n  native:\n", 1)[1].split(
-            "\n  exact-head-gate:\n", 1
-        )[0]
-        self.assertIn("if: needs.classify.outputs.native == 'true'", native)
-        self.assertIn("uses: ./.github/workflows/native-alma.yml", native)
-        self.assertIn("suite: behavior", native)
-        self.assertIn("policy_ref: ${{ github.event.pull_request.base.sha }}", native)
-
-        gate = workflow.split("\n  exact-head-gate:\n", 1)[1]
-        self.assertIn("needs: [classify, rust, python, typescript, ruby, native]", gate)
-        self.assertIn("NATIVE_REQUIRED: ${{ needs.classify.outputs.native }}", gate)
-        self.assertIn("NATIVE_RESULT: ${{ needs.native.result }}", gate)
-        self.assertIn('require_lane Native "$NATIVE_REQUIRED" "$NATIVE_RESULT"', gate)
-        self.assertNotIn("Native verification is local", gate)
-
-        alma = NATIVE_ALMA_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn('NATIVE_CONTAINER: "searchkernel-native"', alma)
-        self.assertIn('docker container inspect "$NATIVE_CONTAINER"', alma)
-        self.assertIn("persist-credentials: false", alma)
-        self.assertIn("refusing to copy a checkout containing persisted GitHub credentials", alma)
-        self.assertIn('docker cp "$GITHUB_WORKSPACE/." "$NATIVE_CONTAINER:$ALMA_WORKTREE"', alma)
-        self.assertIn('git -c safe.directory="$ALMA_WORKTREE" -C "$ALMA_WORKTREE" rev-parse HEAD', alma)
-        self.assertIn('ALMA_CARGO_TARGET_DIR: "/work/target/actions-runner-alma-ci"', alma)
-        self.assertIn('ALMA_CARGO_TARGET_DIR="/tmp/searchkernel-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"', alma)
-        self.assertIn('ALMA_NATIVE_CACHE_DIR="/tmp/searchkernel-native-cache-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"', alma)
-        self.assertIn('-e CARGO_TARGET_DIR="$ALMA_CARGO_TARGET_DIR"', alma)
-        self.assertIn('-e SK_NATIVE_CACHE_DIR="$ALMA_NATIVE_CACHE_DIR"', alma)
-        self.assertNotIn('ALMA_CARGO_TARGET_DIR: "/work/target/actions-runner-alma-ci"', alma)
-        self.assertIn("./dev native-sdk ensure", alma)
-        self.assertIn('gh api -H "Accept: application/vnd.github.raw+json"', alma)
-        self.assertIn('TRUSTED_POLICY_DIR="$ALMA_WORKTREE/.trusted-verification"', alma)
-        self.assertIn('visit("native-full")', alma)
-        self.assertIn('task.command', alma)
-        self.assertIn('subprocess.run(', alma)
-        self.assertIn('export CI_PYTHON="$PWD/.native-e2e-venv/bin/python"', alma)
-        self.assertIn('export SEARCHKERNEL_SDK_LIB="$adapter_lib"', alma)
-        self.assertIn('ldd "$native_host"', alma)
-        self.assertIn("/bin/bash -s <<'BASH'", alma)
-        self.assertIn('rm -rf "$ALMA_WORKTREE" "$ALMA_CARGO_TARGET_DIR" "$ALMA_NATIVE_CACHE_DIR"', alma)
+        client = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
+        client_e2e = client.split("\n  e2e:\n", 1)[1]
+        self.assertIn(
+            "uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main",
+            client_e2e,
+        )
+        self.assertIn("target: client-e2e", client_e2e)
 
         persistence = PERSISTENCE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("\n  native:\n", persistence)
         persistence_native = persistence.split("\n  native:\n", 1)[1]
-        self.assertIn("uses: ./.github/workflows/native-alma.yml", persistence_native)
-        self.assertIn("suite: persistence", persistence_native)
-        self.assertNotIn("Real-Vespa persistence reopen/mutation verification is intentionally local", persistence)
+        self.assertIn(
+            "uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main",
+            persistence_native,
+        )
+        self.assertIn("target: persistence", persistence_native)
+        self.assertNotIn("intentionally local", persistence)
+
+    def test_client_e2e_verifier_builds_real_daemon_and_runs_registered_lanes(self) -> None:
+        source = DEV.read_text(encoding="utf-8")
+        block = source.split("        client-e2e)\n", 1)[1].split("        persistence)\n", 1)[0]
+        self.assertIn("cargo build -p searchkerneld --features native", block)
+        self.assertIn("npm ci --prefix", block)
+        self.assertIn("-m pip install -e", block)
+        self.assertIn("tools/check-client-contracts.py", block)
+        self.assertIn("--run-e2e", block)
+        self.assertIn("SEARCHKERNEL_LOCAL_HOST", block)
+
+    def test_native_runner_is_persistent_alma_and_split_sdk_aware(self) -> None:
+        workflow = NATIVE_VERIFIER_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("NATIVE_CONTAINER: searchkernel-native", workflow)
+        self.assertIn("/native-artifacts", workflow)
+        self.assertIn("./dev native-sdk ensure", workflow)
+        self.assertIn("unset SK_NATIVE_SDK || true", workflow)
+        self.assertIn("target: native-full", WORKFLOW.read_text(encoding="utf-8"))
 
     def test_abi_workflow_installs_rustfmt_for_binding_generation(self) -> None:
         workflow = ABI_WORKFLOW.read_text(encoding="utf-8")
@@ -321,8 +290,22 @@ class ExactHeadTests(unittest.TestCase):
             "core/crates/searchkernel-vespa-bindings/src/bindings.rs",
             "reference/vespa/NATIVE_ABI_CONTRACT.h",
             "reference/vespa/PINNED_VESPA.json",
+            "reference/vespa/m0/expected/01-native-open-close.json",
+            "reference/vespa/m0/scenarios/01-native-open-close.json",
+            "reference/vespa/phase9/expected/01-additive-handles.json",
         ):
             self.assertIn(authority, hook)
+
+    def test_runner_python_selection_never_uses_bare_system_python(self) -> None:
+        root = SCRIPT.parents[2]
+        selector = (root / ".github" / "ci" / "select-python.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("sys.prefix != sys.base_prefix", selector)
+        self.assertIn('-m venv "$venv_dir"', selector)
+        self.assertIn("CI_PYTHON=$selected", selector)
+        self.assertIn("python3-venv", selector)
+        self.assertIn("sudo -n apt-get", selector)
 
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -341,20 +324,19 @@ class ExactHeadTests(unittest.TestCase):
         )[0]
         self.assertIn("if: needs.classify.outputs.ruby == 'true'", ruby)
         self.assertNotIn("uses: ruby/setup-ruby@v1", ruby)
-        self.assertIn("command -v ruby", ruby)
+        self.assertIn("Ensure provisioned Ruby", ruby)
+        self.assertIn("sudo -n apt-get install -y --no-install-recommends ruby-full", ruby)
+        self.assertIn("Gem::Version.new(RUBY_VERSION)", ruby)
         self.assertIn("uses: dtolnay/rust-toolchain@stable", ruby)
         self.assertIn("./dev install flatbuffers", ruby)
         self.assertIn("ruby --version", ruby)
         self.assertIn("./dev test ruby", ruby)
         classify = workflow.split("\n  classify:\n", 1)[1].split("\n  rust:\n", 1)[0]
         self.assertNotIn("uses: ruby/setup-ruby@v1", classify)
-        no_client_guard = ruby.index("if [[ ! -d clients/ruby ]]")
-        runtime_probe = ruby.index("ruby --version")
-        self.assertLess(
-            no_client_guard,
-            runtime_probe,
-            "pre-registered Ruby verification must not require a Ruby runtime before a Ruby client exists",
-        )
+        provisioned_probe = ruby.split("- name: Ensure provisioned Ruby", 1)[1].split(
+            "- name: Install Rust toolchain", 1
+        )[0]
+        self.assertIn("hashFiles('clients/ruby/**')", provisioned_probe)
         gate = workflow.split("\n  exact-head-gate:\n", 1)[1]
         self.assertIn("RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}", gate)
         self.assertIn("RUBY_RESULT: ${{ needs.ruby.result }}", gate)

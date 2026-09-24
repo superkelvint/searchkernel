@@ -42,8 +42,8 @@ trap 'rm -rf "$TMP"' EXIT
 
 PROBE="$TMP/searchreply_probe"
 "${CXX:-c++}" -std=gnu++23 -O0 -g -Wall -Wextra -Werror -pthread \
-  -I"$SK_NATIVE_SDK/include" "$SCRIPT_DIR/native-probe/searchreply_probe.cpp" \
-  -L"$SK_NATIVE_SDK/lib" -Wl,-rpath,"$SK_NATIVE_SDK/lib" \
+  -I"$SDK/include" "$SCRIPT_DIR/native-probe/searchreply_probe.cpp" \
+  -L"$SDK/lib" -Wl,-rpath,"$SDK/lib" \
   -lsearchkernel_vespa -o "$PROBE"
 require_native_driver "$PROBE" \
   sk_engine_search_generic \
@@ -52,13 +52,13 @@ require_native_driver "$PROBE" \
   sk_generic_search_result_issue_message
 
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
-  LD_LIBRARY_PATH="$SK_NATIVE_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     "$SCRIPT_DIR/oracle/run-cpp-oracle.sh" "$SCRIPT_DIR/scenario.json" \
     "$TMP/config" "$TMP/oracle-data" > "$TMP/oracle.json"
   python3 "$ROOT/reference/vespa/common/compare_json.py" \
     "$SCRIPT_DIR/expected/searchreply.json" "$TMP/oracle.json"
 fi
-LD_LIBRARY_PATH="$SK_NATIVE_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   "$PROBE" "$TMP/data" "$TMP/config" > "$TMP/native.json"
 python3 "$ROOT/reference/vespa/common/compare_json.py" \
   "$SCRIPT_DIR/expected/searchreply.json" "$TMP/native.json"
