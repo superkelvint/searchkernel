@@ -20,22 +20,7 @@ write_marker() {
   local closure=$2
   local format_version=${3:-2}
   local generation=${4:-7}
-  python3 - "$marker" "$commit" "$closure" "$format_version" "$generation" <<'PY'
-import json
-import sys
-path, commit, closure, format_version, generation = sys.argv[1:]
-data = {
-    "format_version": int(format_version),
-    "artifact_generation": int(generation),
-    "adapter_static_link_closure": closure == "true",
-    "build_environment": "verifier-regression",
-    "native_target": "x86_64-unknown-linux-gnu",
-    "vespa_commit": commit,
-}
-with open(path, "w", encoding="utf-8") as stream:
-    json.dump(data, stream, sort_keys=True)
-    stream.write("\n")
-PY
+  python3 "reference/vespa/common/test-published-provenance-python-1.py" "$marker" "$commit" "$closure" "$format_version" "$generation"
 }
 write_marker fixture-vespa-commit true
 
