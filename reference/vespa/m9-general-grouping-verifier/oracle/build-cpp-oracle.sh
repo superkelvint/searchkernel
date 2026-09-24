@@ -22,7 +22,7 @@ mkdir -p "$TARGET_DIR"
 OBJ="$(mktemp "${TMPDIR:-/tmp}/searchkernel-recursive-grouping.XXXXXX.o")"
 trap 'rm -f "$OBJ"' EXIT
 
-python3 "reference/vespa/m9-general-grouping-verifier/oracle/build-cpp-oracle-python-1.py" "$ORACLE" "$OBJ" "$OUT" "$COMPILE_DB" "$LINK_TXT"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/build-cpp-oracle-python-1.py" "$ORACLE" "$OBJ" "$OUT" "$COMPILE_DB" "$LINK_TXT"
 
 expected="$(expected_vespa_revision)"
 printf 'vespa_commit=%s\n' "$expected" > "$OUT.provenance"
