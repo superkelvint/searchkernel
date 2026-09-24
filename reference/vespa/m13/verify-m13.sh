@@ -115,11 +115,7 @@ while read -r id expected path; do
     echo "M13 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1
   }
-done < <(python3 - "$ERRORS" <<'PY'
-import json,sys
-for case in json.load(open(sys.argv[1],encoding='utf-8'))['cases']:
-    print(case['id'],case['expected'],case['path'])
-PY
+done < <(python3 "reference/vespa/m13/verify-m13-python-1.py" "$ERRORS"
 )
 
 echo 'M13 dense tensor document CRUD verification passed'
