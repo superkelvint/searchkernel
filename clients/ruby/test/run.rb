@@ -116,6 +116,11 @@ end
 
 include TestSupport
 
+require "rubygems"
+gemspec = Gem::Specification.load(File.expand_path("../searchkernel.gemspec", __dir__))
+assert(!gemspec.nil?, "Ruby gemspec must load")
+same(["Apache-2.0"], gemspec.licenses, "Ruby gemspec license metadata")
+
 expected_operations = {
   insert: %w[InsertRequest InsertResult],
   upsert: %w[UpsertRequest UpsertResult],
