@@ -38,6 +38,7 @@ ALL_LANE_PATTERNS = (
 MULTI_LANE_PATTERNS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (
         (
+            "api/rpc/searchkernel.proto",
             "core/crates/searchkernel-protocol/src/generated/**",
             "core/crates/searchkernel-protocol/bfbs/**",
             "core/crates/searchkernel-rpc/src/generated/**",
@@ -45,6 +46,26 @@ MULTI_LANE_PATTERNS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             "clients/python/searchkernel/_wire_generated/**",
             "clients/python/searchkernel/rpc/**",
             "clients/typescript/src/generated/**",
+            "tools/rpc-codegen/**",
+            "tools/generate-flatbuffers-bfbs.sh",
+            "tools/generate-python-flatbuffers.sh",
+            "tools/generate-python-grpc.sh",
+            "tools/generate-searchkernel-protocol.sh",
+            "tools/generate-searchkernel-rpc.sh",
+            "tools/generate-typescript-flatbuffers.sh",
+            "tools/generate-typescript-grpc-web.sh",
+            "tools/check-flatbuffers-bfbs.sh",
+            "tools/check-flatbuffers-cpp.sh",
+            "tools/check-python-flatbuffers-boundary.py",
+            "tools/check-python-flatbuffers-generated.sh",
+            "tools/check-python-grpc.sh",
+            "tools/check-searchkernel-protocol-generated.sh",
+            "tools/check-searchkernel-rpc.sh",
+            "tools/check-typescript-generated.sh",
+            "tools/patch-python-flatbuffers-object-api.py",
+            "tools/resolve-flatc.sh",
+            "tools/test-flatbuffers-cpp-toolchain.sh",
+            "tools/test-typescript-generation.sh",
         ),
         ("rust", "python", "typescript"),
     ),
@@ -125,13 +146,6 @@ def classify(paths: Iterable[str]) -> tuple[dict[str, bool], dict[str, list[str]
         if _matches(path, NON_BEHAVIORAL_PATTERNS) is not None:
             continue
 
-        all_rule = _matches(path, ALL_LANE_PATTERNS)
-        if all_rule is not None:
-            for lane in LANES:
-                selected[lane] = True
-                reasons[lane].append(f"{path} (shared rule {all_rule})")
-            continue
-
         matched_multi = False
         for patterns, lanes in MULTI_LANE_PATTERNS:
             rule = _matches(path, patterns)
@@ -143,6 +157,13 @@ def classify(paths: Iterable[str]) -> tuple[dict[str, bool], dict[str, list[str]
                 reasons[lane].append(f"{path} (shared rule {rule})")
             break
         if matched_multi:
+            continue
+
+        all_rule = _matches(path, ALL_LANE_PATTERNS)
+        if all_rule is not None:
+            for lane in LANES:
+                selected[lane] = True
+                reasons[lane].append(f"{path} (shared rule {all_rule})")
             continue
 
         matched = False
