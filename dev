@@ -11,6 +11,15 @@ else
     PYTHON=python3
 fi
 
+if [[ "$PYTHON" != */* ]]; then
+    PYTHON=$(command -v "$PYTHON" 2>/dev/null || printf '%s' "$PYTHON")
+fi
+export PYTHON
+if [[ "$PYTHON" == */* && -x "$PYTHON" ]]; then
+    PATH="$(dirname -- "$PYTHON"):$PATH"
+    export PATH
+fi
+
 cd "$ROOT"
 
 configure_ca_bundle() {
@@ -689,14 +698,10 @@ doctor_flatbuffers_cpp() {
 }
 
 doctor_generated_protocol() {
-    [[ -s "$ROOT/core/crates/searchkernel-protocol/src/lib.rs" ]]
-    [[ -n "$(find "$ROOT/core/crates/searchkernel-protocol/src/generated" -name '*.rs' -type f -print -quit 2>/dev/null)" ]]
-    [[ -s "$ROOT/core/crates/searchkernel-protocol/bfbs/searchkernel_request.bfbs" ]]
-    [[ -s "$ROOT/core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs" ]]
-    [[ -n "$(find "$ROOT/clients/python/searchkernel/_wire_generated" -name '*.py' -type f -print -quit 2>/dev/null)" ]]
-    FLATC_PATH="${DOCTOR_FLATC:-$(find_flatc)}" \
-        bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
-    bash "$ROOT/tools/check-searchkernel-rpc.sh"
+    # Verify the exact protocol-generation path used by ./dev check, including
+    # Python FlatBuffers/gRPC codegen. Doctor must not pass a cheaper subset
+    # and then let check discover missing Python tooling immediately afterward.
+    check_protocol
 }
 
 doctor_typescript() {
@@ -820,6 +825,9 @@ doctor_repair_python() {
 
     "$venv_python" -m pip install         --disable-pip-version-check         -e "$ROOT/clients/python[codegen]"
     PYTHON=$venv_python
+    export PYTHON
+    PATH="$(dirname -- "$PYTHON"):$PATH"
+    export PATH
     doctor_python
 }
 
