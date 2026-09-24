@@ -81,7 +81,11 @@ def ldd_resolution(
     return None
 
 
-def bundle(libdir: pathlib.Path, search_dirs: list[pathlib.Path]) -> int:
+def bundle(
+    libdir: pathlib.Path,
+    search_dirs: list[pathlib.Path],
+    extra_elfs: list[pathlib.Path],
+) -> int:
     if not libdir.is_dir():
         die(f"native runtime lib directory does not exist: {libdir}")
 
@@ -104,6 +108,15 @@ def bundle(libdir: pathlib.Path, search_dirs: list[pathlib.Path]) -> int:
         resolved_search_dirs.append(resolved)
 
     available, queue = bundle_entries(libdir)
+    for extra in extra_elfs:
+        try:
+            resolved_extra = extra.resolve(strict=True)
+        except OSError as exc:
+            die(f"invalid extra native ELF {extra}: {exc}")
+        if not resolved_extra.is_file() or not is_elf(resolved_extra):
+            die(f"extra native runtime input is not an ELF file: {resolved_extra}")
+        queue.append(resolved_extra)
+
     inspected: set[pathlib.Path] = set()
     copied = 0
 
@@ -174,8 +187,15 @@ def main() -> int:
         type=pathlib.Path,
         help="additional trusted producer library directory used for ldd resolution",
     )
+    parser.add_argument(
+        "--extra-elf",
+        action="append",
+        default=[],
+        type=pathlib.Path,
+        help="ELF outside libdir whose DT_NEEDED dependencies must also be bundled",
+    )
     args = parser.parse_args()
-    count = bundle(args.libdir, args.search_dir)
+    count = bundle(args.libdir, args.search_dir, args.extra_elf)
     print(f"bundled {count} non-baseline runtime dependencies", file=sys.stderr)
     return 0
 
