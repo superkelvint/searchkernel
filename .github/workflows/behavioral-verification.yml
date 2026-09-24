@@ -38,6 +38,9 @@ jobs:
       - name: Enforce runner-Python workflow policy
         run: bash .github/ci/check-python-workflows.sh
 
+      - name: Enforce immutable self-hosted Rust policy
+        run: $CI_PYTHON .github/ci/check-self-hosted-rust-workflows.py
+
       - name: Test superseded native-head workflow policy
         run: |
           $CI_PYTHON .github/ci/test_native_verifier_runner.py \
@@ -243,14 +246,20 @@ jobs:
           fi
           echo "Verified exact head $actual."
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Verify provisioned Rust toolchain
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          cargo --version
+          rustc --version
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target/ci-non-native"
           shared-key: non-native
+          cache-bin: false
 
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4
@@ -294,8 +303,13 @@ jobs:
           fi
           echo "Verified exact head $actual."
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Verify provisioned Rust toolchain
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          cargo --version
+          rustc --version
 
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4
@@ -339,8 +353,13 @@ jobs:
           fi
           echo "Verified exact head $actual."
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Verify provisioned Rust toolchain
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          cargo --version
+          rustc --version
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -413,6 +432,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target/ci-exact-head-ruby"
+          cache-bin: false
           shared-key: exact-head-ruby
 
       - name: Cache pinned FlatBuffers toolchain
