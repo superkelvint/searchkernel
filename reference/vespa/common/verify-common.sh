@@ -43,6 +43,11 @@ else
   # never mistakes this adapter-only SDK for a full explicit SDK.
   unset SK_NATIVE_SDK
 fi
+# Verifier subprocesses that validate generated native bindings still need the
+# Search Kernel ABI header from the synthesized adapter SDK. Export only the
+# header override; exporting SK_NATIVE_SDK here would incorrectly turn the
+# adapter-only verifier view into an explicitly managed full SDK for Cargo.
+export SK_NATIVE_ABI_HEADER="$SDK/include/searchkernel_vespa.h"
 if [[ -z "${VESPA_ROOT:-}" ]]; then
   VESPA_ROOT=$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)
 fi
