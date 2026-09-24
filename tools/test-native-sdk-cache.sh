@@ -9,6 +9,7 @@ source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 bash -n "$source_root/tools/resolve-native-sdk.sh"
 bash -n "$source_root/tools/install-native-base-artifact.sh"
 bash -n "$source_root/tools/package-native-base-artifact.sh"
+bash -n "$source_root/tools/fetch-native-base.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
 bash "$source_root/tools/test-native-base-artifact.sh"
 
