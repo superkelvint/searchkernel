@@ -281,12 +281,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
 
-      - name: Set up Ruby
+      - name: Verify runner Ruby
         if: ${{ hashFiles('clients/ruby/**') != '' }}
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-          bundler: none
+        run: |
+          set -euo pipefail
+          command -v ruby
+          ruby --version
+          ruby -e 'require "rubygems"; abort "Ruby >= 3.1 is required" if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")'
 
       - name: Install Rust toolchain
         if: ${{ hashFiles('clients/ruby/**') != '' }}
@@ -332,9 +333,19 @@ jobs:
           ruby --version
           ./dev test ruby
 
+  native:
+    name: Native real-engine behavior
+    needs: classify
+    if: needs.classify.outputs.native == 'true'
+    uses: ./.github/workflows/native-alma.yml
+    with:
+      expected_head: ${{ github.event.pull_request.head.sha }}
+      suite: behavior
+      policy_ref: ${{ github.event.pull_request.base.sha }}
+
   exact-head-gate:
     name: Exact-head gate
-    needs: [classify, rust, python, typescript, ruby]
+    needs: [classify, rust, python, typescript, ruby, native]
     if: always()
     runs-on: [self-hosted, linux, x64]
     steps:
@@ -350,7 +361,8 @@ jobs:
           TYPESCRIPT_RESULT: ${{ needs.typescript.result }}
           RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}
           RUBY_RESULT: ${{ needs.ruby.result }}
-          NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}
+          NATIVE_REQUIRED: ${{ needs.classify.outputs.native }}
+          NATIVE_RESULT: ${{ needs.native.result }}
         run: |
           set -euo pipefail
 
@@ -374,8 +386,6 @@ jobs:
           require_lane TypeScript "$TYPESCRIPT_REQUIRED" "$TYPESCRIPT_RESULT"
           require_lane Ruby "$RUBY_REQUIRED" "$RUBY_RESULT"
 
-          if [[ "$NATIVE_SENSITIVE" == "true" ]]; then
-            echo "::notice title=Native verification is local::Native-sensitive paths changed. CI intentionally does not bootstrap Vespa or run the real-engine gate; local native verification evidence is required by AGENTS.md."
-          fi
+          require_lane Native "$NATIVE_REQUIRED" "$NATIVE_RESULT"
 
           echo "All non-native CI behavior required for exact PR head $EXPECTED_HEAD is verified."

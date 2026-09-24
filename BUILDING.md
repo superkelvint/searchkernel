@@ -108,18 +108,35 @@ paths without requiring the optional Vespa SDK:
 cargo test --workspace --all-targets --no-default-features
 ```
 
-### CI does not require Vespa source
+### Native CI does not require Vespa source
 
-Ordinary GitHub CI uses the non-native lanes and must not depend on an
-`upstream/vespa` checkout or call `./dev native-sdk ensure`. Native-sensitive
-pull requests are still classified so reviewers can see that native behavior may
-be affected, but the real-engine acceptance command is run locally by the
-implementation agent for now.
+Ordinary non-native GitHub CI remains on the self-hosted runner host and does not
+need Vespa. When the trusted exact-head classifier selects native verification,
+the workflow executes the native suite inside the persistent
+`searchkernel-native` AlmaLinux container provisioned by
+`tools/actions-runner-setup.sh`.
 
-When a change affects the native adapter, bindings, Vespa engine, IR adapter,
-native build tooling, or real-Vespa acceptance artifacts, run the applicable
-native verifier locally and include the exact command and result in the pull
-request. Do not interpret a green non-native CI run as native verification.
+The host checks out the exact requested revision without persisting GitHub
+credentials. The persistent container created by `tools/actions-runner-setup.sh`
+keeps its provisioning checkout mounted at `/work`; CI does not mutate that clone.
+Instead, the reusable native workflow copies the clean exact Actions checkout into
+an isolated temporary container path, rechecks its commit SHA inside AlmaLinux,
+selects the already-staged published `ci` native-base artifact, and runs
+`./dev native-sdk ensure` plus the requested real-engine suite. No native CI job
+may clone, locate, configure, or rebuild `upstream/vespa`.
+
+AlmaLinux Cargo outputs use `/work/target/actions-runner-alma-ci`, separate from
+the Ubuntu host's `target/ci` and from the interactive runner setup target
+`/work/target/actions-runner-alma`. This isolation is required because Cargo
+build-script executables are libc-sensitive and must never cross host/container
+boundaries.
+
+The native suites are serialized inside each persistent container. Exact-head
+behavior loads the trusted PR base verification DAG and executes the complete
+`native-full` command closure against the candidate; persistence runs the
+real-Vespa compatibility/fault tests; executable client E2E builds and runs native
+`searchkerneld` in AlmaLinux. A green non-native job alone is not native evidence;
+a successful selected AlmaLinux native job is.
 
 The repository-managed pre-commit hook enforces this split with path-sensitive
 verification lanes. Every commit runs Rust formatting, Clippy, and non-native

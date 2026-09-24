@@ -1,0 +1,301 @@
+name: Native AlmaLinux execution
+
+on:
+  workflow_call:
+    inputs:
+      expected_head:
+        description: Exact SearchKernel commit to verify
+        required: true
+        type: string
+      suite:
+        description: Native verification suite to execute
+        required: true
+        type: string
+      policy_ref:
+        description: Trusted base revision that owns native verification task definitions
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: ${{ inputs.suite }} on AlmaLinux
+    runs-on: [self-hosted, linux, x64]
+    env:
+      NATIVE_CONTAINER: "searchkernel-native"
+      ALMA_CARGO_TARGET_DIR: "/work/target/actions-runner-alma-ci"
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_head }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Reject stale host checkout
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::expected exact revision $EXPECTED_HEAD, checked out $actual"
+            exit 1
+          fi
+
+      - name: Verify provisioned AlmaLinux native container
+        run: |
+          set -euo pipefail
+          if ! docker container inspect "$NATIVE_CONTAINER" >/dev/null 2>&1; then
+            echo "::error::missing persistent AlmaLinux native container '$NATIVE_CONTAINER'"
+            echo "::error::run tools/actions-runner-setup.sh once on this runner"
+            exit 1
+          fi
+
+          if [[ "$(docker inspect --format '{{.State.Running}}' "$NATIVE_CONTAINER")" != "true" ]]; then
+            docker start "$NATIVE_CONTAINER" >/dev/null
+          fi
+
+          mounts=$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$NATIVE_CONTAINER")
+          for required in /work /native-artifacts /root/.cargo /root/.rustup /root/.cache/searchkernel; do
+            if ! grep -Fxq "$required" <<<"$mounts"; then
+              echo "::error::native container '$NATIVE_CONTAINER' is missing required mount $required"
+              echo "::error::rerun tools/actions-runner-setup.sh on this runner"
+              exit 1
+            fi
+          done
+
+      - name: Copy exact revision into AlmaLinux container
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+        run: |
+          set -euo pipefail
+          if git config --local --get-regexp '^http\..*\.extraheader$' >/dev/null 2>&1; then
+            echo "::error::refusing to copy a checkout containing persisted GitHub credentials into the native container"
+            exit 1
+          fi
+
+          ALMA_WORKTREE="/tmp/searchkernel-gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE"
+          docker exec "$NATIVE_CONTAINER" mkdir -p "$ALMA_WORKTREE"
+          docker cp "$GITHUB_WORKSPACE/." "$NATIVE_CONTAINER:$ALMA_WORKTREE"
+
+          actual="$(docker exec -e ALMA_WORKTREE="$ALMA_WORKTREE" "$NATIVE_CONTAINER" /bin/bash -lc 'git -c safe.directory="$ALMA_WORKTREE" -C "$ALMA_WORKTREE" rev-parse HEAD')"
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::AlmaLinux copy expected $EXPECTED_HEAD, found $actual"
+            exit 1
+          fi
+
+          echo "ALMA_WORKTREE=$ALMA_WORKTREE" >> "$GITHUB_ENV"
+
+      - name: Copy trusted native verification policy into AlmaLinux
+        if: inputs.suite == 'behavior'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          POLICY_REF: ${{ inputs.policy_ref }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$POLICY_REF" ]]; then
+            echo "::error::behavior suite requires a trusted policy_ref"
+            exit 1
+          fi
+
+          policy_host="$RUNNER_TEMP/searchkernel-native-policy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          rm -rf "$policy_host"
+          mkdir -p "$policy_host"
+
+          for path in verification/dag.py verification/dag.toml; do
+            dest="$policy_host/$(basename "$path")"
+            gh api -H "Accept: application/vnd.github.raw+json"               "repos/$GITHUB_REPOSITORY/contents/$path?ref=$POLICY_REF" > "$dest"
+            [[ -s "$dest" ]] || {
+              echo "::error::trusted verification policy file is empty: $path@$POLICY_REF"
+              exit 1
+            }
+          done
+
+          TRUSTED_POLICY_DIR="$ALMA_WORKTREE/.trusted-verification"
+          docker exec "$NATIVE_CONTAINER" rm -rf "$TRUSTED_POLICY_DIR"
+          docker exec "$NATIVE_CONTAINER" mkdir -p "$TRUSTED_POLICY_DIR"
+          docker cp "$policy_host/." "$NATIVE_CONTAINER:$TRUSTED_POLICY_DIR"
+          echo "TRUSTED_POLICY_DIR=$TRUSTED_POLICY_DIR" >> "$GITHUB_ENV"
+
+      - name: Run native suite in AlmaLinux
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          NATIVE_SUITE: ${{ inputs.suite }}
+        run: |
+          set -euo pipefail
+          docker exec -i \
+            -e ALMA_WORKTREE="$ALMA_WORKTREE" \
+            -e EXPECTED_HEAD="$EXPECTED_HEAD" \
+            -e NATIVE_SUITE="$NATIVE_SUITE" \
+            -e TRUSTED_POLICY_DIR="${TRUSTED_POLICY_DIR:-}" \
+            -e SEARCHKERNEL_BUILD_ENV=ci \
+            -e CARGO_TARGET_DIR="$ALMA_CARGO_TARGET_DIR" \
+            "$NATIVE_CONTAINER" \
+            /bin/bash -s <<'BASH'
+          set -euo pipefail
+
+          export PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          export LD_LIBRARY_PATH="/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=safe.directory
+          export GIT_CONFIG_VALUE_0="$ALMA_WORKTREE"
+
+          cd "$ALMA_WORKTREE"
+
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "expected exact revision $EXPECTED_HEAD in AlmaLinux, found $actual" >&2
+            exit 1
+          fi
+
+          command -v cargo >/dev/null
+          command -v rustc >/dev/null
+          command -v c++ >/dev/null
+          command -v flatc >/dev/null
+          command -v flock >/dev/null
+
+          pin=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["vespa_commit"])' core/native/vespa/manifest.json)
+          if [[ ! "$pin" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "invalid pinned Vespa commit: $pin" >&2
+            exit 1
+          fi
+
+          target=$(rustc -vV | sed -n "s/^host: //p")
+          artifact=$(find /native-artifacts -maxdepth 1 -type f -name "searchkernel-vespa-base-v*-ci-${target}-${pin}.tar.gz" -print | sort -V | tail -n 1)
+          if [[ -z "$artifact" || ! -s "$artifact" || ! -s "${artifact}.sha256" ]]; then
+            echo "no published CI native base for Vespa $pin is staged on this runner" >&2
+            echo "run tools/actions-runner-setup.sh on the runner after publishing the base" >&2
+            exit 1
+          fi
+
+          export SK_NATIVE_BASE_ARTIFACT_URL="file://$artifact"
+
+          exec 9>/tmp/searchkernel-native-ci.lock
+          flock 9
+
+          ./dev native-sdk ensure
+
+          case "$NATIVE_SUITE" in
+            behavior)
+              if [[ -z "${TRUSTED_POLICY_DIR:-}" || ! -s "$TRUSTED_POLICY_DIR/dag.py" || ! -s "$TRUSTED_POLICY_DIR/dag.toml" ]]; then
+                echo "trusted native verification policy is unavailable" >&2
+                exit 1
+              fi
+
+              base_sdk=$(./dev native-sdk path)
+              export LD_LIBRARY_PATH="$base_sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+              python3 - "$TRUSTED_POLICY_DIR/dag.py" "$TRUSTED_POLICY_DIR/dag.toml" "$PWD" <<'PY'
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+dag_module_path, dag_path, candidate_root = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("searchkernel_trusted_verification_dag", dag_module_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("could not load trusted verification DAG module")
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+dag = module.load_dag(Path(dag_path))
+
+ordered = []
+seen = set()
+
+def visit(task_id):
+    if task_id in seen:
+        return
+    seen.add(task_id)
+    task = dag.tasks[task_id]
+    for dependency in task.depends_on:
+        visit(dependency)
+    if task.kind == "command":
+        ordered.append(task)
+
+visit("native-full")
+
+environment = os.environ.copy()
+candidate = Path(candidate_root)
+target = Path(environment["CARGO_TARGET_DIR"])
+for task in ordered:
+    print(f"== trusted native-full task: {task.id} :: {task.command}", flush=True)
+    subprocess.run(
+        task.command,
+        cwd=candidate,
+        env=environment,
+        shell=True,
+        executable="/bin/bash",
+        check=True,
+    )
+    if task.id == "product.integration":
+        verifier_lib = target / "native-verifier-sdk" / "lib"
+        adapter = verifier_lib / "libsearchkernel_vespa.so"
+        if not adapter.is_file():
+            raise SystemExit(
+                f"product.integration did not produce verifier adapter runtime at {adapter}"
+            )
+        prior = environment.get("LD_LIBRARY_PATH")
+        environment["SEARCHKERNEL_SDK_LIB"] = str(verifier_lib)
+        environment["LD_LIBRARY_PATH"] = (
+            f"{verifier_lib}:{prior}" if prior else str(verifier_lib)
+        )
+PY
+              ;;
+            persistence)
+              cargo test -p searchkernel --test persistence_compatibility --features native -- --nocapture
+              cargo test -p searchkernel --features native --lib persistence_fault_matrix_ -- --nocapture
+              bash tools/check-persistence-sensitivity.sh
+              ;;
+            client-e2e)
+              python3 -m venv .native-e2e-venv
+              export CI_PYTHON="$PWD/.native-e2e-venv/bin/python"
+              "$CI_PYTHON" -m pip install --disable-pip-version-check -e clients/python
+              "$CI_PYTHON" tools/check-python-dependencies.py
+              npm ci --prefix clients/typescript
+              cargo build -p searchkerneld --features native
+
+              native_host="$CARGO_TARGET_DIR/debug/searchkerneld"
+              adapter_lib=$(
+                find "$CARGO_TARGET_DIR/debug/build" -type f \
+                  -path '*/out/native-adapter/lib/libsearchkernel_vespa.so' \
+                  -printf '%T@ %h\n' \
+                  | sort -nr \
+                  | sed -n '1p' \
+                  | cut -d' ' -f2-
+              )
+              if [[ -z "$adapter_lib" || ! -f "$adapter_lib/libsearchkernel_vespa.so" ]]; then
+                echo "could not locate the Cargo-built SearchKernel native adapter runtime" >&2
+                exit 1
+              fi
+              base_sdk=$(./dev native-sdk path)
+              export SEARCHKERNEL_SDK_LIB="$adapter_lib"
+              export LD_LIBRARY_PATH="$adapter_lib:$base_sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+              unresolved=$(ldd "$native_host" | awk '/not found/ {print}')
+              if [[ -n "$unresolved" ]]; then
+                echo "native searchkerneld has unresolved runtime dependencies:" >&2
+                echo "$unresolved" >&2
+                exit 1
+              fi
+
+              SEARCHKERNEL_LOCAL_HOST="$native_host" "$CI_PYTHON" tools/check-client-contracts.py --run-e2e
+              ;;
+            *)
+              echo "unknown native AlmaLinux suite: $NATIVE_SUITE" >&2
+              exit 2
+              ;;
+          esac
+          BASH
+      - name: Remove exact-revision container copy
+        if: always()
+        run: |
+          set +e
+          ALMA_WORKTREE="${ALMA_WORKTREE:-/tmp/searchkernel-gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}}"
+          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE" >/dev/null 2>&1 || true

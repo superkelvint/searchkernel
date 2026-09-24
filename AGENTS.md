@@ -686,25 +686,36 @@ If a required check cannot run, record the exact command, failure, and reason.
 For an environment-related failure, follow `BUILDING.md` before classifying
 the failure as a product defect. Do not claim a check passed when it did not run.
 
-### Native verification is agent-local for now
+### Native verification uses the provisioned AlmaLinux runner
 
-Ordinary GitHub CI intentionally does **not** bootstrap `upstream/vespa`, run
-`./dev native-sdk ensure`, or execute the real-engine Vespa acceptance gate.
-CI covers the non-native Rust/FlatBuffers/client/transport surface.
+Native-sensitive GitHub Actions jobs execute inside the persistent
+`searchkernel-native` AlmaLinux container prepared by
+`tools/actions-runner-setup.sh`. The self-hosted host runner still performs the
+trusted exact-head checkout/classification. The provisioned container keeps its
+persistent setup checkout mounted at `/work`, while the native workflow copies the
+credential-free exact Actions checkout into an isolated temporary path, rechecks the
+commit SHA inside AlmaLinux, and executes the real-engine gate there. Native
+behavioral verification takes its `native-full` task/command closure from the
+trusted PR base verification DAG and executes that closure against the exact
+candidate checkout.
+
+Native CI consumes the published immutable `ci` Vespa base. It must not locate,
+clone, configure, or rebuild `upstream/vespa`. Cargo outputs from AlmaLinux are
+isolated under `/work/target/actions-runner-alma-ci`; they must never share the
+Ubuntu host's `target/ci` artifacts.
 
 For any change that can affect native execution, including changes under
 `core/native/**`, `searchkernel-vespa-bindings`,
 `searchkernel-vespa-engine`, `searchkernel-ir-adapter`, the native-only
 `searchkernel` facade/index lifecycle path, the `searchkerneld` native
-entrypoint, native build tooling, or `reference/vespa/**`, the implementation
-agent MUST run the applicable native/real-engine verification locally before
-handing the pull request to the CTO. The pull request must include the exact native commands run and their
-results.
+entrypoint, native build tooling, or `reference/vespa/**`, the trusted
+classifier must select the exact-head native lane. That lane is required for
+handoff when selected; local native verification may still be useful or required
+by a task-specific contract, but it is not a substitute for the exact-head CI
+gate.
 
-A green CI run is therefore not evidence that native behavior was exercised.
-When the task's contract requires real Vespa, local native verification remains
-required even though GitHub CI does not run it. An independent native CI gate may
-be added later; do not assume one exists today.
+A green non-native job alone is not evidence that native behavior was exercised.
+A successful selected AlmaLinux native job is exact-head real-engine evidence.
 
 ## Commit discipline
 
