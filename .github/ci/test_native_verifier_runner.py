@@ -74,13 +74,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             'bash clients/php/examples/run_searchkernel_client_api_e2e.sh',
         ):
             self.assertIn(needle, source)
-
-        # Closure evidence must prove the automatic published-provenance path,
-        # not force the verifier into frozen-oracle mode.
-        self.assertNotIn(
-            "SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip",
-            source,
-        )
+        self.assertNotIn("SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip", source)
 
 
 if __name__ == "__main__":
