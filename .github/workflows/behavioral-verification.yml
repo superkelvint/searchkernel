@@ -423,9 +423,14 @@ jobs:
           gem --version
           ruby -rrubygems -e 'abort "Ruby >= 3.1 is required" if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")'
 
-      - name: Install Rust toolchain
+      - name: Verify provisioned Rust toolchain
         if: ${{ hashFiles('clients/ruby/**') != '' }}
-        uses: dtolnay/rust-toolchain@stable
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          cargo --version
+          rustc --version
 
       - name: Cache Rust build
         if: ${{ hashFiles('clients/ruby/**') != '' }}
