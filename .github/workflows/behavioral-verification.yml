@@ -12,13 +12,13 @@ concurrency:
 
 jobs:
   classify:
-    name: Prepare fixed behavioral lanes
+    name: Prepare change-aware behavioral lanes
     runs-on: [self-hosted, linux, x64]
     outputs:
-      rust: ${{ steps.fixed.outputs.rust }}
-      python: ${{ steps.fixed.outputs.python }}
-      typescript: ${{ steps.fixed.outputs.typescript }}
-      ruby: ${{ steps.fixed.outputs.ruby }}
+      rust: ${{ steps.behavioral.outputs.rust }}
+      python: ${{ steps.behavioral.outputs.python }}
+      typescript: ${{ steps.behavioral.outputs.typescript }}
+      ruby: ${{ steps.behavioral.outputs.ruby }}
       native: ${{ steps.native.outputs.required }}
     steps:
       - name: Check out exact PR head
@@ -45,29 +45,51 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
-      - name: Use fixed non-native behavioral lanes while DAG authorization is offline
-        id: fixed
-        run: |
-          {
-            echo "rust=true"
-            echo "python=true"
-            echo "typescript=true"
-            echo "ruby=true"
-          } >> "$GITHUB_OUTPUT"
+      - name: Test candidate behavioral lane selector
+        run: "$CI_PYTHON" .github/ci/test_behavioral_lanes_required.py
 
-      - name: Select native verifier lane from trusted base policy
-        id: native
+      - name: Compute base-to-head changed paths
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/searchkernel-changed-paths.txt"
 
+      - name: Select non-native behavioral lanes from trusted base policy
+        id: behavioral
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
           # Use the selector from the trusted base commit. A pull request may
           # change the selector, but it cannot use that change to exempt itself.
+          # The first bootstrap change predates the selector on base, so it
+          # conservatively runs every non-native lane.
+          if git cat-file -e "$BASE_SHA:.github/ci/behavioral_lanes_required.py" 2>/dev/null; then
+            git show "$BASE_SHA:.github/ci/behavioral_lanes_required.py" > "$RUNNER_TEMP/behavioral_lanes_required.py"
+            "$CI_PYTHON" "$RUNNER_TEMP/behavioral_lanes_required.py" --github-output "$GITHUB_OUTPUT" < "$RUNNER_TEMP/searchkernel-changed-paths.txt"
+          else
+            {
+              echo "rust=true"
+              echo "python=true"
+              echo "typescript=true"
+              echo "ruby=true"
+            } >> "$GITHUB_OUTPUT"
+            echo "Trusted base predates behavioral lane selection; requiring every non-native lane."
+          fi
+
+      - name: Select native verifier lane from trusted base policy
+        id: native
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          # Native selection remains an independent trusted-base policy while
+          # verification-DAG authorization is suspended.
           git show "$BASE_SHA:.github/ci/native_verifier_required.py" > "$RUNNER_TEMP/native_verifier_required.py"
           required=$("$CI_PYTHON" "$RUNNER_TEMP/native_verifier_required.py" < "$RUNNER_TEMP/searchkernel-changed-paths.txt")
           if [[ "$required" != "true" && "$required" != "false" ]]; then
