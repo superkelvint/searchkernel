@@ -47,7 +47,7 @@ pub fn fixture_schema(root: &Json) -> Schema {
         }
     }
 
-    let mut rank = RankProfile::new("m12_nn").first_phase(format!("closeness({field_name})"));
+    let mut rank = RankProfile::new("m12_nn").first_phase(format!("closeness(field,{field_name})"));
     for (name, input_type) in query_inputs {
         rank = rank.query_input(name, input_type);
     }
