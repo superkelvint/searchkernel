@@ -339,17 +339,17 @@ class VerificationDagTests(unittest.TestCase):
 
         tasks, reasons, unclassified = verification_dag.plan_paths(
             current,
-            ("docs/capabilities.json",),
+            ("docs/CAPABILITIES.md",),
         )
         self.assertIn("client-contracts", tasks)
         self.assertIn("portable-ir-boundary", tasks)
         self.assertEqual(unclassified, ())
         self.assertIn(
-            "docs/capabilities.json: subsystem capability-ledger",
+            "docs/CAPABILITIES.md: subsystem capability-ledger",
             reasons["client-contracts"],
         )
         self.assertIn(
-            "docs/capabilities.json: subsystem capability-ledger",
+            "docs/CAPABILITIES.md: subsystem capability-ledger",
             reasons["portable-ir-boundary"],
         )
 
