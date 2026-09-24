@@ -274,6 +274,17 @@ class ExactHeadTests(unittest.TestCase):
         ):
             self.assertIn(authority, hook)
 
+    def test_runner_python_selection_never_uses_bare_system_python(self) -> None:
+        root = SCRIPT.parents[2]
+        selector = (root / ".github" / "ci" / "select-python.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("sys.prefix != sys.base_prefix", selector)
+        self.assertIn('-m venv "$venv_dir"', selector)
+        self.assertIn("CI_PYTHON=$selected", selector)
+        self.assertIn("python3-venv", selector)
+        self.assertIn("sudo -n apt-get", selector)
+
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         typescript = workflow.split("\n  typescript:\n", 1)[1].split(
