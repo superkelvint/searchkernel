@@ -19,11 +19,24 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "run this from inside
 ROOT="$(cd "$ROOT" && pwd -P)"
 cd "$ROOT"
 
-for cmd in cargo cmake c++ find gh git ldd python3 rustc sha256sum tar; do
+for cmd in cargo cmake c++ find gh git ldd python3 readelf rustc sha256sum tar; do
     command -v "$cmd" >/dev/null 2>&1 || die "missing required command: $cmd"
 done
 [[ -x ./dev ]] || die "./dev is missing or not executable"
 gh api "repos/$REPO" >/dev/null 2>&1 || die "gh authentication cannot access $REPO"
+
+SOURCE_COMMIT="$(git rev-parse HEAD)"
+
+require_canonical_main() {
+    local remote_main
+    remote_main="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+    [[ "$SOURCE_COMMIT" == "$remote_main" ]] ||
+        die "publisher checkout is $SOURCE_COMMIT, but canonical main is $remote_main; update main before publishing"
+    [[ -z "$(git status --porcelain --untracked-files=normal)" ]] ||
+        die "publisher checkout has uncommitted or untracked files; publish only from a clean canonical main"
+}
+
+require_canonical_main
 
 PINNED_VESPA_COMMIT="$(python3 - <<'PY'
 import json
@@ -153,9 +166,9 @@ PY
 
 stamp_generation() {
     local bundle="$1" build_env="$2"
-    python3 - "$bundle/manifest.json" "$bundle/toolchain/upstream/vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
+    python3 - "$bundle/manifest.json" "$bundle/toolchain/upstream/vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT" "$SOURCE_COMMIT" <<'PY'
 import json, sys
-bundle, marker, expected_format, generation, env, target, commit = sys.argv[1:]
+bundle, marker, expected_format, generation, env, target, commit, source_commit = sys.argv[1:]
 expected_format = int(expected_format)
 generation = int(generation)
 for path in (bundle, marker):
@@ -170,6 +183,7 @@ for path in (bundle, marker):
         raise SystemExit(f"artifact metadata identity mismatch in {path}")
     data["artifact_generation"] = generation
     data["adapter_static_link_closure"] = True
+    data["searchkernel_commit"] = source_commit
     with open(path, "w", encoding="utf-8") as stream:
         json.dump(data, stream, indent=2, sort_keys=True)
         stream.write("\n")
@@ -181,11 +195,11 @@ verify_bundle() {
     local base="$bundle/base" vespa="$bundle/toolchain/upstream/vespa" deps="$bundle/toolchain/vespa-deps"
     [[ -d "$base/lib" && -f "$vespa/$MARKER_REL" && -f "$vespa/$FLAGS_REL" && -d "$deps/include" ]] || die "$label: incomplete bundle"
     mkdir -p "$deps/lib64"
-    python3 - "$bundle/manifest.json" "$vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
+    python3 - "$bundle/manifest.json" "$vespa/.searchkernel-vespa-artifact.json" "$ARTIFACT_FORMAT_VERSION" "$ARTIFACT_GENERATION" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT" "$SOURCE_COMMIT" <<'PY'
 import json
 import sys
 
-bundle_path, marker_path, expected_format, generation, build_env, target, commit = sys.argv[1:]
+bundle_path, marker_path, expected_format, generation, build_env, target, commit, source_commit = sys.argv[1:]
 expected_format = int(expected_format)
 generation = int(generation)
 for path in (bundle_path, marker_path):
@@ -198,6 +212,7 @@ for path in (bundle_path, marker_path):
         "native_target": target,
         "vespa_commit": commit,
         "adapter_static_link_closure": True,
+        "searchkernel_commit": source_commit,
     }
     for key, value in expected.items():
         if data.get(key) != value:
@@ -206,6 +221,7 @@ for path in (bundle_path, marker_path):
                 f"{key} expected {value!r}, found {data.get(key)!r}"
             )
 PY
+    python3 "$ROOT/tools/check-native-runtime-closure.py" "$base/lib"
     python3 - "$vespa/$MARKER_REL" "$vespa" "$deps" <<'PY'
 import pathlib, shlex, sys
 link_file = pathlib.Path(sys.argv[1])
@@ -244,11 +260,75 @@ PY
         VESPA_EXTRA_LIB_DIR="$base/lib" \
         bash core/native/vespa/build-sdk.sh
     [[ -s "$verify_root/sdk/lib/libsearchkernel_vespa.so" ]] || die "$label: adapter build produced no library"
+
+    if [[ "$label" == staged ]]; then
+        local runtime_search_args=()
+        local runtime_dir
+        for runtime_dir in "$REAL_DEPS/lib64" "$REAL_DEPS/lib"; do
+            if [[ -d "$runtime_dir" ]]; then
+                runtime_search_args+=(--search-dir "$runtime_dir")
+            fi
+        done
+        python3 "$ROOT/tools/bundle-native-runtime-closure.py" \
+            "$base/lib" \
+            --extra-elf "$verify_root/sdk/lib/libsearchkernel_vespa.so.2" \
+            "${runtime_search_args[@]}"
+    fi
+    python3 "$ROOT/tools/check-native-runtime-closure.py" \
+        "$base/lib" "$verify_root/sdk/lib/libsearchkernel_vespa.so.2"
+
     local output
     output="$(env -u LD_PRELOAD LD_LIBRARY_PATH="$base/lib" ldd "$verify_root/sdk/lib/libsearchkernel_vespa.so")"
     printf '%s\n' "$output"
     ! printf '%s\n' "$output" | grep -q 'not found' || die "$label: unresolved runtime dependencies"
 }
+verify_archive_consumer() {
+    local archive="$1" build_env="$2" label="$3"
+    local cache="$TMP/consumer-cache-${build_env}-${label}"
+    local verify_root="$TMP/consumer-adapter-${build_env}-${label}"
+    local vespa base deps output
+
+    rm -rf "$cache" "$verify_root"
+    mkdir -p "$cache" "$verify_root"
+
+    vespa="$(bash "$ROOT/tools/install-native-base-artifact.sh" \
+        "file://$archive" "$cache" "$build_env" "$TARGET" "$PINNED_VESPA_COMMIT")"
+    base="$cache/objects/$PINNED_VESPA_COMMIT"
+    deps="$cache/toolchains/$PINNED_VESPA_COMMIT/vespa-deps"
+
+    [[ "$vespa" == "$cache/toolchains/$PINNED_VESPA_COMMIT/upstream/vespa" ]] ||
+        die "$label: installer returned unexpected Vespa toolchain path: $vespa"
+    [[ -d "$base/lib" && -d "$deps/include" ]] ||
+        die "$label: installer did not publish complete consumer cache"
+
+    mkdir -p "$deps/lib64"
+    env -u LD_PRELOAD \
+        SEARCHKERNEL_BUILD_ENV="$build_env" \
+        SK_NATIVE_TARGET="$TARGET" \
+        SK_NATIVE_ADAPTER_ONLY=1 \
+        SK_NATIVE_BASE_SDK="$base" \
+        SK_NATIVE_SDK="$verify_root/sdk" \
+        SK_NATIVE_BUILD_DIR="$verify_root/build" \
+        SK_NATIVE_REGENERATE_BINDINGS=0 \
+        SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
+        VESPA_ROOT="$vespa" \
+        VESPA_DEPS="$deps" \
+        VESPA_DEPS_INCLUDE_DIR="$deps/include" \
+        VESPA_DEPS_LIB_DIR="$deps/lib64" \
+        VESPA_EXTRA_LIB_DIR="$base/lib" \
+        bash "$ROOT/core/native/vespa/build-sdk.sh"
+
+    [[ -s "$verify_root/sdk/lib/libsearchkernel_vespa.so" ]] ||
+        die "$label: consumer-path adapter build produced no library"
+    python3 "$ROOT/tools/check-native-runtime-closure.py" \
+        "$base/lib" "$verify_root/sdk/lib/libsearchkernel_vespa.so.2"
+    output="$(env -u LD_PRELOAD LD_LIBRARY_PATH="$base/lib" \
+        ldd "$verify_root/sdk/lib/libsearchkernel_vespa.so")"
+    printf '%s\n' "$output"
+    ! printf '%s\n' "$output" | grep -q 'not found' ||
+        die "$label: consumer-path adapter has unresolved runtime dependencies"
+}
+
 
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     section "Building $BUILD_ENV artifact"
@@ -277,11 +357,15 @@ for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     mkdir -p "$FINAL"
     tar -xzf "$ARCHIVE" -C "$FINAL"
     verify_bundle "$FINAL/searchkernel-vespa-base" "$BUILD_ENV" archive
+    verify_archive_consumer "$ARCHIVE" "$BUILD_ENV" archive-consumer
     ARCHIVES[$BUILD_ENV]="$ARCHIVE"
     CHECKSUMS[$BUILD_ENV]="$CHECKSUM"
     TAGS[$BUILD_ENV]="$TAG"
     ASSETS[$BUILD_ENV]="$ASSET"
 done
+
+section "Revalidating publication source"
+require_canonical_main
 
 section "Publication preflight"
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
@@ -291,30 +375,43 @@ done
 
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     TAG="${TAGS[$BUILD_ENV]}"
-    section "Publishing $TAG"
+    section "Uploading draft $TAG"
     gh release create "$TAG" "${ARCHIVES[$BUILD_ENV]}" "${CHECKSUMS[$BUILD_ENV]}" \
         -R "$REPO" \
+        --draft \
+        --target "$SOURCE_COMMIT" \
         --title "SearchKernel immutable Vespa base $TAG" \
-        --notes "Automatically allocated native-base generation v${ARTIFACT_GENERATION} for pinned Vespa ${PINNED_VESPA_COMMIT}."
-
+        --notes "Automatically allocated native-base generation v${ARTIFACT_GENERATION} for SearchKernel ${SOURCE_COMMIT} and pinned Vespa ${PINNED_VESPA_COMMIT}."
+    [[ "$(gh release view "$TAG" -R "$REPO" --json isDraft --jq '.isDraft')" == "true" ]] ||
+        die "$TAG: release became consumer-visible before verification"
 done
 
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     TAG="${TAGS[$BUILD_ENV]}"
     ASSET="${ASSETS[$BUILD_ENV]}"
-    section "Post-publish verification: $TAG"
+    section "Remote draft verification: $TAG"
     REMOTE="$TMP/remote-$BUILD_ENV"
     mkdir -p "$REMOTE"
     gh release download "$TAG" -R "$REPO" -D "$REMOTE" -p "$ASSET" -p "$ASSET.sha256"
     EXPECTED="$(awk 'NR == 1 {print $1}' "$REMOTE/$ASSET.sha256")"
     ACTUAL="$(sha256sum "$REMOTE/$ASSET" | awk '{print $1}')"
     LOCAL="$(sha256sum "${ARCHIVES[$BUILD_ENV]}" | awk '{print $1}')"
-    [[ "$EXPECTED" == "$ACTUAL" && "$LOCAL" == "$ACTUAL" ]] || die "$TAG: published bytes failed checksum verification"
+    [[ "$EXPECTED" == "$ACTUAL" && "$LOCAL" == "$ACTUAL" ]] || die "$TAG: uploaded bytes failed checksum verification"
     EXTRACT="$TMP/remote-extract-$BUILD_ENV"
     mkdir -p "$EXTRACT"
     tar -xzf "$REMOTE/$ASSET" -C "$EXTRACT"
-    verify_bundle "$EXTRACT/searchkernel-vespa-base" "$BUILD_ENV" published
-    echo "Verified $TAG ($ACTUAL)"
+    verify_bundle "$EXTRACT/searchkernel-vespa-base" "$BUILD_ENV" remote-draft
+    verify_archive_consumer "$REMOTE/$ASSET" "$BUILD_ENV" remote-draft-consumer
+    echo "Verified draft $TAG ($ACTUAL)"
+done
+
+section "Publishing verified native-base releases"
+require_canonical_main
+for BUILD_ENV in "${BUILD_ENVS[@]}"; do
+    TAG="${TAGS[$BUILD_ENV]}"
+    gh release edit "$TAG" -R "$REPO" --draft=false
+    [[ "$(gh release view "$TAG" -R "$REPO" --json isDraft --jq '.isDraft')" == "false" ]] ||
+        die "$TAG: verified release did not publish"
 done
 
 echo

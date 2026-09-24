@@ -25,10 +25,22 @@ pin=2300ef0412bdb76f227ae3b497c8ca5e73c5da4e
 printf '{"vespa_commit":"%s"}\n' "$pin" >"$repo/core/native/vespa/manifest.json"
 git -C "$repo" init -q
 
-for cmd in git python3 sha256sum sed awk mkdir mktemp mv rm uname; do
+for cmd in git sha256sum sed awk mkdir mktemp mv rm uname; do
     command_path=$(command -v "$cmd")
     ln -s "$command_path" "$fakebin/$cmd"
 done
+
+real_python=$(command -v python3)
+cat >"$fakebin/python3" <<PY
+#!/bin/bash
+set -euo pipefail
+if [[ "\${1:-}" == */native-base-release-selection.py ]]; then
+    printf '3\\n'
+    exit 0
+fi
+exec "$real_python" "\$@"
+PY
+chmod +x "$fakebin/python3"
 
 cat >"$fakebin/gh" <<'GH'
 #!/bin/bash
@@ -38,6 +50,11 @@ pin=2300ef0412bdb76f227ae3b497c8ca5e73c5da4e
 target=x86_64-unknown-linux-gnu
 tag="vespa-base-v3-ci-${target}-${pin}"
 asset="searchkernel-vespa-base-v3-ci-${target}-${pin}.tar.gz"
+
+if [[ "${1:-}" == "auth" && "${2:-}" == "token" ]]; then
+    printf 'fixture-token\\n'
+    exit 0
+fi
 
 if [[ "${1:-}" == "api" ]]; then
     for arg in "$@"; do
