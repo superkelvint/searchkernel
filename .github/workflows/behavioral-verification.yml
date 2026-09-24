@@ -34,6 +34,9 @@ jobs:
       - name: Enforce runner-Python workflow policy
         run: bash .github/ci/check-python-workflows.sh
 
+      - name: Test native verifier workflow policy
+        run: "$CI_PYTHON" .github/ci/test_native_verifier_runner.py
+
       - name: Reject stale verification checkout
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
