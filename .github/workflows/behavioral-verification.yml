@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: behavioral-verification-${{ github.event.pull_request.number }}
