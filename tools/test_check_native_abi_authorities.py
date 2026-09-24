@@ -47,6 +47,16 @@ class NativeAbiAuthorityTests(unittest.TestCase):
                     }
                 )
                 + "\n",
+            "reference/vespa/m0/expected/01-native-open-close.json":
+                json.dumps(
+                    {
+                        "scenario": "native-open-close",
+                        "abi_version": version,
+                        "open_count": 2,
+                        "status": "ok",
+                    }
+                )
+                + "\n",
         }
         for relative, contents in files.items():
             path = root / relative
@@ -106,6 +116,27 @@ class NativeAbiAuthorityTests(unittest.TestCase):
             mismatch = CHECKER.disagreement(self.authorities(root))
             self.assertIsNotNone(mismatch)
             self.assertIn("native manifest=12", mismatch)
+
+    def test_m0_expected_abi_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_fixture(root)
+            expected = root / "reference/vespa/m0/expected/01-native-open-close.json"
+            expected.write_text(
+                json.dumps(
+                    {
+                        "scenario": "native-open-close",
+                        "abi_version": 12,
+                        "open_count": 2,
+                        "status": "ok",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            mismatch = CHECKER.disagreement(self.authorities(root))
+            self.assertIsNotNone(mismatch)
+            self.assertIn("M0 native-open-close expected=12", mismatch)
 
     def test_native_manifest_vespa_commit_drift_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
