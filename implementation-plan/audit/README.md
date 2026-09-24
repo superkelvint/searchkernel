@@ -1,11 +1,11 @@
 # Search Kernel Adversarial Audit Checklist — Modular Edition
 
-This is a **lossless split** of `searchkernel-adversarial-audit-checklist-evidence-based.md` into reviewable module files. Checklist obligations were not renumbered or rewritten during the split: the existing stable IDs remain the evidence keys.
+This modular checklist began as a **lossless split** of `searchkernel-adversarial-audit-checklist-evidence-based.md` into reviewable module files. The original IDs remain stable evidence keys; the modular checklist is now also extended under the change-control rules when the repository adds concrete new attack/architecture surfaces.
 
 **Snapshot basis:** `searchkern2(20260921-033528)`  
 **Snapshot archive SHA-256:** `bc439271338dc2f13945de9a34fbc9e63930a953556f49c5cda7cea416add3c1`  
 **Source checklist SHA-256:** `164b85f4687d25ce2449cac88644d032cdf6fdcf60c2c7a3b1b5f5e1a3a29848`  
-**Checklist obligations:** 908 unique stable item IDs.
+**Checklist obligations:** 990 unique stable item IDs.
 
 ## How to use the split
 
@@ -40,4 +40,8 @@ A module reviewer should not silently pass an item based on another module's evi
 
 ## Split integrity
 
-The modular set is mechanically verified so that every one of the 908 stable checklist IDs from the source checklist appears **exactly once** across the module files. The index intentionally contains no duplicated checklist obligations.
+The modular set is mechanically verified so that every stable checklist ID appears **exactly once** across the module files. The original 908 IDs remain traceable to the source split; live scope extensions are recorded in `split-manifest.json`. The index intentionally contains no duplicated checklist obligations.
+
+## Live checklist extensions
+
+- **2026-09-23 — `CODE_SCOPE_CHANGE`: public Search Endpoints.** Issue #469 / PR #470 adds a new anonymous/public-serving ingress surface inside `searchkerneld`. `13-searchkerneld.md` now includes `SK-13-029..SK-13-110` covering public capability isolation, raw/decoded bounds, aggregate-memory and response-amplification limits, computational DoS, parser differential/injection defenses, connection/admission abuse, fuzz/property/stress requirements, privacy/error/logging boundaries, release gates, and implementation-specific closure checks derived from PR #470.
