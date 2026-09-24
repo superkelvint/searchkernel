@@ -1472,7 +1472,7 @@ foreach ([
     'gt' => 'Gt',
     'gte' => 'Gte',
 ] as $comparisonMethod => $comparisonOperator) {
-    $comparison = SearchKernel\Query::{$comparisonMethod}('price', 10);
+    $comparison = SearchKernel\Query::$comparisonMethod('price', 10);
     same('QueryComparison', $queryExpr($comparison)['expr_type'], $comparisonMethod . ' comparison type');
     same(
         $comparisonOperator,
@@ -1620,10 +1620,10 @@ same('GroupingFilterOr', $filterOr['expr_type'], 'grouping filter OR discriminat
 same('GroupingFilterIsTrue', $filterOr['expr']['clauses'][0]['expr_type'], 'grouping is-true filter');
 
 foreach ([
-    SearchKernel\Agg::min('price') => 'MinAggregation',
-    SearchKernel\Agg::max('price') => 'MaxAggregation',
-    SearchKernel\Agg::stddev('price') => 'StdDevAggregation',
-] as $aggregation => $aggregationType) {
+    [SearchKernel\Agg::min('price'), 'MinAggregation'],
+    [SearchKernel\Agg::max('price'), 'MaxAggregation'],
+    [SearchKernel\Agg::stddev('price'), 'StdDevAggregation'],
+] as [$aggregation, $aggregationType]) {
     same(
         $aggregationType,
         $aggregation->model['expr']['aggregation_type'],
