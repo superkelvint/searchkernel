@@ -92,7 +92,7 @@ jobs:
           git diff --check
 
           patch="$RUNNER_TEMP/client-capabilities.patch"
-          git diff --binary --             LIMITATIONS.md             docs/CAPABILITIES.md             docs/CLIENT_CAPABILITIES.md             docs/client-capabilities.json             > "$patch"
+          git diff --binary -- LIMITATIONS.md docs/CAPABILITIES.md docs/CLIENT_CAPABILITIES.md docs/client-capabilities.json > "$patch"
 
           bytes=$(wc -c < "$patch")
           if (( bytes > 5242880 )); then
