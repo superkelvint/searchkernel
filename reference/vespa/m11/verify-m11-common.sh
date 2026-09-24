@@ -15,7 +15,7 @@ M11_DEPS="${VESPA_DEPS:-$ROOT/vespa-deps}"
 
 prepare_hardening_sdk() {
   if [[ -f "$M11_SDK/manifest.json" ]]; then
-    python3 "reference/vespa/m11/verify-m11-common-python-1.py" "$M11_SDK/manifest.json"
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-m11-common-python-1.py" "$M11_SDK/manifest.json"
   else
     mkdir -p "$(dirname "$M11_SDK")" "$M11_BUILD"
     if using_published_vespa_toolchain; then
