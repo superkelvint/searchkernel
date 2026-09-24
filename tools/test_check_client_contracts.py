@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -230,6 +232,95 @@ class ClientContractTests(unittest.TestCase):
             MODULE.validate_catalog(
                 MODULE.load_catalog(path), global_caps, self.root
             )
+
+
+    def test_typescript_real_e2e_installs_package_dependencies(self) -> None:
+        source = (
+            ROOT
+            / "clients"
+            / "typescript"
+            / "scripts"
+            / "run-real-e2e.sh"
+        )
+        fixture = self.root / "typescript-e2e-fixture"
+        repo = fixture / "repo"
+        script = repo / "clients" / "typescript" / "scripts" / "run-real-e2e.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+        dev = repo / "dev"
+        dev.write_text("#!/usr/bin/env bash\\nexit 0\\n", encoding="utf-8")
+        dev.chmod(0o755)
+
+        fakebin = fixture / "bin"
+        fakebin.mkdir(parents=True)
+        cargo = fakebin / "cargo"
+        cargo.write_text(
+            """#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p "$REPO_ROOT/target/host/debug"
+cat >"$REPO_ROOT/target/host/debug/searchkerneld" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$REPO_ROOT/target/host/debug/searchkerneld"
+""",
+            encoding="utf-8",
+        )
+        cargo.chmod(0o755)
+
+        npm = fakebin / "npm"
+        npm.write_text(
+            """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >>"$NPM_LOG"
+if [[ "${1:-}" == "ci" ]]; then
+    touch "$NPM_READY"
+    exit 0
+fi
+if [[ "${1:-}" == "run" && "${2:-}" == "example:e2e" ]]; then
+    if [[ ! -f "$NPM_READY" ]]; then
+        echo "TypeScript E2E dependencies were not installed" >&2
+        exit 42
+    fi
+    exit 0
+fi
+exit 0
+""",
+            encoding="utf-8",
+        )
+        npm.chmod(0o755)
+
+        env = os.environ.copy()
+        env.pop("CARGO_TARGET_DIR", None)
+        env.update(
+            {
+                "PATH": f"{fakebin}:{env['PATH']}",
+                "REPO_ROOT": str(repo),
+                "NPM_LOG": str(fixture / "npm.log"),
+                "NPM_READY": str(fixture / "npm-ready"),
+            }
+        )
+        completed = subprocess.run(
+            ["bash", str(script)],
+            cwd=repo,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+        self.assertEqual(
+            (fixture / "npm.log").read_text(encoding="utf-8").splitlines(),
+            [
+                "ci --prefix clients/typescript",
+                "run example:e2e --prefix clients/typescript",
+            ],
+        )
 
 
 if __name__ == "__main__":

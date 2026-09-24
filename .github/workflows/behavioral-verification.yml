@@ -1,30 +1,35 @@
-name: Behavioral verification
+name: CI invariant verification
 
 on:
+  push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: behavioral-verification-${{ github.event.pull_request.number }}
+  group: ci-invariants-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   classify:
-    name: Prepare fixed behavioral lanes
+    name: Plan invariant lanes
     runs-on: [self-hosted, linux, x64]
     outputs:
-      rust: ${{ steps.fixed.outputs.rust }}
-      python: ${{ steps.fixed.outputs.python }}
-      typescript: ${{ steps.fixed.outputs.typescript }}
-      ruby: ${{ steps.fixed.outputs.ruby }}
+      rust: ${{ steps.behavioral.outputs.rust }}
+      python: ${{ steps.behavioral.outputs.python }}
+      typescript: ${{ steps.behavioral.outputs.typescript }}
+      ruby: ${{ steps.behavioral.outputs.ruby }}
+      tooling: ${{ steps.fixed.outputs.tooling }}
       native: ${{ steps.native.outputs.required }}
     steps:
-      - name: Check out exact PR head
+      - name: Check out exact revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
 
       - name: Select runner Python
@@ -33,43 +38,112 @@ jobs:
       - name: Enforce runner-Python workflow policy
         run: bash .github/ci/check-python-workflows.sh
 
+      - name: Test superseded native-head workflow policy
+        run: |
+          $CI_PYTHON .github/ci/test_native_verifier_runner.py \
+            NativeVerifierRunnerWorkflowTests.test_head_guard_stops_closed_pr_even_when_sha_is_unchanged \
+            NativeVerifierRunnerWorkflowTests.test_head_guard_runtime_current_stale_and_api_failure \
+            NativeVerifierRunnerWorkflowTests.test_superseded_pr_heads_stop_before_each_expensive_native_phase \
+            NativeVerifierRunnerWorkflowTests.test_pr_callers_grant_live_head_lookup_permission
+
       - name: Reject stale verification checkout
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
             exit 1
           fi
-          echo "Verified exact PR head $actual."
+          echo "Verified exact head $actual."
 
-      - name: Use fixed non-native behavioral lanes while DAG authorization is offline
-        id: fixed
+      - name: Enforce canonical CI evidence ownership
+        run: $CI_PYTHON .github/ci/check-ci-evidence-ownership.py
+
+      - name: Test candidate behavioral lane selector
         run: |
-          {
-            echo "rust=true"
-            echo "python=true"
-            echo "typescript=true"
-            echo "ruby=true"
-          } >> "$GITHUB_OUTPUT"
+          "$CI_PYTHON" .github/ci/test_behavioral_lanes_required.py
 
-      - name: Select native verifier lane from trusted base policy
-        id: native
+      - name: Keep tooling invariant fixed while DAG authorization is offline
+        id: fixed
+        run: echo "tooling=true" >> "$GITHUB_OUTPUT"
+
+      - name: Select non-native invariant lanes
+        id: behavioral
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+
+          if [[ -z "${BASE_SHA:-}" || "$BASE_SHA" =~ ^0+$ ]]; then
+            {
+              echo "rust=true"
+              echo "python=true"
+              echo "typescript=true"
+              echo "ruby=true"
+            } >> "$GITHUB_OUTPUT"
+            echo "No usable base revision; requiring every non-native product lane."
+            exit 0
+          fi
 
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/searchkernel-changed-paths.txt"
 
-          # Use the selector from the trusted base commit. A pull request may
-          # change the selector, but it cannot use that change to exempt itself.
-          git show "$BASE_SHA:.github/ci/native_verifier_required.py" > "$RUNNER_TEMP/native_verifier_required.py"
-          required=$("$CI_PYTHON" "$RUNNER_TEMP/native_verifier_required.py" < "$RUNNER_TEMP/searchkernel-changed-paths.txt")
+          selector="$RUNNER_TEMP/behavioral_lanes_required.py"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            # Pull requests are authorized by policy from the trusted base.
+            # During bootstrap, bases that predate this selector fail closed.
+            if git cat-file -e "$BASE_SHA:.github/ci/behavioral_lanes_required.py" 2>/dev/null; then
+              git show "$BASE_SHA:.github/ci/behavioral_lanes_required.py" > "$selector"
+            else
+              {
+                echo "rust=true"
+                echo "python=true"
+                echo "typescript=true"
+                echo "ruby=true"
+              } >> "$GITHUB_OUTPUT"
+              echo "Trusted base predates behavioral lane selection; requiring every non-native product lane."
+              exit 0
+            fi
+          else
+            # On trusted main/push execution, the checked-in selector is the
+            # repository policy for the revision under verification.
+            cp .github/ci/behavioral_lanes_required.py "$selector"
+          fi
+
+          "$CI_PYTHON" "$selector" --github-output "$GITHUB_OUTPUT" < "$RUNNER_TEMP/searchkernel-changed-paths.txt"
+
+      - name: Select native verifier lane
+        id: native
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${BASE_SHA:-}" || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "Native verifier required: true (no usable base revision)"
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/searchkernel-changed-paths.txt"
+
+          selector="$RUNNER_TEMP/native_verifier_required.py"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            # A pull request may change the selector, but it cannot use that
+            # candidate change to exempt itself from native verification.
+            git show "$BASE_SHA:.github/ci/native_verifier_required.py" > "$selector"
+          else
+            cp .github/ci/native_verifier_required.py "$selector"
+          fi
+
+          required=$("$CI_PYTHON" "$selector" < "$RUNNER_TEMP/searchkernel-changed-paths.txt")
           if [[ "$required" != "true" && "$required" != "false" ]]; then
             echo "::error::native verifier selector returned invalid value '$required'"
             exit 1
@@ -79,19 +153,19 @@ jobs:
           echo "Native verifier required: $required"
 
   rust:
-    name: Rust behavior
+    name: Rust invariant
     needs: classify
     if: needs.classify.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64]
     env:
-      CARGO_TARGET_DIR: target/ci-exact-head-rust
+      CARGO_TARGET_DIR: target/ci-non-native
       SEARCHKERNEL_BUILD_ENV: ci
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
-      - name: Check out exact PR head
+      - name: Check out exact revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
 
       - name: Select runner Python
@@ -99,15 +173,15 @@ jobs:
 
       - name: Reject stale verification checkout
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
             exit 1
           fi
-          echo "Verified exact PR head $actual."
+          echo "Verified exact head $actual."
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -115,8 +189,8 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ". -> target/ci-exact-head-rust"
-          shared-key: exact-head-rust
+          workspaces: ". -> target/ci-non-native"
+          shared-key: non-native
 
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4
@@ -127,19 +201,22 @@ jobs:
       - name: Ensure pinned FlatBuffers toolchain
         run: ./dev install flatbuffers
 
-      - name: Run Rust behavioral tests
+      - name: Run canonical Rust baseline
         run: cargo test --workspace --all-targets --no-default-features
 
+      - name: Run portable API conformance on the same Rust build
+        run: reference/api-conformance/verify.sh
+
   python:
-    name: Python behavior
+    name: Python invariant
     needs: classify
     if: needs.classify.outputs.python == 'true'
     runs-on: [self-hosted, linux, x64]
     steps:
-      - name: Check out exact PR head
+      - name: Check out exact revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
 
       - name: Select runner Python
@@ -147,15 +224,15 @@ jobs:
 
       - name: Reject stale verification checkout
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
             exit 1
           fi
-          echo "Verified exact PR head $actual."
+          echo "Verified exact head $actual."
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -176,15 +253,15 @@ jobs:
         run: $CI_PYTHON -m unittest discover -s clients/python/tests -p 'test_*.py'
 
   typescript:
-    name: TypeScript behavior
+    name: TypeScript invariant
     needs: classify
     if: needs.classify.outputs.typescript == 'true'
     runs-on: [self-hosted, linux, x64]
     steps:
-      - name: Check out exact PR head
+      - name: Check out exact revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
 
       - name: Select runner Python
@@ -192,15 +269,15 @@ jobs:
 
       - name: Reject stale verification checkout
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
             exit 1
           fi
-          echo "Verified exact PR head $actual."
+          echo "Verified exact head $actual."
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -241,7 +318,7 @@ jobs:
         run: npm run test:package --prefix clients/typescript
 
   ruby:
-    name: Ruby behavior
+    name: Ruby invariant
     needs: classify
     if: needs.classify.outputs.ruby == 'true'
     runs-on: [self-hosted, linux, x64]
@@ -250,10 +327,10 @@ jobs:
       SEARCHKERNEL_BUILD_ENV: ci
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
-      - name: Check out exact PR head
+      - name: Check out exact revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
 
       - name: Ensure provisioned Ruby
@@ -291,15 +368,15 @@ jobs:
 
       - name: Reject stale verification checkout
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact PR head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this head."
+            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
             exit 1
           fi
-          echo "Verified exact PR head $actual."
+          echo "Verified exact head $actual."
 
       - name: Run Ruby behavioral tests
         run: |
@@ -311,24 +388,65 @@ jobs:
           ruby --version
           ./dev test ruby
 
+  tooling:
+    name: CI and build-tooling invariant
+    needs: classify
+    if: needs.classify.outputs.tooling == 'true'
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Reject stale verification checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
+            exit 1
+          fi
+          echo "Verified exact head $actual."
+
+      - name: Run native SDK packaging regression
+        run: bash tools/test-native-sdk-packaging.sh
+
+      - name: Run native environment fingerprint regression
+        run: bash tools/test-native-environment-fingerprint.sh
+
+      - name: Run native SDK cache regression
+        run: bash tools/test-native-sdk-cache.sh
+
+      - name: Test Clippy diagnostic runner
+        run: python3 tools/test_run_clippy.py
+
+      - name: Run semantic verifier routing regression
+        run: bash reference/vespa/verifiers/test-routing.sh
+
   native:
-    name: Native verification
+    name: Native invariant
     needs: classify
     if: needs.classify.outputs.native == 'true'
     uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main
     with:
-      revision: ${{ github.event.pull_request.head.sha }}
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
       target: native-full
 
   exact-head-gate:
-    name: Exact-head gate
-    needs: [classify, rust, python, typescript, ruby, native]
-    if: always()
+    name: Invariant gate
+    needs: [classify, rust, python, typescript, ruby, tooling, native]
+    # Aggregate dependency failures, but do not strand a superseded workflow
+    # after GitHub cancels it in favor of a newer PR head.
+    if: ${{ always() && !cancelled() }}
     runs-on: [self-hosted, linux, x64]
     steps:
-      - name: Require every selected behavioral lane
+      - name: Require every selected invariant lane
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           CLASSIFY_RESULT: ${{ needs.classify.result }}
           RUST_REQUIRED: ${{ needs.classify.outputs.rust }}
           RUST_RESULT: ${{ needs.rust.result }}
@@ -338,13 +456,15 @@ jobs:
           TYPESCRIPT_RESULT: ${{ needs.typescript.result }}
           RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}
           RUBY_RESULT: ${{ needs.ruby.result }}
+          TOOLING_REQUIRED: ${{ needs.classify.outputs.tooling }}
+          TOOLING_RESULT: ${{ needs.tooling.result }}
           NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}
           NATIVE_RESULT: ${{ needs.native.result }}
         run: |
           set -euo pipefail
 
           if [[ "$CLASSIFY_RESULT" != "success" ]]; then
-            echo "::error::Exact-head classification failed for $EXPECTED_HEAD."
+            echo "::error::Invariant planning failed for $EXPECTED_HEAD."
             exit 1
           fi
 
@@ -353,7 +473,7 @@ jobs:
             local required=$2
             local result=$3
             if [[ "$required" == "true" && "$result" != "success" ]]; then
-              echo "::error::$lane behavioral verification for $EXPECTED_HEAD ended as '$result'."
+              echo "::error::$lane invariant verification for $EXPECTED_HEAD ended as '$result'."
               exit 1
             fi
           }
@@ -362,6 +482,7 @@ jobs:
           require_lane Python "$PYTHON_REQUIRED" "$PYTHON_RESULT"
           require_lane TypeScript "$TYPESCRIPT_REQUIRED" "$TYPESCRIPT_RESULT"
           require_lane Ruby "$RUBY_REQUIRED" "$RUBY_RESULT"
+          require_lane Tooling "$TOOLING_REQUIRED" "$TOOLING_RESULT"
           require_lane Native "$NATIVE_SENSITIVE" "$NATIVE_RESULT"
 
-          echo "All selected behavioral verification for exact PR head $EXPECTED_HEAD is verified."
+          echo "All selected invariant verification for exact head $EXPECTED_HEAD passed."
