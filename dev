@@ -3,22 +3,10 @@ set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 EXPECTED_FLATBUFFERS_VERSION=25.12.19
-if [[ -n "${PYTHON:-}" ]]; then
-    :
-elif [[ -x "$ROOT/venv/bin/python" ]]; then
-    PYTHON="$ROOT/venv/bin/python"
-else
-    PYTHON=python3
-fi
-
-if [[ "$PYTHON" != */* ]]; then
-    PYTHON=$(command -v "$PYTHON" 2>/dev/null || printf '%s' "$PYTHON")
-fi
+PYTHON=$(bash "$ROOT/tools/resolve-python.sh")
 export PYTHON
-if [[ "$PYTHON" == */* && -x "$PYTHON" ]]; then
-    PATH="$(dirname -- "$PYTHON"):$PATH"
-    export PATH
-fi
+PATH="$(dirname -- "$PYTHON"):$PATH"
+export PATH
 
 cd "$ROOT"
 
@@ -297,6 +285,7 @@ check_protocol() {
     bash "$ROOT/tools/check-searchkernel-rpc.sh"
     bash "$ROOT/tools/check-python-flatbuffers-generated.sh"
     bash "$ROOT/tools/check-python-grpc.sh"
+    "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
     run_typescript_generation_check
 }
 
