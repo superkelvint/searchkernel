@@ -19,13 +19,22 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      - name: Verify provisioned Rust toolchain
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          command -v rustfmt
+          command -v cargo-clippy
+          cargo --version
+          rustc --version
+          rustfmt --version
+          cargo clippy --version
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target/ci-non-native"
           shared-key: non-native
+          cache-bin: false
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4
         with:
@@ -116,11 +125,18 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify provisioned Rust toolchain
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          cargo --version
+          rustc --version
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target/ci-nightly-e2e"
           shared-key: nightly-e2e
+          cache-bin: false
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
       - uses: actions/setup-node@v4
