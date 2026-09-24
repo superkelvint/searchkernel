@@ -74,6 +74,20 @@ class VerificationDagTests(unittest.TestCase):
         self.assertEqual(task.command, "./dev test ruby")
         self.assertIn("ruby-client", verification_dag.task_closure(current, ("full",)))
 
+    def test_runner_bootstrap_task_executes_packaging_regression(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+
+        owners = verification_dag.matching_subsystems(
+            current, "tools/ci/runner-bootstrap/package.sh"
+        )
+        self.assertEqual([owner.id for owner in owners], ["ci-runner-bootstrap"])
+        self.assertEqual(owners[0].requires, ("runner-bootstrap",))
+
+        task = current.tasks["runner-bootstrap"]
+        self.assertEqual(task.kind, "command")
+        self.assertEqual(task.command, "bash tools/ci/runner-bootstrap/test.sh")
+        self.assertIn("runner-bootstrap", verification_dag.task_closure(current, ("full",)))
+
     def test_semantic_vespa_router_targets_are_all_represented_in_dag(self) -> None:
         current = verification_dag.load_dag(DAG_PATH)
         completed = subprocess.run(
