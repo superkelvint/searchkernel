@@ -58,15 +58,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - name: Verify provisioned Rust toolchain
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          command -v rustfmt
+          cargo --version
+          rustc --version
+          rustfmt --version
 
       - name: Verify self-hosted ABI dependencies
         run: |
           if ! command -v cargo >/dev/null 2>&1 || ! command -v rustc >/dev/null 2>&1; then
-            echo "::error::Rust toolchain installation did not expose cargo and rustc."
+            echo "::error::Runner provisioning does not expose cargo and rustc."
             exit 1
           fi
           if ! "$ABI_PYTHON" -c 'import clang.cindex'; then
