@@ -76,6 +76,12 @@ jobs:
             fi
           done
 
+          artifact_mount_rw=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/native-artifacts"}}{{.RW}}{{end}}{{end}}' "$NATIVE_CONTAINER")
+          if [[ "$artifact_mount_rw" != "false" ]]; then
+            echo "::error::native artifact mount must be read-only, found RW=$artifact_mount_rw"
+            exit 1
+          fi
+
       - name: Copy exact revision into AlmaLinux
         env:
           EXPECTED_HEAD: ${{ steps.revision.outputs.sha }}
@@ -157,7 +163,12 @@ jobs:
             export CARGO_TARGET_DIR="$ALMA_WORKTREE/target/closure-422"
             rm -rf "$SK_NATIVE_CACHE_DIR" "$CARGO_TARGET_DIR"
             [[ ! -e "$SK_NATIVE_CACHE_DIR" ]]
-            [[ ! -e upstream/vespa/.git ]]
+            if [[ -e upstream/vespa/.git ||
+                  -f upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt ||
+                  -f upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make ]]; then
+              echo "closure-422 requires a checkout with no configured source Vespa tree" >&2
+              exit 1
+            fi
           fi
 
           pin=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["vespa_commit"])' core/native/vespa/manifest.json)
