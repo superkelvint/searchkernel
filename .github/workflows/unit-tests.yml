@@ -22,6 +22,8 @@ on:
       - "tools/test-native-sdk-cache.sh"
       - "tools/run_clippy.py"
       - "tools/test_run_clippy.py"
+      - "tools/ci/runner-bootstrap/ensure-ruby.sh"
+      - ".github/ci/test_ensure_ruby.py"
   pull_request:
     paths:
       - "Cargo.toml"
@@ -42,6 +44,8 @@ on:
       - "tools/test-native-sdk-cache.sh"
       - "tools/run_clippy.py"
       - "tools/test_run_clippy.py"
+      - "tools/ci/runner-bootstrap/ensure-ruby.sh"
+      - ".github/ci/test_ensure_ruby.py"
   workflow_dispatch:
 
 concurrency:
@@ -89,6 +93,9 @@ jobs:
 
       - name: Test Clippy diagnostic runner
         run: python3 tools/test_run_clippy.py
+
+      - name: Run Ruby provisioning regression
+        run: python3 .github/ci/test_ensure_ruby.py
 
       - name: Run semantic verifier routing regression
         run: bash reference/vespa/verifiers/test-routing.sh
