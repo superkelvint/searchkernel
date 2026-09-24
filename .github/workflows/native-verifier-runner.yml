@@ -113,10 +113,9 @@ jobs:
         run: |
           set -euo pipefail
           command -v gh >/dev/null
-          command -v rustc >/dev/null
 
           pin=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["vespa_commit"])' core/native/vespa/manifest.json)
-          target=$(rustc -vV | sed -n 's/^host: //p')
+          target=$(docker exec "$NATIVE_CONTAINER" /bin/bash -lc "rustc -vV | sed -n 's/^host: //p'")
           [[ -n "$target" ]] || {
             echo "::error::could not determine host Rust target for native-base selection"
             exit 1
@@ -212,7 +211,7 @@ jobs:
             exit 1
           fi
 
-          for cmd in cargo rustc c++ flatc flock python3 ldd; do
+          for cmd in cargo rustc c++ flatc flock python3 ldd sha256sum; do
             command -v "$cmd" >/dev/null 2>&1 || {
               echo "required verifier command is unavailable: $cmd" >&2
               exit 1
