@@ -90,5 +90,38 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertNotIn("SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip", source)
 
 
+    def test_superseded_pr_heads_stop_before_each_expensive_native_phase(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "pull-requests: read",
+            'PR_NUMBER: ${{ github.event.pull_request.number }}',
+            "assert_current_pr_head()",
+            'gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq \' .head.sha\'',
+            "Superseded native verification",
+            "run_native_phase()",
+            "run_native_phase prepare",
+            "run_native_phase native-sdk",
+            "run_native_phase native-full-abi",
+            "run_native_phase native-full-hnsw",
+            "run_native_phase native-full-product-integration",
+            "run_native_phase native-full-rust-real-engine",
+            "run_native_phase native-full-grouping-yql",
+            "run_native_phase native-full-recovery",
+            "run_native_phase native-full-phase9",
+            "run_native_phase native-full-python-e2e",
+            "run_native_phase native-full-persistence",
+            "run_native_phase client-e2e-build",
+            "run_native_phase client-e2e-run",
+            "run_native_phase closure-422-build",
+            "run_native_phase closure-422-m14",
+            "run_native_phase closure-422-rust-real-engine",
+            "run_native_phase closure-422-integration",
+            "run_native_phase closure-422-php-e2e",
+            "run_native_phase requested-target",
+            "flock 9",
+        ):
+            self.assertIn(needle, source)
+
+
 if __name__ == "__main__":
     unittest.main()
