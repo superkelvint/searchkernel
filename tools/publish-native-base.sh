@@ -303,6 +303,8 @@ verify_archive_consumer() {
 
     [[ -s "$verify_root/sdk/lib/libsearchkernel_vespa.so" ]] ||
         die "$label: consumer-path adapter build produced no library"
+    python3 "$ROOT/tools/check-native-runtime-closure.py" \
+        "$base/lib" "$verify_root/sdk/lib/libsearchkernel_vespa.so.2"
     output="$(env -u LD_PRELOAD LD_LIBRARY_PATH="$base/lib" \
         ldd "$verify_root/sdk/lib/libsearchkernel_vespa.so")"
     printf '%s\n' "$output"
