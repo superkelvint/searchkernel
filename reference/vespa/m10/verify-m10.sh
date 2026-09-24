@@ -43,7 +43,7 @@ require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m10-driver" \
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
-  id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
+  id="$(python3 "$ROOT/tools/json-cli.py" get "$s" id)"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$SCRIPT_DIR/oracle/run-cpp-oracle.sh" "$s" | "$SCRIPT_DIR/canonicalize.py" > "$TMP/oracle-$id.json"
     "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/oracle-$id.json"
