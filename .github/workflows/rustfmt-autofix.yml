@@ -28,10 +28,15 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      - name: Install Rustfmt
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - name: Verify provisioned Rustfmt
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          command -v rustfmt
+          cargo --version
+          rustc --version
+          rustfmt --version
 
       - name: Apply formatting
         run: cargo fmt --all
