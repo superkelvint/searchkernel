@@ -1,0 +1,176 @@
+name: Native verifier runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Branch, tag, or commit to verify (blank uses the selected workflow ref)
+        required: false
+        type: string
+      target:
+        description: ./dev verify target, or closure-422
+        required: true
+        default: integration
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-verifier-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: ${{ inputs.target }} on AlmaLinux
+    runs-on: [self-hosted, linux, x64]
+    env:
+      NATIVE_CONTAINER: searchkernel-native
+      ALMA_CARGO_TARGET_DIR: /work/target/actions-runner-alma-manual
+    steps:
+      - name: Check out requested revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve exact revision
+        id: revision
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          echo "sha=$actual" >> "$GITHUB_OUTPUT"
+          echo "Verifying exact SearchKernel revision $actual"
+
+      - name: Verify provisioned AlmaLinux native container
+        run: |
+          set -euo pipefail
+
+          if ! docker container inspect "$NATIVE_CONTAINER" >/dev/null 2>&1; then
+            echo "::error::missing persistent AlmaLinux native container '$NATIVE_CONTAINER'"
+            echo "::error::run tools/actions-runner-setup.sh once on this runner"
+            exit 1
+          fi
+
+          if [[ "$(docker inspect --format '{{.State.Running}}' "$NATIVE_CONTAINER")" != "true" ]]; then
+            docker start "$NATIVE_CONTAINER" >/dev/null
+          fi
+
+          mounts=$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$NATIVE_CONTAINER")
+          for required in /work /native-artifacts /root/.cargo /root/.rustup /root/.cache/searchkernel; do
+            if ! grep -Fxq "$required" <<<"$mounts"; then
+              echo "::error::native container '$NATIVE_CONTAINER' is missing required mount $required"
+              echo "::error::rerun tools/actions-runner-setup.sh on this runner"
+              exit 1
+            fi
+          done
+
+      - name: Copy exact revision into AlmaLinux
+        env:
+          EXPECTED_HEAD: ${{ steps.revision.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          if git config --local --get-regexp '^http\..*\.extraheader$' >/dev/null 2>&1; then
+            echo "::error::refusing to copy a checkout containing persisted GitHub credentials"
+            exit 1
+          fi
+
+          ALMA_WORKTREE="/tmp/searchkernel-verifier-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE"
+          docker exec "$NATIVE_CONTAINER" mkdir -p "$ALMA_WORKTREE"
+          docker cp "$GITHUB_WORKSPACE/." "$NATIVE_CONTAINER:$ALMA_WORKTREE"
+
+          actual=$(docker exec             -e ALMA_WORKTREE="$ALMA_WORKTREE"             "$NATIVE_CONTAINER"             /bin/bash -lc 'git -c safe.directory="$ALMA_WORKTREE" -C "$ALMA_WORKTREE" rev-parse HEAD')
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::AlmaLinux copy expected $EXPECTED_HEAD, found $actual"
+            exit 1
+          fi
+
+          echo "ALMA_WORKTREE=$ALMA_WORKTREE" >> "$GITHUB_ENV"
+
+      - name: Run verifier in AlmaLinux
+        env:
+          EXPECTED_HEAD: ${{ steps.revision.outputs.sha }}
+          VERIFIER_TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+
+          docker exec -i             -e ALMA_WORKTREE="$ALMA_WORKTREE"             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e VERIFIER_TARGET="$VERIFIER_TARGET"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR="$ALMA_CARGO_TARGET_DIR"             "$NATIVE_CONTAINER"             /bin/bash -s <<'BASH'
+          set -euo pipefail
+
+          export PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          export LD_LIBRARY_PATH="/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=safe.directory
+          export GIT_CONFIG_VALUE_0="$ALMA_WORKTREE"
+
+          cd "$ALMA_WORKTREE"
+
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "expected exact revision $EXPECTED_HEAD in AlmaLinux, found $actual" >&2
+            exit 1
+          fi
+
+          for cmd in cargo rustc c++ flatc flock python3 ldd; do
+            command -v "$cmd" >/dev/null 2>&1 || {
+              echo "required verifier command is unavailable: $cmd" >&2
+              exit 1
+            }
+          done
+
+          if ! command -v rg >/dev/null 2>&1; then
+            dnf install -y epel-release
+            dnf install -y ripgrep
+          fi
+          if ! command -v nm >/dev/null 2>&1 || ! command -v readelf >/dev/null 2>&1; then
+            dnf install -y binutils
+          fi
+          rustup component add rustfmt clippy >/dev/null
+
+          unset VESPA_ROOT || true
+          unset SK_NATIVE_SDK || true
+          unset SEARCHKERNEL_VERIFY_LIVE_ORACLE || true
+
+          pin=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["vespa_commit"])' core/native/vespa/manifest.json)
+          target=$(rustc -vV | sed -n 's/^host: //p')
+          artifact=$(find /native-artifacts -maxdepth 1 -type f -name "searchkernel-vespa-base-v*-ci-${target}-${pin}.tar.gz" -print | sort -V | tail -n 1)
+          if [[ -z "$artifact" || ! -s "$artifact" || ! -s "${artifact}.sha256" ]]; then
+            echo "no staged published CI native base for Vespa $pin and target $target" >&2
+            echo "run tools/actions-runner-setup.sh on this runner after publishing the base" >&2
+            exit 1
+          fi
+
+          echo "Using native base artifact: $artifact"
+          export SK_NATIVE_BASE_ARTIFACT_URL="file://$artifact"
+
+          exec 9>/tmp/searchkernel-native-ci.lock
+          flock 9
+
+          ./dev native-sdk ensure
+
+          case "$VERIFIER_TARGET" in
+            closure-422)
+              ./dev verify m14
+              ./dev verify product.rust-real-engine
+              ./dev verify integration
+              ;;
+            *)
+              ./dev verify "$VERIFIER_TARGET"
+              ;;
+          esac
+          BASH
+
+      - name: Remove exact-revision container copy
+        if: always()
+        run: |
+          set +e
+          ALMA_WORKTREE="${ALMA_WORKTREE:-/tmp/searchkernel-verifier-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"
+          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE" >/dev/null 2>&1 || true
+
+      - name: Mark evidence scope
+        if: always()
+        run: |
+          echo "::notice::This workflow provides runner execution evidence only. It is not verification-DAG selection or merge authorization."
