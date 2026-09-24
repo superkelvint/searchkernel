@@ -35,7 +35,7 @@ jobs:
         run: bash .github/ci/check-python-workflows.sh
 
       - name: Test native verifier workflow policy
-        run: "$CI_PYTHON" .github/ci/test_native_verifier_runner.py
+        run: $CI_PYTHON .github/ci/test_native_verifier_runner.py
 
       - name: Reject stale verification checkout
         env:
