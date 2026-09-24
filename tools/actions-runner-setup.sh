@@ -690,7 +690,7 @@ PUBLISHED_VESPA_ROOT="$CACHE_NAMESPACE/toolchains/$PINNED_VESPA_COMMIT/upstream/
     die "published native-base toolchain provenance is missing: $PUBLISHED_VESPA_ROOT"
 
 # Force the acceptance run through the published toolchain even if the checkout
-# mounted at /work happens to contain a developer's configured upstream/vespa
+# mounted at /work happens to contain a a developer-configured upstream/vespa
 # tree. live_oracle_enabled() must therefore select frozen-oracle replay.
 export VESPA_ROOT="$PUBLISHED_VESPA_ROOT"
 unset SK_NATIVE_SDK || true
