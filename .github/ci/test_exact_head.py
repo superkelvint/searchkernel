@@ -12,6 +12,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
+CLIENT_CAPABILITIES_WORKFLOW = SCRIPT.parents[1] / "workflows" / "client-capabilities.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 PERSISTENCE_IMMUTABILITY = SCRIPT.parents[2] / "tools" / "check-persistence-fixture-immutability.sh"
@@ -213,6 +214,16 @@ class ExactHeadTests(unittest.TestCase):
             '"$CI_PYTHON" "$EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
             workflow,
         )
+
+    def test_client_capabilities_uses_trusted_base_native_fetch_helper(self) -> None:
+        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
+        install_step = workflow.split(
+            "- name: Install newest immutable native Vespa base for executable client E2E", 1
+        )[1].split("- name: Select C++23 compiler", 1)[0]
+        self.assertIn('BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}', install_step)
+        self.assertIn('git show "$BASE_SHA:tools/fetch-native-base.sh" > "$trusted_fetch"', install_step)
+        self.assertIn('artifact=$("$trusted_fetch" ci)', install_step)
+        self.assertNotIn("artifact=$(tools/fetch-native-base.sh ci)", install_step)
 
     def test_workflow_keeps_native_signal_without_running_native_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
