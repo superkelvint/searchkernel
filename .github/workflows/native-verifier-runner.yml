@@ -239,10 +239,6 @@ jobs:
             }
           done
 
-          if ! command -v jq >/dev/null 2>&1; then
-            dnf install -y jq
-          fi
-
           assert_current_pr_head() {
             local phase=$1
             if [[ -z "${PR_NUMBER:-}" ]]; then
@@ -255,7 +251,7 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
-            current=$(jq -r '.head.sha // empty' <<<"$response")
+            current=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("head", {}).get("sha", ""))' <<<"$response")
             if [[ -z "$current" ]]; then
               echo "::error::could not resolve current head for PR #$PR_NUMBER before $phase"
               exit 1
@@ -281,7 +277,6 @@ jobs:
           if ! command -v clang >/dev/null 2>&1 || ! python3 -c 'import clang.cindex' >/dev/null 2>&1; then
             dnf install -y clang python3-clang
           fi
-          command -v jq >/dev/null
           command -v clang >/dev/null
           python3 -c 'import clang.cindex' >/dev/null
           rustup component add rustfmt clippy >/dev/null
