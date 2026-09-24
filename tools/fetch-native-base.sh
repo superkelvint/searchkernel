@@ -16,7 +16,7 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" ||
 ROOT="$(cd "$ROOT" && pwd -P)"
 cd "$ROOT"
 
-for cmd in gh python3 sha256sum; do
+for cmd in gh python3 sha256sum uname; do
     command -v "$cmd" >/dev/null 2>&1 || die "missing required command: $cmd"
 done
 
@@ -31,9 +31,20 @@ PY
 )"
 if [[ -n "${SK_NATIVE_TARGET:-}" ]]; then
     TARGET=$SK_NATIVE_TARGET
-else
-    command -v rustc >/dev/null 2>&1 || die "rustc is required unless SK_NATIVE_TARGET is set"
+elif command -v rustc >/dev/null 2>&1; then
     TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+else
+    # Native-base download only needs the artifact target, not a Rust compiler.
+    # The self-hosted CI fleet is explicitly Linux x86_64, so keep that
+    # harness path independent of whether host rustc happens to be on PATH.
+    case "$(uname -s):$(uname -m)" in
+        Linux:x86_64|Linux:amd64)
+            TARGET=x86_64-unknown-linux-gnu
+            ;;
+        *)
+            die "cannot determine native target without rustc; set SK_NATIVE_TARGET explicitly"
+            ;;
+    esac
 fi
 [[ -n "$TARGET" ]] || die "could not determine Rust target"
 
