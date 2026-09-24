@@ -8,7 +8,7 @@ BIN="$SCRIPT_DIR/target/m9_cpp_oracle"; SRC="$SCRIPT_DIR/m9_attribute_grouping_o
 IMAGE="${M9_VESPA_DEV_IMAGE:-docker.io/vespaengine/vespa-dev-almalinux-8:latest}"
 [[ -x "$BIN" ]] || fail_verification "M9 C++ oracle binary missing; build explicitly with oracle/build-cpp-oracle.sh"
 [[ -s "$PROV" && -f "$SRC" ]] || fail_verification "M9 oracle provenance/source missing"
-python3 "reference/vespa/m9/oracle/run-cpp-oracle-python-1.py" "$PROV" "$ROOT/reference/vespa/PINNED_VESPA.json"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/run-cpp-oracle-python-1.py" "$PROV" "$ROOT/reference/vespa/PINNED_VESPA.json"
 scenario_abs="$(cd "$(dirname "$SCENARIO")" && pwd -P)/$(basename "$SCENARIO")"
 case "$scenario_abs" in "$ROOT"/*) rel="${scenario_abs#"$ROOT"/}";; *) fail_verification "scenario must be inside repository";; esac
 if [[ -f /.dockerenv ]]; then
