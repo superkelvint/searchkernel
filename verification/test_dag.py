@@ -18,6 +18,13 @@ class VerificationDagTests(unittest.TestCase):
         current = verification_dag.load_dag(DAG_PATH)
         verification_dag.validate_repository_coverage(current, ROOT)
 
+    def test_full_root_reaches_runner_bootstrap(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+        self.assertIn(
+            "runner-bootstrap",
+            verification_dag.task_closure(current, ("full",)),
+        )
+
     def test_every_current_web_feature_family_has_subsystem_ownership(self) -> None:
         current = verification_dag.load_dag(DAG_PATH)
         features = ROOT / "searchkernel-web" / "src" / "features"
