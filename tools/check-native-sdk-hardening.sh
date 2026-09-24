@@ -16,18 +16,7 @@ TEST_HEADER="$ROOT/core/native/vespa/searchkernel_vespa_test.h"
     exit 1
 }
 
-python3 - "$MANIFEST" <<'PY'
-import json
-import sys
-
-path = sys.argv[1]
-with open(path, encoding="utf-8") as stream:
-    manifest = json.load(stream)
-if manifest.get("hardening_failpoints") is not True:
-    raise SystemExit(
-        f"hardening SDK manifest does not enable failpoints: {path}"
-    )
-PY
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/check-native-sdk-hardening-python-1.py" "$MANIFEST"
 
 mapfile -t required_symbols < <(
     sed -nE 's/^SK_API ([A-Za-z0-9_]+) (sk_test_[a-zA-Z0-9_]+)\(.*/\2/p' \
