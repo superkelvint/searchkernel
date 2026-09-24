@@ -4,10 +4,11 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
+python=${PYTHON:-python3}
 
-python3 "$root/tools/check-python-dependencies.py" --codegen
+"$python" "$root/tools/check-python-dependencies.py" --codegen
 
-python3 -m grpc_tools.protoc \
+"$python" -m grpc_tools.protoc \
     --proto_path="$root/api" \
     --python_out="$temporary" \
     --grpc_python_out="$temporary" \
