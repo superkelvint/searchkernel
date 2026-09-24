@@ -29,3 +29,5 @@ The native side packages the Vespa engine behind a Search Kernel-owned C ABI.
 
 Native changes require the repository's SDK build and conformance workflow;
 ordinary Rust-only changes should not rebuild Vespa.
+
+<!-- CI smoke: native verifier closure after SDK-path repair; do not merge. -->
