@@ -87,12 +87,6 @@ if cmp -s "$TYPEA_CFG" "$PRODUCTS_CFG"; then
   exit 1
 fi
 
-python3 - "$TYPEA_CFG" "$PRODUCTS_CFG" <<'PY'
-import json, sys
-left=json.load(open(sys.argv[1])); right=json.load(open(sys.argv[2]))
-assert left['fields'] == right['fields'], 'identity pair field models unexpectedly differ'
-assert left['document_type'] == 'typea', left
-assert right['document_type'] == 'products', right
-PY
+python3 "reference/vespa/m6/verify-m6-python-1.py" "$TYPEA_CFG" "$PRODUCTS_CFG"
 
 echo "M6 verification passed"
