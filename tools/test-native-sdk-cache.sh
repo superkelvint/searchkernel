@@ -25,6 +25,17 @@ grep -Fq 'ARTIFACT="/native-artifacts/${SK_NATIVE_ARCHIVE_NAME}"' \
     "$source_root/tools/actions-runner-setup.sh"
 grep -Fq 'export SK_NATIVE_BASE_ARTIFACT_URL="file://${ARTIFACT}"' \
     "$source_root/tools/actions-runner-setup.sh"
+grep -Fq 'PUBLISHED_VESPA_ROOT="$CACHE_NAMESPACE/toolchains/$PINNED_VESPA_COMMIT/upstream/vespa"' \
+    "$source_root/tools/actions-runner-setup.sh"
+grep -Fq 'export VESPA_ROOT="$PUBLISHED_VESPA_ROOT"' \
+    "$source_root/tools/actions-runner-setup.sh"
+grep -Fq './dev verify m14' "$source_root/tools/actions-runner-setup.sh"
+grep -Fq './dev verify product.rust-real-engine' "$source_root/tools/actions-runner-setup.sh"
+grep -Fq './dev verify integration' "$source_root/tools/actions-runner-setup.sh"
+if grep -Fq 'SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip' "$source_root/tools/actions-runner-setup.sh"; then
+    echo 'Actions runner acceptance must prove automatic published-toolchain oracle replay, not force skip mode' >&2
+    exit 1
+fi
 grep -Fq 'CONTAINER_CARGO_TARGET_DIR="${SEARCHKERNEL_NATIVE_CARGO_TARGET_DIR:-/work/target/actions-runner-alma}"' \
     "$source_root/tools/actions-runner-setup.sh"
 if grep -Fq '/work/target/ci' "$source_root/tools/actions-runner-setup.sh"; then
