@@ -47,6 +47,35 @@ class NativeAbiAuthorityTests(unittest.TestCase):
                     }
                 )
                 + "\n",
+            "reference/vespa/m0/expected/01-native-open-close.json":
+                json.dumps(
+                    {
+                        "scenario": "native-open-close",
+                        "abi_version": version,
+                        "open_count": 2,
+                        "status": "ok",
+                    }
+                )
+                + "\n",
+            "reference/vespa/m0/scenarios/01-native-open-close.json":
+                json.dumps(
+                    {
+                        "scenario": "native-open-close",
+                        "opens": 2,
+                        "same_data_directory": True,
+                        "native_abi_version": version,
+                    }
+                )
+                + "\n",
+            "reference/vespa/phase9/expected/01-additive-handles.json":
+                json.dumps(
+                    {
+                        "id": "additive-handles",
+                        "status": "ok",
+                        "abi": version,
+                    }
+                )
+                + "\n",
         }
         for relative, contents in files.items():
             path = root / relative
@@ -106,6 +135,59 @@ class NativeAbiAuthorityTests(unittest.TestCase):
             mismatch = CHECKER.disagreement(self.authorities(root))
             self.assertIsNotNone(mismatch)
             self.assertIn("native manifest=12", mismatch)
+
+    def test_m0_expected_abi_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_fixture(root)
+            expected = root / "reference/vespa/m0/expected/01-native-open-close.json"
+            expected.write_text(
+                json.dumps(
+                    {
+                        "scenario": "native-open-close",
+                        "abi_version": 12,
+                        "open_count": 2,
+                        "status": "ok",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            mismatch = CHECKER.disagreement(self.authorities(root))
+            self.assertIsNotNone(mismatch)
+            self.assertIn("M0 native-open-close expected=12", mismatch)
+
+    def test_other_verifier_abi_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_fixture(root)
+            scenario = root / "reference/vespa/m0/scenarios/01-native-open-close.json"
+            scenario.write_text(
+                json.dumps(
+                    {
+                        "scenario": "native-open-close",
+                        "opens": 2,
+                        "same_data_directory": True,
+                        "native_abi_version": 12,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            mismatch = CHECKER.disagreement(self.authorities(root))
+            self.assertIsNotNone(mismatch)
+            self.assertIn("M0 native-open-close scenario=12", mismatch)
+
+            self.write_fixture(root)
+            phase9 = root / "reference/vespa/phase9/expected/01-additive-handles.json"
+            phase9.write_text(
+                json.dumps({"id": "additive-handles", "status": "ok", "abi": 12})
+                + "\n",
+                encoding="utf-8",
+            )
+            mismatch = CHECKER.disagreement(self.authorities(root))
+            self.assertIsNotNone(mismatch)
+            self.assertIn("Phase 9 additive expected=12", mismatch)
 
     def test_native_manifest_vespa_commit_drift_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
