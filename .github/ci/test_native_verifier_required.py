@@ -76,17 +76,24 @@ class NativeVerifierRequiredTests(unittest.TestCase):
         )
         self.assertEqual(matches[0][0], "core/native/old_adapter.cpp")
 
-    def test_behavioral_workflow_uses_trusted_base_selector_and_native_gate(self) -> None:
+    def test_behavioral_workflow_uses_current_target_native_policy(self) -> None:
         source = BEHAVIORAL_WORKFLOW.read_text(encoding="utf-8")
         for needle in (
+            'BASE_REF: ${{ github.event.pull_request.base.ref }}',
             'git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA"',
-            'git show "$BASE_SHA:.github/ci/native_verifier_required.py"',
+            'git fetch --no-tags --depth=1 origin "refs/heads/$BASE_REF"',
+            'policy_sha=$(git rev-parse FETCH_HEAD)',
+            'git show "$policy_sha:.github/ci/native_verifier_required.py" > "$selector"',
             'uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main',
             'target: native-full',
             'needs: [classify, rust, python, typescript, ruby, native]',
             'require_lane Native "$NATIVE_SENSITIVE" "$NATIVE_RESULT"',
         ):
             self.assertIn(needle, source)
+        self.assertNotIn(
+            'git show "$BASE_SHA:.github/ci/native_verifier_required.py"',
+            source,
+        )
         self.assertNotIn("verification/dag.toml", source)
 
 
