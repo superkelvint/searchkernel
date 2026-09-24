@@ -802,6 +802,7 @@ depends_on = [
   "web-dashboard",
   "issue-queue",
   "verification-policy",
+  "runner-bootstrap",
 ]
 cache_result = false
 
