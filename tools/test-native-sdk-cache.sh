@@ -11,6 +11,7 @@ bash -n "$source_root/tools/install-native-base-artifact.sh"
 bash -n "$source_root/tools/package-native-base-artifact.sh"
 bash -n "$source_root/tools/fetch-native-base.sh"
 bash -n "$source_root/tools/actions-runner-setup.sh"
+bash -n "$source_root/tools/test-native-actions-runner-container.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
 bash -n "$source_root/tools/test-fetch-native-base.sh"
 bash -n "$source_root/reference/vespa/common/verify-common.sh"
@@ -35,6 +36,7 @@ fi
 bash "$source_root/tools/test-native-base-artifact.sh"
 bash "$source_root/tools/test-fetch-native-base.sh"
 bash "$source_root/reference/vespa/common/test-published-provenance.sh"
+bash "$source_root/tools/test-native-actions-runner-container.sh"
 
 # The resolver executes the SDK builder directly. Git mode is therefore part of
 # the build contract: a content-identical 0644 checkout fails before any native
