@@ -74,10 +74,6 @@ exit 2
 GH
 chmod +x "$fakebin/gh"
 
-if command -v rustc >/dev/null 2>&1; then
-    :
-fi
-
 stderr="$fixture/fetch.err"
 if ! artifact=$(
     cd "$repo"
