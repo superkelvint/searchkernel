@@ -142,6 +142,75 @@ def main() -> int:
                 + complete.stderr
             )
 
+        # The final SearchKernel adapter is not stored inside base/lib, but its
+        # DT_NEEDED set is part of the consumer runtime contract too. Prove the
+        # bundler can close dependencies discovered only through an extra ELF.
+        extra_name = "libsearchkernel_fixture_adapter_dep.so.1"
+        (root / "extra.c").write_text(
+            "int searchkernel_fixture_adapter_dep(void) { return 11; }\n",
+            encoding="utf-8",
+        )
+        extra_dep = producer / extra_name
+        compile_shared(cc, root / "extra.c", extra_dep, extra_name)
+        (producer / "libsearchkernel_fixture_adapter_dep.so").symlink_to(
+            extra_dep.name
+        )
+
+        (root / "adapter.c").write_text(
+            "extern int searchkernel_fixture_adapter_dep(void);\n"
+            "int searchkernel_fixture_adapter(void) { "
+            "return searchkernel_fixture_adapter_dep(); }\n",
+            encoding="utf-8",
+        )
+        adapter = root / "libsearchkernel_fixture_adapter.so.2"
+        compile_shared(
+            cc,
+            root / "adapter.c",
+            adapter,
+            "libsearchkernel_fixture_adapter.so.2",
+            "-L",
+            str(producer),
+            "-Wl,--no-as-needed",
+            "-lsearchkernel_fixture_adapter_dep",
+        )
+
+        extra_before = subprocess.run(
+            [sys.executable, str(CHECKER), str(bundle), str(adapter)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if extra_before.returncode == 0 or extra_name not in extra_before.stderr:
+            raise SystemExit(
+                "checker did not expose adapter-only runtime dependency:\n"
+                + extra_before.stderr
+            )
+
+        run(
+            sys.executable,
+            str(BUNDLER),
+            str(bundle),
+            "--extra-elf",
+            str(adapter),
+            "--search-dir",
+            str(producer),
+            env=env,
+        )
+        if not (bundle / extra_name).is_file():
+            raise SystemExit("bundler did not copy adapter-only runtime dependency")
+
+        extra_complete = subprocess.run(
+            [sys.executable, str(CHECKER), str(bundle), str(adapter)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if extra_complete.returncode != 0:
+            raise SystemExit(
+                "closure checker rejected adapter-complete runtime closure:\n"
+                + extra_complete.stderr
+            )
+
     print("native runtime bundling regression: PASS")
     return 0
 
