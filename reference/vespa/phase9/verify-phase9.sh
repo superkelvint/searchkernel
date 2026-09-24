@@ -54,7 +54,7 @@ cc -std=c11 -Wall -Wextra -Werror -I"$SDK/include" \
   -Wl,-rpath,"$SDK/lib" -o "$TMP/probe"
 actual="$("$TMP/probe")"
 expected="$(cat "$PHASE9/expected/01-additive-handles.json")"
-python3 "reference/vespa/phase9/verify-phase9-python-1.py" "$actual" "$expected"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-phase9-python-1.py" "$actual" "$expected"
 
 # These executable vertical slices cover the Phase 9 semantics that cannot be
 # established by the ABI probe alone: real Vespa arithmetic persistence,
