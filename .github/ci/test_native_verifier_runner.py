@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
+import os
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 
@@ -91,6 +94,86 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             self.assertIn(needle, source)
         self.assertNotIn("SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip", source)
 
+
+
+    def _run_embedded_head_guard(
+        self,
+        payload: str,
+        *,
+        expected_head: str = "aaaaaaaa",
+        pr_number: str = "123",
+        curl_exit: int = 0,
+    ) -> subprocess.CompletedProcess[str]:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        start = source.index("          assert_current_pr_head() {")
+        end = source.index("\n          assert_current_pr_head preflight", start)
+        function_source = "\n".join(
+            line[10:] if line.startswith("          ") else line
+            for line in source[start:end].splitlines()
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_curl = Path(temp_dir) / "curl"
+            fake_curl.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s' \"$FAKE_CURL_PAYLOAD\"\n"
+                "exit \"$FAKE_CURL_EXIT\"\n",
+                encoding="utf-8",
+            )
+            fake_curl.chmod(0o755)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{temp_dir}:{env['PATH']}",
+                    "FAKE_CURL_PAYLOAD": payload,
+                    "FAKE_CURL_EXIT": str(curl_exit),
+                }
+            )
+            script = f"""
+set -euo pipefail
+HEAD_CHECK_TOKEN=dummy
+PR_NUMBER={pr_number!r}
+EXPECTED_HEAD={expected_head!r}
+GITHUB_REPOSITORY=superkelvint/searchkernel
+GITHUB_API_URL=https://api.github.invalid
+{function_source}
+assert_current_pr_head test-phase
+echo AFTER_GUARD
+"""
+            return subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                check=False,
+            )
+
+    def test_head_guard_stops_closed_pr_even_when_sha_is_unchanged(self) -> None:
+        completed = self._run_embedded_head_guard(
+            '{"state":"closed","head":{"sha":"aaaaaaaa"}}'
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        self.assertNotIn("AFTER_GUARD", completed.stdout)
+        self.assertIn("stopping obsolete native verification", completed.stdout)
+
+    def test_head_guard_runtime_current_stale_and_api_failure(self) -> None:
+        current = self._run_embedded_head_guard(
+            '{"state":"open","head":{"sha":"aaaaaaaa"}}'
+        )
+        self.assertEqual(current.returncode, 0, current.stdout)
+        self.assertIn("AFTER_GUARD", current.stdout)
+
+        stale = self._run_embedded_head_guard(
+            '{"state":"open","head":{"sha":"bbbbbbbb"}}'
+        )
+        self.assertEqual(stale.returncode, 0, stale.stdout)
+        self.assertNotIn("AFTER_GUARD", stale.stdout)
+        self.assertIn("Superseded native verification", stale.stdout)
+
+        failed = self._run_embedded_head_guard("", curl_exit=22)
+        self.assertNotEqual(failed.returncode, 0, failed.stdout)
+        self.assertNotIn("AFTER_GUARD", failed.stdout)
 
     def test_superseded_pr_heads_stop_before_each_expensive_native_phase(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
