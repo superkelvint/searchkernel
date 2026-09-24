@@ -19,7 +19,7 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "run this from inside
 ROOT="$(cd "$ROOT" && pwd -P)"
 cd "$ROOT"
 
-for cmd in cargo cmake c++ find gh git ldd python3 rustc sha256sum tar; do
+for cmd in cargo cmake c++ find gh git ldd python3 readelf rustc sha256sum tar; do
     command -v "$cmd" >/dev/null 2>&1 || die "missing required command: $cmd"
 done
 [[ -x ./dev ]] || die "./dev is missing or not executable"
@@ -221,6 +221,7 @@ for path in (bundle_path, marker_path):
                 f"{key} expected {value!r}, found {data.get(key)!r}"
             )
 PY
+    python3 "$ROOT/tools/check-native-runtime-closure.py" "$base/lib"
     python3 - "$vespa/$MARKER_REL" "$vespa" "$deps" <<'PY'
 import pathlib, shlex, sys
 link_file = pathlib.Path(sys.argv[1])
