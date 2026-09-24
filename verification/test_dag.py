@@ -36,6 +36,15 @@ class VerificationDagTests(unittest.TestCase):
         self.assertFalse(verification_dag.matching_subsystems(current, probe))
         self.assertFalse(verification_dag.matching_exemptions(current, probe))
 
+    def test_actions_runner_setup_is_owned_by_native_tooling(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+        owners = verification_dag.matching_subsystems(
+            current, "tools/actions-runner-setup.sh"
+        )
+        self.assertEqual([owner.id for owner in owners], ["native-tooling"])
+        self.assertIn("native-full", owners[0].requires)
+        self.assertIn("abi", owners[0].requires)
+
     def test_new_web_feature_family_is_not_silently_owned(self) -> None:
         current = verification_dag.load_dag(DAG_PATH)
         probe = "searchkernel-web/src/features/new-capability/Page.tsx"

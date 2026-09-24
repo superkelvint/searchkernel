@@ -1255,6 +1255,7 @@ paths = [
   "tools/*shared-library*.sh",
   "tools/copy-shared-library-into-sdk.sh",
   "tools/install-native-base-artifact.sh",
+  "tools/actions-runner-setup.sh",
   "tools/package-native-base-artifact.sh",
   "tools/resolve-native-sdk.sh",
   "tools/coverage-native-adapter.sh",
