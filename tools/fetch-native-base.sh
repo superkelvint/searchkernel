@@ -16,7 +16,7 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" ||
 ROOT="$(cd "$ROOT" && pwd -P)"
 cd "$ROOT"
 
-for cmd in gh python3 sha256sum uname; do
+for cmd in gh python3 sha256sum; do
     command -v "$cmd" >/dev/null 2>&1 || die "missing required command: $cmd"
 done
 
@@ -29,14 +29,16 @@ with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
     print(json.load(stream)["vespa_commit"])
 PY
 )"
-if [[ -n "${SK_NATIVE_TARGET:-}" ]]; then
-    TARGET=$SK_NATIVE_TARGET
-elif command -v rustc >/dev/null 2>&1; then
-    TARGET="$(rustc -vV | sed -n 's/^host: //p')"
-else
+TARGET=${SK_NATIVE_TARGET:-}
+if [[ -z "$TARGET" ]] && command -v rustc >/dev/null 2>&1; then
+    TARGET="$(rustc -vV 2>/dev/null | sed -n 's/^host: //p' || true)"
+fi
+if [[ -z "$TARGET" ]]; then
     # Native-base download only needs the artifact target, not a Rust compiler.
     # The self-hosted CI fleet is explicitly Linux x86_64, so keep that
-    # harness path independent of whether host rustc happens to be on PATH.
+    # harness path independent of whether host rustc happens to be usable.
+    command -v uname >/dev/null 2>&1 ||
+        die "cannot determine native target without rustc or uname; set SK_NATIVE_TARGET explicitly"
     case "$(uname -s):$(uname -m)" in
         Linux:x86_64|Linux:amd64)
             TARGET=x86_64-unknown-linux-gnu
@@ -46,7 +48,6 @@ else
             ;;
     esac
 fi
-[[ -n "$TARGET" ]] || die "could not determine Rust target"
 
 GENERATION="$(
     gh api --paginate "repos/${REPO}/releases?per_page=100" --jq '.[].tag_name' |
