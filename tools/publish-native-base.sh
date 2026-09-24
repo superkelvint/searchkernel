@@ -26,11 +26,17 @@ done
 gh api "repos/$REPO" >/dev/null 2>&1 || die "gh authentication cannot access $REPO"
 
 SOURCE_COMMIT="$(git rev-parse HEAD)"
-REMOTE_MAIN="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
-[[ "$SOURCE_COMMIT" == "$REMOTE_MAIN" ]] ||
-    die "publisher checkout is $SOURCE_COMMIT, but canonical main is $REMOTE_MAIN; update main before publishing"
-[[ -z "$(git status --porcelain --untracked-files=normal)" ]] ||
-    die "publisher checkout has uncommitted or untracked files; publish only from a clean canonical main"
+
+require_canonical_main() {
+    local remote_main
+    remote_main="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+    [[ "$SOURCE_COMMIT" == "$remote_main" ]] ||
+        die "publisher checkout is $SOURCE_COMMIT, but canonical main is $remote_main; update main before publishing"
+    [[ -z "$(git status --porcelain --untracked-files=normal)" ]] ||
+        die "publisher checkout has uncommitted or untracked files; publish only from a clean canonical main"
+}
+
+require_canonical_main
 
 PINNED_VESPA_COMMIT="$(python3 - <<'PY'
 import json
@@ -337,6 +343,9 @@ for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     TAGS[$BUILD_ENV]="$TAG"
     ASSETS[$BUILD_ENV]="$ASSET"
 done
+
+section "Revalidating publication source"
+require_canonical_main
 
 section "Publication preflight"
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
