@@ -62,10 +62,32 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
 
     def test_supports_422_closure_bundle(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("closure-422)", source)
-        self.assertIn("./dev verify m14", source)
-        self.assertIn("./dev verify product.rust-real-engine", source)
-        self.assertIn("./dev verify integration", source)
+        for needle in (
+            "closure-422)",
+            'export SK_NATIVE_CACHE_DIR="$ALMA_WORKTREE/.native-cache"',
+            'export CARGO_TARGET_DIR="$ALMA_WORKTREE/target/closure-422"',
+            "unset VESPA_LIBRARY_ROOT || true",
+            "unset VESPA_DEPS || true",
+            "unset VESPA_EXTRA_LIB_DIR || true",
+            'rm -rf "$SK_NATIVE_CACHE_DIR" "$CARGO_TARGET_DIR"',
+            'artifact_mount_rw=$(docker inspect',
+            "Resolve trusted native-base release",
+            'gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100"',
+            'target=$(docker exec "$NATIVE_CONTAINER"',
+            'EXPECTED_NATIVE_ARCHIVE_NAME: ${{ steps.native_base.outputs.archive }}',
+            'artifact="/native-artifacts/$EXPECTED_NATIVE_ARCHIVE_NAME"',
+            'native base digest does not match trusted release identity',
+            "ldd sha256sum",
+            'closure-422 requires a checkout with no configured source Vespa tree',
+            'bash tools/resolve-native-sdk.sh vespa-root',
+            'cargo build -p searchkerneld --features native',
+            "./dev verify m14",
+            "./dev verify product.rust-real-engine",
+            "./dev verify integration",
+            'bash clients/php/examples/run_searchkernel_client_api_e2e.sh',
+        ):
+            self.assertIn(needle, source)
+        self.assertNotIn("SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip", source)
 
 
 if __name__ == "__main__":

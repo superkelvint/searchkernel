@@ -42,6 +42,13 @@ class VerificationDagTests(unittest.TestCase):
         self.assertFalse(verification_dag.matching_subsystems(current, probe))
         self.assertFalse(verification_dag.matching_exemptions(current, probe))
 
+    def test_audit_split_manifest_is_documentation_exempt(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+        probe = "implementation-plan/audit/split-manifest.json"
+        self.assertFalse(verification_dag.matching_subsystems(current, probe))
+        exemptions = verification_dag.matching_exemptions(current, probe)
+        self.assertEqual([exemption.id for exemption in exemptions], ["documentation"])
+
     def test_ruby_client_family_has_explicit_verification_ownership(self) -> None:
         current = verification_dag.load_dag(DAG_PATH)
 
@@ -342,6 +349,74 @@ class VerificationDagTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, proof)
 
+    def test_plan_paths_respects_exemptions_and_override_ownership(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+
+        tasks, reasons, unclassified = verification_dag.plan_paths(
+            current,
+            ("docs/architecture.md",),
+        )
+        self.assertEqual(tasks, ())
+        self.assertEqual(reasons, {})
+        self.assertEqual(unclassified, ())
+
+        tasks, reasons, unclassified = verification_dag.plan_paths(
+            current,
+            ("docs/CAPABILITIES.md",),
+        )
+        self.assertIn("client-contracts", tasks)
+        self.assertIn("portable-ir-boundary", tasks)
+        self.assertEqual(unclassified, ())
+        self.assertIn(
+            "docs/CAPABILITIES.md: subsystem capability-ledger",
+            reasons["client-contracts"],
+        )
+        self.assertIn(
+            "docs/CAPABILITIES.md: subsystem capability-ledger",
+            reasons["portable-ir-boundary"],
+        )
+
+    def test_plan_paths_normalizes_deduplicates_and_fails_closed_on_unknown_paths(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+
+        normalized = verification_dag.plan_paths(
+            current,
+            (
+                " clients/php/src/Index.php ",
+                r"clients\php\src\Index.php",
+                "clients/php/src/Index.php",
+            ),
+        )
+        canonical = verification_dag.plan_paths(
+            current,
+            ("clients/php/src/Index.php",),
+        )
+        self.assertEqual(normalized, canonical)
+
+        tasks, reasons, unclassified = verification_dag.plan_paths(
+            current,
+            ("new-unowned-product/src/lib.rs",),
+        )
+        self.assertEqual(tasks, ())
+        self.assertEqual(reasons, {})
+        self.assertEqual(unclassified, ("new-unowned-product/src/lib.rs",))
+
+    def test_legacy_lane_projection_is_derived_from_selected_task_closure(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+        closure = verification_dag.task_closure(
+            current,
+            ("php-client", "client-contracts"),
+        )
+
+        lanes = verification_dag.legacy_lanes_for_tasks(current, closure)
+        selected = {lane for lane, enabled in lanes.items() if enabled}
+
+        self.assertEqual(selected, {"php", "contracts"})
+        self.assertFalse(lanes["rust"])
+        self.assertFalse(lanes["native"])
+        self.assertFalse(lanes["verification"])
+
+
     def test_old_schema_version_is_rejected(self) -> None:
         source = DAG_PATH.read_text(encoding="utf-8").replace(
             "schema_version = 2",
@@ -356,6 +431,28 @@ class VerificationDagTests(unittest.TestCase):
                 "unsupported verification DAG schema_version",
             ):
                 verification_dag.load_dag(path)
+
+    def test_search_endpoints_are_pre_registered_before_product_ingress_lands(self) -> None:
+        current = verification_dag.load_dag(DAG_PATH)
+        probe = "searchkerneld/src/search_endpoints.rs"
+        owners = verification_dag.matching_subsystems(current, probe)
+        owner_ids = [owner.id for owner in owners]
+        self.assertIn("searchkerneld-search-endpoints", owner_ids)
+        self.assertIn("searchkerneld", owner_ids)
+
+        endpoint_owner = next(
+            owner for owner in owners if owner.id == "searchkerneld-search-endpoints"
+        )
+        self.assertIn("search-endpoints", endpoint_owner.requires)
+
+        closure = verification_dag.task_closure(current, ("search-endpoints",))
+        self.assertIn("rust-non-native", closure)
+        self.assertIn("protocol-generated", closure)
+        self.assertIn("client-contracts", closure)
+        self.assertIn("search-endpoints", verification_dag.task_closure(current, ("full",)))
+
+        lanes = verification_dag.legacy_lanes_for_tasks(current, closure)
+        self.assertTrue(lanes["rust"])
 
     def test_unknown_task_reference_is_rejected(self) -> None:
         source = DAG_PATH.read_text(encoding="utf-8")
