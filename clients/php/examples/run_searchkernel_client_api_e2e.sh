@@ -22,29 +22,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 free_port() {
-  "$PYTHON" - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
+  "$PYTHON" "clients/php/examples/run_searchkernel_client_api_e2e-python-1.py"
 }
 
 wait_port() {
   local port="$1"
-  "$PYTHON" - "$port" <<'PY'
-import socket, sys, time
-port = int(sys.argv[1])
-deadline = time.monotonic() + 15
-while time.monotonic() < deadline:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-            raise SystemExit(0)
-    except OSError:
-        time.sleep(0.05)
-raise SystemExit("searchkerneld web listener did not become ready")
-PY
+  "$PYTHON" "clients/php/examples/run_searchkernel_client_api_e2e-python-2.py" "$port"
 }
 
 start_host() {
