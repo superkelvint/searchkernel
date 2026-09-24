@@ -132,6 +132,11 @@ jobs:
 
           cd "$ALMA_WORKTREE"
 
+          # Client-side verifier helpers must import from the exact copied
+          # revision, not from an editable package or PYTHONPATH rooted at the
+          # persistent runner checkout mounted at /work.
+          export PYTHONPATH="$ALMA_WORKTREE/clients/python${PYTHONPATH:+:$PYTHONPATH}"
+
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
             echo "expected exact revision $EXPECTED_HEAD in AlmaLinux, found $actual" >&2
@@ -194,6 +199,16 @@ jobs:
               reference/vespa/phase9/verify-phase9.sh
               tools/run-python-native-e2e.sh
               ./dev verify persistence
+              ;;
+            client-e2e)
+              python3 tools/check-python-dependencies.py
+              command -v php >/dev/null 2>&1 || {
+                echo "required client E2E command is unavailable: php" >&2
+                exit 1
+              }
+              cargo build -p searchkerneld --features native
+              SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld" \
+                python3 tools/check-client-contracts.py --run-e2e
               ;;
             closure-422)
               ./dev verify m14
