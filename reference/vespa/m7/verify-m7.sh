@@ -19,9 +19,9 @@ cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m7
 "$SCRIPT_DIR/check-structure.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
- id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
+ id="$(python3 "$ROOT/tools/json-cli.py" get "$s" id)"
  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
-   "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$s" | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin),sort_keys=True,separators=(",",":")))' > "$TMP/java-$id.json"
+   "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$s" | python3 "$ROOT/tools/json-cli.py" canonicalize - > "$TMP/java-$id.json"
    "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/java-$id.json"
  fi
  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m7-driver -- canonical "$s" > "$TMP/canon-$id.json"
