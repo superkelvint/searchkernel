@@ -124,6 +124,9 @@ function detailCodes(SearchKernelException $error): array
 
 $url = getenv('SEARCHKERNEL_HTTP_URL') ?: 'http://127.0.0.1:50052';
 $phase = $argv[1] ?? 'initial';
+if (!in_array($phase, ['initial', 'reopen'], true)) {
+    throw new InvalidArgumentException('expected initial or reopen phase');
+}
 $index = Index::connect($url);
 
 if ($phase === 'reopen') {
@@ -165,7 +168,9 @@ if ($phase === 'reopen') {
         ->input('boost', 3.0)
         ->limit(20)
         ->execute();
+    check($ranked->hits !== [], 'ranked hits survive reopen');
     foreach ($ranked->hits as $hit) {
+        check($hit->score() !== null, 'rank score survives reopen');
         closeEnough(3.0, (float) $hit->matchFeatures['query(boost)'], 'rank feature survives reopen');
     }
 
@@ -304,6 +309,11 @@ check($doc !== null, 'shoe-1 exists');
 same('shoe-1', $doc['_id'], 'id round trip');
 same(89.0, $doc['price'], 'price round trip');
 check($doc['embedding'] instanceof Tensor, 'stored tensor decodes to Tensor');
+same(VECTOR_TYPE, $doc['embedding']->typeSpec, 'stored tensor type');
+same(8, count($doc['embedding']->payload['values']), 'stored tensor cell count');
+foreach (SHOE_1_VECTOR as $i => $expected) {
+    closeEnough($expected, $doc['embedding']->payload['values'][$i], 'stored tensor cell');
+}
 
 heading('4. FULL-TEXT SEARCH');
 $results = $index->search('shoes')->searchField('title')->limit(20)->execute();
@@ -366,6 +376,8 @@ $results = $index->search('shoes')
     ->execute();
 assertIds($results, ['shoe-4', 'shoe-2']);
 same('Acme Racing Shoes', $results->hits[0]->get('title'), 'field mapping access');
+same('Acme', $results->hits[0]->get('brand'), 'projected brand');
+same(159.0, $results->hits[0]->get('price'), 'projected price');
 check(!array_key_exists('rating', $results->hits[0]->fields), 'projection excludes rating');
 
 heading('10. PAGINATION');
@@ -543,6 +555,7 @@ $ranked = $index->search('shoes')
     ->input('boost', 3.0)
     ->limit(20)
     ->execute();
+check($ranked->hits !== [], 'ranked query returns hits');
 foreach ($ranked->hits as $hit) {
     check($hit->score() !== null, 'ranked hit has score');
     closeEnough(3.0, (float) $hit->matchFeatures['query(boost)'], 'scalar match feature');
@@ -553,6 +566,7 @@ $rankPropertyResults = $index->search('shoes')
     ->rankProperty('boost', '4.0')
     ->limit(20)
     ->execute();
+check($rankPropertyResults->hits !== [], 'rank-property query returns hits');
 foreach ($rankPropertyResults->hits as $hit) {
     closeEnough(4.0, (float) $hit->matchFeatures['query(boost)'], 'rank property feature');
 }
@@ -560,6 +574,7 @@ foreach ($rankPropertyResults->hits as $hit) {
 heading('TWO-PHASE RANKING / SECOND-PHASE RERANK');
 $firstPhase = $index->search('candidate')->ranking('first_phase_only')->limit(4)->execute();
 assertIds($firstPhase, ['rerank-a', 'rerank-b', 'rerank-c', 'rerank-d']);
+same([100.0, 90.0, 80.0, 70.0], array_map(static fn ($h): float => (float) $h->score(), $firstPhase->hits), 'first-phase scores');
 $twoPhase = $index->search('candidate')->ranking('two_phase')->limit(4)->execute();
 assertIds($twoPhase, ['rerank-b', 'rerank-c', 'rerank-a', 'rerank-d']);
 same(4, $twoPhase->totalHits, 'two-phase total hits');
@@ -590,6 +605,9 @@ $hybrid = $index->query(Query::anyOf(
     ->execute();
 $hybridIds = ids($hybrid);
 check(in_array('bag-1', $hybridIds, true), 'vector-only candidate survives OR union');
+foreach (['shoe-1', 'shoe-2', 'shoe-3', 'shoe-4', 'shoe-5'] as $id) {
+    check(in_array($id, $hybridIds, true), "lexical candidate {$id} survives OR union");
+}
 same('bag-1', $hybrid->hits[0]->id, 'hybrid top hit');
 $top = $hybrid->hits[0];
 closeEnough(0.0, (float) $top->matchFeatures['bm25(title)'], 'vector-only bm25 feature');
@@ -598,6 +616,14 @@ closeEnough(
     (float) $top->score(),
     (float) $top->matchFeatures['bm25(title)'] + 10.0 * (float) $top->matchFeatures['closeness(embedding)'],
     'hybrid score consistency',
+);
+$lexicalHit = current(array_values(array_filter($hybrid->hits, static fn ($hit): bool => $hit->id === 'shoe-1')));
+check($lexicalHit !== false, 'lexical candidate remains in hybrid hits');
+check($lexicalHit->matchFeatures['bm25(title)'] > 0, 'lexical BM25 contribution');
+closeEnough(
+    (float) $lexicalHit->score(),
+    (float) $lexicalHit->matchFeatures['bm25(title)'] + 10.0 * (float) $lexicalHit->matchFeatures['closeness(embedding)'],
+    'lexical hybrid score consistency',
 );
 
 heading('COVERAGE AND DEGRADATION');
@@ -669,6 +695,8 @@ try {
     throw new RuntimeException('malformed textual filter should fail');
 } catch (SearchKernelException $error) {
     check(in_array('syntax_error', detailCodes($error), true), 'syntax detail code');
+    $syntaxDetails = array_values(array_filter($error->details, static fn (array $detail): bool => $detail['code'] === 'syntax_error'));
+    same('filters.textual[0].source', $syntaxDetails[0]['path'], 'syntax detail path');
 }
 
 heading('25. PATCH BUILDER');
