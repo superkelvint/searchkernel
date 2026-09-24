@@ -138,9 +138,10 @@ jobs:
           if ! command -v nm >/dev/null 2>&1 || ! command -v readelf >/dev/null 2>&1; then
             dnf install -y binutils
           fi
-          if ! python3 -c 'import clang.cindex' >/dev/null 2>&1; then
-            dnf install -y python3-clang
+          if ! command -v clang >/dev/null 2>&1 || ! python3 -c 'import clang.cindex' >/dev/null 2>&1; then
+            dnf install -y clang python3-clang
           fi
+          command -v clang >/dev/null
           python3 -c 'import clang.cindex' >/dev/null
           rustup component add rustfmt clippy >/dev/null
 
