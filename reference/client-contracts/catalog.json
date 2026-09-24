@@ -58,6 +58,28 @@
           ]
         }
       ]
+    },
+    "php": {
+      "title": "PHP",
+      "runtimes": [
+        "http"
+      ],
+      "evidence_roots": [
+        "clients/php/tests",
+        "clients/php/examples"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "http"
+          ],
+          "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
+          "command": [
+            "bash",
+            "clients/php/examples/run_searchkernel_client_api_e2e.sh"
+          ]
+        }
+      ]
     }
   },
   "scenarios": [

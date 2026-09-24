@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -11,10 +12,13 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
+CLIENT_CAPABILITIES_WORKFLOW = SCRIPT.parents[1] / "workflows" / "client-capabilities.yml"
 HOOK = SCRIPT.parents[2] / ".githooks" / "pre-commit"
 PYTHON_NATIVE_E2E_RUNNER = SCRIPT.parents[2] / "tools" / "run-python-native-e2e.sh"
 PERSISTENCE_IMMUTABILITY = SCRIPT.parents[2] / "tools" / "check-persistence-fixture-immutability.sh"
 DEV = SCRIPT.parents[2] / "dev"
+VERIFICATION_DAG_MODULE = SCRIPT.parents[2] / "verification" / "dag.py"
+VERIFICATION_DAG_FILE = SCRIPT.parents[2] / "verification" / "dag.toml"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -32,14 +36,37 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
 
 
+def write_verification_policy(repo: Path) -> None:
+    (repo / ".github" / "ci").mkdir(parents=True, exist_ok=True)
+    (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+    (repo / "verification").mkdir(parents=True, exist_ok=True)
+    (repo / "verification" / "dag.py").write_bytes(VERIFICATION_DAG_MODULE.read_bytes())
+    (repo / "verification" / "dag.toml").write_bytes(VERIFICATION_DAG_FILE.read_bytes())
+
+
 def write_fake_dev(repo: Path) -> None:
     dev = repo / "dev"
     dev.write_text(
         "#!/usr/bin/env bash\n"
-        "printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+        "if [[ -n \"${HOOK_LOG:-}\" ]]; then\n"
+        "  printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n"
+        "fi\n",
         encoding="utf-8",
     )
     dev.chmod(0o755)
+
+
+def classify_lines(*paths: str) -> set[str]:
+    with tempfile.NamedTemporaryFile() as output_file:
+        result = run(
+            "classify",
+            "--github-output",
+            output_file.name,
+            input_bytes=b"\0".join(path.encode() for path in paths) + b"\0",
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stdout.decode())
+        return set(Path(output_file.name).read_text(encoding="utf-8").splitlines())
 
 
 class ExactHeadTests(unittest.TestCase):
@@ -93,8 +120,12 @@ class ExactHeadTests(unittest.TestCase):
         helper_dir = repo / ".github" / "ci"
         helper_dir.mkdir(parents=True)
         (helper_dir / "exact_head.py").write_bytes(SCRIPT.read_bytes())
-        git(repo, "add", ".github/ci/exact_head.py")
-        git(repo, "commit", "-q", "-m", "add gate helper")
+        verification_dir = repo / "verification"
+        verification_dir.mkdir(parents=True)
+        (verification_dir / "dag.py").write_bytes(VERIFICATION_DAG_MODULE.read_bytes())
+        (verification_dir / "dag.toml").write_bytes(VERIFICATION_DAG_FILE.read_bytes())
+        git(repo, "add", ".github/ci/exact_head.py", "verification/dag.py", "verification/dag.toml")
+        git(repo, "commit", "-q", "-m", "add trusted verification policy")
         base = git(repo, "rev-parse", "HEAD")
 
         git(repo, "checkout", "-q", "-b", "pre-gate-head", root)
@@ -110,9 +141,27 @@ class ExactHeadTests(unittest.TestCase):
                 cwd=repo,
             )
         )
+        trusted_dag_module = repo / "base-dag.py"
+        trusted_dag_module.write_bytes(
+            subprocess.check_output(
+                ["git", "show", f"{base}:verification/dag.py"],
+                cwd=repo,
+            )
+        )
+        trusted_dag_file = repo / "base-dag.toml"
+        trusted_dag_file.write_bytes(
+            subprocess.check_output(
+                ["git", "show", f"{base}:verification/dag.toml"],
+                cwd=repo,
+            )
+        )
+        env = os.environ.copy()
+        env["SEARCHKERNEL_VERIFICATION_DAG_MODULE"] = str(trusted_dag_module)
+        env["SEARCHKERNEL_VERIFICATION_DAG"] = str(trusted_dag_file)
         classified = subprocess.run(
             [sys.executable, str(fallback), "classify"],
             cwd=repo,
+            env=env,
             input=b"core/crates/searchkernel-ir/src/model.rs\0",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -121,10 +170,40 @@ class ExactHeadTests(unittest.TestCase):
         self.assertEqual(classified.returncode, 0, classified.stdout.decode())
         self.assertIn("rust: required", classified.stdout.decode())
 
+    def test_candidate_regressions_use_candidate_verification_policy(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        regression_step = workflow.split("- name: Verify exact-head CI regressions", 1)[1].split(
+            "- name: Verify candidate verification DAG integrity and coverage", 1
+        )[0]
+        self.assertIn(
+            "SEARCHKERNEL_VERIFICATION_DAG_MODULE: ${{ github.workspace }}/verification/dag.py",
+            regression_step,
+        )
+        self.assertIn(
+            "SEARCHKERNEL_VERIFICATION_DAG: ${{ github.workspace }}/verification/dag.toml",
+            regression_step,
+        )
+
     def test_workflow_uses_base_classifier_for_authoritative_lane_selection(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
             'git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"',
+            workflow,
+        )
+        self.assertIn(
+            'git show "$BASE_SHA:verification/dag.py" > "$trusted_dir/dag.py"',
+            workflow,
+        )
+        self.assertIn(
+            'git show "$BASE_SHA:verification/dag.toml" > "$trusted_dir/dag.toml"',
+            workflow,
+        )
+        self.assertIn(
+            'SEARCHKERNEL_VERIFICATION_DAG_MODULE=$trusted_dir/dag.py',
+            workflow,
+        )
+        self.assertIn(
+            'SEARCHKERNEL_VERIFICATION_DAG=$trusted_dir/dag.toml',
             workflow,
         )
         self.assertIn(
@@ -135,6 +214,17 @@ class ExactHeadTests(unittest.TestCase):
             '"$CI_PYTHON" "$EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"',
             workflow,
         )
+
+    def test_client_capabilities_uses_trusted_base_native_fetch_helper(self) -> None:
+        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
+        install_step = workflow.split(
+            "- name: Install newest immutable native Vespa base for executable client E2E", 1
+        )[1].split("- name: Select C++23 compiler", 1)[0]
+        self.assertIn('BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}', install_step)
+        self.assertIn('git fetch --no-tags --depth=1 origin "$BASE_SHA"', install_step)
+        self.assertIn('git show "$BASE_SHA:tools/fetch-native-base.sh" > "$trusted_fetch"', install_step)
+        self.assertIn('artifact=$("$trusted_fetch" ci)', install_step)
+        self.assertNotIn("artifact=$(tools/fetch-native-base.sh ci)", install_step)
 
     def test_workflow_keeps_native_signal_without_running_native_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -178,18 +268,57 @@ class ExactHeadTests(unittest.TestCase):
             "core/crates/searchkernel-vespa-bindings/src/bindings.rs",
             "reference/vespa/NATIVE_ABI_CONTRACT.h",
             "reference/vespa/PINNED_VESPA.json",
+            "reference/vespa/m0/expected/01-native-open-close.json",
+            "reference/vespa/m0/scenarios/01-native-open-close.json",
+            "reference/vespa/phase9/expected/01-additive-handles.json",
         ):
             self.assertIn(authority, hook)
+
+    def test_runner_python_selection_never_uses_bare_system_python(self) -> None:
+        root = SCRIPT.parents[2]
+        selector = (root / ".github" / "ci" / "select-python.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("sys.prefix != sys.base_prefix", selector)
+        self.assertIn('-m venv "$venv_dir"', selector)
+        self.assertIn("CI_PYTHON=$selected", selector)
+        self.assertIn("python3-venv", selector)
+        self.assertIn("sudo -n apt-get", selector)
 
     def test_typescript_behavior_installs_rust_for_semantic_snapshot(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         typescript = workflow.split("\n  typescript:\n", 1)[1].split(
-            "\n  exact-head-gate:\n", 1
+            "\n  ruby:\n", 1
         )[0]
         self.assertIn("uses: dtolnay/rust-toolchain@stable", typescript)
         self.assertIn("./tools/test-typescript-generation.sh", typescript)
         self.assertIn("npm run check:generated --prefix clients/typescript", typescript)
         self.assertIn("npm run test:package --prefix clients/typescript", typescript)
+
+    def test_ruby_behavior_is_exact_head_gated(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        ruby = workflow.split("\n  ruby:\n", 1)[1].split(
+            "\n  exact-head-gate:\n", 1
+        )[0]
+        self.assertIn("if: needs.classify.outputs.ruby == 'true'", ruby)
+        self.assertNotIn("uses: ruby/setup-ruby@v1", ruby)
+        self.assertIn("Ensure provisioned Ruby", ruby)
+        self.assertIn("sudo -n apt-get install -y --no-install-recommends ruby-full", ruby)
+        self.assertIn("Gem::Version.new(RUBY_VERSION)", ruby)
+        self.assertIn("uses: dtolnay/rust-toolchain@stable", ruby)
+        self.assertIn("./dev install flatbuffers", ruby)
+        self.assertIn("ruby --version", ruby)
+        self.assertIn("./dev test ruby", ruby)
+        classify = workflow.split("\n  classify:\n", 1)[1].split("\n  rust:\n", 1)[0]
+        self.assertNotIn("uses: ruby/setup-ruby@v1", classify)
+        provisioned_probe = ruby.split("- name: Ensure provisioned Ruby", 1)[1].split(
+            "- name: Install Rust toolchain", 1
+        )[0]
+        self.assertIn("hashFiles('clients/ruby/**')", provisioned_probe)
+        gate = workflow.split("\n  exact-head-gate:\n", 1)[1]
+        self.assertIn("RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}", gate)
+        self.assertIn("RUBY_RESULT: ${{ needs.ruby.result }}", gate)
+        self.assertIn('require_lane Ruby "$RUBY_REQUIRED" "$RUBY_RESULT"', gate)
 
     def test_precommit_runs_native_gate_only_for_native_sensitive_staged_paths(self) -> None:
         for staged_path, expect_native in (
@@ -211,7 +340,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"
@@ -237,7 +366,7 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 python_e2e.chmod(0o755)
 
-                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev")
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev", "verification")
                 git(repo, "commit", "-q", "-m", "fixture")
 
                 staged = repo / staged_path
@@ -261,7 +390,7 @@ class ExactHeadTests(unittest.TestCase):
                 logged = log.read_text(encoding="utf-8")
                 self.assertIn("cargo fmt --all --check", logged)
                 self.assertIn(
-                    "cargo clippy --workspace --all-targets --no-default-features -- -D warnings",
+                    "dev lint --profile rust-clippy-non-native",
                     logged,
                 )
                 self.assertIn(
@@ -296,7 +425,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"
@@ -328,7 +457,7 @@ class ExactHeadTests(unittest.TestCase):
                 )
                 python_e2e.chmod(0o755)
 
-                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev")
+                git(repo, "add", ".githooks", ".github", "reference", "tools", "fakebin", "dev", "verification")
                 git(repo, "commit", "-q", "-m", "fixture")
 
                 staged = repo / staged_path
@@ -366,7 +495,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / "tools").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        write_verification_policy(repo)
 
         log = repo / "hook.log"
         cargo = repo / "fakebin" / "cargo"
@@ -398,7 +527,7 @@ class ExactHeadTests(unittest.TestCase):
         git(repo, "add", ".")
         git(repo, "commit", "-q", "-m", "fixture")
 
-        destination = repo / "docs" / "moved.cc"
+        destination = repo / "core" / "crates" / "searchkernel-ir" / "src" / "moved.rs"
         destination.parent.mkdir(parents=True)
         source.rename(destination)
         git(repo, "add", "-A")
@@ -406,6 +535,7 @@ class ExactHeadTests(unittest.TestCase):
         env = os.environ.copy()
         env["HOOK_LOG"] = str(log)
         env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
         result = subprocess.run(
             ["bash", str(repo / ".githooks" / "pre-commit")],
             cwd=repo,
@@ -432,7 +562,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / "reference" / "vespa").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        write_verification_policy(repo)
         (repo / "tracked.txt").write_text("original\n", encoding="utf-8")
 
         log = repo / "hook.log"
@@ -529,59 +659,64 @@ class ExactHeadTests(unittest.TestCase):
     def test_classification_selects_behavioral_lanes_by_changed_area(self) -> None:
         cases = {
             b"core/crates/searchkernel-ir/src/model.rs\0": {
-                "rust=true", "python=false", "typescript=false", "php=false", "native=false",
+                "rust=true", "python=false", "typescript=false", "php=false", "ruby=false", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"clients/python/searchkernel/ergonomic.py\0": {
-                "rust=false", "python=true", "typescript=false", "php=false", "native=false",
+                "rust=false", "python=true", "typescript=false", "php=false", "ruby=false", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=true", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"clients/typescript/src/index.ts\0": {
-                "rust=false", "python=false", "typescript=true", "php=false", "native=false",
+                "rust=false", "python=false", "typescript=true", "php=false", "ruby=false", "native=false",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=false",
+                "persistence=false", "issue_queue=false", "verification=false",
+            },
+            b"clients/ruby/lib/searchkernel.rb\0": {
+                "rust=false", "python=false", "typescript=false", "php=false", "ruby=true", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=true", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"core/native/vespa/abi.cc\0": {
-                "rust=true", "python=false", "typescript=false", "php=false", "native=true",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=true",
+                "rust=true", "python=false", "typescript=false", "php=false", "ruby=false", "native=true",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=true",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
             b"api/searchkernel.fbs\0": {
-                "rust=true", "python=true", "typescript=true", "php=true", "native=false",
-                "protocol=true", "api_conformance=false", "contracts=false", "abi=false",
+                "rust=true", "python=true", "typescript=true", "php=true", "ruby=true", "native=true",
+                "protocol=true", "api_conformance=true", "contracts=true", "abi=false",
                 "persistence=true", "issue_queue=false", "verification=false",
             },
             b"api/rpc/searchkernel.proto\0": {
-                "rust=true", "python=true", "typescript=true", "php=true", "native=false",
-                "protocol=true", "api_conformance=false", "contracts=false", "abi=false",
+                "rust=true", "python=true", "typescript=true", "php=true", "ruby=false", "native=false",
+                "protocol=true", "api_conformance=false", "contracts=true", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"tools/copy-shared-library-into-sdk.sh\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=true",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=true",
-                "persistence=false", "issue_queue=false", "verification=false",
+                "rust=true", "python=false", "typescript=false", "php=false", "ruby=false", "native=true",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=true",
+                "persistence=true", "issue_queue=false", "verification=false",
             },
             b"reference/api-conformance/golden/example.json\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=false",
+                "rust=false", "python=false", "typescript=false", "php=false", "ruby=false", "native=false",
                 "protocol=false", "api_conformance=true", "contracts=false", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b"tools/check-native-abi-authorities.py\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=true",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=true",
-                "persistence=false", "issue_queue=false", "verification=false",
+                "rust=true", "python=false", "typescript=false", "php=false", "ruby=false", "native=true",
+                "protocol=false", "api_conformance=false", "contracts=true", "abi=true",
+                "persistence=true", "issue_queue=false", "verification=false",
             },
             b"docs/architecture.md\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=false",
+                "rust=false", "python=false", "typescript=false", "php=false", "ruby=false", "native=false",
                 "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
                 "persistence=false", "issue_queue=false", "verification=false",
             },
             b".githooks/pre-commit\0": {
-                "rust=false", "python=false", "typescript=false", "php=false", "native=false",
-                "protocol=false", "api_conformance=false", "contracts=false", "abi=false",
-                "persistence=false", "issue_queue=false", "verification=true",
+                "rust=true", "python=true", "typescript=true", "php=true", "ruby=true", "native=true",
+                "protocol=true", "api_conformance=true", "contracts=true", "abi=true",
+                "persistence=true", "issue_queue=true", "verification=true",
             },
         }
         for changed, expected in cases.items():
@@ -602,13 +737,248 @@ class ExactHeadTests(unittest.TestCase):
                     self.assertEqual(lines, expected)
 
 
+    def assert_unclassified_path_blocks(self, path: str) -> None:
+        for command in ("classify", "plan"):
+            with self.subTest(path=path, command=command):
+                args = (command, "--json") if command == "plan" else (command,)
+                result = run(*args, input_bytes=path.encode() + b"\0")
+                self.assertEqual(result.returncode, 3, result.stdout.decode())
+                output = result.stdout.decode()
+                self.assertIn("Unclassified behavioral paths", output)
+                self.assertIn(path, output)
+
+    def test_unknown_behavioral_path_blocks_authorization(self) -> None:
+        self.assert_unclassified_path_blocks("new-runtime/src/engine.rs")
+
+    def test_new_core_crate_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("core/crates/searchkernel-new/src/lib.rs")
+
+    def test_registered_ruby_client_family_selects_ruby_contract_verification(self) -> None:
+        lines = classify_lines("clients/ruby/lib/searchkernel.rb")
+        self.assertIn("ruby=true", lines)
+        self.assertIn("contracts=true", lines)
+        for lane in ("rust", "python", "typescript", "php", "native", "protocol"):
+            self.assertIn(f"{lane}=false", lines)
+
+    def test_unregistered_client_family_still_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("clients/go/searchkernel.go")
+
+    def test_new_api_contract_family_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("api/new_contract.fbs")
+        self.assert_unclassified_path_blocks("api/rpc/new_transport.proto")
+
+    def test_new_vespa_verifier_family_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("reference/vespa/m15/verify-m15.sh")
+
+    def test_explicit_non_behavioral_paths_do_not_select_behavioral_lanes(self) -> None:
+        for path in (
+            "docs/architecture.md",
+            "nested/README.md",
+            "core/README.md",
+            "core/native/README.md",
+        ):
+            with self.subTest(path=path):
+                lines = classify_lines(path)
+                self.assertTrue(lines)
+                self.assertFalse(
+                    [line for line in lines if line.endswith("=true")],
+                    lines,
+                )
+
+    def test_tracked_scratch_like_file_blocks(self) -> None:
+        self.assert_unclassified_path_blocks("notes.tmp")
+
+    def test_behavioral_documentation_overrides_non_behavioral_exemption(self) -> None:
+        lines = classify_lines("docs/CAPABILITIES.md")
+        self.assertIn("contracts=true", lines)
+        self.assertTrue(
+            any(line.endswith("=true") for line in lines),
+            lines,
+        )
+
+    def test_non_markdown_file_under_docs_blocks_when_unclassified(self) -> None:
+        self.assert_unclassified_path_blocks("docs/new-runtime-policy.json")
+
+    def test_schema_changes_fan_out_across_protocol_clients_contracts_and_persistence(self) -> None:
+        lines = classify_lines("api/searchkernel.fbs")
+        for lane in (
+            "rust",
+            "python",
+            "typescript",
+            "php",
+            "ruby",
+            "native",
+            "protocol",
+            "api_conformance",
+            "contracts",
+            "persistence",
+        ):
+            self.assertIn(f"{lane}=true", lines)
+
+    def test_generated_artifact_changes_fan_out_to_cross_language_protocol_checks(self) -> None:
+        lines = classify_lines("clients/python/searchkernel/_wire_generated/SearchKernel/V2/Foo.py")
+        for lane in ("rust", "python", "typescript", "protocol", "contracts"):
+            self.assertIn(f"{lane}=true", lines)
+
+    def test_native_and_abi_changes_fan_out_to_persistence_and_contracts(self) -> None:
+        lines = classify_lines("core/native/vespa/abi.cc")
+        for lane in ("rust", "native", "abi", "persistence", "contracts"):
+            self.assertIn(f"{lane}=true", lines)
+
+    def test_persistence_storage_changes_select_native_persistence(self) -> None:
+        lines = classify_lines("reference/persistence/fixtures/example/METADATA.json")
+        for lane in ("rust", "native", "persistence"):
+            self.assertIn(f"{lane}=true", lines)
+
+    def test_root_build_metadata_selects_all_current_lanes(self) -> None:
+        lines = classify_lines("Cargo.lock")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_verification_orchestration_changes_select_all_current_lanes(self) -> None:
+        lines = classify_lines(".github/workflows/behavioral-verification.yml")
+        self.assertFalse(
+            [line for line in lines if line.endswith("=false")],
+            lines,
+        )
+
+    def test_ci_diff_disables_rename_detection_so_old_and_new_paths_are_classified(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            'git diff --name-only --no-renames -z "$BASE_SHA" "$HEAD_SHA" -- \\',
+            workflow,
+        )
+
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+
+        source = repo / "clients" / "python" / "searchkernel" / "moved.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("old\n", encoding="utf-8")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "base")
+        base = git(repo, "rev-parse", "HEAD")
+
+        destination = repo / "clients" / "typescript" / "src" / "moved.ts"
+        destination.parent.mkdir(parents=True)
+        source.rename(destination)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "move")
+        head = git(repo, "rev-parse", "HEAD")
+
+        changed = subprocess.check_output(
+            ["git", "diff", "--name-only", "--no-renames", "-z", base, head, "--"],
+            cwd=repo,
+        )
+        result = run("classify", input_bytes=changed)
+        self.assertEqual(result.returncode, 0, result.stdout.decode())
+        output = result.stdout.decode()
+        self.assertIn("python: required", output)
+        self.assertIn("typescript: required", output)
+
+    def test_trusted_plan_emits_stable_task_ids_with_reasons(self) -> None:
+        result = run(
+            "plan",
+            "--json",
+            input_bytes=b"core/native/vespa/abi.cc\0",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout.decode())
+        payload = json.loads(result.stdout.decode())
+        tasks = payload["tasks"]
+        self.assertEqual(
+            [task["id"] for task in tasks],
+            [
+                "rust-non-native",
+                "rust-quality",
+                "client-contracts",
+                "portable-ir-boundary",
+                "abi",
+                "native-full",
+                "milestone.m14",
+                "vespa.nearest-neighbor.hnsw",
+                "product.integration",
+                "product.rust-real-engine",
+                "vespa.grouping.yql",
+                "vespa.recovery",
+                "native-additive-regression",
+                "native-python-e2e",
+                "persistence-native",
+                "persistence-static",
+            ],
+        )
+        for task in tasks:
+            self.assertTrue(task["reasons"], task)
+            self.assertTrue(
+                any("core/native/vespa/abi.cc" in reason for reason in task["reasons"]),
+                task,
+            )
+
+    def test_trusted_plan_is_deterministic_across_input_order_and_duplicates(self) -> None:
+        forward = run(
+            "plan",
+            "--json",
+            input_bytes=(
+                b"core/native/vespa/abi.cc\0"
+                b"api/searchkernel.fbs\0"
+                b"core/native/vespa/abi.cc\0"
+            ),
+        )
+        reverse = run(
+            "plan",
+            "--json",
+            input_bytes=(
+                b"api/searchkernel.fbs\0"
+                b"core/native/vespa/abi.cc\0"
+            ),
+        )
+        self.assertEqual(forward.returncode, 0, forward.stdout.decode())
+        self.assertEqual(reverse.returncode, 0, reverse.stdout.decode())
+        self.assertEqual(forward.stdout, reverse.stdout)
+
+    def test_candidate_moon_configuration_cannot_reduce_trusted_task_set(self) -> None:
+        result = run(
+            "plan",
+            "--json",
+            input_bytes=b".moon/workspace.yml\0",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout.decode())
+        payload = json.loads(result.stdout.decode())
+        task_ids = {task["id"] for task in payload["tasks"]}
+        for task_id in (
+            "full",
+            "portable-full",
+            "clients-full",
+            "native-full",
+            "web-dashboard",
+            "web-full",
+            "milestone.m14",
+            "vespa.recovery",
+            "native-additive-regression",
+            "portable-ir-boundary",
+            "verification-policy",
+            "frontend-harness-selftest",
+            "frontend-verifier-integrity",
+        ):
+            self.assertIn(task_id, task_ids)
+        for task in payload["tasks"]:
+            self.assertTrue(
+                any(".moon/workspace.yml" in reason for reason in task["reasons"]),
+                task,
+            )
+
     def test_classification_covers_precommit_verification_surfaces(self) -> None:
         cases = {
             b"searchkerneld/src/main.rs\0": {"native=true"},
             b"core/crates/searchkernel/src/index/native.rs\0": {"native=true"},
             b"core/crates/searchkernel/src/index/manifest.rs\0": {"native=true"},
             b"core/crates/searchkernel/src/portable_definition.rs\0": {"native=true"},
-            b"api/rpc/searchkernel.proto\0": {"protocol=true", "persistence=false"},
+            b"api/rpc/searchkernel.proto\0": {"protocol=true", "persistence=false", "contracts=true"},
             b"tools/copy-shared-library-into-sdk.sh\0": {"native=true", "abi=true"},
             b"api/searchkernel.fbs\0": {"protocol=true"},
             b"reference/api-conformance/golden/example.json\0": {"api_conformance=true"},
@@ -645,7 +1015,13 @@ class ExactHeadTests(unittest.TestCase):
             ),
             (
                 "api/rpc/searchkernel.proto",
-                ("dev check-protocol", "dev test python", "dev test typescript", "dev test php"),
+                (
+                    "dev check-protocol",
+                    "dev verify contracts",
+                    "dev test python",
+                    "dev test typescript",
+                    "dev test php",
+                ),
                 ("dev verify persistence", "native i", "python-native-e2e"),
             ),
             (
@@ -674,7 +1050,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"
@@ -753,7 +1129,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"
@@ -817,7 +1193,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / "tools").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        write_verification_policy(repo)
         (repo / "tracked.txt").write_text("original\n", encoding="utf-8")
 
         cargo = repo / "fakebin" / "cargo"
@@ -867,11 +1243,12 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 cargo = repo / "fakebin" / "cargo"
                 cargo.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
                 cargo.chmod(0o755)
+                write_fake_dev(repo)
                 git(repo, "add", ".")
                 git(repo, "commit", "-q", "-m", "fixture")
 
@@ -925,7 +1302,7 @@ class ExactHeadTests(unittest.TestCase):
         (repo / "tools").mkdir(parents=True)
         (repo / "fakebin").mkdir(parents=True)
         (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-        (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+        write_verification_policy(repo)
 
         log = repo / "hook.log"
         cargo = repo / "fakebin" / "cargo"
@@ -967,6 +1344,72 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("dev test php", log.read_text(encoding="utf-8"))
 
 
+    def test_ruby_client_changes_select_and_execute_ruby_tests(self) -> None:
+        with tempfile.NamedTemporaryFile() as output_file:
+            result = run(
+                "classify",
+                "--github-output",
+                output_file.name,
+                input_bytes=b"clients/ruby/lib/searchkernel.rb\0",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout.decode())
+            lines = set(Path(output_file.name).read_text(encoding="utf-8").splitlines())
+            self.assertIn("ruby=true", lines)
+
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+        (repo / ".githooks").mkdir(parents=True)
+        (repo / ".github" / "ci").mkdir(parents=True)
+        (repo / "reference" / "vespa").mkdir(parents=True)
+        (repo / "tools").mkdir(parents=True)
+        (repo / "fakebin").mkdir(parents=True)
+        (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+        write_verification_policy(repo)
+
+        log = repo / "hook.log"
+        cargo = repo / "fakebin" / "cargo"
+        cargo.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        cargo.chmod(0o755)
+        dev = repo / "dev"
+        dev.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        dev.chmod(0o755)
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "fixture")
+
+        staged = repo / "clients" / "ruby" / "lib" / "searchkernel.rb"
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text("# frozen_string_literal: true\n", encoding="utf-8")
+        git(repo, "add", "clients/ruby/lib/searchkernel.rb")
+
+        env = os.environ.copy()
+        env["HOOK_LOG"] = str(log)
+        env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks" / "pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("dev test ruby", log.read_text(encoding="utf-8"))
+
+
     def test_precommit_source_is_valid_and_each_major_gate_occurs_once(self) -> None:
         root = SCRIPT.parents[2]
         for shell_source in (
@@ -989,7 +1432,7 @@ class ExactHeadTests(unittest.TestCase):
         source = HOOK.read_text(encoding="utf-8")
         for needle in (
             'cargo fmt --all --check',
-            'cargo clippy --workspace --all-targets --no-default-features -- -D warnings',
+            './dev lint --profile rust-clippy-non-native',
             'cargo test --workspace --all-targets --no-default-features',
             './dev check-protocol',
             './dev verify api-conformance',
@@ -1000,6 +1443,7 @@ class ExactHeadTests(unittest.TestCase):
             './dev test python',
             './dev test typescript',
             './dev test php',
+            './dev test ruby',
             './reference/vespa/verify-through.sh i',
             'bash tools/run-python-native-e2e.sh',
         ):
@@ -1041,7 +1485,7 @@ class ExactHeadTests(unittest.TestCase):
                 (repo / "tools").mkdir(parents=True)
                 (repo / "fakebin").mkdir(parents=True)
                 (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
-                (repo / ".github" / "ci" / "exact_head.py").write_bytes(SCRIPT.read_bytes())
+                write_verification_policy(repo)
 
                 log = repo / "hook.log"
                 cargo = repo / "fakebin" / "cargo"

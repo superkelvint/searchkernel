@@ -6,6 +6,12 @@ cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 
 require_pinned_vespa
+RUN_LIVE_ORACLE=0
+if live_oracle_enabled; then
+  RUN_LIVE_ORACLE=1
+else
+  announce_frozen_oracle_replay
+fi
 require_sdk_manifest "$SDK/manifest.json"
 "$M14/validate_scenarios.py"
 "$M14/validate_expected.py"
@@ -20,8 +26,10 @@ cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.to
 "$M14/check-structure.sh"
 
 ORACLE="$M14/oracle/target/m14_cpp_oracle"
-[[ -x "$ORACLE" ]] || fail_verification \
-  'M14 direct oracle is not built; review oracle/AUTHOR_ORACLE.md and run oracle/build-cpp-oracle.sh'
+if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+  [[ -x "$ORACLE" ]] || fail_verification \
+    'M14 direct oracle is not built; review oracle/AUTHOR_ORACLE.md and run oracle/build-cpp-oracle.sh'
+fi
 
 cargo build --quiet --manifest-path "$M14/rust-driver/Cargo.toml" --bins
 LOW="$CARGO_TARGET_DIR/debug/searchkernel-m14-driver"
@@ -50,9 +58,11 @@ DEFINITION_BIN="$($M14/prepare-portable-definition.sh "$DEFINITION_DIR")"
 for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
   id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
 
-  "$M14/oracle/run-cpp-oracle.sh" "$scenario" \
-    | "$M14/canonicalize_behavior.py" > "$TMP/$id-oracle.json"
-  "$M14/compare.py" "$M14/expected/$id.json" "$TMP/$id-oracle.json"
+  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+    "$M14/oracle/run-cpp-oracle.sh" "$scenario" \
+      | "$M14/canonicalize_behavior.py" > "$TMP/$id-oracle.json"
+    "$M14/compare.py" "$M14/expected/$id.json" "$TMP/$id-oracle.json"
+  fi
 
   low_cfg="$TMP/$id-low-config"; low_data="$TMP/$id-low-data"
   low_trace="$TMP/$id-low-trace.jsonl"
@@ -63,7 +73,9 @@ for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
   python3 "$M14/validate_execution_evidence.py" "$scenario" "$TMP/$id-low-raw.json"
   "$M14/canonicalize_behavior.py" < "$TMP/$id-low-raw.json" > "$TMP/$id-low.json"
   "$M14/compare.py" "$M14/expected/$id.json" "$TMP/$id-low.json"
-  "$M14/compare.py" "$TMP/$id-oracle.json" "$TMP/$id-low.json"
+  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+    "$M14/compare.py" "$TMP/$id-oracle.json" "$TMP/$id-low.json"
+  fi
   "$M14/canonicalize_cfg.py" "$low_cfg" > "$TMP/$id-low-config.json"
   "$M14/compare.py" "$M14/expected/hnsw-config.json" "$TMP/$id-low-config.json"
 
@@ -76,7 +88,9 @@ for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
   python3 "$M14/validate_execution_evidence.py" "$scenario" "$TMP/$id-adapter-raw.json"
   "$M14/canonicalize_behavior.py" < "$TMP/$id-adapter-raw.json" > "$TMP/$id-adapter.json"
   "$M14/compare.py" "$M14/expected/$id.json" "$TMP/$id-adapter.json"
-  "$M14/compare.py" "$TMP/$id-oracle.json" "$TMP/$id-adapter.json"
+  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+    "$M14/compare.py" "$TMP/$id-oracle.json" "$TMP/$id-adapter.json"
+  fi
   "$M14/canonicalize_cfg.py" "$adapter_cfg" > "$TMP/$id-adapter-config.json"
   "$M14/compare.py" "$M14/expected/hnsw-config.json" "$TMP/$id-adapter-config.json"
 done

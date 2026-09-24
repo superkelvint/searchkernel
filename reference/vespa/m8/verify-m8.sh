@@ -4,6 +4,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"; cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
+RUN_LIVE_ORACLE=0
+if live_oracle_enabled; then
+  RUN_LIVE_ORACLE=1
+else
+  announce_frozen_oracle_replay
+fi
 "$SCRIPT_DIR/validate_scenarios.py"
 "$SCRIPT_DIR/validate_expected.py"
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
@@ -22,12 +28,16 @@ require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m8-driver" \
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
-  "$SCRIPT_DIR/oracle/run-cpp-oracle.sh" "$s" > "$TMP/oracle-$id.json"
-  "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/oracle-$id.json"
+  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+    "$SCRIPT_DIR/oracle/run-cpp-oracle.sh" "$s" > "$TMP/oracle-$id.json"
+    "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/oracle-$id.json"
+  fi
   cfg="$TMP/$id-cfg"; data="$TMP/$id-data"; mkdir -p "$data"
   cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m8-driver -- "$s" "$cfg" "$data" > "$TMP/rust-$id.json"
   "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/rust-$id.json"
-  "$SCRIPT_DIR/compare.py" "$TMP/oracle-$id.json" "$TMP/rust-$id.json"
+  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
+    "$SCRIPT_DIR/compare.py" "$TMP/oracle-$id.json" "$TMP/rust-$id.json"
+  fi
 done
 
 ERRORS="$SCRIPT_DIR/scenarios/errors.json"

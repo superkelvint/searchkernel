@@ -4,195 +4,21 @@
 from __future__ import annotations
 
 import argparse
-import fnmatch
+import importlib.util
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Iterable
 
-LANES = (
-    "rust",
-    "python",
-    "typescript",
-    "php",
-    "native",
-    "protocol",
-    "api_conformance",
-    "contracts",
-    "abi",
-    "persistence",
-    "issue_queue",
-    "verification",
+LOCAL_SCRATCH_PATTERNS: tuple[str, ...] = (
+    "*.tmp",
+    "*.log",
+    "*.swp",
+    ".DS_Store",
+    "**/.DS_Store",
 )
-
-LANE_PATTERNS: dict[str, tuple[str, ...]] = {
-    "rust": (
-        "Cargo.toml",
-        "Cargo.lock",
-        ".cargo/**",
-        "rust-toolchain*",
-        "api/**",
-        "core/**",
-        "searchkerneld/**",
-        "dev",
-    ),
-    "python": (
-        "api/**",
-        "clients/python/**",
-        "reference/client-contracts/**",
-        "tools/check-client-contracts.py",
-        "tools/test_check_client_contracts.py",
-        "tools/check-python-*.py",
-        "tools/test_python_*.py",
-        "tools/generate-python-*.sh",
-    ),
-    "typescript": (
-        "api/**",
-        "clients/typescript/**",
-        "reference/client-contracts/**",
-        "tools/check-client-contracts.py",
-        "tools/test_check_client_contracts.py",
-        "tools/generate-typescript-*.sh",
-    ),
-    "php": (
-        "api/**",
-        "clients/php/**",
-        "reference/client-contracts/**",
-        "tools/check-client-contracts.py",
-        "tools/test_check_client_contracts.py",
-    ),
-    "native": (
-        "core/native/**",
-        "core/crates/searchkernel-vespa-bindings/**",
-        "core/crates/searchkernel-vespa-engine/**",
-        "core/crates/searchkernel-ir-adapter/**",
-        "core/crates/searchkernel/Cargo.toml",
-        "core/crates/searchkernel/src/index/native.rs",
-        "core/crates/searchkernel/src/index/manifest.rs",
-        "core/crates/searchkernel/src/portable_definition.rs",
-        "searchkerneld/Cargo.toml",
-        "searchkerneld/src/main.rs",
-        "reference/vespa/**",
-        "tools/check-vespa-bindings.sh",
-        "tools/check-native-*.sh",
-        "tools/check-native-*.py",
-        "tools/test-native-*.sh",
-        "tools/test_check_native_*.py",
-        "tools/native-*.py",
-        "tools/*native-sdk*.sh",
-        "tools/*native-base*.sh",
-        "tools/*shared-library*.sh",
-        "tools/*native-abi*.sh",
-        "tools/run-python-native-e2e.sh",
-        "tools/coverage-native-adapter.sh",
-    ),
-    "protocol": (
-        "api/**",
-        "core/crates/searchkernel-protocol/src/generated/**",
-        "core/crates/searchkernel-protocol/bfbs/**",
-        "searchkerneld/src/generated/**",
-        "clients/python/searchkernel/_wire_generated/**",
-        "clients/python/searchkernel/rpc/**",
-        "clients/typescript/src/generated/**",
-        "tools/rpc-codegen/**",
-        "tools/generate-searchkernel-protocol.sh",
-        "tools/generate-flatbuffers-bfbs.sh",
-        "tools/generate-python-flatbuffers.sh",
-        "tools/generate-python-grpc.sh",
-        "tools/generate-searchkernel-rpc.sh",
-        "tools/generate-typescript-flatbuffers.sh",
-        "tools/generate-typescript-grpc-web.sh",
-        "tools/check-flatbuffers-bfbs.sh",
-        "tools/check-searchkernel-protocol-generated.sh",
-        "tools/check-searchkernel-rpc.sh",
-        "tools/check-python-flatbuffers-generated.sh",
-        "tools/check-python-grpc.sh",
-        "tools/check-typescript-generated.sh",
-        "tools/patch-python-flatbuffers-object-api.py",
-    ),
-    "api_conformance": (
-        "reference/api-conformance/**",
-    ),
-    "contracts": (
-        "clients/**",
-        "core/crates/searchkernel/**",
-        "core/crates/searchkernel-vespa-engine/**",
-        "docs/capabilities.json",
-        "docs/CAPABILITIES.md",
-        "LIMITATIONS.md",
-        "docs/CLIENT_CAPABILITIES.md",
-        "docs/client-capabilities.json",
-        "reference/client-contracts/**",
-        "tools/check-capabilities.py",
-        "tools/check-client-contracts.py",
-        "tools/test_check_capabilities.py",
-        "tools/test_check_client_contracts.py",
-        "tools/check-python-dependencies.py",
-        "tools/test_python_dependency_contract.py",
-        ".github/ci/select-python.sh",
-        ".github/ci/check-python-workflows.sh",
-        ".github/workflows/client-capabilities.yml",
-        "dev",
-    ),
-    "abi": (
-        "core/native/**",
-        "core/crates/searchkernel-vespa-bindings/**",
-        "tools/check_abi_surface.py",
-        "tools/test_check_abi_surface.py",
-        "tools/check-native-bindings.sh",
-        "tools/check-native-bindings/**",
-        "tools/check-native-*.py",
-        "tools/test_check_native_*.py",
-        "tools/check-layout.sh",
-        "tools/native-build-fingerprint.py",
-        "tools/*native-sdk*.sh",
-        "tools/*native-base*.sh",
-        "tools/*shared-library*.sh",
-        "tools/*native-abi*.sh",
-        ".github/workflows/abi-surface.yml",
-        "dev",
-    ),
-    "persistence": (
-        "api/searchkernel.fbs",
-        "core/crates/searchkernel/src/index/**",
-        "core/crates/searchkernel/src/tests.rs",
-        "core/crates/searchkernel/src/schema.rs",
-        "core/crates/searchkernel/src/portable_definition.rs",
-        "core/crates/searchkernel/src/search.rs",
-        "core/crates/searchkernel/src/filter.rs",
-        "core/crates/searchkernel/src/result.rs",
-        "core/crates/searchkernel/tests/persistence_compatibility.rs",
-        "core/crates/searchkernel-ir/src/api_to_ir/schema.rs",
-        "core/crates/searchkernel-ir/src/ir_to_api/schema.rs",
-        "core/crates/searchkernel-ir/src/model/schema.rs",
-        "core/crates/searchkernel-ir/src/snapshot.rs",
-        "core/crates/searchkernel-ir-adapter/**",
-        "core/crates/searchkernel-vespa-engine/**",
-        "core/crates/searchkernel-vespa-bindings/**",
-        "core/native/vespa/**",
-        "reference/persistence/**",
-        "reference/vespa/m5/fixtures/persisted-v1/**",
-        "tools/check-persistence-fixtures.sh",
-        "tools/check-persistence-fixture-immutability.sh",
-        "tools/check-persistence-sensitivity.sh",
-        ".github/workflows/persistence-compatibility.yml",
-    ),
-    "issue_queue": (
-        "AGENTS.md",
-        "tools/check-issue-queue.py",
-        "tools/test_check_issue_queue.py",
-        ".github/ci/select-python.sh",
-        ".github/ci/check-python-workflows.sh",
-        ".github/workflows/issue-queue.yml",
-        "dev",
-    ),
-    "verification": (
-        ".githooks/pre-commit",
-        ".github/ci/exact_head.py",
-        ".github/ci/test_exact_head.py",
-        "dev",
-    ),
-}
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -232,16 +58,93 @@ def assert_exact_head(expected: str, repo: Path) -> int:
     return 0
 
 
-def _matches(path: str, patterns: Iterable[str]) -> bool:
-    return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
+def _load_dag_module():
+    # Loading verification policy must not mutate the checkout. In particular,
+    # pre-commit immediately scans for untracked behavioral files, so emitting a
+    # verification/__pycache__ directory here would make the selector reject its
+    # own side effect.
+    sys.dont_write_bytecode = True
+    module_path = Path(
+        os.environ.get(
+            "SEARCHKERNEL_VERIFICATION_DAG_MODULE",
+            str(Path.cwd() / "verification" / "dag.py"),
+        )
+    )
+    spec = importlib.util.spec_from_file_location("searchkernel_verification_dag", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load verification DAG module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def classify(paths: Iterable[str]) -> dict[str, bool]:
-    normalized = [path.strip().replace("\\", "/") for path in paths if path.strip()]
-    return {
-        lane: any(_matches(path, LANE_PATTERNS[lane]) for path in normalized)
-        for lane in LANES
-    }
+def _load_dag():
+    module = _load_dag_module()
+    dag_path = Path(
+        os.environ.get(
+            "SEARCHKERNEL_VERIFICATION_DAG",
+            str(Path.cwd() / "verification" / "dag.toml"),
+        )
+    )
+    return module, module.load_dag(dag_path)
+
+
+def _matches_local_scratch(path: str) -> bool:
+    import fnmatch
+
+    normalized = path.strip().replace("\\", "/")
+    return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in LOCAL_SCRATCH_PATTERNS)
+
+
+def _normalized_paths(
+    paths: Iterable[str], *, allow_local_scratch: bool = False
+) -> list[str]:
+    normalized = [
+        path.strip().replace("\\", "/")
+        for path in paths
+        if path.strip()
+    ]
+    if allow_local_scratch:
+        normalized = [path for path in normalized if not _matches_local_scratch(path)]
+    return normalized
+
+
+def _plan(
+    paths: Iterable[str], *, allow_local_scratch: bool = False
+):
+    module, dag = _load_dag()
+    normalized = _normalized_paths(paths, allow_local_scratch=allow_local_scratch)
+    task_ids, reasons, unclassified = module.plan_paths(dag, normalized)
+    return module, dag, task_ids, reasons, unclassified
+
+
+def classify(
+    paths: Iterable[str], *, allow_local_scratch: bool = False
+) -> dict[str, bool]:
+    module, dag, task_ids, _reasons, unclassified = _plan(
+        paths, allow_local_scratch=allow_local_scratch
+    )
+    if unclassified:
+        raise module.DagError(
+            "unclassified behavioral paths: " + ", ".join(unclassified)
+        )
+    return module.legacy_lanes_for_tasks(dag, task_ids)
+
+
+def build_task_plan(paths: Iterable[str]) -> list[dict[str, object]]:
+    module, _dag, task_ids, reasons, unclassified = _plan(paths)
+    if unclassified:
+        raise module.DagError(
+            "unclassified behavioral paths: " + ", ".join(unclassified)
+        )
+    return [
+        {
+            "id": task_id,
+            "reasons": list(reasons.get(task_id, ())),
+        }
+        for task_id in task_ids
+    ]
 
 
 def _read_changed_paths() -> list[str]:
@@ -250,10 +153,22 @@ def _read_changed_paths() -> list[str]:
     return [chunk.decode("utf-8", errors="strict") for chunk in chunks if chunk]
 
 
-def write_github_output(path: Path, selected: dict[str, bool]) -> None:
+def write_github_output(
+    path: Path, lane_names: Iterable[str], selected: dict[str, bool]
+) -> None:
     with path.open("a", encoding="utf-8") as output:
-        for lane in LANES:
+        for lane in lane_names:
             output.write(f"{lane}={'true' if selected[lane] else 'false'}\n")
+
+
+def _print_unclassified(paths: Iterable[str]) -> None:
+    print(
+        "::error title=Unclassified behavioral paths::"
+        "Verification DAG does not own these paths. "
+        "Update trusted verification/dag.toml before merging:"
+    )
+    for path in paths:
+        print(f"  {path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -266,6 +181,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     changes = subparsers.add_parser("classify")
     changes.add_argument("--github-output", type=Path)
+    changes.add_argument("--allow-local-scratch", action="store_true")
+
+    plan = subparsers.add_parser("plan")
+    plan.add_argument("--json", action="store_true")
     return parser
 
 
@@ -275,16 +194,47 @@ def main() -> int:
         return assert_exact_head(args.expected, args.repo)
 
     changed_paths = _read_changed_paths()
-    selected = classify(changed_paths)
-    if args.github_output is not None:
-        write_github_output(args.github_output, selected)
-    print("Changed paths:")
-    for changed_path in changed_paths:
-        print(f"  {changed_path}")
-    print("Behavioral lanes:")
-    for lane in LANES:
-        print(f"  {lane}: {'required' if selected[lane] else 'not required'}")
-    return 0
+
+    try:
+        if args.command == "plan":
+            module, _dag, task_ids, reasons, unclassified = _plan(changed_paths)
+            if unclassified:
+                _print_unclassified(unclassified)
+                return 3
+            plan = [
+                {"id": task_id, "reasons": list(reasons.get(task_id, ()))}
+                for task_id in task_ids
+            ]
+            if args.json:
+                print(json.dumps({"tasks": plan}, sort_keys=True, separators=(",", ":")))
+            else:
+                print("Required tasks:")
+                for task in plan:
+                    print(f"  {task['id']}")
+                    for reason in task["reasons"]:
+                        print(f"    - {reason}")
+            return 0
+
+        module, dag, task_ids, _reasons, unclassified = _plan(
+            changed_paths,
+            allow_local_scratch=args.allow_local_scratch,
+        )
+        if unclassified:
+            _print_unclassified(unclassified)
+            return 3
+        selected = module.legacy_lanes_for_tasks(dag, task_ids)
+        if args.github_output is not None:
+            write_github_output(args.github_output, dag.legacy_lane_names, selected)
+        print("Changed paths:")
+        for changed_path in changed_paths:
+            print(f"  {changed_path}")
+        print("Behavioral lanes:")
+        for lane in dag.legacy_lane_names:
+            print(f"  {lane}: {'required' if selected[lane] else 'not required'}")
+        return 0
+    except Exception as error:
+        print(f"::error title=Verification DAG error::{error}")
+        return 2
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "clients/**"
+      - "api/**"
+      - "core/crates/searchkernel-protocol/**"
       - "core/crates/searchkernel/**"
       - "core/crates/searchkernel-vespa-engine/**"
       - "docs/capabilities.json"
@@ -19,13 +21,20 @@ on:
       - "tools/test_check_client_contracts.py"
       - "tools/check-python-dependencies.py"
       - "tools/test_python_dependency_contract.py"
+      - "tools/fetch-native-base.sh"
+      - "tools/install-native-base-artifact.sh"
+      - "tools/resolve-native-sdk.sh"
       - ".github/ci/select-python.sh"
       - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/client-capabilities.yml"
+      - ".github/workflows/client-capabilities-autofix-prepare.yml"
+      - ".github/workflows/client-capabilities-autofix-apply.yml"
   push:
     branches: [main]
     paths:
       - "clients/**"
+      - "api/**"
+      - "core/crates/searchkernel-protocol/**"
       - "core/crates/searchkernel/**"
       - "core/crates/searchkernel-vespa-engine/**"
       - "docs/capabilities.json"
@@ -41,9 +50,14 @@ on:
       - "tools/test_check_client_contracts.py"
       - "tools/check-python-dependencies.py"
       - "tools/test_python_dependency_contract.py"
+      - "tools/fetch-native-base.sh"
+      - "tools/install-native-base-artifact.sh"
+      - "tools/resolve-native-sdk.sh"
       - ".github/ci/select-python.sh"
       - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/client-capabilities.yml"
+      - ".github/workflows/client-capabilities-autofix-prepare.yml"
+      - ".github/workflows/client-capabilities-autofix-apply.yml"
   workflow_dispatch:
 
 concurrency:
@@ -54,7 +68,21 @@ jobs:
   verify:
     runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - name: Reject stale checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::expected exact revision $EXPECTED_HEAD, checked out $actual"
+            exit 1
+          fi
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
       - name: Enforce runner-Python workflow policy
@@ -64,8 +92,19 @@ jobs:
       - run: $CI_PYTHON tools/test_check_capabilities.py
       - run: $CI_PYTHON tools/test_check_client_contracts.py
       - run: $CI_PYTHON tools/test_python_dependency_contract.py
-      - name: Run PHP first-slice tests
-        run: php clients/php/tests/run.php
+      - name: Ensure Composer
+        run: |
+          set -euo pipefail
+          if command -v composer >/dev/null 2>&1; then
+            composer --version
+            exit 0
+          fi
+          installer="$RUNNER_TEMP/composer-setup.php"
+          curl -fsSL https://getcomposer.org/installer -o "$installer"
+          php "$installer" --quiet --install-dir="$RUNNER_TEMP" --filename=composer
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Run canonical PHP client verification task
+        run: ./dev test php
 
   e2e:
     name: Executable E2E evidence
@@ -74,19 +113,89 @@ jobs:
       CARGO_TARGET_DIR: target/ci
       SEARCHKERNEL_BUILD_ENV: ci
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - name: Reject stale checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::expected exact revision $EXPECTED_HEAD, checked out $actual"
+            exit 1
+          fi
       - name: Select runner Python
         run: bash .github/ci/select-python.sh
       - name: Create isolated Python environment
         run: |
-          python -m venv "$RUNNER_TEMP/searchkernel-client-venv"
+          "$CI_PYTHON" -m venv "$RUNNER_TEMP/searchkernel-client-venv"
+          echo "CI_PYTHON=$RUNNER_TEMP/searchkernel-client-venv/bin/python" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/searchkernel-client-venv/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: clients/typescript/package-lock.json
       - run: $CI_PYTHON -m pip install -e clients/python
       - run: $CI_PYTHON tools/check-python-dependencies.py
       - run: npm ci --prefix clients/typescript
-      - run: $CI_PYTHON tools/check-client-contracts.py --run-e2e
+      - name: Install newest immutable native Vespa base for executable client E2E
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache-${{ github.run_id }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          trusted_fetch="$RUNNER_TEMP/searchkernel-fetch-native-base.sh"
+          git show "$BASE_SHA:tools/fetch-native-base.sh" > "$trusted_fetch"
+          chmod +x "$trusted_fetch"
+          artifact=$("$trusted_fetch" ci)
+          SK_NATIVE_BASE_ARTIFACT_URL="file://$artifact" ./dev native-sdk ensure
+      - name: Select C++23 compiler for Search Kernel adapter
+        run: |
+          set -euo pipefail
+
+          probe() {
+            local compiler=$1
+            command -v "$compiler" >/dev/null 2>&1 || return 1
+            printf '#include <expected>\nint main(){ std::expected<int,int> v(1); return *v - 1; }\n' \
+              | "$compiler" -std=gnu++23 -x c++ -fsyntax-only - >/dev/null 2>&1
+          }
+
+          selected=
+          for compiler in g++-15 g++-14 g++-13 g++-12 clang++-19 clang++-18 clang++-17 clang++-16 c++; do
+            if probe "$compiler"; then
+              selected=$(command -v "$compiler")
+              break
+            fi
+          done
+
+          if [[ -z "$selected" ]]; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y g++-12
+            if probe g++-12; then
+              selected=$(command -v g++-12)
+            fi
+          fi
+
+          if [[ -z "$selected" ]]; then
+            echo "::error::No compiler with the C++23 standard-library support required by the native adapter is available."
+            exit 1
+          fi
+
+          echo "Using C++ compiler: $selected"
+          "$selected" --version | head -n 1
+          echo "CXX=$selected" >> "$GITHUB_ENV"
+
+      - name: Build native searchkerneld for executable client E2E
+        env:
+          SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache-${{ github.run_id }}
+        run: cargo build -p searchkerneld --features native
+      - name: Run executable client E2E lanes
+        env:
+          SK_NATIVE_CACHE_DIR: ${{ runner.temp }}/searchkernel-native-sdk-cache-${{ github.run_id }}
+          SEARCHKERNEL_LOCAL_HOST: ${{ github.workspace }}/target/ci/debug/searchkerneld
+        run: $CI_PYTHON tools/check-client-contracts.py --run-e2e

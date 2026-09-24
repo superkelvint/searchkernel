@@ -19,6 +19,15 @@ RUST_ABI = Path("core/crates/searchkernel-vespa-bindings/src/abi.rs")
 RUST_BINDINGS = Path("core/crates/searchkernel-vespa-bindings/src/bindings.rs")
 REFERENCE_CONTRACT = Path("reference/vespa/NATIVE_ABI_CONTRACT.h")
 PINNED_METADATA = Path("reference/vespa/PINNED_VESPA.json")
+M0_NATIVE_OPEN_CLOSE_EXPECTED = Path(
+    "reference/vespa/m0/expected/01-native-open-close.json"
+)
+M0_NATIVE_OPEN_CLOSE_SCENARIO = Path(
+    "reference/vespa/m0/scenarios/01-native-open-close.json"
+)
+PHASE9_ADDITIVE_EXPECTED = Path(
+    "reference/vespa/phase9/expected/01-additive-handles.json"
+)
 
 _HEADER_RE = re.compile(
     r"^\s*#\s*define\s+SK_NATIVE_ABI_VERSION\s+([0-9]+)U?\s*$",
@@ -86,13 +95,19 @@ def _json_object(contents: str, label: str) -> dict[str, object]:
     return value
 
 
-def _json_version(value: dict[str, object], label: str) -> int:
-    version = value.get("native_abi_version")
+def _json_int_field(
+    value: dict[str, object], label: str, field: str
+) -> int:
+    version = value.get(field)
     if type(version) is not int:
         raise AuthorityCheckError(
-            f"{label} must contain integer native_abi_version, found {version!r}"
+            f"{label} must contain integer {field}, found {version!r}"
         )
     return version
+
+
+def _json_version(value: dict[str, object], label: str) -> int:
+    return _json_int_field(value, label, "native_abi_version")
 
 
 def repository_authorities(
@@ -103,6 +118,18 @@ def repository_authorities(
     )
     pinned = _json_object(
         reader.read_text(PINNED_METADATA), PINNED_METADATA.as_posix()
+    )
+    m0_expected = _json_object(
+        reader.read_text(M0_NATIVE_OPEN_CLOSE_EXPECTED),
+        M0_NATIVE_OPEN_CLOSE_EXPECTED.as_posix(),
+    )
+    m0_scenario = _json_object(
+        reader.read_text(M0_NATIVE_OPEN_CLOSE_SCENARIO),
+        M0_NATIVE_OPEN_CLOSE_SCENARIO.as_posix(),
+    )
+    phase9_expected = _json_object(
+        reader.read_text(PHASE9_ADDITIVE_EXPECTED),
+        PHASE9_ADDITIVE_EXPECTED.as_posix(),
     )
 
     pin_commit = pinned.get("commit")
@@ -143,6 +170,21 @@ def repository_authorities(
         ),
         "pinned metadata": _json_version(
             pinned, PINNED_METADATA.as_posix()
+        ),
+        "M0 native-open-close expected": _json_int_field(
+            m0_expected,
+            M0_NATIVE_OPEN_CLOSE_EXPECTED.as_posix(),
+            "abi_version",
+        ),
+        "M0 native-open-close scenario": _json_int_field(
+            m0_scenario,
+            M0_NATIVE_OPEN_CLOSE_SCENARIO.as_posix(),
+            "native_abi_version",
+        ),
+        "Phase 9 additive expected": _json_int_field(
+            phase9_expected,
+            PHASE9_ADDITIVE_EXPECTED.as_posix(),
+            "abi",
         ),
     }
     return authorities, pin_commit

@@ -4,72 +4,188 @@ declare(strict_types=1);
 
 namespace SearchKernel;
 
-use UnexpectedValueException;
 
 final class SearchResult
 {
-    /** @param list<Hit> $hits */
+    /** @var list<string> */
+    private const TOTAL_HIT_RELATIONS = [
+        'Unspecified',
+        'Exact',
+        'LowerBound',
+        'Approximate',
+        'Unknown',
+    ];
+
+    /** @var array<string,list<array{value:mixed,count:int|string}>> */
+    public array $facets = [];
+    /**
+     * @param list<Hit> $hits
+     * @param list<ResultGroup> $groups
+     * @param list<ResultIssue> $errors
+     * @param array<string,mixed> $metadata
+     * @param array<string,mixed> $aggregations
+     * @param array<string,string> $continuations
+     */
     public function __construct(
+        public readonly Hit|ResultGroup|null $root,
         public readonly array $hits,
+        public readonly array $groups,
         public readonly int|string $totalHits,
         public readonly string $totalHitsRelation,
+        public readonly ?Coverage $coverage,
+        public readonly ?SearchTiming $timing,
+        public readonly array $errors,
+        public readonly mixed $trace,
+        public readonly array $metadata,
+        public readonly array $aggregations,
+        public readonly array $continuations,
     ) {}
+
+    public function projectFacet(string $resultName, string $expectedField): void
+    {
+        $candidates = array_values(array_filter(
+            $this->groups,
+            static fn (ResultGroup $group): bool =>
+                ($group->id === $expectedField || $group->id === null)
+                && $group->label === $resultName
+                && $group->value === null
+                && $group->fields === []
+                && $group->continuations === []
+                && $group->source === null
+                && $group->types === []
+                && $group->relevance === null
+                && $group->limits === null
+                && $group->metadata === []
+                && count($group->groups) === count($group->children),
+        ));
+        if (count($candidates) !== 1) {
+            return;
+        }
+
+        $buckets = [];
+        foreach ($candidates[0]->groups as $child) {
+            $optimized = $child->id === null && $child->label === null;
+            $generic = $child->id === 'grouping-0' && $child->label === $resultName;
+            if ((!$optimized && !$generic)
+                || $child->children !== []
+                || $child->continuations !== []
+                || $child->source !== null
+                || $child->types !== []
+                || $child->relevance !== null
+                || $child->limits !== null
+                || $child->metadata !== []
+                || count($child->fields) !== 1
+                || !array_key_exists('count', $child->fields)
+            ) {
+                return;
+            }
+            $countKind = $child->fieldKind('count');
+            $acceptedKinds = $generic
+                ? ['Int64Value', 'UInt64Value']
+                : ['UInt64Value'];
+            if (!in_array($countKind, $acceptedKinds, true)) {
+                return;
+            }
+
+            $count = $child->fields['count'];
+            if (!is_int($count) && !is_string($count)) {
+                return;
+            }
+            if ($generic && $countKind === 'Int64Value' && is_int($count) && $count < 0) {
+                return;
+            }
+            $buckets[] = ['value' => $child->value, 'count' => $count];
+        }
+
+        $this->facets[$resultName] = $buckets;
+    }
 
     /** @param array<string, mixed> $payload */
     public static function fromPayload(array $payload): self
     {
-        $hits = [];
-        if (is_array($payload['root'] ?? null)) {
-            self::collectTopLevelHits($payload['root'], $hits);
+        $root = null;
+        if (array_key_exists('root', $payload) && $payload['root'] !== null) {
+            if (!is_array($payload['root'])) {
+                throw new ProtocolException('SearchResult.root must be a ResultNode object');
+            }
+            $root = ResultGroup::decodeNode($payload['root']);
+        }
+
+        if ($root instanceof ResultGroup) {
+            $hits = $root->hits;
+            $groups = $root->groups;
+            $aggregations = $root->fields;
+            $continuations = $root->continuations;
+        } elseif ($root instanceof Hit) {
+            $hits = [$root];
+            $groups = [];
+            $aggregations = [];
+            $continuations = [];
+        } else {
+            $hits = [];
+            $groups = [];
+            $aggregations = [];
+            $continuations = [];
         }
 
         $totalHits = 0;
         $relation = 'Unknown';
-        if (is_array($payload['total_hits'] ?? null)) {
-            $totalHits = $payload['total_hits']['value'] ?? 0;
-            if (!is_int($totalHits) && !is_string($totalHits)) {
-                throw new UnexpectedValueException('total_hits.value must be an integer or lossless decimal string');
+        if (array_key_exists('total_hits', $payload) && $payload['total_hits'] !== null) {
+            if (!is_array($payload['total_hits'])) {
+                throw new ProtocolException('SearchResult.total_hits must be an object');
             }
-            $relation = (string) ($payload['total_hits']['relation'] ?? 'Unknown');
-        }
-
-        return new self($hits, $totalHits, $relation);
-    }
-
-    /** @param array<string, mixed> $node
-     *  @param list<Hit> $hits
-     */
-    private static function collectTopLevelHits(array $node, array &$hits): void
-    {
-        $type = $node['node_type'] ?? null;
-        $payload = $node['node'] ?? null;
-        if (!is_string($type) || !is_array($payload)) {
-            throw new UnexpectedValueException('malformed ResultNode union');
-        }
-
-        if ($type === 'Hit') {
-            $hits[] = Hit::fromJson($payload);
-            return;
-        }
-        if ($type !== 'ResultGroup') {
-            throw new UnexpectedValueException('unsupported ResultNode kind: ' . $type);
-        }
-
-        $children = $payload['children'] ?? [];
-        if (!is_array($children)) {
-            throw new UnexpectedValueException('ResultGroup children must be an array');
-        }
-        foreach ($children as $child) {
-            if (!is_array($child)) {
-                throw new UnexpectedValueException('malformed ResultGroup child');
-            }
-            if (($child['node_type'] ?? null) === 'Hit') {
-                $childPayload = $child['node'] ?? null;
-                if (!is_array($childPayload)) {
-                    throw new UnexpectedValueException('missing Hit union payload');
-                }
-                $hits[] = Hit::fromJson($childPayload);
+            $totalHits = array_key_exists('value', $payload['total_hits'])
+                ? Protocol::decodeUInt64Scalar($payload['total_hits']['value'], 'TotalHits.value')
+                : 0;
+            $relation = array_key_exists('relation', $payload['total_hits'])
+                ? Protocol::decodeStringScalar($payload['total_hits']['relation'], 'TotalHits.relation')
+                : 'Unspecified';
+            if (!in_array($relation, self::TOTAL_HIT_RELATIONS, true)) {
+                throw new ProtocolException('unsupported TotalHits.relation: ' . $relation);
             }
         }
+
+        if (array_key_exists('coverage', $payload) && $payload['coverage'] !== null && !is_array($payload['coverage'])) {
+            throw new ProtocolException('SearchResult.coverage must be an object');
+        }
+        if (array_key_exists('timing', $payload) && $payload['timing'] !== null && !is_array($payload['timing'])) {
+            throw new ProtocolException('SearchResult.timing must be an object');
+        }
+        $coverage = is_array($payload['coverage'] ?? null) ? new Coverage($payload['coverage']) : null;
+        $timing = is_array($payload['timing'] ?? null) ? new SearchTiming($payload['timing']) : null;
+
+        $errorEntries = Protocol::listField($payload, 'errors', 'SearchResult.errors');
+        $errors = [];
+        foreach ($errorEntries as $error) {
+            if (!is_array($error)) {
+                throw new ProtocolException('SearchResult.errors must contain objects');
+            }
+            $errors[] = new ResultIssue($error);
+        }
+
+        $trace = null;
+        if (array_key_exists('trace', $payload) && $payload['trace'] !== null) {
+            if (!is_array($payload['trace'])) {
+                throw new ProtocolException('SearchResult.trace must be a portable Value');
+            }
+            $trace = Protocol::decodeValue($payload['trace']);
+        }
+
+        return new self(
+            $root,
+            $hits,
+            $groups,
+            $totalHits,
+            $relation,
+            $coverage,
+            $timing,
+            $errors,
+            $trace,
+            Protocol::decodeValueEntries(
+                Protocol::listField($payload, 'metadata', 'SearchResult.metadata'),
+            ),
+            $aggregations,
+            $continuations,
+        );
     }
 }
