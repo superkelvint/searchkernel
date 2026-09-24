@@ -20,7 +20,7 @@ write_marker() {
   local closure=$2
   local format_version=${3:-2}
   local generation=${4:-7}
-  python3 "reference/vespa/common/test-published-provenance-python-1.py" "$marker" "$commit" "$closure" "$format_version" "$generation"
+  python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/test-published-provenance-python-1.py" "$marker" "$commit" "$closure" "$format_version" "$generation"
 }
 write_marker fixture-vespa-commit true
 
