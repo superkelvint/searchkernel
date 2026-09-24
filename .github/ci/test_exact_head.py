@@ -221,6 +221,7 @@ class ExactHeadTests(unittest.TestCase):
             "- name: Install newest immutable native Vespa base for executable client E2E", 1
         )[1].split("- name: Select C++23 compiler", 1)[0]
         self.assertIn('BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}', install_step)
+        self.assertIn('git fetch --no-tags --depth=1 origin "$BASE_SHA"', install_step)
         self.assertIn('git show "$BASE_SHA:tools/fetch-native-base.sh" > "$trusted_fetch"', install_step)
         self.assertIn('artifact=$("$trusted_fetch" ci)', install_step)
         self.assertNotIn("artifact=$(tools/fetch-native-base.sh ci)", install_step)
