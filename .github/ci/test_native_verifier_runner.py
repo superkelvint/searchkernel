@@ -5,6 +5,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "native-verifier-runner.yml"
+BEHAVIORAL_WORKFLOW = ROOT / ".github" / "workflows" / "behavioral-verification.yml"
+CLIENT_CAPABILITIES_WORKFLOW = ROOT / ".github" / "workflows" / "client-capabilities.yml"
 
 
 class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
@@ -123,6 +125,15 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             "flock 9",
         ):
             self.assertIn(needle, source)
+
+
+    def test_pr_callers_grant_live_head_lookup_permission(self) -> None:
+        for workflow in (BEHAVIORAL_WORKFLOW, CLIENT_CAPABILITIES_WORKFLOW):
+            source = workflow.read_text(encoding="utf-8")
+            self.assertIn("native-verifier-runner.yml@main", source)
+            self.assertIn("permissions:", source)
+            self.assertIn("contents: read", source)
+            self.assertIn("pull-requests: read", source)
 
 
 if __name__ == "__main__":
