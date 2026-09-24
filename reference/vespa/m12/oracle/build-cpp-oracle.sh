@@ -19,7 +19,7 @@ mkdir -p "$TARGET_DIR"
 OBJ="$(mktemp "${TMPDIR:-/tmp}/searchkernel-m12-tensor-oracle.XXXXXX.o")"
 trap 'rm -f "$OBJ"' EXIT
 export M12_DIRECT_VESPA="$VESPA" M12_DIRECT_ORACLE="$ORACLE" M12_DIRECT_OBJ="$OBJ" M12_DIRECT_OUT="$OUT" M12_DIRECT_COMPILE_DB="$COMPILE_DB" M12_DIRECT_LINK_TXT="$LINK_TXT"
-python3 "reference/vespa/m12/oracle/build-cpp-oracle-python-1.py"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/build-cpp-oracle-python-1.py"
 [[ -x "$OUT" ]] || die "oracle executable was not produced"
 printf 'vespa_commit=%s\n' "$(expected_vespa_revision)" > "$OUT.provenance"
 echo "M12 direct C++ oracle: $OUT" >&2
