@@ -175,19 +175,22 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
     def test_unknown_behavioral_path_fails_closed_to_all_lanes(self) -> None:
         self.assert_lanes(["integrations/new-runtime/bridge.rs"], set(POLICY.LANES))
 
-    def test_behavioral_workflow_uses_trusted_base_selector(self) -> None:
+    def test_behavioral_workflow_uses_current_trusted_target_policy(self) -> None:
         source = BEHAVIORAL_WORKFLOW.read_text(encoding="utf-8")
         for needle in (
             'rust: ${{ steps.behavioral.outputs.rust }}',
             'python: ${{ steps.behavioral.outputs.python }}',
             'typescript: ${{ steps.behavioral.outputs.typescript }}',
             'ruby: ${{ steps.behavioral.outputs.ruby }}',
+            'BASE_REF: ${{ github.event.pull_request.base.ref }}',
             'git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA"',
             'run: |',
             '"$CI_PYTHON" .github/ci/test_behavioral_lanes_required.py',
             'selector="$RUNNER_TEMP/behavioral_lanes_required.py"',
-            'git cat-file -e "$BASE_SHA:.github/ci/behavioral_lanes_required.py"',
-            'git show "$BASE_SHA:.github/ci/behavioral_lanes_required.py" > "$selector"',
+            'git fetch --no-tags --depth=1 origin "refs/heads/$BASE_REF"',
+            'policy_sha=$(git rev-parse FETCH_HEAD)',
+            'git cat-file -e "$policy_sha:.github/ci/behavioral_lanes_required.py"',
+            'git show "$policy_sha:.github/ci/behavioral_lanes_required.py" > "$selector"',
             'cp .github/ci/behavioral_lanes_required.py "$selector"',
             '"$CI_PYTHON" "$selector" --github-output "$GITHUB_OUTPUT"',
             'echo "rust=true"',
@@ -196,6 +199,10 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
             'echo "ruby=true"',
         ):
             self.assertIn(needle, source)
+        self.assertNotIn(
+            'git show "$BASE_SHA:.github/ci/behavioral_lanes_required.py"',
+            source,
+        )
         self.assertNotIn("verification/dag.toml", source)
 
     def test_windows_separators_are_normalized(self) -> None:
