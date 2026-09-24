@@ -28,15 +28,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      - name: Verify provisioned Rustfmt
-        run: |
-          set -euo pipefail
-          command -v cargo
-          command -v rustc
-          command -v rustfmt
-          cargo --version
-          rustc --version
-          rustfmt --version
+      - name: Ensure runner Rust toolchain
+        run: bash .github/ci/ensure-runner-rust.sh rustfmt
 
       - name: Apply formatting
         run: cargo fmt --all
