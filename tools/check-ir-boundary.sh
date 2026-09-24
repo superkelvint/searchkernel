@@ -4,6 +4,11 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CORE="$ROOT/core/crates/searchkernel-ir/src"
 MODEL="$CORE/model"
 
+command -v rg >/dev/null 2>&1 || {
+  echo "ripgrep (rg) is required for the IR boundary check" >&2
+  exit 1
+}
+
 # `api_to_ir/resolve.rs` is the intentional semantic composition boundary.
 # `resolve_*` functions there convert validated public inputs into owned IR;
 # they are not legacy IR names.  Keep this check limited to names that indicate
