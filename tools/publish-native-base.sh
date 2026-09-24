@@ -355,31 +355,43 @@ done
 
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     TAG="${TAGS[$BUILD_ENV]}"
-    section "Publishing $TAG"
+    section "Uploading draft $TAG"
     gh release create "$TAG" "${ARCHIVES[$BUILD_ENV]}" "${CHECKSUMS[$BUILD_ENV]}" \
         -R "$REPO" \
+        --draft \
+        --target "$SOURCE_COMMIT" \
         --title "SearchKernel immutable Vespa base $TAG" \
         --notes "Automatically allocated native-base generation v${ARTIFACT_GENERATION} for SearchKernel ${SOURCE_COMMIT} and pinned Vespa ${PINNED_VESPA_COMMIT}."
-
+    [[ "$(gh release view "$TAG" -R "$REPO" --json isDraft --jq '.isDraft')" == "true" ]] ||
+        die "$TAG: release became consumer-visible before verification"
 done
 
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     TAG="${TAGS[$BUILD_ENV]}"
     ASSET="${ASSETS[$BUILD_ENV]}"
-    section "Post-publish verification: $TAG"
+    section "Remote draft verification: $TAG"
     REMOTE="$TMP/remote-$BUILD_ENV"
     mkdir -p "$REMOTE"
     gh release download "$TAG" -R "$REPO" -D "$REMOTE" -p "$ASSET" -p "$ASSET.sha256"
     EXPECTED="$(awk 'NR == 1 {print $1}' "$REMOTE/$ASSET.sha256")"
     ACTUAL="$(sha256sum "$REMOTE/$ASSET" | awk '{print $1}')"
     LOCAL="$(sha256sum "${ARCHIVES[$BUILD_ENV]}" | awk '{print $1}')"
-    [[ "$EXPECTED" == "$ACTUAL" && "$LOCAL" == "$ACTUAL" ]] || die "$TAG: published bytes failed checksum verification"
+    [[ "$EXPECTED" == "$ACTUAL" && "$LOCAL" == "$ACTUAL" ]] || die "$TAG: uploaded bytes failed checksum verification"
     EXTRACT="$TMP/remote-extract-$BUILD_ENV"
     mkdir -p "$EXTRACT"
     tar -xzf "$REMOTE/$ASSET" -C "$EXTRACT"
-    verify_bundle "$EXTRACT/searchkernel-vespa-base" "$BUILD_ENV" published
-    verify_archive_consumer "$REMOTE/$ASSET" "$BUILD_ENV" published-consumer
-    echo "Verified $TAG ($ACTUAL)"
+    verify_bundle "$EXTRACT/searchkernel-vespa-base" "$BUILD_ENV" remote-draft
+    verify_archive_consumer "$REMOTE/$ASSET" "$BUILD_ENV" remote-draft-consumer
+    echo "Verified draft $TAG ($ACTUAL)"
+done
+
+section "Publishing verified native-base releases"
+require_canonical_main
+for BUILD_ENV in "${BUILD_ENVS[@]}"; do
+    TAG="${TAGS[$BUILD_ENV]}"
+    gh release edit "$TAG" -R "$REPO" --draft=false
+    [[ "$(gh release view "$TAG" -R "$REPO" --json isDraft --jq '.isDraft')" == "false" ]] ||
+        die "$TAG: verified release did not publish"
 done
 
 echo
