@@ -18,6 +18,6 @@ run_m11_driver concurrency "$TARGET/concurrency"
 
 resource_output="$TARGET/resources.json"
 run_m11_driver resources "$TARGET/resources" > "$resource_output"
-python3 "reference/vespa/m11/verify-m11-stress-python-1.py" "$resource_output" "$M11/expected/invariants.json"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-m11-stress-python-1.py" "$resource_output" "$M11/expected/invariants.json"
 
 echo "M11 stress/resource verification passed"
