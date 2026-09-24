@@ -246,13 +246,8 @@ jobs:
           fi
           echo "Verified exact head $actual."
 
-      - name: Verify provisioned Rust toolchain
-        run: |
-          set -euo pipefail
-          command -v cargo
-          command -v rustc
-          cargo --version
-          rustc --version
+      - name: Ensure runner Rust toolchain
+        run: bash .github/ci/ensure-runner-rust.sh
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
@@ -303,13 +298,8 @@ jobs:
           fi
           echo "Verified exact head $actual."
 
-      - name: Verify provisioned Rust toolchain
-        run: |
-          set -euo pipefail
-          command -v cargo
-          command -v rustc
-          cargo --version
-          rustc --version
+      - name: Ensure runner Rust toolchain
+        run: bash .github/ci/ensure-runner-rust.sh
 
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4
@@ -353,13 +343,8 @@ jobs:
           fi
           echo "Verified exact head $actual."
 
-      - name: Verify provisioned Rust toolchain
-        run: |
-          set -euo pipefail
-          command -v cargo
-          command -v rustc
-          cargo --version
-          rustc --version
+      - name: Ensure runner Rust toolchain
+        run: bash .github/ci/ensure-runner-rust.sh
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -423,14 +408,9 @@ jobs:
           gem --version
           ruby -rrubygems -e 'abort "Ruby >= 3.1 is required" if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")'
 
-      - name: Verify provisioned Rust toolchain
+      - name: Ensure runner Rust toolchain
         if: ${{ hashFiles('clients/ruby/**') != '' }}
-        run: |
-          set -euo pipefail
-          command -v cargo
-          command -v rustc
-          cargo --version
-          rustc --version
+        run: bash .github/ci/ensure-runner-rust.sh
 
       - name: Cache Rust build
         if: ${{ hashFiles('clients/ruby/**') != '' }}
