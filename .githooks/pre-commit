@@ -97,7 +97,7 @@ echo "pre-commit: checking rustfmt"
 cargo fmt --all --check
 
 echo "pre-commit: running clippy"
-cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+./dev lint --profile rust-clippy-non-native
 
 echo "pre-commit: running workspace unit tests"
 cargo test --workspace --all-targets --no-default-features
