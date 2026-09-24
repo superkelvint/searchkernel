@@ -80,14 +80,7 @@ resolved_native_base_sdk() {
 }
 
 expected_vespa_revision() {
-  python3 - "$PIN_FILE" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    pin = json.load(stream)
-print(pin["commit"])
-PY
+  python3 "reference/vespa/common/verify-common-python-1.py" "$PIN_FILE"
 }
 
 fail_verification() {
@@ -110,42 +103,7 @@ require_pinned_vespa() {
        -f "$vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make" ]] ||
       fail_verification "published Vespa toolchain is missing canonical adapter compile/link metadata: $vespa"
 
-    if ! python3 - "$marker" "$build_env" "$target" "$expected" <<'PY'
-import json
-import sys
-
-path, build_env, target, commit = sys.argv[1:]
-try:
-    with open(path, encoding="utf-8") as stream:
-        marker = json.load(stream)
-except (OSError, json.JSONDecodeError) as exc:
-    raise SystemExit(f"invalid published Vespa provenance marker {path}: {exc}") from exc
-
-expected = {
-    "build_environment": build_env,
-    "native_target": target,
-    "vespa_commit": commit,
-}
-for key, value in expected.items():
-    if marker.get(key) != value:
-        raise SystemExit(
-            f"published Vespa provenance {key} mismatch: "
-            f"expected {value!r}, found {marker.get(key)!r}"
-        )
-generation = marker.get("artifact_generation")
-if not isinstance(generation, int) or generation < 1:
-    raise SystemExit("published Vespa provenance has no valid artifact_generation")
-if marker.get("adapter_static_link_closure") is not True:
-    raise SystemExit("published Vespa provenance does not certify adapter static-link closure")
-
-format_version = marker.get("format_version")
-legacy_generation_2 = format_version == 1 and generation == 2
-if format_version != 2 and not legacy_generation_2:
-    raise SystemExit(
-        "unsupported published Vespa provenance format: "
-        f"format_version={format_version!r}, artifact_generation={generation!r}"
-    )
-PY
+    if ! python3 "reference/vespa/common/verify-common-python-2.py" "$marker" "$build_env" "$target" "$expected"
     then
       fail_verification "published Vespa provenance validation failed: $marker"
     fi
