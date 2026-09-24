@@ -291,7 +291,8 @@ class ExactHeadTests(unittest.TestCase):
         )[0]
         self.assertIn("if: needs.classify.outputs.ruby == 'true'", ruby)
         self.assertNotIn("uses: ruby/setup-ruby@v1", ruby)
-        self.assertIn("Verify provisioned Ruby", ruby)
+        self.assertIn("Ensure provisioned Ruby", ruby)
+        self.assertIn("sudo -n apt-get install -y --no-install-recommends ruby-full", ruby)
         self.assertIn("Gem::Version.new(RUBY_VERSION)", ruby)
         self.assertIn("uses: dtolnay/rust-toolchain@stable", ruby)
         self.assertIn("./dev install flatbuffers", ruby)
@@ -299,7 +300,7 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("./dev test ruby", ruby)
         classify = workflow.split("\n  classify:\n", 1)[1].split("\n  rust:\n", 1)[0]
         self.assertNotIn("uses: ruby/setup-ruby@v1", classify)
-        provisioned_probe = ruby.split("- name: Verify provisioned Ruby", 1)[1].split(
+        provisioned_probe = ruby.split("- name: Ensure provisioned Ruby", 1)[1].split(
             "- name: Install Rust toolchain", 1
         )[0]
         self.assertIn("hashFiles('clients/ruby/**')", provisioned_probe)
