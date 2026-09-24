@@ -26,7 +26,6 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     env:
       NATIVE_CONTAINER: "searchkernel-native"
-      ALMA_CARGO_TARGET_DIR: "/work/target/actions-runner-alma-ci"
     steps:
       - name: Check out exact revision
         uses: actions/checkout@v4
@@ -79,8 +78,10 @@ jobs:
           fi
 
           ALMA_WORKTREE="/tmp/searchkernel-gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
-          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE"
-          docker exec "$NATIVE_CONTAINER" mkdir -p "$ALMA_WORKTREE"
+          ALMA_CARGO_TARGET_DIR="/tmp/searchkernel-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          ALMA_NATIVE_CACHE_DIR="/tmp/searchkernel-native-cache-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE" "$ALMA_CARGO_TARGET_DIR" "$ALMA_NATIVE_CACHE_DIR"
+          docker exec "$NATIVE_CONTAINER" mkdir -p "$ALMA_WORKTREE" "$ALMA_CARGO_TARGET_DIR" "$ALMA_NATIVE_CACHE_DIR"
           docker cp "$GITHUB_WORKSPACE/." "$NATIVE_CONTAINER:$ALMA_WORKTREE"
 
           actual="$(docker exec -e ALMA_WORKTREE="$ALMA_WORKTREE" "$NATIVE_CONTAINER" /bin/bash -lc 'git -c safe.directory="$ALMA_WORKTREE" -C "$ALMA_WORKTREE" rev-parse HEAD')"
@@ -90,6 +91,8 @@ jobs:
           fi
 
           echo "ALMA_WORKTREE=$ALMA_WORKTREE" >> "$GITHUB_ENV"
+          echo "ALMA_CARGO_TARGET_DIR=$ALMA_CARGO_TARGET_DIR" >> "$GITHUB_ENV"
+          echo "ALMA_NATIVE_CACHE_DIR=$ALMA_NATIVE_CACHE_DIR" >> "$GITHUB_ENV"
 
       - name: Copy trusted native verification policy into AlmaLinux
         if: inputs.suite == 'behavior'
@@ -135,6 +138,7 @@ jobs:
             -e TRUSTED_POLICY_DIR="${TRUSTED_POLICY_DIR:-}" \
             -e SEARCHKERNEL_BUILD_ENV=ci \
             -e CARGO_TARGET_DIR="$ALMA_CARGO_TARGET_DIR" \
+            -e SK_NATIVE_CACHE_DIR="$ALMA_NATIVE_CACHE_DIR" \
             "$NATIVE_CONTAINER" \
             /bin/bash -s <<'BASH'
           set -euo pipefail
@@ -298,4 +302,6 @@ PY
         run: |
           set +e
           ALMA_WORKTREE="${ALMA_WORKTREE:-/tmp/searchkernel-gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}}"
-          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE" >/dev/null 2>&1 || true
+          ALMA_CARGO_TARGET_DIR="${ALMA_CARGO_TARGET_DIR:-/tmp/searchkernel-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}}"
+          ALMA_NATIVE_CACHE_DIR="${ALMA_NATIVE_CACHE_DIR:-/tmp/searchkernel-native-cache-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}}"
+          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE" "$ALMA_CARGO_TARGET_DIR" "$ALMA_NATIVE_CACHE_DIR" >/dev/null 2>&1 || true
