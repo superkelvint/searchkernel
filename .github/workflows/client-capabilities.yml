@@ -24,6 +24,8 @@ on:
       - ".github/ci/select-python.sh"
       - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/client-capabilities.yml"
+      - ".github/workflows/client-capabilities-autofix-prepare.yml"
+      - ".github/workflows/client-capabilities-autofix-apply.yml"
   push:
     branches: [main]
     paths:
@@ -48,6 +50,8 @@ on:
       - ".github/ci/select-python.sh"
       - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/client-capabilities.yml"
+      - ".github/workflows/client-capabilities-autofix-prepare.yml"
+      - ".github/workflows/client-capabilities-autofix-apply.yml"
   workflow_dispatch:
 
 concurrency:
