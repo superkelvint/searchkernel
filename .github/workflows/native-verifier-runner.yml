@@ -132,6 +132,11 @@ jobs:
 
           cd "$ALMA_WORKTREE"
 
+          # Client-side verifier helpers must import from the exact copied
+          # revision, not from an editable package or PYTHONPATH rooted at the
+          # persistent runner checkout mounted at /work.
+          export PYTHONPATH="$ALMA_WORKTREE/clients/python${PYTHONPATH:+:$PYTHONPATH}"
+
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
             echo "expected exact revision $EXPECTED_HEAD in AlmaLinux, found $actual" >&2
