@@ -13,6 +13,22 @@ fi
 
 cd "$ROOT"
 
+sanitize_ca_overrides() {
+    local name value
+    for name in SSL_CERT_FILE REQUESTS_CA_BUNDLE CURL_CA_BUNDLE PIP_CERT; do
+        value=${!name:-}
+        if [[ -n "$value" && ! -f "$value" ]]; then
+            echo "Ignoring invalid $name=$value" >&2
+            unset "$name"
+        fi
+    done
+}
+
+# Host/container environments sometimes leak distro-specific CA paths (for
+# example Debian's /etc/ssl/certs/ca-certificates.crt into AlmaLinux). Those
+# break pip/curl even when the system trust store is otherwise healthy.
+sanitize_ca_overrides
+
 ensure_hooks() {
     local configured
     configured=$(git config --local --get core.hooksPath 2>/dev/null || true)
