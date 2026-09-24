@@ -131,11 +131,11 @@ cache_result = false
 [[task]]
 id = "ruby-client"
 legacy_lanes = ["ruby"]
-kind = "aggregate"
+kind = "command"
 runner = "linux"
-depends_on = ["client-contracts"]
+command = "./dev test ruby"
+depends_on = []
 cache_result = false
-notes = "Pre-registered ownership for the Ruby client ingress. The first Ruby product PR replaces this aggregate with ./dev test ruby."
 
 [[task]]
 id = "protocol-generated"
@@ -653,6 +653,15 @@ command = "python3 .github/ci/test_exact_head.py"
 depends_on = []
 cache_result = false
 
+[[task]]
+id = "runner-bootstrap"
+legacy_lanes = ["verification"]
+kind = "command"
+runner = "linux"
+command = "bash -n tools/ci/runner-bootstrap/install.sh tools/ci/runner-bootstrap/verify.sh tools/ci/runner-bootstrap/package.sh && bash tools/ci/runner-bootstrap/install.sh --help >/dev/null"
+depends_on = []
+cache_result = false
+
 # SearchKernel Web is deliberately decomposed. Several subsystems share the same
 # executable task today, but retain separate subsystem ownership below so new
 # feature families cannot appear invisibly.
@@ -938,7 +947,10 @@ requires = ["php-client", "client-contracts"]
 
 [[subsystem]]
 id = "client-ruby"
-paths = ["clients/ruby/**"]
+paths = [
+  "clients/ruby/**",
+  "core/crates/searchkernel-protocol/tests/ruby_json_contract.rs",
+]
 requires = ["ruby-client", "client-contracts"]
 
 [[subsystem]]
@@ -1024,6 +1036,11 @@ requires = ["native-full"]
 id = "verification-control-plane"
 paths = [".github/ci/**", ".github/workflows/**", ".githooks/**", "dev", "verification/**"]
 requires = ["verification-policy", "full"]
+
+[[subsystem]]
+id = "ci-runner-bootstrap"
+paths = ["tools/ci/runner-bootstrap/**"]
+requires = ["runner-bootstrap"]
 
 # --- SearchKernel Web subsystem ownership ---
 

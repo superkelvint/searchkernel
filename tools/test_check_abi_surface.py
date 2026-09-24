@@ -115,6 +115,12 @@ def assert_same_version_signature_change_rejected(contents: str) -> None:
 
 
 def main() -> int:
+    parse_args = CHECKER._clang_parse_args()
+    assert parse_args[:3] == ["-x", "c", "-std=c11"], parse_args
+    if "-resource-dir" in parse_args:
+        resource_dir = Path(parse_args[parse_args.index("-resource-dir") + 1])
+        assert (resource_dir / "include").is_dir(), parse_args
+
     opaque_violations = check_header(
         """
         typedef struct sk_engine sk_engine;
