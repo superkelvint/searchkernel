@@ -28,7 +28,7 @@ import sys
 
 text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
 draft_upload = text.index('gh release create "$TAG"')
-remote_verify = text.index('section "Post-publish verification"')
+remote_verify = text.index('section "Remote draft verification"')
 publish_verified = text.index('section "Publishing verified native-base releases"')
 if not (draft_upload < remote_verify < publish_verified):
     raise SystemExit(
