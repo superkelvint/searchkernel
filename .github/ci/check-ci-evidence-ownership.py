@@ -13,6 +13,8 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 CANONICAL = WORKFLOWS / "behavioral-verification.yml"
 RETIRED = WORKFLOWS / "unit-tests.yml"
 EXPECTED_RUST_COMMAND = "cargo test --workspace --all-targets --no-default-features"
+EXPECTED_PYTHON_COMMAND = "$CI_PYTHON -m unittest discover -s clients/python/tests -p 'test_*.py'"
+EXPECTED_TYPESCRIPT_COMMAND = "npm --prefix clients/typescript test"
 
 
 def is_pull_request_workflow(text: str) -> bool:
@@ -27,6 +29,31 @@ def workspace_test_commands(text: str) -> list[str]:
         if "cargo test --workspace" in stripped:
             commands.append(stripped.removeprefix("run:").strip())
     return commands
+
+
+def exact_command_owners(command: str) -> list[Path]:
+    owners: list[Path] = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        if not is_pull_request_workflow(text):
+            continue
+        if command in text:
+            owners.append(path)
+    return owners
+
+
+def require_one_language_owner(
+    errors: list[str],
+    language: str,
+    command: str,
+) -> None:
+    owners = exact_command_owners(command)
+    if owners != [CANONICAL]:
+        rendered = ", ".join(str(path.relative_to(ROOT)) for path in owners) or "none"
+        errors.append(
+            f"{language} PR baseline must have exactly one owner, "
+            f"{CANONICAL.relative_to(ROOT)}; found {rendered}"
+        )
 
 
 def main() -> int:
@@ -66,6 +93,9 @@ def main() -> int:
             f"{expected_owner}: {EXPECTED_RUST_COMMAND!r}; found "
             f"{path.relative_to(ROOT)}: {command!r}"
         )
+
+    require_one_language_owner(errors, "Python", EXPECTED_PYTHON_COMMAND)
+    require_one_language_owner(errors, "TypeScript", EXPECTED_TYPESCRIPT_COMMAND)
 
     canonical = CANONICAL.read_text(encoding="utf-8")
     try:
@@ -112,8 +142,8 @@ def main() -> int:
         return 1
 
     print(
-        "CI evidence ownership PASS: one canonical PR Rust workspace lane; "
-        "portable conformance reuses its build; tooling evidence is separate."
+        "CI evidence ownership PASS: one canonical PR baseline per Rust/Python/TypeScript; "
+        "portable conformance reuses the Rust build; tooling evidence is separate."
     )
     return 0
 
