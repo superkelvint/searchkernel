@@ -7,7 +7,8 @@ import re
 import sys
 from pathlib import Path
 
-WORKFLOWS = Path(".github/workflows")
+ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+WORKFLOWS = ROOT / ".github/workflows"
 
 FORBIDDEN = (
     (re.compile(r"dtolnay/rust-toolchain@"), "job-local Rust toolchain installation"),
