@@ -49,20 +49,7 @@ download_artifact() {
             "https://api.github.com/repos/superkelvint/searchkernel/releases/tags/$tag" \
             -o "$release_json" || return 1
 
-        asset_url=$(python3 - "$release_json" "$asset" <<'PY'
-import json
-import sys
-
-path, wanted = sys.argv[1:]
-with open(path, encoding="utf-8") as stream:
-    release = json.load(stream)
-for candidate in release.get("assets", []):
-    if candidate.get("name") == wanted:
-        print(candidate["url"])
-        break
-else:
-    raise SystemExit(f"release asset not found: {wanted}")
-PY
+        asset_url=$(python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/install-native-base-artifact-python-1.py" "$release_json" "$asset"
         ) || return 1
 
         curl -fsSL \
@@ -100,54 +87,7 @@ ACTUAL_SHA=$(sha256sum "$ARCHIVE" | awk '{print $1}')
 
 EXTRACT=$TMP/extract
 mkdir -p "$EXTRACT"
-python3 - "$ARCHIVE" "$EXTRACT" <<'PY'
-import pathlib
-import posixpath
-import sys
-import tarfile
-
-archive, destination = sys.argv[1:]
-with tarfile.open(archive, "r:gz") as stream:
-    members = stream.getmembers()
-    if not members:
-        raise SystemExit("published Vespa base archive is empty")
-
-    by_name = {str(pathlib.PurePosixPath(member.name)): member for member in members}
-    symlinks = set()
-    for member in members:
-        path = pathlib.PurePosixPath(member.name)
-        if path.is_absolute() or ".." in path.parts:
-            raise SystemExit(f"unsafe published Vespa base path: {member.name}")
-        if member.isdev():
-            raise SystemExit(f"unsupported published Vespa base entry: {member.name}")
-        if member.issym():
-            target = pathlib.PurePosixPath(member.linkname)
-            if target.is_absolute():
-                raise SystemExit(f"unsafe published Vespa base symlink: {member.name}")
-            resolved = posixpath.normpath(str(path.parent / target))
-            if resolved == ".." or resolved.startswith("../"):
-                raise SystemExit(f"unsafe published Vespa base symlink: {member.name}")
-            symlinks.add(path)
-        elif member.islnk():
-            target = pathlib.PurePosixPath(member.linkname)
-            if target.is_absolute() or ".." in target.parts:
-                raise SystemExit(f"unsafe published Vespa base hardlink: {member.name}")
-            resolved = posixpath.normpath(str(target))
-            target_member = by_name.get(resolved)
-            if target_member is None or not target_member.isfile():
-                raise SystemExit(f"unsafe published Vespa base hardlink: {member.name}")
-
-    # A later archive member must never be extracted through a symlink created
-    # by an earlier member. Legitimate runtime SONAME links point at sibling
-    # files and have no children of their own.
-    for member in members:
-        path = pathlib.PurePosixPath(member.name)
-        for parent in path.parents:
-            if parent in symlinks:
-                raise SystemExit(f"unsafe published Vespa base symlink traversal: {member.name}")
-
-    stream.extractall(destination, members=members)
-PY
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/install-native-base-artifact-python-2.py" "$ARCHIVE" "$EXTRACT"
 
 BUNDLE=$EXTRACT/searchkernel-vespa-base
 BUNDLE_MANIFEST=$BUNDLE/manifest.json
@@ -156,70 +96,7 @@ VESPA_ROOT=$BUNDLE/toolchain/upstream/vespa
 DEPS=$BUNDLE/toolchain/vespa-deps
 MARKER=$VESPA_ROOT/.searchkernel-vespa-artifact.json
 
-python3 - "$BUNDLE_MANIFEST" "$BASE/manifest.json" "$MARKER" "$BUILD_ENV" "$TARGET" "$VESPA_COMMIT" <<'PY'
-import json
-import sys
-
-bundle_path, base_path, marker_path, build_env, target, commit = sys.argv[1:]
-
-def read(path):
-    try:
-        with open(path, encoding="utf-8") as stream:
-            return json.load(stream)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise SystemExit(f"invalid published Vespa base metadata {path}: {exc}") from exc
-
-bundle = read(bundle_path)
-base = read(base_path)
-marker = read(marker_path)
-
-expected_identity = {
-    "build_environment": build_env,
-    "native_target": target,
-    "vespa_commit": commit,
-}
-for key, value in expected_identity.items():
-    if bundle.get(key) != value:
-        raise SystemExit(
-            f"published Vespa base {key} mismatch: expected {value!r}, found {bundle.get(key)!r}"
-        )
-    if marker.get(key) != value:
-        raise SystemExit(
-            f"published Vespa toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
-        )
-
-generation = bundle.get("artifact_generation")
-if not isinstance(generation, int) or generation < 1:
-    raise SystemExit("published Vespa base has no valid artifact_generation")
-if marker.get("artifact_generation") != generation:
-    raise SystemExit(
-        "published Vespa base/toolchain artifact_generation mismatch: "
-        f"{generation!r} vs {marker.get('artifact_generation')!r}"
-    )
-
-bundle_format = bundle.get("format_version")
-marker_format = marker.get("format_version")
-if bundle_format != marker_format:
-    raise SystemExit(
-        "published Vespa base/toolchain format_version mismatch: "
-        f"{bundle_format!r} vs {marker_format!r}"
-    )
-
-legacy_link_complete = (
-    bundle_format == 1
-    and generation == 2
-    and bundle.get("adapter_static_link_closure") is True
-    and marker.get("adapter_static_link_closure") is True
-)
-if bundle_format != 2 and not legacy_link_complete:
-    raise SystemExit(
-        "unsupported published Vespa base format: "
-        f"format_version={bundle_format!r}, artifact_generation={generation!r}"
-    )
-
-if base.get("kind") != "vespa-base" or base.get("vespa_commit") != commit:
-    raise SystemExit("published Vespa base manifest does not match the pinned Vespa checkout")
-PY
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/install-native-base-artifact-python-3.py" "$BUNDLE_MANIFEST" "$BASE/manifest.json" "$MARKER" "$BUILD_ENV" "$TARGET" "$VESPA_COMMIT"
 
 [[ -d "$BASE/lib" ]] || { echo "published Vespa base has no lib directory" >&2; exit 1; }
 find "$BASE/lib" -maxdepth 1 -type f -name 'libvespa*.so*' -print -quit | grep -q . || {
@@ -242,40 +119,7 @@ mkdir -p "$DEPS/lib64"
 # archive referenced by the harvested Vespa link command is present. This
 # deliberately rejects the old v1 shape that could appear valid until the
 # consumer reached the final adapter link.
-python3 - "$CONFIGURED_DIR/link.txt" "$VESPA_ROOT" <<'PY'
-import pathlib
-import shlex
-import sys
-
-link_file = pathlib.Path(sys.argv[1]).resolve()
-vespa_root = pathlib.Path(sys.argv[2]).resolve()
-
-for token in shlex.split(link_file.read_text(encoding="utf-8")):
-    if not token.endswith(".a"):
-        continue
-    if pathlib.Path(token).name == "libsearchcore_test.a":
-        continue
-
-    if token.startswith("/work/vespa/"):
-        archive = vespa_root / token[len("/work/vespa/"):]
-    else:
-        archive = pathlib.Path(token)
-        if not archive.is_absolute():
-            # CMake evaluates link.txt arguments from the target directory,
-            # one level above CMakeFiles/<target>.dir.
-            archive = link_file.parent.parent.parent / archive
-
-    archive = archive.resolve()
-    try:
-        archive.relative_to(vespa_root)
-    except ValueError as exc:
-        raise SystemExit(
-            f"published Vespa link references static archive outside packaged toolchain: {token}"
-        ) from exc
-
-    if not archive.is_file():
-        raise SystemExit(f"published Vespa base is missing adapter static archive: {token}")
-PY
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/install-native-base-artifact-python-4.py" "$CONFIGURED_DIR/link.txt" "$VESPA_ROOT"
 
 retire_existing() {
     local path=$1
