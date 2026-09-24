@@ -32,3 +32,5 @@ ordinary Rust-only changes should not rebuild Vespa.
 
 <!-- CI smoke: native-sensitive documentation change; do not merge. -->
 <!-- CI smoke retry after Alma verifier prerequisite repair. -->
+
+<!-- CI smoke retry after clang frontend provisioning. -->
