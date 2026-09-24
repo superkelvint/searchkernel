@@ -157,7 +157,7 @@ for path in (bundle_path, marker_path):
         stream.write("\n")
 PY
 
-ASSET="searchkernel-vespa-base-v2-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
+ASSET="searchkernel-vespa-base-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
 ARCHIVE=$OUT_DIR/$ASSET
 rm -f "$ARCHIVE" "$ARCHIVE.sha256"
 (
