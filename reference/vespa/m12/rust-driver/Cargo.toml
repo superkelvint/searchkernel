@@ -24,4 +24,8 @@ path = "src/bin/adapter_driver.rs"
 name = "searchkernel-m12-error"
 path = "src/bin/error.rs"
 
+[[bin]]
+name = "searchkernel-m12-prepare-fixture"
+path = "src/bin/prepare_fixture.rs"
+
 [workspace]
