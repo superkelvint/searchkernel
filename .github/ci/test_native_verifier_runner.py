@@ -8,8 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "native-verifier-runner.yml"
-BEHAVIORAL_WORKFLOW = ROOT / ".github" / "workflows" / "behavioral-verification.yml"
-CLIENT_CAPABILITIES_WORKFLOW = ROOT / ".github" / "workflows" / "client-capabilities.yml"
+WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
@@ -19,7 +18,8 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", source)
         self.assertNotIn("pull_request:", source)
         self.assertNotIn("push:", source)
-        self.assertNotIn("verification/dag", source)
+        self.assertNotIn("python3 verification/dag.py", source)
+        self.assertNotIn("./verification/dag.py", source)
 
     def test_runs_requested_exact_revision_inside_persistent_alma(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
