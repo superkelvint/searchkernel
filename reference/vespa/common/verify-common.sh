@@ -243,7 +243,7 @@ require_native_driver() {
 }
 
 run_workspace_quality() {
-  "$REPO_ROOT/tools/check-vespa-bindings.sh"
+  SK_NATIVE_ABI_HEADER="$SDK/include/searchkernel_vespa.h"     "$REPO_ROOT/tools/check-vespa-bindings.sh"
   cargo fmt --all --check
   cargo clippy --workspace --all-targets --all-features -- -D warnings
   cargo test --workspace --all-targets --all-features
