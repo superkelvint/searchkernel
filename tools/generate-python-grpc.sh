@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-python=${PYTHON:-python3}
+python=$(bash "$root/tools/resolve-python.sh")
 
 "$python" "$root/tools/check-python-dependencies.py" --codegen
 
