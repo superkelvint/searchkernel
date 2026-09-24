@@ -61,6 +61,21 @@ BUNDLE=$STAGE/searchkernel-vespa-base
 mkdir -p "$BUNDLE/base" "$BUNDLE/toolchain/upstream/vespa" "$BUNDLE/toolchain/vespa-deps/include" "$BUNDLE/toolchain/vespa-deps/lib64"
 cp -aL "$BASE/." "$BUNDLE/base/"
 
+# The immutable base builder intentionally owns Vespa DSOs, but the producer
+# host may satisfy ordinary transitive dependencies (for example libxml2) from
+# its system/dependency installation. A published base must carry every
+# non-baseline DT_NEEDED dependency itself so clean consumers do not inherit
+# accidental producer-host state.
+runtime_search_args=()
+for runtime_dir in "$DEPS/lib64" "$DEPS/lib"; do
+    if [[ -d "$runtime_dir" ]]; then
+        runtime_search_args+=(--search-dir "$runtime_dir")
+    fi
+done
+python3 "$ROOT/tools/bundle-native-runtime-closure.py" \
+    "$BUNDLE/base/lib" "${runtime_search_args[@]}"
+python3 "$ROOT/tools/check-native-runtime-closure.py" "$BUNDLE/base/lib"
+
 # Package the immutable Vespa source/header surface plus generated header-like
 # files and the exact compile/link metadata used by the adapter build. Heavy
 # native objects and libraries stay in the base lib directory instead.
