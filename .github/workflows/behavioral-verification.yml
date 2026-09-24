@@ -256,10 +256,14 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
 
-      - name: Verify provisioned Ruby
+      - name: Ensure provisioned Ruby
         if: ${{ hashFiles('clients/ruby/**') != '' }}
         run: |
           set -euo pipefail
+          if ! command -v ruby >/dev/null 2>&1 || ! command -v gem >/dev/null 2>&1; then
+            sudo -n apt-get update
+            sudo -n apt-get install -y --no-install-recommends ruby-full
+          fi
           ruby --version
           gem --version
           ruby -rrubygems -e 'abort "Ruby >= 3.1 is required" if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")'
