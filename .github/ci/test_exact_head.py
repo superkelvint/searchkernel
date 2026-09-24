@@ -181,7 +181,14 @@ class ExactHeadTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("persist-credentials: false", workflow)
-        self.assertIn("grep -Ev '\\.rs        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(r"grep -Ev '\.rs$' || true", workflow)
+        self.assertIn("AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}", workflow)
+        self.assertIn('if [[ -z "${AUTOFIX_TOKEN:-}" ]]; then', workflow)
+        self.assertIn('git add -u', workflow)
+        self.assertIn('"HEAD:${HEAD_REF}"', workflow)
+
+    def test_candidate_regressions_use_candidate_verification_policy(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
         regression_step = workflow.split("- name: Verify exact-head CI regressions", 1)[1].split(
             "- name: Verify candidate verification DAG integrity and coverage", 1
         )[0]
