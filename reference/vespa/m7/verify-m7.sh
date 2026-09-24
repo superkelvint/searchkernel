@@ -25,13 +25,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
    "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/java-$id.json"
  fi
  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m7-driver -- canonical "$s" > "$TMP/canon-$id.json"
- python3 - "$SCRIPT_DIR/expected/$id.json" "$TMP/canon-$id.json" <<'PY_CANON'
-import json,sys
-exp=json.load(open(sys.argv[1])); got=json.load(open(sys.argv[2]));
-if got['id']!=exp['id'] or got['schema']!=exp['schema']: raise SystemExit('identity mismatch')
-if got['typed']!=exp['query']: raise SystemExit(f"typed canonical mismatch: {got['typed']} != {exp['query']}")
-if got['yql']!=exp['query']: raise SystemExit(f"YQL canonical mismatch: {got['yql']} != {exp['query']}")
-PY_CANON
+ python3 "reference/vespa/m7/verify-m7-python-1.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/canon-$id.json"
  for path in typed yql; do
    cfg="$TMP/$id-$path-cfg"; data="$TMP/$id-$path-data"; mkdir -p "$data"
    cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m7-driver -- execute "$s" "$cfg" "$data" "$path" > "$TMP/$id-$path-hits.json"
@@ -40,12 +34,7 @@ PY_CANON
  "$SCRIPT_DIR/compare.py" "$TMP/$id-typed-hits.json" "$TMP/$id-yql-hits.json"
 done
 ERRORS="$SCRIPT_DIR/scenarios/errors.json"
-python3 - "$ERRORS" <<'PY_JOBS' > "$TMP/error-jobs"
-import json,sys
-for c in json.load(open(sys.argv[1]))['cases']:
- for p in ('typed','yql'):
-  if p in c: print(c['id'],p,c[p+'_error'])
-PY_JOBS
+python3 "reference/vespa/m7/verify-m7-python-2.py" "$ERRORS"  > "$TMP/error-jobs"
 while read -r id path expected; do
  cfg="$TMP/error-$id-$path-cfg"; data="$TMP/error-$id-$path-data"; mkdir -p "$data"
  actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m7-error -- "$path" "$ERRORS" "$id" "$cfg" "$data")"
