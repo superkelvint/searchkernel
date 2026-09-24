@@ -37,8 +37,8 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
-  id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
-  schema="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["schema"])' "$scenario")"
+  id="$(python3 "$ROOT/tools/json-cli.py" get "$scenario" id)"
+  schema="$(python3 "$ROOT/tools/json-cli.py" get "$scenario" schema)"
   cfg="$TMP/$id-config"
   data="$TMP/$id-data"
   mkdir -p "$cfg" "$data"
@@ -58,7 +58,7 @@ for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     live="$TMP/$id-java.json"
     "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$id" "$schema" "$SCRIPT_DIR/scenarios/rendered/$id.sd" \
-      | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",",":")))' > "$live"
+      | python3 "$ROOT/tools/json-cli.py" canonicalize - > "$live"
     "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$live"
     "$SCRIPT_DIR/compare.py" "$live" "$actual"
   fi
