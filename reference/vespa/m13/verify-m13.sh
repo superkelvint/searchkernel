@@ -115,7 +115,7 @@ while read -r id expected path; do
     echo "M13 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1
   }
-done < <(python3 "reference/vespa/m13/verify-m13-python-1.py" "$ERRORS"
+done < <(python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-m13-python-1.py" "$ERRORS"
 )
 
 echo 'M13 dense tensor document CRUD verification passed'
