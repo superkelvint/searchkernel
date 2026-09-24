@@ -135,3 +135,58 @@ pub enum HighlightingIr {
         multi_valued_fields: Vec<FieldName>,
     },
 }
+
+/// Return the canonical portable result-field name for a grouping output.
+///
+/// Explicit labels win. Unlabeled aggregation outputs use one backend-independent
+/// name derived from canonical IR so semantic validation and result projection
+/// cannot disagree after native lowering changes enum/type spellings.
+#[doc(hidden)]
+pub fn effective_grouping_output_name(
+    output: &GroupingOutputIr,
+    aliases: &std::collections::BTreeMap<String, GroupingExpressionIr>,
+) -> Option<String> {
+    output
+        .label
+        .clone()
+        .or_else(|| grouping_expression_output_name(&output.expression, aliases))
+}
+
+fn grouping_expression_output_name(
+    value: &GroupingExpressionIr,
+    aliases: &std::collections::BTreeMap<String, GroupingExpressionIr>,
+) -> Option<String> {
+    match value {
+        GroupingExpressionIr::Alias(name) => aliases
+            .get(name)
+            .and_then(|value| grouping_expression_output_name(value, aliases)),
+        GroupingExpressionIr::Aggregation(aggregation) => {
+            Some(grouping_aggregation_output_name(aggregation))
+        }
+        _ => None,
+    }
+}
+
+fn grouping_aggregation_output_name(value: &GroupingAggregationIr) -> String {
+    let expression_name = |expression: &GroupingExpressionIr| match expression {
+        GroupingExpressionIr::Attribute(field) => field.clone(),
+        expression => format!("{expression:?}"),
+    };
+    match value {
+        GroupingAggregationIr::Count => "count".to_owned(),
+        GroupingAggregationIr::Avg(expression) => {
+            format!("average({})", expression_name(expression))
+        }
+        GroupingAggregationIr::Sum(expression) => format!("sum({})", expression_name(expression)),
+        GroupingAggregationIr::Min(expression) => format!("min({})", expression_name(expression)),
+        GroupingAggregationIr::Max(expression) => format!("max({})", expression_name(expression)),
+        GroupingAggregationIr::Xor(expression) => format!("xor({})", expression_name(expression)),
+        GroupingAggregationIr::StdDev(expression) => {
+            format!("stddev({})", expression_name(expression))
+        }
+        GroupingAggregationIr::Quantiles { expression, .. } => {
+            format!("quantiles({})", expression_name(expression))
+        }
+        GroupingAggregationIr::Summary(_) => "summary".to_owned(),
+    }
+}

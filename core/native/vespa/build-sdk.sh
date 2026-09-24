@@ -336,6 +336,20 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
         cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
     fi
     cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
+    cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
+    python3 - "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
+import json
+import sys
+
+path, failpoints, sanitizer = sys.argv[1:]
+with open(path, encoding="utf-8") as stream:
+    manifest = json.load(stream)
+manifest["hardening_failpoints"] = failpoints == "1"
+manifest["sanitizer"] = sanitizer
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(manifest, stream, indent=2, sort_keys=True)
+    stream.write("\n")
+PY
 
     SDK_BACKUP="${SDK_PACKAGE}.old.$"
     if [ -e "$SDK_BACKUP" ]; then
