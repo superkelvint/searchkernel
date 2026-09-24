@@ -41,11 +41,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
 done
 
 ERRORS="$SCRIPT_DIR/scenarios/errors.json"
-python3 - "$ERRORS" <<'PY' > "$TMP/error-jobs"
-import json,sys
-for c in json.load(open(sys.argv[1],encoding='utf-8'))['cases']:
- print(c['id'],c['expected_error'])
-PY
+python3 "reference/vespa/m8/verify-m8-python-1.py" "$ERRORS"  > "$TMP/error-jobs"
 while read -r id expected; do
   cfg="$TMP/error-$id-cfg"; data="$TMP/error-$id-data"; mkdir -p "$data"
   actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m8-error -- "$ERRORS" "$id" "$cfg" "$data")"
