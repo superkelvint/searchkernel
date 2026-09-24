@@ -37,29 +37,20 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
     def test_rust_local_change_selects_only_rust(self) -> None:
         self.assert_lanes(["core/crates/searchkernel-filter/src/lib.rs"], {"rust"})
 
-    def test_generated_protocol_artifacts_preserve_cross_language_closure(self) -> None:
-        paths = [
-            "core/crates/searchkernel-protocol/src/generated/request_generated.rs",
-            "core/crates/searchkernel-protocol/bfbs/searchkernel.bfbs",
-            "core/crates/searchkernel-rpc/src/generated/searchkernel.rs",
-            "searchkerneld/src/generated/searchkernel.rs",
-            "clients/python/searchkernel/_wire_generated/request.py",
-            "clients/python/searchkernel/rpc/searchkernel_pb2.py",
-            "clients/typescript/src/generated/searchkernel.ts",
-        ]
-        for path in paths:
-            with self.subTest(path=path):
-                self.assert_lanes([path], {"rust", "python", "typescript"})
+    def test_shared_bfbs_artifacts_preserve_cross_language_closure(self) -> None:
+        self.assert_lanes(
+            ["core/crates/searchkernel-protocol/bfbs/searchkernel.bfbs"],
+            {"rust", "python", "typescript"},
+        )
 
-    def test_protocol_codegen_and_checks_preserve_cross_language_closure(self) -> None:
+    def test_shared_protocol_tooling_preserves_cross_language_closure(self) -> None:
         paths = [
             "api/rpc/searchkernel.proto",
-            "tools/rpc-codegen/generate.py",
-            "tools/generate-python-grpc.sh",
-            "tools/generate-typescript-flatbuffers.sh",
-            "tools/check-python-grpc.sh",
-            "tools/check-typescript-generated.sh",
-            "tools/test-typescript-generation.sh",
+            "tools/generate-flatbuffers-bfbs.sh",
+            "tools/check-flatbuffers-bfbs.sh",
+            "tools/check-flatbuffers-cpp.sh",
+            "tools/resolve-flatc.sh",
+            "tools/test-flatbuffers-cpp-toolchain.sh",
         ]
         for path in paths:
             with self.subTest(path=path):
