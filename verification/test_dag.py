@@ -99,6 +99,93 @@ class VerificationDagTests(unittest.TestCase):
                 self.assertEqual(task.kind, "aggregate")
                 self.assertTrue(task.provenance)
 
+    def test_semantic_routes_match_expected_wrappers_and_implementations(self) -> None:
+        router = VESPA_ROUTER.read_text(encoding="utf-8")
+        routes = {
+            "vespa.native-sdk": ("verifiers/native-sdk/verify.sh", "reference/vespa/m0/verify-m0.sh"),
+            "vespa.rust-ownership": ("verifiers/rust-ownership/verify.sh", "reference/vespa/m1/verify-m1.sh"),
+            "vespa.document-mutation": ("verifiers/document-mutation/verify.sh", "reference/vespa/m2/verify-m2.sh"),
+            "vespa.linguistics": ("verifiers/linguistics/verify.sh", "reference/vespa/m3/verify-m3.sh"),
+            "vespa.text-indexing": ("verifiers/text-indexing/verify.sh", "reference/vespa/m4/verify-m4.sh"),
+            "vespa.persistence.reopen": ("verifiers/persistence/reopen/verify.sh", "reference/vespa/m5/verify-m5.sh"),
+            "vespa.schema-config": ("verifiers/schema-config/verify.sh", "reference/vespa/m6/verify-m6.sh"),
+            "vespa.query-compilation": ("verifiers/query-compilation/verify.sh", "reference/vespa/m7/verify-m7.sh"),
+            "vespa.results": ("verifiers/results/verify.sh", "reference/vespa/m8/verify-m8.sh"),
+            "vespa.grouping": ("verifiers/grouping/attributes-facets/verify.sh", "reference/vespa/m9/verify-m9.sh"),
+            "vespa.grouping.recursive": (
+                "verifiers/grouping/recursive/verify.sh",
+                "reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh",
+            ),
+            "vespa.grouping.yql": (
+                "verifiers/grouping/yql/verify.sh",
+                "reference/vespa/m13/grouping-yql/verify-grouping-yql.sh",
+            ),
+            "vespa.ranking": ("verifiers/ranking/verify.sh", "reference/vespa/m10/verify-m10.sh"),
+            "vespa.ranking.feature-values": (
+                "verifiers/ranking/feature-values/verify.sh",
+                "reference/vespa/m10/feature-values/verify-feature-values.sh",
+            ),
+            "vespa.search-reply": (
+                "verifiers/search-reply/verify.sh",
+                "reference/vespa/searchreply/verify-searchreply.sh",
+            ),
+            "vespa.hardening": ("verifiers/hardening/full/verify.sh", "reference/vespa/m11/verify-m11.sh"),
+            "vespa.hardening.core": (
+                "verifiers/hardening/core/verify.sh",
+                "reference/vespa/m11/verify-m11-core.sh",
+            ),
+            "vespa.hardening.stress": (
+                "verifiers/hardening/stress/verify.sh",
+                "reference/vespa/m11/verify-m11-stress.sh",
+            ),
+            "vespa.hardening.sanitizers": (
+                "verifiers/hardening/sanitizers/verify.sh",
+                "reference/vespa/m11/verify-m11-sanitizers.sh",
+            ),
+            "vespa.nearest-neighbor.query": (
+                "verifiers/nearest-neighbor/query/verify.sh",
+                "reference/vespa/m12/verify-m12.sh",
+            ),
+            "vespa.tensor.document-crud": (
+                "verifiers/tensor/document-crud/verify.sh",
+                "reference/vespa/m13/verify-m13.sh",
+            ),
+            "vespa.nearest-neighbor.hnsw": (
+                "verifiers/nearest-neighbor/hnsw/verify.sh",
+                "reference/vespa/m14/verify-m14.sh",
+            ),
+            "vespa.recovery": ("verifiers/recovery/verify.sh", "reference/vespa/recovery/verify-recovery.sh"),
+            "product.rust-real-engine": (
+                "verifiers/product/rust-real-engine/verify.sh",
+                "reference/vespa/phase10/verify-phase10.sh",
+            ),
+            "product.integration": (
+                "verifiers/product/integration/verify.sh",
+                "reference/vespa/i/verify-i.sh",
+            ),
+        }
+
+        for target, (wrapper_rel, implementation_rel) in routes.items():
+            with self.subTest(target=target):
+                route = (
+                    f"    {target})\n"
+                    f'        "$ROOT/{wrapper_rel}"\n'
+                    "        ;;"
+                )
+                self.assertIn(route, router)
+                wrapper = (ROOT / "reference" / "vespa" / wrapper_rel).read_text(
+                    encoding="utf-8"
+                )
+                active_wrapper = "\n".join(
+                    line
+                    for line in wrapper.splitlines()
+                    if line.strip() and not line.lstrip().startswith("#")
+                )
+                self.assertIn(
+                    f'exec "$ROOT/{implementation_rel}" "$@"',
+                    active_wrapper,
+                )
+
     def test_direct_subsumption_edges_match_frozen_verifier_invocations(self) -> None:
         current = verification_dag.load_dag(DAG_PATH)
         cases = {
