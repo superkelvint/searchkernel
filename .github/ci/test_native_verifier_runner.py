@@ -49,10 +49,27 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
 
     def test_supports_422_closure_bundle(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("closure-422)", source)
-        self.assertIn("./dev verify m14", source)
-        self.assertIn("./dev verify product.rust-real-engine", source)
-        self.assertIn("./dev verify integration", source)
+        for needle in (
+            "closure-422)",
+            'export SK_NATIVE_CACHE_DIR="$ALMA_WORKTREE/.native-cache"',
+            'export CARGO_TARGET_DIR="$ALMA_WORKTREE/target/closure-422"',
+            'rm -rf "$SK_NATIVE_CACHE_DIR" "$CARGO_TARGET_DIR"',
+            '[[ ! -e upstream/vespa/.git ]]',
+            'bash tools/resolve-native-sdk.sh vespa-root',
+            'cargo build -p searchkerneld --features native',
+            "./dev verify m14",
+            "./dev verify product.rust-real-engine",
+            "./dev verify integration",
+            'bash clients/php/examples/run_searchkernel_client_api_e2e.sh',
+        ):
+            self.assertIn(needle, source)
+
+        # Closure evidence must prove the automatic published-provenance path,
+        # not force the verifier into frozen-oracle mode.
+        self.assertNotIn(
+            "SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip",
+            source,
+        )
 
 
 if __name__ == "__main__":
