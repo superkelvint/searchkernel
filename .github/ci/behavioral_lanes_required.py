@@ -31,6 +31,29 @@ ALL_LANE_PATTERNS = (
     ".github/ci/test_behavioral_lanes_required.py",
 )
 
+# Some files sit physically inside one language subtree but define or verify a
+# cross-language wire contract. These rules must run before the broad per-lane
+# path rules below or a path such as core/** would incorrectly hide the
+# additional client lanes.
+MULTI_LANE_PATTERNS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        (
+            "core/crates/searchkernel-protocol/src/generated/**",
+            "core/crates/searchkernel-protocol/bfbs/**",
+            "core/crates/searchkernel-rpc/src/generated/**",
+            "searchkerneld/src/generated/**",
+            "clients/python/searchkernel/_wire_generated/**",
+            "clients/python/searchkernel/rpc/**",
+            "clients/typescript/src/generated/**",
+        ),
+        ("rust", "python", "typescript"),
+    ),
+    (
+        ("core/crates/searchkernel-protocol/tests/ruby_json_contract.rs",),
+        ("rust", "ruby"),
+    ),
+)
+
 LANE_PATTERNS = {
     "rust": (
         "Cargo.toml",
@@ -107,6 +130,19 @@ def classify(paths: Iterable[str]) -> tuple[dict[str, bool], dict[str, list[str]
             for lane in LANES:
                 selected[lane] = True
                 reasons[lane].append(f"{path} (shared rule {all_rule})")
+            continue
+
+        matched_multi = False
+        for patterns, lanes in MULTI_LANE_PATTERNS:
+            rule = _matches(path, patterns)
+            if rule is None:
+                continue
+            matched_multi = True
+            for lane in lanes:
+                selected[lane] = True
+                reasons[lane].append(f"{path} (shared rule {rule})")
+            break
+        if matched_multi:
             continue
 
         matched = False
