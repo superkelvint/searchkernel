@@ -22,12 +22,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 free_port() {
-  "$PYTHON" "clients/php/examples/run_searchkernel_client_api_e2e-python-1.py"
+  "$PYTHON" "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/run_searchkernel_client_api_e2e-python-1.py"
 }
 
 wait_port() {
   local port="$1"
-  "$PYTHON" "clients/php/examples/run_searchkernel_client_api_e2e-python-2.py" "$port"
+  "$PYTHON" "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/run_searchkernel_client_api_e2e-python-2.py" "$port"
 }
 
 start_host() {
