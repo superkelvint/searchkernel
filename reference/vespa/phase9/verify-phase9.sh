@@ -54,15 +54,7 @@ cc -std=c11 -Wall -Wextra -Werror -I"$SDK/include" \
   -Wl,-rpath,"$SDK/lib" -o "$TMP/probe"
 actual="$("$TMP/probe")"
 expected="$(cat "$PHASE9/expected/01-additive-handles.json")"
-python3 - "$actual" "$expected" <<'PY'
-import json
-import sys
-
-actual = json.loads(sys.argv[1])
-expected = json.load(open(sys.argv[2], encoding="utf-8"))
-if actual != expected:
-    raise SystemExit(f"phase9 native probe mismatch: {actual!r} != {expected!r}")
-PY
+python3 "reference/vespa/phase9/verify-phase9-python-1.py" "$actual" "$expected"
 
 # These executable vertical slices cover the Phase 9 semantics that cannot be
 # established by the ABI probe alone: real Vespa arithmetic persistence,
