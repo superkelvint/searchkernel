@@ -41,6 +41,7 @@ include = [
 id = "documentation"
 paths = [
   "README.md",
+  "BUILDING.md",
   "**/README.md",
   "**/AGENTS.md",
   "docs/*.md",

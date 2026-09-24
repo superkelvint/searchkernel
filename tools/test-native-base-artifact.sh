@@ -44,14 +44,19 @@ cc -shared -fPIC "$fixture/libvespa.c" -Wl,-soname,libvespalib.so -o "$bundle/ba
 ln -s libvespalib.so "$bundle/base/lib/libvespalib.so.fixture"
 ln "$bundle/base/lib/libvespalib.so" "$bundle/base/lib/libvespalib.so.hardlink"
 printf '{"kind":"vespa-base","vespa_commit":"fixture-vespa-commit"}\n' >"$bundle/base/manifest.json"
+printf 'generation-2\n' >"$bundle/base/generation.txt"
 printf 'CXX_INCLUDES = -I/work/vespa -isystem /fixture-deps/include\n' >"$configured/flags.make"
-printf 'c++ CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o -o searchcore_embedded_crud_spike_app\n' >"$configured/link.txt"
+static_dir="$vespa_toolchain/searchcore/src/vespa/searchcore/proton/server"
+mkdir -p "$static_dir"
+printf 'fixture-static\n' >"$static_dir/libsearchcore_server.a"
+printf 'c++ CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o ../../../vespa/searchcore/proton/server/libsearchcore_server.a -o searchcore_embedded_crud_spike_app\n' >"$configured/link.txt"
 printf '#define FIXTURE_DEP 1\n' >"$bundle/toolchain/vespa-deps/include/fixture.h"
 python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
 import json
 import sys
 payload = {
-    "format_version": 1,
+    "format_version": 2,
+    "artifact_generation": 2,
     "build_environment": "artifact-regression",
     "native_target": "x86_64-unknown-linux-gnu",
     "vespa_commit": "fixture-vespa-commit",
@@ -61,7 +66,7 @@ for path in sys.argv[1:]:
         json.dump(payload, stream, sort_keys=True)
         stream.write("\n")
 PY
-archive="$fixture/searchkernel-vespa-base.tar.gz"
+archive="$fixture/searchkernel-vespa-base-v2-artifact-regression-x86_64-unknown-linux-gnu-fixture-vespa-commit.tar.gz"
 (
     cd "$bundle_parent"
     tar -czf "$archive" searchkernel-vespa-base
@@ -105,10 +110,16 @@ expected="$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-u
 [[ -f "$after/lib/libvespalib.so.hardlink" ]]
 [[ "$(stat -c %i "$after/lib/libvespalib.so")" == "$(stat -c %i "$after/lib/libvespalib.so.hardlink")" ]]
 [[ ! -e "$after/lib/libsearchkernel_vespa.so" ]]
-# Symlink mode bits are not a mutable-permission surface on Linux; chmod -R
-# seals their targets, while symlink metadata commonly remains lrwxrwxrwx.
 [[ -z "$(find "$after" ! -type l -perm /222 -print -quit)" ]]
-grep -q 'installed published Vespa base' "$fixture/install.err"
+[[ "$(cat "$after/generation.txt")" == "generation-2" ]]
+python3 - "$after/.searchkernel-native-base-artifact.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    data = json.load(stream)
+assert data["artifact_generation"] == 2
+PY
+grep -q 'installed published Vespa base generation v2' "$fixture/install.err"
 
 warm=$(run_resolver path)
 [[ "$warm" == "$after" ]]
@@ -116,6 +127,48 @@ resolved_root=$(run_resolver vespa-root)
 [[ "$resolved_root" == "$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-unknown-linux-gnu/toolchains/fixture-vespa-commit/upstream/vespa" ]]
 [[ -f "$resolved_root/.searchkernel-vespa-artifact.json" ]]
 [[ -f "$resolved_root/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make" ]]
+[[ -f "$resolved_root/searchcore/src/vespa/searchcore/proton/server/libsearchcore_server.a" ]]
+
+# A newer published generation for the same Vespa pin must replace the shared
+# object/toolchain atomically at the same cache path. No manual cache deletion
+# is allowed, and read-only "path" lookups remain offline.
+printf 'generation-3\n' >"$bundle/base/generation.txt"
+python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
+import json
+import sys
+for path in sys.argv[1:]:
+    with open(path, encoding="utf-8") as stream:
+        data = json.load(stream)
+    data["artifact_generation"] = 3
+    with open(path, "w", encoding="utf-8") as stream:
+        json.dump(data, stream, sort_keys=True)
+        stream.write("\n")
+PY
+archive_v3="$fixture/searchkernel-vespa-base-v3-artifact-regression-x86_64-unknown-linux-gnu-fixture-vespa-commit.tar.gz"
+(
+    cd "$bundle_parent"
+    tar -czf "$archive_v3" searchkernel-vespa-base
+)
+sha256sum "$archive_v3" >"$archive_v3.sha256"
+
+refreshed=$(run_resolver ensure artifact-regression x86_64-unknown-linux-gnu "file://$archive_v3" 2>"$fixture/refresh.err")
+[[ "$refreshed" == "$after" ]]
+[[ "$(cat "$refreshed/generation.txt")" == "generation-3" ]]
+grep -q 'refreshing published native-base cache to generation v3' "$fixture/refresh.err"
+grep -q 'installed published Vespa base generation v3' "$fixture/refresh.err"
+python3 - "$refreshed/.searchkernel-native-base-artifact.json" "$resolved_root/.searchkernel-vespa-artifact.json" <<'PY'
+import json
+import sys
+for path in sys.argv[1:]:
+    with open(path, encoding="utf-8") as stream:
+        data = json.load(stream)
+    assert data["artifact_generation"] == 3, (path, data)
+PY
+
+# A stale override must never downgrade an already newer installed generation.
+not_downgraded=$(run_resolver ensure artifact-regression x86_64-unknown-linux-gnu "$artifact_url")
+[[ "$not_downgraded" == "$after" ]]
+[[ "$(cat "$not_downgraded/generation.txt")" == "generation-3" ]]
 
 if run_resolver ensure other-environment x86_64-unknown-linux-gnu >"$fixture/wrong-env.out" 2>"$fixture/wrong-env.err"; then
     echo 'published base unexpectedly crossed build environments' >&2
