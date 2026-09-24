@@ -337,19 +337,7 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
     fi
     cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
     cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
-    python3 - "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
-import json
-import sys
-
-path, failpoints, sanitizer = sys.argv[1:]
-with open(path, encoding="utf-8") as stream:
-    manifest = json.load(stream)
-manifest["hardening_failpoints"] = failpoints == "1"
-manifest["sanitizer"] = sanitizer
-with open(path, "w", encoding="utf-8") as stream:
-    json.dump(manifest, stream, indent=2, sort_keys=True)
-    stream.write("\n")
-PY
+    python3 "core/native/vespa/build-sdk-python-1.py" "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER"
 
     SDK_BACKUP="${SDK_PACKAGE}.old.$"
     if [ -e "$SDK_BACKUP" ]; then
@@ -386,52 +374,10 @@ if [ "$BASE_ONLY" != 1 ]; then
         --target "$NATIVE_TARGET" \
         --scope full \
         --output "$SDK/native-build-fingerprint-v2.txt"
-    python3 - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
-import json
-import re
-import sys
-
-path, source_header, failpoints, sanitizer = sys.argv[1:]
-with open(path, encoding="utf-8") as stream:
-    manifest = json.load(stream)
-with open(source_header, encoding="utf-8") as stream:
-    header = stream.read()
-matches = re.findall(r"^#define SK_NATIVE_ABI_VERSION ([0-9]+)U$", header, re.MULTILINE)
-if len(matches) != 1:
-    raise SystemExit(
-        f"expected exactly one SK_NATIVE_ABI_VERSION in {source_header}, found {len(matches)}"
-    )
-manifest["native_abi_version"] = int(matches[0])
-manifest["hardening_failpoints"] = failpoints == "1"
-manifest["sanitizer"] = sanitizer
-with open(path.replace("manifest.json", "native-build-fingerprint-v2.txt"), encoding="utf-8") as stream:
-    manifest["native_build_fingerprint"] = next(
-        line.split("=", 1)[1].strip()
-        for line in stream
-        if line.startswith("sha256=")
-    )
-with open(path, "w", encoding="utf-8") as stream:
-    json.dump(manifest, stream, indent=2, sort_keys=True)
-    stream.write("\n")
-PY
+    python3 "core/native/vespa/build-sdk-python-2.py" "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER"
     cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 else
-    python3 - "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json" <<'PY'
-import json
-import sys
-
-source_path, output_path = sys.argv[1:]
-with open(source_path, encoding="utf-8") as stream:
-    source = json.load(stream)
-with open(output_path, "w", encoding="utf-8") as stream:
-    json.dump(
-        {"kind": "vespa-base", "vespa_commit": source["vespa_commit"]},
-        stream,
-        indent=2,
-        sort_keys=True,
-    )
-    stream.write("\n")
-PY
+    python3 "core/native/vespa/build-sdk-python-3.py" "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
 fi
 
 # Bundle the exact Vespa and third-party shared libraries used by the pinned
