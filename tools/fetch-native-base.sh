@@ -16,7 +16,7 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" ||
 ROOT="$(cd "$ROOT" && pwd -P)"
 cd "$ROOT"
 
-for cmd in gh python3 rustc sha256sum; do
+for cmd in gh python3 sha256sum; do
     command -v "$cmd" >/dev/null 2>&1 || die "missing required command: $cmd"
 done
 
@@ -29,7 +29,12 @@ with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
     print(json.load(stream)["vespa_commit"])
 PY
 )"
-TARGET="${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+if [[ -n "${SK_NATIVE_TARGET:-}" ]]; then
+    TARGET=$SK_NATIVE_TARGET
+else
+    command -v rustc >/dev/null 2>&1 || die "rustc is required unless SK_NATIVE_TARGET is set"
+    TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+fi
 [[ -n "$TARGET" ]] || die "could not determine Rust target"
 
 GENERATION="$(
