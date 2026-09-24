@@ -232,7 +232,48 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn('"$CI_PYTHON" tools/check-capabilities.py --check', workflow)
         self.assertIn('"$CI_PYTHON" tools/check-client-contracts.py --check', workflow)
         self.assertIn(
-            "allowed_regex='^(LIMITATIONS\\.md|docs/CAPABILITIES\\.md|docs/CLIENT_CAPABILITIES\\.md|docs/client-capabilities\\.json)        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
+            "allowed_regex='^(LIMITATIONS\\.md|docs/CAPABILITIES\\.md|docs/CLIENT_CAPABILITIES\\.md|docs/client-capabilities\\.json)$'",
+            workflow,
+        )
+        self.assertIn("git ls-files --others --exclude-standard", workflow)
+        self.assertIn('summary="$(git diff --summary)"', workflow)
+        self.assertIn("git diff --binary -- LIMITATIONS.md", workflow)
+        self.assertIn("if (( bytes > 5242880 )); then", workflow)
+        self.assertIn("retention-days: 1", workflow)
+
+    def test_client_capability_autofix_apply_rejects_stale_or_unsafe_pushes(self) -> None:
+        workflow = CLIENT_CAPABILITIES_AUTOFIX_APPLY.read_text(encoding="utf-8")
+
+        self.assertIn("\n  workflow_run:\n", workflow)
+        self.assertIn('workflows: ["Client capabilities autofix prepare"]', workflow)
+        self.assertIn("permissions:\n  actions: read\n  contents: read", workflow)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
+        self.assertIn("github.event.workflow_run.event == 'pull_request'", workflow)
+        self.assertIn(
+            "github.event.workflow_run.head_repository.full_name == github.repository",
+            workflow,
+        )
+        self.assertIn("ref: ${{ github.event.workflow_run.head_sha }}", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn("run-id: ${{ github.event.workflow_run.id }}", workflow)
+        self.assertIn("git apply --check --whitespace=error-all", workflow)
+        self.assertIn(
+            "allowed_regex='^(LIMITATIONS\\.md|docs/CAPABILITIES\\.md|docs/CLIENT_CAPABILITIES\\.md|docs/client-capabilities\\.json)$'",
+            workflow,
+        )
+        self.assertIn('summary="$(git diff --summary)"', workflow)
+        self.assertIn(
+            'git ls-remote "https://x-access-token:${READ_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"',
+            workflow,
+        )
+        self.assertIn('if [[ "${remote_head,,}" != "${EXPECTED_HEAD,,}" ]]; then', workflow)
+        self.assertIn("STALE_BRANCH=true", workflow)
+        self.assertIn("AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}", workflow)
+        self.assertIn('"HEAD:refs/heads/${HEAD_REF}"', workflow)
+        self.assertNotIn('"HEAD:${HEAD_REF}"', workflow)
+
+    def test_client_capabilities_routes_native_e2e_through_alma(self) -> None:
+        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
         verify = workflow.split("\n  verify:\n", 1)[1].split("\n  e2e:\n", 1)[0]
         e2e = workflow.split("\n  e2e:\n", 1)[1]
         self.assertIn("uses: dtolnay/rust-toolchain@stable", verify)
