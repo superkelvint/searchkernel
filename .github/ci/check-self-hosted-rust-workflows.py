@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
 WORKFLOWS = ROOT / ".github/workflows"
+ENSURE_RUST = ROOT / ".github/ci/ensure-runner-rust.sh"
 
 FORBIDDEN = (
     (re.compile(r"dtolnay/rust-toolchain@"), "job-local Rust toolchain installation"),
@@ -58,14 +59,31 @@ def main() -> int:
                     "must set cache-bin: false"
                 )
 
+    if not ENSURE_RUST.is_file():
+        failures.append(f"{ENSURE_RUST}: canonical runner Rust repair helper is missing")
+    else:
+        helper = ENSURE_RUST.read_text(encoding="utf-8")
+        helper_forbidden = (
+            (r"\brustup\s+toolchain\s+(?:uninstall|remove)\b", "destructive toolchain removal"),
+            (r"\brustup\s+(?:self\s+)?update\b", "unbounded rustup update"),
+            (r"toolchain\s+install[^\n]*--force\b", "forced toolchain replacement"),
+        )
+        for pattern, description in helper_forbidden:
+            match = re.search(pattern, helper)
+            if match:
+                line = helper.count("\n", 0, match.start()) + 1
+                failures.append(f"{ENSURE_RUST}:{line}: forbidden {description}")
+        if "flock 9" not in helper:
+            failures.append(f"{ENSURE_RUST}: repair mutations must be serialized with flock")
+
     if failures:
         print("Self-hosted Rust workflow policy violations:", file=sys.stderr)
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
         print(
-            "\nRust toolchains are provisioned once on the runner. CI jobs may "
-            "verify cargo/rustc/rustfmt/clippy, but must never install, update, "
-            "remove, select, or cache toolchain binaries.",
+            "\nWorkflows may only repair Rust through .github/ci/ensure-runner-rust.sh. "
+            "Direct workflow mutation, destructive repair, and caching toolchain "
+            "binaries are forbidden.",
             file=sys.stderr,
         )
         return 1
