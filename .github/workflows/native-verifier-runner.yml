@@ -1,6 +1,16 @@
 name: Native verifier runner
 
 on:
+  workflow_call:
+    inputs:
+      revision:
+        description: Exact commit to verify
+        required: true
+        type: string
+      target:
+        description: ./dev verify target, or a fixed native bundle
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       revision:
@@ -152,6 +162,20 @@ jobs:
           ./dev native-sdk ensure
 
           case "$VERIFIER_TARGET" in
+            native-full)
+              # Fixed CI bundle while verification-DAG authorization is offline.
+              # Keep this aligned with the native semantic closure, but do not
+              # load or classify through verification/dag.toml here.
+              ./dev verify abi
+              ./dev verify vespa.nearest-neighbor.hnsw
+              ./dev verify product.integration
+              ./dev verify product.rust-real-engine
+              ./dev verify vespa.grouping.yql
+              ./dev verify vespa.recovery
+              reference/vespa/phase9/verify-phase9.sh
+              tools/run-python-native-e2e.sh
+              ./dev verify persistence
+              ;;
             closure-422)
               ./dev verify m14
               ./dev verify product.rust-real-engine
@@ -173,4 +197,8 @@ jobs:
       - name: Mark evidence scope
         if: always()
         run: |
-          echo "::notice::This workflow provides runner execution evidence only. It is not verification-DAG selection or merge authorization."
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "::notice::Manual dispatch provides runner execution evidence only."
+          else
+            echo "::notice::Native verifier execution was requested by the calling CI workflow; verification-DAG selection remains offline."
+          fi
