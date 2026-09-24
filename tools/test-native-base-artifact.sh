@@ -55,9 +55,8 @@ python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact
 import json
 import sys
 payload = {
-    # Match the already-published v2 compatibility shape exactly: release
-    # generation 2 was produced by the old schema-1 packager, then augmented by
-    # the publisher with the complete static-link closure and generation marker.
+    # Match the legacy schema-1 shape that is safe to consume only when the
+    # publisher attests and packages the complete adapter static-link closure.
     "format_version": 1,
     "artifact_generation": 2,
     "adapter_static_link_closure": True,
@@ -78,9 +77,8 @@ archive="$fixture/searchkernel-vespa-base-v2-artifact-regression-x86_64-unknown-
 sha256sum "$archive" >"$archive.sha256"
 artifact_url="file://$archive"
 
-# Schema-1 is not accepted generically. The compatibility exception is scoped
-# to the already-published v2 shape and requires its explicit static-link
-# closure attestation.
+# Schema-1 is not accepted generically. Compatibility requires the explicit
+# static-link-closure attestation and the installer still verifies that closure.
 python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
 import json
 import sys
@@ -128,8 +126,7 @@ run_resolver() {
     )
 }
 
-# A generic schema-1 generation-2 artifact without the closure attestation
-# must still be rejected; the compatibility path is intentionally narrow.
+# A schema-1 artifact without the closure attestation must still be rejected.
 if run_resolver ensure artifact-regression x86_64-unknown-linux-gnu "file://$bad_legacy" >"$fixture/bad-legacy.out" 2>"$fixture/bad-legacy.err"; then
     echo 'unattested schema-1 artifact unexpectedly installed' >&2
     exit 1
@@ -145,6 +142,33 @@ if run_resolver path >"$fixture/cold-path.out" 2>"$fixture/cold-path.err"; then
     exit 1
 fi
 [[ ! -e "$cache_home/searchkernel/native-sdk-cache/artifact-regression" ]]
+
+# Reproduce a persistent runner that already has the original schema-1 cache.
+# Its installed toolchain marker predates artifact_generation and closure
+# metadata. ensure must recognize it as generation 1 via the existing
+# format_version fallback, classify it as stale, and replace it with the
+# host-selected published artifact without requiring cache deletion.
+cache_root="$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-unknown-linux-gnu"
+stale_object="$cache_root/objects/fixture-vespa-commit"
+stale_toolchain="$cache_root/toolchains/fixture-vespa-commit"
+mkdir -p "$stale_object" "$stale_toolchain" "$cache_root/checkouts"
+cp -a "$bundle/base/." "$stale_object/"
+cp -a "$bundle/toolchain/." "$stale_toolchain/"
+python3 - "$stale_toolchain/upstream/vespa/.searchkernel-vespa-artifact.json" <<'PY'
+import json
+import sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as stream:
+    data = json.load(stream)
+data["format_version"] = 1
+data.pop("artifact_generation", None)
+data.pop("adapter_static_link_closure", None)
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(data, stream, sort_keys=True)
+    stream.write("\n")
+PY
+ln -s "$stale_toolchain/upstream/vespa" "$cache_root/checkouts/fixture-vespa-commit"
+chmod -R a-w "$stale_object" "$stale_toolchain"
 
 if ! after=$(run_resolver ensure 2>"$fixture/install.err"); then
     cat "$fixture/install.err" >&2
@@ -167,6 +191,8 @@ with open(sys.argv[1], encoding="utf-8") as stream:
     data = json.load(stream)
 assert data["artifact_generation"] == 2
 PY
+grep -q 'published native-base cache is older than the desired generation; refresh required' "$fixture/install.err"
+grep -q 'refreshing published native-base cache to generation v2' "$fixture/install.err"
 grep -q 'installed published Vespa base generation v2' "$fixture/install.err"
 
 warm=$(run_resolver path)

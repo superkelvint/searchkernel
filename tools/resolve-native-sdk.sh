@@ -220,18 +220,10 @@ for key, value in expected.items():
             f"published Vespa toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
         )
 
-format_version = marker.get("format_version")
-legacy_v2 = (
-    format_version == 1
-    and marker.get("artifact_generation") == 2
-    and marker.get("adapter_static_link_closure") is True
-)
-if format_version != 2 and not legacy_v2:
-    raise SystemExit(
-        "unsupported published Vespa toolchain format: "
-        f"format_version={format_version!r}, "
-        f"artifact_generation={marker.get('artifact_generation')!r}"
-    )
+# Installed cache markers may come from an older artifact schema. At this
+# stage only provenance identity is authoritative; generation freshness is
+# evaluated separately and newly downloaded artifacts are validated by the
+# installer before publication into the cache.
 PY
 }
 

@@ -205,13 +205,12 @@ if bundle_format != marker_format:
         f"{bundle_format!r} vs {marker_format!r}"
     )
 
-legacy_v2 = (
+legacy_link_complete = (
     bundle_format == 1
-    and generation == 2
     and bundle.get("adapter_static_link_closure") is True
     and marker.get("adapter_static_link_closure") is True
 )
-if bundle_format != 2 and not legacy_v2:
+if bundle_format != 2 and not legacy_link_complete:
     raise SystemExit(
         "unsupported published Vespa base format: "
         f"format_version={bundle_format!r}, artifact_generation={generation!r}"
