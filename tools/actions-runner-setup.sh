@@ -313,7 +313,7 @@ do
     fi
 done
 
-if [[ "$NEED_DNF" == "0" ]] && { ! command -v clang >/dev/null 2>&1 || ! python3 -c 'import clang.cindex' >/dev/null 2>&1; }; then
+if [[ "$NEED_DNF" == "0" ]] && { ! command -v clang >/dev/null 2>&1 || ! python3 -c "import clang.cindex" >/dev/null 2>&1; }; then
     NEED_DNF=1
 fi
 
@@ -354,7 +354,7 @@ done
 
 command -v clang >/dev/null 2>&1 ||
     die "clang frontend is unavailable"
-python3 -c 'import clang.cindex' >/dev/null 2>&1 ||
+python3 -c "import clang.cindex" >/dev/null 2>&1 ||
     die "python3 clang.cindex bindings are unavailable"
 
 ###############################################################################
@@ -412,11 +412,28 @@ fi
 
 export PATH="/root/.cargo/bin:$PATH"
 
-if ! rustup toolchain list | grep -q "^stable"; then
-    rustup toolchain install stable --profile minimal
+rust_toolchain_usable() {
+    rustup run stable rustc --version >/dev/null 2>&1 &&
+        rustup run stable cargo --version >/dev/null 2>&1
+}
+
+if ! rust_toolchain_usable; then
+    echo "Stable Rust toolchain is missing or unusable; repairing it"
+
+    # The rustup volume is a persistent cache. An interrupted install can leave
+    # a stable-* directory visible to `toolchain list` without its manifest.
+    # Remove whatever rustup can identify, then force a clean stable install.
+    rustup toolchain uninstall stable >/dev/null 2>&1 || true
+    rustup toolchain install stable --profile minimal --force
+
+    rust_toolchain_usable ||
+        die "stable Rust toolchain is still unusable after repair"
 fi
 
 rustup default stable >/dev/null
+
+rust_toolchain_usable ||
+    die "stable Rust toolchain became unusable after selecting it as default"
 
 rustc --version
 cargo --version
