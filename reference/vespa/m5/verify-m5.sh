@@ -129,7 +129,7 @@ if [ ! -d "$FIXTURE" ]; then
     echo "persisted M5 fixture is missing: $FIXTURE" >&2
     exit 1
 fi
-python3 "reference/vespa/m5/verify-m5-python-1.py" "$ROOT/m5/fixtures/persisted-v1/METADATA.json" "$SDK/manifest.json"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-m5-python-1.py" "$ROOT/m5/fixtures/persisted-v1/METADATA.json" "$SDK/manifest.json"
 cp -a "$FIXTURE" "$TARGET/fixture"
 run_driver verify-final "$TARGET/fixture" > "$TARGET/fixture.json"
 compare "$ROOT/m5/expected/graceful-final.json" "$TARGET/fixture.json"
