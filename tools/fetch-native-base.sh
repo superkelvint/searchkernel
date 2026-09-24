@@ -47,29 +47,7 @@ fi
 
 GENERATION="$(
     gh api --paginate "repos/${REPO}/releases?per_page=100" --jq '.[].tag_name' |
-    python3 -c '
-import re
-import sys
-
-build_env, target, commit = sys.argv[1:]
-pattern = re.compile(
-    r"^vespa-base-v([0-9]+)-"
-    + re.escape(build_env)
-    + "-"
-    + re.escape(target)
-    + "-"
-    + re.escape(commit)
-    + r"$"
-)
-versions = []
-for raw in sys.stdin:
-    match = pattern.match(raw.strip())
-    if match:
-        versions.append(int(match.group(1)))
-if not versions:
-    raise SystemExit(1)
-print(max(versions))
-' "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"
+    python3 "$ROOT/tools/native-base-generation.py" latest --build-env "$BUILD_ENV" --target "$TARGET" --commit "$PINNED_VESPA_COMMIT"
 )" || die "no published native-base generation exists for $BUILD_ENV/$TARGET/$PINNED_VESPA_COMMIT"
 
 TAG="vespa-base-v${GENERATION}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"
