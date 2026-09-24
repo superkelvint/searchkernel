@@ -15,13 +15,7 @@ M11_DEPS="${VESPA_DEPS:-$ROOT/vespa-deps}"
 
 prepare_hardening_sdk() {
   if [[ -f "$M11_SDK/manifest.json" ]]; then
-    python3 - "$M11_SDK/manifest.json" <<'PY'
-import json
-import sys
-manifest = json.load(open(sys.argv[1], encoding="utf-8"))
-if not manifest.get("hardening_failpoints", False):
-    raise SystemExit("SDK is not a hardening/failpoint SDK")
-PY
+    python3 "reference/vespa/m11/verify-m11-common-python-1.py" "$M11_SDK/manifest.json"
   else
     mkdir -p "$(dirname "$M11_SDK")" "$M11_BUILD"
     if using_published_vespa_toolchain; then
