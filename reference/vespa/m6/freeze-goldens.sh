@@ -11,8 +11,8 @@ mkdir -p "$SCRIPT_DIR/scenarios/rendered" "$SCRIPT_DIR/expected"
 rm -f "$SCRIPT_DIR/expected"/*.json
 
 for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
-  id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
-  schema="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["schema"])' "$scenario")"
+  id="$(python3 "$ROOT/tools/json-cli.py" get "$scenario" id)"
+  schema="$(python3 "$ROOT/tools/json-cli.py" get "$scenario" schema)"
   sd="$SCRIPT_DIR/scenarios/rendered/$id.sd"
   "$SCRIPT_DIR/render_sd.py" "$scenario" "$sd"
 
@@ -22,7 +22,7 @@ for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
     rm -f "$raw"
     exit 1
   fi
-  python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), sort_keys=True, separators=(",",":")))' "$raw" \
+  python3 "$ROOT/tools/json-cli.py" canonicalize "$raw" \
       > "$SCRIPT_DIR/expected/$id.json"
   rm -f "$raw"
 done
