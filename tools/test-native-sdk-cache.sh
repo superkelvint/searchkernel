@@ -31,6 +31,8 @@ done
 grep -Fq 'git/ref/heads/main' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'tools/install-native-base-artifact.sh' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'check-native-runtime-closure.py' "$source_root/tools/publish-native-base.sh"
+grep -Fq 'bundle-native-runtime-closure.py' "$source_root/tools/publish-native-base.sh"
+grep -Fq -- '--extra-elf "$verify_root/sdk/lib/libsearchkernel_vespa.so.2"' "$source_root/tools/publish-native-base.sh"
 grep -Fq '"$base/lib" "$verify_root/sdk/lib/libsearchkernel_vespa.so.2"' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'verify_archive_consumer "$ARCHIVE"' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'verify_archive_consumer "$REMOTE/$ASSET"' "$source_root/tools/publish-native-base.sh"
