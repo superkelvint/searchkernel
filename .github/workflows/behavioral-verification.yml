@@ -73,6 +73,7 @@ jobs:
         id: behavioral
         env:
           EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -94,10 +95,25 @@ jobs:
 
           selector="$RUNNER_TEMP/behavioral_lanes_required.py"
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            # Pull requests are authorized by policy from the trusted base.
-            # During bootstrap, bases that predate this selector fail closed.
-            if git cat-file -e "$BASE_SHA:.github/ci/behavioral_lanes_required.py" 2>/dev/null; then
-              git show "$BASE_SHA:.github/ci/behavioral_lanes_required.py" > "$selector"
+            # Keep the diff base stable for path calculation, but load policy
+            # from the current trusted target branch. This lets CI-routing fixes
+            # on main apply immediately to older PRs without letting a PR
+            # authorize its own exemptions.
+            if [[ -z "${BASE_REF:-}" ]]; then
+              {
+                echo "rust=true"
+                echo "python=true"
+                echo "typescript=true"
+                echo "ruby=true"
+              } >> "$GITHUB_OUTPUT"
+              echo "No trusted target branch ref; requiring every non-native product lane."
+              exit 0
+            fi
+            git fetch --no-tags --depth=1 origin "refs/heads/$BASE_REF"
+            policy_sha=$(git rev-parse FETCH_HEAD)
+            if git cat-file -e "$policy_sha:.github/ci/behavioral_lanes_required.py" 2>/dev/null; then
+              git show "$policy_sha:.github/ci/behavioral_lanes_required.py" > "$selector"
+              echo "Behavioral lane policy loaded from $BASE_REF at $policy_sha."
             else
               {
                 echo "rust=true"
@@ -105,7 +121,7 @@ jobs:
                 echo "typescript=true"
                 echo "ruby=true"
               } >> "$GITHUB_OUTPUT"
-              echo "Trusted base predates behavioral lane selection; requiring every non-native product lane."
+              echo "Trusted target branch lacks behavioral lane selection; requiring every non-native product lane."
               exit 0
             fi
           else
@@ -136,9 +152,23 @@ jobs:
 
           selector="$RUNNER_TEMP/native_verifier_required.py"
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            # A pull request may change the selector, but it cannot use that
-            # candidate change to exempt itself from native verification.
-            git show "$BASE_SHA:.github/ci/native_verifier_required.py" > "$selector"
+            # Native policy also comes from the current trusted target branch;
+            # the candidate PR can never use its own selector to exempt itself.
+            if [[ -z "${BASE_REF:-}" ]]; then
+              echo "required=true" >> "$GITHUB_OUTPUT"
+              echo "Native verifier required: true (no trusted target branch ref)"
+              exit 0
+            fi
+            git fetch --no-tags --depth=1 origin "refs/heads/$BASE_REF"
+            policy_sha=$(git rev-parse FETCH_HEAD)
+            if git cat-file -e "$policy_sha:.github/ci/native_verifier_required.py" 2>/dev/null; then
+              git show "$policy_sha:.github/ci/native_verifier_required.py" > "$selector"
+              echo "Native verifier policy loaded from $BASE_REF at $policy_sha."
+            else
+              echo "required=true" >> "$GITHUB_OUTPUT"
+              echo "Native verifier required: true (trusted target branch lacks selector)"
+              exit 0
+            fi
           else
             cp .github/ci/native_verifier_required.py "$selector"
           fi
