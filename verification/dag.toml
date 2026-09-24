@@ -103,6 +103,15 @@ cache_result = false
 notes = "Pre-registered ownership for the Rust remote-client ingress. The product change replaces this aggregate with its focused executable verifier."
 
 [[task]]
+id = "search-endpoints"
+legacy_lanes = ["rust"]
+kind = "aggregate"
+runner = "linux"
+depends_on = ["rust-non-native", "protocol-generated", "client-contracts"]
+cache_result = false
+notes = "Pre-registered ownership for the public Search Endpoint ingress. The product change replaces this aggregate with its focused executable verifier once the dedicated target exists."
+
+[[task]]
 id = "python-client"
 legacy_lanes = ["python"]
 kind = "command"
@@ -802,6 +811,7 @@ depends_on = [
   "native-full",
   "web-dashboard",
   "issue-queue",
+  "search-endpoints",
   "verification-policy",
 ]
 cache_result = false
@@ -927,9 +937,19 @@ paths = ["core/native/**"]
 requires = ["rust-non-native", "client-contracts", "abi", "native-full"]
 
 [[subsystem]]
+id = "searchkerneld-search-endpoints"
+paths = [
+  "searchkerneld/src/search_endpoints.rs",
+  "searchkerneld/src/search_endpoints/**",
+  "searchkerneld/tests/search_endpoints.rs",
+  "searchkerneld/tests/search_endpoints/**",
+]
+requires = ["search-endpoints", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
+
+[[subsystem]]
 id = "searchkerneld"
 paths = ["searchkerneld/**"]
-requires = ["rust-non-native", "rust-quality", "client-contracts", "native-full", "native-python-e2e", "web-static-serving-e2e"]
+requires = ["search-endpoints", "rust-non-native", "rust-quality", "client-contracts", "native-full", "native-python-e2e", "web-static-serving-e2e"]
 
 [[subsystem]]
 id = "client-python"
