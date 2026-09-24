@@ -78,6 +78,7 @@ grep -Fq 'tools/resolve-native-sdk.sh" path' "$verify_common"
 grep -Fq 'tools/resolve-native-sdk.sh" vespa-root' "$verify_common"
 grep -Fq 'SK_NATIVE_SDK_WAS_EXPLICIT=0' "$verify_common"
 grep -Fq 'unset SK_NATIVE_SDK' "$verify_common"
+grep -Fq 'SK_NATIVE_ABI_HEADER="$SDK/include/searchkernel_vespa.h"' "$verify_common"
 # The synthesized verifier adapter must remain a shell-local view. Ordinary
 # SearchReply probes consume $SDK; exporting it through SK_NATIVE_SDK would
 # make Cargo mistake it for a full explicit SDK.
