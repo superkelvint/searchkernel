@@ -70,17 +70,7 @@ trap cleanup EXIT INT TERM
 latest_generation() {
     local env="$1"
     gh api --paginate "repos/${REPO}/releases?per_page=100" --jq '.[].tag_name' |
-    python3 -c '
-import re, sys
-env, target, commit = sys.argv[1:]
-pat = re.compile(r"^vespa-base-v([0-9]+)-" + re.escape(env) + "-" + re.escape(target) + "-" + re.escape(commit) + r"$")
-versions=[]
-for raw in sys.stdin:
-    m=pat.match(raw.strip())
-    if m: versions.append(int(m.group(1)))
-if not versions: raise SystemExit(1)
-print(max(versions))
-' "$env" "$TARGET" "$PINNED_VESPA_COMMIT"
+    python3 "$ROOT/tools/native-base-generation.py" latest --build-env "$env" --target "$TARGET" --commit "$PINNED_VESPA_COMMIT"
 }
 
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
