@@ -48,6 +48,6 @@ if grep -Eiq 'fake|precomputed|hard.?coded.*(score|result)' \
   exit 1
 fi
 
-python3 "reference/vespa/phase9/check-structure-python-1.py" "$ROOT/core/native/vespa"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/check-structure-python-1.py" "$ROOT/core/native/vespa"
 
 echo 'phase9 native structure checks passed'
