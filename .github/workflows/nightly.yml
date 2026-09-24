@@ -19,17 +19,8 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
-      - name: Verify provisioned Rust toolchain
-        run: |
-          set -euo pipefail
-          command -v cargo
-          command -v rustc
-          command -v rustfmt
-          command -v cargo-clippy
-          cargo --version
-          rustc --version
-          rustfmt --version
-          cargo clippy --version
+      - name: Ensure runner Rust toolchain
+        run: bash .github/ci/ensure-runner-rust.sh rustfmt clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target/ci-non-native"
@@ -125,13 +116,8 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
-      - name: Verify provisioned Rust toolchain
-        run: |
-          set -euo pipefail
-          command -v cargo
-          command -v rustc
-          cargo --version
-          rustc --version
+      - name: Ensure runner Rust toolchain
+        run: bash .github/ci/ensure-runner-rust.sh
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target/ci-nightly-e2e"
