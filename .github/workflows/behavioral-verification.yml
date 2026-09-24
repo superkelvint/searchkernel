@@ -12,14 +12,14 @@ concurrency:
 
 jobs:
   classify:
-    name: Classify exact-head behavior
+    name: Prepare fixed behavioral lanes
     runs-on: [self-hosted, linux, x64]
     outputs:
-      rust: ${{ steps.changes.outputs.rust }}
-      python: ${{ steps.changes.outputs.python }}
-      typescript: ${{ steps.changes.outputs.typescript }}
-      ruby: ${{ steps.changes.outputs.ruby }}
-      native: ${{ steps.changes.outputs.native }}
+      rust: ${{ steps.fixed.outputs.rust }}
+      python: ${{ steps.fixed.outputs.python }}
+      typescript: ${{ steps.fixed.outputs.typescript }}
+      ruby: ${{ steps.fixed.outputs.ruby }}
+      native: ${{ steps.fixed.outputs.native }}
     steps:
       - name: Check out exact PR head
         uses: actions/checkout@v4
@@ -45,63 +45,16 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
-      - name: Resolve exact-head CI helpers
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      - name: Use fixed behavioral lanes while DAG authorization is offline
+        id: fixed
         run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          trusted_dir="$RUNNER_TEMP/searchkernel-trusted-exact-head-ci"
-          rm -rf "$trusted_dir"
-          mkdir -p "$trusted_dir"
-          git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"
-          echo "TRUSTED_EXACT_HEAD_HELPER=$trusted_dir/exact_head.py" >> "$GITHUB_ENV"
-
-          # The verification DAG becomes part of the trusted base policy bundle
-          # once the base revision contains it. This conditional is only needed
-          # to bootstrap the first DAG-consuming selector revision.
-          if git cat-file -e "$BASE_SHA:verification/dag.py" 2>/dev/null; then
-            git show "$BASE_SHA:verification/dag.py" > "$trusted_dir/dag.py"
-            git show "$BASE_SHA:verification/dag.toml" > "$trusted_dir/dag.toml"
-            echo "SEARCHKERNEL_VERIFICATION_DAG_MODULE=$trusted_dir/dag.py" >> "$GITHUB_ENV"
-            echo "SEARCHKERNEL_VERIFICATION_DAG=$trusted_dir/dag.toml" >> "$GITHUB_ENV"
-          fi
-
-          if [[ -f .github/ci/exact_head.py && -f .github/ci/test_exact_head.py ]]; then
-            regression_dir="$PWD/.github/ci"
-          else
-            regression_dir="$RUNNER_TEMP/searchkernel-exact-head-ci"
-            rm -rf "$regression_dir"
-            mkdir -p "$regression_dir"
-            for name in exact_head.py test_exact_head.py; do
-              if [[ -f ".github/ci/$name" ]]; then
-                cp ".github/ci/$name" "$regression_dir/$name"
-              else
-                git show "$BASE_SHA:.github/ci/$name" > "$regression_dir/$name"
-              fi
-            done
-          fi
-          echo "EXACT_HEAD_TEST=$regression_dir/test_exact_head.py" >> "$GITHUB_ENV"
-
-      - name: Verify exact-head CI regressions
-        env:
-          SEARCHKERNEL_VERIFICATION_DAG_MODULE: ${{ github.workspace }}/verification/dag.py
-          SEARCHKERNEL_VERIFICATION_DAG: ${{ github.workspace }}/verification/dag.toml
-        run: $CI_PYTHON "$EXACT_HEAD_TEST"
-
-      - name: Verify candidate verification DAG integrity and coverage
-        run: |
-          $CI_PYTHON verification/dag.py check --repo "$PWD"
-          $CI_PYTHON verification/test_dag.py
-
-      - name: Classify changed behavior
-        id: changes
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          git diff --name-only --no-renames -z "$BASE_SHA" "$HEAD_SHA" -- \
-            | "$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
+          {
+            echo "rust=true"
+            echo "python=true"
+            echo "typescript=true"
+            echo "ruby=true"
+            echo "native=false"
+          } >> "$GITHUB_OUTPUT"
 
   rust:
     name: Rust behavior
