@@ -87,6 +87,6 @@ if cmp -s "$TYPEA_CFG" "$PRODUCTS_CFG"; then
   exit 1
 fi
 
-python3 "reference/vespa/m6/verify-m6-python-1.py" "$TYPEA_CFG" "$PRODUCTS_CFG"
+python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/verify-m6-python-1.py" "$TYPEA_CFG" "$PRODUCTS_CFG"
 
 echo "M6 verification passed"
