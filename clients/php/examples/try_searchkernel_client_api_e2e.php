@@ -57,7 +57,7 @@ function same(mixed $expected, mixed $actual, string $message): void
 
 function closeEnough(float $expected, float $actual, string $message, float $epsilon = 1.0e-5): void
 {
-    if (abs($expected - $actual) > $epsilon) {
+    if (!is_finite($expected) || !is_finite($actual) || abs($expected - $actual) > $epsilon) {
         throw new RuntimeException($message . ": expected {$expected}, got {$actual}");
     }
 }
