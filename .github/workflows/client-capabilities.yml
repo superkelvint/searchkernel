@@ -150,8 +150,8 @@ jobs:
           PY
           )
           target=$(rustc -vV | sed -n 's/^host: //p')
-          tag="vespa-base-v1-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}"
-          asset="searchkernel-vespa-base-v1-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}.tar.gz"
+          tag="vespa-base-v2-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}"
+          asset="searchkernel-vespa-base-v2-${SEARCHKERNEL_BUILD_ENV}-${target}-${commit}.tar.gz"
           download="$RUNNER_TEMP/searchkernel-native-base"
           rm -rf "$download"
           mkdir -p "$download"

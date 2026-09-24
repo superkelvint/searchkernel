@@ -231,7 +231,9 @@ for token in shlex.split(link_file.read_text(encoding="utf-8")):
     else:
         archive = pathlib.Path(token)
         if not archive.is_absolute():
-            archive = link_file.parent / archive
+            # CMake evaluates link.txt arguments from the target directory,
+            # one level above CMakeFiles/<target>.dir.
+            archive = link_file.parent.parent.parent / archive
 
     archive = archive.resolve()
     try:

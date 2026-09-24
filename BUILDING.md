@@ -325,7 +325,7 @@ On a cache miss, `ensure` prefers a compatible already-built local source. If
 none exists, it acquires the canonical published immutable base for the current
 build-environment/native-target/Vespa-pin namespace before considering a local
 Vespa build. The default artifact is a GitHub release asset named
-`searchkernel-vespa-base-v1-<environment>-<target>-<vespa-commit>.tar.gz`;
+`searchkernel-vespa-base-v2-<environment>-<target>-<vespa-commit>.tar.gz`;
 `SK_NATIVE_BASE_ARTIFACT_URL` may point at an explicitly managed mirror. The
 download is checksum-verified, its manifest must exactly match the environment,
 target and pin, and unsafe archive entries are rejected before publication.

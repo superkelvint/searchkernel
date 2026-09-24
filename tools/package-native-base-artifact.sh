@@ -103,7 +103,9 @@ for token in tokens:
 
     source = pathlib.Path(token)
     if not source.is_absolute():
-        source = link_file.parent / source
+        # CMake writes link.txt below CMakeFiles/<target>.dir, but evaluates
+        # relative link arguments from the target's binary directory.
+        source = link_file.parent.parent.parent / source
     source = source.resolve()
 
     try:
