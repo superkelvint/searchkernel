@@ -1,0 +1,117 @@
+name: Client capabilities autofix prepare
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "clients/**"
+      - "api/**"
+      - "core/crates/searchkernel-protocol/**"
+      - "core/crates/searchkernel/**"
+      - "core/crates/searchkernel-vespa-engine/**"
+      - "docs/capabilities.json"
+      - "docs/CAPABILITIES.md"
+      - "LIMITATIONS.md"
+      - "dev"
+      - "docs/CLIENT_CAPABILITIES.md"
+      - "docs/client-capabilities.json"
+      - "reference/client-contracts/**"
+      - "tools/check-capabilities.py"
+      - "tools/check-client-contracts.py"
+      - ".github/ci/select-python.sh"
+      - ".github/workflows/client-capabilities.yml"
+      - ".github/workflows/client-capabilities-autofix-prepare.yml"
+      - ".github/workflows/client-capabilities-autofix-apply.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Regenerate capability artifacts
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Check out exact pull request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Reject stale checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::expected exact revision $EXPECTED_HEAD, checked out $actual"
+            exit 1
+          fi
+
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
+
+      - name: Regenerate client capability artifacts
+        run: |
+          set -euo pipefail
+          "$CI_PYTHON" tools/check-capabilities.py --write
+          "$CI_PYTHON" tools/check-client-contracts.py --write
+          "$CI_PYTHON" tools/check-capabilities.py --check
+          "$CI_PYTHON" tools/check-client-contracts.py --check
+
+      - name: Build allowlisted autofix patch
+        id: patch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          allowed_regex='^(LIMITATIONS\.md|docs/CAPABILITIES\.md|docs/CLIENT_CAPABILITIES\.md|docs/client-capabilities\.json)$'
+          changed="$(git diff --name-only)"
+
+          if [[ -n "$changed" ]]; then
+            unexpected="$(printf '%s\n' "$changed" | grep -Ev "$allowed_regex" || true)"
+            if [[ -n "$unexpected" ]]; then
+              echo "::error::capability regeneration changed files outside the generated-artifact allowlist:"
+              printf '%s\n' "$unexpected"
+              exit 1
+            fi
+
+            summary="$(git diff --summary)"
+            if [[ -n "$summary" ]]; then
+              echo "::error::capability regeneration attempted a file-mode, add/delete, or rename change:"
+              printf '%s\n' "$summary"
+              exit 1
+            fi
+          fi
+
+          git diff --check
+
+          patch="$RUNNER_TEMP/client-capabilities.patch"
+          git diff --binary --             LIMITATIONS.md             docs/CAPABILITIES.md             docs/CLIENT_CAPABILITIES.md             docs/client-capabilities.json             > "$patch"
+
+          bytes=$(wc -c < "$patch")
+          if (( bytes > 5242880 )); then
+            echo "::error::capability autofix patch is unexpectedly large: $bytes bytes"
+            exit 1
+          fi
+
+          if [[ -s "$patch" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Capability regeneration produced an autofix patch."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Capability artifacts are already current."
+          fi
+
+      - name: Upload autofix patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-capabilities-autofix
+          path: ${{ runner.temp }}/client-capabilities.patch
+          if-no-files-found: error
+          retention-days: 1
