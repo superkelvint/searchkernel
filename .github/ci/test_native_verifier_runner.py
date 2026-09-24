@@ -99,7 +99,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             'PR_NUMBER: ${{ github.event.pull_request.number }}',
             "assert_current_pr_head()",
             "curl --fail --silent --show-error",
-            "jq -r '.head.sha // empty'",
+            'python3 -c \'import json,sys; print(json.load(sys.stdin).get("head", {}).get("sha", ""))\'',
             "env -u GH_TOKEN",
             "Superseded native verification",
             "run_native_phase()",
