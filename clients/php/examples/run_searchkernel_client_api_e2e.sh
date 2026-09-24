@@ -55,9 +55,18 @@ start_host() {
     --index "$INDEX" \
     --listen "127.0.0.1:$grpc_port" \
     --web-listen "127.0.0.1:$web_port" \
-    >/dev/null 2>&1 &
+    >"$WORK/searchkerneld.log" 2>&1 &
   PID="$!"
-  wait_port "$web_port"
+  if ! wait_port "$web_port"; then
+    echo "searchkerneld failed to start; daemon output:" >&2
+    cat "$WORK/searchkerneld.log" >&2
+    return 1
+  fi
+  if ! kill -0 "$PID" 2>/dev/null; then
+    echo "searchkerneld exited during startup; daemon output:" >&2
+    cat "$WORK/searchkerneld.log" >&2
+    return 1
+  fi
   export SEARCHKERNEL_HTTP_URL="http://127.0.0.1:$web_port"
 }
 
