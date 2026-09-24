@@ -1,0 +1,146 @@
+name: Client capabilities autofix apply
+
+on:
+  workflow_run:
+    workflows: ["Client capabilities autofix prepare"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    name: Commit regenerated capability artifacts
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Check out exact prepared revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Reject stale checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::expected exact revision $EXPECTED_HEAD, checked out $actual"
+            exit 1
+          fi
+
+      - name: Download prepared autofix patch
+        uses: actions/download-artifact@v4
+        with:
+          name: client-capabilities-autofix
+          path: ${{ runner.temp }}/client-capabilities-autofix
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Apply and validate generated-only patch
+        id: patch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          patch="$RUNNER_TEMP/client-capabilities-autofix/client-capabilities.patch"
+          if [[ ! -f "$patch" ]]; then
+            echo "::error::prepared client capability patch is missing"
+            exit 1
+          fi
+          if [[ ! -s "$patch" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Capability artifacts are already current."
+            exit 0
+          fi
+
+          git apply --check --whitespace=error-all "$patch"
+          git apply --whitespace=error-all "$patch"
+
+          allowed_regex='^(LIMITATIONS\.md|docs/CAPABILITIES\.md|docs/CLIENT_CAPABILITIES\.md|docs/client-capabilities\.json)$'
+          changed="$(git diff --name-only)"
+          if [[ -z "$changed" ]]; then
+            echo "::error::non-empty prepared patch applied without producing a diff"
+            exit 1
+          fi
+          unexpected="$(printf '%s\n' "$changed" | grep -Ev "$allowed_regex" || true)"
+          if [[ -n "$unexpected" ]]; then
+            echo "::error::prepared patch touched files outside the generated-artifact allowlist:"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
+
+          summary="$(git diff --summary)"
+          if [[ -n "$summary" ]]; then
+            echo "::error::prepared patch attempted a file-mode, add/delete, or rename change:"
+            printf '%s\n' "$summary"
+            exit 1
+          fi
+
+          git diff --check
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Confirm pull request branch has not advanced
+        if: steps.patch.outputs.changed == 'true'
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.event.workflow_run.head_branch }}
+          EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha }}
+          READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          remote_head="$(
+            git ls-remote "https://x-access-token:${READ_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${HEAD_REF}" |
+              awk '{print $1}'
+          )"
+
+          if [[ -z "$remote_head" ]]; then
+            echo "::notice::pull request branch no longer exists; skipping autofix commit"
+            echo "STALE_BRANCH=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          if [[ "${remote_head,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::notice::pull request branch advanced from $EXPECTED_HEAD to $remote_head; skipping stale autofix commit"
+            echo "STALE_BRANCH=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Commit and push regenerated artifacts
+        if: steps.patch.outputs.changed == 'true' && env.STALE_BRANCH != 'true'
+        shell: bash
+        env:
+          AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
+          HEAD_REF: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${AUTOFIX_TOKEN:-}" ]]; then
+            echo "::error::RUSTFMT_AUTOFIX_TOKEN is not configured."
+            echo "The existing repository autofix token must have Contents: Read and write."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -- LIMITATIONS.md docs/CAPABILITIES.md docs/CLIENT_CAPABILITIES.md docs/client-capabilities.json
+          git diff --cached --check
+
+          git -c core.hooksPath=/dev/null -c commit.gpgsign=false commit -m "chore: regenerate client capabilities"
+
+          # Always qualify the destination as a branch ref. Without this prefix,
+          # a pathological branch name such as "refs/heads/main" could be
+          # interpreted as that full destination rather than the PR branch.
+          git push "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"

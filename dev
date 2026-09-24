@@ -26,11 +26,13 @@ Search Kernel development commands
   ./dev check                 Run the full repository quality and test suite
   ./dev check-fast            Run formatting, compile, and boundary checks
   ./dev check-protocol        Verify generated FlatBuffers/gRPC artifacts
+  ./dev lint --profile <id>   Run a canonical Clippy verification profile
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client
   ./dev test typescript       Test the TypeScript client and generated contract
   ./dev test php              Test the PHP client
+  ./dev test ruby             Test the Ruby client and packaged gem
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify vespa.grouping.yql  Run one semantic verifier target
@@ -102,6 +104,32 @@ run_typescript_tests() {
     npm run test:package --prefix "$ROOT/clients/typescript"
 }
 
+run_php_tests() {
+    php "$ROOT/clients/php/tests/run.php"
+    cargo test -p searchkernel-protocol --test php_json_contract -- --ignored
+    bash "$ROOT/clients/php/tests/verify_package.sh"
+}
+
+run_ruby_tests() {
+    ruby -I"$ROOT/clients/ruby/lib" "$ROOT/clients/ruby/test/run.rb"
+    cargo test -p searchkernel-protocol --test ruby_json_contract -- --ignored
+
+    local package_dir gem_home status
+    package_dir=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ruby-package.XXXXXX")
+    gem_home=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ruby-gem-home.XXXXXX")
+    status=0
+    (
+        cd "$ROOT/clients/ruby"
+        gem build searchkernel.gemspec --output "$package_dir/searchkernel.gem" >/dev/null
+        GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
+            gem install --local "$package_dir/searchkernel.gem" --no-document >/dev/null
+        GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
+            ruby -e 'require "searchkernel"; abort unless SearchKernel::Protocol::VERSION == 2'
+    ) || status=$?
+    rm -rf -- "$package_dir" "$gem_home"
+    return "$status"
+}
+
 check_fast() {
     cargo fmt --all --check
     cargo check --workspace --all-targets --no-default-features
@@ -136,10 +164,12 @@ check_all() {
     "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
     "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
     "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    lint_target --profile rust-clippy-all-features
     cargo test --workspace --all-targets --all-features
     run_python_tests
     run_typescript_tests
+    run_php_tests
+    run_ruby_tests
 }
 
 regen_protocol() {
@@ -153,6 +183,10 @@ regen_protocol() {
 
 regen_result_fixtures() {
     cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures
+}
+
+lint_target() {
+    "$PYTHON" "$ROOT/tools/run_clippy.py" "$@"
 }
 
 test_target() {
@@ -170,10 +204,13 @@ test_target() {
             run_typescript_tests
             ;;
         php)
-            php "$ROOT/clients/php/tests/run.php"
+            run_php_tests
+            ;;
+        ruby)
+            run_ruby_tests
             ;;
         *)
-            echo "usage: ./dev test ir|rust-api|python|typescript|php" >&2
+            echo "usage: ./dev test ir|rust-api|python|typescript|php|ruby" >&2
             return 2
             ;;
     esac
@@ -571,6 +608,10 @@ case "${1:-help}" in
         ;;
     check-protocol)
         check_protocol
+        ;;
+    lint)
+        shift
+        lint_target "$@"
         ;;
     test)
         shift

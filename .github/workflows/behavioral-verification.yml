@@ -12,14 +12,14 @@ concurrency:
 
 jobs:
   classify:
-    name: Classify exact-head behavior
+    name: Prepare fixed behavioral lanes
     runs-on: [self-hosted, linux, x64]
     outputs:
-      rust: ${{ steps.changes.outputs.rust }}
-      python: ${{ steps.changes.outputs.python }}
-      typescript: ${{ steps.changes.outputs.typescript }}
-      ruby: ${{ steps.changes.outputs.ruby }}
-      native: ${{ steps.changes.outputs.native }}
+      rust: ${{ steps.fixed.outputs.rust }}
+      python: ${{ steps.fixed.outputs.python }}
+      typescript: ${{ steps.fixed.outputs.typescript }}
+      ruby: ${{ steps.fixed.outputs.ruby }}
+      native: ${{ steps.native.outputs.required }}
     steps:
       - name: Check out exact PR head
         uses: actions/checkout@v4
@@ -45,63 +45,38 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
-      - name: Resolve exact-head CI helpers
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      - name: Use fixed non-native behavioral lanes while DAG authorization is offline
+        id: fixed
         run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          trusted_dir="$RUNNER_TEMP/searchkernel-trusted-exact-head-ci"
-          rm -rf "$trusted_dir"
-          mkdir -p "$trusted_dir"
-          git show "$BASE_SHA:.github/ci/exact_head.py" > "$trusted_dir/exact_head.py"
-          echo "TRUSTED_EXACT_HEAD_HELPER=$trusted_dir/exact_head.py" >> "$GITHUB_ENV"
+          {
+            echo "rust=true"
+            echo "python=true"
+            echo "typescript=true"
+            echo "ruby=true"
+          } >> "$GITHUB_OUTPUT"
 
-          # The verification DAG becomes part of the trusted base policy bundle
-          # once the base revision contains it. This conditional is only needed
-          # to bootstrap the first DAG-consuming selector revision.
-          if git cat-file -e "$BASE_SHA:verification/dag.py" 2>/dev/null; then
-            git show "$BASE_SHA:verification/dag.py" > "$trusted_dir/dag.py"
-            git show "$BASE_SHA:verification/dag.toml" > "$trusted_dir/dag.toml"
-            echo "SEARCHKERNEL_VERIFICATION_DAG_MODULE=$trusted_dir/dag.py" >> "$GITHUB_ENV"
-            echo "SEARCHKERNEL_VERIFICATION_DAG=$trusted_dir/dag.toml" >> "$GITHUB_ENV"
-          fi
-
-          if [[ -f .github/ci/exact_head.py && -f .github/ci/test_exact_head.py ]]; then
-            regression_dir="$PWD/.github/ci"
-          else
-            regression_dir="$RUNNER_TEMP/searchkernel-exact-head-ci"
-            rm -rf "$regression_dir"
-            mkdir -p "$regression_dir"
-            for name in exact_head.py test_exact_head.py; do
-              if [[ -f ".github/ci/$name" ]]; then
-                cp ".github/ci/$name" "$regression_dir/$name"
-              else
-                git show "$BASE_SHA:.github/ci/$name" > "$regression_dir/$name"
-              fi
-            done
-          fi
-          echo "EXACT_HEAD_TEST=$regression_dir/test_exact_head.py" >> "$GITHUB_ENV"
-
-      - name: Verify exact-head CI regressions
-        env:
-          SEARCHKERNEL_VERIFICATION_DAG_MODULE: ${{ github.workspace }}/verification/dag.py
-          SEARCHKERNEL_VERIFICATION_DAG: ${{ github.workspace }}/verification/dag.toml
-        run: $CI_PYTHON "$EXACT_HEAD_TEST"
-
-      - name: Verify candidate verification DAG integrity and coverage
-        run: |
-          $CI_PYTHON verification/dag.py check --repo "$PWD"
-          $CI_PYTHON verification/test_dag.py
-
-      - name: Classify changed behavior
-        id: changes
+      - name: Select native verifier lane from trusted base policy
+        id: native
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git diff --name-only --no-renames -z "$BASE_SHA" "$HEAD_SHA" -- \
-            | "$CI_PYTHON" "$TRUSTED_EXACT_HEAD_HELPER" classify --github-output "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/searchkernel-changed-paths.txt"
+
+          # Use the selector from the trusted base commit. A pull request may
+          # change the selector, but it cannot use that change to exempt itself.
+          git show "$BASE_SHA:.github/ci/native_verifier_required.py" > "$RUNNER_TEMP/native_verifier_required.py"
+          required=$("$CI_PYTHON" "$RUNNER_TEMP/native_verifier_required.py" < "$RUNNER_TEMP/searchkernel-changed-paths.txt")
+          if [[ "$required" != "true" && "$required" != "false" ]]; then
+            echo "::error::native verifier selector returned invalid value '$required'"
+            exit 1
+          fi
+
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+          echo "Native verifier required: $required"
 
   rust:
     name: Rust behavior
@@ -234,8 +209,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: clients/typescript/package-lock.json
 
       - name: Cache pinned FlatBuffers toolchain
         uses: actions/cache@v4
@@ -272,12 +245,50 @@ jobs:
     needs: classify
     if: needs.classify.outputs.ruby == 'true'
     runs-on: [self-hosted, linux, x64]
+    env:
+      CARGO_TARGET_DIR: target/ci-exact-head-ruby
+      SEARCHKERNEL_BUILD_ENV: ci
+      CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - name: Check out exact PR head
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
+
+      - name: Ensure provisioned Ruby
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        run: |
+          set -euo pipefail
+          if ! command -v ruby >/dev/null 2>&1 || ! command -v gem >/dev/null 2>&1; then
+            sudo -n apt-get update
+            sudo -n apt-get install -y --no-install-recommends ruby-full
+          fi
+          ruby --version
+          gem --version
+          ruby -rrubygems -e 'abort "Ruby >= 3.1 is required" if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")'
+
+      - name: Install Rust toolchain
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/ci-exact-head-ruby"
+          shared-key: exact-head-ruby
+
+      - name: Cache pinned FlatBuffers toolchain
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        uses: actions/cache@v4
+        with:
+          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
+          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Ensure pinned FlatBuffers toolchain
+        if: ${{ hashFiles('clients/ruby/**') != '' }}
+        run: ./dev install flatbuffers
 
       - name: Reject stale verification checkout
         env:
@@ -291,15 +302,28 @@ jobs:
           fi
           echo "Verified exact PR head $actual."
 
-      - name: Verify Ruby runtime
-        run: ruby --version
-
       - name: Run Ruby behavioral tests
-        run: ./dev test ruby
+        run: |
+          set -euo pipefail
+          if [[ ! -d clients/ruby ]]; then
+            echo "Ruby client is only pre-registered on this base; no Ruby product surface exists yet."
+            exit 0
+          fi
+          ruby --version
+          ./dev test ruby
+
+  native:
+    name: Native verification
+    needs: classify
+    if: needs.classify.outputs.native == 'true'
+    uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main
+    with:
+      revision: ${{ github.event.pull_request.head.sha }}
+      target: native-full
 
   exact-head-gate:
     name: Exact-head gate
-    needs: [classify, rust, python, typescript, ruby]
+    needs: [classify, rust, python, typescript, ruby, native]
     if: always()
     runs-on: [self-hosted, linux, x64]
     steps:
@@ -316,6 +340,7 @@ jobs:
           RUBY_REQUIRED: ${{ needs.classify.outputs.ruby }}
           RUBY_RESULT: ${{ needs.ruby.result }}
           NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}
+          NATIVE_RESULT: ${{ needs.native.result }}
         run: |
           set -euo pipefail
 
@@ -338,9 +363,6 @@ jobs:
           require_lane Python "$PYTHON_REQUIRED" "$PYTHON_RESULT"
           require_lane TypeScript "$TYPESCRIPT_REQUIRED" "$TYPESCRIPT_RESULT"
           require_lane Ruby "$RUBY_REQUIRED" "$RUBY_RESULT"
+          require_lane Native "$NATIVE_SENSITIVE" "$NATIVE_RESULT"
 
-          if [[ "$NATIVE_SENSITIVE" == "true" ]]; then
-            echo "::notice title=Native verification is local::Native-sensitive paths changed. CI intentionally does not bootstrap Vespa or run the real-engine gate; local native verification evidence is required by AGENTS.md."
-          fi
-
-          echo "All non-native CI behavior required for exact PR head $EXPECTED_HEAD is verified."
+          echo "All selected behavioral verification for exact PR head $EXPECTED_HEAD is verified."

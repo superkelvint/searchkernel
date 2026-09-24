@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,6 +38,24 @@ def _load_clang():
     return ci
 
 
+def _clang_parse_args() -> list[str]:
+    args = ["-x", "c", "-std=c11"]
+    clang = os.environ.get("CLANG") or shutil.which("clang")
+    if clang:
+        completed = subprocess.run(
+            [clang, "-print-resource-dir"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        resource_dir = completed.stdout.strip()
+        if completed.returncode == 0 and resource_dir:
+            include_dir = Path(resource_dir) / "include"
+            if include_dir.is_dir():
+                args.extend(["-resource-dir", resource_dir])
+    return args
+
+
 def _parse_header(header_path: str | os.PathLike[str]):
     ci = _load_clang()
     path = Path(header_path).resolve()
@@ -43,7 +63,7 @@ def _parse_header(header_path: str | os.PathLike[str]):
         raise RuntimeError(f"ABI header does not exist: {path}")
 
     index = ci.Index.create()
-    translation_unit = index.parse(str(path), args=["-x", "c", "-std=c11"])
+    translation_unit = index.parse(str(path), args=_clang_parse_args())
     diagnostics = [
         str(diagnostic)
         for diagnostic in translation_unit.diagnostics
