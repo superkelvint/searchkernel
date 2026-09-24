@@ -34,8 +34,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Verify provisioned Rust toolchain
+        run: |
+          set -euo pipefail
+          command -v cargo
+          command -v rustc
+          cargo --version
+          rustc --version
 
       - name: Publish and verify host + CI bases
         run: tools/publish-native-base.sh all
