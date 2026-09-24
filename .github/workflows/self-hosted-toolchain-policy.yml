@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/**"
       - ".github/ci/check-self-hosted-rust-workflows.py"
+      - ".github/ci/ensure-runner-rust.sh"
   workflow_dispatch:
 
 permissions:
