@@ -70,6 +70,52 @@ implement them. The selector chooses profile IDs; CI executes those profiles.
 The planner and executor must not maintain independent hand-written meanings for
 the same profile.
 
+
+### Semantic verifier identity
+
+Verification task identity must describe the invariant or capability being proved,
+not the historical milestone that first introduced it.
+
+Milestone labels such as `M10`, `M13`, and `M14` remain useful provenance and
+may remain as cumulative acceptance closures, but they are not sufficiently
+descriptive identities for independently executable verifier units. The
+authoritative DAG should therefore prefer semantic task IDs such as:
+
+```text
+vespa.linguistics
+vespa.text-indexing
+vespa.persistence.reopen
+vespa.schema-config
+vespa.query-compilation
+vespa.results
+vespa.grouping.recursive
+vespa.grouping.yql
+vespa.ranking
+vespa.search-reply
+vespa.recovery
+vespa.hardening.core
+vespa.hardening.sanitizers
+```
+
+A historical milestone is represented as a DAG aggregate/closure over the
+semantic verifier tasks required by that milestone. For example,
+`milestone.m14` may depend on the semantic M0-M14 capability tasks, but callers
+must also be able to run a focused semantic verifier directly when that is the
+actual verification need.
+
+Repository layout should follow the same rule for active executable verifier
+entry points. Historical frozen milestone specification/oracle artifacts may
+remain under `reference/vespa/mN/`, while current executable semantic verifier
+entry points live under a descriptive hierarchy such as
+`reference/vespa/verifiers/<capability>/`. During migration those semantic
+entry points may delegate to the frozen milestone scripts rather than duplicate
+their implementation.
+
+The DAG records milestone provenance separately from task identity (for example
+an `introduced_by = "M13"` metadata field). Renaming or reorganizing verifier
+entry points must preserve existing acceptance behavior and cumulative milestone
+reachability.
+
 Expected profile families include, subject to inventory:
 
 - baseline Rust formatting/lint/unit tests;
@@ -173,10 +219,18 @@ calculation may be useful for local developer feedback and execution
 optimization, but it is not authoritative for deciding whether a candidate has
 tested itself sufficiently.
 
-The canonical task graph should therefore be declarative and mechanical. A
-profile/task owns one command and may depend on other tasks, while the trusted
-selector returns task IDs plus reasons. GitHub Actions should not maintain a
-second handwritten meaning for those tasks.
+The **SearchKernel verification DAG** is repository-owned policy and lives at
+`verification/dag.toml`. It must exist independently of moonrepo. It defines
+the semantic task IDs, dependency edges, subsystem/path ownership,
+subsumption/closure relationships, runner class, and canonical verifier command
+for each verification unit. The trusted selector returns task IDs plus reasons
+against that DAG.
+
+moonrepo is an execution adapter over this SearchKernel-owned DAG. It may mirror
+the dependency edges for scheduling, but moon configuration is not the semantic
+source of truth and must be mechanically checked against the authoritative
+SearchKernel DAG. GitHub Actions likewise must not maintain a second handwritten
+meaning for those tasks.
 
 For Rust test-heavy tasks, prefer cargo-nextest over bespoke test scheduling.
 Where one compiled Rust test corpus is executed on several workers, prefer
@@ -284,7 +338,7 @@ not wall-clock measurements. Actual timing belongs in Phase 7.
 | `rust-quality` | `cargo fmt --all --check`; `./dev lint --profile rust-clippy-non-native` | Broad Rust/build changes | Independent baseline; repeated inside several native milestone verifiers via `run_workspace_quality` with all features | Rust; native all-feature variant needs native SDK | Cargo target only | Nightly; pre-commit | Candidate code | medium |
 | `python-client` | `./dev test python` | Current `python` lane: `api/**`, `clients/python/**`, client contracts and Python generation/check tooling | Includes Python generated checks plus unittest discovery; ordinary discovery skips real native gRPC E2E unless opt-in | Python runtime + package deps + FlatBuffers tools | Temp/package state; isolate venv where possible | PR behavioral, nightly | Candidate code; base-owned selection | fast-medium |
 | `typescript-client` | `./dev test typescript` | Current `typescript` lane: `api/**`, TS client, client contracts and TS generators | Includes generation regression, generated check, typecheck, Vitest, package verification | Node 22, Rust/FlatBuffers for semantic generation, npm deps | `dist`, generated/temp files; safe with per-job checkout | PR behavioral | Candidate code; base-owned selection | medium |
-| `php-client` | `./dev test php` | Current `php` lane: `api/**`, PHP client, client contracts | Standalone first-slice test runner | PHP runtime | Minimal mutable state | Client-capabilities workflow; not behavioral exact-head executor | Candidate code; base-owned selection | fast |
+| `php-client` | `./dev test php` | PHP client plus canonical schema/BFBS bridge changes that can affect the HTTP-first wire contract | PHP semantic/wire suite + PHP-emitted standard FlatBuffers JSON round-trip through the official BFBS bridge + Composer package-consumer verification | PHP runtime, Rust toolchain, pinned FlatBuffers/BFBS bridge, Composer | Cargo/package temp state only | Client-capabilities exact-head verify job; selected by verification DAG for `clients/php/**`, portable schema, and protocol bridge changes | Candidate code; base-owned selection | fast-medium |
 | `protocol-generated` | `./dev check-protocol` | Current `protocol` lane: schemas, BFBS/generated Rust/Python/TS/RPC artifacts and generators | Runs BFBS, protocol, RPC, Python FlatBuffers/gRPC, TS generated checks | pinned flatc/FlatBuffers C++; Python codegen deps; Node for TS generated checks | Regeneration checks should not mutate committed tree | Nightly partially; pre-commit; not a dedicated exact-head job | Candidate artifacts; selection from base; policy/generator changes elevated | fast-medium |
 | `api-conformance` | `./dev verify api-conformance` / `reference/api-conformance/verify.sh` | Current `api_conformance` lane only maps `reference/api-conformance/**` | `verify.sh -> verify-fixtures.sh -> validate_suite.py`, backend-free guard, then `searchkernel-conformance`; parameterized `verify-adapter.sh` is separate | Rust + Python; no Vespa | Temporary Cargo output | Unit workflow | Candidate verifier normally; verifier/expected changes require elevated review | medium |
 | `client-contracts` | `./dev verify contracts` | Current `contracts` lane: clients, public Rust API, Vespa-engine capability docs/ledgers, contract tooling | Capabilities check/tests + client-contract check/tests + Python dependency contract | Python; executable E2E additionally needs Rust/Node/client deps | E2E starts processes/uses temp state through checker; job-local | Client-capabilities, nightly | Candidate code; contract/checker changes need elevated review | fast-medium |
@@ -440,6 +494,69 @@ searchkernel-web package scripts: build, test
 tools/frontend-harness frontend-{ci,verify,accept,verifier-integrity,harness-selftest}
 tools/frontend-harness/verifiers/F0/verify.sh ... F12/verify.sh
 ```
+
+### SearchKernel Web subsystem inventory
+
+`searchkernel-web/` is a product area with several independently meaningful
+subsystems. It must not be represented in the verification DAG only as one
+opaque `web-dashboard` node.
+
+The current tree contains at least these subsystem boundaries:
+
+| Subsystem | Current paths | Primary responsibility | Required verification ownership |
+| --- | --- | --- | --- |
+| Web portable client seam | `searchkernel-web/src/api/**` | Generated-client-shaped portable Search Kernel operations and fixture seam | client contract/unit tests, generated TypeScript/client compatibility, dashboard integration |
+| Web admin client seam | `searchkernel-web/src/admin-client/**` | Operational/diagnostic administration API distinct from portable semantics | admin-client unit/contract tests and daemon admin integration |
+| Application shell and routing | `searchkernel-web/src/app/**`, `src/main.tsx`, top-level app entrypoints | route tree, canonical redirects, client/index context, query state, preferences, fallback pages | route/navigation/query tests plus production build |
+| Shared presentation/result layer | `searchkernel-web/src/components/**`, `src-components/**` | shared chrome, command palette, result rendering, reusable UI primitives | component/result-display tests plus build/typecheck |
+| Configuration/schema feature | `searchkernel-web/src/features/configuration/**` | schema/configuration presentation | web build + relevant client/feature acceptance |
+| Documents feature | `searchkernel-web/src/features/documents/**` | document browsing/detail flows | web build + portable-client/document acceptance |
+| Indexes feature | `searchkernel-web/src/features/indexes/**` | index-scoped navigation and management surfaces | web build + admin/portable index acceptance as applicable |
+| Operations feature | `searchkernel-web/src/features/operations/**` | operational status/actions | admin-client/daemon integration + web build |
+| Overview feature | `searchkernel-web/src/features/overview/**` | global/index overview presentation | web build + relevant client integration |
+| Ranking feature | `searchkernel-web/src/features/ranking/**` | rank-profile presentation/configuration | web build + ranking capability/contract acceptance |
+| Search debugging feature | `searchkernel-web/src/features/search-debugging/**` | inspection/debugging surfaces | web build + inspect/debug endpoint acceptance |
+| Search Lab feature | `searchkernel-web/src/features/search-lab/**` | query/ranking/limit URL state, request execution/inspection | search-param tests + portable-client real request acceptance + web build |
+| Settings feature | `searchkernel-web/src/features/settings/**` | global/index settings UI | web build + admin/config integration as applicable |
+| Summaries feature | `searchkernel-web/src/features/summaries/**` | document-summary presentation/configuration | web build + summary capability/contract acceptance |
+| Static serving / SPA integration | `searchkernel-web/dist/**` contract plus `searchkerneld` static serving | serve concrete assets, preserve `/api/*`, SPA fallback to `index.html` | clean dashboard build + daemon routing/E2E |
+| Frontend milestone acceptance | `tools/frontend-harness/**` and F-series verifiers | immutable frontend acceptance/reviewer contracts | harness self-tests/integrity and activated F-series acceptance |
+
+The machine-readable SearchKernel verification DAG does not necessarily need a
+separate executable command for every feature directory if several features are
+proved by the same build/test command. It **does** need an explicit subsystem
+mapping so every path above resolves to the correct verification closure and so
+new feature families cannot appear without DAG ownership.
+
+The minimum initial web task closure should distinguish at least:
+
+```text
+web-unit
+    npm --prefix searchkernel-web test
+
+web-build
+    npm --prefix searchkernel-web run build
+
+web-portable-client
+    depends on web-unit + TypeScript/generated-client contract verification
+
+web-admin-client
+    depends on web-unit + daemon/admin contract verification
+
+web-static-serving-e2e
+    depends on web-build + searchkerneld static/API/SPA routing verification
+
+frontend-harness-selftest
+frontend-verifier-integrity
+
+web-full
+    reaches all active web tasks and activated F-series acceptance
+```
+
+Feature folders should map to those tasks plus any feature-specific acceptance
+task that exists or is introduced. Unsupported/not-yet-implemented F-series
+acceptance remains explicitly excluded until activated; its absence must not
+hide ordinary dashboard unit/build/static-serving verification.
 
 ### Current CI coverage and gaps
 
@@ -629,16 +746,31 @@ moonrepo or candidate-controlled task configuration.
 Use standard tools for generic orchestration rather than building a
 SearchKernel-specific scheduler/cache/test-distribution system.
 
+#### SearchKernel verification DAG
+
+- [x] Define one machine-readable SearchKernel-owned verification DAG as the semantic source of truth, independent of moonrepo.
+- [x] Represent every surviving Phase 1 verification profile in that DAG with a stable semantic task ID that describes what it proves rather than the milestone that introduced it.
+- [x] Represent milestone acceptance such as M14 as explicit DAG aggregate/closure tasks over semantic verifier IDs, with milestone provenance stored as metadata rather than executable-task identity.
+- [x] Provide focused semantic verifier targets for independently meaningful native/Vespa capabilities so agents and CI need not invoke a whole milestone closure when only one verifier is required.
+- [x] Encode the verified Phase 1 dependency/subsumption edges in the SearchKernel DAG.
+- [x] Record the canonical verifier command and runner class for each task in the SearchKernel DAG.
+- [x] Represent subsystem/path ownership separately from executable task identity so multiple subsystems may share a task without becoming invisible.
+- [x] Decompose `searchkernel-web` into the subsystem inventory above rather than one opaque dashboard node.
+- [x] Map every current `searchkernel-web/src/features/*` family plus the portable-client seam, admin-client seam, app/routing layer, shared presentation layer, daemon/static-serving boundary, and frontend harness to explicit DAG verification closure.
+- [x] Add a mechanical check that a newly introduced top-level subsystem or `searchkernel-web/src/features/*` family is rejected until DAG ownership is added.
+- [x] Make the trusted selector validate emitted task IDs against the SearchKernel DAG.
+- [x] Define the authoritative full-suite root/closure in the SearchKernel DAG, including the active web closure.
+- [x] Add mechanical closure checks so every surviving verifier and supported product subsystem is represented and reachable where required.
+
 #### moonrepo
 
 - [ ] Introduce moonrepo with a pinned version/toolchain identity.
-- [ ] Represent every surviving verification profile as one canonical moon task.
-- [ ] Encode task dependencies from the verified Phase 1 closure graph.
+- [ ] Materialize one moon task for every executable task in the SearchKernel verification DAG.
+- [ ] Mirror SearchKernel DAG dependencies into moon only for execution scheduling; moon is not the semantic authority.
 - [ ] Keep repository verifier scripts as task commands where they remain the authoritative acceptance entry point.
-- [ ] Add a mechanical check that every task ID emitted by the trusted selector exists in the moon graph.
-- [ ] Add a mechanical check that every required full-suite verifier is reachable from the full-suite root.
-- [ ] Make pre-commit and developer tooling invoke the same canonical tasks rather than duplicating commands.
-- [ ] Make the developer/agent `test-plan` interface print trusted task IDs and reasons.
+- [ ] Add a mechanical equivalence check that moon task IDs, commands, runner classes, and dependency edges match the SearchKernel DAG.
+- [ ] Make pre-commit and developer tooling invoke the same canonical SearchKernel task IDs rather than duplicating commands.
+- [ ] Make the developer/agent `test-plan` interface print trusted SearchKernel task IDs and reasons.
 - [ ] Make the developer/agent `test-affected` interface execute the trusted task set through moon.
 - [ ] Ensure arbitrary issue/PR shell text can add evidence but never becomes executable CI authority.
 
@@ -683,15 +815,16 @@ block native CI on adopting Nix.
 - [ ] After native CI is green, evaluate Nix plus Cachix/Attic as a replacement for ad-hoc immutable prerequisite distribution.
 - [ ] Treat a smaller purpose-built verifier bundle as a later optimization rather than a prerequisite for CI enablement.
 
-### Phase 5: connect trusted policy to the moon task graph
+### Phase 5: connect trusted policy to execution
 
-- [ ] Extend the trusted base-owned selector to emit every required canonical moon task ID.
-- [ ] Have CI execute exactly the trusted task set through moon against candidate code.
+- [ ] Extend the trusted base-owned selector to emit every required canonical SearchKernel verification task ID.
+- [ ] Resolve dependencies/closure from the trusted SearchKernel verification DAG, not from moon.
+- [ ] Have CI execute exactly the trusted SearchKernel task set through moon against candidate code.
 - [ ] Add GitHub Actions worker placement for non-native tasks.
 - [ ] Add self-hosted worker placement for native real-engine tasks.
 - [ ] Add native client/gRPC end-to-end tasks.
 - [ ] Add Vespa milestone/oracle tasks.
-- [ ] Keep task dependencies in the moon graph instead of duplicating them in GitHub Actions YAML.
+- [ ] Keep semantic task dependencies in the SearchKernel verification DAG; mirror them into moon for scheduling and never duplicate them in GitHub Actions YAML.
 - [ ] Run candidate policy/task-graph self-tests plus conservative/full verification when verification infrastructure changes.
 - [ ] Preserve exact-head evidence for every required task.
 - [ ] Detect base drift so stale evidence cannot authorize a changed merge candidate.
@@ -759,14 +892,15 @@ The verification system itself needs regression tests proving at least:
 The design is complete when:
 
 1. every surviving repository verifier/test family is represented in the
-   verified inventory and canonical moon task graph;
+   verified inventory and authoritative SearchKernel verification DAG, with
+   moon mechanically equivalent as an execution projection;
 2. PR CI independently and fail-closed selects all required task IDs from
    trusted base policy, while candidate-controlled moon configuration cannot
    reduce that mandatory set;
 3. all selected tasks, including real native/Vespa paths, execute in CI against
    the exact candidate head;
-4. one mechanically checked full-suite moon root reaches the complete intended
-   verifier closure;
+4. one mechanically checked SearchKernel full-suite root reaches the complete
+   intended verifier closure, and moon's execution projection matches it;
 5. Rust test execution uses cargo-nextest where appropriate, including
    partition/archive reuse when it materially reduces duplicate compilation;
 6. Rust/C/C++ compilation uses sccache where appropriate without weakening

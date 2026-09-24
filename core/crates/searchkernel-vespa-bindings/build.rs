@@ -215,6 +215,17 @@ fn main() {
     println!("cargo:rerun-if-changed=src/abi.rs");
     println!("cargo:rerun-if-changed=src/bindings.rs");
     #[cfg(feature = "native")]
+    if let Some(base) = base_sdk.as_deref() {
+        let artifact_marker = base.join(".searchkernel-native-base-artifact.json");
+        if artifact_marker.exists() {
+            // The shared base path is keyed by Vespa checkout, while published
+            // generations may advance at that same path. Watching the installed
+            // generation receipt makes Cargo rebuild only this local adapter
+            // after './dev native-sdk ensure' refreshes the base.
+            println!("cargo:rerun-if-changed={}", artifact_marker.display());
+        }
+    }
+    #[cfg(feature = "native")]
     if base_sdk.is_none() {
         // Explicitly managed full SDKs are external inputs, so track them.
         println!("cargo:rerun-if-changed={}", header.display());

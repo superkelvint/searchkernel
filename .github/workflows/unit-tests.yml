@@ -90,6 +90,9 @@ jobs:
       - name: Test Clippy diagnostic runner
         run: python3 tools/test_run_clippy.py
 
+      - name: Run semantic verifier routing regression
+        run: bash reference/vespa/verifiers/test-routing.sh
+
       - name: Run workspace unit tests
         run: cargo test --workspace --no-default-features
 
