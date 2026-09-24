@@ -131,11 +131,11 @@ cache_result = false
 [[task]]
 id = "ruby-client"
 legacy_lanes = ["ruby"]
-kind = "aggregate"
+kind = "command"
 runner = "linux"
-depends_on = ["client-contracts"]
+command = "./dev test ruby"
+depends_on = []
 cache_result = false
-notes = "Pre-registered ownership for the Ruby client ingress. The first Ruby product PR replaces this aggregate with ./dev test ruby."
 
 [[task]]
 id = "protocol-generated"
@@ -938,7 +938,10 @@ requires = ["php-client", "client-contracts"]
 
 [[subsystem]]
 id = "client-ruby"
-paths = ["clients/ruby/**"]
+paths = [
+  "clients/ruby/**",
+  "core/crates/searchkernel-protocol/tests/ruby_json_contract.rs",
+]
 requires = ["ruby-client", "client-contracts"]
 
 [[subsystem]]

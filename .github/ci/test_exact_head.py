@@ -275,8 +275,13 @@ class ExactHeadTests(unittest.TestCase):
             "\n  exact-head-gate:\n", 1
         )[0]
         self.assertIn("if: needs.classify.outputs.ruby == 'true'", ruby)
+        self.assertIn("uses: ruby/setup-ruby@v1", ruby)
+        self.assertIn("uses: dtolnay/rust-toolchain@stable", ruby)
+        self.assertIn("./dev install flatbuffers", ruby)
         self.assertIn("ruby --version", ruby)
         self.assertIn("./dev test ruby", ruby)
+        classify = workflow.split("\n  classify:\n", 1)[1].split("\n  rust:\n", 1)[0]
+        self.assertNotIn("uses: ruby/setup-ruby@v1", classify)
         no_client_guard = ruby.index("if [[ ! -d clients/ruby ]]")
         runtime_probe = ruby.index("ruby --version")
         self.assertLess(
@@ -1313,6 +1318,72 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("dev test php", log.read_text(encoding="utf-8"))
 
 
+    def test_ruby_client_changes_select_and_execute_ruby_tests(self) -> None:
+        with tempfile.NamedTemporaryFile() as output_file:
+            result = run(
+                "classify",
+                "--github-output",
+                output_file.name,
+                input_bytes=b"clients/ruby/lib/searchkernel.rb\0",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout.decode())
+            lines = set(Path(output_file.name).read_text(encoding="utf-8").splitlines())
+            self.assertIn("ruby=true", lines)
+
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name)
+        git(repo, "init", "-q")
+        git(repo, "config", "user.name", "CI Test")
+        git(repo, "config", "user.email", "ci@example.invalid")
+        (repo / ".githooks").mkdir(parents=True)
+        (repo / ".github" / "ci").mkdir(parents=True)
+        (repo / "reference" / "vespa").mkdir(parents=True)
+        (repo / "tools").mkdir(parents=True)
+        (repo / "fakebin").mkdir(parents=True)
+        (repo / ".githooks" / "pre-commit").write_bytes(HOOK.read_bytes())
+        write_verification_policy(repo)
+
+        log = repo / "hook.log"
+        cargo = repo / "fakebin" / "cargo"
+        cargo.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'cargo %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        cargo.chmod(0o755)
+        dev = repo / "dev"
+        dev.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'dev %s\\n' \"$*\" >> \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        dev.chmod(0o755)
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "fixture")
+
+        staged = repo / "clients" / "ruby" / "lib" / "searchkernel.rb"
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text("# frozen_string_literal: true\n", encoding="utf-8")
+        git(repo, "add", "clients/ruby/lib/searchkernel.rb")
+
+        env = os.environ.copy()
+        env["HOOK_LOG"] = str(log)
+        env["PATH"] = f"{repo / 'fakebin'}:{env['PATH']}"
+        env["SEARCHKERNEL_PRECOMMIT_SELFTEST"] = "1"
+        result = subprocess.run(
+            ["bash", str(repo / ".githooks" / "pre-commit")],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("dev test ruby", log.read_text(encoding="utf-8"))
+
+
     def test_precommit_source_is_valid_and_each_major_gate_occurs_once(self) -> None:
         root = SCRIPT.parents[2]
         for shell_source in (
@@ -1346,6 +1417,7 @@ class ExactHeadTests(unittest.TestCase):
             './dev test python',
             './dev test typescript',
             './dev test php',
+            './dev test ruby',
             './reference/vespa/verify-through.sh i',
             'bash tools/run-python-native-e2e.sh',
         ):
