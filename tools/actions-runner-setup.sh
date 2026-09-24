@@ -36,6 +36,7 @@ CONTAINER_NAME="${SEARCHKERNEL_NATIVE_CONTAINER:-searchkernel-native}"
 
 BUILD_ENV="${SEARCHKERNEL_BUILD_ENV:-ci}"
 TARGET="${SEARCHKERNEL_NATIVE_TARGET:-x86_64-unknown-linux-gnu}"
+CONTAINER_CARGO_TARGET_DIR="${SEARCHKERNEL_NATIVE_CARGO_TARGET_DIR:-/work/target/actions-runner-alma}"
 
 CARGO_VOLUME="${SEARCHKERNEL_CARGO_VOLUME:-searchkernel-cargo}"
 RUSTUP_VOLUME="${SEARCHKERNEL_RUSTUP_VOLUME:-searchkernel-rustup}"
@@ -239,7 +240,7 @@ else
         -v "$RUSTUP_VOLUME:/root/.rustup" \
         -v "$NATIVE_CACHE_VOLUME:/root/.cache/searchkernel" \
         -e "SEARCHKERNEL_BUILD_ENV=$BUILD_ENV" \
-        -e "CARGO_TARGET_DIR=/work/target/ci" \
+        -e "CARGO_TARGET_DIR=$CONTAINER_CARGO_TARGET_DIR" \
         -e "PATH=/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
         -e "LD_LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib" \
         -w /work \
@@ -259,7 +260,7 @@ section "Preparing container and building searchkerneld"
 docker exec \
     -e "SK_NATIVE_ARCHIVE_NAME=$ARCHIVE_NAME" \
     -e "SEARCHKERNEL_BUILD_ENV=$BUILD_ENV" \
-    -e "CARGO_TARGET_DIR=/work/target/ci" \
+    -e "CARGO_TARGET_DIR=$CONTAINER_CARGO_TARGET_DIR" \
     "$CONTAINER_NAME" \
     /bin/bash -lc '
 set -euo pipefail
@@ -283,7 +284,7 @@ export PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbi
 export LD_LIBRARY_PATH="/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 export SEARCHKERNEL_BUILD_ENV="${SEARCHKERNEL_BUILD_ENV:-ci}"
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/work/target/ci}"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/work/target/actions-runner-alma}"
 
 unset VESPA_ROOT || true
 unset SK_NATIVE_SDK || true
@@ -671,7 +672,16 @@ echo
 section "Done"
 
 echo "searchkerneld:"
-echo "  $REPO_ROOT/target/ci/debug/searchkerneld"
+case "$CONTAINER_CARGO_TARGET_DIR" in
+    /work/*)
+        HOST_BINARY="$REPO_ROOT/${CONTAINER_CARGO_TARGET_DIR#/work/}/debug/searchkerneld"
+        ;;
+    *)
+        HOST_BINARY="$CONTAINER_CARGO_TARGET_DIR/debug/searchkerneld"
+        ;;
+esac
+
+echo "  $HOST_BINARY"
 
 echo
 echo "Persistent container:"

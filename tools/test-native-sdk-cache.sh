@@ -23,6 +23,12 @@ grep -Fq 'ARTIFACT="/native-artifacts/${SK_NATIVE_ARCHIVE_NAME}"' \
     "$source_root/tools/actions-runner-setup.sh"
 grep -Fq 'export SK_NATIVE_BASE_ARTIFACT_URL="file://${ARTIFACT}"' \
     "$source_root/tools/actions-runner-setup.sh"
+grep -Fq 'CONTAINER_CARGO_TARGET_DIR="${SEARCHKERNEL_NATIVE_CARGO_TARGET_DIR:-/work/target/actions-runner-alma}"' \
+    "$source_root/tools/actions-runner-setup.sh"
+if grep -Fq '/work/target/ci' "$source_root/tools/actions-runner-setup.sh"; then
+    echo 'Actions runner container must not share target/ci with host CI' >&2
+    exit 1
+fi
 bash "$source_root/tools/test-native-base-artifact.sh"
 
 # The resolver executes the SDK builder directly. Git mode is therefore part of
