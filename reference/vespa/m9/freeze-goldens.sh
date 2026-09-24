@@ -32,7 +32,7 @@ run_oracle() {
 }
 mkdir -p "$M9/expected"
 for s in "$M9"/scenarios/[0-9][0-9]-*.json; do
- id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
+ id="$(python3 "$ROOT/tools/json-cli.py" get "$s" id)"
  echo "M9 freezing $id" >&2
  CURRENT_TMP="$(mktemp)"
  run_oracle "$M9/oracle/run-cpp-oracle.sh" "$s" > "$CURRENT_TMP"
