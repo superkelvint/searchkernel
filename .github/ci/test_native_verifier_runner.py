@@ -49,6 +49,17 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(needle, source)
 
+    def test_supports_client_e2e_bundle_inside_alma(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "client-e2e)",
+            "python3 tools/check-python-dependencies.py",
+            "cargo build -p searchkerneld --features native",
+            'SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"',
+            "python3 tools/check-client-contracts.py --run-e2e",
+        ):
+            self.assertIn(needle, source)
+
     def test_supports_422_closure_bundle(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
@@ -61,8 +72,8 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             'rm -rf "$SK_NATIVE_CACHE_DIR" "$CARGO_TARGET_DIR"',
             'artifact_mount_rw=$(docker inspect',
             "Resolve trusted native-base release",
-            'target=$(docker exec "$NATIVE_CONTAINER"',
             'gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100"',
+            'target=$(docker exec "$NATIVE_CONTAINER"',
             'EXPECTED_NATIVE_ARCHIVE_NAME: ${{ steps.native_base.outputs.archive }}',
             'artifact="/native-artifacts/$EXPECTED_NATIVE_ARCHIVE_NAME"',
             'native base digest does not match trusted release identity',
