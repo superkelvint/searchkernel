@@ -23,11 +23,7 @@ done
 gh api "repos/$REPO" >/dev/null 2>&1 ||
     die "gh authentication cannot access $REPO"
 
-PINNED_VESPA_COMMIT="$(python3 - <<'PY'
-import json
-with open("core/native/vespa/manifest.json", encoding="utf-8") as stream:
-    print(json.load(stream)["vespa_commit"])
-PY
+PINNED_VESPA_COMMIT="$(python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fetch-native-base-python-1.py"
 )"
 TARGET=${SK_NATIVE_TARGET:-}
 if [[ -z "$TARGET" ]] && command -v rustc >/dev/null 2>&1; then
