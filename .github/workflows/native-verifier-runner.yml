@@ -245,16 +245,23 @@ jobs:
               return 0
             fi
 
-            local response current
+            local response current state
             response=$(curl --fail --silent --show-error \
               -H "Authorization: Bearer $HEAD_CHECK_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
-            current=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("head", {}).get("sha", ""))' <<<"$response")
-            if [[ -z "$current" ]]; then
-              echo "::error::could not resolve current head for PR #$PR_NUMBER before $phase"
+            read -r current state < <(
+              python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("head", {}).get("sha", ""), data.get("state", ""))' <<<"$response"
+            )
+            if [[ -z "$current" || -z "$state" ]]; then
+              echo "::error::could not resolve current head/state for PR #$PR_NUMBER before $phase"
               exit 1
+            fi
+
+            if [[ "$state" != "open" ]]; then
+              echo "::notice title=Superseded native verification::PR #$PR_NUMBER is $state; stopping obsolete native verification for $EXPECTED_HEAD before $phase."
+              exit 0
             fi
 
             if [[ "${current,,}" != "${EXPECTED_HEAD,,}" ]]; then
