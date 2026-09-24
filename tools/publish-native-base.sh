@@ -260,6 +260,23 @@ PY
         VESPA_EXTRA_LIB_DIR="$base/lib" \
         bash core/native/vespa/build-sdk.sh
     [[ -s "$verify_root/sdk/lib/libsearchkernel_vespa.so" ]] || die "$label: adapter build produced no library"
+
+    if [[ "$label" == staged ]]; then
+        local runtime_search_args=()
+        local runtime_dir
+        for runtime_dir in "$REAL_DEPS/lib64" "$REAL_DEPS/lib"; do
+            if [[ -d "$runtime_dir" ]]; then
+                runtime_search_args+=(--search-dir "$runtime_dir")
+            fi
+        done
+        python3 "$ROOT/tools/bundle-native-runtime-closure.py" \
+            "$base/lib" \
+            --extra-elf "$verify_root/sdk/lib/libsearchkernel_vespa.so.2" \
+            "${runtime_search_args[@]}"
+    fi
+    python3 "$ROOT/tools/check-native-runtime-closure.py" \
+        "$base/lib" "$verify_root/sdk/lib/libsearchkernel_vespa.so.2"
+
     local output
     output="$(env -u LD_PRELOAD LD_LIBRARY_PATH="$base/lib" ldd "$verify_root/sdk/lib/libsearchkernel_vespa.so")"
     printf '%s\n' "$output"
