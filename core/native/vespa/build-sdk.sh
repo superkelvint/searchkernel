@@ -337,7 +337,7 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
     fi
     cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
     cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
-    python3 "core/native/vespa/build-sdk-python-1.py" "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER"
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/build-sdk-python-1.py" "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER"
 
     SDK_BACKUP="${SDK_PACKAGE}.old.$"
     if [ -e "$SDK_BACKUP" ]; then
@@ -374,10 +374,10 @@ if [ "$BASE_ONLY" != 1 ]; then
         --target "$NATIVE_TARGET" \
         --scope full \
         --output "$SDK/native-build-fingerprint-v2.txt"
-    python3 "core/native/vespa/build-sdk-python-2.py" "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER"
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/build-sdk-python-2.py" "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER"
     cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 else
-    python3 "core/native/vespa/build-sdk-python-3.py" "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
+    python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/build-sdk-python-3.py" "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
 fi
 
 # Bundle the exact Vespa and third-party shared libraries used by the pinned
