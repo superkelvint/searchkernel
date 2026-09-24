@@ -10,10 +10,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
   raw="$(mktemp)"
   if ! "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$s" > "$raw"; then echo "M7 Java oracle failed: $id" >&2; rm -f "$raw"; exit 1; fi
-  python3 - "$raw" > "$SCRIPT_DIR/expected/$id.json" <<'PY_EXPECTED'
-import json,sys
-print(json.dumps(json.load(open(sys.argv[1])),sort_keys=True,separators=(',',':')))
-PY_EXPECTED
+  python3 "reference/vespa/m7/freeze-goldens-python-1.py" "$raw" > "$SCRIPT_DIR/expected/$id.json"
   rm -f "$raw"
 done
 "$SCRIPT_DIR/validate_expected.py"
