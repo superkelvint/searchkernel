@@ -18,5 +18,7 @@ if [[ ! -x "$host_binary" ]]; then
   exit 1
 fi
 
+npm ci --prefix clients/typescript
+
 SEARCHKERNEL_LOCAL_HOST="$host_binary" \
   npm run example:e2e --prefix clients/typescript
