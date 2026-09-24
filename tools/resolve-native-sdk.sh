@@ -364,7 +364,8 @@ resolve_vespa_root() {
         return
     fi
 
-    if configured_marker "$ROOT/upstream/vespa"; then
+    if configured_marker "$ROOT/upstream/vespa" &&
+       verify_pinned_vespa_checkout "$ROOT/upstream/vespa" >/dev/null 2>&1; then
         printf '%s\n' "$ROOT/upstream/vespa"
         return
     fi
