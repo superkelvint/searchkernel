@@ -126,10 +126,19 @@ fn ruby_emitted_standard_json_matches_canonical_bfbs() {
                             .unwrap_or_else(|| panic!("missing {key}"))["value"]
                     };
                     assert_eq!(value("min")["kind_type"], "Int64Value");
-                    assert_eq!(value("min")["kind"]["value"].as_str(), Some("-9223372036854775808"));
-                    assert_eq!(value("max")["kind"]["value"].as_str(), Some("9223372036854775807"));
+                    assert_eq!(
+                        value("min")["kind"]["value"].as_str(),
+                        Some("-9223372036854775808")
+                    );
+                    assert_eq!(
+                        value("max")["kind"]["value"].as_str(),
+                        Some("9223372036854775807")
+                    );
                     assert_eq!(value("unsigned")["kind_type"], "UInt64Value");
-                    assert_eq!(value("unsigned")["kind"]["value"].as_str(), Some("18446744073709551615"));
+                    assert_eq!(
+                        value("unsigned")["kind"]["value"].as_str(),
+                        Some("18446744073709551615")
+                    );
                     for (key, kind) in [
                         ("dense", "DenseTensorValues"),
                         ("sparse", "SparseTensorCells"),
