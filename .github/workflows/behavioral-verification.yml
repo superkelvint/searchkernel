@@ -25,6 +25,7 @@ jobs:
       ruby: ${{ steps.behavioral.outputs.ruby }}
       tooling: ${{ steps.fixed.outputs.tooling }}
       native: ${{ steps.native.outputs.required }}
+      coverage: ${{ steps.coverage.outputs.required }}
     steps:
       - name: Check out exact revision
         uses: actions/checkout@v4
@@ -50,6 +51,7 @@ jobs:
             NativeVerifierRunnerWorkflowTests.test_pr_callers_grant_live_head_lookup_permission \
             NativeVerifierRunnerWorkflowTests.test_native_searchkerneld_build_resolves_exact_adapter_runtime_lib
           $CI_PYTHON .github/ci/test_resolve_native_adapter_lib.py
+          $CI_PYTHON .github/ci/test_coverage_verifier_required.py
 
       - name: Reject stale verification checkout
         env:
@@ -180,6 +182,43 @@ jobs:
 
           "$CI_PYTHON" "$selector" --github-output "$GITHUB_OUTPUT" < "$RUNNER_TEMP/searchkernel-changed-paths.txt"
 
+      - name: Select coverage verifier lane
+        id: coverage
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGES_RESOLVED: ${{ steps.changes.outputs.resolved }}
+          POLICY_SHA: ${{ steps.changes.outputs.policy_sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$CHANGES_RESOLVED" != "true" ]]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "Coverage verifier required: true (changed paths unresolved)"
+            exit 0
+          fi
+
+          selector="$RUNNER_TEMP/coverage_verifier_required.py"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ -z "${POLICY_SHA:-}" ]] || ! git cat-file -e "$POLICY_SHA:.github/ci/coverage_verifier_required.py" 2>/dev/null; then
+              echo "required=true" >> "$GITHUB_OUTPUT"
+              echo "Coverage verifier required: true (trusted target branch lacks selector)"
+              exit 0
+            fi
+            git show "$POLICY_SHA:.github/ci/coverage_verifier_required.py" > "$selector"
+            echo "Coverage verifier policy loaded from trusted target at $POLICY_SHA."
+          else
+            cp .github/ci/coverage_verifier_required.py "$selector"
+          fi
+
+          required=$("$CI_PYTHON" "$selector" < "$RUNNER_TEMP/searchkernel-changed-paths.txt")
+          if [[ "$required" != "true" && "$required" != "false" ]]; then
+            echo "::error::coverage verifier selector returned invalid value '$required'"
+            exit 1
+          fi
+
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+          echo "Coverage verifier required: $required"
+
       - name: Select native verifier lane
         id: native
         env:
@@ -278,9 +317,19 @@ jobs:
       target: native-full
     secrets: inherit
 
+  coverage:
+    name: Rust coverage invariant
+    needs: classify
+    if: needs.classify.outputs.coverage == 'true'
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
+      target: nightly-coverage
+    secrets: inherit
+
   exact-head-gate:
     name: Invariant gate
-    needs: [classify, rust, python, typescript, ruby, tooling, native]
+    needs: [classify, rust, python, typescript, ruby, tooling, native, coverage]
     # Aggregate dependency failures, but do not strand a superseded workflow
     # after GitHub cancels it in favor of a newer PR head.
     if: ${{ always() && !cancelled() }}
@@ -302,6 +351,8 @@ jobs:
           TOOLING_RESULT: ${{ needs.tooling.result }}
           NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}
           NATIVE_RESULT: ${{ needs.native.result }}
+          COVERAGE_REQUIRED: ${{ needs.classify.outputs.coverage }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
         run: |
           set -euo pipefail
 
@@ -326,5 +377,6 @@ jobs:
           require_lane Ruby "$RUBY_REQUIRED" "$RUBY_RESULT"
           require_lane Tooling "$TOOLING_REQUIRED" "$TOOLING_RESULT"
           require_lane Native "$NATIVE_SENSITIVE" "$NATIVE_RESULT"
+          require_lane Coverage "$COVERAGE_REQUIRED" "$COVERAGE_RESULT"
 
           echo "All selected invariant verification for exact head $EXPECTED_HEAD passed."
