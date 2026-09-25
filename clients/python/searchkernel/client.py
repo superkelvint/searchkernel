@@ -390,17 +390,6 @@ class _ManagedLocalHost:
                 temporary.close()
         environment = os.environ.copy()
         sdk_lib = os.environ.get("SEARCHKERNEL_SDK_LIB")
-        if sdk_lib is None:
-            candidate = (
-                Path(__file__).resolve().parents[3]
-                / "core"
-                / "native"
-                / "sdk"
-                / "linux-x86_64"
-                / "lib"
-            )
-            if candidate.is_dir():
-                sdk_lib = str(candidate)
         if sdk_lib:
             previous = environment.get("LD_LIBRARY_PATH")
             environment["LD_LIBRARY_PATH"] = f"{sdk_lib}:{previous}" if previous else sdk_lib
