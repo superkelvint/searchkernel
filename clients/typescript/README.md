@@ -270,7 +270,7 @@ ranking, grouping, or query semantics.
 ## Managed local Node.js usage
 
 Browser code continues to use the main `@searchkernel/client` entrypoint and `Index.connect(...)`.
-Node.js can use `@searchkernel/client/node` to mirror the Python client lifecycle: `Index.create(...)` and `Index.open(...)` spawn and own a local `searchkerneld` over a private Unix-domain socket. Set `SEARCHKERNEL_LOCAL_HOST` to an explicit daemon binary when needed; the repository fallback is `target/host/debug/searchkerneld`.
+Node.js can use `@searchkernel/client/node` to mirror the Python client lifecycle: `Index.create(...)` and `Index.open(...)` spawn and own a local `searchkerneld` over a private Unix-domain socket. Installed npm packages do not bundle the daemon, so consumers must set `SEARCHKERNEL_LOCAL_HOST` to an existing `searchkerneld` binary. A real Search Kernel source checkout may use the development fallback `target/host/debug/searchkerneld`; installed packages never infer a daemon path from their surrounding `node_modules` layout.
 
 The complete managed-local showcase lives at `examples/try_searchkernel_client_api_e2e.ts`. After building `searchkerneld`, run it with:
 
