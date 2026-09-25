@@ -95,6 +95,8 @@ required_runner = (
     'artifact_volume="searchkernel-dev-artifacts-$(id -u)-$$-${RANDOM}"',
     "-e SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage",
     'tar -C /artifacts -cf - coverage | tar -C "$ROOT" -xf -',
+    'if [[ "$status" -eq 0 ]]; then',
+    'coverage failed; no canonical report was exported',
 )
 for fragment in required_runner:
     if fragment not in runner:
