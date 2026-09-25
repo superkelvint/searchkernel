@@ -88,22 +88,27 @@ def repository(ref):
     return ref
 
 wanted = repository(image)
-matches = []
-for item in digests:
-    if "@" not in item:
-        continue
-    candidate, digest = item.rsplit("@", 1)
-    if repository(candidate) == wanted:
-        matches.append((candidate, digest))
+matches = {
+    digest
+    for item in digests
+    if "@" in item
+    for candidate, digest in [item.rsplit("@", 1)]
+    if repository(candidate) == wanted
+}
 
 if len(matches) != 1:
     raise SystemExit(
-        f"expected exactly one repository digest for {image!r}; "
-        f"found {len(matches)} matching entries in {digests!r}"
+        f"expected exactly one content digest for repository {wanted!r}; "
+        f"found {sorted(matches)!r} in {digests!r}"
     )
 
-candidate, digest = matches[0]
-print(f"{candidate}@{digest}")
+digest = next(iter(matches))
+requested = image.split("@", 1)[0]
+slash = requested.rfind("/")
+colon = requested.rfind(":")
+if colon > slash:
+    requested = requested[:colon]
+print(f"{requested}@{digest}")
 PY
 }
 
