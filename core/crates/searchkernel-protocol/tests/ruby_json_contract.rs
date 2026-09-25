@@ -115,6 +115,31 @@ fn ruby_emitted_standard_json_matches_canonical_bfbs() {
                 request_json_to_flatbuffer(&printed).unwrap_or_else(|error| {
                     panic!("{name}: BFBS-printed request is not readable: {error}")
                 });
+                if name == "portable-values-request" {
+                    let entries = round_trip["payload"]["document"]["fields"]
+                        .as_array()
+                        .expect("BFBS printed ValueEntry vector");
+                    let value = |key: &str| {
+                        &entries
+                            .iter()
+                            .find(|entry| entry["key"] == key)
+                            .unwrap_or_else(|| panic!("missing {key}"))["value"]
+                    };
+                    assert_eq!(value("min")["kind_type"], "Int64Value");
+                    assert_eq!(value("min")["kind"]["value"].as_i64(), Some(i64::MIN));
+                    assert_eq!(value("max")["kind"]["value"].as_i64(), Some(i64::MAX));
+                    assert_eq!(value("unsigned")["kind_type"], "UInt64Value");
+                    assert_eq!(value("unsigned")["kind"]["value"].as_u64(), Some(u64::MAX));
+                    for (key, kind) in [
+                        ("dense", "DenseTensorValues"),
+                        ("sparse", "SparseTensorCells"),
+                        ("mixed", "MixedTensorBlocks"),
+                    ] {
+                        assert_eq!(value(key)["kind"]["payload_type"], kind);
+                    }
+                    assert_eq!(value("bytes")["kind"]["value"], serde_json::json!([0, 255]));
+                    assert_eq!(value("nested")["kind_type"], "ValueList");
+                }
             }
             "response" => {
                 response_json_to_flatbuffer(&printed).unwrap_or_else(|error| {
@@ -127,7 +152,40 @@ fn ruby_emitted_standard_json_matches_canonical_bfbs() {
     }
 
     assert_eq!(
-        count, 21,
-        "expected all ten request/response operation discriminators plus canonical Error"
+        count, 24,
+        "expected operation discriminators, Error, values and recursive result"
     );
+}
+
+#[test]
+#[ignore = "requires the Ruby runtime; run explicitly from client verification"]
+fn ruby_rejects_adversarial_values_after_bfbs_printing() {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()
+        .expect("repository root");
+    let cases: &[(&str, &[u8])] = &[
+        (
+            "duplicate nested object key",
+            br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind_type":"ValueObject","kind":{"fields":[{"key":"x","value":{"kind_type":"Int64Value","kind":{"value":1}}},{"key":"x","value":{"kind_type":"Int64Value","kind":{"value":2}}}]}}}]}}}"#,
+        ),
+        (
+            "missing Value discriminator",
+            br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind":{"value":1}}}]}}}"#,
+        ),
+        (
+            "missing Value payload",
+            br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind_type":"Int64Value"}}]}}}"#,
+        ),
+    ];
+
+    for (name, input) in cases {
+        // The BFBS parser may reject malformed unions itself. If it accepts
+        // one structurally, the Ruby consumer must reject the printed form.
+        if let Ok(buffer) = response_json_to_flatbuffer(input) {
+            let printed = response_flatbuffer_to_json(&buffer)
+                .unwrap_or_else(|error| panic!("{name}: BFBS print failed: {error}"));
+            assert_ruby_consumes_printed_response(&repo_root, "rejected-value-response", &printed);
+        }
+    }
 }

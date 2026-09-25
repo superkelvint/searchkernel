@@ -11,71 +11,71 @@ Legend: ergonomic = handwritten facade coverage; conformance = shared semantic
 fixture coverage; E2E = real product/backend execution. For multi-scenario
 capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
-| Capability | Area | Core / backend | Rust | Python | TypeScript | PHP |
-| --- | --- | --- | --- | --- | --- | --- |
-| Term and fielded contains queries (query.term) | query | — | — | — | — | ergonomic · conformance · E2E (http) |
-| True and false query constants (query.boolean_constants) | query | — | — | — | — | conformance (http) |
-| Comparison queries (query.comparison) | query | — | — | — | — | conformance (http) |
-| Range queries (query.range) | query | — | — | — | — | conformance (http) |
-| Boolean query operators (query.boolean) | query | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Phrase queries (query.phrase) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) |
-| Near and ordered-near proximity queries (query.proximity) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) |
-| sameElement query (query.same_element) | query | — | — | ergonomic (grpc) | — | conformance (http) |
-| Fuzzy query (query.fuzzy) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) |
-| Prefix, suffix, and substring queries (query.prefix_suffix_substring) | query | — | — | — | — | — |
-| Alternatives queries (query.alternatives) | query | — | — | — | — | — |
-| Nearest-neighbor vector search (query.nearest_neighbor) | query | — | — | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) |
-| Geo-location and bounding-box queries (query.geo) | query | — | — | ergonomic (grpc) | — | conformance (http) |
-| Predicate queries (query.predicate) | query | — | — | — | — | conformance (http) |
-| WeakAnd and WAND queries (query.weighted_and_wand) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) |
-| Weighted-set and dot-product queries (query.weighted_set_dot_product) | query | — | — | — | — | conformance (http) |
-| Equivalence queries (query.equivalence) | query | — | — | — | — | conformance (http) |
-| Rank query composition (query.rank) | query | — | — | — | — | conformance (http) |
-| userInput and userQuery text parsing (query.user_input_user_query) | query | — | — | — | — | conformance (http) |
-| Structured filters (filter.structured) | filter | — | — | — | — | — |
-| Textual filter expressions (filter.textual) | filter | — | — | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) |
-| Field sorting (search.sorting) | search | — | ergonomic (native) | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) |
-| First/last missing-value sort placement (search.sort_missing_placement) | search | — | — | — | — | — |
-| Limit and offset pagination (search.pagination) | search | — | ergonomic (native) | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) |
-| Text search-field selection (search.search_fields) | search | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Document-summary field projection (result.docsum_field_projection) | result | — | ergonomic (native) | ergonomic (grpc) | ergonomic · E2E (node, shared) | ergonomic · E2E (http) |
-| Named summary-class selection (result.named_summary_class) | result | — | — | — | — | ergonomic · E2E (http) |
-| Rich document-summary values (scalar subset) (result.rich_docsum_values) | result | — | — | — | — | — |
-| Summary-feature readback (result.summary_features) | result | — | — | — | — | — |
-| Highlighting (result.highlighting) | result | — | ergonomic (native) | ergonomic · conformance (grpc, shared) | conformance (shared) | ergonomic · conformance · E2E 1/3 (http) |
-| Dense tensor document readback (result.tensor_document_readback) | result | — | — | — | — | ergonomic · E2E (http) |
-| Typed tensor feature readback (result.tensor_feature_readback) | result | — | — | — | — | — |
-| Structured grouping and faceting (grouping.structured) | grouping | — | — | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) |
-| Executable grouping expression/function subset (grouping.functions) | grouping | — | — | — | — | conformance (http) |
-| Grouping aggregations (grouping.aggregations) | grouping | — | — | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) |
-| Summary aggregation (grouping.summary_aggregation) | grouping | — | — | — | — | ergonomic · E2E (http) |
-| Grouping continuations (grouping.continuations) | grouping | — | — | — | — | conformance (http) |
-| Raw grouping source (grouping.raw_source) | grouping | — | — | — | — | conformance (http) |
-| Document insert, upsert, patch, delete, and get (update.document_crud) | update | — | ergonomic (native) | ergonomic (managed-local) | ergonomic · E2E (node) | ergonomic · conformance · E2E (http) |
-| Arithmetic document updates (update.arithmetic) | update | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Create-if-nonexistent document updates (update.create_if_nonexistent) | update | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Conditional document mutations (update.conditional) | update | — | — | — | — | — |
-| Collection add/remove updates (update.collection_add_remove) | update | — | — | — | — | — |
-| Matched-element updates (update.matched_element) | update | — | — | — | — | conformance (http) |
-| Tensor modify updates (update.tensor_modify) | update | — | — | — | — | conformance (http) |
-| Dense tensor document values (tensor.dense_document_crud) | tensor | — | — | — | — | ergonomic · E2E (http) |
-| YQL query source (query.yql) | query | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Analyzed text search with default WeakAnd semantics (query.text_weak_and) | query | — | — | — | — | ergonomic · E2E (http) |
-| Typed analyzed-text query nodes (query.typed_text) | query | — | — | — | — | conformance (http) |
-| Native in-term queries (query.in_term) | query | — | — | — | — | conformance (http) |
-| NonEmpty query wrapper (query.non_empty) | query | — | — | — | — | conformance (http) |
-| Labeled query rank properties (query.labels) | query | — | — | — | — | conformance (http) |
-| Document-summary schema definitions (schema.document_summaries) | schema | — | — | — | — | — |
-| Array-of-struct document fields (schema.array_struct_fields) | schema | — | — | — | — | — |
-| Position fields and derived geo attributes (schema.position_geo_fields) | schema | — | — | — | — | — |
-| Rank-profile selection (ranking.profile_selection) | ranking | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Numeric scalar query inputs (ranking.numeric_query_inputs) | ranking | — | — | — | — | ergonomic · E2E (http) |
-| Dense tensor query inputs (ranking.tensor_query_inputs) | ranking | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Rank properties (ranking.rank_properties) | ranking | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Match-feature readback (result.match_features) | result | — | — | — | — | ergonomic · E2E (http) |
-| Recursive grouping result trees (result.grouping_tree) | result | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Coverage and degradation metadata (result.degradation_metadata) | result | — | — | — | — | ergonomic · conformance · E2E (http) |
-| Embedded single-node Vespa scope (platform.embedded_vespa_scope) | platform | — | — | — | — | — |
+| Capability | Area | Core / backend | Rust | Python | TypeScript | PHP | Ruby |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Term and fielded contains queries (query.term) | query | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| True and false query constants (query.boolean_constants) | query | — | — | — | — | conformance (http) | — |
+| Comparison queries (query.comparison) | query | — | — | — | — | conformance (http) | — |
+| Range queries (query.range) | query | — | — | — | — | conformance (http) | — |
+| Boolean query operators (query.boolean) | query | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Phrase queries (query.phrase) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | — |
+| Near and ordered-near proximity queries (query.proximity) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | — |
+| sameElement query (query.same_element) | query | — | — | ergonomic (grpc) | — | conformance (http) | — |
+| Fuzzy query (query.fuzzy) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | — |
+| Prefix, suffix, and substring queries (query.prefix_suffix_substring) | query | — | — | — | — | — | — |
+| Alternatives queries (query.alternatives) | query | — | — | — | — | — | — |
+| Nearest-neighbor vector search (query.nearest_neighbor) | query | — | — | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) | — |
+| Geo-location and bounding-box queries (query.geo) | query | — | — | ergonomic (grpc) | — | conformance (http) | — |
+| Predicate queries (query.predicate) | query | — | — | — | — | conformance (http) | — |
+| WeakAnd and WAND queries (query.weighted_and_wand) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | — |
+| Weighted-set and dot-product queries (query.weighted_set_dot_product) | query | — | — | — | — | conformance (http) | — |
+| Equivalence queries (query.equivalence) | query | — | — | — | — | conformance (http) | — |
+| Rank query composition (query.rank) | query | — | — | — | — | conformance (http) | — |
+| userInput and userQuery text parsing (query.user_input_user_query) | query | — | — | — | — | conformance (http) | — |
+| Structured filters (filter.structured) | filter | — | — | — | — | — | — |
+| Textual filter expressions (filter.textual) | filter | — | — | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) | — |
+| Field sorting (search.sorting) | search | — | ergonomic (native) | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) | — |
+| First/last missing-value sort placement (search.sort_missing_placement) | search | — | — | — | — | — | — |
+| Limit and offset pagination (search.pagination) | search | — | ergonomic (native) | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) | — |
+| Text search-field selection (search.search_fields) | search | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Document-summary field projection (result.docsum_field_projection) | result | — | ergonomic (native) | ergonomic (grpc) | ergonomic · E2E (node, shared) | ergonomic · E2E (http) | — |
+| Named summary-class selection (result.named_summary_class) | result | — | — | — | — | ergonomic · E2E (http) | — |
+| Rich document-summary values (scalar subset) (result.rich_docsum_values) | result | — | — | — | — | — | — |
+| Summary-feature readback (result.summary_features) | result | — | — | — | — | — | — |
+| Highlighting (result.highlighting) | result | — | ergonomic (native) | ergonomic · conformance (grpc, shared) | conformance (shared) | ergonomic · conformance · E2E 1/3 (http) | — |
+| Dense tensor document readback (result.tensor_document_readback) | result | — | — | — | — | ergonomic · E2E (http) | — |
+| Typed tensor feature readback (result.tensor_feature_readback) | result | — | — | — | — | — | — |
+| Structured grouping and faceting (grouping.structured) | grouping | — | — | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) | — |
+| Executable grouping expression/function subset (grouping.functions) | grouping | — | — | — | — | conformance (http) | — |
+| Grouping aggregations (grouping.aggregations) | grouping | — | — | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) | — |
+| Summary aggregation (grouping.summary_aggregation) | grouping | — | — | — | — | ergonomic · E2E (http) | — |
+| Grouping continuations (grouping.continuations) | grouping | — | — | — | — | conformance (http) | — |
+| Raw grouping source (grouping.raw_source) | grouping | — | — | — | — | conformance (http) | — |
+| Document insert, upsert, patch, delete, and get (update.document_crud) | update | — | ergonomic (native) | ergonomic (managed-local) | ergonomic · E2E (node) | ergonomic · conformance · E2E (http) | — |
+| Arithmetic document updates (update.arithmetic) | update | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Create-if-nonexistent document updates (update.create_if_nonexistent) | update | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Conditional document mutations (update.conditional) | update | — | — | — | — | — | — |
+| Collection add/remove updates (update.collection_add_remove) | update | — | — | — | — | — | — |
+| Matched-element updates (update.matched_element) | update | — | — | — | — | conformance (http) | — |
+| Tensor modify updates (update.tensor_modify) | update | — | — | — | — | conformance (http) | — |
+| Dense tensor document values (tensor.dense_document_crud) | tensor | — | — | — | — | ergonomic · E2E (http) | — |
+| YQL query source (query.yql) | query | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Analyzed text search with default WeakAnd semantics (query.text_weak_and) | query | — | — | — | — | ergonomic · E2E (http) | — |
+| Typed analyzed-text query nodes (query.typed_text) | query | — | — | — | — | conformance (http) | — |
+| Native in-term queries (query.in_term) | query | — | — | — | — | conformance (http) | — |
+| NonEmpty query wrapper (query.non_empty) | query | — | — | — | — | conformance (http) | — |
+| Labeled query rank properties (query.labels) | query | — | — | — | — | conformance (http) | — |
+| Document-summary schema definitions (schema.document_summaries) | schema | — | — | — | — | — | — |
+| Array-of-struct document fields (schema.array_struct_fields) | schema | — | — | — | — | — | — |
+| Position fields and derived geo attributes (schema.position_geo_fields) | schema | — | — | — | — | — | — |
+| Rank-profile selection (ranking.profile_selection) | ranking | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Numeric scalar query inputs (ranking.numeric_query_inputs) | ranking | — | — | — | — | ergonomic · E2E (http) | — |
+| Dense tensor query inputs (ranking.tensor_query_inputs) | ranking | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Rank properties (ranking.rank_properties) | ranking | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Match-feature readback (result.match_features) | result | — | — | — | — | ergonomic · E2E (http) | — |
+| Recursive grouping result trees (result.grouping_tree) | result | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Coverage and degradation metadata (result.degradation_metadata) | result | — | — | — | — | ergonomic · conformance · E2E (http) | — |
+| Embedded single-node Vespa scope (platform.embedded_vespa_scope) | platform | — | — | — | — | — | — |
 
 ## Scenario evidence
 

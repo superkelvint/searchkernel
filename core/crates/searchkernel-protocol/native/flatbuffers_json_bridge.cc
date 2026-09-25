@@ -47,6 +47,20 @@ bool deserialize_schema(const uint8_t* bfbs, size_t bfbs_len,
   return true;
 }
 
+bool parse_schema_text(const uint8_t* schema, size_t schema_len,
+                       flatbuffers::Parser* parser, std::string* error) {
+  if (schema_len != 0 && std::memchr(schema, '\0', schema_len) != nullptr) {
+    *error = "schema input contains NUL byte";
+    return false;
+  }
+  std::string text(reinterpret_cast<const char*>(schema), schema_len);
+  if (!parser->Parse(text.c_str())) {
+    *error = parser->error_.empty() ? "could not parse FlatBuffers schema" : parser->error_;
+    return false;
+  }
+  return true;
+}
+
 bool verify_buffer(const uint8_t* bfbs, size_t bfbs_len, const uint8_t* buffer,
                    size_t buffer_len, std::string* error) {
   flatbuffers::Verifier schema_verifier(bfbs, bfbs_len);
@@ -130,6 +144,34 @@ int flatbuffer_to_json(const uint8_t* bfbs, size_t bfbs_len,
   return 0;
 }
 
+int schema_json_to_flatbuffer(const uint8_t* schema, size_t schema_len,
+                              const uint8_t* json, size_t json_len,
+                              uint8_t** out_ptr, size_t* out_len,
+                              char** error_ptr, size_t* error_len) {
+  flatbuffers::Parser parser(json_options());
+  std::string error;
+  if (!parse_schema_text(schema, schema_len, &parser, &error)) {
+    return fail(1, error, error_ptr, error_len);
+  }
+  if (json_len != 0 && std::memchr(json, '\0', json_len) != nullptr) {
+    return fail(2, "JSON input contains NUL byte", error_ptr, error_len);
+  }
+  std::string text(reinterpret_cast<const char*>(json), json_len);
+  if (!parser.ParseJson(text.c_str())) {
+    return fail(2, parser.error_, error_ptr, error_len);
+  }
+
+  const auto size = parser.builder_.GetSize();
+  auto* memory = static_cast<uint8_t*>(std::malloc(size));
+  if (memory == nullptr) {
+    return fail(4, "could not allocate FlatBuffer output", error_ptr, error_len);
+  }
+  std::memcpy(memory, parser.builder_.GetBufferPointer(), size);
+  *out_ptr = memory;
+  *out_len = size;
+  return 0;
+}
+
 }  // namespace
 
 extern "C" int sk_fbjson_json_to_flatbuffer(
@@ -170,6 +212,29 @@ extern "C" int sk_fbjson_flatbuffer_to_json(
   try {
     return flatbuffer_to_json(bfbs, bfbs_len, buffer, buffer_len, out_ptr,
                               out_len, error_ptr, error_len);
+  } catch (const std::exception& exception) {
+    return fail(4, exception.what(), error_ptr, error_len);
+  } catch (...) {
+    return fail(4, "unknown native exception", error_ptr, error_len);
+  }
+}
+
+extern "C" int sk_fbjson_schema_json_to_flatbuffer(
+    const uint8_t* schema, size_t schema_len, const uint8_t* json,
+    size_t json_len, uint8_t** out_ptr, size_t* out_len, char** error_ptr,
+    size_t* error_len) {
+  if (out_ptr == nullptr || out_len == nullptr || error_ptr == nullptr ||
+      error_len == nullptr || (schema == nullptr && schema_len != 0) ||
+      (json == nullptr && json_len != 0)) {
+    return 4;
+  }
+  *out_ptr = nullptr;
+  *out_len = 0;
+  *error_ptr = nullptr;
+  *error_len = 0;
+  try {
+    return schema_json_to_flatbuffer(schema, schema_len, json, json_len,
+                                     out_ptr, out_len, error_ptr, error_len);
   } catch (const std::exception& exception) {
     return fail(4, exception.what(), error_ptr, error_len);
   } catch (...) {

@@ -39,6 +39,14 @@
       "runtimes": [
         "http"
       ]
+    },
+    {
+      "id": "ruby",
+      "title": "Ruby",
+      "runtimes": [
+        "http",
+        "managed-local"
+      ]
     }
   ],
   "capabilities": [

@@ -646,6 +646,77 @@ else
 fi
 
 ###############################################################################
+# Ruby
+###############################################################################
+
+say "Checking Ruby"
+
+RUBY_VERSION="3.3.6"
+RUBY_SHA256="8dc48fffaf270f86f1019053f28e51e4da4cce32a36760a0603a9aee67d7fd8d"
+RUBY_PREFIX="/opt/searchkernel/ruby/$RUBY_VERSION"
+
+ruby_ok() {
+    command -v ruby >/dev/null 2>&1 || return 1
+    command -v gem >/dev/null 2>&1 || return 1
+    ruby -rrubygems -e 'exit Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.1") ? 0 : 1'
+}
+
+cached_ruby_ok() {
+    [[ -x "$RUBY_PREFIX/bin/ruby" ]] || return 1
+    [[ -x "$RUBY_PREFIX/bin/gem" ]] || return 1
+    "$RUBY_PREFIX/bin/ruby" -rrubygems -e 'exit Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.1") ? 0 : 1'
+}
+
+if ! ruby_ok; then
+    if ! cached_ruby_ok; then
+        say "Installing pinned Ruby $RUBY_VERSION"
+
+        dnf install -y \
+            openssl-devel \
+            readline-devel \
+            zlib-devel \
+            libyaml-devel \
+            libffi-devel \
+            gdbm-devel \
+            ncurses-devel
+
+        WORK="$(mktemp -d)"
+        trap 'rm -rf "$WORK"' EXIT
+        ARCHIVE="$WORK/ruby-$RUBY_VERSION.tar.gz"
+        curl --fail --location --silent --show-error \
+            "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-$RUBY_VERSION.tar.gz" \
+            --output "$ARCHIVE"
+        printf '%s  %s\n' "$RUBY_SHA256" "$ARCHIVE" | sha256sum --check --status ||
+            die "Ruby source checksum mismatch"
+
+        mkdir -p "$WORK/source"
+        tar -xzf "$ARCHIVE" --strip-components=1 -C "$WORK/source"
+        (
+            cd "$WORK/source"
+            ./configure \
+                --prefix="$RUBY_PREFIX" \
+                --disable-install-doc \
+                --disable-yjit
+            make -j"$(nproc 2>/dev/null || printf '2')"
+            make install
+        )
+        rm -rf "$WORK"
+        trap - EXIT
+    fi
+
+    for command in ruby gem bundle bundler; do
+        if [[ -x "$RUBY_PREFIX/bin/$command" ]]; then
+            ln -sfn "$RUBY_PREFIX/bin/$command" "/usr/local/bin/$command"
+        fi
+    done
+fi
+
+ruby_ok || die "Ruby >= 3.1 is required for first-class Ruby client verification"
+echo "Ruby:"
+ruby --version
+gem --version
+
+###############################################################################
 # Doctor
 ###############################################################################
 

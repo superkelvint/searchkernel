@@ -116,6 +116,41 @@ end
 
 include TestSupport
 
+portable = SearchKernel::Value
+same(2**64 - 1, portable.decode(portable.encode(portable.uint64(2**64 - 1))), "uint64 boundary")
+same(-(2**63), portable.decode(portable.encode(-(2**63))), "int64 boundary")
+same("\x00\xff".b, portable.decode(portable.encode(portable.bytes("\x00\xff".b))), "bytes retain octets")
+same([{"key" => [nil, true, 3.0]}], portable.decode(portable.encode([{"key" => [nil, true, 3.0]}])), "nested values")
+%i[dense sparse mixed].each do |encoding|
+  payload = case encoding
+  when :dense then [1.0, 2.0]
+  when :sparse then [{"address" => [{"dimension" => "x", "label" => "0"}], "value" => 1.0}]
+  when :mixed then [{"address" => [{"dimension" => "p", "label" => "a"}], "values" => [1.0]}]
+  end
+  wire = portable.encode(portable.tensor("tensor<float>(x[2])", encoding, payload))
+  same(payload, portable.decode(wire).fetch("$searchkernel_tensor").fetch(encoding.to_s), "#{encoding} tensor")
+end
+raises(ArgumentError, "reject signed overflow") { portable.encode(2**63) }
+raises(ArgumentError, "reject unsigned overflow") { portable.uint64(2**64) }
+raises(ArgumentError, "reject non-finite request") { portable.encode(Float::INFINITY) }
+raises(ArgumentError, "reject non-finite tensor") { portable.encode(portable.tensor("tensor(x[1])", :dense, [Float::NAN])) }
+raises(ArgumentError, "reject overflowing tensor conversion") { portable.encode(portable.tensor("tensor(x[1])", :dense, [10**400])) }
+raises(SearchKernel::ProtocolError, "reject missing discriminator") { portable.decode({"kind" => {"value" => 1}}) }
+raises(SearchKernel::ProtocolError, "reject mismatched discriminator") do
+  portable.decode({"kind_type" => "ValueList", "kind" => {"value" => [1]}})
+end
+raises(SearchKernel::ProtocolError, "reject duplicate entries before Hash conversion") do
+  portable.entries([{"key" => "a", "value" => portable.encode(1)}, {"key" => "a", "value" => portable.encode(2)}])
+end
+raises(SearchKernel::ProtocolError, "reject malformed tensor address") do
+  wire = portable.encode(portable.tensor("tensor(x[1])", :sparse, []))
+  wire.fetch("kind").fetch("payload")["cells"] = [{"address" => [{}], "value" => 1.0}]
+  portable.decode(wire)
+end
+raises(SearchKernel::ProtocolError, "reject malformed result node") do
+  SearchKernel::Results::SearchResults.new({"root" => {"node_type" => "Hit", "node" => {"id" => "a"}}, "metadata" => [{"key" => "x"}]})
+end
+
 require "rubygems"
 gemspec = Gem::Specification.load(File.expand_path("../searchkernel.gemspec", __dir__))
 assert(!gemspec.nil?, "Ruby gemspec must load")
@@ -281,6 +316,11 @@ end
 recording = RecordingTransport.new
 client = SearchKernel::Client.new(recording)
 same({ "root" => nil }, client.search({ "query" => { "source_type" => "MatchAllQuery" } }), "client returns operation payload")
+same([], client.search_results({}).hits, "client result wrapper derives hits from root")
+same(false, SearchKernel::Results::SearchResults.new({"coverage" => {"full" => {}}}).coverage.full,
+     "present OptionalBool retains omitted default false")
+same(nil, SearchKernel::Results::SearchResults.new({"coverage" => {}}).coverage.full,
+     "absent OptionalBool differs from present false")
 same("SearchKernel_V2_SearchRequest", recording.last_request["payload_type"], "client uses centralized operation mapping")
 raw = { "protocol_version" => 2, "payload_type" => "Custom", "payload" => {} }
 same(recording.execute(raw), client.execute_raw(raw), "raw envelope escape hatch delegates unchanged")
@@ -420,3 +460,5 @@ with_http_server(status: 503, body: "bad\r\ninjected\x00\xff".b, content_type: "
 end
 
 puts "Ruby protocol/transport tests PASS"
+
+require_relative "facade"
