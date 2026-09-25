@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import re
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+BARE_TOOL_RE = re.compile(
+    r"(?m)^\s*(?:env\s+)?"
+    r"(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*"
+    r"(python3|cargo|rustc|npm|node|flatc)\b"
+)
+
+CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "dev": (
+        (
+            "tools/resolve-python.sh",
+            "tools/resolve-rust.sh",
+            "tools/resolve-node.sh",
+            "tools/resolve-flatc.sh",
+            "tools/resolve-native-sdk.sh",
+        ),
+        ("python3", "cargo", "rustc", "npm", "node", "flatc"),
+    ),
+    ".githooks/pre-commit": (
+        ("tools/resolve-python.sh", "tools/resolve-rust.sh"),
+        ("python3", "cargo", "rustc"),
+    ),
+    "tools/check-python-grpc.sh": (
+        ("resolve-python.sh",),
+        ("python3",),
+    ),
+    "tools/generate-python-grpc.sh": (
+        ("resolve-python.sh",),
+        ("python3",),
+    ),
+    "tools/generate-python-flatbuffers.sh": (
+        ("resolve-python.sh",),
+        ("python3",),
+    ),
+    "tools/run-python-native-e2e.sh": (
+        ("resolve-python.sh",),
+        ("python3",),
+    ),
+    "tools/check-searchkernel-rpc.sh": (
+        ("resolve-rust.sh",),
+        ("cargo", "rustc"),
+    ),
+    "tools/generate-searchkernel-rpc.sh": (
+        ("resolve-rust.sh",),
+        ("cargo", "rustc"),
+    ),
+    "tools/check-typescript-generated.sh": (
+        ("resolve-node.sh",),
+        ("npm", "node"),
+    ),
+    "tools/test-typescript-generation.sh": (
+        ("resolve-node.sh",),
+        ("npm", "node"),
+    ),
+    "tools/check-flatbuffers-bfbs.sh": (
+        ("resolve-flatc.sh",),
+        ("flatc",),
+    ),
+    "tools/generate-flatbuffers-bfbs.sh": (
+        ("resolve-flatc.sh",),
+        ("flatc",),
+    ),
+    "tools/generate-searchkernel-protocol.sh": (
+        ("resolve-flatc.sh",),
+        ("flatc",),
+    ),
+    "tools/generate-typescript-flatbuffers.sh": (
+        ("resolve-flatc.sh",),
+        ("flatc",),
+    ),
+    "tools/resolve-native-sdk.sh": (
+        ("resolve-python.sh", "resolve-rust.sh"),
+        ("python3", "rustc"),
+    ),
+    "reference/api-conformance/verify.sh": (
+        ("resolve-python.sh", "resolve-rust.sh"),
+        ("python3", "cargo", "rustc"),
+    ),
+    "reference/api-conformance/verify-fixtures.sh": (
+        ("resolve-python.sh",),
+        ("python3",),
+    ),
+}
+
+
+def read(relative: str) -> str:
+    path = ROOT / relative
+    if not path.is_file():
+        raise AssertionError(f"required toolchain authority file is missing: {relative}")
+    return path.read_text(encoding="utf-8")
+
+
+def function_body(shell: str, name: str) -> str:
+    marker = f"{name}() {{"
+    start = shell.find(marker)
+    if start < 0:
+        raise AssertionError(f"missing shell function {name}")
+    rest = shell[start + len(marker) :]
+    end = rest.find("\n}")
+    if end < 0:
+        raise AssertionError(f"could not delimit shell function {name}")
+    return rest[:end]
+
+
+class ToolchainAuthorityTests(unittest.TestCase):
+    def test_canonical_resolvers_exist(self) -> None:
+        for relative in (
+            "tools/resolve-python.sh",
+            "tools/resolve-rust.sh",
+            "tools/resolve-node.sh",
+            "tools/resolve-flatc.sh",
+            "tools/resolve-native-sdk.sh",
+        ):
+            self.assertTrue((ROOT / relative).is_file(), relative)
+
+    def test_critical_scripts_use_authorities_and_no_bare_tools(self) -> None:
+        for relative, (required, forbidden) in CRITICAL_SCRIPTS.items():
+            with self.subTest(relative=relative):
+                text = read(relative)
+                for resolver in required:
+                    self.assertIn(resolver, text, f"{relative} must use {resolver}")
+
+                for match in BARE_TOOL_RE.finditer(text):
+                    tool = match.group(1)
+                    if tool in forbidden:
+                        line = text.count("\n", 0, match.start()) + 1
+                        self.fail(
+                            f"{relative}:{line}: direct '{tool}' invocation bypasses "
+                            "the repository toolchain authority"
+                        )
+
+    def test_doctor_exercises_real_downstream_paths(self) -> None:
+        dev = read("dev")
+
+        generated = function_body(dev, "doctor_generated_protocol")
+        self.assertIn("check_protocol", generated)
+
+        typescript = function_body(dev, "doctor_typescript")
+        self.assertIn("run_typescript_generation_check", typescript)
+
+        flatbuffers = function_body(dev, "doctor_flatbuffers_cpp")
+        self.assertIn("check-flatbuffers-cpp.sh", flatbuffers)
+
+        native = function_body(dev, "doctor_native_sdk")
+        self.assertIn("native_sdk_path", native)
+
+        searchkerneld = function_body(dev, "doctor_searchkerneld")
+        self.assertIn('"$CARGO" build -p searchkerneld --features native', searchkerneld)
+
+    def test_dev_repairs_every_canonical_toolchain(self) -> None:
+        dev = read("dev")
+        for repair in (
+            "doctor_repair_rust",
+            "doctor_repair_node",
+            "doctor_repair_flatbuffers",
+            "doctor_repair_python",
+            "doctor_repair_native_sdk",
+        ):
+            self.assertIn(f"repair '", dev)
+            self.assertIn(repair, dev)
+
+
+if __name__ == "__main__":
+    unittest.main()
