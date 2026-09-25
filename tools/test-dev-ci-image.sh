@@ -65,9 +65,9 @@ for command in (
 coverage_start = dev.index("coverage_target() {")
 coverage_end = dev.index("\nlint_target()", coverage_start)
 coverage_body = dev[coverage_start:coverage_end]
-if "install_native_sdk" not in coverage_body:
+if "native_sdk_command ensure >/dev/null" not in coverage_body:
     raise SystemExit("dev coverage must provision the native SDK before all-features tests")
-if coverage_body.index("install_native_sdk") > coverage_body.index('bash "$ROOT/tools/coverage.sh"'):
+if coverage_body.index("native_sdk_command ensure >/dev/null") > coverage_body.index('bash "$ROOT/tools/coverage.sh"'):
     raise SystemExit("dev coverage provisions the native SDK too late")
 
 required_runner = (
