@@ -395,6 +395,16 @@ jobs:
               ;;
             client-e2e)
               python3 tools/check-python-dependencies.py
+              command -v ruby >/dev/null 2>&1 || {
+                echo "required client E2E command is unavailable: ruby" >&2
+                echo "rerun tools/actions-runner-setup.sh once on this runner" >&2
+                exit 1
+              }
+              ruby -rrubygems -e 'exit Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.1") ? 0 : 1' || {
+                echo "client E2E requires Ruby >= 3.1" >&2
+                echo "rerun tools/actions-runner-setup.sh once on this runner" >&2
+                exit 1
+              }
               command -v php >/dev/null 2>&1 || {
                 echo "required client E2E command is unavailable: php" >&2
                 exit 1
