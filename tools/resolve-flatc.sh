@@ -2,48 +2,4 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-expected=25.12.19
-
-is_expected_flatc() {
-    local candidate=$1
-    [[ -x "$candidate" ]] &&
-        [[ "$("$candidate" --version 2>/dev/null || true)" == "flatc version $expected" ]]
-}
-
-if [[ -n "${FLATC_PATH:-}" ]]; then
-    if is_expected_flatc "$FLATC_PATH"; then
-        printf '%s\n' "$FLATC_PATH"
-        exit 0
-    fi
-    echo "error: FLATC_PATH='$FLATC_PATH' is not executable FlatBuffers $expected flatc" >&2
-    exit 1
-fi
-
-common=$(git -C "$root" rev-parse --git-common-dir)
-if [[ "$common" != /* ]]; then
-    common="$root/$common"
-fi
-common=$(cd -- "$common" && pwd)
-build_env=${SEARCHKERNEL_BUILD_ENV:-host}
-shared="$common/searchkernel/toolchains/flatbuffers/$expected/$build_env/bin/flatc"
-if is_expected_flatc "$shared"; then
-    printf '%s\n' "$shared"
-    exit 0
-fi
-
-if command -v flatc >/dev/null 2>&1; then
-    candidate=$(command -v flatc)
-    if is_expected_flatc "$candidate"; then
-        printf '%s\n' "$candidate"
-        exit 0
-    fi
-fi
-
-if is_expected_flatc /usr/local/bin/flatc; then
-    printf '%s\n' /usr/local/bin/flatc
-    exit 0
-fi
-
-echo "error: FlatBuffers $expected flatc was not found" >&2
-echo "       Run './dev install flatbuffers' once from any worktree; the versioned install is shared by the whole clone within this build environment." >&2
-exit 1
+exec bash "$root/tools/resolve-flatbuffers.sh" flatc
