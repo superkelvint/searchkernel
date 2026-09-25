@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Hit, ResultGroup, SearchResults } from "../src/client/results.js";
-import { uint64, value } from "../src/client/values.js";
+import { int64, uint64, value } from "../src/client/values.js";
 import { CoverageDegradedT } from "../src/generated/flatbuffers/search-kernel/v2/coverage-degraded.js";
 import { CoverageT } from "../src/generated/flatbuffers/search-kernel/v2/coverage.js";
 import { FiniteRelevanceT } from "../src/generated/flatbuffers/search-kernel/v2/finite-relevance.js";
@@ -203,6 +203,34 @@ it("projects named facets only when explicitly requested", () => {
 
   result.projectFacet("brands", "brands");
   expect(result.facets).toEqual({ brands: [{ value: "Acme", count: 3n }] });
+});
+
+it("accepts non-negative Int64 counts for generic facets and rejects negative counts", () => {
+  const genericBucket = new ResultGroupT(
+    "grouping-0",
+    "brands",
+    value("Acme"),
+    [new ValueEntryT("count", value(int64(3)))],
+  );
+  const genericFacet = new ResultGroupT(null, "brands", null, [], [node(genericBucket)]);
+  const genericRoot = new ResultGroupT(null, null, null, [], [node(genericFacet)]);
+  const generic = new SearchResults(new SearchResultT(node(genericRoot)));
+
+  generic.projectFacet("brands", "brands");
+  expect(generic.facets).toEqual({ brands: [{ value: "Acme", count: 3n }] });
+
+  const negativeBucket = new ResultGroupT(
+    "grouping-0",
+    "brands",
+    value("Acme"),
+    [new ValueEntryT("count", value(int64(-1)))],
+  );
+  const negativeFacet = new ResultGroupT(null, "brands", null, [], [node(negativeBucket)]);
+  const negativeRoot = new ResultGroupT(null, null, null, [], [node(negativeFacet)]);
+  const negative = new SearchResults(new SearchResultT(node(negativeRoot)));
+
+  negative.projectFacet("brands", "brands");
+  expect(negative.facets).toEqual({});
 });
 
 

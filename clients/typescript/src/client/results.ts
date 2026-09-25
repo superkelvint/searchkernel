@@ -332,7 +332,8 @@ export class SearchResults {
    * Project the exact canonical facet result shape for a facet the caller requested.
    *
    * Generic grouping results are never inferred to be facets. Each bucket must
-   * contain exactly one UInt64 `count` output and no nested children.
+   * contain exactly one non-negative Int64 or UInt64 `count` output and no
+   * nested children. Optimized facet children retain their UInt64-only shape.
    */
   projectFacet(expectedLabel: string, resultName: string, expectedField = expectedLabel): void {
     const candidates = this.groups.filter((group) =>
@@ -361,14 +362,19 @@ export class SearchResults {
       const fields = child.raw.fields ?? [];
       if (fields.length !== 1) return;
       const count = fields[0]!;
+      const acceptedCountKinds = genericChild
+        ? [ValueKind.Int64Value, ValueKind.UInt64Value]
+        : [ValueKind.UInt64Value];
       if (
         text(count.key) !== "count"
         || count.value == null
-        || count.value.kindType !== ValueKind.UInt64Value
+        || !acceptedCountKinds.includes(count.value.kindType)
       ) {
         return;
       }
-      buckets.push({ value: child.value, count: fromValue(count.value) });
+      const countValue = fromValue(count.value);
+      if (genericChild && (typeof countValue !== "bigint" || countValue < 0n)) return;
+      buckets.push({ value: child.value, count: countValue });
     }
 
     this.facets[resultName] = buckets;
