@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gc
+import os
 import signal
 import sys
 import tempfile
@@ -73,6 +74,17 @@ class ManagedLocalHostTest(unittest.TestCase):
         killpg.assert_called_once_with(process.pid, signal.SIGINT)
         self.assertIsNone(host.process)
         self.assertFalse(host._finalizer)
+
+    def test_stale_legacy_sdk_directory_never_changes_runtime_loader_path(self):
+        with patch.dict(os.environ, {"LD_LIBRARY_PATH": "/existing"}, clear=False):
+            os.environ.pop("SEARCHKERNEL_SDK_LIB", None)
+            with patch.object(client_module.Path, "is_dir", return_value=True):
+                host, _process = self._host()
+
+        popen = client_module.subprocess.Popen
+        environment = popen.call_args.kwargs["env"]
+        self.assertEqual(environment.get("LD_LIBRARY_PATH"), "/existing")
+        host.close(force=True)
 
     def test_finalizer_stops_daemon_and_removes_owned_resources(self):
         host, process = self._host()
