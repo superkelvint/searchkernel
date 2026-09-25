@@ -27,17 +27,10 @@ VESPA_COMMIT="$(ci_image_vespa_commit "$ROOT")"
 VESPA_BUNDLE_ID="$(ci_image_vespa_bundle_id "$ROOT")"
 IMAGE_REF="$IMAGE:$VESPA_COMMIT-$VESPA_BUNDLE_ID"
 
-if ci_image_pull_if_available "$IMAGE_REF"; then
-    ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
-    ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
-    echo
-    echo "Vespa image already published:"
-    echo "  $IMAGE_REF"
-    exit 0
-fi
-
-# Capture the actual local native inputs before sanitizing ambient build
-# variables. The common AlmaLinux developer shell exports both of these.
+# Capture the actual local native inputs before deciding whether an existing
+# tag is current. A bundle tag is stable for one Vespa commit + packaging
+# recipe, while the producer fingerprint distinguishes rebuilt native SDK bytes
+# for that same logical bundle.
 FULL_SDK="${SEARCHKERNEL_CI_FULL_SDK:-${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}}"
 LOCAL_VESPA_ROOT="${SEARCHKERNEL_CI_VESPA_ROOT:-${VESPA_ROOT:-$ROOT/upstream/vespa}}"
 
@@ -45,6 +38,28 @@ LOCAL_VESPA_ROOT="${SEARCHKERNEL_CI_VESPA_ROOT:-${VESPA_ROOT:-$ROOT/upstream/ves
     ci_image_die "full native SDK not found: $FULL_SDK"
 [[ -d "$LOCAL_VESPA_ROOT" ]] ||
     ci_image_die "configured Vespa root not found: $LOCAL_VESPA_ROOT"
+
+VESPA_PRODUCER_ID="$(ci_image_vespa_producer_id "$ROOT" "$FULL_SDK")"
+
+if ci_image_pull_if_available "$IMAGE_REF"; then
+    ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
+    ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
+    EXISTING_PRODUCER_ID="$(ci_image_label "$IMAGE_REF" io.searchkernel.vespa-producer-id)"
+    if [[ "$EXISTING_PRODUCER_ID" == "$VESPA_PRODUCER_ID" ]]; then
+        PINNED_IMAGE_REF="$(ci_image_resolve_local_digest "$IMAGE_REF")"
+        echo
+        echo "Vespa image already published for the current producer fingerprint:"
+        echo "  $IMAGE_REF"
+        echo "  $PINNED_IMAGE_REF"
+        exit 0
+    fi
+    echo
+    echo "Existing Vespa tag has stale producer fingerprint:"
+    echo "  tag:      $IMAGE_REF"
+    echo "  existing: ${EXISTING_PRODUCER_ID:-<missing>}"
+    echo "  current:  $VESPA_PRODUCER_ID"
+    echo "Rebuilding and replacing that logical bundle tag."
+fi
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-vespa.XXXXXX")"
 cleanup() {
@@ -55,8 +70,9 @@ trap cleanup EXIT INT TERM
 echo
 echo "==> Preparing Vespa Docker contexts"
 echo "Vespa commit:    $VESPA_COMMIT"
-echo "Vespa bundle id: $VESPA_BUNDLE_ID"
-echo "Full SDK:     $FULL_SDK"
+echo "Vespa bundle id:   $VESPA_BUNDLE_ID"
+echo "Vespa producer id: $VESPA_PRODUCER_ID"
+echo "Full SDK:           $FULL_SDK"
 echo "Vespa root:   $LOCAL_VESPA_ROOT"
 
 mapfile -t native_contexts < <(
@@ -94,6 +110,7 @@ vespa_build_args=(
     --label "org.opencontainers.image.revision=$REVISION"
     --label "io.searchkernel.vespa-commit=$VESPA_COMMIT"
     --label "io.searchkernel.vespa-bundle-id=$VESPA_BUNDLE_ID"
+    --label "io.searchkernel.vespa-producer-id=$VESPA_PRODUCER_ID"
     --label "io.searchkernel.native-target=$TARGET"
     -f "$ROOT/docker/searchkernel-ci-vespa/Dockerfile"
     -t "$IMAGE_REF"
@@ -102,6 +119,7 @@ DOCKER_BUILDKIT=1 docker build "${vespa_build_args[@]}" "$ROOT/docker/searchkern
 
 ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
 ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
+ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-producer-id "$VESPA_PRODUCER_ID"
 
 echo
 echo "==> Pushing $IMAGE_REF"
