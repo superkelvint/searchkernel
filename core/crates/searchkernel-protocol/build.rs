@@ -73,18 +73,38 @@ fn main() {
         );
     }
 
-    cc::Build::new()
+    let mut bridge = cc::Build::new();
+    bridge
         .cpp(true)
         .file("native/flatbuffers_json_bridge.cc")
         .include("native")
         .include(&include)
         .flag_if_supported("-std=c++17")
-        .warnings(true)
-        .compile("searchkernel_flatbuffers_json_bridge");
+        .warnings(true);
+    let compiler = bridge.get_compiler();
+    bridge.compile("searchkernel_flatbuffers_json_bridge");
 
     println!("cargo:rustc-link-search=native={}", library.display());
     println!("cargo:rustc-link-lib=static=flatbuffers");
     if cfg!(target_os = "linux") {
+        // Rust's cc linker can otherwise find the host OS libstdc++ (GCC 8)
+        // after cc compiled this bridge with the CI toolset (GCC 15).
+        // Query the actual C++ compiler so the link uses its matching runtime.
+        let output = compiler
+            .to_command()
+            .arg("-print-file-name=libstdc++.so")
+            .output()
+            .expect("query the C++ compiler for libstdc++");
+        if !output.status.success() {
+            panic!("C++ compiler could not locate libstdc++");
+        }
+        let runtime = String::from_utf8(output.stdout).expect("libstdc++ path is UTF-8");
+        let runtime = Path::new(runtime.trim());
+        if !runtime.is_absolute() || !runtime.is_file() {
+            panic!("C++ compiler did not report an installed libstdc++: {}", runtime.display());
+        }
+        let runtime_dir = runtime.parent().expect("libstdc++ has a parent directory");
+        println!("cargo:rustc-link-search=native={}", runtime_dir.display());
         println!("cargo:rustc-link-lib=dylib=stdc++");
     } else if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=dylib=c++");
