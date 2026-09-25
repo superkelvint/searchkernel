@@ -6,6 +6,7 @@ DEV="$ROOT/dev"
 RUNNER="$ROOT/tools/run-in-ci-image.sh"
 HOOK="$ROOT/.githooks/pre-commit"
 COVERAGE="$ROOT/tools/coverage.sh"
+CI_WORKFLOW="$ROOT/.github/workflows/ci-image-runner.yml"
 
 bash -n "$DEV"
 bash -n "$RUNNER"
@@ -13,7 +14,7 @@ bash -n "$HOOK"
 bash -n "$COVERAGE"
 python3 -m py_compile "$ROOT/.github/ci/test_exact_head.py"
 
-python3 - "$DEV" "$RUNNER" "$HOOK" "$ROOT/.github/ci/test_exact_head.py" <<'PY'
+python3 - "$DEV" "$RUNNER" "$HOOK" "$ROOT/.github/ci/test_exact_head.py" "$CI_WORKFLOW" <<'PY'
 from pathlib import Path
 import sys
 
@@ -21,6 +22,7 @@ dev = Path(sys.argv[1]).read_text(encoding="utf-8")
 runner = Path(sys.argv[2]).read_text(encoding="utf-8")
 hook = Path(sys.argv[3]).read_text(encoding="utf-8")
 exact_head = Path(sys.argv[4]).read_text(encoding="utf-8")
+ci_workflow = Path(sys.argv[5]).read_text(encoding="utf-8")
 
 if exact_head.count('if __name__ == "__main__":') != 1:
     raise SystemExit("exact-head regression module must contain exactly one module terminator")
@@ -33,6 +35,23 @@ if dev.index(dispatch) > dev.index(resolve_python):
     raise SystemExit("dev must dispatch before resolving any host language toolchain")
 if "Configured repository-managed Git hooks at .githooks' >&2" not in dev:
     raise SystemExit("dev hook auto-configuration must not contaminate machine-readable stdout")
+
+for fragment in (
+    "nightly-coverage-evidence",
+    '"coverage.json"',
+    '"summary.json"',
+    '"lcov.info"',
+    '"summary.txt"',
+    '"README.txt"',
+    '"metadata.json"',
+    '"html/index.html"',
+    'metadata.get("git_head", "").lower() != expected_head.lower()',
+    'metadata.get("working_tree_clean") is not True',
+    'metadata.get("tool") != "cargo-llvm-cov 0.9.1"',
+    "if-no-files-found: error",
+):
+    if fragment not in ci_workflow:
+        raise SystemExit(f"CI coverage evidence contract is missing {fragment!r}")
 
 for command in (
     "check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify",
