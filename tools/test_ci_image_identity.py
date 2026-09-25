@@ -67,4 +67,29 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-ci-image-identity.") as ra
     if composite_a == composite_vespa_changed:
         raise SystemExit("composite identity ignored the Vespa image digest")
 
+    producer_root = tmp / "producer-root"
+    (producer_root / "core/native/vespa").mkdir(parents=True)
+    (producer_root / "core/native/vespa/manifest.json").write_text(
+        '{"native_abi_version":13,"vespa_commit":"' + "1" * 40 + '"}\n',
+        encoding="utf-8",
+    )
+    full_sdk = tmp / "full-sdk"
+    full_sdk.mkdir()
+    (full_sdk / "manifest.json").write_text(
+        '{"native_abi_version":13,"native_build_fingerprint":"abc","vespa_commit":"' + "1" * 40 + '"}\n',
+        encoding="utf-8",
+    )
+    fingerprint = full_sdk / "native-build-fingerprint-v2.txt"
+    fingerprint.write_text("fingerprint-version=3\nsha256=abc\n", encoding="utf-8")
+
+    producer_a = call(
+        "ci_image_vespa_producer_id", str(producer_root), str(full_sdk)
+    ).stdout.strip()
+    fingerprint.write_text("fingerprint-version=3\nsha256=def\n", encoding="utf-8")
+    producer_b = call(
+        "ci_image_vespa_producer_id", str(producer_root), str(full_sdk)
+    ).stdout.strip()
+    if producer_a == producer_b:
+        raise SystemExit("Vespa producer identity ignored the native SDK fingerprint")
+
 print("split CI image identity regression: PASS")
