@@ -58,7 +58,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1240
+              "line": 1252
             },
             {
               "capability": "query.term",
@@ -99,7 +99,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1241
+              "line": 1253
             }
           ],
           "overrides": []
@@ -122,7 +122,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1242
+              "line": 1254
             }
           ],
           "overrides": []
@@ -145,7 +145,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1243
+              "line": 1255
             }
           ],
           "overrides": []
@@ -168,7 +168,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1244
+              "line": 1256
             },
             {
               "capability": "query.boolean",
@@ -209,7 +209,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1245
+              "line": 1257
             },
             {
               "capability": "query.phrase",
@@ -250,7 +250,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1246
+              "line": 1258
             },
             {
               "capability": "query.proximity",
@@ -291,7 +291,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1247
+              "line": 1259
             },
             {
               "capability": "query.same_element",
@@ -323,7 +323,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1248
+              "line": 1260
             },
             {
               "capability": "query.fuzzy",
@@ -390,7 +390,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1249
+              "line": 1261
             },
             {
               "capability": "query.nearest_neighbor",
@@ -458,7 +458,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1250
+              "line": 1262
             },
             {
               "capability": "query.geo",
@@ -490,7 +490,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1251
+              "line": 1263
             }
           ],
           "overrides": []
@@ -513,7 +513,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1252
+              "line": 1264
             },
             {
               "capability": "query.weighted_and_wand",
@@ -554,7 +554,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1253
+              "line": 1265
             }
           ],
           "overrides": []
@@ -577,7 +577,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1254
+              "line": 1266
             }
           ],
           "overrides": []
@@ -600,7 +600,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1255
+              "line": 1267
             }
           ],
           "overrides": []
@@ -623,7 +623,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1256
+              "line": 1268
             }
           ],
           "overrides": []
@@ -659,7 +659,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1261
+              "line": 1273
             },
             {
               "capability": "filter.textual",
@@ -727,7 +727,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1262
+              "line": 1274
             },
             {
               "capability": "search.sorting",
@@ -817,7 +817,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1264
+              "line": 1276
             },
             {
               "capability": "search.pagination",
@@ -894,7 +894,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1263
+              "line": 1275
             },
             {
               "capability": "search.search_fields",
@@ -1070,7 +1070,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1279
+              "line": 1291
             },
             {
               "capability": "result.highlighting",
@@ -1204,7 +1204,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1265
+              "line": 1277
             },
             {
               "capability": "grouping.structured",
@@ -1272,7 +1272,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1266
+              "line": 1278
             }
           ],
           "overrides": []
@@ -1295,7 +1295,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1267
+              "line": 1279
             },
             {
               "capability": "grouping.aggregations",
@@ -1395,7 +1395,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1268
+              "line": 1280
             }
           ],
           "overrides": []
@@ -1418,7 +1418,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1269
+              "line": 1281
             }
           ],
           "overrides": []
@@ -1441,7 +1441,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1270
+              "line": 1282
             },
             {
               "capability": "update.document_crud",
@@ -1518,7 +1518,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1271
+              "line": 1283
             },
             {
               "capability": "update.arithmetic",
@@ -1559,7 +1559,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1272
+              "line": 1284
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -1626,7 +1626,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1273
+              "line": 1285
             }
           ],
           "overrides": []
@@ -1649,7 +1649,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1274
+              "line": 1286
             }
           ],
           "overrides": []
@@ -1704,7 +1704,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1275
+              "line": 1287
             },
             {
               "capability": "query.yql",
@@ -1777,7 +1777,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1257
+              "line": 1269
             }
           ],
           "overrides": []
@@ -1800,7 +1800,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1258
+              "line": 1270
             }
           ],
           "overrides": []
@@ -1823,7 +1823,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1259
+              "line": 1271
             }
           ],
           "overrides": []
@@ -1846,7 +1846,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1260
+              "line": 1272
             }
           ],
           "overrides": []
@@ -1908,7 +1908,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1276
+              "line": 1288
             },
             {
               "capability": "ranking.profile_selection",
@@ -1981,7 +1981,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1277
+              "line": 1289
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -2022,7 +2022,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1278
+              "line": 1290
             },
             {
               "capability": "ranking.rank_properties",
@@ -2095,7 +2095,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1280
+              "line": 1292
             },
             {
               "capability": "result.grouping_tree",
@@ -2136,7 +2136,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1281
+              "line": 1293
             },
             {
               "capability": "result.degradation_metadata",
