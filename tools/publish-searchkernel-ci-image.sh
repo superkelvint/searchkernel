@@ -183,6 +183,7 @@ rg --version >/dev/null
 gh --version >/dev/null
 rustc --version
 cargo --version
+cargo llvm-cov --version
 node --version
 ruby --version
 php --version | head -n 1
