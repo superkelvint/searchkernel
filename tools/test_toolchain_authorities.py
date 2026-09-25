@@ -22,7 +22,7 @@ CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "tools/resolve-flatc.sh",
             "tools/resolve-native-sdk.sh",
         ),
-        ("python3", "cargo", "rustc", "npm", "node", "flatc"),
+        ("python3", "cargo", "rustc", "rustfmt", "npm", "node", "flatc"),
     ),
     ".githooks/pre-commit": (
         ("tools/resolve-python.sh", "tools/resolve-rust.sh"),
@@ -69,8 +69,8 @@ CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ("flatc",),
     ),
     "tools/generate-searchkernel-protocol.sh": (
-        ("resolve-flatc.sh",),
-        ("flatc",),
+        ("resolve-flatc.sh", "resolve-rust.sh"),
+        ("flatc", "rustfmt"),
     ),
     "tools/generate-typescript-flatbuffers.sh": (
         ("resolve-flatc.sh",),
@@ -146,6 +146,10 @@ class ToolchainAuthorityTests(unittest.TestCase):
         typescript = function_body(dev, "doctor_typescript")
         self.assertIn("run_typescript_generation_check", typescript)
 
+        rust = function_body(dev, "doctor_rust")
+        self.assertIn('"$CARGO" metadata --no-deps --format-version 1', rust)
+        self.assertIn('"$RUSTFMT" --version', rust)
+
         flatbuffers = function_body(dev, "doctor_flatbuffers_cpp")
         self.assertIn("check-flatbuffers-cpp.sh", flatbuffers)
 
@@ -154,6 +158,15 @@ class ToolchainAuthorityTests(unittest.TestCase):
 
         searchkerneld = function_body(dev, "doctor_searchkerneld")
         self.assertIn('"$CARGO" build -p searchkerneld --features native', searchkerneld)
+
+    def test_typescript_helpers_pin_node_for_npm_children(self) -> None:
+        for relative in (
+            "tools/check-typescript-generated.sh",
+            "tools/test-typescript-generation.sh",
+        ):
+            text = read(relative)
+            self.assertIn('node=$(bash "$root/tools/resolve-node.sh" node)', text)
+            self.assertIn('PATH="$(dirname -- "$node"):$PATH"', text)
 
     def test_dev_repairs_every_canonical_toolchain(self) -> None:
         dev = read("dev")
