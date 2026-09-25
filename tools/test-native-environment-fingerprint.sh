@@ -115,7 +115,11 @@ echo 'native fingerprint: SDK packaging policy changes the fingerprint'
 
 [[ "$(grep -o 'target/host' "$root/.cargo/config.toml" | head -1)" == target/host ]]
 grep -q 'ENV CARGO_TARGET_DIR=target/devcontainer' "$root/.yolobox.Dockerfile"
-grep -q 'CARGO_TARGET_DIR: target/ci' "$root/.github/workflows/abi-surface.yml"
-echo 'native environments: host, devcontainer, and CI use separate Cargo targets'
+grep -Fq 'uses: ./.github/workflows/ci-image-runner.yml' "$root/.github/workflows/abi-surface.yml"
+grep -Fq 'target: abi-surface' "$root/.github/workflows/abi-surface.yml"
+grep -Fq 'TARGET_VOLUME="searchkernel-ci-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$SAFE_TARGET"' "$root/.github/workflows/ci-image-runner.yml"
+grep -Fq -- '-v "$TARGET_VOLUME:/cargo-target"' "$root/.github/workflows/ci-image-runner.yml"
+grep -Fq -- '-e CARGO_TARGET_DIR=/cargo-target' "$root/.github/workflows/ci-image-runner.yml"
+echo 'native environments: host, devcontainer, and job-private CI volume use separate Cargo targets'
 
 echo 'native environment fingerprint regression PASS'
