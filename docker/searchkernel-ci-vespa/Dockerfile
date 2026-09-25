@@ -6,9 +6,11 @@
 FROM scratch
 
 ARG VESPA_COMMIT
+ARG VESPA_BUNDLE_ID
 
 LABEL org.opencontainers.image.source="https://github.com/superkelvint/searchkernel"
 LABEL io.searchkernel.vespa-commit="${VESPA_COMMIT}"
+LABEL io.searchkernel.vespa-bundle-id="${VESPA_BUNDLE_ID}"
 
 COPY --link --from=searchkernel-native-base / /opt/searchkernel/native-sdk-cache/ci/x86_64-unknown-linux-gnu/objects/${VESPA_COMMIT}/
 COPY --link --from=searchkernel-native-toolchain / /opt/searchkernel/native-sdk-cache/ci/x86_64-unknown-linux-gnu/toolchains/${VESPA_COMMIT}/
