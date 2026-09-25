@@ -43,13 +43,57 @@ int fail(int status, const std::string& message, char** error_ptr,
   return status;
 }
 
+bool restore_union_sibling_fields(flatbuffers::Parser* parser,
+                                  std::string* error) {
+  // Parser::Deserialize() rebuilds field types from BFBS, but it does not
+  // restore FieldDef::sibling_union_field. JSON traversal needs that relation
+  // to apply the concrete union member schema instead of treating the payload
+  // as untyped JSON.
+  for (auto* definition : parser->structs_.vec) {
+    for (auto* field : definition->fields.vec) {
+      const auto& type = field->value.type;
+      const bool scalar_union =
+          type.base_type == flatbuffers::BASE_TYPE_UNION;
+      const bool vector_union =
+          (type.base_type == flatbuffers::BASE_TYPE_VECTOR ||
+           type.base_type == flatbuffers::BASE_TYPE_VECTOR64) &&
+          type.element == flatbuffers::BASE_TYPE_UNION;
+      if (!scalar_union && !vector_union) continue;
+
+      auto* type_field = definition->fields.Lookup(field->name + "_type");
+      if (type_field == nullptr) {
+        *error = "BFBS union field is missing its type discriminator: " +
+                 definition->name + "." + field->name;
+        return false;
+      }
+
+      const auto& discriminator = type_field->value.type;
+      const bool valid_discriminator =
+          scalar_union
+              ? discriminator.base_type == flatbuffers::BASE_TYPE_UTYPE
+              : (discriminator.base_type == flatbuffers::BASE_TYPE_VECTOR ||
+                 discriminator.base_type == flatbuffers::BASE_TYPE_VECTOR64) &&
+                    discriminator.element == flatbuffers::BASE_TYPE_UTYPE;
+      if (!valid_discriminator || discriminator.enum_def != type.enum_def) {
+        *error = "BFBS union discriminator does not match payload field: " +
+                 definition->name + "." + field->name;
+        return false;
+      }
+
+      field->sibling_union_field = type_field;
+      type_field->sibling_union_field = field;
+    }
+  }
+  return true;
+}
+
 bool deserialize_schema(const uint8_t* bfbs, size_t bfbs_len,
                         flatbuffers::Parser* parser, std::string* error) {
   if (!parser->Deserialize(bfbs, bfbs_len)) {
     *error = parser->error_.empty() ? "could not deserialize BFBS" : parser->error_;
     return false;
   }
-  return true;
+  return restore_union_sibling_fields(parser, error);
 }
 
 bool verify_buffer(const uint8_t* bfbs, size_t bfbs_len, const uint8_t* buffer,
