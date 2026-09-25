@@ -5,11 +5,12 @@ set -euo pipefail
 #
 # Usage:
 #   ./dev image toolchain publish
-#   tools/publish-searchkernel-ci-toolchain.sh
+#   bash tools/publish-searchkernel-ci-toolchain.sh
 #
-# The immutable tag is a content hash of docker/searchkernel-ci-toolchain/.
-# Adding a client language or changing a compiler/runtime changes that identity
-# without changing the Vespa bundle identity.
+# The immutable tag is a content hash of docker/searchkernel-ci-toolchain/ plus
+# the resolved digest of its upstream base image. Adding a client language,
+# changing a compiler/runtime, or changing the upstream base bytes therefore
+# creates a new toolchain identity without changing the Vespa bundle identity.
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
@@ -22,29 +23,25 @@ RECIPE="$ROOT/docker/searchkernel-ci-toolchain"
 
 ci_image_require_commands docker git python3
 ci_image_require_docker
+ci_image_require_clean_checkout "$ROOT"
 ci_image_login
 
-TOOLCHAIN_ID="$(ci_image_toolchain_id "$RECIPE" "$BASE_IMAGE")"
+echo
+echo "==> Resolving immutable toolchain base image"
+PINNED_BASE_IMAGE="$(ci_image_pull_and_resolve_digest "$BASE_IMAGE")"
+
+TOOLCHAIN_ID="$(ci_image_toolchain_id "$RECIPE" "$PINNED_BASE_IMAGE")"
 IMAGE_REF="$IMAGE:$TOOLCHAIN_ID"
 
 if ci_image_pull_if_available "$IMAGE_REF"; then
     ci_image_require_label "$IMAGE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
+    ci_image_require_label "$IMAGE_REF" io.searchkernel.toolchain-base "$PINNED_BASE_IMAGE"
     echo
     echo "Toolchain image already published:"
     echo "  $IMAGE_REF"
+    echo "  base: $PINNED_BASE_IMAGE"
     exit 0
 fi
-
-echo
-echo "==> Pinning toolchain base image"
-docker pull "$BASE_IMAGE" >/dev/null
-PINNED_BASE_IMAGE="$(
-    docker image inspect \
-        --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' \
-        "$BASE_IMAGE"
-)"
-[[ -n "$PINNED_BASE_IMAGE" ]] ||
-    ci_image_die "could not resolve an immutable digest for $BASE_IMAGE"
 
 REVISION="$(git rev-parse HEAD)"
 
@@ -66,6 +63,7 @@ toolchain_build_args=(
 DOCKER_BUILDKIT=1 docker build "${toolchain_build_args[@]}" "$RECIPE"
 
 ci_image_require_label "$IMAGE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
+ci_image_require_label "$IMAGE_REF" io.searchkernel.toolchain-base "$PINNED_BASE_IMAGE"
 
 docker run --rm "$IMAGE_REF" /bin/bash -lc '
 set -euo pipefail
@@ -85,6 +83,11 @@ echo
 echo "==> Pushing $IMAGE_REF"
 docker push "$IMAGE_REF"
 
+# Pull once after push so the local image acquires the same immutable repository
+# digest consumers will use during composition.
+PINNED_IMAGE_REF="$(ci_image_pull_and_resolve_digest "$IMAGE_REF")"
+
 echo
 echo "Published:"
 echo "  $IMAGE_REF"
+echo "  $PINNED_IMAGE_REF"
