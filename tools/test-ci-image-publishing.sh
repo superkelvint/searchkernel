@@ -139,8 +139,8 @@ if "ci_image_resolve_local_digest" not in common or "ci_image_pull_and_resolve_d
     raise SystemExit("split-image publishing has no canonical tag-to-digest resolver")
 if "ci_image_require_clean_checkout" not in common:
     raise SystemExit("publishers do not share a clean-checkout gate")
-if "ci_image_require_remote_main" not in common:
-    raise SystemExit("canonical :latest publication has no remote-main gate")
+if "ci_image_require_main_checkout" not in common:
+    raise SystemExit("canonical :latest publication has no local-main checkout gate")
 if "searchkernel-ci-vespa-bundle-v1" not in common:
     raise SystemExit("Vespa bundle identity must include the packaging/closure recipe")
 if "searchkernel-ci-vespa-producer-v1" not in common or "ci_image_vespa_producer_id" not in common:
@@ -197,7 +197,7 @@ for fragment in (
     "io.searchkernel.composite-image-digest",
     "BUILDKIT_CACHE_MOUNT_NS",
     "ci_image_require_clean_checkout",
-    "ci_image_require_remote_main",
+    "ci_image_require_main_checkout",
     "tags beginning with 'base-' are reserved",
     "Docker tag 'latest' is reserved",
     "io.searchkernel.vespa-bundle-id",
