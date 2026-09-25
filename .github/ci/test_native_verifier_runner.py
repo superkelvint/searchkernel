@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = ROOT / ".github" / "workflows" / "native-verifier-runner.yml"
+WORKFLOW = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
@@ -24,9 +24,9 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
     def test_runs_requested_exact_revision_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
-            "NATIVE_IMAGE: docker.io/superkelvint/searchkernel-ci:latest",
+            "CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest",
             "persist-credentials: false",
-            'docker pull "$NATIVE_IMAGE"',
+            'docker pull "$CI_IMAGE"',
             'docker volume create "$SOURCE_VOLUME"',
             'docker volume create "$TARGET_VOLUME"',
             'test -f /opt/searchkernel/native-validation-pass',
@@ -48,6 +48,32 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertNotIn(retired, source)
 
+    def test_workers_share_no_mutable_toolchain_state(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for forbidden in (
+            "searchkernel-ci-cargo-registry",
+            "searchkernel-ci-cargo-git",
+            "searchkernel-native-ci-lock",
+            "/native-lock",
+            ":/root/.cargo/registry",
+            ":/root/.cargo/git",
+            "ensure-runner-rust.sh",
+            "Swatinem/rust-cache",
+            "flock 9",
+        ):
+            self.assertNotIn(forbidden, source)
+        for required in (
+            'SOURCE_VOLUME="searchkernel-ci-src-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${SAFE_TARGET}"',
+            'TARGET_VOLUME="searchkernel-ci-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${SAFE_TARGET}"',
+            'docker volume create "$SOURCE_VOLUME"',
+            'docker volume create "$TARGET_VOLUME"',
+            '-v "$SOURCE_VOLUME:/work"',
+            '-v "$TARGET_VOLUME:/cargo-target"',
+            "CARGO_TARGET_DIR=/cargo-target",
+            "zero shared mutable worker state",
+        ):
+            self.assertIn(required, source)
+
     def test_supports_native_full_ci_bundle(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
@@ -64,7 +90,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(needle, source)
 
-    def test_supports_client_e2e_bundle_inside_alma(self) -> None:
+    def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
             "client-e2e)",
@@ -183,7 +209,7 @@ echo AFTER_GUARD
         )
         self.assertEqual(stale.returncode, 0, stale.stdout)
         self.assertNotIn("AFTER_GUARD", stale.stdout)
-        self.assertIn("Superseded native verification", stale.stdout)
+        self.assertIn("Superseded verification", stale.stdout)
 
         malformed = self._run_embedded_head_guard(
             '{"head":{"sha":"aaaaaaaa"}}'
@@ -215,28 +241,27 @@ echo AFTER_GUARD
             'python3 -c \'import json,sys; data=json.load(sys.stdin); print(data.get("head", {}).get("sha", ""), data.get("state", ""))\'',
             'if [[ "$state" != "open" ]]; then',
             "env -u GH_TOKEN",
-            "Superseded native verification",
-            "run_native_phase()",
+            "Superseded verification",
+            "run_phase()",
             "assert_current_pr_head preflight",
-            "run_native_phase native-full-abi",
-            "run_native_phase native-full-hnsw",
-            "run_native_phase native-full-product-integration",
-            "run_native_phase native-full-rust-real-engine",
-            "run_native_phase native-full-grouping-yql",
-            "run_native_phase native-full-recovery",
-            "run_native_phase native-full-phase9",
-            "run_native_phase native-full-python-e2e",
-            "run_native_phase native-full-persistence",
-            'run_native_phase "$phase"',
+            "run_phase native-full-abi",
+            "run_phase native-full-hnsw",
+            "run_phase native-full-product-integration",
+            "run_phase native-full-rust-real-engine",
+            "run_phase native-full-grouping-yql",
+            "run_phase native-full-recovery",
+            "run_phase native-full-phase9",
+            "run_phase native-full-python-e2e",
+            "run_phase native-full-persistence",
+            'run_phase "$phase"',
             "build_native_searchkerneld client-e2e-build",
-            "run_native_phase client-e2e-run",
+            "run_phase client-e2e-run",
             "build_native_searchkerneld closure-422-build",
-            "run_native_phase closure-422-m14",
-            "run_native_phase closure-422-rust-real-engine",
-            "run_native_phase closure-422-integration",
-            "run_native_phase closure-422-php-e2e",
-            "run_native_phase requested-target",
-            "flock 9",
+            "run_phase closure-422-m14",
+            "run_phase closure-422-rust-real-engine",
+            "run_phase closure-422-integration",
+            "run_phase closure-422-php-e2e",
+            "run_phase requested-target",
         ):
             self.assertIn(needle, source)
 
@@ -248,14 +273,14 @@ echo AFTER_GUARD
         )
         for workflow in workflows:
             source = workflow.read_text(encoding="utf-8")
-            if "native-verifier-runner.yml" not in source:
+            if "uses: ./.github/workflows/ci-image-runner.yml" not in source:
                 continue
             callers.append(workflow)
             header = source.split("\njobs:", 1)[0]
             self.assertIn("permissions:", header, workflow)
             self.assertIn("contents: read", header, workflow)
             self.assertIn("pull-requests: read", header, workflow)
-        self.assertTrue(callers, "expected at least one native-verifier caller")
+        self.assertTrue(callers, "expected at least one ci-image-runner caller")
 
 
 if __name__ == "__main__":
