@@ -288,6 +288,7 @@ run_ruby_tests() {
 }
 
 check_fast() {
+    "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
     "$CARGO" fmt --all --check
     "$CARGO" check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
@@ -936,6 +937,10 @@ doctor_hooks() {
     [[ "$(git config --local --get core.hooksPath 2>/dev/null || true)" == ".githooks" ]]
 }
 
+doctor_toolchain_authorities() {
+    "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
+}
+
 doctor() {
     local status=0
     local diagnostics
@@ -981,6 +986,7 @@ doctor() {
     echo
     echo 'Verification'
     doctor_check 'repository Git hooks configured' doctor_hooks
+    doctor_check 'toolchain authority contract' doctor_toolchain_authorities
     doctor_check 'Rust toolchain present' doctor_rust
     doctor_check 'Node.js toolchain present' doctor_node
     doctor_check 'system verification tools present' doctor_system_tools
