@@ -15,16 +15,22 @@ use hyper::{body::Bytes, Request as HttpRequest};
 use hyper_util::rt::TokioIo;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use prost::Message;
-use searchkernel::{Field, Index, IndexDefinition};
+use searchkernel::{
+    field, ErrorCode as PublicErrorCode, Field, Index, IndexDefinition, Ranking, Sort, Tensor,
+};
 use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
 use searchkernel_protocol::protocol::v2 as wire;
-use searchkernel_testkit::RecordingBackend;
+use searchkernel_testkit::{
+    canonical_result_fixtures, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
+};
 #[cfg(unix)]
 use searchkerneld::ServerError;
 use searchkerneld::{rpc, start, ServerConfig};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
+use std::path::PathBuf;
 #[cfg(unix)]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
@@ -225,6 +231,39 @@ async fn connect_client(
         .expect("connect generated gRPC client")
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ergonomic_rust_remote_client_uses_actual_daemon_transport() {
+    let backend = Arc::new(RecordingBackend::new());
+    let (_local, dispatcher) = dispatcher(backend);
+    let server = start(
+        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
+        dispatcher,
+    )
+    .await
+    .expect("start searchkerneld transport");
+    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+
+    // The public remote API is intentionally synchronous. In an async
+    // application it belongs on the application's normal blocking-work path.
+    tokio::task::spawn_blocking(move || {
+        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        let error = remote
+            .search("headphones")
+            .execute::<String>()
+            .expect_err("recording backend rejects execution");
+        assert_eq!(error.code(), PublicErrorCode::Unsupported);
+        assert_eq!(error.details()[0].code, "recording_backend");
+        remote.close().expect("close remote client");
+    })
+    .await
+    .expect("remote client blocking task");
+
+    server
+        .shutdown()
+        .await
+        .expect("shutdown searchkerneld transport");
+}
+
 async fn execute_grpc_web_raw(
     address: SocketAddr,
     payload: Vec<u8>,
@@ -280,6 +319,86 @@ async fn execute_grpc_web(address: SocketAddr, payload: Vec<u8>) -> Vec<u8> {
     rpc::FlatBufferFrame::decode(&body[5..5 + frame_len])
         .expect("decode grpc-web response frame")
         .payload
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ergonomic_remote_search_preserves_direct_normalized_ir_through_daemon() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").stored(true).searchable(true))
+        .field(
+            Field::float64("price")
+                .stored(true)
+                .filterable(true)
+                .sortable(true),
+        );
+
+    let recording = Arc::new(RecordingBackend::new());
+    let direct = Index::from_backend(definition.clone(), recording.clone())
+        .expect("build direct recording index");
+    let direct_error = direct
+        .search("remote headphones")
+        .filter(field("price").gte(10.0))
+        .sort(Sort::desc("price").missing_last())
+        .ranking(Ranking::bm25())
+        .language("en")
+        .timeout(Duration::from_millis(1750))
+        .limit(7)
+        .offset(3)
+        .execute::<String>()
+        .expect_err("recording backend rejects direct execution");
+    assert_eq!(direct_error.code(), PublicErrorCode::Unsupported);
+    let expected = recording
+        .last_call()
+        .expect("direct execution recorded normalized IR");
+
+    let scripted = Arc::new(ScriptedBackend::new(vec![ExpectedCall::success(
+        expected,
+        ScriptedResult::Search(Box::new(searchkernel_ir::SearchResult::empty(
+            searchkernel_ir::TotalHits {
+                value: 0,
+                relation: searchkernel_ir::TotalHitsRelation::Exact,
+            },
+        ))),
+    )]));
+    let hosted =
+        Index::from_backend(definition, scripted.clone()).expect("build hosted scripted index");
+    let expected_definition = hosted.describe().expect("describe hosted index");
+    let (context, session) = hosted.into_session_parts();
+    let dispatcher = Arc::new(Dispatcher::new(context, session));
+    let server = start(
+        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
+        dispatcher,
+    )
+    .await
+    .expect("start searchkerneld transport");
+    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+
+    tokio::task::spawn_blocking(move || {
+        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        let result = remote
+            .search("remote headphones")
+            .filter(field("price").gte(10.0))
+            .sort(Sort::desc("price").missing_last())
+            .ranking(Ranking::bm25())
+            .language("en")
+            .timeout(Duration::from_millis(1750))
+            .limit(7)
+            .offset(3)
+            .execute::<String>()
+            .expect("remote normalized IR matches direct IR");
+        assert_eq!(result.total_hits.value, 0);
+        remote.close().expect("close remote client");
+    })
+    .await
+    .expect("remote client blocking task");
+
+    scripted
+        .finish()
+        .expect("remote daemon consumed the exact direct IR request");
+    server
+        .shutdown()
+        .await
+        .expect("shutdown searchkerneld transport");
 }
 
 #[cfg(unix)]
@@ -928,4 +1047,320 @@ async fn non_socket_path_is_not_removed_before_binding() {
 
     index.close().expect("close test index");
     std::fs::remove_file(path).expect("remove test path");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ergonomic_remote_insert_preserves_direct_normalized_ir_through_daemon() {
+    let definition = IndexDefinition::new()
+        .field(Field::keyword("tags").multi().stored(true))
+        .field(Field::position("location").stored(true))
+        .field(Field::tensor("embedding", "tensor<float>(x[3])").stored(true));
+
+    let tags_document = std::collections::BTreeMap::from([(
+        "tags".to_owned(),
+        vec!["rust".to_owned(), "remote".to_owned()],
+    )]);
+    let location_document = std::collections::BTreeMap::from([(
+        "location".to_owned(),
+        std::collections::BTreeMap::from([
+            ("latitude".to_owned(), 37.3317_f64),
+            ("longitude".to_owned(), -121.8916_f64),
+        ]),
+    )]);
+    let tensor_document = std::collections::BTreeMap::from([(
+        "embedding".to_owned(),
+        Tensor::dense("tensor<float>(x[3])", vec![0.25, 0.5, 0.75]),
+    )]);
+
+    let recording = Arc::new(RecordingBackend::new());
+    let direct = Index::from_backend(definition.clone(), recording.clone())
+        .expect("build direct recording index");
+    assert_eq!(
+        direct
+            .insert("doc-tags", &tags_document)
+            .expect_err("recording backend rejects direct tags insert")
+            .code(),
+        PublicErrorCode::Unsupported
+    );
+    assert_eq!(
+        direct
+            .insert("doc-location", &location_document)
+            .expect_err("recording backend rejects direct position insert")
+            .code(),
+        PublicErrorCode::Unsupported
+    );
+    assert_eq!(
+        direct
+            .insert("doc-tensor", &tensor_document)
+            .expect_err("recording backend rejects direct tensor insert")
+            .code(),
+        PublicErrorCode::Unsupported
+    );
+    let expected = recording.take_calls();
+    assert_eq!(expected.len(), 3);
+
+    let scripted = Arc::new(ScriptedBackend::new(vec![
+        ExpectedCall::success(
+            expected[0].clone(),
+            ScriptedResult::Insert(searchkernel_ir::InsertResult {
+                id: "doc-tags".to_owned(),
+            }),
+        ),
+        ExpectedCall::success(
+            expected[1].clone(),
+            ScriptedResult::Insert(searchkernel_ir::InsertResult {
+                id: "doc-location".to_owned(),
+            }),
+        ),
+        ExpectedCall::success(
+            expected[2].clone(),
+            ScriptedResult::Insert(searchkernel_ir::InsertResult {
+                id: "doc-tensor".to_owned(),
+            }),
+        ),
+    ]));
+    let hosted =
+        Index::from_backend(definition, scripted.clone()).expect("build hosted scripted index");
+    let expected_definition = hosted.describe().expect("describe hosted index");
+    let (context, session) = hosted.into_session_parts();
+    let dispatcher = Arc::new(Dispatcher::new(context, session));
+    let server = start(
+        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
+        dispatcher,
+    )
+    .await
+    .expect("start searchkerneld transport");
+    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+
+    tokio::task::spawn_blocking(move || {
+        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        assert_eq!(
+            remote.describe().expect("describe remote index"),
+            expected_definition,
+            "connect-time Describe must preserve the effective Rust schema exactly"
+        );
+        remote
+            .insert("doc-tags", &tags_document)
+            .expect("remote multi-value insert preserves direct normalized IR");
+        remote
+            .insert("doc-location", &location_document)
+            .expect("remote position insert preserves direct normalized IR");
+        remote
+            .insert("doc-tensor", &tensor_document)
+            .expect("remote tensor insert preserves direct normalized IR");
+        remote.close().expect("close remote client");
+    })
+    .await
+    .expect("remote client blocking task");
+
+    scripted
+        .finish()
+        .expect("remote daemon consumed the exact direct insert IR");
+    server
+        .shutdown()
+        .await
+        .expect("shutdown searchkerneld transport");
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ergonomic_rust_remote_client_connects_over_unix_socket() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time")
+        .as_nanos();
+    let socket_path = std::env::temp_dir().join(format!(
+        "searchkernel-rust-remote-{}-{nonce}.sock",
+        std::process::id()
+    ));
+    let mut lock_name = socket_path.as_os_str().to_os_string();
+    lock_name.push(".lock");
+    let lock_path = PathBuf::from(lock_name);
+
+    let backend = Arc::new(RecordingBackend::new());
+    let (_local, dispatcher) = dispatcher(backend);
+    let server = start(ServerConfig::unix(&socket_path), dispatcher)
+        .await
+        .expect("start Unix searchkerneld transport");
+    let endpoint = format!("unix://{}", socket_path.display());
+
+    tokio::task::spawn_blocking(move || {
+        let remote = Index::connect(endpoint).expect("connect Rust remote client over Unix socket");
+        let error = remote
+            .search("headphones")
+            .execute::<String>()
+            .expect_err("recording backend rejects execution");
+        assert_eq!(error.code(), PublicErrorCode::Unsupported);
+        assert_eq!(error.details()[0].code, "recording_backend");
+        remote.close().expect("close Unix remote client");
+    })
+    .await
+    .expect("Unix remote client blocking task");
+
+    server.shutdown().await.expect("shutdown Unix transport");
+    assert!(
+        !socket_path.exists(),
+        "searchkerneld shutdown must remove the owned Unix socket"
+    );
+    let _ = std::fs::remove_file(lock_path);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ergonomic_remote_result_matches_embedded_public_projection_exactly() {
+    let definition =
+        IndexDefinition::new().field(Field::text("title").stored(true).searchable(true));
+
+    // Resolve once through the public Rust facade so both backends receive the
+    // exact same normalized request. This keeps the test focused on result
+    // transport fidelity rather than reconstructing SearchRequestIr by hand.
+    let recording = Arc::new(RecordingBackend::new());
+    let probe = Index::from_backend(definition.clone(), recording.clone())
+        .expect("build request probe index");
+    assert_eq!(
+        probe
+            .search("remote result")
+            .execute::<serde_json::Value>()
+            .expect_err("recording backend rejects request")
+            .code(),
+        PublicErrorCode::Unsupported
+    );
+    let expected_request = recording
+        .last_call()
+        .expect("request probe recorded normalized IR");
+    probe.close().expect("close request probe");
+
+    let fixtures = canonical_result_fixtures();
+    let embedded_backend = Arc::new(ScriptedBackend::new(
+        fixtures
+            .iter()
+            .map(|(_, fixture)| {
+                ExpectedCall::success(
+                    expected_request.clone(),
+                    ScriptedResult::Search(Box::new(fixture.clone())),
+                )
+            })
+            .collect::<Vec<_>>(),
+    ));
+    let embedded = Index::from_backend(definition.clone(), embedded_backend.clone())
+        .expect("build embedded scripted index");
+    let mut embedded_results = Vec::with_capacity(fixtures.len());
+    for (name, _) in &fixtures {
+        let result = embedded
+            .search("remote result")
+            .execute::<serde_json::Value>()
+            .unwrap_or_else(|error| panic!("embedded fixture {name} failed: {error}"));
+        embedded_results.push((*name, result));
+    }
+    embedded_backend
+        .finish()
+        .expect("embedded path consumed result corpus");
+    embedded.close().expect("close embedded index");
+
+    let remote_backend = Arc::new(ScriptedBackend::new(
+        fixtures
+            .iter()
+            .map(|(_, fixture)| {
+                ExpectedCall::success(
+                    expected_request.clone(),
+                    ScriptedResult::Search(Box::new(fixture.clone())),
+                )
+            })
+            .collect::<Vec<_>>(),
+    ));
+    let hosted = Index::from_backend(definition, remote_backend.clone())
+        .expect("build hosted scripted index");
+    let (context, session) = hosted.into_session_parts();
+    let server = start(
+        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
+        Arc::new(Dispatcher::new(context, session)),
+    )
+    .await
+    .expect("start searchkerneld transport");
+    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+
+    let fixture_names = fixtures.iter().map(|(name, _)| *name).collect::<Vec<_>>();
+    let remote_results = tokio::task::spawn_blocking(move || {
+        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        let mut results = Vec::with_capacity(fixture_names.len());
+        for name in fixture_names {
+            let result = remote
+                .search("remote result")
+                .execute::<serde_json::Value>()
+                .unwrap_or_else(|error| panic!("remote fixture {name} failed: {error}"));
+            results.push((name, result));
+        }
+        remote.close().expect("close remote client");
+        results
+    })
+    .await
+    .expect("remote client blocking task");
+
+    remote_backend
+        .finish()
+        .expect("remote path consumed result corpus");
+    assert_eq!(
+        remote_results, embedded_results,
+        "remote response decoding must preserve every canonical public Rust result projection"
+    );
+    server
+        .shutdown()
+        .await
+        .expect("shutdown searchkerneld transport");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ergonomic_rust_remote_client_multiplexes_concurrent_calls() {
+    let backend = BlockingBackend::new();
+    let (_local, dispatcher) = dispatcher(backend.clone());
+    let server = start(
+        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address"))
+            .with_execution_limit(2)
+            .with_admission_limit(2),
+        dispatcher,
+    )
+    .await
+    .expect("start searchkerneld transport");
+    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+
+    let remote = tokio::task::spawn_blocking(move || {
+        Index::connect(endpoint).expect("connect ergonomic Rust remote client")
+    })
+    .await
+    .expect("connect blocking task");
+    let first = remote.clone();
+    let second = remote.clone();
+
+    let first_call = tokio::task::spawn_blocking(move || {
+        first
+            .search("first")
+            .execute::<String>()
+            .expect_err("blocking backend rejects first search")
+    });
+    let second_call = tokio::task::spawn_blocking(move || {
+        second
+            .search("second")
+            .execute::<String>()
+            .expect_err("blocking backend rejects second search")
+    });
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while backend.searches.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("both remote calls must reach the daemon concurrently");
+
+    backend.release.store(true, Ordering::Release);
+
+    let first_error = first_call.await.expect("first blocking task");
+    let second_error = second_call.await.expect("second blocking task");
+    assert_eq!(first_error.code(), PublicErrorCode::Unsupported);
+    assert_eq!(second_error.code(), PublicErrorCode::Unsupported);
+
+    remote.close().expect("close remote client");
+    server
+        .shutdown()
+        .await
+        .expect("shutdown searchkerneld transport");
 }

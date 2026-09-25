@@ -43,21 +43,15 @@ use tonic::{body::BoxBody, Request, Response, Status};
 use tonic_web::GrpcWebLayer;
 use tower::{Layer, Service};
 
-/// Rust bindings generated from the public Search Kernel gRPC protocol.
-#[allow(clippy::result_large_err)]
-pub mod rpc {
-    include!("generated/rpc.rs");
-}
+/// Shared Rust bindings generated from the public Search Kernel gRPC protocol.
+pub use searchkernel_rpc::rpc;
 
 use rpc::{
     search_kernel_server::{SearchKernel, SearchKernelServer},
     FlatBufferFrame,
 };
 
-/// Explicit transport bound for canonical FlatBuffer request and response
-/// frames. Tonic's default decode limit is 4 MiB, which is too small for
-/// legitimate documents and tensor payloads.
-pub const MAX_GRPC_MESSAGE_SIZE: usize = 256 * 1024 * 1024;
+pub use searchkernel_rpc::MAX_GRPC_MESSAGE_SIZE;
 
 /// HTTP/JSON edge endpoint carrying standard FlatBuffers JSON envelopes.
 pub const JSON_EXECUTE_PATH: &str = "/v1/execute";
