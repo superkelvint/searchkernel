@@ -487,6 +487,7 @@ coverage_target() {
         echo "usage: ./dev coverage" >&2
         return 2
     }
+    install_native_sdk
     bash "$ROOT/tools/coverage.sh"
 }
 
