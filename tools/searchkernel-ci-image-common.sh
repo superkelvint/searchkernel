@@ -35,12 +35,14 @@ ci_image_login() {
 
 ci_image_toolchain_id() {
     local root=$1
-    python3 - "$root" <<'PY'
+    local base_image=${2:-docker.io/vespaengine/vespa-dev-almalinux-8:latest}
+    python3 - "$root" "$base_image" <<'PY'
 import hashlib
 import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
+base_image = sys.argv[2]
 if not root.is_dir():
     raise SystemExit(f"toolchain recipe directory does not exist: {root}")
 
@@ -50,6 +52,8 @@ if not files:
     raise SystemExit(f"toolchain recipe directory has no files: {root}")
 
 h.update(b"searchkernel-ci-toolchain-v1\0")
+h.update(base_image.encode())
+h.update(b"\0")
 for path in files:
     relative = path.relative_to(root).as_posix().encode()
     data = path.read_bytes()
