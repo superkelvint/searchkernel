@@ -44,7 +44,7 @@ class PythonDependencyContractTests(unittest.TestCase):
             self.assertIn("resolve-python.sh", text, relative)
             self.assertNotRegex(
                 text,
-                r"(?m)^\\s*python3\\s",
+                r"(?m)^\s*python3\s",
                 relative,
             )
 
