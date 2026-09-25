@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-flatc_bin=$(bash "$root/tools/resolve-flatc.sh")
+flatc_bin=$(bash "$root/tools/resolve-flatbuffers.sh" flatc)
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
 "$flatc_bin" --binary --schema -I "$root/api" -o "$temporary" "$root/api/searchkernel_request.fbs"
