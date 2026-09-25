@@ -27,7 +27,7 @@ require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m8-driver" \
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
-  id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
+  id="$(python3 "$ROOT/reference/vespa/common/json_tools.py" field "$s" id)"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$SCRIPT_DIR/oracle/run-cpp-oracle.sh" "$s" > "$TMP/oracle-$id.json"
     "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/oracle-$id.json"
@@ -41,11 +41,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
 done
 
 ERRORS="$SCRIPT_DIR/scenarios/errors.json"
-python3 - "$ERRORS" <<'PY' > "$TMP/error-jobs"
-import json,sys
-for c in json.load(open(sys.argv[1],encoding='utf-8'))['cases']:
- print(c['id'],c['expected_error'])
-PY
+python3 "$ROOT/reference/vespa/common/json_tools.py" cases "$ERRORS" id expected_error > "$TMP/error-jobs"
 while read -r id expected; do
   cfg="$TMP/error-$id-cfg"; data="$TMP/error-$id-data"; mkdir -p "$data"
   actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m8-error -- "$ERRORS" "$id" "$cfg" "$data")"
