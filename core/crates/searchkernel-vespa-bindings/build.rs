@@ -21,8 +21,13 @@ fn main() {
     #[cfg(feature = "native")]
     let explicit_sdk = env::var_os("SK_NATIVE_SDK").map(PathBuf::from);
     #[cfg(feature = "native")]
+    let hardening_required = env::var_os("CARGO_FEATURE_HARDENING").is_some();
+    #[cfg(feature = "native")]
     let (sdk, base_sdk) = if let Some(configured) = explicit_sdk {
-        (prepare_native_sdk(&manifest_dir, configured, &target), None)
+        (
+            prepare_native_sdk(&manifest_dir, configured, &target, hardening_required),
+            None,
+        )
     } else {
         let base = resolve_shared_native_sdk(&manifest_dir, &target, "path").unwrap_or_else(|error| {
             panic!(
@@ -40,7 +45,7 @@ fn main() {
                 "immutable Vespa base prerequisite is invalid: {error}\nRun './dev native-sdk ensure' to bootstrap or repair it."
             )
         });
-        let adapter = build_local_adapter(&manifest_dir, &base, &target)
+        let adapter = build_local_adapter(&manifest_dir, &base, &target, hardening_required)
             .unwrap_or_else(|error| panic!("build Search Kernel Vespa adapter: {error}"));
         (adapter, Some(base))
     };
@@ -111,7 +116,7 @@ fn main() {
                 );
             }
             println!("cargo:warning=searchkernel: explicit native Vespa SDK link probe failed");
-            rebuild_native_sdk(&manifest_dir, &sdk).unwrap_or_else(|rebuild_error| {
+            rebuild_native_sdk(&manifest_dir, &sdk, hardening_required).unwrap_or_else(|rebuild_error| {
                 panic!(
                     "explicit native Vespa SDK link probe failed and automatic rebuild could not start:\n{error}\n{rebuild_error}"
                 )
@@ -126,6 +131,43 @@ fn main() {
             probe_native_sdk(&sdk, None, &target, &host).unwrap_or_else(|retry_error| {
                 panic!(
                     "explicit native Vespa SDK link probe failed after one automatic rebuild:\n{error}\n{retry_error}"
+                )
+            });
+        }
+    }
+
+    #[cfg(feature = "native")]
+    if hardening_required {
+        if let Err(error) = verify_hardening_sdk(&manifest_dir, &sdk) {
+            if base_sdk.is_some() {
+                panic!(
+                    "Search Kernel hardening adapter '{}' is missing required failpoint support:\n{error}",
+                    sdk.display()
+                );
+            }
+            println!(
+                "cargo:warning=searchkernel: explicit native SDK lacks hardening failpoints; rebuilding it once"
+            );
+            rebuild_native_sdk(&manifest_dir, &sdk, true).unwrap_or_else(|rebuild_error| {
+                panic!(
+                    "explicit native SDK lacks hardening failpoints and automatic rebuild failed:\n{error}\n{rebuild_error}"
+                )
+            });
+            verify_native_provenance(&manifest_dir, &sdk, &target).unwrap_or_else(
+                |verify_error| {
+                    panic!(
+                        "explicit native SDK hardening rebuild produced invalid provenance:\n{verify_error}"
+                    )
+                },
+            );
+            probe_native_sdk(&sdk, None, &target, &host).unwrap_or_else(|retry_error| {
+                panic!(
+                    "explicit native SDK failed its ordinary link probe after hardening rebuild:\n{retry_error}"
+                )
+            });
+            verify_hardening_sdk(&manifest_dir, &sdk).unwrap_or_else(|retry_error| {
+                panic!(
+                    "explicit native SDK still lacks hardening failpoints after one rebuild:\n{retry_error}"
                 )
             });
         }
@@ -169,7 +211,20 @@ fn main() {
             .join("../../native/vespa/searchkernel_vespa_test.map")
             .display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir
+            .join("../../native/vespa/searchkernel_vespa_test.h")
+            .display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir
+            .join("../../../tools/check-native-sdk-hardening.sh")
+            .display()
+    );
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ENABLE_FAILPOINTS");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_HARDENING");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_CXX_FLAGS");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_LINK_FLAGS");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SANITIZER");
@@ -262,7 +317,12 @@ fn default_native_sdk(manifest_dir: &Path) -> PathBuf {
 }
 
 #[cfg(feature = "native")]
-fn prepare_native_sdk(manifest_dir: &Path, configured: PathBuf, target: &str) -> PathBuf {
+fn prepare_native_sdk(
+    manifest_dir: &Path,
+    configured: PathBuf,
+    target: &str,
+    hardening_required: bool,
+) -> PathBuf {
     let root = manifest_dir.join("../../..");
     let configured = if configured.is_absolute() {
         configured
@@ -283,7 +343,7 @@ fn prepare_native_sdk(manifest_dir: &Path, configured: PathBuf, target: &str) ->
             println!(
                 "cargo:warning=searchkernel: explicitly managed native SDK is missing or stale; rebuilding it once"
             );
-            rebuild_native_sdk(manifest_dir, &configured).unwrap_or_else(|error| {
+            rebuild_native_sdk(manifest_dir, &configured, hardening_required).unwrap_or_else(|error| {
                 panic!(
                     "explicit native Vespa SDK is missing or stale and automatic rebuild failed:\n{last_error}\n{error}"
                 )
@@ -328,6 +388,7 @@ fn build_local_adapter(
     manifest_dir: &Path,
     base_sdk: &Path,
     target: &str,
+    hardening_required: bool,
 ) -> Result<PathBuf, String> {
     let root = manifest_dir.join("../../..");
     let out_dir = PathBuf::from(
@@ -345,6 +406,10 @@ fn build_local_adapter(
         .env("SK_NATIVE_TARGET", target)
         .env("SK_NATIVE_ADAPTER_ONLY", "1")
         .env("SK_NATIVE_BASE_SDK", base_sdk)
+        .env(
+            "SK_NATIVE_ENABLE_FAILPOINTS",
+            if hardening_required { "1" } else { "0" },
+        )
         .env("SK_NATIVE_REGENERATE_BINDINGS", "0")
         .env("SK_NATIVE_SKIP_BINDINGS_CHECK", "1")
         .output()
@@ -442,12 +507,20 @@ fn manifest_string_field<'a>(manifest: &'a str, field: &str) -> Option<&'a str> 
 }
 
 #[cfg(feature = "native")]
-fn rebuild_native_sdk(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
+fn rebuild_native_sdk(
+    manifest_dir: &Path,
+    sdk: &Path,
+    hardening_required: bool,
+) -> Result<(), String> {
     let root = manifest_dir.join("../../..");
     let output = Command::new("bash")
         .arg(root.join("core/native/vespa/build-sdk.sh"))
         .env("SK_NATIVE_SDK", sdk)
         .env("SK_NATIVE_TARGET", env::var("TARGET").unwrap_or_default())
+        .env(
+            "SK_NATIVE_ENABLE_FAILPOINTS",
+            if hardening_required { "1" } else { "0" },
+        )
         .env("SK_NATIVE_REGENERATE_BINDINGS", "0")
         .env("SK_NATIVE_SKIP_BINDINGS_CHECK", "1")
         .output()
@@ -457,6 +530,26 @@ fn rebuild_native_sdk(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
     } else {
         Err(format!(
             "native SDK rebuild exited with {}\nstdout={}\nstderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ))
+    }
+}
+
+#[cfg(feature = "native")]
+fn verify_hardening_sdk(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
+    let root = manifest_dir.join("../../..");
+    let output = Command::new("bash")
+        .arg(root.join("tools/check-native-sdk-hardening.sh"))
+        .arg(sdk)
+        .output()
+        .map_err(|error| format!("run native hardening SDK verifier: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "native hardening SDK verifier exited with {}\nstdout={}\nstderr={}",
             output.status,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
