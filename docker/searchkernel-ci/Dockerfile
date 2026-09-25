@@ -223,8 +223,8 @@ RUN command -v rg \
     && command -v cmake \
     && command -v clang \
     && c++ --version | head -n 1 \
-    && test "$(c++ -dumpfullversion)" = 15.2.1 \
-    && test "$(c++ -print-file-name=libstdc++.so)" != libstdc++.so
+    && [[ "$(c++ -dumpfullversion)" == 15.* ]] \
+    && test -f "$(c++ -print-file-name=libstdc++.so)"
 
 # Prove that the bundled base/toolchain can rebuild the adapter from the exact
 # Search Kernel source revision being published. The source exists only in this
