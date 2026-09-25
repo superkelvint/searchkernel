@@ -87,7 +87,6 @@ for fragment in (
     "searchkernel-native-toolchain",
     "io.searchkernel.vespa-commit",
     "io.searchkernel.vespa-bundle-id",
-    "ci_image_require_clean_checkout",
 ):
     if fragment not in vespa:
         raise SystemExit(f"Vespa image is missing {fragment!r}")
@@ -144,6 +143,8 @@ if "ci_image_require_remote_main" not in common:
     raise SystemExit("canonical :latest publication has no remote-main gate")
 if "searchkernel-ci-vespa-bundle-v1" not in common:
     raise SystemExit("Vespa bundle identity must include the packaging/closure recipe")
+if "searchkernel-ci-vespa-producer-v1" not in common or "ci_image_vespa_producer_id" not in common:
+    raise SystemExit("Vespa producer identity must include the native SDK fingerprint")
 if 'root / "tools/prepare-searchkernel-ci-native-context.sh"' not in common:
     raise SystemExit("Vespa bundle identity does not include native-context packaging")
 
@@ -168,6 +169,10 @@ for fragment in (
     'IMAGE_REF="$IMAGE:$VESPA_COMMIT-$VESPA_BUNDLE_ID"',
     "io.searchkernel.vespa-commit",
     "io.searchkernel.vespa-bundle-id",
+    "io.searchkernel.vespa-producer-id",
+    "ci_image_vespa_producer_id",
+    "VESPA_PRODUCER_ID",
+    "ci_image_require_clean_checkout",
 ):
     if fragment not in vespa_publish:
         raise SystemExit(f"Vespa publisher is missing {fragment!r}")
@@ -194,11 +199,12 @@ for fragment in (
     "ci_image_require_clean_checkout",
     "ci_image_require_remote_main",
     "tags beginning with 'base-' are reserved",
+    "Docker tag 'latest' is reserved",
     "io.searchkernel.vespa-bundle-id",
     "./dev image toolchain publish",
     "./dev image vespa publish",
     "Reusing published composite base.",
-    "CI_BASE_IMAGE=$COMPOSITE_REF",
+    "CI_BASE_IMAGE=$PINNED_COMPOSITE_REF",
 ):
     if fragment not in leaf_publish:
         raise SystemExit(f"final image publisher is missing split-image behavior {fragment!r}")
