@@ -63,6 +63,8 @@ for fragment in (
     "ARG RUBY_VERSION=",
     "ARG RUST_TOOLCHAIN=",
     "ARG FLATBUFFERS_VERSION=",
+    "llvm-tools-preview",
+    "cargo-llvm-cov",
     "dnf install",
 ):
     if fragment not in toolchain:
@@ -100,6 +102,8 @@ for fragment in (
     "io.searchkernel.toolchain-id",
     "io.searchkernel.vespa-commit",
     "Composition-time compatibility gate",
+    "adapter_static_link_closure",
+    "cargo llvm-cov --version",
 ):
     if fragment not in base:
         raise SystemExit(f"composite CI base is missing {fragment!r}")
