@@ -338,9 +338,64 @@ run_tool_regression_tests() {
     done < <(find "$ROOT/tools" -maxdepth 1 -type f -name 'test-*.sh' -print | sort)
 }
 
-run_all_semantic_verifiers() {
+universe_step() {
+    local label=$1
+    shift
+
+    echo
+    echo "==> universe: $label"
+    if "$@"; then
+        UNIVERSE_PASSED+=("$label")
+    else
+        local status=$?
+        UNIVERSE_FAILED+=("$label (exit $status)")
+    fi
+}
+
+universe_dev_step() {
+    local label=$1
+    shift
+    universe_step "$label" "$ROOT/dev" "$@"
+}
+
+universe() {
     local target
     local -a targets=()
+    local -a UNIVERSE_PASSED=()
+    local -a UNIVERSE_FAILED=()
+
+    # Universe is deliberately non-fail-fast. Each child ./dev invocation keeps
+    # the normal set -e behavior, while this parent records its exit status and
+    # continues through the remaining independent verification lanes.
+    universe_dev_step 'provision native SDK' native-sdk ensure
+    universe_dev_step 'fast repository checks' check-fast
+    universe_step 'Vespa binding checks' bash "$ROOT/tools/check-vespa-bindings.sh"
+    universe_dev_step 'protocol/generated-artifact checks' check-protocol
+    universe_dev_step 'all-features Clippy' lint --profile rust-clippy-all-features
+
+    universe_step 'Rust tests (all targets/features, including ignored)'         "$CARGO" test --workspace --all-targets --all-features -- --include-ignored
+    universe_step 'Rust doctests (all features)'         "$CARGO" test --workspace --all-features --doc
+
+    universe_dev_step 'Python client tests' test python
+    universe_dev_step 'TypeScript client/package tests' test typescript
+    universe_dev_step 'PHP client/package tests' test php
+    universe_dev_step 'Ruby client/package tests' test ruby
+
+    universe_step 'Python tooling regression tests'         "$PYTHON" -m unittest discover -s "$ROOT/tools" -p 'test_*.py'
+    while IFS= read -r target; do
+        universe_step "tool regression $(basename "$target")" bash "$target"
+    done < <(find "$ROOT/tools" -maxdepth 1 -type f -name 'test-*.sh' -print | sort)
+
+    universe_dev_step 'API conformance verifier' verify api-conformance
+    universe_dev_step 'capability/client contract verifiers' verify contracts
+    universe_dev_step 'native ABI verifier' verify abi
+    universe_dev_step 'persistence compatibility verifier' verify persistence
+    universe_dev_step 'issue queue verifier' verify issue-queue
+
+    universe_step 'executable client E2E lanes'         "$PYTHON" "$ROOT/tools/check-client-contracts.py" --run-e2e
+    if [[ -x "$ROOT/tools/run-python-native-e2e.sh" ]]; then
+        universe_step 'Python native gRPC E2E' bash "$ROOT/tools/run-python-native-e2e.sh"
+    fi
 
     mapfile -t targets < <(
         "$ROOT/reference/vespa/verify-through.sh" --list |
@@ -350,71 +405,29 @@ run_all_semantic_verifiers() {
                 semantic && NF { print $1 }
             '
     )
-
-    (("${#targets[@]}" > 0)) || {
-        echo 'error: no semantic verifier targets discovered' >&2
-        return 1
-    }
-
-    for target in "${targets[@]}"; do
-        echo
-        echo "==> universe: verify $target"
-        verify_target "$target"
-    done
-}
-
-universe() {
-    echo '==> universe: provisioning native SDK'
-    native_sdk_command ensure
-
-    echo
-    echo '==> universe: repository checks'
-    check_fast
-    bash "$ROOT/tools/check-vespa-bindings.sh"
-    check_protocol
-    lint_target --profile rust-clippy-all-features
-
-    echo
-    echo '==> universe: every Rust test, including ignored and doctests'
-    "$CARGO" test --workspace --all-targets --all-features -- --include-ignored
-    "$CARGO" test --workspace --all-features --doc
-
-    echo
-    echo '==> universe: every client unit/package suite'
-    run_python_tests
-    run_typescript_tests
-    run_php_tests
-    run_ruby_tests
-
-    echo
-    echo '==> universe: tooling regression tests'
-    run_tool_regression_tests
-
-    echo
-    echo '==> universe: focused repository verifiers'
-    verify_target api-conformance
-    verify_target contracts
-    verify_target abi
-    verify_target persistence
-    verify_target issue-queue
-
-    echo
-    echo '==> universe: executable client E2E lanes'
-    "$PYTHON" "$ROOT/tools/check-client-contracts.py" --run-e2e
-    if [[ -x "$ROOT/tools/run-python-native-e2e.sh" ]]; then
-        bash "$ROOT/tools/run-python-native-e2e.sh"
+    if (("${#targets[@]}" == 0)); then
+        UNIVERSE_FAILED+=('semantic verifier discovery (no targets)')
+    else
+        for target in "${targets[@]}"; do
+            universe_dev_step "semantic verifier $target" verify "$target"
+        done
     fi
 
-    echo
-    echo '==> universe: every canonical semantic Vespa verifier'
-    run_all_semantic_verifiers
+    universe_dev_step 'cumulative milestone.m14 closure' verify milestone.m14
 
     echo
-    echo '==> universe: cumulative milestone closure'
-    verify_target milestone.m14
+    echo '========== Search Kernel universe summary =========='
+    printf 'PASS: %d lane(s)\n' "${#UNIVERSE_PASSED[@]}"
+    if (("${#UNIVERSE_FAILED[@]}" == 0)); then
+        echo 'FAIL: 0 lane(s)'
+        echo 'Search Kernel universe: PASS'
+        return 0
+    fi
 
-    echo
-    echo 'Search Kernel universe: PASS'
+    printf 'FAIL: %d lane(s)\n' "${#UNIVERSE_FAILED[@]}"
+    printf '  - %s\n' "${UNIVERSE_FAILED[@]}"
+    echo 'Search Kernel universe: FAIL' >&2
+    return 1
 }
 
 regen_protocol() {
