@@ -116,12 +116,14 @@ RUN curl --fail --location --retry 5 --silent --show-error \
 RUN curl --proto "=https" --tlsv1.2 --retry 5 --silent --show-error --fail \
         https://sh.rustup.rs \
         | sh -s -- -y --profile minimal --default-toolchain "${RUST_TOOLCHAIN}" --no-modify-path \
-    && rustup component add rustfmt clippy --toolchain "${RUST_TOOLCHAIN}" \
+    && rustup component add rustfmt clippy llvm-tools-preview --toolchain "${RUST_TOOLCHAIN}" \
+    && cargo install cargo-llvm-cov --locked --version 0.9.1 \
     && rustup default "${RUST_TOOLCHAIN}" \
     && rustc --version \
     && cargo --version \
     && rustfmt --version \
-    && cargo clippy --version
+    && cargo clippy --version \
+    && cargo llvm-cov --version
 
 RUN work="$(mktemp -d /tmp/flatbuffers.XXXXXX)" \
     && curl --fail --location --retry 5 --silent --show-error \
@@ -168,6 +170,7 @@ RUN test "$("$CC" -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 \
     && command -v "${PYTHON}" \
     && command -v rustc \
     && command -v cargo \
+    && cargo llvm-cov --version \
     && command -v flatc \
     && command -v cmake \
     && command -v clang \
