@@ -465,6 +465,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
 
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
+
       - name: Reject stale verification checkout
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -492,13 +495,13 @@ jobs:
         run: bash tools/test-native-sdk-cache.sh
 
       - name: Test Clippy diagnostic runner
-        run: python3 tools/test_run_clippy.py
+        run: $CI_PYTHON tools/test_run_clippy.py
 
       - name: Enforce canonical Python tooling resolution
-        run: python3 tools/test_python_dependency_contract.py
+        run: $CI_PYTHON tools/test_python_dependency_contract.py
 
       - name: Enforce canonical toolchain authorities
-        run: python3 tools/test_toolchain_authorities.py
+        run: $CI_PYTHON tools/test_toolchain_authorities.py
 
       - name: Run semantic verifier routing regression
         run: bash reference/vespa/verifiers/test-routing.sh
