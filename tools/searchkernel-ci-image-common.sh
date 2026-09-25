@@ -22,6 +22,31 @@ ci_image_require_docker() {
         ci_image_die "Docker is not usable by the current user"
 }
 
+ci_image_require_clean_checkout() {
+    local root=$1
+    local status
+
+    status="$(git -C "$root" status --porcelain --untracked-files=normal)"
+    [[ -z "$status" ]] ||
+        ci_image_die "publisher checkout has uncommitted or untracked files; publish only from a clean checkout"
+}
+
+ci_image_require_remote_main() {
+    local root=$1
+    local remote_name=${SEARCHKERNEL_GIT_REMOTE:-origin}
+    local source_commit remote_commit ignored
+
+    source_commit="$(git -C "$root" rev-parse HEAD)"
+    if ! read -r remote_commit ignored < <(
+        git -C "$root" ls-remote --exit-code "$remote_name" refs/heads/main
+    ); then
+        ci_image_die "could not resolve canonical main from Git remote '$remote_name'"
+    fi
+
+    [[ -n "$remote_commit" && "$source_commit" == "$remote_commit" ]] ||
+        ci_image_die "publisher checkout is $source_commit, but canonical main is ${remote_commit:-unknown}; update main before publishing :latest"
+}
+
 ci_image_login() {
     if [[ -n "${DOCKERHUB_TOKEN:-}" ]]; then
         local username=${DOCKERHUB_USERNAME:-superkelvint}
@@ -33,26 +58,88 @@ ci_image_login() {
     fi
 }
 
+ci_image_resolve_local_digest() {
+    local image=$1
+    local digests_json
+
+    digests_json="$(docker image inspect --format '{{json .RepoDigests}}' "$image")" ||
+        ci_image_die "could not inspect pulled image: $image"
+
+    python3 - "$image" "$digests_json" <<'PY'
+import json
+import sys
+
+image, encoded = sys.argv[1:]
+digests = json.loads(encoded)
+if not digests:
+    raise SystemExit(f"pulled image has no repository digest: {image}")
+
+def repository(ref):
+    ref = ref.split("@", 1)[0]
+    slash = ref.rfind("/")
+    colon = ref.rfind(":")
+    if colon > slash:
+        ref = ref[:colon]
+    for prefix in ("docker.io/", "index.docker.io/"):
+        if ref.startswith(prefix):
+            ref = ref[len(prefix):]
+    if "/" not in ref:
+        ref = "library/" + ref
+    return ref
+
+wanted = repository(image)
+matches = []
+for item in digests:
+    if "@" not in item:
+        continue
+    candidate, digest = item.rsplit("@", 1)
+    if repository(candidate) == wanted:
+        matches.append((candidate, digest))
+
+if len(matches) != 1:
+    raise SystemExit(
+        f"expected exactly one repository digest for {image!r}; "
+        f"found {len(matches)} matching entries in {digests!r}"
+    )
+
+candidate, digest = matches[0]
+print(f"{candidate}@{digest}")
+PY
+}
+
+ci_image_pull_and_resolve_digest() {
+    local image=$1
+
+    docker pull "$image" >/dev/null ||
+        ci_image_die "could not pull image: $image"
+    ci_image_resolve_local_digest "$image"
+}
+
 ci_image_toolchain_id() {
     local root=$1
-    local base_image=${2:-docker.io/vespaengine/vespa-dev-almalinux-8:latest}
-    python3 - "$root" "$base_image" <<'PY'
+    local base_image_digest=$2
+    python3 - "$root" "$base_image_digest" <<'PY'
 import hashlib
 import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
-base_image = sys.argv[2]
+base_image_digest = sys.argv[2]
 if not root.is_dir():
     raise SystemExit(f"toolchain recipe directory does not exist: {root}")
+if "@sha256:" not in base_image_digest:
+    raise SystemExit(
+        "toolchain identity requires an immutable base-image digest, "
+        f"found {base_image_digest!r}"
+    )
 
 h = hashlib.sha256()
 files = sorted(path for path in root.rglob("*") if path.is_file())
 if not files:
     raise SystemExit(f"toolchain recipe directory has no files: {root}")
 
-h.update(b"searchkernel-ci-toolchain-v1\0")
-h.update(base_image.encode())
+h.update(b"searchkernel-ci-toolchain-v2\0")
+h.update(base_image_digest.encode())
 h.update(b"\0")
 for path in files:
     relative = path.relative_to(root).as_posix().encode()
@@ -106,28 +193,32 @@ PY
 
 ci_image_composite_id() {
     local recipe=$1
-    local toolchain_id=$2
-    local vespa_commit=$3
-    local vespa_bundle_id=$4
-    python3 - "$recipe" "$toolchain_id" "$vespa_commit" "$vespa_bundle_id" <<'PY'
+    local toolchain_image_digest=$2
+    local vespa_image_digest=$3
+    python3 - "$recipe" "$toolchain_image_digest" "$vespa_image_digest" <<'PY'
 import hashlib
 import pathlib
 import sys
 
 recipe = pathlib.Path(sys.argv[1])
-toolchain_id = sys.argv[2]
-vespa_commit = sys.argv[3]
-vespa_bundle_id = sys.argv[4]
+toolchain_image_digest = sys.argv[2]
+vespa_image_digest = sys.argv[3]
 if not recipe.is_file():
     raise SystemExit(f"composite recipe does not exist: {recipe}")
+for label, value in (
+    ("toolchain", toolchain_image_digest),
+    ("Vespa", vespa_image_digest),
+):
+    if "@sha256:" not in value:
+        raise SystemExit(
+            f"composite identity requires immutable {label} image digest, found {value!r}"
+        )
 
 h = hashlib.sha256()
-h.update(b"searchkernel-ci-composite-v1\0")
-h.update(toolchain_id.encode())
+h.update(b"searchkernel-ci-composite-v2\0")
+h.update(toolchain_image_digest.encode())
 h.update(b"\0")
-h.update(vespa_commit.encode())
-h.update(b"\0")
-h.update(vespa_bundle_id.encode())
+h.update(vespa_image_digest.encode())
 h.update(b"\0")
 h.update(recipe.read_bytes())
 print(h.hexdigest())
@@ -161,7 +252,7 @@ ci_image_require_label() {
     local expected=$3
     local actual
 
-    actual=$(ci_image_label "$image" "$label")
+    actual="$(ci_image_label "$image" "$label")"
     if [[ "$actual" != "$expected" ]]; then
         ci_image_die "$image label $label mismatch: expected $expected, found ${actual:-<missing>}"
     fi
