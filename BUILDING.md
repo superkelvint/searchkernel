@@ -261,6 +261,20 @@ come from a different toolchain than CI.
 
 ## Environment isolation
 
+Container isolation does not by itself make a synthetic test hermetic. Tests that
+model resolver, cache, bootstrap, publication, or other environment-sensitive
+state MUST start from a clean environment and explicitly declare every variable
+they consume. They must not inherit the parent shell and then maintain a
+blacklist of known-dangerous `SK_NATIVE_*`, `VESPA_*`, toolchain, or cache
+overrides.
+
+Use `tools/run-hermetic-env.sh` for these fixtures. The runner starts with
+`env -i`; callers pass execution basics such as `PATH`, a fixture-local
+`HOME`/`TMPDIR`, deterministic locale, and the fixture inputs as explicit
+`NAME=VALUE` arguments. Ambient variables are unavailable unless the fixture
+deliberately opts them in. Regression tests should poison representative parent
+variables so accidental ambient authority becomes a deterministic failure.
+
 Supported build/test execution now has two deliberate modes:
 
 | Environment | Cargo target root | Vespa SDK source |
