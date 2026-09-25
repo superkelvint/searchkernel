@@ -24,7 +24,7 @@ COPY --from=searchkernel-source / /tmp/searchkernel-source/
 WORKDIR /tmp/searchkernel-source
 RUN --mount=type=cache,id=searchkernel-ci-publish-cargo-registry,target=/root/.cargo/registry \
     --mount=type=cache,id=searchkernel-ci-publish-cargo-git,target=/root/.cargo/git \
-    --mount=type=cache,id=searchkernel-ci-publish-target,target=/tmp/searchkernel-target \
+    --mount=type=cache,id=searchkernel-ci-publish-target,target=/tmp/searchkernel-target,sharing=locked \
     unset SK_NATIVE_SDK VESPA_ROOT VESPA_DEPS VESPA_LIBRARY_ROOT \
     && CARGO_TARGET_DIR=/tmp/searchkernel-target \
        cargo check -p searchkernel-vespa-bindings --features native \
