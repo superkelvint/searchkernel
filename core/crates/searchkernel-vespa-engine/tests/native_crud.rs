@@ -1963,6 +1963,25 @@ fn native_get_preserves_explicit_empty_collections_across_reopen() {
         .expect("assign explicit empty string array");
     engine
         .put(
+            Document::new("updated-empty-people")
+                .field("marker", "present")
+                .field(
+                    "people",
+                    FieldValue::Array(ArrayValue::Structs(vec![BTreeMap::from([(
+                        "name".to_owned(),
+                        ScalarValue::String("before".to_owned()),
+                    )])])),
+                ),
+        )
+        .expect("put document before assigning empty struct array");
+    engine
+        .update(
+            DocumentUpdate::new("updated-empty-people")
+                .assign("people", FieldValue::Array(ArrayValue::Structs(Vec::new()))),
+        )
+        .expect("assign explicit empty struct array");
+    engine
+        .put(
             Document::new("cleared-array")
                 .field("marker", "present")
                 .field(
@@ -2003,6 +2022,15 @@ fn native_get_preserves_explicit_empty_collections_across_reopen() {
         assert_eq!(
             updated.fields().get("tags"),
             Some(&FieldValue::Array(ArrayValue::Strings(Vec::new())))
+        );
+
+        let updated_people = engine
+            .get("updated-empty-people")
+            .expect("get updated-empty-people document")
+            .expect("updated-empty-people document exists");
+        assert_eq!(
+            updated_people.fields().get("people"),
+            Some(&FieldValue::Array(ArrayValue::Structs(Vec::new())))
         );
 
         let cleared = engine
