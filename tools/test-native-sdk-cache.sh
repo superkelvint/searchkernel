@@ -241,6 +241,7 @@ run_resolver() {
         SEARCHKERNEL_BUILD_ENV="$build_env" \
         SK_NATIVE_TARGET="$native_target" \
         XDG_CACHE_HOME="$fixture/machine-cache-home" \
+        SK_NATIVE_CACHE_DIR="$fixture/machine-cache-home/searchkernel/native-sdk-cache" \
         SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
         SK_NATIVE_CACHE_BUILDER="$root/tools/fake-sdk-builder.sh" \
         VESPA_LIBRARY_ROOT="$untrusted_library_root" \
