@@ -52,6 +52,49 @@ has_vespa_libraries() {
     find "$root" -type f -name 'libvespa*.so*' -print -quit 2>/dev/null | grep -q .
 }
 
+resolve_explicit_sdk() {
+    local sdk manifest
+    sdk=$(cd -- "$SK_NATIVE_SDK" 2>/dev/null && pwd -P) || {
+        echo "explicit SK_NATIVE_SDK does not exist: $SK_NATIVE_SDK" >&2
+        return 1
+    }
+    manifest="$sdk/manifest.json"
+    [[ -f "$manifest" ]] || {
+        echo "explicit SK_NATIVE_SDK is missing manifest.json: $sdk" >&2
+        return 1
+    }
+    grep -Eq '"vespa_commit"[[:space:]]*:[[:space:]]*"'"$PINNED_VESPA_COMMIT"'"' "$manifest" || {
+        echo "explicit SK_NATIVE_SDK does not match pinned Vespa checkout $PINNED_VESPA_COMMIT" >&2
+        return 1
+    }
+    [[ -f "$sdk/include/searchkernel_vespa.h" ]] || {
+        echo "explicit SK_NATIVE_SDK is missing searchkernel_vespa.h: $sdk" >&2
+        return 1
+    }
+    compgen -G "$sdk/lib/libsearchkernel_vespa.so*" >/dev/null || {
+        echo "explicit SK_NATIVE_SDK is missing libsearchkernel_vespa: $sdk" >&2
+        return 1
+    }
+    has_vespa_libraries "$sdk/lib" || {
+        echo "explicit SK_NATIVE_SDK is missing Vespa runtime libraries: $sdk" >&2
+        return 1
+    }
+    printf '%s\n' "$sdk"
+}
+
+if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
+    case "$MODE" in
+        ensure|path)
+            resolve_explicit_sdk
+            exit $?
+            ;;
+        vespa-root)
+            echo "explicit SK_NATIVE_SDK does not require a registered Vespa source checkout" >&2
+            exit 1
+            ;;
+    esac
+fi
+
 PUBLISHED_BASE_RESOLVED=0
 PUBLISHED_BASE_GENERATION=
 PUBLISHED_BASE_URL=
