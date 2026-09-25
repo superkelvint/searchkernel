@@ -5,13 +5,16 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 DEV="$ROOT/dev"
 RUNNER="$ROOT/tools/run-in-ci-image.sh"
 HOOK="$ROOT/.githooks/pre-commit"
+PREPARE="$ROOT/tools/prepare-searchkernel-ci-native-context.sh"
+IMAGE_DOCKERFILE="$ROOT/docker/searchkernel-ci/Dockerfile"
 
 bash -n "$DEV"
 bash -n "$RUNNER"
 bash -n "$HOOK"
+bash -n "$PREPARE"
 python3 -m py_compile "$ROOT/.github/ci/test_exact_head.py"
 
-python3 - "$DEV" "$RUNNER" "$HOOK" "$ROOT/.github/ci/test_exact_head.py" <<'PY'
+python3 - "$DEV" "$RUNNER" "$HOOK" "$ROOT/.github/ci/test_exact_head.py" "$PREPARE" "$IMAGE_DOCKERFILE" <<'PY'
 from pathlib import Path
 import sys
 
@@ -19,6 +22,8 @@ dev = Path(sys.argv[1]).read_text(encoding="utf-8")
 runner = Path(sys.argv[2]).read_text(encoding="utf-8")
 hook = Path(sys.argv[3]).read_text(encoding="utf-8")
 exact_head = Path(sys.argv[4]).read_text(encoding="utf-8")
+prepare = Path(sys.argv[5]).read_text(encoding="utf-8")
+dockerfile = Path(sys.argv[6]).read_text(encoding="utf-8")
 
 if exact_head.count('if __name__ == "__main__":') != 1:
     raise SystemExit("exact-head regression module must contain exactly one module terminator")
@@ -78,6 +83,31 @@ for forbidden in (
 ):
     if forbidden in runner:
         raise SystemExit(f"CI-image runner reintroduced shared/host mutable state: {forbidden}")
+
+required_ci_provenance = (
+    '"format_version": 2',
+    '"artifact_generation": 1',
+    '"adapter_static_link_closure": True',
+)
+for fragment in required_ci_provenance:
+    if fragment not in prepare:
+        raise SystemExit(
+            f"CI-image native-context producer is missing verifier-compatible provenance {fragment!r}"
+        )
+if '"format_version": 3' in prepare:
+    raise SystemExit("CI-image native-context producer emits unsupported provenance format 3")
+
+required_image_validation = (
+    'generation = marker.get("artifact_generation")',
+    'if not isinstance(generation, int) or generation < 1:',
+    'if marker.get("adapter_static_link_closure") is not True:',
+    'if marker.get("format_version") != 2:',
+)
+for fragment in required_image_validation:
+    if fragment not in dockerfile:
+        raise SystemExit(
+            f"CI image build does not fail closed on malformed Vespa provenance: {fragment!r}"
+        )
 
 if 'SEARCHKERNEL_PRECOMMIT_IN_CONTAINER=1' not in dev:
     raise SystemExit("dev precommit verifier does not mark the container phase")
