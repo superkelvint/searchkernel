@@ -31,20 +31,13 @@ ci_image_require_clean_checkout() {
         ci_image_die "publisher checkout has uncommitted or untracked files; publish only from a clean checkout"
 }
 
-ci_image_require_remote_main() {
+ci_image_require_main_checkout() {
     local root=$1
-    local remote_name=${SEARCHKERNEL_GIT_REMOTE:-origin}
-    local source_commit remote_commit ignored
+    local branch
 
-    source_commit="$(git -C "$root" rev-parse HEAD)"
-    if ! read -r remote_commit ignored < <(
-        GIT_TERMINAL_PROMPT=0 git -C "$root" ls-remote --exit-code "$remote_name" refs/heads/main
-    ); then
-        ci_image_die "could not resolve canonical main from Git remote '$remote_name' non-interactively; configure Git credentials (for example, gh auth setup-git) or use an authenticated SSH remote"
-    fi
-
-    [[ -n "$remote_commit" && "$source_commit" == "$remote_commit" ]] ||
-        ci_image_die "publisher checkout is $source_commit, but canonical main is ${remote_commit:-unknown}; update main before publishing :latest"
+    branch="$(git -C "$root" branch --show-current)"
+    [[ "$branch" == "main" ]] ||
+        ci_image_die "publishing :latest requires the main branch; current branch is ${branch:-detached HEAD}"
 }
 
 ci_image_login() {
