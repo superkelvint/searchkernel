@@ -55,9 +55,10 @@ Before starting this SOP, verify the client already satisfies the applicable imp
 
 At minimum, the client should already have:
 
-- generated FlatBuffers models from the canonical `.fbs`;
-- generated or equivalent standard gRPC transport plumbing from `api/rpc/searchkernel.proto`;
-- a supported low-level generated-model escape hatch;
+- one explicitly sanctioned representation/transport path from `IMPLEMENTING_NEW_CLIENTS.md`;
+- for binary gRPC/gRPC-Web clients, generated FlatBuffers models from the canonical `.fbs` and standard generated RPC plumbing from `api/rpc/searchkernel.proto`;
+- for explicitly designated HTTP-first clients, standard FlatBuffers JSON envelope/value/request handling mechanically checked through the official BFBS-backed parser/printer;
+- a supported low-level canonical escape hatch appropriate to that path;
 - request/response envelope handling;
 - portable value encoding/decoding;
 - portable error handling;
@@ -70,7 +71,7 @@ At minimum, the client should already have:
 
 Do not use repository integration as a substitute for unfinished client implementation.
 
-If the client needs changes to canonical semantics, `searchkernel-ir`, `searchkernel-dispatch`, the gRPC domain model, or Vespa lowering in order to integrate, stop and resolve that as a separate architectural or correctness change.
+If the client needs changes to canonical semantics, `searchkernel-ir`, `searchkernel-dispatch`, the portable FlatBuffers contract, the generic transport edges, or Vespa lowering in order to integrate, stop and resolve that as a separate architectural or correctness change. A client must not redefine those layers merely to fit its host runtime.
 
 ---
 
@@ -134,6 +135,8 @@ Examples:
 
 ```text
 grpc
+grpc-web
+http
 managed-local
 shared
 node
@@ -141,6 +144,11 @@ browser
 jvm
 native
 ```
+
+The runtime entry is evidence metadata, not permission to invent a transport. A
+first-party client using `http` must already be explicitly designated
+HTTP-first by the architecture/SOP and must use the standard FlatBuffers JSON
+generic execute edge.
 
 Only list an evidence root if it exists and is intended to contain executable evidence.
 
@@ -239,11 +247,16 @@ If the client checks in generated FlatBuffers or gRPC artifacts, wire generation
 ./dev regen protocol
 ```
 
-The existing regeneration path already owns canonical protocol-derived client artifacts.
+The existing regeneration path owns canonical protocol-derived client artifacts
+for clients that have generated trees.
 
-A protocol regeneration must not update Python and TypeScript while silently leaving the new first-class client stale.
+A protocol regeneration must not update existing generated clients while
+silently leaving another generated first-class client stale. An explicitly
+HTTP-first client with no generated language tree is not forced into
+regeneration; its BFBS-backed standard-JSON conformance check is the mechanical
+schema-drift authority instead.
 
-Requirements:
+Where generated artifacts exist, requirements are:
 
 - use the pinned toolchain;
 - replace generated trees atomically;
@@ -251,7 +264,11 @@ Requirements:
 - make regeneration deterministic;
 - provide a check mode that fails on diff.
 
-If the client deliberately does not check in generated code, document that exception and ensure its build/test path generates from the canonical source every time.
+If a binary client deliberately does not check in generated code, document that
+exception and ensure its build/test path generates from canonical source every
+time. If an HTTP-first client deliberately has no generated language model/RPC
+tree, document that representation choice and ensure its conformance path
+reaches the official BFBS bridge every time.
 
 ---
 
@@ -265,8 +282,9 @@ If the client has a cheap deterministic generated-artifact or boundary check, in
 
 Good `check-fast` candidates:
 
-- generated-model freshness;
-- generated gRPC freshness;
+- generated-model freshness where generated models exist;
+- generated gRPC/gRPC-Web freshness where that transport is used;
+- BFBS-backed standard-FlatBuffers-JSON conformance for HTTP-first clients;
 - package manifest consistency;
 - source-boundary checks;
 - capability-report freshness.
@@ -310,13 +328,13 @@ The doctor message must say exactly how to install or populate the missing prere
 
 ---
 
-# Part IV — Generated Protocol and Build Integration
+# Part IV — Protocol Derivation and Build Integration
 
-## 11. Add explicit generation/check scripts
+## 11. Add explicit generation/conformance checks
 
-Use repository-owned scripts under `tools/` for deterministic generation and verification.
+Use repository-owned scripts under `tools/` or the client test harness for deterministic protocol derivation and verification.
 
-Prefer the existing naming pattern:
+For binary/gRPC clients, prefer the existing naming pattern:
 
 ```text
 tools/generate-<client>-flatbuffers.sh
@@ -325,9 +343,12 @@ tools/check-<client>-generated.sh
 tools/test-<client>-generation.sh
 ```
 
-Not every language needs all four files, but the responsibilities must exist somewhere explicit and testable.
+For explicitly HTTP-first clients, the equivalent required responsibility is a
+mechanical BFBS conformance check over representative client-emitted and
+client-consumed standard FlatBuffers JSON. Do not add unused generated RPC code
+only to satisfy a filename convention.
 
-Generation scripts must:
+Where generated artifacts exist, generation scripts must:
 
 1. resolve the pinned tool;
 2. verify its version;
@@ -336,24 +357,29 @@ Generation scripts must:
 5. replace the generated tree atomically;
 6. fail closed on unsupported generation state.
 
-Do not hand-edit generated output.
+Where standard FlatBuffers JSON is the selected low-level representation, the
+conformance harness must fail closed on schema/discriminator/scalar-width drift
+and malformed unions.
+
+Do not hand-edit generated output or maintain a handwritten parallel JSON domain schema.
 
 ---
 
 ## 12. Make build provenance visible
 
-The client package should make it obvious which canonical inputs produce its generated code:
+The client package should make it obvious which canonical inputs define its wire representation:
 
 ```text
 api/searchkernel.fbs
 api/searchkernel_request.fbs
 api/searchkernel_response.fbs
-api/rpc/searchkernel.proto
+api/rpc/searchkernel.proto        # only when the client uses gRPC/gRPC-Web
+generated BFBS                    # schema authority for standard FlatBuffers JSON
 ```
 
 If additional schema entrypoints become canonical later, use the current repository list rather than freezing this document's examples forever.
 
-The important invariant is that the client's generated wire layer comes from the same portable and transport contracts as every other client.
+The important invariant is that every client's low-level wire representation is mechanically derived from the same portable contract, while transport-specific framing is used only by clients that actually select that transport.
 
 ---
 
@@ -597,7 +623,9 @@ public Index.create/open
     ↓
 managed searchkerneld lifecycle
     ↓
-canonical gRPC/FlatBuffers path
+the client's sanctioned canonical transport path
+    ↓
+shared dispatcher / IR
     ↓
 real backend
     ↓
@@ -624,15 +652,31 @@ May use recording/scripted/shared fixtures.
 
 ### B. Transport integration
 
+Binary/gRPC example:
+
 ```text
 canonical FlatBuffer bytes
     ↓
-real gRPC path
+real generated gRPC/gRPC-Web path
     ↓
 dispatcher
 ```
 
-Proves transport plumbing, not necessarily real Vespa execution.
+HTTP-first example:
+
+```text
+standard FlatBuffers JSON
+    ↓
+real generic HTTP execute path
+    ↓
+official BFBS-backed parser
+    ↓
+canonical FlatBuffer bytes
+    ↓
+dispatcher
+```
+
+Proves transport/representation plumbing, not necessarily real Vespa execution.
 
 ### C. Product E2E
 
@@ -811,7 +855,7 @@ Verify at least:
 ```text
 import/load package
 construct a representative request
-load low-level generated API
+load selected low-level canonical API
 run package-level smoke test
 ```
 
@@ -827,8 +871,8 @@ Use the language's normal package-consumer mechanism.
 - [ ] `clients/README.md` references the client where appropriate.
 - [ ] `./dev test <client>` exists.
 - [ ] `./dev check` runs the client.
-- [ ] Cheap generated/drift checks participate in `./dev check-fast`.
-- [ ] `./dev regen protocol` refreshes checked-in generated artifacts.
+- [ ] Cheap generated/drift or BFBS-conformance checks participate in `./dev check-fast`.
+- [ ] `./dev regen protocol` refreshes checked-in generated artifacts for clients that have them; HTTP-first clients without generated trees are covered by their canonical BFBS conformance check.
 - [ ] `./dev doctor` covers required shared prerequisites where appropriate.
 - [ ] CI bootstraps the toolchain/dependencies from a clean checkout.
 - [ ] CI and local repository commands share the same underlying scripts.
@@ -858,9 +902,9 @@ Use the language's normal package-consumer mechanism.
 
 ## 35. Packaging/release wiring
 
-- [ ] Generated models are present in the package or generated reproducibly at build time.
+- [ ] The low-level canonical representation is present/reproducible for the selected path: generated models for binary clients, or supported standard-FlatBuffers-JSON helpers for HTTP-first clients.
 - [ ] Ergonomic API is importable by an external consumer.
-- [ ] Low-level generated API is importable by an external consumer.
+- [ ] The selected low-level canonical API/escape hatch is importable by an external consumer.
 - [ ] Package tests consume the packed/built artifact.
 - [ ] Runtime-specific entrypoints work.
 - [ ] Release automation includes the client, or publication deferral is explicit.
@@ -871,8 +915,8 @@ Use the language's normal package-consumer mechanism.
 - [ ] No capability claim is derived from comments without executable coverage.
 - [ ] No E2E claim points at an unexecuted file.
 - [ ] No workflow tests only source-tree imports while package output is broken.
-- [ ] No generated-code check ignores stale deleted files.
-- [ ] No protocol regeneration omits the new client.
+- [ ] No generated-code check ignores stale deleted files where generated artifacts exist.
+- [ ] No protocol regeneration or BFBS conformance inventory omits the new client.
 - [ ] No hard-coded list of existing clients still excludes the new one.
 - [ ] No compatibility matrix requires manual edits to remain current.
 - [ ] No client-specific defaults or semantic validation were introduced during integration.

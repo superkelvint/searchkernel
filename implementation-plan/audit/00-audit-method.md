@@ -25,7 +25,7 @@ Every checkbox has a stable item ID. An item is not complete merely because a re
 | `NEG` | Negative-path test | Automated proof that malformed/unsupported/conflicting input fails with the required structured behavior. |
 | `ORACLE` | Independent oracle | Direct Vespa C++, pinned Vespa Java behavior, or another explicitly authoritative external reference, compared to Search Kernel. |
 | `VER` | Repository verifier | Named verifier script/contract, exact command, exit 0, and its explicit non-goals recorded. |
-| `E2E` | Public-path real-engine test | User-facing Rust/Python/TypeScript path through the real Vespa engine; mocks/RecordingBackend/ScriptedBackend do not qualify. |
+| `E2E` | Public-path real-engine test | User-facing direct-Rust or first-party client path through the real Vespa engine; mocks/RecordingBackend/ScriptedBackend do not qualify. |
 | `PKG` | Clean packaging/bootstrap proof | Build/install/package from a pristine source tree/environment with generated/local residue removed. |
 | `HARD` | Hardening evidence | Sanitizer, stress, lifecycle-race, resource-growth, failpoint, or crash/recovery run. |
 | `DOC` | Documentation claim | Useful only as a claim to verify. **Never sufficient by itself for PASS.** |
@@ -59,13 +59,13 @@ The checklist itself is considered complete only if these inventories are regene
 |---|---|---|---|
 | Workspace crates | root `Cargo.toml` workspace members | 11 members | Every crate maps to a numbered module section. |
 | Native adapter surface | `core/native/vespa/*.{cc,h}` + maps/build scripts | concrete source/header/helper set in §12 | Every production/native ABI/resource file maps to §10–§12. |
-| First-party clients | actual package roots under `clients/` | Python, TypeScript | Every first-party client maps to its own section and parity gate. |
+| First-party clients | actual package roots under `clients/` | Python, TypeScript in the frozen source snapshot; current audits must regenerate this inventory and include later clients such as PHP when present | Every first-party client maps to its selected transport contract, evidence roots, and parity gate. |
 | Canonical domain schemas | `api/*.fbs` | `searchkernel.fbs`, request envelope, response envelope | Every table/union/enum/field family is represented in schema/IR/round-trip coverage. |
 | RPC contract | `api/rpc/searchkernel.proto` | one transport schema | Every protobuf message/service is transport-only and generated through standard tooling. |
 | Portable operations | request/response union variants | derive from current schemas | Every operation has ingress, IR, dispatch, response, error, and negative-path coverage. |
 | Production generated-source dependencies | `include!(...)` / generated imports | Rust protocol, Rust RPC, TS generated trees are absent in this export | Every dependency has a deterministic clean bootstrap/freshness proof. |
 | Verifier lanes | executable scripts/contracts under `reference/` | M0–M13 + specialized/I/Phase lanes present | Every active verifier has an exact “proves / does not prove” mapping in §17. |
-| Public Rust/Python/TS facade families | exported public source/API | derive mechanically/manual API inventory | Every public operation/builder family maps to semantic + E2E evidence or explicit unsupported status. |
+| Public first-party facade families | exported public source/API | derive mechanically/manual API inventory | Every public operation/builder family maps to semantic + E2E evidence or explicit unsupported status. |
 | Capability/documentation claims | `docs/capabilities.json`, generated docs, README/status | known stale/incomplete claims exist | Every advertised claim points to executable evidence; docs never create support by themselves. |
 
 **Freeze condition:** after the closure matrix is regenerated and shows zero unmapped implementation/API/verifier surfaces, this checklist is frozen for the snapshot. Future additions require a concrete unmapped artifact, newly added scope, or demonstrated checklist defect; “I thought of another edge case” is not sufficient change control.
@@ -83,7 +83,7 @@ The audit must begin from the modules that actually exist in this snapshot. Do n
 
 - [ ] **SK-META-001** Workspace crates are inventoried from `Cargo.toml`: `flatbuffers-build`, `searchkernel-protocol`, `searchkernel-filter`, `searchkernel-ir`, `searchkernel`, `searchkernel-testkit`, `searchkernel-dispatch`, `searchkernel-ir-adapter`, `searchkernel-vespa-bindings`, `searchkernel-vespa-engine`, and `searchkerneld`.
 - [ ] **SK-META-002** Native implementation inventory includes `core/native/vespa/{abi,engine,document,update,query,search,grouping,tensor,errors,hardening}.cc`, `searchkernel_vespa.h`, `searchkernel_vespa_internal.h`, test-only ABI headers/maps, and resource-owner helpers.
-- [ ] **SK-META-003** First-party non-Rust clients present in this snapshot are Python and TypeScript. Go/PHP/Java are documentation/roadmap targets only unless source/package directories are added.
+- [ ] **SK-META-003** First-party non-Rust clients are inventoried from actual package roots under `clients/`. In the frozen source snapshot used to construct this edition, Python and TypeScript are present; later audits must regenerate this inventory rather than treating that historical list as current, including PHP or any other client whose package root is now present.
 - [ ] **SK-META-004** Active native verifier baseline is read from `reference/vespa/README.md`; for this snapshot it is M13, with I-series/Phase 10 plus specialized Phase 9, SearchReply, recovery, recursive-grouping, and grouping/YQL lanes.
 - [ ] **SK-META-005** Empty historical/placeholder directories (`tools/searchkernel-bindgen`, `tools/searchkerneld-e2e-harness`, `core/crates/searchkernel-json`, `reference/ffi-conformance`, and `reference/json-conformance`) are treated as archaeology/placeholders only unless a build/test/document still references them. An empty directory is never counted as conformance evidence.
 - [ ] **SK-META-006** Generated source dependencies are inventoried separately from checked-in source. In this snapshot `core/crates/searchkernel-protocol/src/generated`, `searchkerneld/src/generated`, and `clients/typescript/src/generated` are absent even though production source imports/includes them.
@@ -129,7 +129,7 @@ The audit must begin from the modules that actually exist in this snapshot. Do n
 - [ ] **SK-00-004** Direct Rust requests and portable requests converge on the same semantic resolver operations.
 - [ ] **SK-00-005** No transport implements Search Kernel defaults, field legality, ranking semantics, filter semantics, grouping semantics, or result semantics.
 - [ ] **SK-00-006** No client independently parses the Search Kernel textual filter language.
-- [ ] **SK-00-007** No client implements its own gRPC protocol/framing stack; all clients use standard generated gRPC/gRPC-Web tooling appropriate to that runtime.
+- [ ] **SK-00-007** No client that selects gRPC/gRPC-Web implements its own protocol/framing stack; every such client uses standard generated gRPC/gRPC-Web tooling appropriate to that runtime.
 - [ ] **SK-00-008** `searchkernel-ir-adapter` is the only production crate allowed to **directly import both** `searchkernel-ir` and `searchkernel-vespa-engine`. The product `searchkernel` crate may reach the adapter behind its optional `native` feature; that does not make it a second lowering implementation.
 - [ ] **SK-00-009** `searchkernel-ir`, `searchkernel-protocol`, `searchkernel-filter`, `searchkernel-testkit`, and dispatcher-only semantic tests compile without Vespa implementation crates/native SDK requirements.
 - [ ] **SK-00-010** Vespa engine crates do not depend on portable IR semantics except through the adapter boundary.
@@ -140,6 +140,7 @@ The audit must begin from the modules that actually exist in this snapshot. Do n
 - [ ] **SK-00-015** No retired portable client FFI/native transport path has re-entered the product architecture; empty historical directories and history docs do not count as active paths, but any live dependency/script/package reference does.
 - [ ] **SK-00-016** Source-distribution bootstrap is closed: every `include!("generated/...")` or client import from a generated tree is satisfied either by checked-in generated files or by an automatic documented build/generation step that runs before normal build/test/package commands.
 - [ ] **SK-00-017** Rust remains directly embedded and does not serialize through FlatBuffers/gRPC to reach the local engine.
-- [ ] **SK-00-018** Every first-party non-Rust product client present in the tree goes through canonical FlatBuffer bytes carried by **standard generated gRPC/gRPC-Web stubs**. Using a generated protobuf message class while hand-writing HTTP/2 framing is a failure of this invariant.
+- [ ] **SK-00-018** Every first-party non-Rust product client present in the tree uses one explicitly sanctioned, mechanically schema-derived transport path that converges on canonical FlatBuffer envelope bytes and the shared dispatcher before Search Kernel semantics are applied. Binary gRPC/gRPC-Web clients use standard generated RPC tooling; explicitly designated HTTP-first clients use standard FlatBuffers JSON through the official BFBS-backed parser/printer. A custom REST/domain DTO model, handwritten JSON -> IR path, or handwritten gRPC/HTTP2 framing is a failure of this invariant.
+- [ ] **SK-00-019** HTTP-first status is explicit per client and is not a general exemption from transport discipline. Such clients must prove representative request/response/value/union fidelity against the canonical BFBS bridge and must not own Search Kernel defaults, parsing, validation, normalization, or result semantics.
 
 ---
