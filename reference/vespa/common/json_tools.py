@@ -40,6 +40,32 @@ def command_m7_error_jobs(args):
                 print(case["id"], path, case[path + "_error"])
 
 
+def command_m6_identity(args):
+    left = load_json(args.left)
+    right = load_json(args.right)
+    if left["fields"] != right["fields"]:
+        raise SystemExit("identity pair field models unexpectedly differ")
+    if left["document_type"] != "typea":
+        raise SystemExit(repr(left))
+    if right["document_type"] != "products":
+        raise SystemExit(repr(right))
+
+
+def command_m7_canonical(args):
+    expected = load_json(args.expected)
+    got = load_json(args.actual)
+    if got["id"] != expected["id"] or got["schema"] != expected["schema"]:
+        raise SystemExit("identity mismatch")
+    if got["typed"] != expected["query"]:
+        raise SystemExit(
+            f"typed canonical mismatch: {got['typed']} != {expected['query']}"
+        )
+    if got["yql"] != expected["query"]:
+        raise SystemExit(
+            f"YQL canonical mismatch: {got['yql']} != {expected['query']}"
+        )
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -61,6 +87,16 @@ def main():
     m7 = sub.add_parser("m7-error-jobs")
     m7.add_argument("path")
     m7.set_defaults(func=command_m7_error_jobs)
+
+    m6_identity = sub.add_parser("m6-identity")
+    m6_identity.add_argument("left")
+    m6_identity.add_argument("right")
+    m6_identity.set_defaults(func=command_m6_identity)
+
+    m7_canonical = sub.add_parser("m7-canonical")
+    m7_canonical.add_argument("expected")
+    m7_canonical.add_argument("actual")
+    m7_canonical.set_defaults(func=command_m7_canonical)
 
     args = parser.parse_args()
     args.func(args)
