@@ -290,6 +290,7 @@ check_fast() {
     bash "$ROOT/tools/test-actions-runner-rustup-recovery.sh"
     bash "$ROOT/tools/test-flatbuffers-cpp-toolchain.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
+    bash "$ROOT/tools/check-native-hardening-feature-contract.sh"
     bash "$ROOT/reference/vespa/verifiers/test-routing.sh"
     "$PYTHON" "$ROOT/tools/check-search-semantic-entry-points.py"
     "$PYTHON" "$ROOT/tools/check-native-abi-authorities.py"
