@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "protocol"
+require_relative "results"
 
 module SearchKernel
   class Client
@@ -21,6 +22,10 @@ module SearchKernel
 
     def execute_raw(envelope)
       @transport.execute(envelope)
+    end
+
+    def search_results(payload)
+      Results::SearchResults.new(search(payload))
     end
 
     Protocol::OPERATIONS.each_key do |operation|

@@ -12,6 +12,8 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
+RUSTFMT_AUTOFIX_WORKFLOW = SCRIPT.parents[1] / "workflows" / "rustfmt-autofix.yml"
+CI_IMAGE_RUNNER_WORKFLOW = SCRIPT.parents[1] / "workflows" / "ci-image-runner.yml"
 CLIENT_CAPABILITIES_WORKFLOW = SCRIPT.parents[1] / "workflows" / "client-capabilities.yml"
 CLIENT_CAPABILITIES_AUTOFIX_PREPARE = SCRIPT.parents[1] / "workflows" / "client-capabilities-autofix-prepare.yml"
 CLIENT_CAPABILITIES_AUTOFIX_APPLY = SCRIPT.parents[1] / "workflows" / "client-capabilities-autofix-apply.yml"
@@ -171,6 +173,50 @@ class ExactHeadTests(unittest.TestCase):
         )
         self.assertEqual(classified.returncode, 0, classified.stdout.decode())
         self.assertIn("rust: required", classified.stdout.decode())
+
+    def test_rustfmt_autofix_workflow_preserves_write_safety_contract(self) -> None:
+        workflow = RUSTFMT_AUTOFIX_WORKFLOW.read_text(encoding="utf-8")
+        runner = CI_IMAGE_RUNNER_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "if: github.event.pull_request.head.repo.full_name == github.repository",
+            workflow,
+        )
+        self.assertIn("uses: ./.github/workflows/ci-image-runner.yml", workflow)
+        self.assertIn("revision: ${{ github.event.pull_request.head.sha }}", workflow)
+        self.assertIn("target: rustfmt-autofix", workflow)
+        self.assertIn("head_ref: ${{ github.event.pull_request.head.ref }}", workflow)
+        self.assertIn(
+            "autofix_token: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}",
+            workflow,
+        )
+
+        checkout = runner.split("- name: Check out requested revision", 1)[1].split(
+            "- name: Resolve exact revision", 1
+        )[0]
+        self.assertIn("ref: ${{ inputs.revision || github.sha }}", checkout)
+        self.assertIn("persist-credentials: false", checkout)
+
+        rustfmt = runner.split("            rustfmt-autofix)", 1)[1].split(
+            "            *)", 1
+        )[0]
+        self.assertIn("run_phase rustfmt cargo fmt --all", rustfmt)
+        self.assertIn("grep -Ev '\\.rs$' || true", rustfmt)
+        self.assertIn('if [[ -n "$unexpected" ]]; then', rustfmt)
+        self.assertIn("exit 1", rustfmt)
+        self.assertIn('[[ -n "${AUTOFIX_TOKEN:-}" ]] || {', rustfmt)
+        self.assertIn('[[ -n "${HEAD_REF:-}" ]] || {', rustfmt)
+        self.assertIn("assert_current_pr_head rustfmt-push", rustfmt)
+        self.assertLess(
+            rustfmt.index("assert_current_pr_head rustfmt-push"),
+            rustfmt.index("git add -u"),
+        )
+        self.assertLess(
+            rustfmt.index("assert_current_pr_head rustfmt-push"),
+            rustfmt.index("git push"),
+        )
+        self.assertIn("git add -u", rustfmt)
+        self.assertIn('"HEAD:refs/heads/${HEAD_REF}"', rustfmt)
 
     def test_candidate_regressions_use_candidate_verification_policy(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

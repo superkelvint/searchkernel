@@ -157,6 +157,18 @@ function groupsByValue(groups: readonly ResultGroup[]): Map<unknown, ResultGroup
   return new Map(groups.map((group) => [group.value, group]));
 }
 
+function groupingGroups(results: SearchResults): readonly ResultGroup[] {
+  const candidates = results.groups.filter((group) =>
+    group.id === null
+    && group.label === null
+    && group.value === null
+    && Object.keys(group.fields).length === 0
+    && group.hits.length === 0
+  );
+  assert(candidates.length === 1, `expected one native grouping wrapper, got ${candidates.length}`);
+  return candidates[0]!.groups;
+}
+
 async function main(): Promise<void> {
   WORKSPACE_PATH = await mkdtemp(join(tmpdir(), "searchkernel-client-api-e2e-"));
   INDEX_PATH = join(WORKSPACE_PATH, "showcase-index");
@@ -344,13 +356,13 @@ async function main(): Promise<void> {
           .output(agg.count().as("products"), agg.avg("price").as("avg_price")),
       ).execute();
       printResults(results);
-      let byBrand = groupsByValue(results.groups);
+      let byBrand = groupsByValue(groupingGroups(results));
       assert(asBigInt(byBrand.get("Acme")!.get("products")) === 2n);
       assert(closeTo(asNumber(byBrand.get("Acme")!.get("avg_price")), 124));
       assert(asBigInt(byBrand.get("TrailCo")!.get("products")) === 2n);
       assert(closeTo(asNumber(byBrand.get("TrailCo")!.get("avg_price")), 119));
       assert(asBigInt(byBrand.get("Budget")!.get("products")) === 1n);
-      assert(results.groups.map((group) => group.value).join(",") === "Acme,TrailCo,Budget");
+      assert(groupingGroups(results).map((group) => group.value).join(",") === "Acme,TrailCo,Budget");
 
       heading("16. NESTED GROUPING: CATEGORY -> BRAND");
       results = await index.browse().filter("category IN (:categories)", { categories: ["shoes", "bags"] }).group(
@@ -365,7 +377,7 @@ async function main(): Promise<void> {
               .output(agg.count().as("products"), agg.avg("price").as("avg_price")),
           ),
       ).execute();
-      const categories = groupsByValue(results.groups);
+      const categories = groupsByValue(groupingGroups(results));
       assert(asBigInt(categories.get("shoes")!.get("products")) === 5n);
       assert(asBigInt(categories.get("bags")!.get("products")) === 1n);
       const shoeBrands = groupsByValue(categories.get("shoes")!.groups);
@@ -381,7 +393,7 @@ async function main(): Promise<void> {
           .orderBy(desc(g.aliasRef("revenue")))
           .output(agg.count().as("products"), g.aliasRef("revenue").as("revenue")),
       ).execute();
-      byBrand = groupsByValue(results.groups);
+      byBrand = groupsByValue(groupingGroups(results));
       assert(closeTo(asNumber(byBrand.get("Acme")!.get("revenue")), 248));
       assert(closeTo(asNumber(byBrand.get("TrailCo")!.get("revenue")), 238));
       assert(closeTo(asNumber(byBrand.get("Budget")!.get("revenue")), 49));
@@ -390,8 +402,9 @@ async function main(): Promise<void> {
       results = await index.search("shoes").group(
         Group.by("brand").limit(10).keep(gf.regex(g.field("brand"), "^A.*")).output(agg.count().as("products")),
       ).execute();
-      assert(results.groups.length === 1 && results.groups[0]!.value === "Acme");
-      assert(asBigInt(results.groups[0]!.get("products")) === 2n);
+      const keptGroups = groupingGroups(results);
+      assert(keptGroups.length === 1 && keptGroups[0]!.value === "Acme");
+      assert(asBigInt(keptGroups[0]!.get("products")) === 2n);
 
       // 19/20 remain blocked/deferred for the same native reasons as Python:
       // summary aggregation Hit children and grouping continuation tokens.
@@ -481,7 +494,7 @@ async function main(): Promise<void> {
         .property("q", "shoes")
         .group(Group.by("brand").limit(10).output(agg.count().as("products")))
         .execute();
-      byBrand = groupsByValue(results.groups);
+      byBrand = groupsByValue(groupingGroups(results));
       assert(asBigInt(byBrand.get("Acme")!.get("products")) === 2n);
       assert(asBigInt(byBrand.get("TrailCo")!.get("products")) === 2n);
       assert(asBigInt(byBrand.get("Budget")!.get("products")) === 1n);
@@ -623,7 +636,7 @@ async function main(): Promise<void> {
       const browseIds = new Set(results.hits.map((hit) => hit.id));
       assert(!browseIds.has("shoe-4") && !browseIds.has("shoe-3"));
       for (const id of ["shoe-1", "shoe-2", "shoe-5", "bag-1"]) assert(browseIds.has(id));
-      const categories = groupsByValue(results.groups);
+      const categories = groupsByValue(groupingGroups(results));
       assert(asBigInt(categories.get("shoes")!.get("products")) === 3n);
       assert(asBigInt(categories.get("bags")!.get("products")) === 1n);
     } finally {
