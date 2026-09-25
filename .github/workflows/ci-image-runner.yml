@@ -346,7 +346,15 @@ jobs:
               run_phase dev-syntax bash -n dev
               run_phase dev-help bash dev help
               run_phase dev-ci-image-contract bash tools/test-dev-ci-image.sh
-              run_phase exact-head-hook-regressions "$PYTHON" .github/ci/test_exact_head.py
+              run_phase exact-head-hook-regressions "$PYTHON" .github/ci/test_exact_head.py \
+                ExactHeadTests.test_precommit_checks_staged_native_abi_authorities \
+                ExactHeadTests.test_precommit_runs_native_gate_only_for_native_sensitive_staged_paths \
+                ExactHeadTests.test_precommit_runs_python_native_e2e_only_for_native_sensitive_changes \
+                ExactHeadTests.test_precommit_consumes_non_rust_behavioral_lanes \
+                ExactHeadTests.test_precommit_rejects_tracked_unstaged_changes_for_non_native_commits \
+                ExactHeadTests.test_precommit_rejects_relevant_untracked_files_but_not_scratch_files \
+                ExactHeadTests.test_precommit_source_is_valid_and_each_major_gate_occurs_once \
+                ExactHeadTests.test_precommit_selects_repository_verifier_families
               run_phase native-sdk-packaging bash tools/test-native-sdk-packaging.sh
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
