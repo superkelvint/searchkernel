@@ -94,10 +94,10 @@ jobs:
             exit 1
           }
           echo "CI IMAGE PROVENANCE"
-          printf '  ref:          %s\\n' "$CI_IMAGE"
-          printf '  digest:       %s\\n' "${digest:-unknown}"
-          printf '  image_id:     %s\\n' "$image_id"
-          printf '  vespa_commit: %s\\n' "$label"
+          printf '  ref:          %s\n' "$CI_IMAGE"
+          printf '  digest:       %s\n' "${digest:-unknown}"
+          printf '  image_id:     %s\n' "$image_id"
+          printf '  vespa_commit: %s\n' "$label"
           echo "CI_IMAGE_ID=$image_id" >> "$GITHUB_ENV"
 
           docker run --rm "$image_id" /bin/bash -lc '
