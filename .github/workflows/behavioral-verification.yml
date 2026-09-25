@@ -318,7 +318,7 @@ jobs:
     secrets: inherit
 
   coverage:
-    name: Rust coverage invariant
+    name: Coverage invariant
     needs: classify
     if: needs.classify.outputs.coverage == 'true'
     uses: ./.github/workflows/ci-image-runner.yml
