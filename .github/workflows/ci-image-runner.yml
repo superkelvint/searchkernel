@@ -275,6 +275,8 @@ jobs:
           case "$CI_TARGET" in
             rust-non-native)
               run_phase rust-test cargo test --workspace --all-targets --no-default-features
+              run_phase search-endpoint-hostile-inputs cargo test -p searchkerneld --no-default-features --features test-support --test search_endpoints
+              run_phase instantsearch-request-compat cargo test -p searchkerneld --no-default-features --features test-support --test instantsearch_compat
               run_phase api-conformance reference/api-conformance/verify.sh
               ;;
 
