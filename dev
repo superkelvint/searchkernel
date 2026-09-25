@@ -307,9 +307,9 @@ run_ruby_tests() {
     status=0
     (
         cd "$ROOT/clients/ruby"
-        gem build searchkernel.gemspec --output "$package_dir/searchkernel.gem" >/dev/null
+        ruby -S gem build searchkernel.gemspec --output "$package_dir/searchkernel.gem" >/dev/null
         GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
-            gem install --local "$package_dir/searchkernel.gem" --no-document >/dev/null
+            ruby -S gem install --local "$package_dir/searchkernel.gem" --no-document >/dev/null
         GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
             ruby -e 'require "rubygems"; gem "searchkernel"; require "searchkernel"; abort unless SearchKernel::Protocol::VERSION == 2'
     ) || status=$?
