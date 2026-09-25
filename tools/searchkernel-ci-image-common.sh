@@ -66,6 +66,32 @@ print(h.hexdigest())
 PY
 }
 
+ci_image_composite_id() {
+    local recipe=$1
+    local toolchain_id=$2
+    local vespa_commit=$3
+    python3 - "$recipe" "$toolchain_id" "$vespa_commit" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+recipe = pathlib.Path(sys.argv[1])
+toolchain_id = sys.argv[2]
+vespa_commit = sys.argv[3]
+if not recipe.is_file():
+    raise SystemExit(f"composite recipe does not exist: {recipe}")
+
+h = hashlib.sha256()
+h.update(b"searchkernel-ci-composite-v1\0")
+h.update(toolchain_id.encode())
+h.update(b"\0")
+h.update(vespa_commit.encode())
+h.update(b"\0")
+h.update(recipe.read_bytes())
+print(h.hexdigest())
+PY
+}
+
 ci_image_vespa_commit() {
     local root=$1
     python3 - "$root/core/native/vespa/manifest.json" <<'PY'
