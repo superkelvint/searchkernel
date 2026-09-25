@@ -54,13 +54,9 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-ci-image-identity.") as ra
     if mutable.returncode == 0:
         raise SystemExit("toolchain identity accepted a mutable base tag")
 
-    composite_a = call("ci_image_composite_id", str(composite), digest_a, vespa_a).stdout.strip()
-    composite_toolchain_changed = call(
-        "ci_image_composite_id", str(composite), digest_b, vespa_a
-    ).stdout.strip()
-    composite_vespa_changed = call(
-        "ci_image_composite_id", str(composite), digest_a, vespa_b
-    ).stdout.strip()
+    environment_a = call("ci_image_environment_id", str(environment), digest_a, vespa_a).stdout.strip()
+    environment_toolchain_changed = call(\n        "ci_image_environment_id", str(environment), digest_b, vespa_a\n    ).stdout.strip()
+    environment_vespa_changed = call(\n        "ci_image_environment_id", str(environment), digest_a, vespa_b\n    ).stdout.strip()
 
     if composite_a == composite_toolchain_changed:
         raise SystemExit("composite identity ignored the toolchain image digest")
