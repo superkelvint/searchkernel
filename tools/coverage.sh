@@ -6,6 +6,17 @@ cd "$ROOT"
 
 CARGO=${CARGO:-cargo}
 OUTPUT_DIR=${SEARCHKERNEL_COVERAGE_DIR:-"$ROOT/coverage"}
+OUTPUT_DIR=$(python3 - "$OUTPUT_DIR" <<'PY'
+from pathlib import Path
+import sys
+
+print(Path(sys.argv[1]).expanduser().resolve(strict=False))
+PY
+)
+if [[ "$OUTPUT_DIR" == "/" || "$OUTPUT_DIR" == "$ROOT" ]]; then
+    echo "error: refusing destructive coverage output directory: $OUTPUT_DIR" >&2
+    exit 2
+fi
 IGNORE_RE='(^|/)(target|generated|upstream|vendor|node_modules|tests?|benches|examples|reference)(/|$)|(^|/)core/crates/searchkernel-testkit(/|$)'
 
 command -v "$CARGO" >/dev/null 2>&1 || {
