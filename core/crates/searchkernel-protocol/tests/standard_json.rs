@@ -117,7 +117,9 @@ fn standard_json_rejects_bare_64_bit_integer_scalars() {
 
     let error = request_json_to_flatbuffer(input).expect_err("bare int64 JSON must fail closed");
     assert!(
-        error.to_string().contains("64-bit integer JSON values must be decimal strings"),
+        error
+            .to_string()
+            .contains("64-bit integer JSON values must be decimal strings"),
         "unexpected error: {error}"
     );
 }
