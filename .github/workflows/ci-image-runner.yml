@@ -390,6 +390,10 @@ jobs:
               run_phase abi-contract "$ABI_PYTHON" tools/check_abi_surface.py "${args[@]}"
               ;;
 
+            nightly-universe)
+              run_phase nightly-universe ./dev universe
+              ;;
+
             nightly-rust)
               run_phase nightly-format cargo fmt --all --check
               run_phase nightly-check cargo check --workspace --all-targets --no-default-features

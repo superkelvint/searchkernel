@@ -41,6 +41,14 @@ function repositoryRoot(): string {
   return resolve(packageRoot(), "..", "..");
 }
 
+function sourceRepositoryRoot(): string | null {
+  const root = repositoryRoot();
+  if (resolve(root, "clients", "typescript") !== packageRoot()) return null;
+  if (!existsSync(resolve(root, "Cargo.toml"))) return null;
+  if (!existsSync(resolve(root, "clients", "typescript", "package.json"))) return null;
+  return root;
+}
+
 export function resolveHostBinary(): string {
   const configured = process.env.SEARCHKERNEL_LOCAL_HOST;
   if (configured) return configured;
@@ -48,7 +56,15 @@ export function resolveHostBinary(): string {
   const packaged = resolve(packageRoot(), "bin", "searchkerneld");
   if (existsSync(packaged)) return packaged;
 
-  return resolve(repositoryRoot(), "target", "debug", "searchkerneld");
+  const sourceRoot = sourceRepositoryRoot();
+  if (sourceRoot !== null) {
+    return resolve(sourceRoot, "target", "host", "debug", "searchkerneld");
+  }
+
+  throw new SearchKernelError(
+    "managed local host binary is not bundled with @searchkernel/client; "
+      + "set SEARCHKERNEL_LOCAL_HOST to an existing searchkerneld binary",
+  );
 }
 
 export function environmentForHost(): NodeJS.ProcessEnv {
@@ -140,7 +156,7 @@ export class ManagedLocalHost {
     const binary = resolveHostBinary();
     if (!existsSync(binary)) {
       throw new SearchKernelError(
-        `managed local host binary not found at ${binary}; build searchkerneld first`,
+        `managed local host binary not found at ${binary}; set SEARCHKERNEL_LOCAL_HOST to an existing searchkerneld binary`,
       );
     }
 
@@ -155,7 +171,6 @@ export class ManagedLocalHost {
     }
 
     this.child = spawn(binary, args, {
-      cwd: repositoryRoot(),
       env: environmentForHost(),
       detached: true,
       stdio: "ignore",

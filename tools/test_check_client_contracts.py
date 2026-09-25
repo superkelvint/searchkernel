@@ -291,6 +291,19 @@ exit 0
         )
         npm.chmod(0o755)
 
+        node = fakebin / "node"
+        node.write_text(
+            """#!/usr/bin/env bash
+set -euo pipefail
+[[ -f "$NPM_READY" ]] || { echo "TypeScript E2E dependencies were not installed" >&2; exit 42; }
+[[ -n "${SEARCHKERNEL_LOCAL_HOST:-}" ]] || { echo "managed-local host was not passed to installed-package E2E" >&2; exit 43; }
+[[ "$1" == "clients/typescript/scripts/verify-installed-managed-local-e2e.cjs" ]] || exit 44
+printf '%s\\n' "installed-package-e2e" >>"$NPM_LOG"
+""",
+            encoding="utf-8",
+        )
+        node.chmod(0o755)
+
         env = os.environ.copy()
         env.pop("CARGO_TARGET_DIR", None)
         env.update(
@@ -318,6 +331,8 @@ exit 0
             (fixture / "npm.log").read_text(encoding="utf-8").splitlines(),
             [
                 "ci --prefix clients/typescript",
+                "run build --prefix clients/typescript",
+                "installed-package-e2e",
                 "run example:e2e --prefix clients/typescript",
             ],
         )
