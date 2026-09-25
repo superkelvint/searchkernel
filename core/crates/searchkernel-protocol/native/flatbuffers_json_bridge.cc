@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "flatbuffers/idl.h"
 #include "flatbuffers/reflection.h"
@@ -117,6 +118,22 @@ class IntegerJsonCanonicalizer {
   }
 
  private:
+  class DepthScope {
+   public:
+    explicit DepthScope(size_t* depth) : depth_(depth) { ++*depth_; }
+    ~DepthScope() { --*depth_; }
+
+   private:
+    size_t* depth_;
+  };
+
+  bool EnterDepth() {
+    if (depth_ >= FLATBUFFERS_MAX_PARSING_DEPTH) {
+      return Fail("JSON nesting exceeds FlatBuffers parsing depth");
+    }
+    return true;
+  }
+
   bool Fail(const std::string& message) {
     *error_ = message + " at JSON byte " + std::to_string(position_);
     return false;
@@ -334,6 +351,8 @@ class IntegerJsonCanonicalizer {
   }
 
   bool Object(const flatbuffers::StructDef& definition) {
+    if (!EnterDepth()) return false;
+    DepthScope depth_scope(&depth_);
     if (!Consume('{')) return false;
     Whitespace();
     std::map<const flatbuffers::FieldDef*, flatbuffers::Type> union_types;
@@ -379,6 +398,8 @@ class IntegerJsonCanonicalizer {
   }
 
   bool Array(const flatbuffers::Type& element_type) {
+    if (!EnterDepth()) return false;
+    DepthScope depth_scope(&depth_);
     if (!Consume('[')) return false;
     Whitespace();
     bool first = true;
@@ -395,6 +416,8 @@ class IntegerJsonCanonicalizer {
   }
 
   bool AnyObject() {
+    if (!EnterDepth()) return false;
+    DepthScope depth_scope(&depth_);
     if (!Consume('{')) return false;
     Whitespace();
     bool first = true;
@@ -415,6 +438,8 @@ class IntegerJsonCanonicalizer {
   }
 
   bool AnyArray() {
+    if (!EnterDepth()) return false;
+    DepthScope depth_scope(&depth_);
     if (!Consume('[')) return false;
     Whitespace();
     bool first = true;
@@ -476,6 +501,7 @@ class IntegerJsonCanonicalizer {
   std::string* output_;
   std::string* error_;
   size_t position_ = 0;
+  size_t depth_ = 0;
 };
 
 bool canonicalize_integer_json(const flatbuffers::Parser& parser,
