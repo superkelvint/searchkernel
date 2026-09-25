@@ -90,6 +90,9 @@ same(["max"], request.dig("filters", "textual", 0, "bindings").map { |entry| ent
 same(["min"], request.dig("filters", "textual", 1, "bindings").map { |entry| entry.fetch("key") }, "second filter bindings do not leak")
 same(3, request.dig("offset", "value"), "page computes offset")
 same(3, request.dig("limit", "value"), "page sets limit")
+raises(ArgumentError, "page zero rejects") { index.search("shoes").page(0, 3) }
+raises(ArgumentError, "page offset overflow rejects") { index.search("shoes").page(0xffff_ffff, 2) }
+raises(ArgumentError, "page size outside uint32 rejects") { index.search("shoes").page(1, 0x1_0000_0000) }
 same("Asc", request.dig("sort", 0, "direction"), "sort direction")
 same(%w[title price], request.dig("presentation", "fields", "fields"), "projection fields retain caller order")
 same(["title"], request.dig("presentation", "highlighting", "fields"), "highlight fields retained")
@@ -209,6 +212,47 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
   ensure
     ENV["SEARCHKERNEL_LOCAL_HOST"] = previous_host
     ENV["FAKE_HOST_LOG"] = previous_log
+  end
+end
+
+Dir.mktmpdir("searchkernel-ruby-startup-race-") do |root|
+  script = File.join(root, "crashing-searchkerneld")
+  index_path = File.join(root, "index")
+  File.write(
+    script,
+    <<~'RUBY'
+      #!/usr/bin/env ruby
+      warn "startup boom"
+      exit 23
+    RUBY
+  )
+  File.chmod(0o755, script)
+
+  previous_host = ENV["SEARCHKERNEL_LOCAL_HOST"]
+  registry_before = SearchKernel::ManagedLocalHost.registry.length
+  ENV["SEARCHKERNEL_LOCAL_HOST"] = script
+  begin
+    error = raises(SearchKernel::ClientError, "managed startup exit fails closed") do
+      SearchKernel::Index.create(
+        index_path,
+        fields: { "title" => SearchKernel::Text.new(stored: true, searchable: true) }
+      )
+    end
+    assert(
+      error.message.include?("managed local host exited during startup"),
+      "startup race retains stable managed-host failure"
+    )
+    assert(
+      error.message.include?("startup boom"),
+      "startup race includes bounded child stderr diagnostics"
+    )
+    same(
+      registry_before,
+      SearchKernel::ManagedLocalHost.registry.length,
+      "failed startup must not leak managed-host registry state"
+    )
+  ensure
+    ENV["SEARCHKERNEL_LOCAL_HOST"] = previous_host
   end
 end
 
