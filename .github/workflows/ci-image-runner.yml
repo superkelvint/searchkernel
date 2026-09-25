@@ -592,7 +592,9 @@ jobs:
         with:
           name: coverage-${{ github.run_id }}-${{ github.job }}
           path: ${{ env.ARTIFACT_DIR }}/coverage
-          if-no-files-found: error
+          # Superseded exact-head jobs can exit cleanly before producing coverage.
+          # Current-head coverage validates every required file inside the lane.
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Upload nightly Clippy repair packet
