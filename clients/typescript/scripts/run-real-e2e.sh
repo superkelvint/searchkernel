@@ -19,6 +19,10 @@ if [[ ! -x "$host_binary" ]]; then
 fi
 
 npm ci --prefix clients/typescript
+npm run build --prefix clients/typescript
+
+SEARCHKERNEL_LOCAL_HOST="$host_binary" \
+  node clients/typescript/scripts/verify-installed-managed-local-e2e.cjs
 
 SEARCHKERNEL_LOCAL_HOST="$host_binary" \
   npm run example:e2e --prefix clients/typescript
