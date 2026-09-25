@@ -115,6 +115,61 @@ fn ruby_emitted_standard_json_matches_canonical_bfbs() {
                 request_json_to_flatbuffer(&printed).unwrap_or_else(|error| {
                     panic!("{name}: BFBS-printed request is not readable: {error}")
                 });
+                if name == "portable-values-request" {
+                    let entries = round_trip["payload"]["document"]["fields"]
+                        .as_array()
+                        .expect("BFBS printed ValueEntry vector");
+                    let value = |key: &str| {
+                        &entries
+                            .iter()
+                            .find(|entry| entry["key"] == key)
+                            .unwrap_or_else(|| panic!("missing {key}"))["value"]
+                    };
+                    assert_eq!(value("min")["kind_type"], "Int64Value");
+                    assert_eq!(value("min")["kind"]["value"].as_i64(), Some(i64::MIN));
+                    assert_eq!(value("max")["kind"]["value"].as_i64(), Some(i64::MAX));
+                    assert_eq!(value("unsigned")["kind_type"], "UInt64Value");
+                    assert_eq!(value("unsigned")["kind"]["value"].as_u64(), Some(u64::MAX));
+                    for (key, kind) in [
+                        ("dense", "DenseTensorValues"),
+                        ("sparse", "SparseTensorCells"),
+                        ("mixed", "MixedTensorBlocks"),
+                    ] {
+                        assert_eq!(value(key)["kind"]["payload_type"], kind);
+                    }
+                    assert_eq!(value("bytes")["kind"]["value"], serde_json::json!([0, 255]));
+                    assert_eq!(value("nested")["kind_type"], "ValueList");
+
+                    let unicode_keys = |document: &serde_json::Value| {
+                        document["payload"]["document"]["fields"]
+                            .as_array()
+                            .expect("ValueEntry vector")
+                            .iter()
+                            .find(|entry| entry["key"] == "unicode_object")
+                            .expect("unicode_object field")["value"]["kind"]["fields"]
+                            .as_array()
+                            .expect("unicode ValueObject fields")
+                            .iter()
+                            .map(|entry| {
+                                entry["key"]
+                                    .as_str()
+                                    .expect("unicode object key")
+                                    .to_owned()
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    let expected_unicode_order = vec!["a", "z", "é", "😀"];
+                    assert_eq!(
+                        unicode_keys(&input),
+                        expected_unicode_order,
+                        "Ruby must emit canonical UTF-8 key ordering before BFBS parsing"
+                    );
+                    assert_eq!(
+                        unicode_keys(&round_trip),
+                        expected_unicode_order,
+                        "canonical Unicode key ordering must survive BFBS parse/print"
+                    );
+                }
             }
             "response" => {
                 response_json_to_flatbuffer(&printed).unwrap_or_else(|error| {
@@ -127,7 +182,46 @@ fn ruby_emitted_standard_json_matches_canonical_bfbs() {
     }
 
     assert_eq!(
-        count, 21,
-        "expected all ten request/response operation discriminators plus canonical Error"
+        count, 24,
+        "expected operation discriminators, Error, values and recursive result"
     );
+}
+
+#[test]
+#[ignore = "requires the Ruby runtime; run explicitly from client verification"]
+fn ruby_rejects_adversarial_values_after_bfbs_printing() {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()
+        .expect("repository root");
+    let cases: &[(&str, &[u8])] = &[
+        (
+            "duplicate nested object key",
+            br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind_type":"ValueObject","kind":{"fields":[{"key":"x","value":{"kind_type":"Int64Value","kind":{"value":1}}},{"key":"x","value":{"kind_type":"Int64Value","kind":{"value":2}}}]}}}]}}}"#,
+        ),
+        (
+            "missing Value discriminator",
+            br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind":{"value":1}}}]}}}"#,
+        ),
+    ];
+
+    for (name, input) in cases {
+        // The BFBS parser may reject malformed unions itself. If it accepts
+        // one structurally, the Ruby consumer must reject the printed form.
+        if let Ok(buffer) = response_json_to_flatbuffer(input) {
+            let printed = response_flatbuffer_to_json(&buffer)
+                .unwrap_or_else(|error| panic!("{name}: BFBS print failed: {error}"));
+            assert_ruby_consumes_printed_response(&repo_root, "rejected-value-response", &printed);
+        }
+    }
+
+    // Scalar fields use FlatBuffers defaults. An Int64Value table with its
+    // scalar omitted therefore means canonical zero, not a missing payload.
+    // Verify the BFBS printer and Ruby decoder agree on that default.
+    let canonical_default = br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:default","fields":[{"key":"zero","value":{"kind_type":"Int64Value","kind":{}}}]}}}"#;
+    let buffer = response_json_to_flatbuffer(canonical_default)
+        .expect("canonical Int64Value default must parse");
+    let printed =
+        response_flatbuffer_to_json(&buffer).expect("canonical Int64Value default must print");
+    assert_ruby_consumes_printed_response(&repo_root, "portable-int64-default-response", &printed);
 }
