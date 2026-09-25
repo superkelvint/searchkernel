@@ -61,10 +61,10 @@ docker run --rm "$IMAGE_ID" /bin/bash -lc '
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-image.XXXXXX")
 source_volume="searchkernel-dev-src-$(id -u)-$$-${RANDOM}"
-target_volume="searchkernel-dev-target-$(id -u)-$-${RANDOM}"
+target_volume="searchkernel-dev-target-$(id -u)-$$-${RANDOM}"
 artifact_volume=""
 if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
-    artifact_volume="searchkernel-dev-artifacts-$(id -u)-$-${RANDOM}"
+    artifact_volume="searchkernel-dev-artifacts-$(id -u)-$$-${RANDOM}"
 fi
 container_name="searchkernel-dev-$(id -u)-$$-${RANDOM}"
 
