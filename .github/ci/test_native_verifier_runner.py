@@ -34,7 +34,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             '/opt/searchkernel/native-sdk-cache/ci/*/objects/*',
             'command -v "$cmd"',
             "/usr/bin/python3 -c 'import clang.cindex'",
-            './dev verify "$VERIFIER_TARGET"',
+            './dev verify "$CI_TARGET"',
         ):
             self.assertIn(needle, source)
 
@@ -195,7 +195,7 @@ echo AFTER_GUARD
         )
         self.assertEqual(completed.returncode, 0, completed.stdout)
         self.assertNotIn("AFTER_GUARD", completed.stdout)
-        self.assertIn("stopping obsolete native verification", completed.stdout)
+        self.assertIn("stopping obsolete verification", completed.stdout)
 
     def test_head_guard_runtime_current_stale_and_api_failure(self) -> None:
         current = self._run_embedded_head_guard(
