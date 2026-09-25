@@ -11,10 +11,12 @@ USER root
 
 ARG TOOLCHAIN_ID
 ARG VESPA_COMMIT
+ARG VESPA_BUNDLE_ID
 
 LABEL org.opencontainers.image.source="https://github.com/superkelvint/searchkernel"
 LABEL io.searchkernel.toolchain-id="${TOOLCHAIN_ID}"
 LABEL io.searchkernel.vespa-commit="${VESPA_COMMIT}"
+LABEL io.searchkernel.vespa-bundle-id="${VESPA_BUNDLE_ID}"
 
 # Keep the large Vespa payload as an independent linked layer. Changing the
 # language/toolchain image does not require repacking the Vespa bundle, and a
