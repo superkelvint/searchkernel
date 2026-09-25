@@ -240,6 +240,7 @@ run_resolver() {
         cd "$root"
         env \
             -u SK_NATIVE_SDK \
+            -u SK_NATIVE_CACHE_DIR \
             -u VESPA_ROOT \
             -u SK_NATIVE_BASE_ARTIFACT_URL \
             -u SK_NATIVE_BASE_ARTIFACT_GENERATION \
