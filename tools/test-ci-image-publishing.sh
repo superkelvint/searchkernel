@@ -156,7 +156,9 @@ for forbidden in ("searchkernel-ci-toolchain", "TOOLCHAIN_ID"):
 for fragment in (
     "superkelvint/searchkernel-ci-toolchain",
     "superkelvint/searchkernel-ci-vespa",
-    'COMPOSITE_TAG="base-$TOOLCHAIN_ID-$VESPA_COMMIT"',
+    'COMPOSITE_TAG="base-$COMPOSITE_ID"',
+    "ci_image_composite_id",
+    "io.searchkernel.composite-id",
     "./dev image toolchain publish",
     "./dev image vespa publish",
     "Reusing published composite base.",
