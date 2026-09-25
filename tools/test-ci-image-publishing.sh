@@ -87,6 +87,7 @@ for fragment in (
     "searchkernel-native-toolchain",
     "io.searchkernel.vespa-commit",
     "io.searchkernel.vespa-bundle-id",
+    "ci_image_require_clean_checkout",
 ):
     if fragment not in vespa:
         raise SystemExit(f"Vespa image is missing {fragment!r}")
@@ -118,6 +119,7 @@ for fragment in (
     "io.searchkernel.vespa-bundle-id",
     "COPY --from=searchkernel-source",
     "searchkernel-ci-publish-target",
+    "sharing=locked",
     "/opt/searchkernel/native-validation-pass",
 ):
     if fragment not in leaf:
@@ -132,8 +134,14 @@ for forbidden in (
     if forbidden in leaf:
         raise SystemExit(f"thin CI leaf regressed into rebuilding a base input: {forbidden!r}")
 
-if "searchkernel-ci-toolchain-v1" not in common or "rglob" not in common:
-    raise SystemExit("toolchain identity must be a content hash of the complete recipe directory")
+if "searchkernel-ci-toolchain-v2" not in common or "rglob" not in common:
+    raise SystemExit("toolchain identity must hash the complete recipe and immutable base digest")
+if "ci_image_resolve_local_digest" not in common or "ci_image_pull_and_resolve_digest" not in common:
+    raise SystemExit("split-image publishing has no canonical tag-to-digest resolver")
+if "ci_image_require_clean_checkout" not in common:
+    raise SystemExit("publishers do not share a clean-checkout gate")
+if "ci_image_require_remote_main" not in common:
+    raise SystemExit("canonical :latest publication has no remote-main gate")
 if "searchkernel-ci-vespa-bundle-v1" not in common:
     raise SystemExit("Vespa bundle identity must include the packaging/closure recipe")
 if 'root / "tools/prepare-searchkernel-ci-native-context.sh"' not in common:
@@ -143,6 +151,9 @@ for fragment in (
     "superkelvint/searchkernel-ci-toolchain",
     "io.searchkernel.toolchain-id",
     "BASE_IMAGE=",
+    "PINNED_BASE_IMAGE",
+    "io.searchkernel.toolchain-base",
+    "ci_image_require_clean_checkout",
 ):
     if fragment not in toolchain_publish:
         raise SystemExit(f"toolchain publisher is missing {fragment!r}")
@@ -169,10 +180,20 @@ for fragment in (
     "superkelvint/searchkernel-ci-toolchain",
     "superkelvint/searchkernel-ci-vespa",
     'VESPA_REF="$VESPA_IMAGE:$VESPA_COMMIT-$VESPA_BUNDLE_ID"',
-    'COMPOSITE_TAG="base-$COMPOSITE_ID"',
+    'COMPOSITE_REF="$IMAGE:base-$COMPOSITE_ID"',
     "ci_image_vespa_bundle_id",
     "ci_image_composite_id",
+    "PINNED_TOOLCHAIN_REF",
+    "PINNED_VESPA_REF",
+    "PINNED_COMPOSITE_REF",
     "io.searchkernel.composite-id",
+    "io.searchkernel.toolchain-image-digest",
+    "io.searchkernel.vespa-image-digest",
+    "io.searchkernel.composite-image-digest",
+    "BUILDKIT_CACHE_MOUNT_NS",
+    "ci_image_require_clean_checkout",
+    "ci_image_require_remote_main",
+    "tags beginning with 'base-' are reserved",
     "io.searchkernel.vespa-bundle-id",
     "./dev image toolchain publish",
     "./dev image vespa publish",
