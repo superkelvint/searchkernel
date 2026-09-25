@@ -41,15 +41,22 @@ if [[ "$mode" == node ]]; then
     exit 0
 fi
 
-npm_bin=$(resolve_candidate npm NPM) || {
+if [[ -n "${NPM:-}" ]]; then
+    npm_bin=$(resolve_candidate npm NPM) || {
+        echo "error: explicit NPM is not executable: $NPM" >&2
+        exit 1
+    }
+else
     sibling="$(dirname -- "$node_bin")/npm"
     if [[ -x "$sibling" ]]; then
         npm_bin=$sibling
     else
-        echo "error: could not resolve npm for $node_bin; run ./dev doctor" >&2
-        exit 1
+        npm_bin=$(resolve_candidate npm NPM) || {
+            echo "error: could not resolve npm for $node_bin; run ./dev doctor" >&2
+            exit 1
+        }
     fi
-}
+fi
 "$npm_bin" --version >/dev/null 2>&1 || {
     echo "error: resolved npm is unusable: $npm_bin" >&2
     exit 1
