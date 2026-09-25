@@ -494,6 +494,9 @@ jobs:
       - name: Test Clippy diagnostic runner
         run: python3 tools/test_run_clippy.py
 
+      - name: Enforce canonical Python tooling resolution
+        run: python3 tools/test_python_dependency_contract.py
+
       - name: Run semantic verifier routing regression
         run: bash reference/vespa/verifiers/test-routing.sh
 
