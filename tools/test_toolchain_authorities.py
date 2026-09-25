@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 BARE_TOOL_RE = re.compile(
-    r"(?m)^\s*(?:env\s+)?"
+    r"(?m)(?:^|[|;&]\s*)\s*(?:env\s+)?"
     r"(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*"
     r"(python3|cargo|rustc|npm|node|flatc)\b"
 )
