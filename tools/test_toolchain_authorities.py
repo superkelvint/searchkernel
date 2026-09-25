@@ -176,6 +176,17 @@ class ToolchainAuthorityTests(unittest.TestCase):
         searchkerneld = function_body(dev, "doctor_searchkerneld")
         self.assertIn('"$CARGO" build -p searchkerneld --features native', searchkerneld)
 
+    def test_doctor_system_tool_repair_matches_almalinux_package_surface(self) -> None:
+        dev = read("dev")
+        repair = function_body(dev, "doctor_repair_system_tools")
+
+        self.assertIn("dnf install -y epel-release", repair)
+        self.assertIn("dnf install -y ripgrep clang python3-clang", repair)
+        self.assertNotIn(
+            "dnf install -y ripgrep clang python3-clang libclang",
+            repair,
+        )
+
     def test_typescript_helpers_pin_node_for_npm_children(self) -> None:
         for relative in (
             "tools/check-typescript-generated.sh",
