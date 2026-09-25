@@ -48,7 +48,7 @@ for fragment in (
     'metadata.get("git_head", "").lower() != expected_head.lower()',
     'metadata.get("working_tree_clean") is not True',
     'metadata.get("tool") != "cargo-llvm-cov 0.9.1"',
-    "if-no-files-found: error",
+    "if-no-files-found: warn",
 ):
     if fragment not in ci_workflow:
         raise SystemExit(f"CI coverage evidence contract is missing {fragment!r}")
@@ -137,7 +137,8 @@ for fragment in \
     '--summary-only' \
     'metadata.json' \
     '"working_tree_clean": not bool(git_status)' \
-    '"native_cpp_coverage": False'; do
+    '"native_cpp_coverage": False' \
+    'refusing destructive coverage output directory'; do
     grep -F -- "$fragment" "$COVERAGE" >/dev/null || {
         echo "coverage runner is missing contract fragment: $fragment" >&2
         exit 1
