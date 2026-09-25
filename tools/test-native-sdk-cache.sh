@@ -143,7 +143,10 @@ trap cleanup_fixture EXIT
 
 repo="$fixture/repo"
 mkdir -p "$repo/tools" "$repo/core/native/vespa" "$repo/upstream/vespa" "$repo/vespa-deps/lib64"
-cp "$source_root/tools/resolve-native-sdk.sh" "$repo/tools/"
+cp "$source_root/tools/resolve-native-sdk.sh" \
+   "$source_root/tools/resolve-python.sh" \
+   "$source_root/tools/resolve-rust.sh" \
+   "$repo/tools/"
 cat >"$repo/core/native/vespa/searchkernel_vespa.h" <<'EOF'
 #define SK_NATIVE_ABI_VERSION 1U
 EOF
