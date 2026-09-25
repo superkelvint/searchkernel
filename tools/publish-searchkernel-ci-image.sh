@@ -3,8 +3,15 @@ set -euo pipefail
 
 # Build and publish the immutable Search Kernel CI image to Docker Hub.
 #
-# The image includes the validated Vespa/runtime base and its adapter toolchain,
-# so normal runner provisioning never downloads a native-base GitHub Release.
+# The image includes:
+#   - pinned toolchains and language runtimes;
+#   - the validated Vespa/runtime base;
+#   - the configured Vespa headers/static link metadata needed to rebuild the
+#     Search Kernel adapter in each checkout.
+#
+# This path deliberately does NOT use the published native-base GitHub Release
+# flow. It prepares Docker build contexts directly from the existing full SDK
+# and matching configured Vespa toolchain.
 #
 # Usage:
 #   tools/publish-searchkernel-ci-image.sh [tag]
@@ -14,14 +21,6 @@ set -euo pipefail
 # or:
 #   DOCKERHUB_TOKEN=... DOCKERHUB_USERNAME=superkelvint \
 #     tools/publish-searchkernel-ci-image.sh [tag]
-#
-# Environment:
-#   SEARCHKERNEL_CI_IMAGE       Docker Hub repository
-#                               (default: superkelvint/searchkernel-ci)
-#   SEARCHKERNEL_CI_BASE_IMAGE  Vespa AlmaLinux builder base
-#   SEARCHKERNEL_CI_PUSH_LATEST Set to 1 to also push :latest
-#   DOCKERHUB_USERNAME          Username for token login
-#   DOCKERHUB_TOKEN             Docker Hub personal access token
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
@@ -68,6 +67,16 @@ PY
 [[ "$VESPA_COMMIT" =~ ^[0-9a-f]{40}$ ]] ||
     die "invalid pinned Vespa commit: $VESPA_COMMIT"
 
+# Capture the actual local native inputs before sanitizing ambient build
+# variables. The common AlmaLinux developer shell exports both of these.
+FULL_SDK="${SEARCHKERNEL_CI_FULL_SDK:-${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}}"
+LOCAL_VESPA_ROOT="${SEARCHKERNEL_CI_VESPA_ROOT:-${VESPA_ROOT:-$ROOT/upstream/vespa}}"
+
+[[ -d "$FULL_SDK" ]] ||
+    die "full native SDK not found: $FULL_SDK"
+[[ -d "$LOCAL_VESPA_ROOT" ]] ||
+    die "configured Vespa root not found: $LOCAL_VESPA_ROOT"
+
 if [[ -n "${DOCKERHUB_TOKEN:-}" ]]; then
     DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME:-superkelvint}"
     printf '%s' "$DOCKERHUB_TOKEN" |
@@ -83,54 +92,43 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# This publisher must package the pinned Vespa base together with its source/
-# toolchain metadata. An inherited SK_NATIVE_SDK selects the explicit full-SDK
-# resolver path, where vespa-root is intentionally unavailable. Runner/dev
-# shells commonly export SK_NATIVE_SDK, so sanitize that ambient override here.
-if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
-    echo "Ignoring inherited SK_NATIVE_SDK for CI image publication: $SK_NATIVE_SDK"
-    unset SK_NATIVE_SDK
-fi
-
-# Image publication is deliberately source/local-base driven. Never let an
-# ambient artifact URL or generation silently reintroduce the GitHub Release
-# native-base path that this image is replacing.
-unset SK_NATIVE_BASE_ARTIFACT_URL
-unset SK_NATIVE_BASE_ARTIFACT_GENERATION
-
 echo
-echo "==> Ensuring local pinned Vespa base without GitHub Release fallback"
+echo "==> Preparing native Docker contexts from the full SDK"
+echo "Full SDK:   $FULL_SDK"
+echo "Vespa root: $LOCAL_VESPA_ROOT"
 
-SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
-SK_NATIVE_TARGET="$TARGET" \
-SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
-    ./dev native-sdk ensure >/dev/null
-
-echo
-echo "==> Packaging validated local Vespa base/toolchain"
-
-mkdir -p "$TMP/package"
-mapfile -t package_outputs < <(
+mapfile -t native_contexts < <(
     SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
     SK_NATIVE_TARGET="$TARGET" \
-    SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
-        tools/package-native-base-artifact.sh "$TMP/package"
+    bash "$ROOT/tools/prepare-searchkernel-ci-native-context.sh" \
+        "$FULL_SDK" \
+        "$LOCAL_VESPA_ROOT" \
+        "$TMP/native-context" \
+        "$BUILD_ENV" \
+        "$TARGET"
 )
 
-ARCHIVE="${package_outputs[0]:-}"
-[[ -s "$ARCHIVE" ]] || die "native-base packager did not produce an archive"
+NATIVE_BASE="${native_contexts[${#native_contexts[@]}-2]:-}"
+NATIVE_TOOLCHAIN="${native_contexts[${#native_contexts[@]}-1]:-}"
 
-mkdir -p "$TMP/extract"
-tar -xzf "$ARCHIVE" -C "$TMP/extract"
+[[ -d "$NATIVE_BASE" && -s "$NATIVE_BASE/lib/libvespalib.so" ]] ||
+    die "native context preparation did not produce a valid base"
+[[ -d "$NATIVE_TOOLCHAIN" &&
+   -f "$NATIVE_TOOLCHAIN/upstream/vespa/.searchkernel-vespa-artifact.json" ]] ||
+    die "native context preparation did not produce a valid toolchain"
 
-BUNDLE="$TMP/extract/searchkernel-vespa-base"
-NATIVE_BASE="$BUNDLE/base"
-NATIVE_TOOLCHAIN="$BUNDLE/toolchain"
+echo
+echo "==> Preparing clean Search Kernel source context"
 
-[[ -s "$NATIVE_BASE/lib/libvespalib.so" ]] ||
-    die "packaged native base is missing libvespalib.so"
-[[ -f "$NATIVE_TOOLCHAIN/upstream/vespa/.searchkernel-vespa-artifact.json" ]] ||
-    die "packaged native toolchain marker is missing"
+SOURCE_CONTEXT="$TMP/source"
+mkdir -p "$SOURCE_CONTEXT"
+
+# Use exactly HEAD: do not accidentally publish an image whose validation was
+# performed against uncommitted working-tree state.
+git archive --format=tar HEAD | tar -xf - -C "$SOURCE_CONTEXT"
+
+[[ -f "$SOURCE_CONTEXT/Cargo.toml" ]] ||
+    die "source context is missing Cargo.toml"
 
 echo
 echo "==> Pinning Docker base image"
@@ -145,29 +143,33 @@ PINNED_BASE_IMAGE="$(
     die "could not resolve an immutable digest for $BASE_IMAGE"
 
 IMAGE_REF="$IMAGE:$TAG"
+REVISION="$(git rev-parse HEAD)"
 
 echo
 echo "==> Building $IMAGE_REF"
 echo "Base image:   $PINNED_BASE_IMAGE"
+echo "Revision:     $REVISION"
 echo "Vespa commit: $VESPA_COMMIT"
 
 DOCKER_BUILDKIT=1 docker build \
     --build-context "searchkernel-native-base=$NATIVE_BASE" \
     --build-context "searchkernel-native-toolchain=$NATIVE_TOOLCHAIN" \
+    --build-context "searchkernel-source=$SOURCE_CONTEXT" \
     --build-arg "BASE_IMAGE=$PINNED_BASE_IMAGE" \
     --build-arg "VESPA_COMMIT=$VESPA_COMMIT" \
     --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel" \
-    --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+    --label "org.opencontainers.image.revision=$REVISION" \
     --label "io.searchkernel.vespa-commit=$VESPA_COMMIT" \
     -f "$ROOT/docker/searchkernel-ci/Dockerfile" \
     -t "$IMAGE_REF" \
     "$ROOT/docker/searchkernel-ci"
 
 echo
-echo "==> Verifying image capabilities"
+echo "==> Verifying final image capabilities"
 
 docker run --rm "$IMAGE_REF" /bin/bash -lc '
 set -euo pipefail
+test -f /opt/searchkernel/native-validation-pass
 node -e '"'"'const [M,m]=process.versions.node.split(".").map(Number); if (M < 20 || (M === 20 && m < 19)) process.exit(1)'"'"'
 ruby -e '"'"'abort if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.3.0")'"'"'
 php -r '"'"'exit(version_compare(PHP_VERSION, "8.1.0", ">=") ? 0 : 1);'"'"'
@@ -186,15 +188,6 @@ flatc --version
 rg --version | head -n 1
 gh --version | head -n 1
 '
-
-echo
-echo "==> Verifying bundled native resolver against this checkout"
-
-docker run --rm \
-    -v "$ROOT:/work:ro" \
-    -w /work \
-    "$IMAGE_REF" \
-    ./dev native-sdk path >/dev/null
 
 echo
 echo "==> Pushing $IMAGE_REF"
