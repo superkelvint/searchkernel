@@ -82,27 +82,59 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$CI_IMAGE"
-          label=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-commit"}}' "$CI_IMAGE")
-          [[ -n "$label" && "$label" != "<no value>" ]] || {
+
+          vespa_commit=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-commit"}}' "$CI_IMAGE")
+          vespa_bundle=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-bundle-id"}}' "$CI_IMAGE")
+          vespa_ref=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-image-digest"}}' "$CI_IMAGE")
+          [[ -n "$vespa_commit" && "$vespa_commit" != "<no value>" ]] || {
             echo "::error::CI image is missing io.searchkernel.vespa-commit label"
             exit 1
           }
+          [[ "$vespa_ref" == *@sha256:* ]] || {
+            echo "::error::CI image is missing immutable io.searchkernel.vespa-image-digest label"
+            exit 1
+          }
+
+          docker pull "$vespa_ref"
+          actual_vespa_commit=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-commit"}}' "$vespa_ref")
+          actual_vespa_bundle=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-bundle-id"}}' "$vespa_ref")
+          [[ "$actual_vespa_commit" == "$vespa_commit" ]] || {
+            echo "::error::CI/Vespa commit provenance mismatch"
+            exit 1
+          }
+          [[ "$actual_vespa_bundle" == "$vespa_bundle" ]] || {
+            echo "::error::CI/Vespa bundle provenance mismatch"
+            exit 1
+          }
+
           digest=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$CI_IMAGE")
           image_id=$(docker image inspect --format '{{.Id}}' "$CI_IMAGE")
           [[ -n "$image_id" ]] || {
             echo "::error::could not resolve immutable image ID for $CI_IMAGE"
             exit 1
           }
+
           echo "CI IMAGE PROVENANCE"
           printf '  ref:          %s\n' "$CI_IMAGE"
           printf '  digest:       %s\n' "${digest:-unknown}"
           printf '  image_id:     %s\n' "$image_id"
-          printf '  vespa_commit: %s\n' "$label"
-          echo "CI_IMAGE_ID=$image_id" >> "$GITHUB_ENV"
+          printf '  vespa_commit: %s\n' "$vespa_commit"
+          printf '  vespa_image:  %s\n' "$vespa_ref"
+
+          {
+            echo "CI_IMAGE_ID=$image_id"
+            echo "CI_VESPA_IMAGE_REF=$vespa_ref"
+            echo "CI_VESPA_COMMIT=$vespa_commit"
+            echo "CI_VESPA_BUNDLE_ID=$vespa_bundle"
+          } >> "$GITHUB_ENV"
 
           docker run --rm "$image_id" /bin/bash -lc '
             set -euo pipefail
             test -f /opt/searchkernel/native-validation-pass
+            if find /opt/searchkernel/native-sdk-cache -mindepth 1 -print -quit 2>/dev/null | grep -q .; then
+              echo "CI leaf unexpectedly contains baked Vespa/native payload" >&2
+              exit 1
+            fi
             for cmd in cargo rustc rustfmt cargo-clippy c++ flatc python3 curl rg gh php ruby composer node npm nm readelf; do
               command -v "$cmd" >/dev/null || {
                 echo "required CI-image command is unavailable: $cmd" >&2
@@ -111,10 +143,6 @@ jobs:
             done
             rustc --version | grep -q "^rustc 1\.98\.0 "
             test "$(flatc --version)" = "flatc version 25.12.19"
-            node -e '"'"'const [M,m]=process.versions.node.split(".").map(Number); if (M < 20 || (M === 20 && m < 19)) process.exit(1)'"'"'
-            ruby -e '"'"'abort if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.3.0")'"'"'
-            /usr/bin/python3 -c "import clang.cindex"
-            "$PYTHON" -c "import flatbuffers, grpc, google.protobuf"
           '
 
       - name: Create job-private Docker state
@@ -138,6 +166,13 @@ jobs:
 
           docker volume create "$SOURCE_VOLUME" >/dev/null
           docker volume create "$TARGET_VOLUME" >/dev/null
+
+          NATIVE_VOLUME=$(bash tools/ensure-ci-vespa-volume.sh \
+            "$CI_IMAGE_ID" \
+            "$CI_VESPA_IMAGE_REF" \
+            "$CI_VESPA_COMMIT" \
+            "$CI_VESPA_BUNDLE_ID")
+          echo "Using immutable Vespa volume: $NATIVE_VOLUME"
 
           bundle="$RUNNER_TEMP/searchkernel-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$SAFE_TARGET.bundle"
           rm -f "$bundle"
@@ -172,6 +207,7 @@ jobs:
           {
             echo "SOURCE_VOLUME=$SOURCE_VOLUME"
             echo "TARGET_VOLUME=$TARGET_VOLUME"
+            echo "NATIVE_VOLUME=$NATIVE_VOLUME"
             echo "CONTAINER_NAME=$CONTAINER_NAME"
             echo "ARTIFACT_DIR=$ARTIFACT_DIR"
           } >> "$GITHUB_ENV"
@@ -189,7 +225,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker run --rm -i             --name "$CONTAINER_NAME"             --pids-limit=-1             -v "$SOURCE_VOLUME:/work"             -v "$TARGET_VOLUME:/cargo-target"             -v "$ARTIFACT_DIR:/artifacts"             -w /work             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e CI_TARGET="$CI_TARGET"             -e ABI_BASELINE_SHA="$ABI_BASELINE_SHA"             -e HEAD_REF="$HEAD_REF"             -e AUTOFIX_TOKEN="$AUTOFIX_TOKEN"             -e GH_TOKEN="$GH_TOKEN"             -e PR_NUMBER="$PR_NUMBER"             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY"             -e GITHUB_API_URL="$GITHUB_API_URL"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR=/cargo-target             -e FLATBUFFERS_CPP_ROOT=/usr/local             -e FLATC_PATH=/usr/local/bin/flatc             -e CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             -e CXX=/opt/rh/gcc-toolset-15/root/usr/bin/g++             -e AR=/opt/rh/gcc-toolset-15/root/usr/bin/ar             -e RANLIB=/opt/rh/gcc-toolset-15/root/usr/bin/ranlib             -e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib             -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             "$CI_IMAGE_ID"             /bin/bash -s <<'BASH'
+          docker run --rm -i             --name "$CONTAINER_NAME"             --pids-limit=-1             -v "$SOURCE_VOLUME:/work"             -v "$TARGET_VOLUME:/cargo-target"             -v "$NATIVE_VOLUME:/opt/searchkernel/native-sdk-cache:ro"             -v "$ARTIFACT_DIR:/artifacts"             -w /work             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e CI_TARGET="$CI_TARGET"             -e ABI_BASELINE_SHA="$ABI_BASELINE_SHA"             -e HEAD_REF="$HEAD_REF"             -e AUTOFIX_TOKEN="$AUTOFIX_TOKEN"             -e GH_TOKEN="$GH_TOKEN"             -e PR_NUMBER="$PR_NUMBER"             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY"             -e GITHUB_API_URL="$GITHUB_API_URL"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR=/cargo-target             -e FLATBUFFERS_CPP_ROOT=/usr/local             -e FLATC_PATH=/usr/local/bin/flatc             -e CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             -e CXX=/opt/rh/gcc-toolset-15/root/usr/bin/g++             -e AR=/opt/rh/gcc-toolset-15/root/usr/bin/ar             -e RANLIB=/opt/rh/gcc-toolset-15/root/usr/bin/ranlib             -e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib             -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             "$CI_IMAGE_ID"             /bin/bash -s <<'BASH'
           set -euo pipefail
           trap 'chmod -R a+rwX /artifacts 2>/dev/null || true' EXIT
 
@@ -250,11 +286,11 @@ jobs:
           case "$native_base" in
             /opt/searchkernel/native-sdk-cache/ci/*/objects/*) ;;
             *)
-              echo "CI image resolved native base outside its baked immutable cache: $native_base" >&2
+              echo "CI resolved native base outside the mounted immutable Vespa cache: $native_base" >&2
               exit 1
               ;;
           esac
-          echo "Using baked native base: $native_base"
+          echo "Using mounted immutable native base: $native_base"
 
           assert_current_pr_head() {
             local phase=$1
