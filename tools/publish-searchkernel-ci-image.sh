@@ -25,6 +25,7 @@ source "$ROOT/tools/searchkernel-ci-image-common.sh"
 
 IMAGE="${SEARCHKERNEL_CI_IMAGE:-superkelvint/searchkernel-ci}"
 TOOLCHAIN_IMAGE="${SEARCHKERNEL_CI_TOOLCHAIN_IMAGE:-superkelvint/searchkernel-ci-toolchain}"
+TOOLCHAIN_BASE_IMAGE="${SEARCHKERNEL_CI_TOOLCHAIN_BASE_IMAGE:-docker.io/vespaengine/vespa-dev-almalinux-8:latest}"
 VESPA_IMAGE="${SEARCHKERNEL_CI_VESPA_IMAGE:-superkelvint/searchkernel-ci-vespa}"
 PUSH_LATEST="${SEARCHKERNEL_CI_PUSH_LATEST:-0}"
 
@@ -46,7 +47,7 @@ fi
 
 ci_image_login
 
-TOOLCHAIN_ID="$(ci_image_toolchain_id "$ROOT/docker/searchkernel-ci-toolchain")"
+TOOLCHAIN_ID="$(ci_image_toolchain_id "$ROOT/docker/searchkernel-ci-toolchain" "$TOOLCHAIN_BASE_IMAGE")"
 VESPA_COMMIT="$(ci_image_vespa_commit "$ROOT")"
 
 TOOLCHAIN_REF="$TOOLCHAIN_IMAGE:$TOOLCHAIN_ID"
