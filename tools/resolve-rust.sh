@@ -3,9 +3,9 @@ set -euo pipefail
 
 mode=${1:-cargo}
 case "$mode" in
-    cargo|rustc) ;;
+    cargo|rustc|rustfmt) ;;
     *)
-        echo "usage: tools/resolve-rust.sh cargo|rustc" >&2
+        echo "usage: tools/resolve-rust.sh cargo|rustc|rustfmt" >&2
         exit 2
         ;;
 esac
