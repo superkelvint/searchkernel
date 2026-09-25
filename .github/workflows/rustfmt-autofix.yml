@@ -11,82 +11,21 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+
 jobs:
   rustfmt:
     name: Apply cargo fmt
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64]
-    steps:
-      - name: Check out exact pull request head
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-
-      - name: Ensure runner Rust toolchain
-        run: bash .github/ci/ensure-runner-rust.sh rustfmt
-
-      - name: Apply formatting
-        run: cargo fmt --all
-
-      - name: Inspect formatting diff
-        id: formatting
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if git diff --quiet; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "cargo fmt changed:"
-          git diff --name-only
-
-          unexpected="$(
-            git diff --name-only |
-              grep -Ev '\.rs$' || true
-          )"
-          if [[ -n "$unexpected" ]]; then
-            echo "::error::cargo fmt unexpectedly changed non-Rust files:"
-            printf '%s\n' "$unexpected"
-            exit 1
-          fi
-
-          git diff --check
-
-      - name: Commit and push formatting fixes
-        if: steps.formatting.outputs.changed == 'true'
-        shell: bash
-        env:
-          AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${AUTOFIX_TOKEN:-}" ]]; then
-            echo "::error::RUSTFMT_AUTOFIX_TOKEN is not configured."
-            echo "Configure a fine-grained token with Contents: Read and write for this repository."
-            exit 1
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -u
-          git diff --cached --check
-
-          git -c core.hooksPath=/dev/null -c commit.gpgsign=false \
-            commit -m "style: apply cargo fmt"
-
-          # Qualify the destination explicitly as a branch ref so a pathological
-          # source branch name cannot be interpreted as another full ref.
-          git push \
-            "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            "HEAD:refs/heads/${HEAD_REF}"
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.event.pull_request.head.sha }}
+      target: rustfmt-autofix
+      head_ref: ${{ github.event.pull_request.head.ref }}
+    secrets:
+      autofix_token: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
