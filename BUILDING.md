@@ -160,8 +160,10 @@ Image publishing has three independent identities:
   native runtime closure plus configured Vespa headers/static-link metadata for
   the commit pinned by `core/native/vespa/manifest.json`.
 - `superkelvint/searchkernel-ci:<searchkernel-revision>` is a thin leaf. A
-  reusable `base-<toolchain-id>-<vespa-commit>` tag in the same repository
-  composes and compatibility-checks the first two images once; ordinary source
+  reusable `base-<composition-id>` tag in the same repository composes and
+  compatibility-checks the first two images once. The composition id hashes
+  the toolchain id, Vespa commit, and base-composition Dockerfile, so changes
+  to the compatibility gate cannot reuse a stale base. Ordinary source
   publishes reuse it and only rerun Search Kernel's source-specific native
   adapter validation.
 
