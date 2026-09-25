@@ -56,16 +56,19 @@ echo "==> coverage: writing machine-readable and human-readable reports"
     --output-dir "$OUTPUT_DIR/html"
 
 head_sha=$(git rev-parse HEAD)
+git_status=$(git status --porcelain=v1 --untracked-files=all)
 tool_version=$("$CARGO" llvm-cov --version | head -n 1)
-python3 - "$OUTPUT_DIR/metadata.json" "$head_sha" "$tool_version" "$IGNORE_RE" <<'PY'
+python3 - "$OUTPUT_DIR/metadata.json" "$head_sha" "$tool_version" "$IGNORE_RE" "$git_status" <<'PY'
 import datetime
 import json
 import sys
 
-path, head, tool_version, ignore_re = sys.argv[1:]
+path, head, tool_version, ignore_re, git_status = sys.argv[1:]
 payload = {
     "schema_version": 1,
     "git_head": head,
+    "working_tree_clean": not bool(git_status),
+    "working_tree_status": git_status.splitlines(),
     "generated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "tool": tool_version,
     "test_scope": "cargo llvm-cov --workspace --all-targets --all-features",
@@ -93,7 +96,8 @@ and searchkernel-testkit are excluded from the reported denominator.
 
 This does NOT instrument the linked Vespa/SearchKernel C++ native implementation.
 A high Rust coverage percentage does not replace native/real-engine verification.
-See metadata.json for the exact Git HEAD and tool version.
+See metadata.json for the Git HEAD, dirty-worktree status, and tool version.
+A report from a dirty local snapshot must not be reused as pristine exact-head evidence.
 EOF
 
 cat "$OUTPUT_DIR/summary.txt"
