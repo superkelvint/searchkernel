@@ -268,7 +268,7 @@ fn standard_json_preserves_textual_filter_clause_bindings() {
               "bindings": [
                 {
                   "key": "max",
-                  "value": {"kind_type":"Int64Value", "kind":{"value":120}}
+                  "value": {"kind_type":"Int64Value", "kind":{"value":"120"}}
                 }
               ]
             },
@@ -277,7 +277,7 @@ fn standard_json_preserves_textual_filter_clause_bindings() {
               "bindings": [
                 {
                   "key": "value",
-                  "value": {"kind_type":"Int64Value", "kind":{"value":4}}
+                  "value": {"kind_type":"Int64Value", "kind":{"value":"4"}}
                 }
               ]
             }
