@@ -161,7 +161,7 @@ emitCase('response', 'recursive-search-result', Protocol::envelope('SearchResult
             ]],
         ],
     ],
-    'total_hits' => ['value' => 1, 'relation' => 'Exact'],
+    'total_hits' => ['value' => '1', 'relation' => 'Exact'],
 ]));
 
 emitCase('response', 'default-delete-false', Protocol::envelope('DeleteResult', [
