@@ -61,6 +61,7 @@ set -euo pipefail
 for cmd in cargo rustc rustfmt cargo-clippy c++ flatc python3 curl rg gh php ruby composer node npm nm readelf; do
   command -v "$cmd" >/dev/null
 done
+cargo llvm-cov --version
 rustc --version | grep -q "^rustc 1\.98\.0 "
 test "$(flatc --version)" = "flatc version 25.12.19"
 node -e '"'"'const [M,m]=process.versions.node.split(".").map(Number); if (M < 20 || (M === 20 && m < 19)) process.exit(1)'"'"'
