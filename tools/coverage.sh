@@ -30,27 +30,33 @@ echo "==> coverage: running Rust workspace tests (all targets/features)"
     --workspace \
     --all-targets \
     --all-features \
+    --remap-path-prefix \
     --no-report
 
 echo "==> coverage: writing machine-readable and human-readable reports"
 "$CARGO" llvm-cov report \
+    --remap-path-prefix \
     --ignore-filename-regex "$IGNORE_RE" \
     --json \
     --output-path "$OUTPUT_DIR/coverage.json"
 "$CARGO" llvm-cov report \
+    --remap-path-prefix \
     --ignore-filename-regex "$IGNORE_RE" \
     --json \
     --summary-only \
     --output-path "$OUTPUT_DIR/summary.json"
 "$CARGO" llvm-cov report \
+    --remap-path-prefix \
     --ignore-filename-regex "$IGNORE_RE" \
     --lcov \
     --output-path "$OUTPUT_DIR/lcov.info"
 "$CARGO" llvm-cov report \
+    --remap-path-prefix \
     --ignore-filename-regex "$IGNORE_RE" \
     --text \
     --output-path "$OUTPUT_DIR/summary.txt"
 "$CARGO" llvm-cov report \
+    --remap-path-prefix \
     --ignore-filename-regex "$IGNORE_RE" \
     --html \
     --output-dir "$OUTPUT_DIR/html"
