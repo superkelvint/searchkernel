@@ -37,8 +37,8 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
-  id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
-  schema="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["schema"])' "$scenario")"
+  id="$(python3 "$ROOT/reference/vespa/common/json_tools.py" field "$scenario" id)"
+  schema="$(python3 "$ROOT/reference/vespa/common/json_tools.py" field "$scenario" schema)"
   cfg="$TMP/$id-config"
   data="$TMP/$id-data"
   mkdir -p "$cfg" "$data"
@@ -58,7 +58,7 @@ for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     live="$TMP/$id-java.json"
     "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$id" "$schema" "$SCRIPT_DIR/scenarios/rendered/$id.sd" \
-      | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",",":")))' > "$live"
+      | python3 "$ROOT/reference/vespa/common/json_tools.py" canonicalize > "$live"
     "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$live"
     "$SCRIPT_DIR/compare.py" "$live" "$actual"
   fi
@@ -87,12 +87,6 @@ if cmp -s "$TYPEA_CFG" "$PRODUCTS_CFG"; then
   exit 1
 fi
 
-python3 - "$TYPEA_CFG" "$PRODUCTS_CFG" <<'PY'
-import json, sys
-left=json.load(open(sys.argv[1])); right=json.load(open(sys.argv[2]))
-assert left['fields'] == right['fields'], 'identity pair field models unexpectedly differ'
-assert left['document_type'] == 'typea', left
-assert right['document_type'] == 'products', right
-PY
+python3 "$ROOT/reference/vespa/common/json_tools.py" m6-identity "$TYPEA_CFG" "$PRODUCTS_CFG"
 
 echo "M6 verification passed"
