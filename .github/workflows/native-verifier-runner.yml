@@ -33,11 +33,10 @@ concurrency:
 
 jobs:
   verify:
-    name: ${{ inputs.target }} on AlmaLinux
+    name: ${{ inputs.target }} in searchkernel-ci:latest
     runs-on: [self-hosted, linux, x64]
     env:
-      NATIVE_CONTAINER: searchkernel-native
-      ALMA_CARGO_TARGET_DIR: /work/target/actions-runner-alma-manual
+      NATIVE_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
     steps:
       - name: Check out requested revision
         uses: actions/checkout@v4
@@ -54,190 +53,121 @@ jobs:
           echo "sha=$actual" >> "$GITHUB_OUTPUT"
           echo "Verifying exact SearchKernel revision $actual"
 
-      - name: Verify provisioned AlmaLinux native container
+      - name: Pull immutable CI environment candidate
         run: |
           set -euo pipefail
-
-          if ! docker container inspect "$NATIVE_CONTAINER" >/dev/null 2>&1; then
-            echo "::error::missing persistent AlmaLinux native container '$NATIVE_CONTAINER'"
-            echo "::error::run tools/actions-runner-setup.sh once on this runner"
+          docker pull "$NATIVE_IMAGE"
+          label=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-commit"}}' "$NATIVE_IMAGE")
+          [[ -n "$label" && "$label" != "<no value>" ]] || {
+            echo "::error::CI image is missing io.searchkernel.vespa-commit label"
             exit 1
-          fi
+          }
+          digest=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$NATIVE_IMAGE")
+          echo "Using $NATIVE_IMAGE"
+          echo "Resolved image digest: ${digest:-unknown}"
 
-          if [[ "$(docker inspect --format '{{.State.Running}}' "$NATIVE_CONTAINER")" != "true" ]]; then
-            docker start "$NATIVE_CONTAINER" >/dev/null
-          fi
+          docker run --rm "$NATIVE_IMAGE" /bin/bash -lc '
+            set -euo pipefail
+            test -f /opt/searchkernel/native-validation-pass
+            for cmd in cargo rustc rustfmt cargo-clippy c++ flatc flock python3 curl rg gh php ruby nm readelf; do
+              command -v "$cmd" >/dev/null || {
+                echo "required CI-image command is unavailable: $cmd" >&2
+                exit 1
+              }
+            done
+            /usr/bin/python3 -c "import clang.cindex"
+            "$PYTHON" -c "import flatbuffers, grpc, google.protobuf"
+          '
 
-          mounts=$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$NATIVE_CONTAINER")
-          for required in /work /native-artifacts /root/.cargo /root/.rustup /root/.cache/searchkernel; do
-            if ! grep -Fxq "$required" <<<"$mounts"; then
-              echo "::error::native container '$NATIVE_CONTAINER' is missing required mount $required"
-              echo "::error::rerun tools/actions-runner-setup.sh on this runner"
-              exit 1
-            fi
-          done
-
-          artifact_mount_rw=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/native-artifacts"}}{{.RW}}{{end}}{{end}}' "$NATIVE_CONTAINER")
-          if [[ "$artifact_mount_rw" != "false" ]]; then
-            echo "::error::native artifact mount must be read-only, found RW=$artifact_mount_rw"
-            exit 1
-          fi
-
-      - name: Copy exact revision into AlmaLinux
+      - name: Create isolated verifier volumes
         env:
           EXPECTED_HEAD: ${{ steps.revision.outputs.sha }}
         run: |
           set -euo pipefail
 
-          if git config --local --get-regexp '^http\..*\.extraheader$' >/dev/null 2>&1; then
-            echo "::error::refusing to copy a checkout containing persisted GitHub credentials"
-            exit 1
-          fi
+          SOURCE_VOLUME="searchkernel-native-src-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          TARGET_VOLUME="searchkernel-native-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CONTAINER_NAME="searchkernel-native-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-          ALMA_WORKTREE="/tmp/searchkernel-verifier-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE"
-          docker exec "$NATIVE_CONTAINER" mkdir -p "$ALMA_WORKTREE"
-          docker cp "$GITHUB_WORKSPACE/." "$NATIVE_CONTAINER:$ALMA_WORKTREE"
+          docker volume rm -f "$SOURCE_VOLUME" "$TARGET_VOLUME" >/dev/null 2>&1 || true
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
-          actual=$(docker exec             -e ALMA_WORKTREE="$ALMA_WORKTREE"             "$NATIVE_CONTAINER"             /bin/bash -lc 'git -c safe.directory="$ALMA_WORKTREE" -C "$ALMA_WORKTREE" rev-parse HEAD')
+          docker volume create "$SOURCE_VOLUME" >/dev/null
+          docker volume create "$TARGET_VOLUME" >/dev/null
+          docker volume create searchkernel-ci-cargo-registry >/dev/null
+          docker volume create searchkernel-ci-cargo-git >/dev/null
+          docker volume create searchkernel-native-ci-lock >/dev/null
+
+          docker run --rm             -v "$GITHUB_WORKSPACE:/source:ro"             -v "$SOURCE_VOLUME:/work"             "$NATIVE_IMAGE"             /bin/bash -lc 'cp -a /source/. /work/'
+
+          actual=$(docker run --rm             -v "$SOURCE_VOLUME:/work"             -w /work             "$NATIVE_IMAGE"             /bin/bash -lc 'git config --global --add safe.directory /work && git rev-parse HEAD')
+
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error::AlmaLinux copy expected $EXPECTED_HEAD, found $actual"
+            echo "::error::container copy expected $EXPECTED_HEAD, found $actual"
             exit 1
           fi
 
-          echo "ALMA_WORKTREE=$ALMA_WORKTREE" >> "$GITHUB_ENV"
+          {
+            echo "SOURCE_VOLUME=$SOURCE_VOLUME"
+            echo "TARGET_VOLUME=$TARGET_VOLUME"
+            echo "CONTAINER_NAME=$CONTAINER_NAME"
+          } >> "$GITHUB_ENV"
 
-      - name: Resolve trusted native-base release
-        id: native_base
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          command -v gh >/dev/null
-
-          pin=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["vespa_commit"])' core/native/vespa/manifest.json)
-          target=$(docker exec "$NATIVE_CONTAINER" /bin/bash -lc "rustc -vV | sed -n 's/^host: //p'")
-          [[ -n "$target" ]] || {
-            echo "::error::could not determine AlmaLinux Rust target for native-base selection"
-            exit 1
-          }
-
-          latest_generation=
-          while IFS= read -r tag; do
-            if [[ "$tag" =~ ^vespa-base-v([0-9]+)-ci-${target}-${pin}$ ]]; then
-              generation="${BASH_REMATCH[1]}"
-              if [[ -z "$latest_generation" || "$generation" -gt "$latest_generation" ]]; then
-                latest_generation="$generation"
-              fi
-            fi
-          done < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')
-
-          [[ -n "$latest_generation" ]] || {
-            echo "::error::no published CI native base for Vespa $pin and target $target"
-            exit 1
-          }
-
-          tag="vespa-base-v${latest_generation}-ci-${target}-${pin}"
-          archive="searchkernel-vespa-base-v${latest_generation}-ci-${target}-${pin}.tar.gz"
-          assets=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.assets[].name')
-          grep -Fxq "$archive" <<<"$assets" || {
-            echo "::error::trusted release $tag is missing $archive"
-            exit 1
-          }
-          grep -Fxq "${archive}.sha256" <<<"$assets" || {
-            echo "::error::trusted release $tag is missing ${archive}.sha256"
-            exit 1
-          }
-
-          checksum_dir="${RUNNER_TEMP}/searchkernel-native-base-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          rm -rf "$checksum_dir"
-          mkdir -p "$checksum_dir"
-          gh release download "$tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "${archive}.sha256" \
-            --dir "$checksum_dir"
-
-          expected_sha=$(awk 'NF {print $1; exit}' "$checksum_dir/${archive}.sha256")
-          [[ "$expected_sha" =~ ^[0-9a-fA-F]{64}$ ]] || {
-            echo "::error::trusted release checksum is malformed for $archive"
-            exit 1
-          }
-
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "archive=$archive" >> "$GITHUB_OUTPUT"
-          echo "sha256=${expected_sha,,}" >> "$GITHUB_OUTPUT"
-
-      - name: Run verifier in AlmaLinux
+      - name: Run verifier in immutable CI image
         env:
           EXPECTED_HEAD: ${{ steps.revision.outputs.sha }}
           VERIFIER_TARGET: ${{ inputs.target }}
-          EXPECTED_NATIVE_ARCHIVE_NAME: ${{ steps.native_base.outputs.archive }}
-          EXPECTED_NATIVE_ARCHIVE_SHA256: ${{ steps.native_base.outputs.sha256 }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
 
-          docker exec -i \
-            -e ALMA_WORKTREE="$ALMA_WORKTREE" \
-            -e EXPECTED_HEAD="$EXPECTED_HEAD" \
-            -e VERIFIER_TARGET="$VERIFIER_TARGET" \
-            -e EXPECTED_NATIVE_ARCHIVE_NAME="$EXPECTED_NATIVE_ARCHIVE_NAME" \
-            -e EXPECTED_NATIVE_ARCHIVE_SHA256="$EXPECTED_NATIVE_ARCHIVE_SHA256" \
-            -e GH_TOKEN="$GH_TOKEN" \
-            -e PR_NUMBER="$PR_NUMBER" \
-            -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
-            -e GITHUB_API_URL="$GITHUB_API_URL" \
-            -e SEARCHKERNEL_BUILD_ENV=ci \
-            -e CARGO_TARGET_DIR="$ALMA_CARGO_TARGET_DIR" \
-            "$NATIVE_CONTAINER" \
-            /bin/bash -s <<'BASH'
+          docker run --rm             --name "$CONTAINER_NAME"             --pids-limit=-1             -v "$SOURCE_VOLUME:/work"             -v "$TARGET_VOLUME:/cargo-target"             -v searchkernel-ci-cargo-registry:/root/.cargo/registry             -v searchkernel-ci-cargo-git:/root/.cargo/git             -v searchkernel-native-ci-lock:/native-lock             -w /work             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e VERIFIER_TARGET="$VERIFIER_TARGET"             -e NATIVE_IMAGE="$NATIVE_IMAGE"             -e GH_TOKEN="$GH_TOKEN"             -e PR_NUMBER="$PR_NUMBER"             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY"             -e GITHUB_API_URL="$GITHUB_API_URL"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR=/cargo-target             "$NATIVE_IMAGE"             /bin/bash -s <<'BASH'
           set -euo pipefail
 
-          # Keep the GitHub token in a non-exported shell variable. Candidate
-          # checkout scripts must never inherit repository credentials.
           HEAD_CHECK_TOKEN="${GH_TOKEN:-}"
           unset GH_TOKEN
 
-          export PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-          export LD_LIBRARY_PATH="/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-
-          # Keep exact-head verification hermetic from runner-global Cargo
-          # configuration. In particular, a stale [env] SK_NATIVE_SDK entry in
-          # /root/.cargo/config* must not make Cargo treat the verifier-owned
-          # adapter SDK as an explicit full SDK. Reuse only the expensive
-          # registry/git caches from the persistent runner.
-          export CARGO_HOME="$ALMA_WORKTREE/.cargo-home"
-          mkdir -p "$CARGO_HOME"
-          for cache in registry git; do
-            if [[ -e "/root/.cargo/$cache" && ! -e "$CARGO_HOME/$cache" ]]; then
-              ln -s "/root/.cargo/$cache" "$CARGO_HOME/$cache"
-            fi
-          done
-
-          export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0=safe.directory
-          export GIT_CONFIG_VALUE_0="$ALMA_WORKTREE"
-
-          cd "$ALMA_WORKTREE"
-
-          # Client-side verifier helpers must import from the exact copied
-          # revision, not from an editable package or PYTHONPATH rooted at the
-          # persistent runner checkout mounted at /work.
-          export PYTHONPATH="$ALMA_WORKTREE/clients/python${PYTHONPATH:+:$PYTHONPATH}"
+          git config --global --add safe.directory /work
+          export PYTHONPATH="/work/clients/python${PYTHONPATH:+:$PYTHONPATH}"
 
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "expected exact revision $EXPECTED_HEAD in AlmaLinux, found $actual" >&2
+            echo "expected exact revision $EXPECTED_HEAD in CI image, found $actual" >&2
             exit 1
           fi
 
-          for cmd in cargo rustc c++ flatc flock python3 ldd sha256sum curl; do
+          for cmd in cargo rustc rustfmt cargo-clippy c++ flatc flock python3 ldd sha256sum curl rg gh php ruby nm readelf; do
             command -v "$cmd" >/dev/null 2>&1 || {
-              echo "required verifier command is unavailable: $cmd" >&2
+              echo "required verifier command is unavailable from $NATIVE_IMAGE: $cmd" >&2
               exit 1
             }
           done
+          /usr/bin/python3 -c 'import clang.cindex'
+          "$PYTHON" -c 'import flatbuffers, grpc, google.protobuf'
+          test -f /opt/searchkernel/native-validation-pass
+
+          unset VESPA_ROOT || true
+          unset VESPA_LIBRARY_ROOT || true
+          unset VESPA_DEPS || true
+          unset VESPA_DEPS_LIB_DIR || true
+          unset VESPA_DEPS_INCLUDE_DIR || true
+          unset VESPA_EXTRA_LIB_DIR || true
+          unset VESPA_AWS_LIB_DIR || true
+          unset SK_NATIVE_SDK || true
+          unset SK_NATIVE_BASE_ARTIFACT_URL || true
+          unset SK_NATIVE_BASE_ARTIFACT_GENERATION || true
+          unset SEARCHKERNEL_VERIFY_LIVE_ORACLE || true
+
+          native_base=$(./dev native-sdk path)
+          case "$native_base" in
+            /opt/searchkernel/native-sdk-cache/ci/*/objects/*) ;;
+            *)
+              echo "CI image resolved native base outside its baked immutable cache: $native_base" >&2
+              exit 1
+              ;;
+          esac
+          echo "Using baked native base: $native_base"
 
           assert_current_pr_head() {
             local phase=$1
@@ -246,13 +176,7 @@ jobs:
             fi
 
             local response current state
-            response=$(curl --fail --silent --show-error \
-              --connect-timeout 5 \
-              --max-time 15 \
-              -H "Authorization: Bearer $HEAD_CHECK_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
+            response=$(curl --fail --silent --show-error               --connect-timeout 5               --max-time 15               -H "Authorization: Bearer $HEAD_CHECK_TOKEN"               -H "Accept: application/vnd.github+json"               -H "X-GitHub-Api-Version: 2022-11-28"               "${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
             read -r current state < <(
               python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("head", {}).get("sha", ""), data.get("state", ""))' <<<"$response"
             )
@@ -276,88 +200,13 @@ jobs:
 
           assert_current_pr_head preflight
 
-          if ! command -v rg >/dev/null 2>&1; then
-            dnf install -y epel-release
-            dnf install -y ripgrep
-          fi
-          if ! command -v nm >/dev/null 2>&1 || ! command -v readelf >/dev/null 2>&1; then
-            dnf install -y binutils
-          fi
-          if ! command -v clang >/dev/null 2>&1 || ! python3 -c 'import clang.cindex' >/dev/null 2>&1; then
-            dnf install -y clang python3-clang
-          fi
-          command -v clang >/dev/null
-          python3 -c 'import clang.cindex' >/dev/null
-          command -v cargo >/dev/null
-          command -v rustc >/dev/null
-          command -v rustfmt >/dev/null
-          command -v cargo-clippy >/dev/null
-
-          unset VESPA_ROOT || true
-          unset VESPA_LIBRARY_ROOT || true
-          unset VESPA_DEPS || true
-          unset VESPA_DEPS_LIB_DIR || true
-          unset VESPA_DEPS_INCLUDE_DIR || true
-          unset VESPA_EXTRA_LIB_DIR || true
-          unset VESPA_AWS_LIB_DIR || true
-          unset SK_NATIVE_SDK || true
-          unset SEARCHKERNEL_VERIFY_LIVE_ORACLE || true
-
-          if [[ "$VERIFIER_TARGET" == "closure-422" ]]; then
-            export SK_NATIVE_CACHE_DIR="$ALMA_WORKTREE/.native-cache"
-            export CARGO_TARGET_DIR="$ALMA_WORKTREE/target/closure-422"
-            rm -rf "$SK_NATIVE_CACHE_DIR" "$CARGO_TARGET_DIR"
-            [[ ! -e "$SK_NATIVE_CACHE_DIR" ]]
-            if [[ -e upstream/vespa/.git ||
-                  -f upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt ||
-                  -f upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make ]]; then
-              echo "closure-422 requires a checkout with no configured source Vespa tree" >&2
-              exit 1
-            fi
-          fi
-
-          pin=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["vespa_commit"])' core/native/vespa/manifest.json)
-          target=$(rustc -vV | sed -n 's/^host: //p')
-          artifact="/native-artifacts/$EXPECTED_NATIVE_ARCHIVE_NAME"
-          if [[ ! -s "$artifact" || ! -s "${artifact}.sha256" ]]; then
-            echo "trusted native base is not staged in /native-artifacts: $artifact" >&2
-            echo "rerun tools/actions-runner-setup.sh on this runner after publishing the base" >&2
-            exit 1
-          fi
-
-          staged_sha=$(awk 'NF {print $1; exit}' "${artifact}.sha256")
-          actual_sha=$(sha256sum "$artifact" | awk '{print $1}')
-          if [[ "${staged_sha,,}" != "$EXPECTED_NATIVE_ARCHIVE_SHA256" ||
-                "${actual_sha,,}" != "$EXPECTED_NATIVE_ARCHIVE_SHA256" ]]; then
-            echo "native base digest does not match trusted release identity for $artifact" >&2
-            echo "trusted=$EXPECTED_NATIVE_ARCHIVE_SHA256 staged=$staged_sha actual=$actual_sha" >&2
-            exit 1
-          fi
-
-          case "$EXPECTED_NATIVE_ARCHIVE_NAME" in
-            searchkernel-vespa-base-v*-ci-${target}-${pin}.tar.gz) ;;
-            *)
-              echo "trusted native base name does not match candidate pin/target: $EXPECTED_NATIVE_ARCHIVE_NAME" >&2
-              exit 1
-              ;;
-          esac
-
-          echo "Using trusted native base artifact: $artifact"
-          export SK_NATIVE_BASE_ARTIFACT_URL="file://$artifact"
-
-          # Keep native work serialized, but do not let an old PR head consume
-          # the lock after a newer commit supersedes it. The check is deliberately
-          # after flock acquisition so a SHA that becomes stale while queued exits
-          # before starting the next expensive phase.
-          exec 9>/tmp/searchkernel-native-ci.lock
+          exec 9>/native-lock/native-ci.lock
           flock 9
 
           run_native_phase() {
             local phase=$1
             shift
             assert_current_pr_head "$phase"
-            # The read-only GitHub token is needed only by the trusted head
-            # check above. Do not expose it to candidate verifier processes.
             env -u GH_TOKEN "$@"
           }
 
@@ -384,28 +233,31 @@ jobs:
             export NATIVE_ADAPTER_LIB
           }
 
-          run_native_phase native-sdk ./dev native-sdk ensure
-
           if [[ "$VERIFIER_TARGET" == "closure-422" ]]; then
+            export CARGO_TARGET_DIR=/cargo-target/closure-422
+            if [[ -e upstream/vespa/.git ||
+                  -f upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt ||
+                  -f upstream/vespa/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make ]]; then
+              echo "closure-422 requires a checkout with no configured source Vespa tree" >&2
+              exit 1
+            fi
+
             published_vespa=$(bash tools/resolve-native-sdk.sh vespa-root)
             case "$published_vespa" in
-              "$SK_NATIVE_CACHE_DIR"/*/toolchains/*/upstream/vespa) ;;
+              /opt/searchkernel/native-sdk-cache/ci/*/toolchains/*/upstream/vespa) ;;
               *)
-                echo "closure-422 resolved Vespa outside the isolated published cache: $published_vespa" >&2
+                echo "closure-422 resolved Vespa outside the image toolchain: $published_vespa" >&2
                 exit 1
                 ;;
             esac
             [[ -f "$published_vespa/.searchkernel-vespa-artifact.json" ]] || {
-              echo "closure-422 published provenance marker is missing: $published_vespa" >&2
+              echo "closure-422 image provenance marker is missing: $published_vespa" >&2
               exit 1
             }
           fi
 
           case "$VERIFIER_TARGET" in
             native-full)
-              # Fixed CI bundle while verification-DAG authorization is offline.
-              # Keep this aligned with the native semantic closure, but do not
-              # load or classify through verification/dag.toml here.
               run_native_phase native-full-abi ./dev verify abi
               run_native_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw
               run_native_phase native-full-product-integration ./dev verify product.integration
@@ -417,16 +269,9 @@ jobs:
               run_native_phase native-full-persistence ./dev verify persistence
               ;;
             client-e2e)
-              python3 tools/check-python-dependencies.py
-              command -v php >/dev/null 2>&1 || {
-                echo "required client E2E command is unavailable: php" >&2
-                exit 1
-              }
+              "$PYTHON" tools/check-python-dependencies.py
               build_native_searchkerneld client-e2e-build
-              run_native_phase client-e2e-run env \
-                SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld" \
-                SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB" \
-                python3 tools/check-client-contracts.py --run-e2e
+              run_native_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e
               ;;
             closure-422)
               build_native_searchkerneld closure-422-build
@@ -440,12 +285,8 @@ jobs:
               run_native_phase closure-422-rust-real-engine ./dev verify product.rust-real-engine
               run_native_phase closure-422-integration ./dev verify integration
 
-              command -v php >/dev/null
-              python3 tools/check-python-dependencies.py
-              run_native_phase closure-422-php-e2e env \
-                SEARCHKERNEL_LOCAL_HOST="$daemon" \
-                SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB" \
-                bash clients/php/examples/run_searchkernel_client_api_e2e.sh
+              "$PYTHON" tools/check-python-dependencies.py
+              run_native_phase closure-422-php-e2e env                 SEARCHKERNEL_LOCAL_HOST="$daemon"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 bash clients/php/examples/run_searchkernel_client_api_e2e.sh
               ;;
             *)
               run_native_phase requested-target ./dev verify "$VERIFIER_TARGET"
@@ -453,12 +294,12 @@ jobs:
           esac
           BASH
 
-      - name: Remove exact-revision container copy
+      - name: Remove verifier container and volumes
         if: always()
         run: |
           set +e
-          ALMA_WORKTREE="${ALMA_WORKTREE:-/tmp/searchkernel-verifier-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"
-          docker exec "$NATIVE_CONTAINER" rm -rf "$ALMA_WORKTREE" >/dev/null 2>&1 || true
+          docker rm -f "${CONTAINER_NAME:-searchkernel-native-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}" >/dev/null 2>&1 || true
+          docker volume rm -f             "${SOURCE_VOLUME:-searchkernel-native-src-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"             "${TARGET_VOLUME:-searchkernel-native-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"             >/dev/null 2>&1 || true
 
       - name: Mark evidence scope
         if: always()

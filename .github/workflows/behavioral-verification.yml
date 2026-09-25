@@ -512,7 +512,7 @@ jobs:
     name: Native invariant
     needs: classify
     if: needs.classify.outputs.native == 'true'
-    uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main
+    uses: ./.github/workflows/native-verifier-runner.yml
     with:
       revision: ${{ github.event.pull_request.head.sha || github.sha }}
       target: native-full

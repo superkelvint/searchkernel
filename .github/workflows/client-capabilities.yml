@@ -114,7 +114,7 @@ jobs:
 
   e2e:
     name: Executable E2E evidence
-    uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main
+    uses: ./.github/workflows/native-verifier-runner.yml
     with:
       revision: ${{ github.event.pull_request.head.sha || github.sha }}
       target: client-e2e
