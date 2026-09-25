@@ -256,7 +256,7 @@ mod tests {
             .expect("encoded definition must be a valid standalone FlatBuffer");
         let fields = definition.fields().expect("definition fields");
         assert_eq!(fields.len(), 1);
-        assert_eq!(fields.get(0).name(), Some("title"));
+        assert_eq!(fields.get(0).name(), "title");
     }
 
     #[test]
