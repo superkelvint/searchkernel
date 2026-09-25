@@ -38,9 +38,9 @@ ci_image_require_remote_main() {
 
     source_commit="$(git -C "$root" rev-parse HEAD)"
     if ! read -r remote_commit ignored < <(
-        git -C "$root" ls-remote --exit-code "$remote_name" refs/heads/main
+        GIT_TERMINAL_PROMPT=0 git -C "$root" ls-remote --exit-code "$remote_name" refs/heads/main
     ); then
-        ci_image_die "could not resolve canonical main from Git remote '$remote_name'"
+        ci_image_die "could not resolve canonical main from Git remote '$remote_name' non-interactively; configure Git credentials (for example, gh auth setup-git) or use an authenticated SSH remote"
     fi
 
     [[ -n "$remote_commit" && "$source_commit" == "$remote_commit" ]] ||
