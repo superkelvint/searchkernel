@@ -243,15 +243,18 @@ runtime such as 7.36.2 is healthy and must not fail `./dev doctor`.
 gRPC sources remain reproducible by requiring the exact codegen stack:
 `grpcio-tools==1.84.0` and `protobuf==7.35.1`. These exact codegen pins do
 not narrow the Python client's runtime protobuf compatibility range.
-`grpcio-tools` is required by `./dev regen protocol` and
-`tools/check-python-grpc.sh`, but its absence does not make ordinary
-`./dev doctor`, Rust builds, or SDK-independent verification unhealthy.
-Install the Python `codegen` extra only when changing or verifying generated
-gRPC sources:
 
-```bash
-python3 -m pip install -e 'clients/python[codegen]'
-```
+The repository has one Python toolchain authority: `tools/resolve-python.sh`.
+`./dev` and Python generation/check scripts must resolve their interpreter
+through it; they must not invoke a bare `python3` for repository Python
+tooling. The resolver honors an explicit `PYTHON` override, otherwise reuses
+the repository `venv/` when present, and only then falls back to system
+`python3`.
+
+Because `./dev doctor` verifies the same protocol-generation path used by
+`./dev check`, doctor installs the `codegen` extra when needed. Developers
+should normally run `./dev doctor` rather than manually installing these
+dependencies.
 
 ## Vespa base and adapter builds
 
