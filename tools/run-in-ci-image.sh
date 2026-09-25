@@ -224,13 +224,16 @@ status=0
 docker run --rm     --name "$container_name"     --pids-limit=-1     "${tty_args[@]}"     "${docker_volume_args[@]}"     -w /work     "${docker_env[@]}"     "$IMAGE_ID"     ./dev "$@" || status=$?
 
 if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
-    if docker run --rm -v "$artifact_volume:/artifacts" "$IMAGE_ID" test -d /artifacts/coverage; then
-        rm -rf -- "$ROOT/coverage"
+    rm -rf -- "$ROOT/coverage"
+    if [[ "$status" -eq 0 ]]; then
+        if ! docker run --rm -v "$artifact_volume:/artifacts" "$IMAGE_ID" test -d /artifacts/coverage; then
+            die "coverage command succeeded without producing /artifacts/coverage"
+        fi
         docker run --rm -v "$artifact_volume:/artifacts" "$IMAGE_ID" \
             tar -C /artifacts -cf - coverage | tar -C "$ROOT" -xf -
         echo "==> dev: exported coverage reports to $ROOT/coverage"
-    elif [[ "$status" -eq 0 ]]; then
-        die "coverage command succeeded without producing /artifacts/coverage"
+    else
+        echo "==> dev: coverage failed; no canonical report was exported" >&2
     fi
 fi
 
