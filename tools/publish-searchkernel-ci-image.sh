@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Reusable inputs are published independently:
 #   superkelvint/searchkernel-ci-toolchain:<toolchain-id>
-#   superkelvint/searchkernel-ci-vespa:<vespa-commit>
+#   superkelvint/searchkernel-ci-vespa:<vespa-commit>-<bundle-id>
 #
 # This script automatically reuses (or creates once) a composite base tag in
 # superkelvint/searchkernel-ci and then validates only the current Search Kernel
@@ -49,10 +49,11 @@ ci_image_login
 
 TOOLCHAIN_ID="$(ci_image_toolchain_id "$ROOT/docker/searchkernel-ci-toolchain" "$TOOLCHAIN_BASE_IMAGE")"
 VESPA_COMMIT="$(ci_image_vespa_commit "$ROOT")"
-COMPOSITE_ID="$(ci_image_composite_id "$ROOT/docker/searchkernel-ci/base.Dockerfile" "$TOOLCHAIN_ID" "$VESPA_COMMIT")"
+VESPA_BUNDLE_ID="$(ci_image_vespa_bundle_id "$ROOT")"
+COMPOSITE_ID="$(ci_image_composite_id "$ROOT/docker/searchkernel-ci/base.Dockerfile" "$TOOLCHAIN_ID" "$VESPA_COMMIT" "$VESPA_BUNDLE_ID")"
 
 TOOLCHAIN_REF="$TOOLCHAIN_IMAGE:$TOOLCHAIN_ID"
-VESPA_REF="$VESPA_IMAGE:$VESPA_COMMIT"
+VESPA_REF="$VESPA_IMAGE:$VESPA_COMMIT-$VESPA_BUNDLE_ID"
 COMPOSITE_TAG="base-$COMPOSITE_ID"
 COMPOSITE_REF="$IMAGE:$COMPOSITE_TAG"
 
@@ -60,12 +61,14 @@ echo
 echo "CI image inputs:"
 echo "  toolchain: $TOOLCHAIN_REF"
 echo "  Vespa:     $VESPA_REF"
+echo "  bundle id: $VESPA_BUNDLE_ID"
 echo "  base:      $COMPOSITE_REF"
 
 if ci_image_pull_if_available "$COMPOSITE_REF"; then
     ci_image_require_label "$COMPOSITE_REF" io.searchkernel.composite-id "$COMPOSITE_ID"
     ci_image_require_label "$COMPOSITE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
     ci_image_require_label "$COMPOSITE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
+    ci_image_require_label "$COMPOSITE_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
     echo "Reusing published composite base."
 else
     echo
@@ -103,6 +106,7 @@ EOF
         exit 1
     fi
     ci_image_require_label "$VESPA_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
+    ci_image_require_label "$VESPA_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
 
     echo
     echo "==> Composing compatible toolchain + Vespa base"
@@ -112,10 +116,12 @@ EOF
         --build-arg "VESPA_IMAGE=$VESPA_REF"
         --build-arg "TOOLCHAIN_ID=$TOOLCHAIN_ID"
         --build-arg "VESPA_COMMIT=$VESPA_COMMIT"
+        --build-arg "VESPA_BUNDLE_ID=$VESPA_BUNDLE_ID"
         --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel"
         --label "io.searchkernel.composite-id=$COMPOSITE_ID"
         --label "io.searchkernel.toolchain-id=$TOOLCHAIN_ID"
         --label "io.searchkernel.vespa-commit=$VESPA_COMMIT"
+        --label "io.searchkernel.vespa-bundle-id=$VESPA_BUNDLE_ID"
         -f "$ROOT/docker/searchkernel-ci/base.Dockerfile"
         -t "$COMPOSITE_REF"
     )
@@ -124,6 +130,7 @@ EOF
     ci_image_require_label "$COMPOSITE_REF" io.searchkernel.composite-id "$COMPOSITE_ID"
     ci_image_require_label "$COMPOSITE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
     ci_image_require_label "$COMPOSITE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
+    ci_image_require_label "$COMPOSITE_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
 
     docker run --rm "$COMPOSITE_REF" /bin/bash -lc '
       set -euo pipefail
@@ -166,18 +173,21 @@ echo
 echo "==> Building thin CI leaf $IMAGE_REF"
 echo "Revision:     $REVISION"
 echo "Toolchain id: $TOOLCHAIN_ID"
-echo "Vespa commit: $VESPA_COMMIT"
+echo "Vespa commit:    $VESPA_COMMIT"
+echo "Vespa bundle id: $VESPA_BUNDLE_ID"
 
 leaf_build_args=(
     --build-context "searchkernel-source=$SOURCE_CONTEXT"
     --build-arg "CI_BASE_IMAGE=$COMPOSITE_REF"
     --build-arg "TOOLCHAIN_ID=$TOOLCHAIN_ID"
     --build-arg "VESPA_COMMIT=$VESPA_COMMIT"
+    --build-arg "VESPA_BUNDLE_ID=$VESPA_BUNDLE_ID"
     --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel"
     --label "org.opencontainers.image.revision=$REVISION"
     --label "io.searchkernel.composite-id=$COMPOSITE_ID"
     --label "io.searchkernel.toolchain-id=$TOOLCHAIN_ID"
     --label "io.searchkernel.vespa-commit=$VESPA_COMMIT"
+    --label "io.searchkernel.vespa-bundle-id=$VESPA_BUNDLE_ID"
     -f "$ROOT/docker/searchkernel-ci/Dockerfile"
     -t "$IMAGE_REF"
 )
@@ -189,6 +199,7 @@ echo "==> Verifying final image capabilities"
 ci_image_require_label "$IMAGE_REF" io.searchkernel.composite-id "$COMPOSITE_ID"
 ci_image_require_label "$IMAGE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
 ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
+ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
 
 docker run --rm "$IMAGE_REF" /bin/bash -lc '
 set -euo pipefail
