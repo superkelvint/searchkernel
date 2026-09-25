@@ -56,7 +56,15 @@ echo "Full SDK:     $FULL_SDK"
 echo "Vespa root:   $LOCAL_VESPA_ROOT"
 
 mapfile -t native_contexts < <(
-    SEARCHKERNEL_BUILD_ENV="$BUILD_ENV"     SK_NATIVE_TARGET="$TARGET"     bash "$ROOT/tools/prepare-searchkernel-ci-native-context.sh"         "$FULL_SDK"         "$LOCAL_VESPA_ROOT"         "$TMP/native-context"         "$BUILD_ENV"         "$TARGET"
+    env \
+        SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
+        SK_NATIVE_TARGET="$TARGET" \
+        bash "$ROOT/tools/prepare-searchkernel-ci-native-context.sh" \
+            "$FULL_SDK" \
+            "$LOCAL_VESPA_ROOT" \
+            "$TMP/native-context" \
+            "$BUILD_ENV" \
+            "$TARGET"
 )
 
 NATIVE_BASE="${native_contexts[${#native_contexts[@]}-2]:-}"
@@ -73,7 +81,18 @@ REVISION="$(git rev-parse HEAD)"
 echo
 echo "==> Building reusable Vespa image"
 
-DOCKER_BUILDKIT=1 docker build     --build-context "searchkernel-native-base=$NATIVE_BASE"     --build-context "searchkernel-native-toolchain=$NATIVE_TOOLCHAIN"     --build-arg "VESPA_COMMIT=$VESPA_COMMIT"     --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel"     --label "org.opencontainers.image.revision=$REVISION"     --label "io.searchkernel.vespa-commit=$VESPA_COMMIT"     --label "io.searchkernel.native-target=$TARGET"     -f "$ROOT/docker/searchkernel-ci-vespa/Dockerfile"     -t "$IMAGE_REF"     "$ROOT/docker/searchkernel-ci-vespa"
+vespa_build_args=(
+    --build-context "searchkernel-native-base=$NATIVE_BASE"
+    --build-context "searchkernel-native-toolchain=$NATIVE_TOOLCHAIN"
+    --build-arg "VESPA_COMMIT=$VESPA_COMMIT"
+    --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel"
+    --label "org.opencontainers.image.revision=$REVISION"
+    --label "io.searchkernel.vespa-commit=$VESPA_COMMIT"
+    --label "io.searchkernel.native-target=$TARGET"
+    -f "$ROOT/docker/searchkernel-ci-vespa/Dockerfile"
+    -t "$IMAGE_REF"
+)
+DOCKER_BUILDKIT=1 docker build "${vespa_build_args[@]}" "$ROOT/docker/searchkernel-ci-vespa"
 
 ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
 
