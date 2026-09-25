@@ -1524,7 +1524,7 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
                 .attribute()
                 .summary(),
         )
-        .field(Field::new("qty", FieldType::Integer).attribute().summary())
+        .field(Field::new("qty", FieldType::Long).attribute().summary())
         .field(Field::new("price", FieldType::Long).attribute().summary());
     ConfigCompiler
         .compile_to(&schema, &config)
