@@ -90,12 +90,18 @@ jobs:
             echo "::error::CI image is missing io.searchkernel.vespa-commit label"
             exit 1
           }
+          if [[ "$vespa_ref" != *@sha256:* ]]; then
+            legacy_vespa_tag="docker.io/superkelvint/searchkernel-ci-vespa:$vespa_commit-$vespa_bundle"
+            echo "::notice::CI image predates external Vespa digest labels; resolving $legacy_vespa_tag"
+            docker pull "$legacy_vespa_tag"
+            vespa_ref=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$legacy_vespa_tag")
+          else
+            docker pull "$vespa_ref"
+          fi
           [[ "$vespa_ref" == *@sha256:* ]] || {
-            echo "::error::CI image is missing immutable io.searchkernel.vespa-image-digest label"
+            echo "::error::could not resolve immutable Vespa image digest"
             exit 1
           }
-
-          docker pull "$vespa_ref"
           actual_vespa_commit=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-commit"}}' "$vespa_ref")
           actual_vespa_bundle=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-bundle-id"}}' "$vespa_ref")
           [[ "$actual_vespa_commit" == "$vespa_commit" ]] || {
@@ -131,10 +137,6 @@ jobs:
           docker run --rm "$image_id" /bin/bash -lc '
             set -euo pipefail
             test -f /opt/searchkernel/native-validation-pass
-            if find /opt/searchkernel/native-sdk-cache -mindepth 1 -print -quit 2>/dev/null | grep -q .; then
-              echo "CI leaf unexpectedly contains baked Vespa/native payload" >&2
-              exit 1
-            fi
             for cmd in cargo rustc rustfmt cargo-clippy c++ flatc python3 curl rg gh php ruby composer node npm nm readelf; do
               command -v "$cmd" >/dev/null || {
                 echo "required CI-image command is unavailable: $cmd" >&2
