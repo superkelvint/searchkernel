@@ -38,8 +38,6 @@ const WIDENED_SEARCH_REQUEST: &[u8] = br#"
 }
 "#;
 
-
-
 const INTEGER_BOUNDARY_REQUEST: &[u8] = br#"
 {
   "protocol_version": 2,
@@ -102,7 +100,6 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
     assert!(!again.is_empty());
 }
 
-
 #[test]
 fn standard_json_prints_64_bit_integer_boundaries_as_decimal_strings() {
     let bytes =
@@ -131,8 +128,8 @@ fn standard_json_prints_64_bit_integer_boundaries_as_decimal_strings() {
         );
     }
 
-    let again =
-        request_json_to_flatbuffer(&printed).expect("printed integer boundary JSON remains readable");
+    let again = request_json_to_flatbuffer(&printed)
+        .expect("printed integer boundary JSON remains readable");
     assert!(!again.is_empty());
 }
 
