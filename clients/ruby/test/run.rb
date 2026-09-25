@@ -126,8 +126,8 @@ same("9223372036854775807", i64_max_boundary.fetch("kind").fetch("value"), "int6
 same(2**64 - 1, portable.decode(u64_boundary), "uint64 boundary")
 same(-(2**63), portable.decode(i64_min_boundary), "int64 boundary")
 same(2**63 - 1, portable.decode(i64_max_boundary), "int64 max boundary")
-truth(JSON.generate(u64_boundary).include?('"value":"18446744073709551615"'),
-      "Ruby HTTP JSON keeps uint64 max quoted")
+same(true, JSON.generate(u64_boundary).include?('"value":"18446744073709551615"'),
+     "Ruby HTTP JSON keeps uint64 max quoted")
 same("\x00\xff".b, portable.decode(portable.encode(portable.bytes("\x00\xff".b))), "bytes retain octets")
 same([{"key" => [nil, true, 3.0]}], portable.decode(portable.encode([{"key" => [nil, true, 3.0]}])), "nested values")
 unicode_object = {"😀" => 4, "é" => 3, "z" => 2, "a" => 1}
