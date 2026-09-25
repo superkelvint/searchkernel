@@ -394,6 +394,31 @@ class IntegerJsonCanonicalizer {
     return true;
   }
 
+  bool FieldValue(
+      const flatbuffers::FieldDef& field,
+      std::map<const flatbuffers::FieldDef*, flatbuffers::Type>* union_types) {
+    if (field.value.type.base_type == flatbuffers::BASE_TYPE_UTYPE &&
+        field.sibling_union_field != nullptr) {
+      flatbuffers::Type union_type;
+      if (!UnionDiscriminator(field, &union_type)) return false;
+      if (union_type.base_type != flatbuffers::BASE_TYPE_NONE) {
+        (*union_types)[field.sibling_union_field] = union_type;
+      }
+      return true;
+    }
+
+    if (field.value.type.base_type == flatbuffers::BASE_TYPE_UNION &&
+        field.sibling_union_field != nullptr) {
+      const auto it = union_types->find(&field);
+      if (it == union_types->end()) {
+        return Fail("union payload appeared before its discriminator");
+      }
+      return Value(it->second);
+    }
+
+    return Value(field.value.type);
+  }
+
   bool Object(const flatbuffers::StructDef& definition) {
     if (!EnterDepth()) return false;
     DepthScope depth_scope(&depth_);
@@ -417,28 +442,44 @@ class IntegerJsonCanonicalizer {
       const auto* field = definition.fields.Lookup(field_name);
       if (field == nullptr) {
         if (!AnyValue()) return false;
-      } else if (field->value.type.base_type ==
-                     flatbuffers::BASE_TYPE_UTYPE &&
-                 field->sibling_union_field != nullptr) {
-        flatbuffers::Type union_type;
-        if (!UnionDiscriminator(*field, &union_type)) return false;
-        if (union_type.base_type != flatbuffers::BASE_TYPE_NONE) {
-          union_types[field->sibling_union_field] = union_type;
-        }
-      } else if (field->value.type.base_type ==
-                     flatbuffers::BASE_TYPE_UNION &&
-                 field->sibling_union_field != nullptr) {
-        const auto it = union_types.find(field);
-        if (it == union_types.end()) {
-          return Fail("union payload appeared before its discriminator");
-        }
-        if (!Value(it->second)) return false;
-      } else {
-        if (!Value(field->value.type)) return false;
+      } else if (!FieldValue(*field, &union_types)) {
+        return false;
       }
       Whitespace();
     }
     return Consume('}');
+  }
+
+  bool PositionalObject(const flatbuffers::StructDef& definition) {
+    if (!EnterDepth()) return false;
+    DepthScope depth_scope(&depth_);
+    if (!Consume('[')) return false;
+    Whitespace();
+
+    std::map<const flatbuffers::FieldDef*, flatbuffers::Type> union_types;
+    size_t field_index = 0;
+    bool first = true;
+    while (position_ < input_.size() && input_[position_] != ']') {
+      if (!first) {
+        if (!Consume(',')) return false;
+        Whitespace();
+      }
+      first = false;
+      if (field_index >= definition.fields.vec.size()) {
+        return Fail("too many unnamed fields in positional table");
+      }
+      if (!FieldValue(*definition.fields.vec[field_index], &union_types)) {
+        return false;
+      }
+      ++field_index;
+      Whitespace();
+    }
+
+    if (!Consume(']')) return false;
+    if (field_index != definition.fields.vec.size()) {
+      return Fail("wrong number of unnamed fields in positional table");
+    }
+    return true;
   }
 
   bool Array(const flatbuffers::Type& element_type) {
@@ -527,10 +568,19 @@ class IntegerJsonCanonicalizer {
     switch (type.base_type) {
       case flatbuffers::BASE_TYPE_STRUCT:
         if (type.struct_def == nullptr) return Fail("schema struct has no definition");
+        if (input_[position_] == '[') {
+          return PositionalObject(*type.struct_def);
+        }
+        if (input_.substr(position_, 4) == "null") {
+          return Scalar();
+        }
         return Object(*type.struct_def);
       case flatbuffers::BASE_TYPE_VECTOR:
       case flatbuffers::BASE_TYPE_VECTOR64:
       case flatbuffers::BASE_TYPE_ARRAY:
+        if (input_.substr(position_, 4) == "null") {
+          return Scalar();
+        }
         return Array(type.VectorType());
       case flatbuffers::BASE_TYPE_UNION:
         return AnyValue();
