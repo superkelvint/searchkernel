@@ -152,7 +152,8 @@ Image publishing has three independent identities:
 
 - `superkelvint/searchkernel-ci-toolchain:<toolchain-id>` contains the OS,
   compilers, language runtimes, FlatBuffers, and reusable client tooling. The
-  toolchain id is a content hash of `docker/searchkernel-ci-toolchain/`.
+  toolchain id is a content hash of `docker/searchkernel-ci-toolchain/` plus
+  the configured upstream toolchain-base reference.
   Adding a client language or bumping Rust/Node/Ruby/PHP/Python/FlatBuffers
   changes this axis without changing the Vespa axis.
 - `superkelvint/searchkernel-ci-vespa:<vespa-commit>` contains the immutable
