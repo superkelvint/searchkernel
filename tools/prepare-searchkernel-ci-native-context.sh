@@ -300,9 +300,12 @@ for token in tokens:
     if pathlib.Path(token).name == "libsearchcore_test.a":
         continue
 
-    source = pathlib.Path(token)
-    if not source.is_absolute():
-        source = link_file.parent.parent.parent / source
+    if token.startswith("/work/vespa/"):
+        source = vespa_root / token.removeprefix("/work/vespa/")
+    else:
+        source = pathlib.Path(token)
+        if not source.is_absolute():
+            source = link_file.parent.parent.parent / source
     source = source.resolve()
 
     try:
