@@ -215,3 +215,5 @@ for forbidden in (
 
 print("split CI image publishing contract: PASS")
 PY
+
+python3 "$ROOT/tools/test_ci_image_identity.py"
