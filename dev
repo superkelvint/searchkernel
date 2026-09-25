@@ -162,11 +162,7 @@ native_target_root() {
 }
 
 native_sdk_path() {
-    if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
-        printf '%s\n' "$SK_NATIVE_SDK"
-    else
-        bash "$ROOT/tools/resolve-native-sdk.sh" path
-    fi
+    bash "$ROOT/tools/resolve-native-sdk.sh" path
 }
 
 run_python_tests() {
@@ -782,13 +778,9 @@ doctor_native_sdk() {
     local sdk
     sdk=$(native_sdk_path)
     [[ -f "$sdk/manifest.json" ]]
-    if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
-        [[ -f "$sdk/include/searchkernel_vespa.h" ]]
-        compgen -G "$sdk/lib/libsearchkernel_vespa.so*" >/dev/null
-    else
+    if [[ -z "${SK_NATIVE_SDK:-}" ]]; then
         grep -Eq '"kind"[[:space:]]*:[[:space:]]*"vespa-base"' "$sdk/manifest.json"
         compgen -G "$sdk/lib/libvespa*.so*" >/dev/null
-        bash "$ROOT/tools/resolve-native-sdk.sh" vespa-root >/dev/null
     fi
 }
 
