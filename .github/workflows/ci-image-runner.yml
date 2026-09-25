@@ -159,7 +159,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker run --rm             --name "$CONTAINER_NAME"             --pids-limit=-1             -v "$SOURCE_VOLUME:/work"             -v "$TARGET_VOLUME:/cargo-target"             -v "$ARTIFACT_DIR:/artifacts"             -w /work             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e CI_TARGET="$CI_TARGET"             -e ABI_BASELINE_SHA="$ABI_BASELINE_SHA"             -e HEAD_REF="$HEAD_REF"             -e AUTOFIX_TOKEN="$AUTOFIX_TOKEN"             -e GH_TOKEN="$GH_TOKEN"             -e PR_NUMBER="$PR_NUMBER"             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY"             -e GITHUB_API_URL="$GITHUB_API_URL"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR=/cargo-target             "$CI_IMAGE"             /bin/bash -s <<'BASH'
+          docker run --rm -i             --name "$CONTAINER_NAME"             --pids-limit=-1             -v "$SOURCE_VOLUME:/work"             -v "$TARGET_VOLUME:/cargo-target"             -v "$ARTIFACT_DIR:/artifacts"             -w /work             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e CI_TARGET="$CI_TARGET"             -e ABI_BASELINE_SHA="$ABI_BASELINE_SHA"             -e HEAD_REF="$HEAD_REF"             -e AUTOFIX_TOKEN="$AUTOFIX_TOKEN"             -e GH_TOKEN="$GH_TOKEN"             -e PR_NUMBER="$PR_NUMBER"             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY"             -e GITHUB_API_URL="$GITHUB_API_URL"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR=/cargo-target             "$CI_IMAGE"             /bin/bash -s <<'BASH'
           set -euo pipefail
           trap 'chmod -R a+rwX /artifacts 2>/dev/null || true' EXIT
 
@@ -175,6 +175,10 @@ jobs:
             echo "expected exact revision $EXPECTED_HEAD in CI image, found $actual" >&2
             exit 1
           fi
+
+          # The host checks this receipt after Docker exits. Without -i, bash -s
+          # reads EOF and returns success without executing any lane code.
+          printf '%s %s\n' "$EXPECTED_HEAD" "$CI_TARGET" > /artifacts/lane-started
 
           # No workflow is allowed to repair or mutate a host toolchain. These
           # are immutable image inputs; Cargo outputs and package caches live
@@ -477,6 +481,12 @@ jobs:
               ;;
           esac
           BASH
+
+          receipt=$(cat "$ARTIFACT_DIR/lane-started" 2>/dev/null || true)
+          if [[ "$receipt" != "$EXPECTED_HEAD $CI_TARGET" ]]; then
+            echo "::error::CI container exited without executing the exact-head lane preflight"
+            exit 1
+          fi
 
       - name: Upload nightly Clippy repair packet
         if: ${{ always() && inputs.target == 'nightly-rust' }}
