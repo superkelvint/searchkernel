@@ -192,7 +192,7 @@ class ToolchainAuthorityTests(unittest.TestCase):
         ):
             self.assertRegex(
                 doctor,
-                rf"repair '[^']+' {repair}\\b",
+                rf"repair '[^']+' {repair}\b",
                 f"doctor must invoke {repair}",
             )
 
