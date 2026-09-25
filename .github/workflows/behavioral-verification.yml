@@ -513,7 +513,7 @@ jobs:
     uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main
     with:
       revision: ${{ github.event.pull_request.head.sha || github.sha }}
-      target: native-full
+      target: closure-422
 
   exact-head-gate:
     name: Invariant gate
