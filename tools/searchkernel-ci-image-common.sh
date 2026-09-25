@@ -66,11 +66,50 @@ print(h.hexdigest())
 PY
 }
 
+ci_image_vespa_bundle_id() {
+    local root=$1
+    python3 - "$root" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+inputs = [
+    root / "docker/searchkernel-ci-vespa",
+    root / "tools/prepare-searchkernel-ci-native-context.sh",
+    root / "tools/bundle-native-runtime-closure.py",
+    root / "tools/check-native-runtime-closure.py",
+]
+
+files = []
+for item in inputs:
+    if item.is_dir():
+        files.extend(path for path in item.rglob("*") if path.is_file())
+    elif item.is_file():
+        files.append(item)
+    else:
+        raise SystemExit(f"Vespa bundle recipe input does not exist: {item}")
+
+h = hashlib.sha256()
+h.update(b"searchkernel-ci-vespa-bundle-v1\0")
+for path in sorted(files):
+    relative = path.relative_to(root).as_posix().encode()
+    data = path.read_bytes()
+    h.update(relative)
+    h.update(b"\0")
+    h.update(len(data).to_bytes(8, "big"))
+    h.update(data)
+
+print(h.hexdigest())
+PY
+}
+
 ci_image_composite_id() {
     local recipe=$1
     local toolchain_id=$2
     local vespa_commit=$3
-    python3 - "$recipe" "$toolchain_id" "$vespa_commit" <<'PY'
+    local vespa_bundle_id=$4
+    python3 - "$recipe" "$toolchain_id" "$vespa_commit" "$vespa_bundle_id" <<'PY'
 import hashlib
 import pathlib
 import sys
@@ -78,6 +117,7 @@ import sys
 recipe = pathlib.Path(sys.argv[1])
 toolchain_id = sys.argv[2]
 vespa_commit = sys.argv[3]
+vespa_bundle_id = sys.argv[4]
 if not recipe.is_file():
     raise SystemExit(f"composite recipe does not exist: {recipe}")
 
@@ -86,6 +126,8 @@ h.update(b"searchkernel-ci-composite-v1\0")
 h.update(toolchain_id.encode())
 h.update(b"\0")
 h.update(vespa_commit.encode())
+h.update(b"\0")
+h.update(vespa_bundle_id.encode())
 h.update(b"\0")
 h.update(recipe.read_bytes())
 print(h.hexdigest())
