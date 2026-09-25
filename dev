@@ -11,11 +11,14 @@ export PATH
 refresh_rust_tools() {
     CARGO=$(bash "$ROOT/tools/resolve-rust.sh" cargo)
     RUSTC=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
-    export CARGO RUSTC
+    RUSTFMT=$(bash "$ROOT/tools/resolve-rust.sh" rustfmt)
+    export CARGO RUSTC RUSTFMT
 }
 
 refresh_node_tools() {
     NODE=$(bash "$ROOT/tools/resolve-node.sh" node)
+    PATH="$(dirname -- "$NODE"):$PATH"
+    export PATH
     NPM=$(bash "$ROOT/tools/resolve-node.sh" npm)
     export NODE NPM
 }
@@ -23,7 +26,8 @@ refresh_node_tools() {
 if ! refresh_rust_tools 2>/dev/null; then
     CARGO=${CARGO:-cargo}
     RUSTC=${RUSTC:-rustc}
-    export CARGO RUSTC
+    RUSTFMT=${RUSTFMT:-rustfmt}
+    export CARGO RUSTC RUSTFMT
 fi
 if ! refresh_node_tools 2>/dev/null; then
     NODE=${NODE:-node}
@@ -694,6 +698,7 @@ doctor_rust() {
     refresh_rust_tools
     "$CARGO" --version >/dev/null
     "$RUSTC" --version >/dev/null
+    "$RUSTFMT" --version >/dev/null
     "$CARGO" metadata --no-deps --format-version 1 >/dev/null
 }
 
