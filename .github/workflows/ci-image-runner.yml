@@ -278,6 +278,8 @@ jobs:
 
           case "$CI_TARGET" in
             rust-non-native)
+              run_phase protocol-bfbs bash tools/check-flatbuffers-bfbs.sh
+              run_phase protocol-rust-generated bash tools/check-searchkernel-protocol-generated.sh
               run_phase rust-test cargo test --workspace --all-targets --no-default-features
               run_phase api-conformance reference/api-conformance/verify.sh
               ;;
