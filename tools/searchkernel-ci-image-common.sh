@@ -191,6 +191,37 @@ print(h.hexdigest())
 PY
 }
 
+ci_image_vespa_producer_id() {
+    local root=$1
+    local full_sdk=$2
+    python3 - "$root" "$full_sdk" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+full_sdk = pathlib.Path(sys.argv[2])
+inputs = [
+    root / "core/native/vespa/manifest.json",
+    full_sdk / "manifest.json",
+    full_sdk / "native-build-fingerprint-v2.txt",
+]
+
+h = hashlib.sha256()
+h.update(b"searchkernel-ci-vespa-producer-v1\0")
+for path in inputs:
+    if not path.is_file():
+        raise SystemExit(f"Vespa producer identity input does not exist: {path}")
+    data = path.read_bytes()
+    h.update(path.name.encode())
+    h.update(b"\0")
+    h.update(len(data).to_bytes(8, "big"))
+    h.update(data)
+
+print(h.hexdigest())
+PY
+}
+
 ci_image_composite_id() {
     local recipe=$1
     local toolchain_image_digest=$2
