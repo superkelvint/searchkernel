@@ -5,8 +5,6 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 EXPECTED_FLATBUFFERS_VERSION=25.12.19
 PYTHON=$(bash "$ROOT/tools/resolve-python.sh")
 export PYTHON
-PATH="$(dirname -- "$PYTHON"):$PATH"
-export PATH
 
 refresh_rust_tools() {
     CARGO=$(bash "$ROOT/tools/resolve-rust.sh" cargo)
@@ -914,8 +912,6 @@ doctor_repair_python() {
     "$venv_python" -m pip install         --disable-pip-version-check         -e "$ROOT/clients/python[codegen]"
     PYTHON=$venv_python
     export PYTHON
-    PATH="$(dirname -- "$PYTHON"):$PATH"
-    export PATH
     doctor_python
 }
 
