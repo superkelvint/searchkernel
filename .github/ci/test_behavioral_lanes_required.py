@@ -13,6 +13,7 @@ SPEC.loader.exec_module(POLICY)
 
 ROOT = Path(__file__).resolve().parents[2]
 BEHAVIORAL_WORKFLOW = ROOT / ".github" / "workflows" / "behavioral-verification.yml"
+CI_IMAGE_RUNNER = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
 
 
 class BehavioralLanesRequiredTests(unittest.TestCase):
@@ -160,6 +161,22 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
 
     def test_portable_api_change_selects_all_lanes(self) -> None:
         self.assert_lanes(["api/searchkernel_request.fbs"], set(POLICY.LANES))
+
+    def test_portable_api_rust_lane_runs_protocol_freshness(self) -> None:
+        self.assert_lanes(["api/searchkernel_request.fbs"], set(POLICY.LANES))
+
+        source = CI_IMAGE_RUNNER.read_text(encoding="utf-8")
+        rust_lane = source.split("            rust-non-native)", 1)[1].split(
+            "            python)", 1
+        )[0]
+        self.assertIn(
+            "run_phase protocol-bfbs bash tools/check-flatbuffers-bfbs.sh",
+            rust_lane,
+        )
+        self.assertIn(
+            "run_phase protocol-rust-generated bash tools/check-searchkernel-protocol-generated.sh",
+            rust_lane,
+        )
 
     def test_shared_client_contract_change_selects_all_lanes(self) -> None:
         self.assert_lanes(["tools/check-client-contracts.py"], set(POLICY.LANES))
