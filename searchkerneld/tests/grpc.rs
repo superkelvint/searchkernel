@@ -16,7 +16,8 @@ use hyper_util::rt::TokioIo;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use prost::Message;
 use searchkernel::{
-    field, ErrorCode as PublicErrorCode, Field, Index, IndexDefinition, Ranking, Sort, Tensor,
+    field, ErrorCode as PublicErrorCode, Field, Index, IndexDefinition, Patch, Ranking, Sort,
+    Tensor,
 };
 use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
@@ -395,6 +396,89 @@ async fn ergonomic_remote_search_preserves_direct_normalized_ir_through_daemon()
     scripted
         .finish()
         .expect("remote daemon consumed the exact direct IR request");
+    server
+        .shutdown()
+        .await
+        .expect("shutdown searchkerneld transport");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ergonomic_remote_patch_and_projection_preserve_direct_normalized_ir_through_daemon() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").stored(true).searchable(true))
+        .field(Field::float64("price").stored(true).filterable(true));
+
+    let recording = Arc::new(RecordingBackend::new());
+    let direct = Index::from_backend(definition.clone(), recording.clone())
+        .expect("build direct recording index");
+
+    let patch = Patch::new().set("price", 88.25_f64).unset("title");
+    assert_eq!(
+        direct
+            .patch("doc-1", patch.clone())
+            .expect_err("recording backend rejects direct patch")
+            .code(),
+        PublicErrorCode::Unsupported
+    );
+    assert_eq!(
+        direct
+            .get_with_projection::<serde_json::Value>("doc-1", ["price"])
+            .expect_err("recording backend rejects direct projected get")
+            .code(),
+        PublicErrorCode::Unsupported
+    );
+    let expected = recording.take_calls();
+    assert_eq!(expected.len(), 2);
+
+    let scripted = Arc::new(ScriptedBackend::new(vec![
+        ExpectedCall::success(
+            expected[0].clone(),
+            ScriptedResult::Patch(searchkernel_ir::PatchResult {
+                id: "doc-1".to_owned(),
+            }),
+        ),
+        ExpectedCall::success(
+            expected[1].clone(),
+            ScriptedResult::Get(searchkernel_ir::GetResult {
+                document: Some(searchkernel_ir::DocumentResult {
+                    id: "doc-1".to_owned(),
+                    fields: std::collections::BTreeMap::from([(
+                        "price".to_owned(),
+                        searchkernel_ir::Value::Float64(88.25),
+                    )]),
+                }),
+            }),
+        ),
+    ]));
+    let hosted =
+        Index::from_backend(definition, scripted.clone()).expect("build hosted scripted index");
+    let (context, session) = hosted.into_session_parts();
+    let server = start(
+        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
+        Arc::new(Dispatcher::new(context, session)),
+    )
+    .await
+    .expect("start searchkerneld transport");
+    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+
+    tokio::task::spawn_blocking(move || {
+        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        remote
+            .patch("doc-1", patch)
+            .expect("remote patch preserves direct normalized IR");
+        let projected = remote
+            .get_with_projection::<serde_json::Value>("doc-1", ["price"])
+            .expect("remote projected get preserves direct normalized IR")
+            .expect("projected document exists");
+        assert_eq!(projected, serde_json::json!({"price": 88.25}));
+        remote.close().expect("close remote client");
+    })
+    .await
+    .expect("remote client blocking task");
+
+    scripted
+        .finish()
+        .expect("remote daemon consumed exact patch and projected-get IR");
     server
         .shutdown()
         .await
