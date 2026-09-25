@@ -8,6 +8,29 @@ export PYTHON
 PATH="$(dirname -- "$PYTHON"):$PATH"
 export PATH
 
+refresh_rust_tools() {
+    CARGO=$(bash "$ROOT/tools/resolve-rust.sh" cargo)
+    RUSTC=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
+    export CARGO RUSTC
+}
+
+refresh_node_tools() {
+    NODE=$(bash "$ROOT/tools/resolve-node.sh" node)
+    NPM=$(bash "$ROOT/tools/resolve-node.sh" npm)
+    export NODE NPM
+}
+
+if ! refresh_rust_tools 2>/dev/null; then
+    CARGO=${CARGO:-cargo}
+    RUSTC=${RUSTC:-rustc}
+    export CARGO RUSTC
+fi
+if ! refresh_node_tools 2>/dev/null; then
+    NODE=${NODE:-node}
+    NPM=${NPM:-npm}
+    export NODE NPM
+fi
+
 cd "$ROOT"
 
 configure_ca_bundle() {
@@ -229,20 +252,20 @@ run_typescript_generation_check() {
 run_typescript_tests() {
     bash "$ROOT/tools/test-typescript-generation.sh"
     run_typescript_generation_check
-    npm run typecheck --prefix "$ROOT/clients/typescript"
-    npm test --prefix "$ROOT/clients/typescript"
-    npm run test:package --prefix "$ROOT/clients/typescript"
+    "$NPM" run typecheck --prefix "$ROOT/clients/typescript"
+    "$NPM" test --prefix "$ROOT/clients/typescript"
+    "$NPM" run test:package --prefix "$ROOT/clients/typescript"
 }
 
 run_php_tests() {
     php "$ROOT/clients/php/tests/run.php"
-    cargo test -p searchkernel-protocol --test php_json_contract -- --ignored
+    "$CARGO" test -p searchkernel-protocol --test php_json_contract -- --ignored
     bash "$ROOT/clients/php/tests/verify_package.sh"
 }
 
 run_ruby_tests() {
     ruby -I"$ROOT/clients/ruby/lib" "$ROOT/clients/ruby/test/run.rb"
-    cargo test -p searchkernel-protocol --test ruby_json_contract -- --ignored
+    "$CARGO" test -p searchkernel-protocol --test ruby_json_contract -- --ignored
 
     local package_dir gem_home status
     package_dir=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ruby-package.XXXXXX")
@@ -261,8 +284,8 @@ run_ruby_tests() {
 }
 
 check_fast() {
-    cargo fmt --all --check
-    cargo check --workspace --all-targets --no-default-features
+    "$CARGO" fmt --all --check
+    "$CARGO" check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
     bash "$ROOT/tools/test-actions-runner-rustup-recovery.sh"
     bash "$ROOT/tools/test-flatbuffers-cpp-toolchain.sh"
@@ -276,7 +299,7 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
     run_typescript_generation_check
-    cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
+    "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
 }
 
 check_protocol() {
@@ -297,7 +320,7 @@ check_all() {
     "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
     "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
     lint_target --profile rust-clippy-all-features
-    cargo test --workspace --all-targets --all-features
+    "$CARGO" test --workspace --all-targets --all-features
     run_python_tests
     run_typescript_tests
     run_php_tests
@@ -351,8 +374,8 @@ universe() {
 
     echo
     echo '==> universe: every Rust test, including ignored and doctests'
-    cargo test --workspace --all-targets --all-features -- --include-ignored
-    cargo test --workspace --all-features --doc
+    "$CARGO" test --workspace --all-targets --all-features -- --include-ignored
+    "$CARGO" test --workspace --all-features --doc
 
     echo
     echo '==> universe: every client unit/package suite'
@@ -398,11 +421,11 @@ regen_protocol() {
     bash "$ROOT/tools/generate-searchkernel-rpc.sh"
     bash "$ROOT/tools/generate-python-flatbuffers.sh"
     bash "$ROOT/tools/generate-python-grpc.sh"
-    npm run generate --prefix "$ROOT/clients/typescript"
+    "$NPM" run generate --prefix "$ROOT/clients/typescript"
 }
 
 regen_result_fixtures() {
-    cargo run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures
+    "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures
 }
 
 lint_target() {
@@ -412,10 +435,10 @@ lint_target() {
 test_target() {
     case "${1:-}" in
         ir)
-            cargo test -p searchkernel-ir --all-targets --all-features
+            "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
         rust-api|rust)
-            cargo test -p searchkernel --all-targets --no-default-features
+            "$CARGO" test -p searchkernel --all-targets --no-default-features
             ;;
         python)
             run_python_tests
@@ -473,8 +496,8 @@ verify_target() {
             bash "$ROOT/tools/check-persistence-fixtures.sh"
             PERSISTENCE_CHECK_INDEX=1 \
                 bash "$ROOT/tools/check-persistence-fixture-immutability.sh" HEAD
-            cargo test -p searchkernel --test persistence_compatibility --features native -- --nocapture
-            cargo test -p searchkernel --features native --lib persistence_fault_matrix_ -- --nocapture
+            "$CARGO" test -p searchkernel --test persistence_compatibility --features native -- --nocapture
+            "$CARGO" test -p searchkernel --features native --lib persistence_fault_matrix_ -- --nocapture
             bash "$ROOT/tools/check-persistence-sensitivity.sh"
             ;;
         issue-queue)
@@ -666,9 +689,55 @@ find_flatc() {
     bash "$ROOT/tools/resolve-flatc.sh"
 }
 
-doctor_cargo() {
-    command -v cargo >/dev/null 2>&1
-    cargo --version >/dev/null
+doctor_rust() {
+    refresh_rust_tools
+    "$CARGO" --version >/dev/null
+    "$RUSTC" --version >/dev/null
+}
+
+doctor_repair_rust() {
+    if doctor_rust >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo 'REPAIR Rust toolchain'
+    command -v rustup >/dev/null 2>&1 || {
+        echo 'cannot repair Rust automatically: rustup is not installed' >&2
+        return 1
+    }
+
+    rustup toolchain install stable --profile minimal
+    rustup default stable
+    refresh_rust_tools
+    doctor_rust
+}
+
+doctor_node() {
+    refresh_node_tools
+    "$NODE" --version >/dev/null
+    "$NPM" --version >/dev/null
+}
+
+doctor_repair_node() {
+    if doctor_node >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo 'REPAIR Node.js toolchain'
+    if command -v dnf >/dev/null 2>&1; then
+        dnf module reset -y nodejs || true
+        dnf module enable -y nodejs:20
+        dnf install -y nodejs npm
+    elif command -v apt-get >/dev/null 2>&1; then
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
+    else
+        echo 'cannot repair Node.js automatically: supported package manager (dnf/apt-get) not found' >&2
+        return 1
+    fi
+
+    refresh_node_tools
+    doctor_node
 }
 
 doctor_flatc() {
@@ -782,12 +851,9 @@ doctor_repair_typescript() {
     if doctor_typescript >/dev/null 2>&1; then
         return 0
     fi
-    command -v npm >/dev/null 2>&1 || {
-        echo 'cannot repair TypeScript dependencies: npm is not installed' >&2
-        return 1
-    }
+    doctor_node >/dev/null 2>&1 || return 1
     echo 'REPAIR TypeScript dependencies'
-    npm ci --prefix "$ROOT/clients/typescript"
+    "$NPM" ci --prefix "$ROOT/clients/typescript"
     doctor_typescript
 }
 
@@ -847,7 +913,7 @@ doctor_repair_searchkerneld() {
         return 0
     fi
     echo 'REPAIR searchkerneld'
-    cargo build -p searchkerneld
+    "$CARGO" build -p searchkerneld
     doctor_searchkerneld
 }
 
@@ -891,9 +957,10 @@ doctor() {
     echo "Search Kernel doctor"
 
     doctor_hooks >/dev/null 2>&1 || status=1
-    doctor_cargo >/dev/null 2>&1 || status=1
 
-    if doctor_cargo >/dev/null 2>&1; then
+    repair 'Rust toolchain' doctor_repair_rust
+    if doctor_rust >/dev/null 2>&1; then
+        repair 'Node.js toolchain' doctor_repair_node
         repair 'system verification tools' doctor_repair_system_tools
         repair 'FlatBuffers toolchain' doctor_repair_flatbuffers
         repair 'TypeScript dependencies' doctor_repair_typescript
@@ -906,7 +973,8 @@ doctor() {
     echo
     echo 'Verification'
     doctor_check 'repository Git hooks configured' doctor_hooks
-    doctor_check 'cargo present' doctor_cargo
+    doctor_check 'Rust toolchain present' doctor_rust
+    doctor_check 'Node.js toolchain present' doctor_node
     doctor_check 'system verification tools present' doctor_system_tools
     doctor_check 'flatc correct version' doctor_flatc
     doctor_check 'FlatBuffers C++ correct version' doctor_flatbuffers_cpp
