@@ -156,16 +156,19 @@ Image publishing has three independent identities:
   the configured upstream toolchain-base reference.
   Adding a client language or bumping Rust/Node/Ruby/PHP/Python/FlatBuffers
   changes this axis without changing the Vespa axis.
-- `superkelvint/searchkernel-ci-vespa:<vespa-commit>` contains the immutable
-  native runtime closure plus configured Vespa headers/static-link metadata for
-  the commit pinned by `core/native/vespa/manifest.json`.
+- `superkelvint/searchkernel-ci-vespa:<vespa-commit>-<bundle-id>` contains
+  the immutable native runtime closure plus configured Vespa headers/static-link
+  metadata for the commit pinned by `core/native/vespa/manifest.json`. The
+  bundle id hashes the Vespa Docker/package/closure recipe. This keeps the Vespa
+  commit independent of the language toolchain while ensuring a packaging fix
+  for the same commit cannot silently reuse an older immutable image.
 - `superkelvint/searchkernel-ci:<searchkernel-revision>` is a thin leaf. A
   reusable `base-<composition-id>` tag in the same repository composes and
   compatibility-checks the first two images once. The composition id hashes
-  the toolchain id, Vespa commit, and base-composition Dockerfile, so changes
-  to the compatibility gate cannot reuse a stale base. Ordinary source
-  publishes reuse it and only rerun Search Kernel's source-specific native
-  adapter validation.
+  the toolchain id, Vespa commit, Vespa bundle id, and base-composition
+  Dockerfile, so changes to either packaging or compatibility gates cannot
+  reuse a stale base. Ordinary source publishes reuse it and only rerun Search
+  Kernel's source-specific native adapter validation.
 
 Publish only the axis that changed:
 
