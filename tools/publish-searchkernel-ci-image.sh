@@ -13,7 +13,10 @@ set -euo pipefail
 # flow. It prepares Docker build contexts directly from the existing full SDK
 # and matching configured Vespa toolchain.
 #
-# Usage:
+# Preferred usage:
+#   ./dev image publish [tag]
+#
+# Low-level usage:
 #   tools/publish-searchkernel-ci-image.sh [tag]
 #
 # Authentication:
@@ -205,7 +208,7 @@ Or provide a Docker Hub personal access token:
 
   DOCKERHUB_USERNAME=superkelvint \
   DOCKERHUB_TOKEN=... \
-  tools/publish-searchkernel-ci-image.sh $TAG
+  ./dev image publish $TAG
 
 EOF
     exit 1

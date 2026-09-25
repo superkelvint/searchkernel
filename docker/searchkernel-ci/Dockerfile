@@ -13,7 +13,14 @@ ARG FLATBUFFERS_VERSION=25.12.19
 ARG COMPOSER_VERSION=2.8.12
 ARG VESPA_COMMIT
 
-ENV PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+ENV GCC_TOOLSET_ROOT="/opt/rh/gcc-toolset-15/root/usr" \
+    PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    CC="/opt/rh/gcc-toolset-15/root/usr/bin/gcc" \
+    CXX="/opt/rh/gcc-toolset-15/root/usr/bin/g++" \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="/opt/rh/gcc-toolset-15/root/usr/bin/gcc" \
+    AR="/opt/rh/gcc-toolset-15/root/usr/bin/ar" \
+    RANLIB="/opt/rh/gcc-toolset-15/root/usr/bin/ranlib" \
+    LIBRARY_PATH="/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib" \
     LD_LIBRARY_PATH="/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib" \
     PYTHON="/usr/bin/python3.11" \
     SEARCHKERNEL_BUILD_ENV="ci" \
@@ -208,7 +215,13 @@ RUN base="/opt/searchkernel/native-sdk-cache/ci/x86_64-unknown-linux-gnu/objects
 
 # Final capability smoke test. These checks intentionally fail the image build
 # instead of allowing a broken runner to discover the problem later.
-RUN command -v rg \
+RUN test "$("$CC" -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 \
+    && test "$("$CXX" -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 \
+    && test "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER" = "$CC" \
+    && "$CXX" -std=gnu++23 -Wmismatched-tags -x c++ -fsyntax-only - <<< 'struct Smoke {}; int main() { Smoke value; (void)value; }' \
+    && stdcpp="$("$CXX" -print-file-name=libstdc++.so)" \
+    && case "$stdcpp" in "$GCC_TOOLSET_ROOT"/*) ;; *) echo "unexpected libstdc++: $stdcpp" >&2; exit 1;; esac \
+    && command -v rg \
     && rg --version | head -n 1 \
     && command -v gh \
     && gh --version | head -n 1 \
