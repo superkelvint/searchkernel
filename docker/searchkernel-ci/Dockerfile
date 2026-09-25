@@ -235,7 +235,9 @@ RUN test "$("$CC" -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 \
     && command -v flatc \
     && command -v cmake \
     && command -v clang \
-    && c++ --version | head -n 1
+    && c++ --version | head -n 1 \
+    && [[ "$(c++ -dumpfullversion)" == 15.* ]] \
+    && test -f "$(c++ -print-file-name=libstdc++.so)"
 
 # Prove that the bundled base/toolchain can rebuild the adapter from the exact
 # Search Kernel source revision being published. The source exists only in this
