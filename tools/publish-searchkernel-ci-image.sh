@@ -49,10 +49,11 @@ ci_image_login
 
 TOOLCHAIN_ID="$(ci_image_toolchain_id "$ROOT/docker/searchkernel-ci-toolchain" "$TOOLCHAIN_BASE_IMAGE")"
 VESPA_COMMIT="$(ci_image_vespa_commit "$ROOT")"
+COMPOSITE_ID="$(ci_image_composite_id "$ROOT/docker/searchkernel-ci/base.Dockerfile" "$TOOLCHAIN_ID" "$VESPA_COMMIT")"
 
 TOOLCHAIN_REF="$TOOLCHAIN_IMAGE:$TOOLCHAIN_ID"
 VESPA_REF="$VESPA_IMAGE:$VESPA_COMMIT"
-COMPOSITE_TAG="base-$TOOLCHAIN_ID-$VESPA_COMMIT"
+COMPOSITE_TAG="base-$COMPOSITE_ID"
 COMPOSITE_REF="$IMAGE:$COMPOSITE_TAG"
 
 echo
@@ -105,7 +106,7 @@ EOF
     echo
     echo "==> Composing compatible toolchain + Vespa base"
 
-    DOCKER_BUILDKIT=1 docker build         --build-arg "TOOLCHAIN_IMAGE=$TOOLCHAIN_REF"         --build-arg "VESPA_IMAGE=$VESPA_REF"         --build-arg "TOOLCHAIN_ID=$TOOLCHAIN_ID"         --build-arg "VESPA_COMMIT=$VESPA_COMMIT"         --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel"         --label "io.searchkernel.toolchain-id=$TOOLCHAIN_ID"         --label "io.searchkernel.vespa-commit=$VESPA_COMMIT"         -f "$ROOT/docker/searchkernel-ci/base.Dockerfile"         -t "$COMPOSITE_REF"         "$ROOT/docker/searchkernel-ci"
+    DOCKER_BUILDKIT=1 docker build         --build-arg "TOOLCHAIN_IMAGE=$TOOLCHAIN_REF"         --build-arg "VESPA_IMAGE=$VESPA_REF"         --build-arg "TOOLCHAIN_ID=$TOOLCHAIN_ID"         --build-arg "VESPA_COMMIT=$VESPA_COMMIT"         --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel"         --label "io.searchkernel.composite-id=$COMPOSITE_ID"         --label "io.searchkernel.toolchain-id=$TOOLCHAIN_ID"         --label "io.searchkernel.vespa-commit=$VESPA_COMMIT"         -f "$ROOT/docker/searchkernel-ci/base.Dockerfile"         -t "$COMPOSITE_REF"         "$ROOT/docker/searchkernel-ci"
 
     ci_image_require_label "$COMPOSITE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
     ci_image_require_label "$COMPOSITE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
