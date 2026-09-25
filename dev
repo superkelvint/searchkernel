@@ -325,6 +325,7 @@ run_ruby_tests() {
 
 check_fast() {
     bash "$ROOT/tools/test-dev-ci-image.sh"
+    bash "$ROOT/tools/test-ci-image-publishing.sh"
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
     "$CARGO" fmt --all --check
     "$CARGO" check --workspace --all-targets --no-default-features
