@@ -182,6 +182,7 @@ class ToolchainAuthorityTests(unittest.TestCase):
 
     def test_dev_repairs_every_canonical_toolchain(self) -> None:
         dev = read("dev")
+        doctor = function_body(dev, "doctor")
         for repair in (
             "doctor_repair_rust",
             "doctor_repair_node",
@@ -189,8 +190,11 @@ class ToolchainAuthorityTests(unittest.TestCase):
             "doctor_repair_python",
             "doctor_repair_native_sdk",
         ):
-            self.assertIn(f"repair '", dev)
-            self.assertIn(repair, dev)
+            self.assertRegex(
+                doctor,
+                rf"repair '[^']+' {repair}\\b",
+                f"doctor must invoke {repair}",
+            )
 
 
 if __name__ == "__main__":
