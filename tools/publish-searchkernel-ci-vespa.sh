@@ -20,6 +20,7 @@ BUILD_ENV="ci"
 
 ci_image_require_commands docker git python3 tar
 ci_image_require_docker
+ci_image_require_clean_checkout "$ROOT"
 ci_image_login
 
 VESPA_COMMIT="$(ci_image_vespa_commit "$ROOT")"
@@ -106,6 +107,9 @@ echo
 echo "==> Pushing $IMAGE_REF"
 docker push "$IMAGE_REF"
 
+PINNED_IMAGE_REF="$(ci_image_pull_and_resolve_digest "$IMAGE_REF")"
+
 echo
 echo "Published:"
 echo "  $IMAGE_REF"
+echo "  $PINNED_IMAGE_REF"
