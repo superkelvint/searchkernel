@@ -141,85 +141,91 @@ paths without requiring the optional Vespa SDK:
 cargo test --workspace --all-targets --no-default-features
 ```
 
-### CI does not require Vespa source
+### CI and local verification use the immutable image
 
-Ordinary GitHub CI uses the non-native lanes and must not depend on an
-`upstream/vespa` checkout or call `./dev native-sdk ensure`. Native-sensitive
-pull requests are still classified so reviewers can see that native behavior may
-be affected, but the real-engine acceptance command is run locally by the
-implementation agent for now.
+`docker.io/superkelvint/searchkernel-ci:latest` is the canonical execution
+environment for compilation, tests, client verification, and real-Vespa
+verification. GitHub Actions and local developer commands use the same pinned
+Rust, Node, Ruby, PHP, Python, FlatBuffers, and Vespa base/toolchain.
 
-When a change affects the native adapter, bindings, Vespa engine, IR adapter,
-native build tooling, or real-Vespa acceptance artifacts, run the applicable
-native verifier locally and include the exact command and result in the pull
-request. Do not interpret a green non-native CI run as native verification.
+These commands dispatch to one disposable image container by default:
 
-The repository-managed pre-commit hook enforces this split with path-sensitive
-verification lanes. Every commit runs Rust formatting, Clippy, and non-native
-workspace tests. Staged Python, TypeScript, and PHP changes additionally run
-their client suites; canonical API changes select all affected first-party
-clients; protocol/schema changes verify checked-in FlatBuffers/gRPC
-artifacts for Rust, Python, and TypeScript; API-conformance changes run the
-conformance verifier; capability/client-contract, ABI-surface, persistence, and
-issue-queue verifier changes run their focused checks; and hook/classifier
-changes run the selector regression suite.
+```bash
+./dev check
+./dev check-fast
+./dev check-protocol
+./dev universe
+./dev lint --profile rust-clippy-all-features
+./dev test python
+./dev test typescript
+./dev test php
+./dev test ruby
+./dev verify integration
+./dev verify persistence
+```
 
-When any checked-in native ABI authority is staged, pre-commit first checks the
-Git index with `tools/check-native-abi-authorities.py --git-index`, so a version
-bump cannot commit with stale manifests, Rust constants, reference contracts, or
-pinned metadata.
+The local launcher does not bind-mount the developer checkout into the build.
+It creates a private Git repository from a bundle of the current `HEAD`, then
+overlays exactly the non-ignored tracked/untracked working-tree changes. This
+works from ordinary clones, linked Git worktrees, and Docker-outside-of-Docker
+developer shells. Ignored state such as `target/`, `node_modules/`, venvs,
+local SDKs, and existing build outputs never enters the verification container.
+For pre-commit specifically, relevant untracked files are rejected on the host,
+only the staged/tracked snapshot is copied, and the private clone stages that
+overlay so verifier scripts observe the same index/working-tree semantics as
+the commit being created.
 
-Staged native-sensitive changes run both the real-Vespa gate and the real Python
-gRPC E2E through `tools/run-python-native-e2e.sh`. Native-sensitive paths include
-the native adapter/bindings/engine/IR adapter plus native-only public facade code
-and the `searchkerneld` native entrypoint. The E2E runner opts the native test in
-explicitly and bootstraps the native SDK first. Non-native-only Rust or Python
-changes do not trigger native verification solely because their language lane is
-selected. Ordinary Python unittest discovery leaves the real gRPC E2E skipped,
-so GitHub CI does not acquire or build Vespa merely because Python behavioral
-tests are selected.
+Each invocation receives a private source volume and a private
+`/cargo-target` volume. Those volumes are removed after the command. No
+writable Cargo registry, rustup, native SDK, node_modules, or target cache is
+shared between concurrent developer/CI workers. Docker image layers are the
+only intentionally shared execution state.
 
-Because lane selection is based on the staged snapshot while the verifiers run
-from the working tree, pre-commit rejects tracked unstaged changes. It also
-rejects untracked files that select a behavioral verification lane, since an
-untracked source or tooling file can influence a working-tree build without
-being present in the commit. Unrelated scratch files remain allowed. Stage,
-remove, ignore, or revert relevant edits before committing so working-tree-only
-state cannot make a broken staged commit appear green.
+The pre-commit hook keeps Git-index responsibilities on the host: lane
+selection, staged-vs-unstaged validation, generated capability staging, and
+the staged ABI-authority check. It then executes the complete formatting,
+Clippy, workspace-test, selected client, and selected native verifier body in
+**one** disposable `searchkernel-ci` container. Nested `./dev` calls detect
+that they are already inside the image and do not launch additional containers.
 
+Commands that intentionally modify the developer environment or checked-out
+source remain host-side: `./dev doctor`, `./dev regen ...`,
+`./dev install flatbuffers`, `./dev native-sdk ...`,
+`./dev hooks install`, and `./dev worktree create ...`.
+
+The image is pulled before local verification by default. Useful overrides are:
+
+```bash
+# Deliberately run the legacy host path for debugging/bootstrap work.
+SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev check-fast
+
+# Work offline against an already-pulled image.
+SEARCHKERNEL_CI_PULL=never ./dev check
+
+# Test another immutable/candidate image.
+SEARCHKERNEL_CI_IMAGE=superkelvint/searchkernel-ci:<tag> ./dev universe
+```
+
+There is no automatic fallback from Docker to host execution. A missing Docker
+daemon/image is an explicit failure so a local green result cannot silently
+come from a different toolchain than CI.
 
 ## Environment isolation
 
-Supported workflows use these independent target roots:
+Supported build/test execution now has two deliberate modes:
 
-| Environment | Cargo target root | Vespa SDK namespace |
+| Environment | Cargo target root | Vespa SDK source |
 | --- | --- | --- |
-| Host | `target/host` | `<machine-cache>/searchkernel/native-sdk-cache/host/<target>/objects/<vespa-checkout-hash>` |
-| Project container | `target/devcontainer` | `<machine-cache>/searchkernel/native-sdk-cache/devcontainer/<target>/objects/<vespa-checkout-hash>` |
-| CI | `target/ci` | `<machine-cache>/searchkernel/native-sdk-cache/ci/<target>/objects/<vespa-checkout-hash>` |
+| Canonical Docker-backed dev/CI | private `/cargo-target` volume | baked `/opt/searchkernel/native-sdk-cache/ci/.../objects/<vespa-commit>` |
+| Explicit host override | `target/host` (or caller override) | host resolver/cache or explicit `SK_NATIVE_SDK` |
 
-The project container sets `CARGO_TARGET_DIR=target/devcontainer`. The CI ABI
-workflow sets `CARGO_TARGET_DIR=target/ci`. Do not manually mount or restore a
-host `target/host` directory into the container, or restore native output from
-one CI image/toolchain into another.
+The Docker-backed path is the default. The host mode exists for toolchain
+bootstrap, image construction, low-level environment debugging, and deliberate
+custom qualification work; it is not the normal verification contract.
 
-For a deliberate custom environment, choose a new target root for the entire
-build:
-
-```bash
-CARGO_TARGET_DIR=target/my-native-environment \
-SEARCHKERNEL_BUILD_ENV=my-native-environment \
-  cargo build -p searchkerneld
-```
-
-`CARGO_TARGET_DIR` remains the isolation boundary for Cargo/FlatBuffers build
-outputs. The Vespa base resolver separately partitions its machine-global store
-by `SEARCHKERNEL_BUILD_ENV` and native target, then addresses the immutable
-object inside that compatibility namespace by the pinned Vespa checkout hash.
-Compiler identity and Search Kernel adapter source/flags do not create another
-Vespa-base key. `SK_NATIVE_SDK` bypasses this split
-model for a deliberately managed full SDK; full-package provenance still
-includes Search Kernel adapter source and adapter-only native flags.
+`CARGO_TARGET_DIR` remains the build-output isolation boundary in custom host
+runs. Never mount a host `target/`, `~/.cargo`, `~/.rustup`, or mutable
+native cache into the canonical image.
 
 ## FlatBuffers
 
