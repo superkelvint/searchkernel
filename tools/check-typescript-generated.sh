@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+npm=$(bash "$root/tools/resolve-node.sh" npm)
 client="$root/clients/typescript"
 generated="$client/src/generated"
 fresh=$(mktemp -d)
@@ -12,8 +13,8 @@ trap 'rm -rf -- "$fresh"' EXIT
 # tree. Once bootstrapped, never overwrite the consumed tree during the check:
 # that is what makes stale local output observable.
 if [[ ! -d "$generated" ]]; then
-    npm run generate --prefix "$client"
+    "$npm" run generate --prefix "$client"
 fi
 
-TYPESCRIPT_GENERATED_DIR="$fresh" npm run generate --prefix "$client"
+TYPESCRIPT_GENERATED_DIR="$fresh" "$npm" run generate --prefix "$client"
 diff -ruN -- "$generated" "$fresh"
