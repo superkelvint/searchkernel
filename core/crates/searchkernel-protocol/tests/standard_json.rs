@@ -158,6 +158,50 @@ fn standard_json_prints_64_bit_integer_boundaries_as_decimal_strings() {
 }
 
 #[test]
+fn standard_json_canonicalizes_64_bit_scalars_outside_value_unions() {
+    let request = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_SearchRequest",
+      "payload": {
+        "timeout_ms": {"value": "18446744073709551615"}
+      }
+    }"#;
+    let request_bytes =
+        request_json_to_flatbuffer(request).expect("request uint64 decimal string");
+    let request_printed =
+        request_flatbuffer_to_json(&request_bytes).expect("request uint64 JSON printer");
+    let request_value: serde_json::Value =
+        serde_json::from_slice(&request_printed).expect("valid request JSON");
+    assert_eq!(
+        request_value["payload"]["timeout_ms"]["value"].as_str(),
+        Some("18446744073709551615")
+    );
+
+    let response = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_SearchResult",
+      "payload": {
+        "total_hits": {"value": "18446744073709551615", "relation": "Exact"},
+        "errors": [{"code": "-9223372036854775808", "message": "boundary"}]
+      }
+    }"#;
+    let response_bytes =
+        response_json_to_flatbuffer(response).expect("response 64-bit decimal strings");
+    let response_printed =
+        response_flatbuffer_to_json(&response_bytes).expect("response 64-bit JSON printer");
+    let response_value: serde_json::Value =
+        serde_json::from_slice(&response_printed).expect("valid response JSON");
+    assert_eq!(
+        response_value["payload"]["total_hits"]["value"].as_str(),
+        Some("18446744073709551615")
+    );
+    assert_eq!(
+        response_value["payload"]["errors"][0]["code"].as_str(),
+        Some("-9223372036854775808")
+    );
+}
+
+#[test]
 fn standard_json_handles_response_union_and_errors() {
     let input = br#"{
       "protocol_version": 2,
