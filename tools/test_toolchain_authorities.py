@@ -19,7 +19,7 @@ CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "tools/resolve-python.sh",
             "tools/resolve-rust.sh",
             "tools/resolve-node.sh",
-            "tools/resolve-flatc.sh",
+            "tools/resolve-flatbuffers.sh",
             "tools/resolve-native-sdk.sh",
         ),
         ("python3", "cargo", "rustc", "rustfmt", "npm", "node", "flatc"),
@@ -37,8 +37,8 @@ CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ("python3",),
     ),
     "tools/generate-python-flatbuffers.sh": (
-        ("resolve-python.sh",),
-        ("python3",),
+        ("resolve-python.sh", "resolve-flatbuffers.sh"),
+        ("python3", "flatc"),
     ),
     "tools/run-python-native-e2e.sh": (
         ("resolve-python.sh",),
@@ -61,19 +61,23 @@ CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ("npm", "node"),
     ),
     "tools/check-flatbuffers-bfbs.sh": (
-        ("resolve-flatc.sh",),
+        ("resolve-flatbuffers.sh",),
         ("flatc",),
     ),
     "tools/generate-flatbuffers-bfbs.sh": (
-        ("resolve-flatc.sh",),
+        ("resolve-flatbuffers.sh",),
         ("flatc",),
     ),
     "tools/generate-searchkernel-protocol.sh": (
-        ("resolve-flatc.sh", "resolve-rust.sh"),
+        ("resolve-flatbuffers.sh", "resolve-rust.sh"),
         ("flatc", "rustfmt"),
     ),
     "tools/generate-typescript-flatbuffers.sh": (
-        ("resolve-flatc.sh",),
+        ("resolve-flatbuffers.sh",),
+        ("flatc",),
+    ),
+    "tools/resolve-flatc.sh": (
+        ("resolve-flatbuffers.sh",),
         ("flatc",),
     ),
     "tools/resolve-native-sdk.sh": (
@@ -116,7 +120,7 @@ class ToolchainAuthorityTests(unittest.TestCase):
             "tools/resolve-python.sh",
             "tools/resolve-rust.sh",
             "tools/resolve-node.sh",
-            "tools/resolve-flatc.sh",
+            "tools/resolve-flatbuffers.sh",
             "tools/resolve-native-sdk.sh",
         ):
             self.assertTrue((ROOT / relative).is_file(), relative)
@@ -155,6 +159,14 @@ class ToolchainAuthorityTests(unittest.TestCase):
 
         native = function_body(dev, "doctor_native_sdk")
         self.assertIn("native_sdk_path", native)
+
+        native_path = function_body(dev, "native_sdk_path")
+        self.assertIn("resolve-native-sdk.sh", native_path)
+        self.assertNotIn("SK_NATIVE_SDK", native_path)
+        self.assertIn("resolve_explicit_sdk", read("tools/resolve-native-sdk.sh"))
+
+        flatc_wrapper = read("tools/resolve-flatc.sh")
+        self.assertIn("resolve-flatbuffers.sh", flatc_wrapper)
 
         searchkerneld = function_body(dev, "doctor_searchkerneld")
         self.assertIn('"$CARGO" build -p searchkerneld --features native', searchkerneld)
