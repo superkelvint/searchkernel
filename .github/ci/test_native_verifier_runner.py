@@ -59,9 +59,22 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         for needle in (
             "client-e2e)",
             "python3 tools/check-python-dependencies.py",
-            "cargo build -p searchkerneld --features native",
+            "build_native_searchkerneld client-e2e-build",
             'SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"',
+            'SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"',
             "python3 tools/check-client-contracts.py --run-e2e",
+        ):
+            self.assertIn(needle, source)
+
+    def test_native_searchkerneld_build_resolves_exact_adapter_runtime_lib(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "build_native_searchkerneld()",
+            "--message-format=json-render-diagnostics",
+            ".github/ci/resolve-native-adapter-lib.py",
+            "NATIVE_ADAPTER_LIB=",
+            "build_native_searchkerneld closure-422-build",
+            'SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"',
         ):
             self.assertIn(needle, source)
 
@@ -214,9 +227,10 @@ echo AFTER_GUARD
             "run_native_phase native-full-phase9",
             "run_native_phase native-full-python-e2e",
             "run_native_phase native-full-persistence",
-            "run_native_phase client-e2e-build",
+            'run_native_phase "$phase"',
+            "build_native_searchkerneld client-e2e-build",
             "run_native_phase client-e2e-run",
-            "run_native_phase closure-422-build",
+            "build_native_searchkerneld closure-422-build",
             "run_native_phase closure-422-m14",
             "run_native_phase closure-422-rust-real-engine",
             "run_native_phase closure-422-integration",
