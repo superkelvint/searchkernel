@@ -24,7 +24,7 @@ ci_image_require_commands docker git python3
 ci_image_require_docker
 ci_image_login
 
-TOOLCHAIN_ID="$(ci_image_toolchain_id "$RECIPE")"
+TOOLCHAIN_ID="$(ci_image_toolchain_id "$RECIPE" "$BASE_IMAGE")"
 IMAGE_REF="$IMAGE:$TOOLCHAIN_ID"
 
 if ci_image_pull_if_available "$IMAGE_REF"; then
