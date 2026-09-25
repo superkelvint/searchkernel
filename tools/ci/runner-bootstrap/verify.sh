@@ -5,10 +5,12 @@ RUNNER_USER=${RUNNER_USER:-actions-runner}
 RUNNER_HOME=${RUNNER_HOME:-/opt/actions-runner}
 SEARCHKERNEL_CACHE_ROOT=${SEARCHKERNEL_CACHE_ROOT:-/var/cache/searchkernel}
 FLATBUFFERS_VERSION=${FLATBUFFERS_VERSION:-25.12.19}
+RUBY_VERSION=${RUBY_VERSION:-3.3.6}
+RUBY_BIN_DIR="$SEARCHKERNEL_CACHE_ROOT/searchkernel/ruby/$RUBY_VERSION/bin"
 
 RUNNER_USER_HOME=$(getent passwd "$RUNNER_USER" | cut -d: -f6)
 
-sudo -u "$RUNNER_USER" -H env   HOME="$RUNNER_USER_HOME"   XDG_CACHE_HOME="$SEARCHKERNEL_CACHE_ROOT"   SEARCHKERNEL_ARTIFACT_CACHE="$SEARCHKERNEL_CACHE_ROOT/native-artifacts"   bash -lc '
+sudo -u "$RUNNER_USER" -H env   HOME="$RUNNER_USER_HOME"   XDG_CACHE_HOME="$SEARCHKERNEL_CACHE_ROOT"   SEARCHKERNEL_ARTIFACT_CACHE="$SEARCHKERNEL_CACHE_ROOT/native-artifacts"   PATH="$RUBY_BIN_DIR:$RUNNER_USER_HOME/.cargo/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"   bash -lc '
 set -euo pipefail
 source "$HOME/.cargo/env"
 rustc --version

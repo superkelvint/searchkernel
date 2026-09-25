@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
 usage() {
   cat <<'USAGE'
 SearchKernel self-hosted GitHub Actions host bootstrap (Ubuntu/Debian x86_64)
@@ -59,6 +61,7 @@ SEARCHKERNEL_STATE_ROOT=${SEARCHKERNEL_STATE_ROOT:-/var/lib/searchkernel-ci}
 SEARCHKERNEL_CACHE_ROOT=${SEARCHKERNEL_CACHE_ROOT:-/var/cache/searchkernel}
 ACTIONS_RUNNER_VERSION=${ACTIONS_RUNNER_VERSION:-2.337.0}
 FLATBUFFERS_VERSION=${FLATBUFFERS_VERSION:-25.12.19}
+RUBY_VERSION=${RUBY_VERSION:-3.3.6}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -93,7 +96,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
-apt-get install -y --no-install-recommends   ca-certificates curl git gh jq sudo tar gzip unzip zip file procps time   docker.io   build-essential cmake ninja-build pkg-config   clang llvm lld libclang-dev python3-clang   python3 python3-venv python3-pip python3-dev   php-cli ruby-full
+apt-get install -y --no-install-recommends   ca-certificates curl git gh jq sudo tar gzip unzip zip file procps time   docker.io   build-essential cmake ninja-build pkg-config   clang llvm lld libclang-dev python3-clang   python3 python3-venv python3-pip python3-dev   php-cli ruby-full   libssl-dev libreadline-dev zlib1g-dev libyaml-dev libffi-dev libgdbm-dev libncurses-dev
 
 systemctl enable --now docker
 
@@ -129,6 +132,11 @@ if [[ ! -x "$RUNNER_USER_HOME/.cargo/bin/rustup" ]]; then
   run_user bash -lc 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal'
 fi
 run_user bash -lc 'source "$HOME/.cargo/env"; rustup toolchain install stable --profile minimal --no-self-update; rustup default stable; rustup component add rustfmt clippy'
+
+run_user env \
+  SEARCHKERNEL_RUBY_VERSION="$RUBY_VERSION" \
+  SEARCHKERNEL_RUBY_SKIP_DEP_INSTALL=1 \
+  bash "$SCRIPT_DIR/ensure-ruby.sh"
 
 flatbuffers_ok() {
   [[ -x /usr/local/bin/flatc ]] &&
@@ -184,7 +192,8 @@ append_env() {
   printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
 }
 
-append_env PATH "$RUNNER_USER_HOME/.cargo/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
+RUBY_BIN_DIR="$SEARCHKERNEL_CACHE_ROOT/searchkernel/ruby/$RUBY_VERSION/bin"
+append_env PATH "$RUBY_BIN_DIR:$RUNNER_USER_HOME/.cargo/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
 append_env HOME "$RUNNER_USER_HOME"
 append_env XDG_CACHE_HOME "$SEARCHKERNEL_CACHE_ROOT"
 append_env SEARCHKERNEL_ARTIFACT_CACHE "$SEARCHKERNEL_CACHE_ROOT/native-artifacts"

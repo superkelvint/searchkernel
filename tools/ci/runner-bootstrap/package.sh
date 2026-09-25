@@ -12,7 +12,7 @@ command -v zip >/dev/null 2>&1 || {
 rm -f "$OUT"
 (
   cd "$SCRIPT_DIR"
-  zip -q "$OUT" README.md config.env.example install.sh verify.sh
+  zip -q "$OUT" README.md config.env.example install.sh verify.sh ensure-ruby.sh
 )
 
 echo "$OUT"
