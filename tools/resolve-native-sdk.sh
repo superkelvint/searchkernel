@@ -3,8 +3,12 @@ set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
-RUSTC_BIN=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
-TARGET=${SK_NATIVE_TARGET:-$("$RUSTC_BIN" -vV | sed -n 's/^host: //p')}
+if [[ -n "${SK_NATIVE_TARGET:-}" ]]; then
+    TARGET=$SK_NATIVE_TARGET
+else
+    RUSTC_BIN=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
+    TARGET=$("$RUSTC_BIN" -vV | sed -n 's/^host: //p')
+fi
 BUILD_ENV=${SEARCHKERNEL_BUILD_ENV:-host}
 MODE=${1:-ensure}
 unset VESPA_LIBRARY_ROOT
