@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./dev image vespa publish
-#   tools/publish-searchkernel-ci-vespa.sh
+#   bash tools/publish-searchkernel-ci-vespa.sh
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
@@ -23,10 +23,12 @@ ci_image_require_docker
 ci_image_login
 
 VESPA_COMMIT="$(ci_image_vespa_commit "$ROOT")"
-IMAGE_REF="$IMAGE:$VESPA_COMMIT"
+VESPA_BUNDLE_ID="$(ci_image_vespa_bundle_id "$ROOT")"
+IMAGE_REF="$IMAGE:$VESPA_COMMIT-$VESPA_BUNDLE_ID"
 
 if ci_image_pull_if_available "$IMAGE_REF"; then
     ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
+    ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
     echo
     echo "Vespa image already published:"
     echo "  $IMAGE_REF"
@@ -51,7 +53,8 @@ trap cleanup EXIT INT TERM
 
 echo
 echo "==> Preparing Vespa Docker contexts"
-echo "Vespa commit: $VESPA_COMMIT"
+echo "Vespa commit:    $VESPA_COMMIT"
+echo "Vespa bundle id: $VESPA_BUNDLE_ID"
 echo "Full SDK:     $FULL_SDK"
 echo "Vespa root:   $LOCAL_VESPA_ROOT"
 
@@ -85,9 +88,11 @@ vespa_build_args=(
     --build-context "searchkernel-native-base=$NATIVE_BASE"
     --build-context "searchkernel-native-toolchain=$NATIVE_TOOLCHAIN"
     --build-arg "VESPA_COMMIT=$VESPA_COMMIT"
+    --build-arg "VESPA_BUNDLE_ID=$VESPA_BUNDLE_ID"
     --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel"
     --label "org.opencontainers.image.revision=$REVISION"
     --label "io.searchkernel.vespa-commit=$VESPA_COMMIT"
+    --label "io.searchkernel.vespa-bundle-id=$VESPA_BUNDLE_ID"
     --label "io.searchkernel.native-target=$TARGET"
     -f "$ROOT/docker/searchkernel-ci-vespa/Dockerfile"
     -t "$IMAGE_REF"
@@ -95,6 +100,7 @@ vespa_build_args=(
 DOCKER_BUILDKIT=1 docker build "${vespa_build_args[@]}" "$ROOT/docker/searchkernel-ci-vespa"
 
 ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
+ci_image_require_label "$IMAGE_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
 
 echo
 echo "==> Pushing $IMAGE_REF"
