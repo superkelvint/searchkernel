@@ -272,7 +272,9 @@ fn main() {
         );
         println!(
             "cargo:rerun-if-changed={}",
-            external_sdk.join("native-build-fingerprint-v2.txt").display()
+            external_sdk
+                .join("native-build-fingerprint-v2.txt")
+                .display()
         );
         println!(
             "cargo:rerun-if-changed={}",
