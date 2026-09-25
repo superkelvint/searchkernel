@@ -79,7 +79,7 @@ impl Backend for ProbeBackend {
         let id = request.document().id().as_str().to_owned();
         self.record(OperationIr::Insert(request));
         match self.insert_mode.load(Ordering::SeqCst) {
-            1 => std::thread::sleep(Duration::from_millis(500)),
+            1 => std::thread::sleep(Duration::from_secs(2)),
             2 => {
                 return Ok(InsertResult {
                     id: "wrong-id".to_owned(),
@@ -365,7 +365,7 @@ async fn request_deadlines_are_transport_errors_and_do_not_require_an_async_rust
 async fn mutation_deadlines_do_not_claim_ambiguous_writes_are_retryable() {
     let backend = Arc::new(ProbeBackend::default());
     let server = TestServer::start(Arc::clone(&backend)).await;
-    let options = RemoteOptions::default().request_timeout(Duration::from_millis(50));
+    let options = RemoteOptions::default().request_timeout(Duration::from_millis(500));
     let index = Index::connect_with(&server.endpoint, options).expect("connect remote index");
 
     backend.insert_mode(1);
