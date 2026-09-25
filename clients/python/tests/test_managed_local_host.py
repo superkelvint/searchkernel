@@ -86,6 +86,26 @@ class ManagedLocalHostTest(unittest.TestCase):
         self.assertEqual(environment.get("LD_LIBRARY_PATH"), "/existing")
         host.close(force=True)
 
+    def test_explicit_adapter_runtime_path_is_prepended_for_child_only(self):
+        with patch.dict(
+            os.environ,
+            {
+                "SEARCHKERNEL_SDK_LIB": "/exact/native-adapter/lib",
+                "LD_LIBRARY_PATH": "/existing",
+            },
+            clear=False,
+        ):
+            host, _process = self._host()
+
+        popen = client_module.subprocess.Popen
+        environment = popen.call_args.kwargs["env"]
+        self.assertEqual(
+            environment.get("LD_LIBRARY_PATH"),
+            "/exact/native-adapter/lib:/existing",
+        )
+        self.assertEqual(os.environ.get("LD_LIBRARY_PATH"), "/existing")
+        host.close(force=True)
+
     def test_finalizer_stops_daemon_and_removes_owned_resources(self):
         host, process = self._host()
         definition_path = host.definition_path
