@@ -88,10 +88,17 @@ jobs:
             exit 1
           }
           digest=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$CI_IMAGE")
+          image_id=$(docker image inspect --format '{{.Id}}' "$CI_IMAGE")
+          [[ -n "$image_id" ]] || {
+            echo "::error::could not resolve immutable image ID for $CI_IMAGE"
+            exit 1
+          }
           echo "Using $CI_IMAGE"
           echo "Resolved image digest: ${digest:-unknown}"
+          echo "Resolved image ID: $image_id"
+          echo "CI_IMAGE_ID=$image_id" >> "$GITHUB_ENV"
 
-          docker run --rm "$CI_IMAGE" /bin/bash -lc '
+          docker run --rm "$image_id" /bin/bash -lc '
             set -euo pipefail
             test -f /opt/searchkernel/native-validation-pass
             for cmd in cargo rustc rustfmt cargo-clippy c++ flatc python3 curl rg gh php ruby composer node npm nm readelf; do
@@ -130,12 +137,33 @@ jobs:
           docker volume create "$SOURCE_VOLUME" >/dev/null
           docker volume create "$TARGET_VOLUME" >/dev/null
 
-          docker run --rm             -v "$GITHUB_WORKSPACE:/source:ro"             -v "$SOURCE_VOLUME:/work"             "$CI_IMAGE"             /bin/bash -lc 'cp -a /source/. /work/'
+          bundle="$RUNNER_TEMP/searchkernel-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$SAFE_TARGET.bundle"
+          rm -f "$bundle"
+          git bundle create "$bundle" --all HEAD
 
-          actual=$(docker run --rm             -v "$SOURCE_VOLUME:/work"             -w /work             "$CI_IMAGE"             /bin/bash -lc 'git config --global --add safe.directory /work && git rev-parse HEAD')
+          cat "$bundle" | docker run --rm -i \
+            -e EXPECTED_HEAD="$EXPECTED_HEAD" \
+            -v "$SOURCE_VOLUME:/workspace" \
+            "$CI_IMAGE_ID" \
+            /bin/bash -lc '
+              set -euo pipefail
+              bundle=/tmp/searchkernel.bundle
+              cat > "$bundle"
+              git clone --quiet "$bundle" /workspace
+              git -C /workspace checkout --quiet --detach "$EXPECTED_HEAD"
+              git -C /workspace config core.hooksPath .githooks
+              rm -f "$bundle"
+            '
+          rm -f "$bundle"
+
+          actual=$(docker run --rm \
+            -v "$SOURCE_VOLUME:/work" \
+            -w /work \
+            "$CI_IMAGE_ID" \
+            /bin/bash -lc 'git config --global --add safe.directory /work && git rev-parse HEAD')
 
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error::container copy expected $EXPECTED_HEAD, found $actual"
+            echo "::error::container snapshot expected $EXPECTED_HEAD, found $actual"
             exit 1
           fi
 
@@ -159,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker run --rm -i             --name "$CONTAINER_NAME"             --pids-limit=-1             -v "$SOURCE_VOLUME:/work"             -v "$TARGET_VOLUME:/cargo-target"             -v "$ARTIFACT_DIR:/artifacts"             -w /work             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e CI_TARGET="$CI_TARGET"             -e ABI_BASELINE_SHA="$ABI_BASELINE_SHA"             -e HEAD_REF="$HEAD_REF"             -e AUTOFIX_TOKEN="$AUTOFIX_TOKEN"             -e GH_TOKEN="$GH_TOKEN"             -e PR_NUMBER="$PR_NUMBER"             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY"             -e GITHUB_API_URL="$GITHUB_API_URL"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR=/cargo-target             "$CI_IMAGE"             /bin/bash -s <<'BASH'
+          docker run --rm -i             --name "$CONTAINER_NAME"             --pids-limit=-1             -v "$SOURCE_VOLUME:/work"             -v "$TARGET_VOLUME:/cargo-target"             -v "$ARTIFACT_DIR:/artifacts"             -w /work             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e CI_TARGET="$CI_TARGET"             -e ABI_BASELINE_SHA="$ABI_BASELINE_SHA"             -e HEAD_REF="$HEAD_REF"             -e AUTOFIX_TOKEN="$AUTOFIX_TOKEN"             -e GH_TOKEN="$GH_TOKEN"             -e PR_NUMBER="$PR_NUMBER"             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY"             -e GITHUB_API_URL="$GITHUB_API_URL"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR=/cargo-target             -e FLATBUFFERS_CPP_ROOT=/usr/local             -e FLATC_PATH=/usr/local/bin/flatc             -e CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             -e CXX=/opt/rh/gcc-toolset-15/root/usr/bin/g++             -e AR=/opt/rh/gcc-toolset-15/root/usr/bin/ar             -e RANLIB=/opt/rh/gcc-toolset-15/root/usr/bin/ranlib             -e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib             -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             "$CI_IMAGE_ID"             /bin/bash -s <<'BASH'
           set -euo pipefail
           trap 'chmod -R a+rwX /artifacts 2>/dev/null || true' EXIT
 
@@ -183,6 +211,15 @@ jobs:
           # No workflow is allowed to repair or mutate a host toolchain. These
           # are immutable image inputs; Cargo outputs and package caches live
           # only in this disposable container and its job-private target volume.
+          for compiler in /opt/rh/gcc-toolset-15/root/usr/bin/gcc /opt/rh/gcc-toolset-15/root/usr/bin/g++; do
+            [[ -x "$compiler" ]] || {
+              echo "required GCC 15 compiler is unavailable: $compiler" >&2
+              exit 1
+            }
+          done
+          [[ "$(/opt/rh/gcc-toolset-15/root/usr/bin/gcc -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 ]]
+          [[ "$(/opt/rh/gcc-toolset-15/root/usr/bin/g++ -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 ]]
+
           for cmd in cargo rustc rustfmt cargo-clippy c++ flatc python3 curl rg gh php ruby composer node npm ldd sha256sum nm readelf; do
             command -v "$cmd" >/dev/null 2>&1 || {
               echo "required CI-image command is unavailable from $CI_IMAGE: $cmd" >&2
@@ -308,6 +345,7 @@ jobs:
             tooling)
               run_phase dev-syntax bash -n dev
               run_phase dev-help bash dev help
+              run_phase dev-ci-image-contract bash tools/test-dev-ci-image.sh
               run_phase native-sdk-packaging bash tools/test-native-sdk-packaging.sh
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh

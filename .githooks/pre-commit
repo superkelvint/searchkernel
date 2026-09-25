@@ -4,101 +4,145 @@ set -euo pipefail
 ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
 PYTHON=$(bash "$ROOT/tools/resolve-python.sh")
-CARGO=$(bash "$ROOT/tools/resolve-rust.sh" cargo)
-export PYTHON CARGO
+export PYTHON
 
-if ! git diff --cached --quiet -- docs/capabilities.json; then
-    # Do not generate from a worktree version that differs from the staged source;
-    # otherwise the committed ledger and its generated views could describe
-    # different capability sets.
-    if ! git diff --quiet -- docs/capabilities.json; then
-        echo "pre-commit: stage all docs/capabilities.json changes before committing" >&2
+precommit_in_container=${SEARCHKERNEL_PRECOMMIT_IN_CONTAINER:-0}
+
+if [[ "$precommit_in_container" == "1" ]]; then
+    CARGO=$(bash "$ROOT/tools/resolve-rust.sh" cargo)
+    export CARGO
+
+    native_required=${SEARCHKERNEL_PRECOMMIT_NATIVE_REQUIRED:-false}
+    python_required=${SEARCHKERNEL_PRECOMMIT_PYTHON_REQUIRED:-false}
+    typescript_required=${SEARCHKERNEL_PRECOMMIT_TYPESCRIPT_REQUIRED:-false}
+    php_required=${SEARCHKERNEL_PRECOMMIT_PHP_REQUIRED:-false}
+    ruby_required=${SEARCHKERNEL_PRECOMMIT_RUBY_REQUIRED:-false}
+    protocol_required=${SEARCHKERNEL_PRECOMMIT_PROTOCOL_REQUIRED:-false}
+    api_conformance_required=${SEARCHKERNEL_PRECOMMIT_API_CONFORMANCE_REQUIRED:-false}
+    contracts_required=${SEARCHKERNEL_PRECOMMIT_CONTRACTS_REQUIRED:-false}
+    abi_required=${SEARCHKERNEL_PRECOMMIT_ABI_REQUIRED:-false}
+    persistence_required=${SEARCHKERNEL_PRECOMMIT_PERSISTENCE_REQUIRED:-false}
+    issue_queue_required=${SEARCHKERNEL_PRECOMMIT_ISSUE_QUEUE_REQUIRED:-false}
+    verification_required=${SEARCHKERNEL_PRECOMMIT_VERIFICATION_REQUIRED:-false}
+    python_native_e2e_required="$native_required"
+else
+    if ! git diff --cached --quiet -- docs/capabilities.json; then
+        # Do not generate from a worktree version that differs from the staged
+        # source; otherwise the committed ledger and its generated views could
+        # describe different capability sets.
+        if ! git diff --quiet -- docs/capabilities.json; then
+            echo "pre-commit: stage all docs/capabilities.json changes before committing" >&2
+            exit 1
+        fi
+
+        "$PYTHON" tools/check-capabilities.py --write
+        git add docs/CAPABILITIES.md LIMITATIONS.md
+    fi
+
+    selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-selection.XXXXXX")
+    untracked_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-untracked.XXXXXX")
+    trap 'rm -f -- "$selection" "$untracked_selection"' EXIT
+    git diff --cached --name-only --no-renames -z \
+        | "$PYTHON" .github/ci/exact_head.py classify --github-output "$selection" >/dev/null
+
+    lane_required() {
+        local lane=$1
+        grep -qx "$lane=true" "$selection"
+    }
+
+    native_required=false
+    python_required=false
+    typescript_required=false
+    php_required=false
+    ruby_required=false
+    protocol_required=false
+    api_conformance_required=false
+    contracts_required=false
+    abi_required=false
+    persistence_required=false
+    issue_queue_required=false
+    verification_required=false
+
+    lane_required native && native_required=true
+    lane_required python && python_required=true
+    lane_required typescript && typescript_required=true
+    lane_required php && php_required=true
+    lane_required ruby && ruby_required=true
+    lane_required protocol && protocol_required=true
+    lane_required api_conformance && api_conformance_required=true
+    lane_required contracts && contracts_required=true
+    lane_required abi && abi_required=true
+    lane_required persistence && persistence_required=true
+    lane_required issue_queue && issue_queue_required=true
+    lane_required verification && verification_required=true
+
+    # Lane selection is based on the staged tree while the container receives
+    # the working tree. Require them to agree for every tracked path.
+    if ! git diff --quiet; then
+        echo "pre-commit: tracked unstaged changes exist" >&2
+        echo "pre-commit: stage or revert them so verification matches the commit" >&2
         exit 1
     fi
 
-    "$PYTHON" tools/check-capabilities.py --write
-    git add docs/CAPABILITIES.md LIMITATIONS.md
-fi
+    # Relevant untracked files could influence the containerized build without
+    # being present in the commit. Scratch files that select no lane remain OK.
+    git ls-files --others --exclude-standard -z \
+        | "$PYTHON" .github/ci/exact_head.py classify --allow-local-scratch --github-output "$untracked_selection" >/dev/null
+    if grep -Eq '=true$' "$untracked_selection"; then
+        echo "pre-commit: behaviorally relevant untracked files exist" >&2
+        echo "pre-commit: add, remove, or ignore them so verification matches the commit" >&2
+        exit 1
+    fi
 
-selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-selection.XXXXXX")
-untracked_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-untracked.XXXXXX")
-trap 'rm -f -- "$selection" "$untracked_selection"' EXIT
-git diff --cached --name-only --no-renames -z \
-    | "$PYTHON" .github/ci/exact_head.py classify --github-output "$selection" >/dev/null
+    python_native_e2e_required="$native_required"
 
-lane_required() {
-    local lane=$1
-    grep -qx "$lane=true" "$selection"
-}
+    abi_authority_required=false
+    if [[ -n "$(git diff --cached --name-only --no-renames -- \
+        core/native/vespa/searchkernel_vespa.h \
+        core/native/vespa/manifest.json \
+        core/crates/searchkernel-vespa-bindings/src/abi.rs \
+        core/crates/searchkernel-vespa-bindings/src/bindings.rs \
+        reference/vespa/NATIVE_ABI_CONTRACT.h \
+        reference/vespa/PINNED_VESPA.json \
+        reference/vespa/m0/expected/01-native-open-close.json \
+        reference/vespa/m0/scenarios/01-native-open-close.json \
+        reference/vespa/phase9/expected/01-additive-handles.json)" ]]; then
+        abi_authority_required=true
+    fi
 
-native_required=false
-python_required=false
-typescript_required=false
-php_required=false
-ruby_required=false
-protocol_required=false
-api_conformance_required=false
-contracts_required=false
-abi_required=false
-persistence_required=false
-issue_queue_required=false
-verification_required=false
+    if [[ "$abi_authority_required" == true ]]; then
+        echo "pre-commit: checking staged native ABI authority agreement"
+        "$PYTHON" tools/check-native-abi-authorities.py --git-index
+    fi
 
-lane_required native && native_required=true
-lane_required python && python_required=true
-lane_required typescript && typescript_required=true
-lane_required php && php_required=true
-lane_required ruby && ruby_required=true
-lane_required protocol && protocol_required=true
-lane_required api_conformance && api_conformance_required=true
-lane_required contracts && contracts_required=true
-lane_required abi && abi_required=true
-lane_required persistence && persistence_required=true
-lane_required issue_queue && issue_queue_required=true
-lane_required verification && verification_required=true
+    # Repository hook regression fixtures intentionally execute the verifier
+    # body in-process with fake tools. Real developer commits always hand the
+    # complete verification body to one disposable searchkernel-ci container.
+    if [[ "${SEARCHKERNEL_PRECOMMIT_SELFTEST:-0}" != "1" &&
+          -f "$ROOT/Cargo.toml" ]]; then
+        [[ -f "$ROOT/tools/run-in-ci-image.sh" ]] || {
+            echo "pre-commit: canonical CI-image launcher is missing: tools/run-in-ci-image.sh" >&2
+            exit 1
+        }
+        echo "pre-commit: running build/test verification in searchkernel-ci"
+        SEARCHKERNEL_PRECOMMIT_NATIVE_REQUIRED="$native_required" \
+        SEARCHKERNEL_PRECOMMIT_PYTHON_REQUIRED="$python_required" \
+        SEARCHKERNEL_PRECOMMIT_TYPESCRIPT_REQUIRED="$typescript_required" \
+        SEARCHKERNEL_PRECOMMIT_PHP_REQUIRED="$php_required" \
+        SEARCHKERNEL_PRECOMMIT_RUBY_REQUIRED="$ruby_required" \
+        SEARCHKERNEL_PRECOMMIT_PROTOCOL_REQUIRED="$protocol_required" \
+        SEARCHKERNEL_PRECOMMIT_API_CONFORMANCE_REQUIRED="$api_conformance_required" \
+        SEARCHKERNEL_PRECOMMIT_CONTRACTS_REQUIRED="$contracts_required" \
+        SEARCHKERNEL_PRECOMMIT_ABI_REQUIRED="$abi_required" \
+        SEARCHKERNEL_PRECOMMIT_PERSISTENCE_REQUIRED="$persistence_required" \
+        SEARCHKERNEL_PRECOMMIT_ISSUE_QUEUE_REQUIRED="$issue_queue_required" \
+        SEARCHKERNEL_PRECOMMIT_VERIFICATION_REQUIRED="$verification_required" \
+            "$ROOT/dev" precommit-verify
+        exit $?
+    fi
 
-# Every verifier below runs against the working tree, while lane selection is
-# based on the staged tree. Refuse tracked unstaged changes for every commit so
-# an unstaged fix cannot make a broken staged snapshot look green.
-if ! git diff --quiet; then
-    echo "pre-commit: tracked unstaged changes exist" >&2
-    echo "pre-commit: stage or revert them so verification matches the commit" >&2
-    exit 1
-fi
-
-# Untracked source/tooling files can also affect working-tree builds without
-# being present in the commit. Reject only untracked paths that select at least
-# one behavioral lane; harmless scratch files remain allowed.
-git ls-files --others --exclude-standard -z \
-    | "$PYTHON" .github/ci/exact_head.py classify --allow-local-scratch --github-output "$untracked_selection" >/dev/null
-if grep -Eq '=true$' "$untracked_selection"; then
-    echo "pre-commit: behaviorally relevant untracked files exist" >&2
-    echo "pre-commit: add, remove, or ignore them so verification matches the commit" >&2
-    exit 1
-fi
-
-# The real Python gRPC E2E is part of native-sensitive verification. Keep it
-# on the same classifier boundary as the real-Vespa gate so non-native-only
-# Rust/Python changes do not unexpectedly require a Vespa SDK.
-python_native_e2e_required="$native_required"
-
-abi_authority_required=false
-if [[ -n "$(git diff --cached --name-only --no-renames -- \
-    core/native/vespa/searchkernel_vespa.h \
-    core/native/vespa/manifest.json \
-    core/crates/searchkernel-vespa-bindings/src/abi.rs \
-    core/crates/searchkernel-vespa-bindings/src/bindings.rs \
-    reference/vespa/NATIVE_ABI_CONTRACT.h \
-    reference/vespa/PINNED_VESPA.json \
-    reference/vespa/m0/expected/01-native-open-close.json \
-    reference/vespa/m0/scenarios/01-native-open-close.json \
-    reference/vespa/phase9/expected/01-additive-handles.json)" ]]; then
-    abi_authority_required=true
-fi
-
-if [[ "$abi_authority_required" == true ]]; then
-    echo "pre-commit: checking staged native ABI authority agreement"
-    "$PYTHON" tools/check-native-abi-authorities.py --git-index
+    CARGO=$(bash "$ROOT/tools/resolve-rust.sh" cargo)
+    export CARGO
 fi
 
 echo "pre-commit: enforcing canonical toolchain authorities"
