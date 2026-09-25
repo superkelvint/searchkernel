@@ -7,11 +7,13 @@ ARG CI_BASE_IMAGE
 FROM ${CI_BASE_IMAGE} AS runtime
 
 ARG VESPA_COMMIT
+ARG VESPA_BUNDLE_ID
 ARG TOOLCHAIN_ID
 
 LABEL org.opencontainers.image.source="https://github.com/superkelvint/searchkernel"
 LABEL io.searchkernel.toolchain-id="${TOOLCHAIN_ID}"
 LABEL io.searchkernel.vespa-commit="${VESPA_COMMIT}"
+LABEL io.searchkernel.vespa-bundle-id="${VESPA_BUNDLE_ID}"
 
 # Prove that the reusable base can rebuild the adapter from the exact Search
 # Kernel source revision being published. BuildKit cache mounts accelerate this
