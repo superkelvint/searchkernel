@@ -5,10 +5,12 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 DEV="$ROOT/dev"
 RUNNER="$ROOT/tools/run-in-ci-image.sh"
 HOOK="$ROOT/.githooks/pre-commit"
+COVERAGE="$ROOT/tools/coverage.sh"
 
 bash -n "$DEV"
 bash -n "$RUNNER"
 bash -n "$HOOK"
+bash -n "$COVERAGE"
 python3 -m py_compile "$ROOT/.github/ci/test_exact_head.py"
 
 python3 - "$DEV" "$RUNNER" "$HOOK" "$ROOT/.github/ci/test_exact_head.py" <<'PY'
@@ -98,6 +100,25 @@ if hook.index('"$ROOT/dev" precommit-verify') > hook.index('echo "pre-commit: ch
 
 print("dev/pre-commit CI-image source contract: PASS")
 PY
+
+for fragment in \
+    '"$CARGO" llvm-cov clean --workspace' \
+    '--workspace' \
+    '--all-targets' \
+    '--all-features' \
+    '--no-report' \
+    '--summary-only' \
+    'metadata.json' \
+    '"native_cpp_coverage": False'; do
+    grep -F -- "$fragment" "$COVERAGE" >/dev/null || {
+        echo "coverage runner is missing contract fragment: $fragment" >&2
+        exit 1
+    }
+done
+if grep -F -- 'cargo install' "$COVERAGE" >/dev/null; then
+    echo 'coverage endpoint must not install/mutate the immutable CI toolchain' >&2
+    exit 1
+fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-dev-image-test.XXXXXX")
 trap 'rm -rf -- "$tmp"' EXIT
