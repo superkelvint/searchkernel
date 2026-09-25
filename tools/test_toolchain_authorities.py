@@ -125,6 +125,11 @@ class ToolchainAuthorityTests(unittest.TestCase):
         ):
             self.assertTrue((ROOT / relative).is_file(), relative)
 
+    def test_python_selection_does_not_shadow_other_toolchains(self) -> None:
+        dev = read("dev")
+        self.assertIn('PYTHON=$(bash "$ROOT/tools/resolve-python.sh")', dev)
+        self.assertNotIn('PATH="$(dirname -- "$PYTHON"):$PATH"', dev)
+
     def test_critical_scripts_use_authorities_and_no_bare_tools(self) -> None:
         for relative, (required, forbidden) in CRITICAL_SCRIPTS.items():
             with self.subTest(relative=relative):
