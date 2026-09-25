@@ -96,6 +96,7 @@ class ManagedLocalHostTest(unittest.TestCase):
             clear=False,
         ):
             host, _process = self._host()
+            self.assertEqual(os.environ.get("LD_LIBRARY_PATH"), "/existing")
 
         popen = client_module.subprocess.Popen
         environment = popen.call_args.kwargs["env"]
@@ -103,7 +104,6 @@ class ManagedLocalHostTest(unittest.TestCase):
             environment.get("LD_LIBRARY_PATH"),
             "/exact/native-adapter/lib:/existing",
         )
-        self.assertEqual(os.environ.get("LD_LIBRARY_PATH"), "/existing")
         host.close(force=True)
 
     def test_finalizer_stops_daemon_and_removes_owned_resources(self):
