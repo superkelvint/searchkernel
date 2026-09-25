@@ -220,7 +220,7 @@ print(h.hexdigest())
 PY
 }
 
-ci_image_composite_id() {
+ci_image_environment_id() {
     local recipe=$1
     local toolchain_image_digest=$2
     local vespa_image_digest=$3
@@ -233,18 +233,18 @@ recipe = pathlib.Path(sys.argv[1])
 toolchain_image_digest = sys.argv[2]
 vespa_image_digest = sys.argv[3]
 if not recipe.is_file():
-    raise SystemExit(f"composite recipe does not exist: {recipe}")
+    raise SystemExit(f"CI environment recipe does not exist: {recipe}")
 for label, value in (
     ("toolchain", toolchain_image_digest),
     ("Vespa", vespa_image_digest),
 ):
     if "@sha256:" not in value:
         raise SystemExit(
-            f"composite identity requires immutable {label} image digest, found {value!r}"
+            f"CI environment identity requires immutable {label} image digest, found {value!r}"
         )
 
 h = hashlib.sha256()
-h.update(b"searchkernel-ci-composite-v2\0")
+h.update(b"searchkernel-ci-environment-v1\0")
 h.update(toolchain_image_digest.encode())
 h.update(b"\0")
 h.update(vespa_image_digest.encode())

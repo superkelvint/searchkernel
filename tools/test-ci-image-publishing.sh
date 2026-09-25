@@ -8,74 +8,60 @@ for script in \
     "$ROOT/tools/searchkernel-ci-image-common.sh" \
     "$ROOT/tools/publish-searchkernel-ci-toolchain.sh" \
     "$ROOT/tools/publish-searchkernel-ci-vespa.sh" \
-    "$ROOT/tools/publish-searchkernel-ci-image.sh"; do
+    "$ROOT/tools/publish-searchkernel-ci-image.sh" \
+    "$ROOT/tools/ensure-ci-vespa-volume.sh" \
+    "$ROOT/tools/run-in-ci-image.sh"; do
     bash -n "$script"
 done
 
 python3 - \
-    "$ROOT/dev" \
     "$ROOT/docker/searchkernel-ci-toolchain/Dockerfile" \
     "$ROOT/docker/searchkernel-ci-vespa/Dockerfile" \
-    "$ROOT/docker/searchkernel-ci/base.Dockerfile" \
     "$ROOT/docker/searchkernel-ci/Dockerfile" \
     "$ROOT/tools/searchkernel-ci-image-common.sh" \
     "$ROOT/tools/publish-searchkernel-ci-toolchain.sh" \
     "$ROOT/tools/publish-searchkernel-ci-vespa.sh" \
-    "$ROOT/tools/publish-searchkernel-ci-image.sh" <<'PY'
+    "$ROOT/tools/publish-searchkernel-ci-image.sh" \
+    "$ROOT/tools/ensure-ci-vespa-volume.sh" \
+    "$ROOT/tools/run-in-ci-image.sh" \
+    "$ROOT/.github/workflows/ci-image-runner.yml" <<'PY'
 from pathlib import Path
 import sys
 
 (
-    dev_path,
-    toolchain_dockerfile_path,
-    vespa_dockerfile_path,
-    base_dockerfile_path,
-    leaf_dockerfile_path,
+    toolchain_path,
+    vespa_path,
+    leaf_path,
     common_path,
     toolchain_publish_path,
     vespa_publish_path,
     leaf_publish_path,
+    ensure_volume_path,
+    local_runner_path,
+    workflow_path,
 ) = map(Path, sys.argv[1:])
 
-dev = dev_path.read_text(encoding="utf-8")
-toolchain = toolchain_dockerfile_path.read_text(encoding="utf-8")
-vespa = vespa_dockerfile_path.read_text(encoding="utf-8")
-base = base_dockerfile_path.read_text(encoding="utf-8")
-leaf = leaf_dockerfile_path.read_text(encoding="utf-8")
+toolchain = toolchain_path.read_text(encoding="utf-8")
+vespa = vespa_path.read_text(encoding="utf-8")
+leaf = leaf_path.read_text(encoding="utf-8")
 common = common_path.read_text(encoding="utf-8")
 toolchain_publish = toolchain_publish_path.read_text(encoding="utf-8")
 vespa_publish = vespa_publish_path.read_text(encoding="utf-8")
 leaf_publish = leaf_publish_path.read_text(encoding="utf-8")
-
-for fragment in (
-    "./dev image publish",
-    "./dev image toolchain publish",
-    "./dev image vespa publish",
-    "publish-searchkernel-ci-toolchain.sh",
-    "publish-searchkernel-ci-vespa.sh",
-):
-    if fragment not in dev:
-        raise SystemExit(f"dev image publishing surface is missing {fragment!r}")
+ensure_volume = ensure_volume_path.read_text(encoding="utf-8")
+local_runner = local_runner_path.read_text(encoding="utf-8")
+workflow = workflow_path.read_text(encoding="utf-8")
 
 for fragment in (
     "ARG BASE_IMAGE=",
-    "ARG NODE_VERSION=",
-    "ARG RUBY_VERSION=",
     "ARG RUST_TOOLCHAIN=",
     "ARG FLATBUFFERS_VERSION=",
-    "llvm-tools-preview",
     "cargo-llvm-cov",
-    "dnf install",
 ):
     if fragment not in toolchain:
         raise SystemExit(f"toolchain image is missing {fragment!r}")
 
-for forbidden in (
-    "ARG VESPA_COMMIT",
-    "searchkernel-native-base",
-    "searchkernel-native-toolchain",
-    "prepare-searchkernel-ci-native-context",
-):
+for forbidden in ("ARG VESPA_COMMIT", "searchkernel-native-base", "searchkernel-native-toolchain"):
     if forbidden in toolchain:
         raise SystemExit(f"toolchain image improperly depends on Vespa: {forbidden!r}")
 
@@ -85,141 +71,103 @@ for fragment in (
     "ARG VESPA_BUNDLE_ID",
     "searchkernel-native-base",
     "searchkernel-native-toolchain",
-    "io.searchkernel.vespa-commit",
-    "io.searchkernel.vespa-bundle-id",
 ):
     if fragment not in vespa:
         raise SystemExit(f"Vespa image is missing {fragment!r}")
-
-for forbidden in ("dnf install", "RUST_TOOLCHAIN", "RUBY_VERSION", "NODE_VERSION"):
-    if forbidden in vespa:
-        raise SystemExit(f"Vespa image improperly owns language tooling: {forbidden!r}")
 
 for fragment in (
     "ARG TOOLCHAIN_IMAGE",
     "ARG VESPA_IMAGE",
     "FROM ${VESPA_IMAGE} AS vespa",
-    "FROM ${TOOLCHAIN_IMAGE}",
-    "COPY --link --from=vespa",
-    "io.searchkernel.toolchain-id",
-    "io.searchkernel.vespa-commit",
+    "FROM ${TOOLCHAIN_IMAGE} AS runtime",
+    "RUN --mount=from=vespa",
+    "FROM runtime AS final",
+    "io.searchkernel.environment-id",
     "io.searchkernel.vespa-bundle-id",
-    "Composition-time compatibility gate",
-    "adapter_static_link_closure",
-    "cargo llvm-cov --version",
-):
-    if fragment not in base:
-        raise SystemExit(f"composite CI base is missing {fragment!r}")
-
-for fragment in (
-    "ARG CI_BASE_IMAGE",
-    "FROM ${CI_BASE_IMAGE} AS runtime",
-    "ARG VESPA_BUNDLE_ID",
-    "io.searchkernel.vespa-bundle-id",
-    "COPY --from=searchkernel-source",
-    "searchkernel-ci-publish-target",
-    "sharing=locked",
     "/opt/searchkernel/native-validation-pass",
 ):
     if fragment not in leaf:
         raise SystemExit(f"thin CI leaf is missing {fragment!r}")
 
 for forbidden in (
-    "dnf install",
-    "searchkernel-native-base",
-    "searchkernel-native-toolchain",
-    "vespaengine/vespa-dev-almalinux",
+    "COPY --from=vespa",
+    "COPY --link --from=vespa",
+    "CI_BASE_IMAGE",
+    "FROM ${TOOLCHAIN_IMAGE}\n\nCOPY",
 ):
     if forbidden in leaf:
-        raise SystemExit(f"thin CI leaf regressed into rebuilding a base input: {forbidden!r}")
+        raise SystemExit(f"CI leaf republishes Vespa payload: {forbidden!r}")
 
-if "searchkernel-ci-toolchain-v2" not in common or "rglob" not in common:
-    raise SystemExit("toolchain identity must hash the complete recipe and immutable base digest")
-if "ci_image_resolve_local_digest" not in common or "ci_image_pull_and_resolve_digest" not in common:
-    raise SystemExit("split-image publishing has no canonical tag-to-digest resolver")
-if "ci_image_require_clean_checkout" not in common:
-    raise SystemExit("publishers do not share a clean-checkout gate")
-if "ci_image_require_remote_main" not in common:
-    raise SystemExit("canonical :latest publication has no remote-main gate")
-if "searchkernel-ci-vespa-bundle-v1" not in common:
-    raise SystemExit("Vespa bundle identity must include the packaging/closure recipe")
-if "searchkernel-ci-vespa-producer-v1" not in common or "ci_image_vespa_producer_id" not in common:
-    raise SystemExit("Vespa producer identity must include the native SDK fingerprint")
-if 'root / "tools/prepare-searchkernel-ci-native-context.sh"' not in common:
-    raise SystemExit("Vespa bundle identity does not include native-context packaging")
+for fragment in (
+    "searchkernel-ci-toolchain-v2",
+    "searchkernel-ci-vespa-bundle-v1",
+    "searchkernel-ci-vespa-producer-v1",
+    "searchkernel-ci-environment-v1",
+    "ci_image_environment_id",
+    "ci_image_pull_and_resolve_digest",
+):
+    if fragment not in common:
+        raise SystemExit(f"shared image identity helpers are missing {fragment!r}")
 
 for fragment in (
     "superkelvint/searchkernel-ci-toolchain",
-    "io.searchkernel.toolchain-id",
-    "BASE_IMAGE=",
     "PINNED_BASE_IMAGE",
     "io.searchkernel.toolchain-base",
-    "ci_image_require_clean_checkout",
 ):
     if fragment not in toolchain_publish:
         raise SystemExit(f"toolchain publisher is missing {fragment!r}")
 
-if "prepare-searchkernel-ci-native-context.sh" in toolchain_publish:
-    raise SystemExit("toolchain publishing must not package or rebuild Vespa")
-
 for fragment in (
     "superkelvint/searchkernel-ci-vespa",
-    "prepare-searchkernel-ci-native-context.sh",
-    "ci_image_vespa_bundle_id",
-    'IMAGE_REF="$IMAGE:$VESPA_COMMIT-$VESPA_BUNDLE_ID"',
-    "io.searchkernel.vespa-commit",
-    "io.searchkernel.vespa-bundle-id",
-    "io.searchkernel.vespa-producer-id",
-    "ci_image_vespa_producer_id",
     "VESPA_PRODUCER_ID",
-    "ci_image_require_clean_checkout",
+    "io.searchkernel.vespa-producer-id",
 ):
     if fragment not in vespa_publish:
         raise SystemExit(f"Vespa publisher is missing {fragment!r}")
 
-for forbidden in ("searchkernel-ci-toolchain", "TOOLCHAIN_ID"):
-    if forbidden in vespa_publish:
-        raise SystemExit(f"Vespa publishing must be independent of CI language tooling: {forbidden!r}")
-
 for fragment in (
-    "superkelvint/searchkernel-ci-toolchain",
-    "superkelvint/searchkernel-ci-vespa",
-    'VESPA_REF="$VESPA_IMAGE:$VESPA_COMMIT-$VESPA_BUNDLE_ID"',
-    'COMPOSITE_REF="$IMAGE:base-$COMPOSITE_ID"',
-    "ci_image_vespa_bundle_id",
-    "ci_image_composite_id",
     "PINNED_TOOLCHAIN_REF",
     "PINNED_VESPA_REF",
-    "PINNED_COMPOSITE_REF",
-    "io.searchkernel.composite-id",
-    "io.searchkernel.toolchain-image-digest",
+    "CI_ENVIRONMENT_ID",
+    "ci_image_environment_id",
+    'TOOLCHAIN_IMAGE=$PINNED_TOOLCHAIN_REF',
+    'VESPA_IMAGE=$PINNED_VESPA_REF',
     "io.searchkernel.vespa-image-digest",
-    "io.searchkernel.composite-image-digest",
-    "BUILDKIT_CACHE_MOUNT_NS",
-    "ci_image_require_clean_checkout",
-    "ci_image_require_remote_main",
-    "tags beginning with 'base-' are reserved",
-    "Docker tag 'latest' is reserved",
-    "io.searchkernel.vespa-bundle-id",
-    "./dev image toolchain publish",
-    "./dev image vespa publish",
-    "Reusing published composite base.",
-    "CI_BASE_IMAGE=$PINNED_COMPOSITE_REF",
+    "Vespa remains external and is NOT republished",
 ):
     if fragment not in leaf_publish:
-        raise SystemExit(f"final image publisher is missing split-image behavior {fragment!r}")
+        raise SystemExit(f"leaf publisher is missing external-Vespa behavior {fragment!r}")
 
 for forbidden in (
-    "prepare-searchkernel-ci-native-context.sh",
-    "SEARCHKERNEL_CI_FULL_SDK",
-    "SEARCHKERNEL_CI_VESPA_ROOT",
+    "base.Dockerfile",
+    "COMPOSITE_REF",
+    "COMPOSITE_ID",
+    "ci_image_composite_id",
+    "COPY --link",
 ):
     if forbidden in leaf_publish:
-        raise SystemExit(
-            f"ordinary final-image publishing must not rebuild/repackage Vespa: {forbidden!r}"
-        )
+        raise SystemExit(f"leaf publisher still has composite-image behavior: {forbidden!r}")
 
-print("split CI image publishing contract: PASS")
+for fragment in (
+    'VOLUME="searchkernel-ci-vespa-',
+    "docker export",
+    "/opt/searchkernel/native-sdk-cache",
+    ".searchkernel-vespa-image-digest",
+    "flock 9",
+):
+    if fragment not in ensure_volume:
+        raise SystemExit(f"Vespa volume materializer is missing {fragment!r}")
+
+for surface, text in (("local runner", local_runner), ("CI workflow", workflow)):
+    for fragment in (
+        "ensure-ci-vespa-volume.sh",
+        "io.searchkernel.vespa-image-digest",
+        "/opt/searchkernel/native-sdk-cache:ro",
+    ):
+        if fragment not in text:
+            raise SystemExit(f"{surface} does not externalize Vespa correctly: missing {fragment!r}")
+
+print("external Vespa CI image publishing contract: PASS")
 PY
 
 python3 "$ROOT/tools/test_ci_image_identity.py"
