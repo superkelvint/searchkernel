@@ -42,6 +42,7 @@ class ManagedLocalHostTest(unittest.TestCase):
         binary = root / "searchkerneld"
         binary.touch()
         process = _Process()
+        process.stdout = tempfile.TemporaryFile()
         patches = (
             patch.object(client_module, "_host_binary", return_value=binary),
             patch.object(client_module.subprocess, "Popen", return_value=process),
@@ -64,16 +65,97 @@ class ManagedLocalHostTest(unittest.TestCase):
         popen = client_module.subprocess.Popen
 
         popen.assert_called_once()
-        self.assertEqual(popen.call_args.kwargs["stdout"], client_module.subprocess.DEVNULL)
-        self.assertEqual(popen.call_args.kwargs["stderr"], client_module.subprocess.DEVNULL)
+        self.assertEqual(popen.call_args.kwargs["stdout"], client_module.subprocess.PIPE)
+        self.assertEqual(popen.call_args.kwargs["stderr"], client_module.subprocess.STDOUT)
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        capture = host._output_capture
+        self.assertIsNotNone(capture)
+        assert capture is not None
+        self.assertTrue(capture._thread.daemon)
 
         with patch.object(client_module.os, "killpg") as killpg:
             host.close()
 
         killpg.assert_called_once_with(process.pid, signal.SIGINT)
+        self.assertTrue(process.stdout.closed)
         self.assertIsNone(host.process)
         self.assertFalse(host._finalizer)
+
+    def test_output_capture_drains_more_than_pipe_capacity_without_blocking(self):
+        process = client_module.subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "sys.stdout.buffer.write("
+                    "b'BEGIN SHOULD BE TRUNCATED\\n' + b'x' * 262144 + b'\\nPIPE TAIL\\n'"
+                    "); "
+                    "sys.stdout.buffer.flush()"
+                ),
+            ],
+            stdout=client_module.subprocess.PIPE,
+            stderr=client_module.subprocess.STDOUT,
+        )
+        self.assertIsNotNone(process.stdout)
+        assert process.stdout is not None
+        capture = client_module._ManagedHostOutputCapture(process.stdout)
+        try:
+            self.assertEqual(process.wait(timeout=5), 0)
+            output = capture.tail(wait_for_eof=True)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+            capture.close()
+
+        self.assertIn("PIPE TAIL", output)
+        self.assertNotIn("BEGIN SHOULD BE TRUNCATED", output)
+        self.assertLess(
+            len(output.encode("utf-8")),
+            client_module._MANAGED_HOST_OUTPUT_TAIL_BYTES + 128,
+        )
+
+    def test_startup_exit_reports_exit_code_and_bounded_daemon_output(self):
+        temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-host-failure-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        binary = root / "searchkerneld"
+        binary.touch()
+        process = _Process()
+        process.returncode = 127
+        captured = {}
+
+        def popen(*_args, **kwargs):
+            self.assertEqual(kwargs["stdout"], client_module.subprocess.PIPE)
+            output = tempfile.TemporaryFile()
+            output.write(
+                b"BEGIN SHOULD BE TRUNCATED\n"
+                + (b"x" * 20000)
+                + b"\nsearchkerneld: error while loading shared libraries: "
+                + b"libvespa_searchlib.so: cannot open shared object file\n"
+            )
+            output.seek(0)
+            process.stdout = output
+            captured["output"] = output
+            return process
+
+        with (
+            patch.object(client_module, "_host_binary", return_value=binary),
+            patch.object(client_module.subprocess, "Popen", side_effect=popen),
+            self.assertRaises(client_module.ClientError) as raised,
+        ):
+            client_module._ManagedLocalHost(root / "index", b"definition")
+
+        message = str(raised.exception)
+        self.assertIn("exit code 127", message)
+        self.assertIn("libvespa_searchlib.so", message)
+        self.assertNotIn("BEGIN SHOULD BE TRUNCATED", message)
+        self.assertLess(
+            len(message.encode("utf-8")),
+            client_module._MANAGED_HOST_OUTPUT_TAIL_BYTES + 512,
+        )
+        self.assertTrue(captured["output"].closed)
 
     def test_stale_legacy_sdk_directory_never_changes_runtime_loader_path(self):
         with patch.dict(os.environ, {"LD_LIBRARY_PATH": "/existing"}, clear=False):
@@ -110,6 +192,7 @@ class ManagedLocalHostTest(unittest.TestCase):
         host, process = self._host()
         definition_path = host.definition_path
         socket_directory = Path(host.socket_dir.name)
+        output = process.stdout
         finalizer = host._finalizer
         self.assertIsNotNone(finalizer)
         assert finalizer is not None
@@ -121,6 +204,7 @@ class ManagedLocalHostTest(unittest.TestCase):
         killpg.assert_called_once_with(process.pid, signal.SIGINT)
         self.assertFalse(definition_path.exists())
         self.assertFalse(socket_directory.exists())
+        self.assertTrue(output.closed)
         self.assertFalse(finalizer.alive)
 
 

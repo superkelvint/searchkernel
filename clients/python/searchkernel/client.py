@@ -8,12 +8,13 @@ import signal
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 import weakref
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from .grpc_transport import GrpcTransport, GrpcTransportError
 from .protocol import ERROR_TYPE, pack_object, pack_request, unpack_response
@@ -309,6 +310,8 @@ class ClientError(RuntimeError):
 
 SearchKernelError = ClientError
 
+_MANAGED_HOST_OUTPUT_TAIL_BYTES = 16 * 1024
+
 
 def _host_binary() -> Path:
     configured = os.environ.get("SEARCHKERNEL_LOCAL_HOST")
@@ -331,10 +334,64 @@ def _signal_managed_process(process: subprocess.Popen[bytes], signum: int) -> No
         process.send_signal(signum)
 
 
+class _ManagedHostOutputCapture:
+    def __init__(self, stream: BinaryIO):
+        self._stream = stream
+        self._tail = bytearray()
+        self._truncated = False
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(
+            target=self._drain,
+            name="searchkernel-daemon-output",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def _drain(self) -> None:
+        try:
+            while chunk := self._stream.read(8192):
+                with self._lock:
+                    self._tail.extend(chunk)
+                    overflow = len(self._tail) - _MANAGED_HOST_OUTPUT_TAIL_BYTES
+                    if overflow > 0:
+                        del self._tail[:overflow]
+                        self._truncated = True
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                self._stream.close()
+            except OSError:
+                pass
+
+    def tail(self, *, wait_for_eof: bool) -> str:
+        if wait_for_eof:
+            self._thread.join(timeout=1)
+        with self._lock:
+            data = bytes(self._tail)
+            truncated = self._truncated
+        text = data.decode("utf-8", errors="replace").rstrip()
+        if not text:
+            return ""
+        if truncated:
+            return (
+                f"[last {_MANAGED_HOST_OUTPUT_TAIL_BYTES} bytes of searchkerneld output]\n"
+                f"{text}"
+            )
+        return text
+
+    def close(self) -> None:
+        # The drain thread owns the pipe. Closing a buffered reader from another
+        # thread while read() is blocked can itself block on the reader lock.
+        # Process shutdown produces EOF, so only wait here and let _drain close it.
+        self._thread.join(timeout=1)
+
+
 def _cleanup_managed_local_host(
     process: subprocess.Popen[bytes] | None,
     definition_path: Path | None,
     socket_dir: tempfile.TemporaryDirectory,
+    output_capture: _ManagedHostOutputCapture | None,
     force: bool,
 ) -> None:
     if process is not None:
@@ -348,10 +405,12 @@ def _cleanup_managed_local_host(
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     pass
-        if process.stdout is not None:
+        if output_capture is None and process.stdout is not None:
             process.stdout.close()
         if process.stderr is not None:
             process.stderr.close()
+    if output_capture is not None:
+        output_capture.close()
     if definition_path is not None:
         definition_path.unlink(missing_ok=True)
     socket_dir.cleanup()
@@ -369,6 +428,7 @@ class _ManagedLocalHost:
         self.path = path
         self.definition_path: Path | None = None
         self.process: subprocess.Popen[bytes] | None = None
+        self._output_capture: _ManagedHostOutputCapture | None = None
         self._finalizer: weakref.finalize | None = None
         self.socket_dir = tempfile.TemporaryDirectory(prefix="searchkernel-socket-")
         self.socket_path = Path(self.socket_dir.name) / "searchkerneld.sock"
@@ -407,16 +467,20 @@ class _ManagedLocalHost:
                 command,
                 cwd=Path(__file__).resolve().parents[3],
                 env=environment,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+            if self.process.stdout is None:
+                raise ClientError("managed local host output capture was not created")
+            self._output_capture = _ManagedHostOutputCapture(self.process.stdout)
             self._finalizer = weakref.finalize(
                 self,
                 _cleanup_managed_local_host,
                 self.process,
                 self.definition_path,
                 self.socket_dir,
+                self._output_capture,
                 False,
             )
             self._wait_until_ready()
@@ -429,7 +493,18 @@ class _ManagedLocalHost:
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
-                raise ClientError("managed local host exited during startup")
+                output = (
+                    self._output_capture.tail(wait_for_eof=True)
+                    if self._output_capture is not None
+                    else ""
+                )
+                message = (
+                    "managed local host exited during startup "
+                    f"(exit code {self.process.returncode})"
+                )
+                if output:
+                    message = f"{message}\nsearchkerneld output:\n{output}"
+                raise ClientError(message)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
                 sock.settimeout(0.1)
                 try:
@@ -437,7 +512,15 @@ class _ManagedLocalHost:
                     return
                 except OSError:
                     time.sleep(0.05)
-        raise ClientError("managed local host did not open its gRPC socket")
+        output = (
+            self._output_capture.tail(wait_for_eof=False)
+            if self._output_capture is not None
+            else ""
+        )
+        message = "managed local host did not open its gRPC socket"
+        if output:
+            message = f"{message}\nsearchkerneld output:\n{output}"
+        raise ClientError(message)
 
     def close(self, *, force: bool = False) -> None:
         finalizer = self._finalizer
@@ -445,9 +528,16 @@ class _ManagedLocalHost:
             return
         if finalizer is not None:
             finalizer.detach()
-        _cleanup_managed_local_host(self.process, self.definition_path, self.socket_dir, force)
+        _cleanup_managed_local_host(
+            self.process,
+            self.definition_path,
+            self.socket_dir,
+            self._output_capture,
+            force,
+        )
         self.process = None
         self.definition_path = None
+        self._output_capture = None
         self._finalizer = None
 
 
