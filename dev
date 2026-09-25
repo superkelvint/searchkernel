@@ -692,7 +692,7 @@ worktree_create() {
 }
 
 find_flatc() {
-    bash "$ROOT/tools/resolve-flatc.sh"
+    bash "$ROOT/tools/resolve-flatbuffers.sh" flatc
 }
 
 doctor_rust() {
@@ -759,7 +759,7 @@ doctor_flatbuffers_cpp() {
     flatc=${DOCTOR_FLATC:-$(find_flatc)}
     [[ -x "${flatc:-}" ]] || return 1
 
-    cpp_root=${FLATBUFFERS_CPP_ROOT:-$(cd -- "$(dirname -- "$flatc")/.." && pwd)}
+    cpp_root=$(bash "$ROOT/tools/resolve-flatbuffers.sh" root)
     bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$cpp_root" "$EXPECTED_FLATBUFFERS_VERSION" "$flatc"
 }
 
