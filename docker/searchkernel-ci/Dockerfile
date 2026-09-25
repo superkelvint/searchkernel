@@ -222,7 +222,9 @@ RUN command -v rg \
     && command -v flatc \
     && command -v cmake \
     && command -v clang \
-    && c++ --version | head -n 1
+    && c++ --version | head -n 1 \
+    && test "$(c++ -dumpfullversion)" = 15.2.1 \
+    && test "$(c++ -print-file-name=libstdc++.so)" != libstdc++.so
 
 # Prove that the bundled base/toolchain can rebuild the adapter from the exact
 # Search Kernel source revision being published. The source exists only in this
