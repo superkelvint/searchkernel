@@ -858,7 +858,12 @@ doctor_repair_system_tools() {
     echo 'REPAIR system verification tools'
 
     if command -v dnf >/dev/null 2>&1; then
-        dnf install -y ripgrep clang python3-clang libclang
+        # ripgrep is provided by EPEL on the AlmaLinux 8 environment used by
+        # Search Kernel. Keep this package surface aligned with the CI image;
+        # there is no `libclang` RPM in that install path, and including it in
+        # the same transaction prevents dnf from installing rg at all.
+        dnf install -y epel-release
+        dnf install -y ripgrep clang python3-clang
     elif command -v apt-get >/dev/null 2>&1; then
         apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y ripgrep clang python3-clang libclang-dev
