@@ -31,4 +31,4 @@ done
 # Synthetic tests must declare every environment input they consume. Starting
 # from an empty environment prevents CI, developer shells, and nested tooling
 # from silently changing fixture semantics through ambient overrides.
-exec env -i "${assignments[@]}" "$@"
+exec /usr/bin/env -i "${assignments[@]}" "$@"
