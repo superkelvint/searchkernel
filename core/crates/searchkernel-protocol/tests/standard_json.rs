@@ -12,7 +12,7 @@ const RICH_REQUEST: &[u8] = br#"
       "id": "id:ns:type::1",
       "fields": [
         {"key":"text","value":{"kind_type":"StringValue","kind":{"value":"hello"}}},
-        {"key":"count","value":{"kind_type":"Int64Value","kind":{"value":9223372036854775807}}},
+        {"key":"count","value":{"kind_type":"Int64Value","kind":{"value":"9223372036854775807"}}},
         {"key":"raw","value":{"kind_type":"BytesValue","kind":{"value":[1,2,3]}}},
         {"key":"list","value":{"kind_type":"ValueList","kind":{"values":[{"kind_type":"BoolValue","kind":{"value":true}}]}}},
         {"key":"tensor","value":{"kind_type":"TensorValue","kind":{"type_spec":"tensor<float>(x[2])","payload_type":"DenseTensorValues","payload":{"values":[1.0,2.0]}}}}
@@ -84,7 +84,7 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
     };
     assert_eq!(
         field("count")["value"]["kind"]["value"],
-        9223372036854775807i64
+        "9223372036854775807"
     );
     assert_eq!(
         field("raw")["value"]["kind"]["value"],
@@ -98,6 +98,28 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
     let again =
         request_json_to_flatbuffer(&printed).expect("printed standard JSON remains readable");
     assert!(!again.is_empty());
+}
+
+#[test]
+fn standard_json_rejects_bare_64_bit_integer_scalars() {
+    let input = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_InsertRequest",
+      "payload": {
+        "document": {
+          "id": "id:ns:type::bare-int64",
+          "fields": [
+            {"key":"count","value":{"kind_type":"Int64Value","kind":{"value":9223372036854775807}}}
+          ]
+        }
+      }
+    }"#;
+
+    let error = request_json_to_flatbuffer(input).expect_err("bare int64 JSON must fail closed");
+    assert!(
+        error.to_string().contains("64-bit integer JSON values must be decimal strings"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
