@@ -51,7 +51,12 @@ start_host() {
   local grpc_port web_port
   grpc_port="$(free_port)"
   web_port="$(free_port)"
-  "$HOST" \
+  local host_ld_library_path="${LD_LIBRARY_PATH:-}"
+  if [[ -n "${SEARCHKERNEL_SDK_LIB:-}" ]]; then
+    host_ld_library_path="${SEARCHKERNEL_SDK_LIB}${host_ld_library_path:+:$host_ld_library_path}"
+  fi
+
+  LD_LIBRARY_PATH="$host_ld_library_path" "$HOST" \
     --index "$INDEX" \
     --listen "127.0.0.1:$grpc_port" \
     --web-listen "127.0.0.1:$web_port" \
