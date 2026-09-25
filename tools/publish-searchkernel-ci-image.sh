@@ -52,7 +52,7 @@ fi
     ci_image_die "SEARCHKERNEL_CI_PUSH_LATEST must be 0 or 1"
 
 if [[ "$PUSH_LATEST" == 1 ]]; then
-    ci_image_require_remote_main "$ROOT"
+    ci_image_require_main_checkout "$ROOT"
 fi
 
 ci_image_login
