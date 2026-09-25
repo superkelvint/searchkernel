@@ -394,6 +394,10 @@ jobs:
               run_phase nightly-universe ./dev universe
               ;;
 
+            nightly-coverage)
+              run_phase nightly-coverage env SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage ./dev coverage
+              ;;
+
             nightly-rust)
               run_phase nightly-format cargo fmt --all --check
               run_phase nightly-check cargo check --workspace --all-targets --no-default-features
@@ -531,6 +535,15 @@ jobs:
             echo "::error::CI container exited without executing the exact-head lane preflight"
             exit 1
           fi
+
+      - name: Upload nightly coverage
+        if: ${{ always() && inputs.target == 'nightly-coverage' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}-${{ github.job }}
+          path: ${{ env.ARTIFACT_DIR }}/coverage
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Upload nightly Clippy repair packet
         if: ${{ always() && inputs.target == 'nightly-rust' }}
