@@ -54,4 +54,19 @@ if bash "$RUNNER" NOT_AN_ASSIGNMENT -- true >/dev/null 2>&1; then
     exit 1
 fi
 
+poison_path="$tmp/poison-path"
+mkdir -p "$poison_path"
+cat >"$poison_path/env" <<'EOF'
+#!/usr/bin/env bash
+echo "poison env executable was selected" >&2
+exit 99
+EOF
+chmod +x "$poison_path/env"
+
+/bin/bash "$RUNNER" \
+    "PATH=/usr/bin:/bin" \
+    "HOME=$tmp/home" \
+    "TMPDIR=$tmp/tmp" \
+    -- /bin/bash -c '[[ "$PATH" == /usr/bin:/bin ]]'
+
 echo "hermetic test environment regression PASS"
