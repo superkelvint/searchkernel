@@ -3,13 +3,14 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 flatc_bin=$(bash "$repo_root/tools/resolve-flatc.sh")
+rustfmt_bin=$(bash "$repo_root/tools/resolve-rust.sh" rustfmt)
 generated_root=${SEARCHKERNEL_RUST_GENERATED_DIR:-"$repo_root/core/crates/searchkernel-protocol/src/generated"}
 
 # The output directory contains only FlatBuffers-generated files.
 mkdir -p "$generated_root"
 rm -rf "$generated_root/search_kernel"
 
-$flatc_bin \
+"$flatc_bin" \
     --rust \
     --rust-module-root-file \
     -o "$generated_root" \
@@ -17,10 +18,10 @@ $flatc_bin \
 
 generated_envelopes=$(mktemp -d)
 trap 'rm -rf "$generated_envelopes"' EXIT
-$flatc_bin --rust --rust-module-root-file --gen-all \
+"$flatc_bin" --rust --rust-module-root-file --gen-all \
     -o "$generated_envelopes/request" \
     "$repo_root/api/searchkernel_request.fbs"
-$flatc_bin --rust --rust-module-root-file --gen-all \
+"$flatc_bin" --rust --rust-module-root-file --gen-all \
     -o "$generated_envelopes/response" \
     "$repo_root/api/searchkernel_response.fbs"
 mkdir -p "$generated_root/search_kernel/protocol/v2"
@@ -39,11 +40,11 @@ for generated in \
 done
 
 # Keep checked-in generated code consistent with the repository's Rust style.
-rustfmt "$generated_root/mod.rs" \
+"$rustfmt_bin" "$generated_root/mod.rs" \
     "$generated_root/search_kernel/v2/"*_generated.rs \
     "$generated_root/search_kernel/protocol/v2/"*_generated.rs
 
 if [[ "$generated_root" == "$repo_root/core/crates/searchkernel-protocol/src/generated" ]]; then
-    rustfmt "$repo_root/core/crates/searchkernel-protocol/src/lib.rs" \
+    "$rustfmt_bin" "$repo_root/core/crates/searchkernel-protocol/src/lib.rs" \
         "$repo_root/core/crates/searchkernel-protocol/src/protocol.rs"
 fi
