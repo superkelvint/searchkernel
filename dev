@@ -127,6 +127,7 @@ Search Kernel development commands
   ./dev install flatbuffers   Build and install the pinned FlatBuffers toolchain
   ./dev native-sdk ensure     Resolve/build the immutable shared Vespa SDK
   ./dev native-sdk path       Print the SDK object selected for this worktree
+  ./dev image publish        Build/push the CI image and update :latest
   ./dev hooks install        Install the repository-managed Git hooks
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Repair and verify local build/verification prerequisites
@@ -664,6 +665,33 @@ native_sdk_command() {
     esac
 }
 
+image_command() {
+    local action=${1:-}
+    shift || true
+
+    case "$action" in
+        publish)
+            if (($# > 1)); then
+                echo 'usage: ./dev image publish [tag]' >&2
+                return 2
+            fi
+
+            echo 'Publishing Search Kernel CI image (commit tag + latest)'
+            if (($# == 1)); then
+                SEARCHKERNEL_CI_PUSH_LATEST=1 \
+                    bash "$ROOT/tools/publish-searchkernel-ci-image.sh" "$1"
+            else
+                SEARCHKERNEL_CI_PUSH_LATEST=1 \
+                    bash "$ROOT/tools/publish-searchkernel-ci-image.sh"
+            fi
+            ;;
+        *)
+            echo 'usage: ./dev image publish [tag]' >&2
+            return 2
+            ;;
+    esac
+}
+
 worktree_create() {
     local task_name=${1:-}
     local worktree_root repo_name branch path common_git_dir
@@ -1069,6 +1097,10 @@ case "${1:-help}" in
     native-sdk)
         shift
         native_sdk_command "${1:-ensure}"
+        ;;
+    image)
+        shift
+        image_command "$@"
         ;;
     worktree)
         [[ "${2:-}" == create ]] || {
