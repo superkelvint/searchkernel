@@ -140,7 +140,7 @@ impl IndexContext {
             return request_tensor_to_ir(tensor, path).map(FieldValueIr::Tensor);
         }
         let request = RequestValueIr::from_api(value, path.clone())?;
-        super::resolve::resolve_field_value(field, request, path)
+        super::resolve::resolve_field_value(field, request, path, self.definition.structs())
     }
 }
 

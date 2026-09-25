@@ -1815,6 +1815,10 @@ fn native_get_round_trips_composite_values_across_reopen() {
                         name: "active".to_owned(),
                         field_type: StructFieldType::Boolean,
                     },
+                    StructField {
+                        name: "score".to_owned(),
+                        field_type: StructFieldType::Float,
+                    },
                 ]),
             )
             .attribute(),
@@ -1844,14 +1848,16 @@ fn native_get_round_trips_composite_values_across_reopen() {
             ("active".to_owned(), ScalarValue::Boolean(true)),
             ("age".to_owned(), ScalarValue::Integer(37)),
             ("name".to_owned(), ScalarValue::String("Ada".to_owned())),
+            ("score".to_owned(), ScalarValue::Float(1.23456789)),
         ]),
         BTreeMap::from([
             ("active".to_owned(), ScalarValue::Boolean(false)),
             ("age".to_owned(), ScalarValue::Integer(85)),
             ("name".to_owned(), ScalarValue::String("Grace".to_owned())),
+            ("score".to_owned(), ScalarValue::Float(9.87654321)),
         ]),
     ]));
-    let location = FieldValue::Position(PositionValue::new(1.25, -2.5));
+    let location = FieldValue::Position(PositionValue::new(37.774929, -122.419416));
     let feature_access = FieldValue::Predicate(PredicateValue::new(BTreeMap::from([(
         "hobby".to_owned(),
         "music".to_owned(),
@@ -1902,6 +1908,119 @@ fn native_get_round_trips_composite_values_across_reopen() {
     reopened
         .close()
         .expect("close reopened composite GET engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_get_preserves_explicit_empty_collections_across_reopen() {
+    let config = temporary_path("empty-composite-get-config");
+    let data = temporary_path("empty-composite-get-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("marker", FieldType::String).attribute())
+        .field(Field::new("tags", FieldType::ArrayString).attribute())
+        .field(
+            Field::new(
+                "people",
+                FieldType::ArrayStruct(vec![StructField {
+                    name: "name".to_owned(),
+                    field_type: StructFieldType::String,
+                }]),
+            )
+            .attribute(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile empty composite GET config");
+
+    let engine = Engine::open(&data, &config).expect("open empty composite GET engine");
+    engine
+        .put(
+            Document::new("explicit-empty")
+                .field("marker", "present")
+                .field("tags", FieldValue::Array(ArrayValue::Strings(Vec::new())))
+                .field("people", FieldValue::Array(ArrayValue::Structs(Vec::new()))),
+        )
+        .expect("put explicit empty composite document");
+    engine
+        .put(Document::new("absent").field("marker", "present"))
+        .expect("put document with absent collection fields");
+    engine
+        .put(
+            Document::new("updated-empty")
+                .field("marker", "present")
+                .field(
+                    "tags",
+                    FieldValue::Array(ArrayValue::Strings(vec!["before".to_owned()])),
+                ),
+        )
+        .expect("put document before assigning empty array");
+    engine
+        .update(
+            DocumentUpdate::new("updated-empty")
+                .assign("tags", FieldValue::Array(ArrayValue::Strings(Vec::new()))),
+        )
+        .expect("assign explicit empty string array");
+    engine
+        .put(
+            Document::new("cleared-array")
+                .field("marker", "present")
+                .field(
+                    "tags",
+                    FieldValue::Array(ArrayValue::Strings(vec!["before".to_owned()])),
+                ),
+        )
+        .expect("put document before clearing array");
+    engine
+        .update(DocumentUpdate::new("cleared-array").clear("tags"))
+        .expect("clear string array");
+
+    let assert_presence = |engine: &Engine| {
+        let explicit = engine
+            .get("explicit-empty")
+            .expect("get explicit-empty document")
+            .expect("explicit-empty document exists");
+        assert_eq!(
+            explicit.fields().get("tags"),
+            Some(&FieldValue::Array(ArrayValue::Strings(Vec::new())))
+        );
+        assert_eq!(
+            explicit.fields().get("people"),
+            Some(&FieldValue::Array(ArrayValue::Structs(Vec::new())))
+        );
+
+        let absent = engine
+            .get("absent")
+            .expect("get absent document")
+            .expect("absent document exists");
+        assert!(!absent.fields().contains_key("tags"));
+        assert!(!absent.fields().contains_key("people"));
+
+        let updated = engine
+            .get("updated-empty")
+            .expect("get updated-empty document")
+            .expect("updated-empty document exists");
+        assert_eq!(
+            updated.fields().get("tags"),
+            Some(&FieldValue::Array(ArrayValue::Strings(Vec::new())))
+        );
+
+        let cleared = engine
+            .get("cleared-array")
+            .expect("get cleared-array document")
+            .expect("cleared-array document exists");
+        assert!(!cleared.fields().contains_key("tags"));
+    };
+
+    assert_presence(&engine);
+    engine.close().expect("close empty composite GET engine");
+
+    let reopened = Engine::open(&data, &config).expect("reopen empty composite GET engine");
+    assert_presence(&reopened);
+    reopened
+        .close()
+        .expect("close reopened empty composite GET engine");
+
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

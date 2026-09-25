@@ -2035,7 +2035,12 @@ pub fn resolve_document(context: &IndexContext, input: DocumentInput) -> Result<
     let mut fields = BTreeMap::new();
     for (name, value) in input.fields {
         let field = context.field_for_resolver(&name, format!("document.fields.{name}"))?;
-        let value = resolve_field_value(field, value, format!("document.fields.{name}"))?;
+        let value = resolve_field_value(
+            field,
+            value,
+            format!("document.fields.{name}"),
+            context.definition.structs(),
+        )?;
         fields.insert(field.name().clone(), value);
     }
     Ok(DocumentIr { id, fields })
@@ -2096,6 +2101,7 @@ pub fn resolve_patch(
                         schema_field,
                         value.clone(),
                         format!("{path}.set.value"),
+                        context.definition.structs(),
                     )?,
                 });
             }
@@ -2177,6 +2183,7 @@ pub fn resolve_update(
                         field,
                         value.clone(),
                         format!("{path}.operation.value"),
+                        context.definition.structs(),
                     )?,
                 })
             }
@@ -2240,6 +2247,7 @@ pub(crate) fn resolve_field_value(
     field: &crate::model::FieldIr,
     value: RequestValueIr,
     path: String,
+    structs: &[crate::model::NamedStructDefinitionIr],
 ) -> Result<FieldValueIr> {
     match field.data_type() {
         crate::model::DataTypeIr::Position => return resolve_position_value(value, path),
@@ -2257,8 +2265,20 @@ pub(crate) fn resolve_field_value(
         };
     }
     if let crate::model::DataTypeIr::Array(element) = field.data_type() {
-        let crate::model::DataTypeIr::Struct { fields } = element.as_ref() else {
-            return resolve_scalar_or_multi_value(field, value, path);
+        let fields = match element.as_ref() {
+            crate::model::DataTypeIr::Struct { fields } => fields.as_slice(),
+            crate::model::DataTypeIr::StructReference { name } => structs
+                .iter()
+                .find(|definition| definition.name == *name)
+                .map(|definition| definition.fields.as_slice())
+                .ok_or_else(|| {
+                    invalid(
+                        "unknown_struct",
+                        Some(path.clone()),
+                        format!("struct `{name}` is not declared"),
+                    )
+                })?,
+            _ => return resolve_scalar_or_multi_value(field, value, path),
         };
         let RequestValueIr::List(values) = value else {
             return Err(invalid(
