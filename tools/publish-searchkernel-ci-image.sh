@@ -45,6 +45,8 @@ fi
     ci_image_die "invalid Docker tag: $TAG"
 [[ "$TAG" != base-* ]] ||
     ci_image_die "Docker tags beginning with 'base-' are reserved for composite CI bases"
+[[ "$TAG" != latest ]] ||
+    ci_image_die "Docker tag 'latest' is reserved for canonical promotion; omit the tag and publish from current main"
 
 [[ "$PUSH_LATEST" == 0 || "$PUSH_LATEST" == 1 ]] ||
     ci_image_die "SEARCHKERNEL_CI_PUSH_LATEST must be 0 or 1"
@@ -173,6 +175,12 @@ fi
 # immutable image as the leaf base. This closes the tag-mutation race between
 # validation and the following Docker build.
 PINNED_COMPOSITE_REF="$(ci_image_pull_and_resolve_digest "$COMPOSITE_REF")"
+ci_image_require_label "$PINNED_COMPOSITE_REF" io.searchkernel.composite-id "$COMPOSITE_ID"
+ci_image_require_label "$PINNED_COMPOSITE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
+ci_image_require_label "$PINNED_COMPOSITE_REF" io.searchkernel.vespa-commit "$VESPA_COMMIT"
+ci_image_require_label "$PINNED_COMPOSITE_REF" io.searchkernel.vespa-bundle-id "$VESPA_BUNDLE_ID"
+ci_image_require_label "$PINNED_COMPOSITE_REF" io.searchkernel.toolchain-image-digest "$PINNED_TOOLCHAIN_REF"
+ci_image_require_label "$PINNED_COMPOSITE_REF" io.searchkernel.vespa-image-digest "$PINNED_VESPA_REF"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-image.XXXXXX")"
 cleanup() {
