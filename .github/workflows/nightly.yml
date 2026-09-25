@@ -5,156 +5,44 @@ on:
     - cron: "23 9 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: nightly-comprehensive
   cancel-in-progress: false
 
+
 jobs:
   rust:
     name: Rust all-target verification
-    runs-on: [self-hosted, linux, x64]
-    env:
-      CARGO_TARGET_DIR: target/ci-non-native
-      SEARCHKERNEL_BUILD_ENV: ci
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - uses: actions/checkout@v4
-      - name: Ensure runner Rust toolchain
-        run: bash .github/ci/ensure-runner-rust.sh rustfmt clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target/ci-non-native"
-          shared-key: non-native
-          cache-bin: false
-      - name: Cache pinned FlatBuffers toolchain
-        uses: actions/cache@v4
-        with:
-          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
-          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
-      - name: Ensure pinned FlatBuffers toolchain
-        run: ./dev install flatbuffers
-
-      - name: Formatting
-        run: cargo fmt --all --check
-
-      - name: Compile every non-native target
-        run: cargo check --workspace --all-targets --no-default-features
-
-      - name: Test Clippy diagnostic runner
-        run: python3 tools/test_run_clippy.py
-
-      - name: Clippy every non-native target
-        id: clippy
-        run: ./dev lint --profile rust-clippy-non-native --diagnostics-dir "$RUNNER_TEMP/clippy"
-
-      - name: Upload Clippy repair packet
-        if: ${{ always() && steps.clippy.outcome == 'failure' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: clippy-repair-${{ github.run_id }}-${{ github.job }}
-          path: ${{ runner.temp }}/clippy
-          if-no-files-found: ignore
-
-      - name: Test every non-native target
-        env:
-          SEARCHKERNEL_MODEL_STEPS: 250
-          SEARCHKERNEL_MODEL_SEEDS: 0x517a11,0x9e3779,0xd1ce42,0x4f1ab7,0xa50933,0xe2710d,0x6c8824,0xb342f0
-        run: cargo test --workspace --all-targets --no-default-features
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.sha }}
+      target: nightly-rust
+    secrets: inherit
 
   contracts:
     name: Contracts and generated artifacts
-    runs-on: [self-hosted, linux, x64]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Select runner Python
-        run: bash .github/ci/select-python.sh
-      - name: Enforce runner-Python workflow policy
-        run: bash .github/ci/check-python-workflows.sh
-
-      - name: Install Python client/codegen dependencies
-        run: $CI_PYTHON -m pip install -e 'clients/python[codegen]'
-
-      - name: Cache pinned FlatBuffers toolchain
-        uses: actions/cache@v4
-        with:
-          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
-          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Install pinned FlatBuffers toolchain
-        run: ./dev install flatbuffers
-
-      - name: Repository and semantic boundaries
-        run: |
-          bash tools/check-layout.sh
-          bash tools/check-ir-boundary.sh
-          "$CI_PYTHON" tools/check-search-semantic-entry-points.py
-          "$CI_PYTHON" tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
-          "$CI_PYTHON" tools/check-python-flatbuffers-boundary.py
-
-      - name: Generated protocol and RPC artifacts
-        run: |
-          bash tools/check-flatbuffers-bfbs.sh
-          bash tools/check-searchkernel-rpc.sh
-          bash tools/check-python-grpc.sh
-
-      - name: Client capability contracts
-        run: |
-          "$CI_PYTHON" tools/check-capabilities.py --check
-          "$CI_PYTHON" tools/check-client-contracts.py --check
-          "$CI_PYTHON" tools/test_check_capabilities.py
-          "$CI_PYTHON" tools/test_check_client_contracts.py
-
-      - name: Python client tests
-        run: $CI_PYTHON -m unittest discover -s clients/python/tests -p 'test_*.py'
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.sha }}
+      target: nightly-contracts
+    secrets: inherit
 
   client-e2e:
     name: Client executable E2E evidence
-    runs-on: [self-hosted, linux, x64]
-    env:
-      CARGO_TARGET_DIR: target/ci-nightly-e2e
-      SEARCHKERNEL_BUILD_ENV: ci
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - uses: actions/checkout@v4
-      - name: Ensure runner Rust toolchain
-        run: bash .github/ci/ensure-runner-rust.sh
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target/ci-nightly-e2e"
-          shared-key: nightly-e2e
-          cache-bin: false
-      - name: Select runner Python
-        run: bash .github/ci/select-python.sh
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Cache pinned FlatBuffers toolchain
-        uses: actions/cache@v4
-        with:
-          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
-          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
-      - name: Ensure pinned FlatBuffers toolchain
-        run: ./dev install flatbuffers
-
-      - name: Install clients
-        run: |
-          "$CI_PYTHON" -m pip install -e clients/python
-          npm ci --prefix clients/typescript
-
-      - name: Run executable client contract evidence
-        run: $CI_PYTHON tools/check-client-contracts.py --run-e2e
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.sha }}
+      target: nightly-client-e2e
+    secrets: inherit
 
   abi:
     name: ABI and native-cache regression tests
-    runs-on: [self-hosted, linux, x64]
-    env:
-      CARGO_TARGET_DIR: target/ci-nightly-abi
-      SEARCHKERNEL_BUILD_ENV: ci
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install libclang Python bindings
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libclang-dev python3-clang
-      - run: python3 tools/test_check_abi_surface.py
-      - run: bash tools/test-native-sdk-cache.sh
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.sha }}
+      target: nightly-abi
+    secrets: inherit
