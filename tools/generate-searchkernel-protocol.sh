@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-flatc_bin=$(bash "$repo_root/tools/resolve-flatc.sh")
+flatc_bin=$(bash "$repo_root/tools/resolve-flatbuffers.sh" flatc)
 rustfmt_bin=$(bash "$repo_root/tools/resolve-rust.sh" rustfmt)
 generated_root=${SEARCHKERNEL_RUST_GENERATED_DIR:-"$repo_root/core/crates/searchkernel-protocol/src/generated"}
 
