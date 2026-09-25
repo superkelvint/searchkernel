@@ -693,6 +693,7 @@ doctor_rust() {
     refresh_rust_tools
     "$CARGO" --version >/dev/null
     "$RUSTC" --version >/dev/null
+    "$CARGO" metadata --no-deps --format-version 1 >/dev/null
 }
 
 doctor_repair_rust() {
@@ -912,14 +913,15 @@ doctor_repair_searchkerneld() {
     if doctor_searchkerneld >/dev/null 2>&1; then
         return 0
     fi
-    echo 'REPAIR searchkerneld'
-    "$CARGO" build -p searchkerneld
+    echo 'REPAIR searchkerneld native build'
+    "$CARGO" build -p searchkerneld --features native
     doctor_searchkerneld
 }
 
 doctor_searchkerneld() {
     local target_dir=${CARGO_TARGET_DIR:-$ROOT/target/host}
     local binary=${SEARCHKERNELD_BIN:-$target_dir/debug/searchkerneld}
+    "$CARGO" build -p searchkerneld --features native --quiet
     [[ -x "$binary" ]]
 }
 
