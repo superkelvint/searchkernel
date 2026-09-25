@@ -52,6 +52,39 @@ verification, generation, and acceptance lanes:
 Use `./dev --help` for the supported command list. Direct underlying scripts
 are for focused debugging or when a contract explicitly names one.
 
+## Canonical toolchain authorities
+
+Repository tooling must not choose its own interpreter/compiler/runtime. Each
+multi-install toolchain has exactly one path authority:
+
+| Toolchain | Authority | Explicit overrides |
+| --- | --- | --- |
+| Python | `tools/resolve-python.sh` | `PYTHON`, then CI's `CI_PYTHON` |
+| Rust | `tools/resolve-rust.sh` | `CARGO`, `RUSTC`, `RUSTFMT` |
+| Node.js | `tools/resolve-node.sh` | `NODE`, `NPM` |
+| FlatBuffers | `tools/resolve-flatbuffers.sh` | `FLATC_PATH`, `FLATBUFFERS_CPP_ROOT` |
+| Native SDK | `tools/resolve-native-sdk.sh` | `SK_NATIVE_SDK`, `SK_NATIVE_TARGET` |
+
+The compatibility wrapper `tools/resolve-flatc.sh` delegates to the canonical
+FlatBuffers resolver and must contain no selection logic of its own.
+
+Critical repository scripts must call these authorities instead of invoking bare
+`python3`, `cargo`, `rustc`, `rustfmt`, `node`, `npm`, or `flatc`.
+For paired tools, the authority also owns pairing: npm is resolved alongside the
+selected Node.js installation, and Cargo/Rustc/Rustfmt are exported as one Rust
+toolchain view.
+
+`tools/test_toolchain_authorities.py` is the fail-closed architectural guard.
+It runs in pre-commit, `./dev check-fast`, `./dev doctor`, and the always-on
+CI tooling lane. Reintroducing a direct tool invocation in a protected path is a
+test failure, not a convention violation.
+
+Doctor must verify the same downstream paths used by normal checks. It therefore
+runs protocol-generation reproducibility, TypeScript generation, FlatBuffers C++
+compile/link validation, Cargo metadata, and a real native `searchkerneld`
+build. A green doctor means those execution paths are usable, not merely that
+similarly named binaries exist somewhere on PATH.
+
 ## Normal development
 
 Run the prerequisite check first when setting up a checkout or diagnosing an
@@ -77,9 +110,9 @@ base; Cargo watches that receipt and rebuilds only the local adapter after an
 automatic base refresh. `cargo clean` is not required.
 
 A fresh or isolated worktree is not expected to already contain a built
-`searchkerneld` binary. If `./dev doctor` reports it as informational,
-build it with `cargo build -p searchkerneld`.
-
+`searchkerneld` binary. `./dev doctor` now builds the native daemon through the
+canonical Rust/native-SDK authorities, so a successful doctor run proves that
+the native compile/link path works. Manual builds remain useful for focused work:
 
 ```bash
 cargo build -p searchkerneld
@@ -244,12 +277,10 @@ gRPC sources remain reproducible by requiring the exact codegen stack:
 `grpcio-tools==1.84.0` and `protobuf==7.35.1`. These exact codegen pins do
 not narrow the Python client's runtime protobuf compatibility range.
 
-The repository has one Python toolchain authority: `tools/resolve-python.sh`.
-`./dev` and Python generation/check scripts must resolve their interpreter
-through it; they must not invoke a bare `python3` for repository Python
-tooling. The resolver honors an explicit `PYTHON` override, otherwise reuses
-the repository `venv/` when present, and only then falls back to system
-`python3`.
+Python follows the repository-wide toolchain-authority contract above.
+`tools/resolve-python.sh` honors `PYTHON` (or CI's selected `CI_PYTHON`),
+then a healthy repository `venv/`, and finally a usable system Python >=3.10.
+Python generation/check scripts must not invoke a bare `python3`.
 
 Because `./dev doctor` verifies the same protocol-generation path used by
 `./dev check`, doctor installs the `codegen` extra when needed. Developers
@@ -320,10 +351,10 @@ Use:
 ./dev native-sdk ensure
 ```
 
-`./dev doctor` does not build native artifacts. Native SDK / ABI / pinned
-Vespa readiness is informational for ordinary non-native development and becomes
-a prerequisite only when the requested verification actually uses the native
-feature.
+`./dev doctor` validates the selected native SDK and performs a real
+`searchkerneld --features native` build. The pinned Vespa source checkout itself
+remains optional when a valid explicit or published SDK/toolchain is available;
+source-checkout registration is only needed to rebuild or provision a base.
 
 The resolver first checks the machine-global base and registered toolchain
 keyed by the checked-in Vespa checkout hash. Normal agent clones therefore need
