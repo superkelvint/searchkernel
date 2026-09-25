@@ -1124,7 +1124,7 @@
               "runtime": "shared",
               "kind": "conformance",
               "path": "clients/typescript/tests/results.test.ts",
-              "line": 273
+              "line": 301
             }
           ],
           "overrides": []
