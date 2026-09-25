@@ -33,7 +33,7 @@ if "Configured repository-managed Git hooks at .githooks' >&2" not in dev:
     raise SystemExit("dev hook auto-configuration must not contaminate machine-readable stdout")
 
 for command in (
-    "check|universe|check-fast|check-protocol|lint|test|verify|precommit-verify",
+    "check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify",
     "SEARCHKERNEL_DEV_USE_CI_IMAGE",
     "SEARCHKERNEL_IN_CI_IMAGE",
     "/opt/searchkernel/native-validation-pass",
@@ -62,6 +62,10 @@ required_runner = (
     "-e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc",
     "-e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib",
     "-e SEARCHKERNEL_IN_CI_IMAGE=1",
+    '[[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1',
+    'artifact_volume="searchkernel-dev-artifacts-',
+    "-e SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage",
+    'tar -C /artifacts -cf - coverage | tar -C "$ROOT" -xf -',
 )
 for fragment in required_runner:
     if fragment not in runner:
