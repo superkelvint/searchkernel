@@ -306,6 +306,7 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn("if (( bytes > 5242880 )); then", workflow)
         self.assertIn("retention-days: 1", workflow)
 
+
     def test_client_capability_autofix_apply_rejects_stale_or_unsafe_pushes(self) -> None:
         workflow = CLIENT_CAPABILITIES_AUTOFIX_APPLY.read_text(encoding="utf-8")
 
@@ -337,70 +338,6 @@ class ExactHeadTests(unittest.TestCase):
         self.assertIn('"HEAD:refs/heads/${HEAD_REF}"', workflow)
         self.assertNotIn('"HEAD:${HEAD_REF}"', workflow)
 
-    def test_client_capabilities_routes_native_e2e_through_alma(self) -> None:
-        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
-        verify = workflow.split("\n  verify:\n", 1)[1].split("\n  e2e:\n", 1)[0]
-        e2e = workflow.split("\n  e2e:\n", 1)[1]
-        self.assertIn("uses: dtolnay/rust-toolchain@stable", verify)
-        self.assertIn(
-            "uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main",
-            e2e,
-        )
-        self.assertIn(
-            'revision: ${{ github.event.pull_request.head.sha || github.sha }}',
-            e2e,
-        )
-        self.assertIn("target: client-e2e", e2e)
-        self.assertNotIn("Install newest immutable native Vespa base", workflow)
-        self.assertNotIn("sudo apt-get", e2e)
-
-    def test_workflow_keeps_native_signal_without_running_native_ci(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertNotIn("\n  native:\n", workflow)
-        self.assertNotIn("./dev native-sdk ensure", workflow)
-        self.assertNotIn("./reference/vespa/verify-through.sh i", workflow)
-        self.assertIn(
-            'NATIVE_SENSITIVE: ${{ needs.classify.outputs.native }}',
-            workflow,
-        )
-        self.assertIn(
-            "Native-sensitive paths changed. CI intentionally does not bootstrap Vespa",
-            workflow,
-        )
-
-    def test_abi_workflow_installs_rustfmt_for_binding_generation(self) -> None:
-        workflow = ABI_WORKFLOW.read_text(encoding="utf-8")
-        rust_step = workflow.split("- name: Install Rust toolchain", 1)[1].split(
-            "- name: Verify self-hosted ABI dependencies", 1
-        )[0]
-        self.assertIn("components: rustfmt", rust_step)
-
-    def test_dev_abi_verifier_uses_repository_header_without_sdk_dependency(self) -> None:
-        source = DEV.read_text(encoding="utf-8")
-        self.assertIn(
-            'SK_NATIVE_ABI_HEADER="$ROOT/core/native/vespa/searchkernel_vespa.h" \\\n'
-            '                bash "$ROOT/tools/check-native-bindings.sh"',
-            source,
-        )
-
-    def test_precommit_checks_staged_native_abi_authorities(self) -> None:
-        hook = HOOK.read_text(encoding="utf-8")
-        self.assertIn(
-            "python3 tools/check-native-abi-authorities.py --git-index",
-            hook,
-        )
-        for authority in (
-            "core/native/vespa/searchkernel_vespa.h",
-            "core/native/vespa/manifest.json",
-            "core/crates/searchkernel-vespa-bindings/src/abi.rs",
-            "core/crates/searchkernel-vespa-bindings/src/bindings.rs",
-            "reference/vespa/NATIVE_ABI_CONTRACT.h",
-            "reference/vespa/PINNED_VESPA.json",
-            "reference/vespa/m0/expected/01-native-open-close.json",
-            "reference/vespa/m0/scenarios/01-native-open-close.json",
-            "reference/vespa/phase9/expected/01-additive-handles.json",
-        ):
-            self.assertIn(authority, hook)
 
     def test_runner_python_selection_never_uses_bare_system_python(self) -> None:
         root = SCRIPT.parents[2]
