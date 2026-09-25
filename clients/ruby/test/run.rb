@@ -117,8 +117,17 @@ end
 include TestSupport
 
 portable = SearchKernel::Value
-same(2**64 - 1, portable.decode(portable.encode(portable.uint64(2**64 - 1))), "uint64 boundary")
-same(-(2**63), portable.decode(portable.encode(-(2**63))), "int64 boundary")
+u64_boundary = portable.encode(portable.uint64(2**64 - 1))
+i64_min_boundary = portable.encode(-(2**63))
+i64_max_boundary = portable.encode(2**63 - 1)
+same("18446744073709551615", u64_boundary.fetch("kind").fetch("value"), "uint64 JSON uses decimal text")
+same("-9223372036854775808", i64_min_boundary.fetch("kind").fetch("value"), "int64 min JSON uses decimal text")
+same("9223372036854775807", i64_max_boundary.fetch("kind").fetch("value"), "int64 max JSON uses decimal text")
+same(2**64 - 1, portable.decode(u64_boundary), "uint64 boundary")
+same(-(2**63), portable.decode(i64_min_boundary), "int64 boundary")
+same(2**63 - 1, portable.decode(i64_max_boundary), "int64 max boundary")
+same(true, JSON.generate(u64_boundary).include?('"value":"18446744073709551615"'),
+     "Ruby HTTP JSON keeps uint64 max quoted")
 same("\x00\xff".b, portable.decode(portable.encode(portable.bytes("\x00\xff".b))), "bytes retain octets")
 same([{"key" => [nil, true, 3.0]}], portable.decode(portable.encode([{"key" => [nil, true, 3.0]}])), "nested values")
 unicode_object = {"😀" => 4, "é" => 3, "z" => 2, "a" => 1}
@@ -328,6 +337,14 @@ same(false, SearchKernel::Results::SearchResults.new({"coverage" => {"full" => {
      "present OptionalBool retains omitted default false")
 same(nil, SearchKernel::Results::SearchResults.new({"coverage" => {}}).coverage.full,
      "absent OptionalBool differs from present false")
+integer_result = SearchKernel::Results::SearchResults.new(
+  "total_hits" => {"value" => "18446744073709551615", "relation" => "LowerBound"},
+  "coverage" => {"documents" => {"value" => "18446744073709551615"}},
+  "errors" => [{"code" => "-9223372036854775808", "message" => "boundary"}]
+)
+same(2**64 - 1, integer_result.total_hits, "total hits decode canonical uint64 text")
+same(2**64 - 1, integer_result.coverage.documents, "coverage decodes canonical uint64 text")
+same(-(2**63), integer_result.errors.first.code, "result errors decode canonical int64 text")
 same("SearchKernel_V2_SearchRequest", recording.last_request["payload_type"], "client uses centralized operation mapping")
 raw = { "protocol_version" => 2, "payload_type" => "Custom", "payload" => {} }
 same(recording.execute(raw), client.execute_raw(raw), "raw envelope escape hatch delegates unchanged")

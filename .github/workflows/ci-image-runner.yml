@@ -350,6 +350,7 @@ jobs:
               run_phase dev-syntax bash -n dev
               run_phase dev-help bash dev help
               run_phase dev-ci-image-contract bash tools/test-dev-ci-image.sh
+              run_phase ci-image-publishing-contract bash tools/test-ci-image-publishing.sh
               run_phase native-sdk-packaging bash tools/test-native-sdk-packaging.sh
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
@@ -447,7 +448,6 @@ jobs:
           print(f"Coverage evidence PASS for exact head {expected_head}.")
           PY
               ;;
-
             nightly-rust)
               run_phase nightly-format cargo fmt --all --check
               run_phase nightly-check cargo check --workspace --all-targets --no-default-features
@@ -596,7 +596,6 @@ jobs:
           # Current-head coverage validates every required file inside the lane.
           if-no-files-found: warn
           retention-days: 30
-
       - name: Upload nightly Clippy repair packet
         if: ${{ always() && inputs.target == 'nightly-rust' }}
         uses: actions/upload-artifact@v4

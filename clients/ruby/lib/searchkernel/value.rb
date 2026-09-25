@@ -35,8 +35,8 @@ module SearchKernel
       kind, payload = case item
       when nil then ["NullValueValue", { "value" => "Null" }]
       when true, false then ["BoolValue", { "value" => item }]
-      when UInt then ["UInt64Value", { "value" => check_integer(item.value, UINT64) }]
-      when Integer then ["Int64Value", { "value" => check_integer(item, INT64) }]
+      when UInt then ["UInt64Value", { "value" => check_integer(item.value, UINT64).to_s }]
+      when Integer then ["Int64Value", { "value" => check_integer(item, INT64).to_s }]
       when Float
         raise ArgumentError, "non-finite request float" unless item.finite?
         ["Float64Value", { "value" => item }]
@@ -66,8 +66,8 @@ module SearchKernel
         value = payload.fetch("value", false) # FlatBuffers omits default false.
         raise ProtocolError, "invalid BoolValue" unless value == true || value == false
         value
-      when "Int64Value" then integer!(payload.fetch("value", 0), INT64)
-      when "UInt64Value" then integer!(payload.fetch("value", 0), UINT64)
+      when "Int64Value" then decimal_integer!(payload.fetch("value", "0"), INT64)
+      when "UInt64Value" then decimal_integer!(payload.fetch("value", "0"), UINT64)
       when "Float64Value" then finite!(payload.fetch("value", 0.0))
       when "NonFiniteFloatValue"
         NON_FINITE.fetch(payload["kind"]) { raise ProtocolError, "unknown non-finite float kind" }
@@ -127,6 +127,15 @@ module SearchKernel
     def integer!(value, range)
       raise ProtocolError, "invalid portable integer" unless value.is_a?(Integer) && range.cover?(value)
       value
+    end
+
+    def decimal_integer!(value, range)
+      unless value.is_a?(String) && value.match?(/\A-?(?:0|[1-9][0-9]*)\z/)
+        raise ProtocolError, "invalid portable 64-bit decimal string"
+      end
+      integer = Integer(value, 10)
+      raise ProtocolError, "portable 64-bit integer out of range" unless range.cover?(integer)
+      integer
     end
 
     def finite!(value)

@@ -487,7 +487,7 @@ final class Query
             if (!is_int($weight)) {
                 throw new InvalidArgumentException('weighted query weights must be integers');
             }
-            $weighted[] = ['key' => Protocol::value($key), 'weight' => $weight];
+            $weighted[] = ['key' => Protocol::value($key), 'weight' => (string) $weight];
         }
         usort(
             $weighted,
