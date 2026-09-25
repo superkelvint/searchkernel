@@ -91,7 +91,7 @@ same(["min"], request.dig("filters", "textual", 1, "bindings").map { |entry| ent
 same(3, request.dig("offset", "value"), "page computes offset")
 same(3, request.dig("limit", "value"), "page sets limit")
 same("Asc", request.dig("sort", 0, "direction"), "sort direction")
-same(%w[price title], request.dig("presentation", "fields", "fields"), "projection fields retained")
+same(%w[title price], request.dig("presentation", "fields", "fields"), "projection fields retain caller order")
 same(["title"], request.dig("presentation", "highlighting", "fields"), "highlight fields retained")
 assert(search.execute.is_a?(SearchKernel::Results::SearchResults), "search executes into canonical SearchResults")
 
