@@ -24,7 +24,7 @@ selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-selection.XXXXXX")
 untracked_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-untracked.XXXXXX")
 trap 'rm -f -- "$selection" "$untracked_selection"' EXIT
 git diff --cached --name-only --no-renames -z \
-    | python3 .github/ci/exact_head.py classify --github-output "$selection" >/dev/null
+    | "$PYTHON" .github/ci/exact_head.py classify --github-output "$selection" >/dev/null
 
 lane_required() {
     local lane=$1
@@ -70,7 +70,7 @@ fi
 # being present in the commit. Reject only untracked paths that select at least
 # one behavioral lane; harmless scratch files remain allowed.
 git ls-files --others --exclude-standard -z \
-    | python3 .github/ci/exact_head.py classify --allow-local-scratch --github-output "$untracked_selection" >/dev/null
+    | "$PYTHON" .github/ci/exact_head.py classify --allow-local-scratch --github-output "$untracked_selection" >/dev/null
 if grep -Eq '=true$' "$untracked_selection"; then
     echo "pre-commit: behaviorally relevant untracked files exist" >&2
     echo "pre-commit: add, remove, or ignore them so verification matches the commit" >&2
@@ -115,7 +115,7 @@ echo "pre-commit: running workspace unit tests"
 
 if [[ "$verification_required" == true && "${SEARCHKERNEL_PRECOMMIT_SELFTEST:-0}" != "1" ]]; then
     echo "pre-commit: verification tooling changed; running selector/hook regressions"
-    SEARCHKERNEL_PRECOMMIT_SELFTEST=1 python3 .github/ci/test_exact_head.py
+    SEARCHKERNEL_PRECOMMIT_SELFTEST=1 "$PYTHON" .github/ci/test_exact_head.py
 fi
 
 if [[ "$protocol_required" == true ]]; then
