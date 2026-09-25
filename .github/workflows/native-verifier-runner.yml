@@ -361,6 +361,29 @@ jobs:
             env -u GH_TOKEN "$@"
           }
 
+          build_native_searchkerneld() {
+            local phase=$1
+            local cargo_messages
+            cargo_messages=$(mktemp)
+
+            if ! run_native_phase "$phase" bash -c '
+              set -euo pipefail
+              cargo build -p searchkerneld --features native \
+                --message-format=json-render-diagnostics | tee "$1"
+            ' _ "$cargo_messages"; then
+              rm -f "$cargo_messages"
+              return 1
+            fi
+
+            if ! NATIVE_ADAPTER_LIB=$(python3 .github/ci/resolve-native-adapter-lib.py \
+              "$cargo_messages" "$CARGO_TARGET_DIR"); then
+              rm -f "$cargo_messages"
+              return 1
+            fi
+            rm -f "$cargo_messages"
+            export NATIVE_ADAPTER_LIB
+          }
+
           run_native_phase native-sdk ./dev native-sdk ensure
 
           if [[ "$VERIFIER_TARGET" == "closure-422" ]]; then
@@ -399,13 +422,14 @@ jobs:
                 echo "required client E2E command is unavailable: php" >&2
                 exit 1
               }
-              run_native_phase client-e2e-build cargo build -p searchkerneld --features native
+              build_native_searchkerneld client-e2e-build
               run_native_phase client-e2e-run env \
                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld" \
+                SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB" \
                 python3 tools/check-client-contracts.py --run-e2e
               ;;
             closure-422)
-              run_native_phase closure-422-build cargo build -p searchkerneld --features native
+              build_native_searchkerneld closure-422-build
               daemon="$CARGO_TARGET_DIR/debug/searchkerneld"
               [[ -x "$daemon" ]] || {
                 echo "closure-422 did not produce native searchkerneld: $daemon" >&2
@@ -420,6 +444,7 @@ jobs:
               python3 tools/check-python-dependencies.py
               run_native_phase closure-422-php-e2e env \
                 SEARCHKERNEL_LOCAL_HOST="$daemon" \
+                SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB" \
                 bash clients/php/examples/run_searchkernel_client_api_e2e.sh
               ;;
             *)
