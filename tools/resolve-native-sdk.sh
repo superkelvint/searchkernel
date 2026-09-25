@@ -2,7 +2,9 @@
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-TARGET=${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}
+PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
+RUSTC_BIN=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
+TARGET=${SK_NATIVE_TARGET:-$("$RUSTC_BIN" -vV | sed -n 's/^host: //p')}
 BUILD_ENV=${SEARCHKERNEL_BUILD_ENV:-host}
 MODE=${1:-ensure}
 unset VESPA_LIBRARY_ROOT
@@ -14,7 +16,7 @@ esac
 
 [[ -n "$TARGET" ]] || { echo "could not determine Rust target; set SK_NATIVE_TARGET" >&2; exit 1; }
 
-PINNED_VESPA_COMMIT=$(python3 - "$ROOT/core/native/vespa/manifest.json" <<'PY'
+PINNED_VESPA_COMMIT=$("$PYTHON_BIN" - "$ROOT/core/native/vespa/manifest.json" <<'PY'
 import json
 import sys
 with open(sys.argv[1], encoding="utf-8") as stream:
@@ -60,7 +62,7 @@ has_published_install() {
 
 artifact_generation_from_url() {
     local url=$1
-    python3 - "$url" <<'PY'
+    "$PYTHON_BIN" - "$url" <<'PY'
 import re
 import sys
 from urllib.parse import urlparse
@@ -77,7 +79,7 @@ PY
 }
 
 latest_published_generation() {
-    python3 "$ROOT/tools/native-base-release-selection.py" \
+    "$PYTHON_BIN" "$ROOT/tools/native-base-release-selection.py" \
         "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"
 }
 resolve_published_base_identity() {
@@ -113,7 +115,7 @@ installed_published_generation() {
     local marker
     marker=$(published_toolchain_marker_path)
     [[ -f "$marker" ]] || return 1
-    python3 - "$marker" <<'PY'
+    "$PYTHON_BIN" - "$marker" <<'PY'
 import json
 import sys
 
@@ -143,7 +145,7 @@ verify_published_toolchain_marker() {
     local vespa_root=$1
     local marker="$vespa_root/.searchkernel-vespa-artifact.json"
     [[ -f "$marker" ]] || return 1
-    python3 - "$marker" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
+    "$PYTHON_BIN" - "$marker" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
 import json
 import sys
 
