@@ -12,7 +12,7 @@ const RICH_REQUEST: &[u8] = br#"
       "id": "id:ns:type::1",
       "fields": [
         {"key":"text","value":{"kind_type":"StringValue","kind":{"value":"hello"}}},
-        {"key":"count","value":{"kind_type":"Int64Value","kind":{"value":9223372036854775807}}},
+        {"key":"count","value":{"kind_type":"Int64Value","kind":{"value":"9223372036854775807"}}},
         {"key":"raw","value":{"kind_type":"BytesValue","kind":{"value":[1,2,3]}}},
         {"key":"list","value":{"kind_type":"ValueList","kind":{"values":[{"kind_type":"BoolValue","kind":{"value":true}}]}}},
         {"key":"tensor","value":{"kind_type":"TensorValue","kind":{"type_spec":"tensor<float>(x[2])","payload_type":"DenseTensorValues","payload":{"values":[1.0,2.0]}}}}
@@ -34,6 +34,23 @@ const WIDENED_SEARCH_REQUEST: &[u8] = br#"
       {"operation_type":"GroupingGroupOperation","operation":{"expression":{"expr_type":"GroupingAttributeExpression","expr":{"field":"brand"}}}},
       {"operation_type":"GroupingOutputOperation","operation":{"outputs":[{"label":"count","expression":{"expr_type":"GroupingAggregationExpression","expr":{"aggregation_type":"CountAggregation","aggregation":{}}}}]}}
     ]}}}]
+  }
+}
+"#;
+
+const INTEGER_BOUNDARY_REQUEST: &[u8] = br#"
+{
+  "protocol_version": 2,
+  "payload_type": "SearchKernel_V2_InsertRequest",
+  "payload": {
+    "document": {
+      "id": "id:ns:type::integer-boundaries",
+      "fields": [
+        {"key":"i64_min","value":{"kind_type":"Int64Value","kind":{"value":"-9223372036854775808"}}},
+        {"key":"i64_max","value":{"kind_type":"Int64Value","kind":{"value":"9223372036854775807"}}},
+        {"key":"u64_max","value":{"kind_type":"UInt64Value","kind":{"value":"18446744073709551615"}}}
+      ]
+    }
   }
 }
 "#;
@@ -67,7 +84,7 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
     };
     assert_eq!(
         field("count")["value"]["kind"]["value"],
-        9223372036854775807i64
+        "9223372036854775807"
     );
     assert_eq!(
         field("raw")["value"]["kind"]["value"],
@@ -81,6 +98,106 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
     let again =
         request_json_to_flatbuffer(&printed).expect("printed standard JSON remains readable");
     assert!(!again.is_empty());
+}
+
+#[test]
+fn standard_json_rejects_bare_64_bit_integer_scalars() {
+    let input = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_InsertRequest",
+      "payload": {
+        "document": {
+          "id": "id:ns:type::bare-int64",
+          "fields": [
+            {"key":"count","value":{"kind_type":"Int64Value","kind":{"value":9223372036854775807}}}
+          ]
+        }
+      }
+    }"#;
+
+    let error = request_json_to_flatbuffer(input).expect_err("bare int64 JSON must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("64-bit integer JSON values must be decimal strings"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn standard_json_prints_64_bit_integer_boundaries_as_decimal_strings() {
+    let bytes =
+        request_json_to_flatbuffer(INTEGER_BOUNDARY_REQUEST).expect("quoted integer boundary JSON");
+    let printed = request_flatbuffer_to_json(&bytes).expect("integer boundary JSON printer");
+    let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+    let fields = value["payload"]["document"]["fields"]
+        .as_array()
+        .expect("document fields array");
+    let field = |name: &str| {
+        fields
+            .iter()
+            .find(|field| field["key"] == name)
+            .unwrap_or_else(|| panic!("missing field {name}"))
+    };
+
+    for (name, expected) in [
+        ("i64_min", "-9223372036854775808"),
+        ("i64_max", "9223372036854775807"),
+        ("u64_max", "18446744073709551615"),
+    ] {
+        assert_eq!(
+            field(name)["value"]["kind"]["value"].as_str(),
+            Some(expected),
+            "{name} must use the canonical decimal-string JSON representation"
+        );
+    }
+
+    let again = request_json_to_flatbuffer(&printed)
+        .expect("printed integer boundary JSON remains readable");
+    assert!(!again.is_empty());
+}
+
+#[test]
+fn standard_json_canonicalizes_64_bit_scalars_outside_value_unions() {
+    let request = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_SearchRequest",
+      "payload": {
+        "timeout_ms": {"value": "18446744073709551615"}
+      }
+    }"#;
+    let request_bytes = request_json_to_flatbuffer(request).expect("request uint64 decimal string");
+    let request_printed =
+        request_flatbuffer_to_json(&request_bytes).expect("request uint64 JSON printer");
+    let request_value: serde_json::Value =
+        serde_json::from_slice(&request_printed).expect("valid request JSON");
+    assert_eq!(
+        request_value["payload"]["timeout_ms"]["value"].as_str(),
+        Some("18446744073709551615")
+    );
+
+    let response = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_SearchResult",
+      "payload": {
+        "total_hits": {"value": "18446744073709551615", "relation": "Exact"},
+        "errors": [{"code": "-9223372036854775808", "message": "boundary"}]
+      }
+    }"#;
+    let response_bytes =
+        response_json_to_flatbuffer(response).expect("response 64-bit decimal strings");
+    let response_printed =
+        response_flatbuffer_to_json(&response_bytes).expect("response 64-bit JSON printer");
+    let response_value: serde_json::Value =
+        serde_json::from_slice(&response_printed).expect("valid response JSON");
+    assert_eq!(
+        response_value["payload"]["total_hits"]["value"].as_str(),
+        Some("18446744073709551615")
+    );
+    assert_eq!(
+        response_value["payload"]["errors"][0]["code"].as_str(),
+        Some("-9223372036854775808")
+    );
 }
 
 #[test]
@@ -101,6 +218,28 @@ fn standard_json_handles_response_union_and_errors() {
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
     assert_eq!(value["payload"]["code"], "InvalidArgument");
     assert_eq!(value["payload"]["details"][0]["code"], "unknown_field");
+}
+
+#[test]
+fn standard_json_accepts_flatbuffers_positional_empty_union_tables() {
+    let input = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_SearchRequest",
+      "payload": {
+        "query": {"source_type":"MatchAllQuery","source":[]},
+        "sort": [{
+          "target": {"target_type":"FieldSortTarget","target":{"field":"price"}},
+          "direction": "Desc",
+          "missing": {"policy_type":"MissingLast","policy":[]}
+        }]
+      }
+    }"#;
+
+    let bytes = request_json_to_flatbuffer(input)
+        .expect("FlatBuffers positional empty tables must remain accepted");
+    let printed = request_flatbuffer_to_json(&bytes).expect("sort request JSON printer");
+    request_json_to_flatbuffer(&printed)
+        .expect("printed sort request with empty marker table remains readable");
 }
 
 #[test]
@@ -151,7 +290,7 @@ fn standard_json_preserves_textual_filter_clause_bindings() {
               "bindings": [
                 {
                   "key": "max",
-                  "value": {"kind_type":"Int64Value", "kind":{"value":120}}
+                  "value": {"kind_type":"Int64Value", "kind":{"value":"120"}}
                 }
               ]
             },
@@ -160,7 +299,7 @@ fn standard_json_preserves_textual_filter_clause_bindings() {
               "bindings": [
                 {
                   "key": "value",
-                  "value": {"kind_type":"Int64Value", "kind":{"value":4}}
+                  "value": {"kind_type":"Int64Value", "kind":{"value":"4"}}
                 }
               ]
             }

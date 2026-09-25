@@ -82,10 +82,10 @@ emit_case("response", "recursive-search-response", {
         result_node("Hit", { "id" => "c" })
       ]
     }),
-    "total_hits" => { "value" => 2**64 - 1, "relation" => "LowerBound" },
+    "total_hits" => { "value" => (2**64 - 1).to_s, "relation" => "LowerBound" },
     "trace" => value.encode({ "events" => [] }), "metadata" => [],
     "coverage" => { "full" => { "value" => false }, "degraded" => { "timeout" => { "value" => true } } },
     "timing" => { "query_time_seconds" => { "value" => 0.5 } },
-    "errors" => [{ "code" => 7, "summary" => "partial", "transient" => { "value" => true }, "metadata" => [] }]
+    "errors" => [{ "code" => "7", "summary" => "partial", "transient" => { "value" => true }, "metadata" => [] }]
   }
 })
