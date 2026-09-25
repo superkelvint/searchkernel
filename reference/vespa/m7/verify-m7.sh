@@ -19,19 +19,13 @@ cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m7
 "$SCRIPT_DIR/check-structure.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
- id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
+ id="$(python3 "$ROOT/reference/vespa/common/json_tools.py" field "$s" id)"
  if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
-   "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$s" | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin),sort_keys=True,separators=(",",":")))' > "$TMP/java-$id.json"
+   "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$s" | python3 "$ROOT/reference/vespa/common/json_tools.py" canonicalize > "$TMP/java-$id.json"
    "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/java-$id.json"
  fi
  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m7-driver -- canonical "$s" > "$TMP/canon-$id.json"
- python3 - "$SCRIPT_DIR/expected/$id.json" "$TMP/canon-$id.json" <<'PY_CANON'
-import json,sys
-exp=json.load(open(sys.argv[1])); got=json.load(open(sys.argv[2]));
-if got['id']!=exp['id'] or got['schema']!=exp['schema']: raise SystemExit('identity mismatch')
-if got['typed']!=exp['query']: raise SystemExit(f"typed canonical mismatch: {got['typed']} != {exp['query']}")
-if got['yql']!=exp['query']: raise SystemExit(f"YQL canonical mismatch: {got['yql']} != {exp['query']}")
-PY_CANON
+ python3 "$ROOT/reference/vespa/common/json_tools.py" m7-canonical "$SCRIPT_DIR/expected/$id.json" "$TMP/canon-$id.json"
  for path in typed yql; do
    cfg="$TMP/$id-$path-cfg"; data="$TMP/$id-$path-data"; mkdir -p "$data"
    cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m7-driver -- execute "$s" "$cfg" "$data" "$path" > "$TMP/$id-$path-hits.json"
@@ -40,12 +34,7 @@ PY_CANON
  "$SCRIPT_DIR/compare.py" "$TMP/$id-typed-hits.json" "$TMP/$id-yql-hits.json"
 done
 ERRORS="$SCRIPT_DIR/scenarios/errors.json"
-python3 - "$ERRORS" <<'PY_JOBS' > "$TMP/error-jobs"
-import json,sys
-for c in json.load(open(sys.argv[1]))['cases']:
- for p in ('typed','yql'):
-  if p in c: print(c['id'],p,c[p+'_error'])
-PY_JOBS
+python3 "$ROOT/reference/vespa/common/json_tools.py" m7-error-jobs "$ERRORS" > "$TMP/error-jobs"
 while read -r id path expected; do
  cfg="$TMP/error-$id-$path-cfg"; data="$TMP/error-$id-$path-data"; mkdir -p "$data"
  actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m7-error -- "$path" "$ERRORS" "$id" "$cfg" "$data")"
