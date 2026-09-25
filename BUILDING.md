@@ -153,28 +153,15 @@ Image publishing has three independent identities:
 - `superkelvint/searchkernel-ci-toolchain:<toolchain-id>` contains the OS,
   compilers, language runtimes, FlatBuffers, and reusable client tooling. The
   toolchain id hashes `docker/searchkernel-ci-toolchain/` together with the
-  **resolved repository digest** of its upstream base image. A mutable
-  `:latest` base may therefore be configured for convenience, but its bytes
-  are pinned before the toolchain identity is calculated or built.
-  Adding a client language or bumping Rust/Node/Ruby/PHP/Python/FlatBuffers
-  changes this axis without changing the Vespa axis.
+  resolved repository digest of its upstream base image.
 - `superkelvint/searchkernel-ci-vespa:<vespa-commit>-<bundle-id>` contains
   the immutable native runtime closure plus configured Vespa headers/static-link
-  metadata for the commit pinned by `core/native/vespa/manifest.json`. The
-  bundle id hashes the Vespa Docker/package/closure recipe. The publisher also
-  fingerprints the full native SDK manifest and canonical native-build
-  fingerprint; if those producer inputs change for the same commit + bundle
-  recipe, it rebuilds and replaces that logical Vespa tag. Consumers immediately
-  resolve the tag to its exact repository digest, so the resulting composite
-  identity still changes with the actual Vespa image bytes.
-- `superkelvint/searchkernel-ci:<searchkernel-revision>` is a thin leaf. A
-  reusable `base-<composition-id>` tag in the same repository composes and
-  compatibility-checks the first two images once. Composition resolves the
-  toolchain and Vespa tags to immutable repository digests first; the
-  composition id hashes those two exact image digests plus the base-composition
-  Dockerfile. The leaf likewise uses the resolved composite digest rather than
-  its tag, closing tag-mutation races between validation and build.
-
+  metadata. This is the only image that carries the large Vespa/native payload.
+- `superkelvint/searchkernel-ci:<searchkernel-revision>` contains only the
+  toolchain plus the source-specific validation receipt. During image build,
+  the exact Vespa image is mounted read-only with BuildKit for compatibility and
+  native-adapter validation; its files are never copied into a committed
+  `searchkernel-ci` layer.
 
 Publish only the axis that changed:
 
@@ -185,32 +172,30 @@ Publish only the axis that changed:
 # Pinned Vespa/native bundle change.
 ./dev image vespa publish
 
-# Normal Search Kernel source publish. This reuses the composite base and
-# updates :latest in addition to the commit tag.
+# Normal Search Kernel source publish. This does not republish Vespa bytes.
 ./dev image publish
 ```
 
-`./dev image publish` never silently rebuilds a missing toolchain or Vespa
-bundle. If either immutable input is absent it fails with the exact publishing
-command required. When both inputs exist but their pair has never been used,
-the command creates and publishes the composite base once. Composition includes
-the native closure/compiler compatibility gate, so the two axes may advance
-independently without allowing an incompatible pair to become canonical.
+The leaf records the exact toolchain and Vespa repository digests in labels.
+GitHub CI and local `./dev` resolve the Vespa digest from the leaf, materialize
+that digest once into a content-addressed Docker volume on the machine, and
+mount the volume read-only at `/opt/searchkernel/native-sdk-cache`. Multiple
+jobs reuse the same immutable volume; source and Cargo-target volumes remain
+job-private.
 
-All image publishers require a clean Git checkout. Because `searchkernel-ci:latest`
-is the canonical developer/CI environment, updating `:latest` additionally
-requires `HEAD` to equal the current remote `main`. The low-level leaf
-publisher can still create an explicitly tagged candidate with
-`SEARCHKERNEL_CI_PUSH_LATEST=0`, but a branch or stale checkout cannot promote
-itself to canonical `:latest`. The literal `latest` leaf tag and all tags
-beginning with `base-` are reserved for canonical promotion and composite
-images respectively.
+This means the large Vespa payload is uploaded to Docker Hub only by
+`./dev image vespa publish`. An ordinary `./dev image publish` pushes the
+toolchain-derived leaf layers and source-validation metadata only. It does not
+create or push a composite image and does not copy the Vespa filesystem into
+`superkelvint/searchkernel-ci`.
 
-The leaf's BuildKit cache mounts are namespaced by the composition id. Repeated
-publishes on the same toolchain/Vespa pair retain Cargo acceleration, while a
-toolchain or native-image change cannot reuse the previous pair's target
-directory. The target cache is also writer-locked for concurrent publishers.
+All image publishers require a clean Git checkout. Updating
+`searchkernel-ci:latest` additionally requires the local `main` branch.
+The literal `latest` and `base-*` leaf tags remain reserved.
 
+The leaf's BuildKit caches are namespaced by the exact toolchain/Vespa
+environment identity. Changing either immutable input therefore cannot reuse a
+stale native target cache.
 
 These commands dispatch to one disposable image container by default:
 
@@ -280,7 +265,7 @@ Supported build/test execution now has two deliberate modes:
 
 | Environment | Cargo target root | Vespa SDK source |
 | --- | --- | --- |
-| Canonical Docker-backed dev/CI | private `/cargo-target` volume | baked `/opt/searchkernel/native-sdk-cache/ci/.../objects/<vespa-commit>` |
+| Canonical Docker-backed dev/CI | private `/cargo-target` volume | read-only digest-addressed Vespa Docker volume mounted at `/opt/searchkernel/native-sdk-cache` |
 | Explicit host override | `target/host` (or caller override) | host resolver/cache or explicit `SK_NATIVE_SDK` |
 
 The Docker-backed path is the default. The host mode exists for toolchain
