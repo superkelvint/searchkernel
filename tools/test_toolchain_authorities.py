@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BARE_TOOL_RE = re.compile(
     r"(?m)(?:^|[|;&]\s*)\s*(?:env\s+)?"
     r"(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*"
-    r"(python3|cargo|rustc|npm|node|flatc)\b"
+    r"(python3|cargo|rustc|rustfmt|npm|node|flatc)\b"
 )
 
 CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
