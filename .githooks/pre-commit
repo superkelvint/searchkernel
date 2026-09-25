@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
+PYTHON=$(bash "$ROOT/tools/resolve-python.sh")
+CARGO=$(bash "$ROOT/tools/resolve-rust.sh" cargo)
+export PYTHON CARGO
 
 if ! git diff --cached --quiet -- docs/capabilities.json; then
     # Do not generate from a worktree version that differs from the staged source;
@@ -13,7 +16,7 @@ if ! git diff --cached --quiet -- docs/capabilities.json; then
         exit 1
     fi
 
-    python3 tools/check-capabilities.py --write
+    "$PYTHON" tools/check-capabilities.py --write
     git add docs/CAPABILITIES.md LIMITATIONS.md
 fi
 
@@ -95,17 +98,20 @@ fi
 
 if [[ "$abi_authority_required" == true ]]; then
     echo "pre-commit: checking staged native ABI authority agreement"
-    python3 tools/check-native-abi-authorities.py --git-index
+    "$PYTHON" tools/check-native-abi-authorities.py --git-index
 fi
 
+echo "pre-commit: enforcing canonical toolchain authorities"
+"$PYTHON" tools/test_toolchain_authorities.py
+
 echo "pre-commit: checking rustfmt"
-cargo fmt --all --check
+"$CARGO" fmt --all --check
 
 echo "pre-commit: running clippy"
 ./dev lint --profile rust-clippy-non-native
 
 echo "pre-commit: running workspace unit tests"
-cargo test --workspace --all-targets --no-default-features
+"$CARGO" test --workspace --all-targets --no-default-features
 
 if [[ "$verification_required" == true && "${SEARCHKERNEL_PRECOMMIT_SELFTEST:-0}" != "1" ]]; then
     echo "pre-commit: verification tooling changed; running selector/hook regressions"
