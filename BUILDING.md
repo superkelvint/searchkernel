@@ -148,6 +148,44 @@ environment for compilation, tests, client verification, and real-Vespa
 verification. GitHub Actions and local developer commands use the same pinned
 Rust, Node, Ruby, PHP, Python, FlatBuffers, and Vespa base/toolchain.
 
+Image publishing has three independent identities:
+
+- `superkelvint/searchkernel-ci-toolchain:<toolchain-id>` contains the OS,
+  compilers, language runtimes, FlatBuffers, and reusable client tooling. The
+  toolchain id is a content hash of `docker/searchkernel-ci-toolchain/`.
+  Adding a client language or bumping Rust/Node/Ruby/PHP/Python/FlatBuffers
+  changes this axis without changing the Vespa axis.
+- `superkelvint/searchkernel-ci-vespa:<vespa-commit>` contains the immutable
+  native runtime closure plus configured Vespa headers/static-link metadata for
+  the commit pinned by `core/native/vespa/manifest.json`.
+- `superkelvint/searchkernel-ci:<searchkernel-revision>` is a thin leaf. A
+  reusable `base-<toolchain-id>-<vespa-commit>` tag in the same repository
+  composes and compatibility-checks the first two images once; ordinary source
+  publishes reuse it and only rerun Search Kernel's source-specific native
+  adapter validation.
+
+Publish only the axis that changed:
+
+```bash
+# New client language, compiler/runtime bump, or other CI tooling change.
+./dev image toolchain publish
+
+# Pinned Vespa/native bundle change.
+./dev image vespa publish
+
+# Normal Search Kernel source publish. This reuses the composite base and
+# updates :latest in addition to the commit tag.
+./dev image publish
+```
+
+`./dev image publish` never silently rebuilds a missing toolchain or Vespa
+bundle. If either immutable input is absent it fails with the exact publishing
+command required. When both inputs exist but their pair has never been used,
+the command creates and publishes the composite base once. Composition includes
+the native closure/compiler compatibility gate, so the two axes may advance
+independently without allowing an incompatible pair to become canonical.
+
+
 These commands dispatch to one disposable image container by default:
 
 ```bash
