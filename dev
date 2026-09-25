@@ -288,7 +288,6 @@ check_fast() {
     "$CARGO" fmt --all --check
     "$CARGO" check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
-    bash "$ROOT/tools/test-actions-runner-rustup-recovery.sh"
     bash "$ROOT/tools/test-flatbuffers-cpp-toolchain.sh"
     bash "$ROOT/tools/check-ir-boundary.sh"
     bash "$ROOT/tools/check-native-hardening-feature-contract.sh"

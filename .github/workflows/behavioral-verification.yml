@@ -217,305 +217,66 @@ jobs:
           echo "required=$required" >> "$GITHUB_OUTPUT"
           echo "Native verifier required: $required"
 
+
   rust:
     name: Rust invariant
     needs: classify
     if: needs.classify.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64]
-    env:
-      CARGO_TARGET_DIR: target/ci-non-native
-      SEARCHKERNEL_BUILD_ENV: ci
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - name: Check out exact revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 1
-
-      - name: Select runner Python
-        run: bash .github/ci/select-python.sh
-
-      - name: Reject stale verification checkout
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          actual=$(git rev-parse HEAD)
-          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
-            exit 1
-          fi
-          echo "Verified exact head $actual."
-
-      - name: Ensure runner Rust toolchain
-        run: bash .github/ci/ensure-runner-rust.sh
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target/ci-non-native"
-          shared-key: non-native
-          cache-bin: false
-
-      - name: Cache pinned FlatBuffers toolchain
-        uses: actions/cache@v4
-        with:
-          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
-          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Ensure pinned FlatBuffers toolchain
-        run: ./dev install flatbuffers
-
-      - name: Run canonical Rust baseline
-        run: cargo test --workspace --all-targets --no-default-features
-
-      - name: Run portable API conformance on the same Rust build
-        run: reference/api-conformance/verify.sh
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
+      target: rust-non-native
+    secrets: inherit
 
   python:
     name: Python invariant
     needs: classify
     if: needs.classify.outputs.python == 'true'
-    runs-on: [self-hosted, linux, x64]
-    steps:
-      - name: Check out exact revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 1
-
-      - name: Select runner Python
-        run: bash .github/ci/select-python.sh
-
-      - name: Reject stale verification checkout
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          actual=$(git rev-parse HEAD)
-          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
-            exit 1
-          fi
-          echo "Verified exact head $actual."
-
-      - name: Ensure runner Rust toolchain
-        run: bash .github/ci/ensure-runner-rust.sh
-
-      - name: Cache pinned FlatBuffers toolchain
-        uses: actions/cache@v4
-        with:
-          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
-          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Ensure pinned FlatBuffers toolchain
-        run: ./dev install flatbuffers
-
-      - name: Install Python client
-        run: $CI_PYTHON -m pip install -e clients/python
-
-      - name: Run Python behavioral tests
-        run: $CI_PYTHON -m unittest discover -s clients/python/tests -p 'test_*.py'
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
+      target: python
+    secrets: inherit
 
   typescript:
     name: TypeScript invariant
     needs: classify
     if: needs.classify.outputs.typescript == 'true'
-    runs-on: [self-hosted, linux, x64]
-    steps:
-      - name: Check out exact revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 1
-
-      - name: Select runner Python
-        run: bash .github/ci/select-python.sh
-
-      - name: Reject stale verification checkout
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          actual=$(git rev-parse HEAD)
-          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
-            exit 1
-          fi
-          echo "Verified exact head $actual."
-
-      - name: Ensure runner Rust toolchain
-        run: bash .github/ci/ensure-runner-rust.sh
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Cache pinned FlatBuffers toolchain
-        uses: actions/cache@v4
-        with:
-          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
-          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Ensure pinned FlatBuffers toolchain
-        run: ./dev install flatbuffers
-
-      - name: Install TypeScript client
-        run: npm ci --prefix clients/typescript
-
-      - name: Run TypeScript generation regressions
-        run: ./tools/test-typescript-generation.sh
-
-      - name: Generate TypeScript protocol bindings
-        run: npm run generate --prefix clients/typescript
-
-      - name: Verify TypeScript generated bindings
-        run: npm run check:generated --prefix clients/typescript
-
-      - name: Typecheck TypeScript client
-        run: npm --prefix clients/typescript run typecheck
-
-      - name: Run TypeScript behavioral tests
-        run: npm --prefix clients/typescript test
-
-      - name: Verify TypeScript package
-        run: npm run test:package --prefix clients/typescript
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
+      target: typescript
+    secrets: inherit
 
   ruby:
     name: Ruby invariant
     needs: classify
     if: needs.classify.outputs.ruby == 'true'
-    runs-on: [self-hosted, linux, x64]
-    env:
-      CARGO_TARGET_DIR: target/ci-exact-head-ruby
-      SEARCHKERNEL_BUILD_ENV: ci
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - name: Check out exact revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 1
-
-      - name: Ensure provisioned Ruby
-        if: ${{ hashFiles('clients/ruby/**') != '' }}
-        run: |
-          set -euo pipefail
-          if ! command -v ruby >/dev/null 2>&1 || ! command -v gem >/dev/null 2>&1; then
-            sudo -n apt-get install -y --no-install-recommends ruby-full
-          fi
-          ruby --version
-          gem --version
-          ruby -rrubygems -e 'abort "Ruby >= 3.1 is required" if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")'
-
-      - name: Ensure runner Rust toolchain
-        if: ${{ hashFiles('clients/ruby/**') != '' }}
-        run: bash .github/ci/ensure-runner-rust.sh
-
-      - name: Cache Rust build
-        if: ${{ hashFiles('clients/ruby/**') != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target/ci-exact-head-ruby"
-          cache-bin: false
-          shared-key: exact-head-ruby
-
-      - name: Cache pinned FlatBuffers toolchain
-        if: ${{ hashFiles('clients/ruby/**') != '' }}
-        uses: actions/cache@v4
-        with:
-          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
-          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Ensure pinned FlatBuffers toolchain
-        if: ${{ hashFiles('clients/ruby/**') != '' }}
-        run: ./dev install flatbuffers
-
-      - name: Reject stale verification checkout
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          actual=$(git rev-parse HEAD)
-          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
-            exit 1
-          fi
-          echo "Verified exact head $actual."
-
-      - name: Run Ruby behavioral tests
-        run: |
-          set -euo pipefail
-          if [[ ! -d clients/ruby ]]; then
-            echo "Ruby client is only pre-registered on this base; no Ruby product surface exists yet."
-            exit 0
-          fi
-          ruby --version
-          ./dev test ruby
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
+      target: ruby
+    secrets: inherit
 
   tooling:
     name: CI and build-tooling invariant
     needs: classify
     if: needs.classify.outputs.tooling == 'true'
-    runs-on: [self-hosted, linux, x64]
-    steps:
-      - name: Check out exact revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 1
-
-      - name: Select runner Python
-        run: bash .github/ci/select-python.sh
-
-      - name: Reject stale verification checkout
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          actual=$(git rev-parse HEAD)
-          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error title=Stale verification checkout::Expected exact head $EXPECTED_HEAD, checked out $actual. Verification from a different SHA cannot authorize this revision."
-            exit 1
-          fi
-          echo "Verified exact head $actual."
-
-      - name: Validate developer command wrapper
-        run: |
-          bash -n dev
-          bash dev help >/dev/null
-
-      - name: Run native SDK packaging regression
-        run: bash tools/test-native-sdk-packaging.sh
-
-      - name: Run native environment fingerprint regression
-        run: bash tools/test-native-environment-fingerprint.sh
-
-      - name: Run native SDK cache regression
-        run: bash tools/test-native-sdk-cache.sh
-
-      - name: Test Clippy diagnostic runner
-        run: $CI_PYTHON tools/test_run_clippy.py
-
-      - name: Enforce canonical Python tooling resolution
-        run: $CI_PYTHON tools/test_python_dependency_contract.py
-
-      - name: Enforce canonical toolchain authorities
-        run: $CI_PYTHON tools/test_toolchain_authorities.py
-
-      - name: Run semantic verifier routing regression
-        run: bash reference/vespa/verifiers/test-routing.sh
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
+      target: tooling
+    secrets: inherit
 
   native:
     name: Native invariant
     needs: classify
     if: needs.classify.outputs.native == 'true'
-    uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main
+    uses: ./.github/workflows/ci-image-runner.yml
     with:
       revision: ${{ github.event.pull_request.head.sha || github.sha }}
       target: native-full
+    secrets: inherit
 
   exact-head-gate:
     name: Invariant gate
