@@ -166,8 +166,7 @@ fn standard_json_canonicalizes_64_bit_scalars_outside_value_unions() {
         "timeout_ms": {"value": "18446744073709551615"}
       }
     }"#;
-    let request_bytes =
-        request_json_to_flatbuffer(request).expect("request uint64 decimal string");
+    let request_bytes = request_json_to_flatbuffer(request).expect("request uint64 decimal string");
     let request_printed =
         request_flatbuffer_to_json(&request_bytes).expect("request uint64 JSON printer");
     let request_value: serde_json::Value =
