@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG BASE_IMAGE=docker.io/vespaengine/vespa-dev-almalinux-8:latest
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} AS runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 USER root
@@ -224,5 +224,18 @@ RUN command -v rg \
     && command -v clang \
     && c++ --version | head -n 1
 
+# Prove that the bundled base/toolchain can rebuild the adapter from the exact
+# Search Kernel source revision being published. The source exists only in this
+# validation stage and is not retained in the final image.
+FROM runtime AS native-validation
+COPY --from=searchkernel-source / /tmp/searchkernel-source/
+WORKDIR /tmp/searchkernel-source
+RUN unset SK_NATIVE_SDK VESPA_ROOT VESPA_DEPS VESPA_LIBRARY_ROOT \
+    && CARGO_TARGET_DIR=/tmp/searchkernel-target \
+       cargo check -p searchkernel-vespa-bindings --features native \
+    && touch /tmp/searchkernel-native-validation-pass
+
+FROM runtime AS final
+COPY --from=native-validation /tmp/searchkernel-native-validation-pass /opt/searchkernel/native-validation-pass
 WORKDIR /work
 CMD ["/bin/bash"]
