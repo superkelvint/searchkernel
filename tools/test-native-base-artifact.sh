@@ -17,6 +17,7 @@ trap cleanup EXIT
 repo="$fixture/repo"
 mkdir -p "$repo/tools" "$repo/core/native/vespa"
 cp "$source_root/tools/resolve-native-sdk.sh" "$repo/tools/"
+cp "$source_root/tools/resolve-python.sh" "$repo/tools/"
 cp "$source_root/tools/install-native-base-artifact.sh" "$repo/tools/"
 chmod +x "$repo/tools/"*.sh
 printf '{"vespa_commit":"fixture-vespa-commit"}\n' >"$repo/core/native/vespa/manifest.json"
@@ -149,6 +150,23 @@ run_resolver() {
     local url=${4:-$artifact_url}
     (
         cd "$clone"
+
+        # This is a resolver-isolation fixture. Self-hosted runners and native
+        # developer shells may export these variables globally; inheriting any
+        # of them can bypass the published-artifact path under test (most
+        # notably SK_NATIVE_SDK, which short-circuits the resolver entirely).
+        unset SK_NATIVE_SDK
+        unset SK_NATIVE_CACHE_DIR
+        unset SK_NATIVE_DISABLE_PUBLISHED_BASE
+        unset SK_NATIVE_BASE_ARTIFACT_GENERATION
+        unset VESPA_ROOT
+        unset VESPA_LIBRARY_ROOT
+        unset VESPA_DEPS
+        unset VESPA_DEPS_LIB_DIR
+        unset VESPA_DEPS_INCLUDE_DIR
+        unset VESPA_EXTRA_LIB_DIR
+        unset VESPA_AWS_LIB_DIR
+
         SEARCHKERNEL_BUILD_ENV="$build_env" \
         SK_NATIVE_TARGET="$native_target" \
         XDG_CACHE_HOME="$cache_home" \

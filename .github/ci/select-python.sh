@@ -42,11 +42,8 @@ if [[ -z "$selected" ]]; then
   venv_dir="$RUNNER_TEMP/searchkernel-python-venv"
   rm -rf "$venv_dir"
   if ! "$base" -m venv "$venv_dir"; then
-    echo "::notice::Python venv support is missing; attempting one-time runner migration."
-    sudo -n apt-get update
-    sudo -n apt-get install -y --no-install-recommends python3-venv
-    rm -rf "$venv_dir"
-    "$base" -m venv "$venv_dir"
+    echo "::error::Runner Python lacks venv support; fix runner provisioning or use the CI image."
+    exit 1
   fi
   selected="$venv_dir/bin/python"
 fi

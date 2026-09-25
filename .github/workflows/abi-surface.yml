@@ -40,72 +40,21 @@ on:
       - ".github/workflows/abi-surface.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+
 jobs:
   abi-surface:
     name: Public ABI contract check
-    runs-on: [self-hosted, linux, x64]
-    env:
-      CARGO_TARGET_DIR: target/ci
-      SEARCHKERNEL_BUILD_ENV: ci
-      ABI_PYTHON: /usr/bin/python3
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Ensure runner Rust toolchain
-        run: bash .github/ci/ensure-runner-rust.sh rustfmt
-
-      - name: Verify self-hosted ABI dependencies
-        run: |
-          if ! command -v cargo >/dev/null 2>&1 || ! command -v rustc >/dev/null 2>&1; then
-            echo "::error::Runner provisioning does not expose cargo and rustc."
-            exit 1
-          fi
-          if ! "$ABI_PYTHON" -c 'import clang.cindex'; then
-            echo "::error::The self-hosted runner must provide python3-clang and libclang-dev for /usr/bin/python3."
-            exit 1
-          fi
-
-      - name: Run ABI authority regression tests
-        run: $ABI_PYTHON tools/test_check_native_abi_authorities.py
-
-      - name: Check native ABI authority agreement
-        run: $ABI_PYTHON tools/check-native-abi-authorities.py
-
-      - name: Run ABI surface regression tests
-        run: $ABI_PYTHON tools/test_check_abi_surface.py
-
-      - name: Verify checked-in Rust ABI bindings
-        env:
-          SK_NATIVE_ABI_HEADER: ${{ github.workspace }}/core/native/vespa/searchkernel_vespa.h
-        run: bash tools/check-native-bindings.sh
-
-      - name: Check repository layout
-        run: bash tools/check-layout.sh
-
-      - name: Verify cross-worktree native SDK cache
-        run: bash tools/test-native-sdk-cache.sh
-
-      - name: Check public Vespa ABI contract
-        env:
-          ABI_BASELINE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          set -euo pipefail
-          args=(
-            core/native/vespa/searchkernel_vespa.h
-            --linker-map core/native/vespa/searchkernel_vespa.map
-          )
-          if [[ -n "${ABI_BASELINE_SHA:-}" ]] &&
-             [[ "$ABI_BASELINE_SHA" != "0000000000000000000000000000000000000000" ]]; then
-            baseline_header=$(mktemp)
-            trap 'rm -f "$baseline_header"' EXIT
-            git show "${ABI_BASELINE_SHA}:core/native/vespa/searchkernel_vespa.h" > "$baseline_header"
-            args+=(--baseline-header "$baseline_header")
-          fi
-          "$ABI_PYTHON" tools/check_abi_surface.py "${args[@]}"
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
+      target: abi-surface
+      baseline_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+    secrets: inherit

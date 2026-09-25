@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = ROOT / ".github" / "workflows" / "native-verifier-runner.yml"
+WORKFLOW = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
@@ -21,22 +21,58 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertNotIn("python3 verification/dag.py", source)
         self.assertNotIn("./verification/dag.py", source)
 
-    def test_runs_requested_exact_revision_inside_persistent_alma(self) -> None:
+    def test_runs_requested_exact_revision_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
-            "NATIVE_CONTAINER: searchkernel-native",
+            "CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest",
             "persist-credentials: false",
-            'docker cp "$GITHUB_WORKSPACE/." "$NATIVE_CONTAINER:$ALMA_WORKTREE"',
-            'git -c safe.directory="$ALMA_WORKTREE" -C "$ALMA_WORKTREE" rev-parse HEAD',
-            './dev native-sdk ensure',
-            'export CARGO_HOME="$ALMA_WORKTREE/.cargo-home"',
-            'ln -s "/root/.cargo/$cache" "$CARGO_HOME/$cache"',
-            "dnf install -y clang python3-clang",
-            "command -v clang",
-            "python3 -c 'import clang.cindex'",
-            './dev verify "$VERIFIER_TARGET"',
+            'docker pull "$CI_IMAGE"',
+            'docker volume create "$SOURCE_VOLUME"',
+            'docker volume create "$TARGET_VOLUME"',
+            'test -f /opt/searchkernel/native-validation-pass',
+            'native_base=$(./dev native-sdk path)',
+            '/opt/searchkernel/native-sdk-cache/ci/*/objects/*',
+            'command -v "$cmd"',
+            "/usr/bin/python3 -c 'import clang.cindex'",
+            './dev verify "$CI_TARGET"',
         ):
             self.assertIn(needle, source)
+
+        for retired in (
+            "./dev native-sdk ensure",
+            "dnf install",
+            "Resolve trusted native-base release",
+            "/native-artifacts/",
+            "SK_NATIVE_BASE_ARTIFACT_URL=",
+            "NATIVE_CONTAINER: searchkernel-native",
+        ):
+            self.assertNotIn(retired, source)
+
+    def test_workers_share_no_mutable_toolchain_state(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for forbidden in (
+            "searchkernel-ci-cargo-registry",
+            "searchkernel-ci-cargo-git",
+            "searchkernel-native-ci-lock",
+            "/native-lock",
+            ":/root/.cargo/registry",
+            ":/root/.cargo/git",
+            "ensure-runner-rust.sh",
+            "Swatinem/rust-cache",
+            "flock 9",
+        ):
+            self.assertNotIn(forbidden, source)
+        for required in (
+            'SOURCE_VOLUME="searchkernel-ci-src-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${SAFE_TARGET}"',
+            'TARGET_VOLUME="searchkernel-ci-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${SAFE_TARGET}"',
+            'docker volume create "$SOURCE_VOLUME"',
+            'docker volume create "$TARGET_VOLUME"',
+            '-v "$SOURCE_VOLUME:/work"',
+            '-v "$TARGET_VOLUME:/cargo-target"',
+            "CARGO_TARGET_DIR=/cargo-target",
+            "zero shared mutable worker state",
+        ):
+            self.assertIn(required, source)
 
     def test_supports_native_full_ci_bundle(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
@@ -54,14 +90,27 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(needle, source)
 
-    def test_supports_client_e2e_bundle_inside_alma(self) -> None:
+    def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
             "client-e2e)",
-            "python3 tools/check-python-dependencies.py",
-            "cargo build -p searchkerneld --features native",
+            '"$PYTHON" tools/check-python-dependencies.py',
+            "build_native_searchkerneld client-e2e-build",
             'SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"',
-            "python3 tools/check-client-contracts.py --run-e2e",
+            'SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"',
+            '"$PYTHON" tools/check-client-contracts.py --run-e2e',
+        ):
+            self.assertIn(needle, source)
+
+    def test_native_searchkerneld_build_resolves_exact_adapter_runtime_lib(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "build_native_searchkerneld()",
+            "--message-format=json-render-diagnostics",
+            ".github/ci/resolve-native-adapter-lib.py",
+            "NATIVE_ADAPTER_LIB=",
+            "build_native_searchkerneld closure-422-build",
+            'SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"',
         ):
             self.assertIn(needle, source)
 
@@ -69,23 +118,15 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
             "closure-422)",
-            'export SK_NATIVE_CACHE_DIR="$ALMA_WORKTREE/.native-cache"',
-            'export CARGO_TARGET_DIR="$ALMA_WORKTREE/target/closure-422"',
+            "export CARGO_TARGET_DIR=/cargo-target/closure-422",
             "unset VESPA_LIBRARY_ROOT || true",
             "unset VESPA_DEPS || true",
             "unset VESPA_EXTRA_LIB_DIR || true",
-            'rm -rf "$SK_NATIVE_CACHE_DIR" "$CARGO_TARGET_DIR"',
-            'artifact_mount_rw=$(docker inspect',
-            "Resolve trusted native-base release",
-            'gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100"',
-            'target=$(docker exec "$NATIVE_CONTAINER"',
-            'EXPECTED_NATIVE_ARCHIVE_NAME: ${{ steps.native_base.outputs.archive }}',
-            'artifact="/native-artifacts/$EXPECTED_NATIVE_ARCHIVE_NAME"',
-            'native base digest does not match trusted release identity',
-            "ldd sha256sum",
+            '/opt/searchkernel/native-sdk-cache/ci/*/objects/*',
             'closure-422 requires a checkout with no configured source Vespa tree',
             'bash tools/resolve-native-sdk.sh vespa-root',
-            'cargo build -p searchkerneld --features native',
+            '/opt/searchkernel/native-sdk-cache/ci/*/toolchains/*/upstream/vespa',
+            'build_native_searchkerneld closure-422-build',
             "./dev verify m14",
             "./dev verify product.rust-real-engine",
             "./dev verify integration",
@@ -93,7 +134,6 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(needle, source)
         self.assertNotIn("SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip", source)
-
 
 
     def _run_embedded_head_guard(
@@ -155,7 +195,7 @@ echo AFTER_GUARD
         )
         self.assertEqual(completed.returncode, 0, completed.stdout)
         self.assertNotIn("AFTER_GUARD", completed.stdout)
-        self.assertIn("stopping obsolete native verification", completed.stdout)
+        self.assertIn("stopping obsolete verification", completed.stdout)
 
     def test_head_guard_runtime_current_stale_and_api_failure(self) -> None:
         current = self._run_embedded_head_guard(
@@ -169,7 +209,7 @@ echo AFTER_GUARD
         )
         self.assertEqual(stale.returncode, 0, stale.stdout)
         self.assertNotIn("AFTER_GUARD", stale.stdout)
-        self.assertIn("Superseded native verification", stale.stdout)
+        self.assertIn("Superseded verification", stale.stdout)
 
         malformed = self._run_embedded_head_guard(
             '{"head":{"sha":"aaaaaaaa"}}'
@@ -201,28 +241,27 @@ echo AFTER_GUARD
             'python3 -c \'import json,sys; data=json.load(sys.stdin); print(data.get("head", {}).get("sha", ""), data.get("state", ""))\'',
             'if [[ "$state" != "open" ]]; then',
             "env -u GH_TOKEN",
-            "Superseded native verification",
-            "run_native_phase()",
+            "Superseded verification",
+            "run_phase()",
             "assert_current_pr_head preflight",
-            "run_native_phase native-sdk",
-            "run_native_phase native-full-abi",
-            "run_native_phase native-full-hnsw",
-            "run_native_phase native-full-product-integration",
-            "run_native_phase native-full-rust-real-engine",
-            "run_native_phase native-full-grouping-yql",
-            "run_native_phase native-full-recovery",
-            "run_native_phase native-full-phase9",
-            "run_native_phase native-full-python-e2e",
-            "run_native_phase native-full-persistence",
-            "run_native_phase client-e2e-build",
-            "run_native_phase client-e2e-run",
-            "run_native_phase closure-422-build",
-            "run_native_phase closure-422-m14",
-            "run_native_phase closure-422-rust-real-engine",
-            "run_native_phase closure-422-integration",
-            "run_native_phase closure-422-php-e2e",
-            "run_native_phase requested-target",
-            "flock 9",
+            "run_phase native-full-abi",
+            "run_phase native-full-hnsw",
+            "run_phase native-full-product-integration",
+            "run_phase native-full-rust-real-engine",
+            "run_phase native-full-grouping-yql",
+            "run_phase native-full-recovery",
+            "run_phase native-full-phase9",
+            "run_phase native-full-python-e2e",
+            "run_phase native-full-persistence",
+            'run_phase "$phase"',
+            "build_native_searchkerneld client-e2e-build",
+            "run_phase client-e2e-run",
+            "build_native_searchkerneld closure-422-build",
+            "run_phase closure-422-m14",
+            "run_phase closure-422-rust-real-engine",
+            "run_phase closure-422-integration",
+            "run_phase closure-422-php-e2e",
+            "run_phase requested-target",
         ):
             self.assertIn(needle, source)
 
@@ -234,14 +273,14 @@ echo AFTER_GUARD
         )
         for workflow in workflows:
             source = workflow.read_text(encoding="utf-8")
-            if "native-verifier-runner.yml@" not in source:
+            if "uses: ./.github/workflows/ci-image-runner.yml" not in source:
                 continue
             callers.append(workflow)
             header = source.split("\njobs:", 1)[0]
             self.assertIn("permissions:", header, workflow)
             self.assertIn("contents: read", header, workflow)
             self.assertIn("pull-requests: read", header, workflow)
-        self.assertTrue(callers, "expected at least one native-verifier caller")
+        self.assertTrue(callers, "expected at least one ci-image-runner caller")
 
 
 if __name__ == "__main__":

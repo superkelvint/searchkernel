@@ -11,9 +11,7 @@ bash -n "$source_root/tools/install-native-base-artifact.sh"
 bash -n "$source_root/tools/package-native-base-artifact.sh"
 bash -n "$source_root/tools/publish-native-base.sh"
 bash -n "$source_root/tools/fetch-native-base.sh"
-bash -n "$source_root/tools/actions-runner-setup.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
-bash -n "$source_root/tools/test-native-actions-runner-container.sh"
 bash -n "$source_root/tools/test-fetch-native-base.sh"
 bash -n "$source_root/tools/test-native-base-publish-policy.sh"
 python3 "$source_root/tools/test_check_native_base_release_selection.py"
@@ -22,15 +20,6 @@ python3 "$source_root/tools/test_bundle_native_runtime_closure.py"
 grep -Fq 'bundle-native-runtime-closure.py' "$source_root/tools/package-native-base-artifact.sh"
 grep -Fq 'check-native-runtime-closure.py' "$source_root/tools/package-native-base-artifact.sh"
 grep -Fq 'check-native-runtime-closure.py" "$BUNDLE/base/lib" >&2' "$source_root/tools/package-native-base-artifact.sh"
-for publisher_input in \
-    tools/package-native-base-artifact.sh \
-    tools/bundle-native-runtime-closure.py \
-    tools/check-native-runtime-closure.py \
-    tools/native_runtime_closure.py \
-    tools/native-base-release-selection.py \
-    tools/publish-native-base.sh; do
-    grep -Fq -- "- \"$publisher_input\"" "$source_root/.github/workflows/publish-native-base.yml"
-done
 grep -Fq 'git/ref/heads/main' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'tools/install-native-base-artifact.sh' "$source_root/tools/publish-native-base.sh"
 grep -Fq 'check-native-runtime-closure.py' "$source_root/tools/publish-native-base.sh"
@@ -69,27 +58,9 @@ if "require_canonical_main" not in between:
 PY
 bash -n "$source_root/reference/vespa/common/verify-common.sh"
 bash -n "$source_root/reference/vespa/common/test-published-provenance.sh"
-if grep -Eq 'vespa-base-v[0-9]+|searchkernel-vespa-base-v[0-9]+' \
-    "$source_root/tools/actions-runner-setup.sh"; then
-    echo 'Actions runner setup must not hard-code a native-base generation' >&2
-    exit 1
-fi
-grep -Fq '"$REPO_ROOT/tools/fetch-native-base.sh" "$BUILD_ENV"' \
-    "$source_root/tools/actions-runner-setup.sh"
-grep -Fq 'ARTIFACT="/native-artifacts/${SK_NATIVE_ARCHIVE_NAME}"' \
-    "$source_root/tools/actions-runner-setup.sh"
-grep -Fq 'export SK_NATIVE_BASE_ARTIFACT_URL="file://${ARTIFACT}"' \
-    "$source_root/tools/actions-runner-setup.sh"
-grep -Fq 'CONTAINER_CARGO_TARGET_DIR="${SEARCHKERNEL_NATIVE_CARGO_TARGET_DIR:-/work/target/actions-runner-alma}"' \
-    "$source_root/tools/actions-runner-setup.sh"
-if grep -Fq '/work/target/ci' "$source_root/tools/actions-runner-setup.sh"; then
-    echo 'Actions runner container must not share target/ci with host CI' >&2
-    exit 1
-fi
 bash "$source_root/tools/test-native-base-artifact.sh"
 bash "$source_root/tools/test-fetch-native-base.sh"
 bash "$source_root/tools/test-native-base-publish-policy.sh"
-bash "$source_root/tools/test-native-actions-runner-container.sh"
 bash "$source_root/reference/vespa/common/test-published-provenance.sh"
 
 # The resolver executes the SDK builder directly. Git mode is therefore part of
