@@ -32,8 +32,8 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-ci-image-identity.") as ra
     toolchain = tmp / "toolchain"
     toolchain.mkdir()
     (toolchain / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
-    composite = tmp / "base.Dockerfile"
-    composite.write_text("FROM scratch\n", encoding="utf-8")
+    environment = tmp / "base.Dockerfile"
+    environment.write_text("FROM scratch\n", encoding="utf-8")
 
     digest_a = "registry.example/base@sha256:" + "a" * 64
     digest_b = "registry.example/base@sha256:" + "b" * 64
@@ -55,13 +55,17 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-ci-image-identity.") as ra
         raise SystemExit("toolchain identity accepted a mutable base tag")
 
     environment_a = call("ci_image_environment_id", str(environment), digest_a, vespa_a).stdout.strip()
-    environment_toolchain_changed = call(\n        "ci_image_environment_id", str(environment), digest_b, vespa_a\n    ).stdout.strip()
-    environment_vespa_changed = call(\n        "ci_image_environment_id", str(environment), digest_a, vespa_b\n    ).stdout.strip()
+    environment_toolchain_changed = call(
+        "ci_image_environment_id", str(environment), digest_b, vespa_a
+    ).stdout.strip()
+    environment_vespa_changed = call(
+        "ci_image_environment_id", str(environment), digest_a, vespa_b
+    ).stdout.strip()
 
-    if composite_a == composite_toolchain_changed:
-        raise SystemExit("composite identity ignored the toolchain image digest")
-    if composite_a == composite_vespa_changed:
-        raise SystemExit("composite identity ignored the Vespa image digest")
+    if environment_a == environment_toolchain_changed:
+        raise SystemExit("environment identity ignored the toolchain image digest")
+    if environment_a == environment_vespa_changed:
+        raise SystemExit("environment identity ignored the Vespa image digest")
 
     producer_root = tmp / "producer-root"
     (producer_root / "core/native/vespa").mkdir(parents=True)
