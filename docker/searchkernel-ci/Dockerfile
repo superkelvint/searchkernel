@@ -199,6 +199,17 @@ for key, value in expected.items():
         raise SystemExit(
             f"bundled native toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
         )
+
+generation = marker.get("artifact_generation")
+if not isinstance(generation, int) or generation < 1:
+    raise SystemExit("bundled native toolchain has no valid artifact_generation")
+if marker.get("adapter_static_link_closure") is not True:
+    raise SystemExit("bundled native toolchain does not certify adapter static-link closure")
+if marker.get("format_version") != 2:
+    raise SystemExit(
+        "bundled native toolchain has unsupported provenance format: "
+        f"{marker.get('format_version')!r}"
+    )
 PY
 
 RUN base="/opt/searchkernel/native-sdk-cache/ci/x86_64-unknown-linux-gnu/objects/${VESPA_COMMIT}" \
