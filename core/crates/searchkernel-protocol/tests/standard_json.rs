@@ -221,6 +221,28 @@ fn standard_json_handles_response_union_and_errors() {
 }
 
 #[test]
+fn standard_json_accepts_flatbuffers_positional_empty_union_tables() {
+    let input = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_SearchRequest",
+      "payload": {
+        "query": {"source_type":"MatchAllQuery","source":[]},
+        "sort": [{
+          "target": {"target_type":"FieldSortTarget","target":{"field":"price"}},
+          "direction": "Desc",
+          "missing": {"policy_type":"MissingLast","policy":[]}
+        }]
+      }
+    }"#;
+
+    let bytes = request_json_to_flatbuffer(input)
+        .expect("FlatBuffers positional empty tables must remain accepted");
+    let printed = request_flatbuffer_to_json(&bytes).expect("sort request JSON printer");
+    request_json_to_flatbuffer(&printed)
+        .expect("printed sort request with empty marker table remains readable");
+}
+
+#[test]
 fn standard_json_carries_ranking_inputs_and_structured_grouping() {
     let bytes =
         request_json_to_flatbuffer(WIDENED_SEARCH_REQUEST).expect("widened V2 request JSON");
