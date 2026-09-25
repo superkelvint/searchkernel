@@ -2,6 +2,9 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+node=$(bash "$root/tools/resolve-node.sh" node)
+PATH="$(dirname -- "$node"):$PATH"
+export PATH
 npm=$(bash "$root/tools/resolve-node.sh" npm)
 client="$root/clients/typescript"
 generated="$client/src/generated"
