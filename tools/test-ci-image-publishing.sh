@@ -82,9 +82,11 @@ for forbidden in (
 for fragment in (
     "FROM scratch",
     "ARG VESPA_COMMIT",
+    "ARG VESPA_BUNDLE_ID",
     "searchkernel-native-base",
     "searchkernel-native-toolchain",
     "io.searchkernel.vespa-commit",
+    "io.searchkernel.vespa-bundle-id",
 ):
     if fragment not in vespa:
         raise SystemExit(f"Vespa image is missing {fragment!r}")
@@ -101,6 +103,7 @@ for fragment in (
     "COPY --link --from=vespa",
     "io.searchkernel.toolchain-id",
     "io.searchkernel.vespa-commit",
+    "io.searchkernel.vespa-bundle-id",
     "Composition-time compatibility gate",
     "adapter_static_link_closure",
     "cargo llvm-cov --version",
@@ -111,6 +114,8 @@ for fragment in (
 for fragment in (
     "ARG CI_BASE_IMAGE",
     "FROM ${CI_BASE_IMAGE} AS runtime",
+    "ARG VESPA_BUNDLE_ID",
+    "io.searchkernel.vespa-bundle-id",
     "COPY --from=searchkernel-source",
     "searchkernel-ci-publish-target",
     "/opt/searchkernel/native-validation-pass",
@@ -129,6 +134,10 @@ for forbidden in (
 
 if "searchkernel-ci-toolchain-v1" not in common or "rglob" not in common:
     raise SystemExit("toolchain identity must be a content hash of the complete recipe directory")
+if "searchkernel-ci-vespa-bundle-v1" not in common:
+    raise SystemExit("Vespa bundle identity must include the packaging/closure recipe")
+if 'root / "tools/prepare-searchkernel-ci-native-context.sh"' not in common:
+    raise SystemExit("Vespa bundle identity does not include native-context packaging")
 
 for fragment in (
     "superkelvint/searchkernel-ci-toolchain",
@@ -144,7 +153,10 @@ if "prepare-searchkernel-ci-native-context.sh" in toolchain_publish:
 for fragment in (
     "superkelvint/searchkernel-ci-vespa",
     "prepare-searchkernel-ci-native-context.sh",
+    "ci_image_vespa_bundle_id",
+    'IMAGE_REF="$IMAGE:$VESPA_COMMIT-$VESPA_BUNDLE_ID"',
     "io.searchkernel.vespa-commit",
+    "io.searchkernel.vespa-bundle-id",
 ):
     if fragment not in vespa_publish:
         raise SystemExit(f"Vespa publisher is missing {fragment!r}")
@@ -156,9 +168,12 @@ for forbidden in ("searchkernel-ci-toolchain", "TOOLCHAIN_ID"):
 for fragment in (
     "superkelvint/searchkernel-ci-toolchain",
     "superkelvint/searchkernel-ci-vespa",
+    'VESPA_REF="$VESPA_IMAGE:$VESPA_COMMIT-$VESPA_BUNDLE_ID"',
     'COMPOSITE_TAG="base-$COMPOSITE_ID"',
+    "ci_image_vespa_bundle_id",
     "ci_image_composite_id",
     "io.searchkernel.composite-id",
+    "io.searchkernel.vespa-bundle-id",
     "./dev image toolchain publish",
     "./dev image vespa publish",
     "Reusing published composite base.",
