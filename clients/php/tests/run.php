@@ -166,6 +166,7 @@ same(
     'document fields are canonical key order',
 );
 same('Int64Value', $document['fields'][1]['value']['kind_type'], 'integers stay int64');
+same((string) PHP_INT_MAX, $document['fields'][1]['value']['kind']['value'], 'int64 JSON uses decimal text');
 same('Float64Value', $document['fields'][3]['value']['kind_type'], 'floats stay float64');
 same('ValueList', $document['fields'][4]['value']['kind_type'], 'lists stay lists');
 
@@ -366,8 +367,8 @@ truth(
 );
 same(2, count($request['filters']['textual']), 'repeated filters remain separate clauses');
 same('value', $request['filters']['textual'][0]['bindings'][0]['key'], 'first clause binding key');
-same(120, $request['filters']['textual'][0]['bindings'][0]['value']['kind']['value'], 'first clause binding value');
-same(4, $request['filters']['textual'][1]['bindings'][0]['value']['kind']['value'], 'second clause binding value');
+same('120', $request['filters']['textual'][0]['bindings'][0]['value']['kind']['value'], 'first clause binding value');
+same('4', $request['filters']['textual'][1]['bindings'][0]['value']['kind']['value'], 'second clause binding value');
 same('FieldSortTarget', $request['sort'][0]['target']['target_type'], 'field sort target');
 same('Desc', $request['sort'][0]['direction'], 'field sort direction');
 same('MissingLast', $request['sort'][0]['missing']['policy_type'], 'missing policy');
@@ -381,7 +382,7 @@ same('TensorValue', $request['inputs'][0]['input']['value']['kind_type'], 'tenso
 same([['key' => 'trace.level', 'value' => Protocol::value(2)]], $request['properties'], 'generic property namespace');
 same(['value' => 20], $request['offset'], 'page offset');
 same(['value' => 20], $request['limit'], 'page limit');
-same(['value' => 1000], $request['timeout_ms'], 'timeout');
+same(['value' => '1000'], $request['timeout_ms'], 'timeout uses canonical uint64 decimal text');
 
 same(
     'MatchAllQuery',
@@ -737,12 +738,23 @@ same('UInt64Value', $encodedU64['kind_type'], 'explicit uint64 uses the UInt64Va
 same('18446744073709551615', $encodedU64['kind']['value'], 'uint64 max remains lossless as decimal text');
 $u64Json = Protocol::encodeJson(['value' => $encodedU64]);
 truth(
-    str_contains($u64Json, '"value":18446744073709551615'),
-    'uint64 max is emitted as an unquoted standard FlatBuffers JSON number',
+    str_contains($u64Json, '"value":"18446744073709551615"'),
+    'uint64 max is emitted as a canonical decimal string on the HTTP wire',
 );
 truth(
-    !str_contains($u64Json, '"18446744073709551615"'),
-    'uint64 max is never stringified on the HTTP wire',
+    !str_contains($u64Json, '"value":18446744073709551615'),
+    'uint64 max is never emitted as a bare JSON number',
+);
+
+$i64MinJson = Protocol::encodeJson(['value' => Protocol::value(PHP_INT_MIN)]);
+$i64MaxJson = Protocol::encodeJson(['value' => Protocol::value(PHP_INT_MAX)]);
+truth(
+    str_contains($i64MinJson, '"value":"-9223372036854775808"'),
+    'int64 min is emitted as canonical decimal text',
+);
+truth(
+    str_contains($i64MaxJson, '"value":"9223372036854775807"'),
+    'int64 max is emitted as canonical decimal text',
 );
 
 throws(
