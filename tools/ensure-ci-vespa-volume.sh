@@ -90,13 +90,21 @@ if ! validate_volume; then
     docker volume rm -f "$VOLUME" >/dev/null 2>&1 || true
     docker volume create "$VOLUME" >/dev/null
 
-    # Docker populates a newly-created empty volume from files present at the
-    # mount point in the image during container creation. The scratch Vespa
-    # image never needs to execute.
-    docker create \
-        --name "$SEED_CONTAINER" \
-        --mount "type=volume,source=$VOLUME,target=/opt/searchkernel/native-sdk-cache" \
-        "$VESPA_IMAGE" /bin/true >/dev/null
+    # The Vespa image is scratch-based, so it has no executable we can run.
+    # Export its filesystem locally and stream only the native-cache subtree
+    # into the named volume using the toolchain-bearing CI image. This is a
+    # one-time local materialization per Vespa digest, not a registry push.
+    docker create --name "$SEED_CONTAINER" "$VESPA_IMAGE" /bin/true >/dev/null
+    docker export "$SEED_CONTAINER" |
+        docker run --rm -i \
+            -v "$VOLUME:/opt/searchkernel/native-sdk-cache" \
+            "$CI_IMAGE" \
+            /bin/bash -lc '
+                set -euo pipefail
+                tar -x -C /opt/searchkernel/native-sdk-cache \
+                    --strip-components=3 \
+                    opt/searchkernel/native-sdk-cache
+            '
     docker rm "$SEED_CONTAINER" >/dev/null
 
     # Add only the resolver alias and an integrity marker. Jobs mount this
