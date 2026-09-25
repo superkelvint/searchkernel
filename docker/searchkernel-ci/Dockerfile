@@ -17,6 +17,7 @@ ENV GCC_TOOLSET_ROOT="/opt/rh/gcc-toolset-15/root/usr" \
     PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     CC="/opt/rh/gcc-toolset-15/root/usr/bin/gcc" \
     CXX="/opt/rh/gcc-toolset-15/root/usr/bin/g++" \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="/opt/rh/gcc-toolset-15/root/usr/bin/gcc" \
     AR="/opt/rh/gcc-toolset-15/root/usr/bin/ar" \
     RANLIB="/opt/rh/gcc-toolset-15/root/usr/bin/ranlib" \
     LIBRARY_PATH="/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib" \
@@ -216,6 +217,7 @@ RUN base="/opt/searchkernel/native-sdk-cache/ci/x86_64-unknown-linux-gnu/objects
 # instead of allowing a broken runner to discover the problem later.
 RUN test "$("$CC" -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 \
     && test "$("$CXX" -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 \
+    && test "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER" = "$CC" \
     && "$CXX" -std=gnu++23 -Wmismatched-tags -x c++ -fsyntax-only - <<< 'struct Smoke {}; int main() { Smoke value; (void)value; }' \
     && stdcpp="$("$CXX" -print-file-name=libstdc++.so)" \
     && case "$stdcpp" in "$GCC_TOOLSET_ROOT"/*) ;; *) echo "unexpected libstdc++: $stdcpp" >&2; exit 1;; esac \
