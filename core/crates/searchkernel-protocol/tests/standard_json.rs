@@ -38,6 +38,25 @@ const WIDENED_SEARCH_REQUEST: &[u8] = br#"
 }
 "#;
 
+
+
+const INTEGER_BOUNDARY_REQUEST: &[u8] = br#"
+{
+  "protocol_version": 2,
+  "payload_type": "SearchKernel_V2_InsertRequest",
+  "payload": {
+    "document": {
+      "id": "id:ns:type::integer-boundaries",
+      "fields": [
+        {"key":"i64_min","value":{"kind_type":"Int64Value","kind":{"value":"-9223372036854775808"}}},
+        {"key":"i64_max","value":{"kind_type":"Int64Value","kind":{"value":"9223372036854775807"}}},
+        {"key":"u64_max","value":{"kind_type":"UInt64Value","kind":{"value":"18446744073709551615"}}}
+      ]
+    }
+  }
+}
+"#;
+
 const STRUCTURED_QUERY_REQUEST: &[u8] = br#"
 {
   "protocol_version": 2,
@@ -80,6 +99,40 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
 
     let again =
         request_json_to_flatbuffer(&printed).expect("printed standard JSON remains readable");
+    assert!(!again.is_empty());
+}
+
+
+#[test]
+fn standard_json_prints_64_bit_integer_boundaries_as_decimal_strings() {
+    let bytes =
+        request_json_to_flatbuffer(INTEGER_BOUNDARY_REQUEST).expect("quoted integer boundary JSON");
+    let printed = request_flatbuffer_to_json(&bytes).expect("integer boundary JSON printer");
+    let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+    let fields = value["payload"]["document"]["fields"]
+        .as_array()
+        .expect("document fields array");
+    let field = |name: &str| {
+        fields
+            .iter()
+            .find(|field| field["key"] == name)
+            .unwrap_or_else(|| panic!("missing field {name}"))
+    };
+
+    for (name, expected) in [
+        ("i64_min", "-9223372036854775808"),
+        ("i64_max", "9223372036854775807"),
+        ("u64_max", "18446744073709551615"),
+    ] {
+        assert_eq!(
+            field(name)["value"]["kind"]["value"].as_str(),
+            Some(expected),
+            "{name} must use the canonical decimal-string JSON representation"
+        );
+    }
+
+    let again =
+        request_json_to_flatbuffer(&printed).expect("printed integer boundary JSON remains readable");
     assert!(!again.is_empty());
 }
 
