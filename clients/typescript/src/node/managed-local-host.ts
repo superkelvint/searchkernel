@@ -51,20 +51,9 @@ export function resolveHostBinary(): string {
   return resolve(repositoryRoot(), "target", "debug", "searchkerneld");
 }
 
-function environmentForHost(): NodeJS.ProcessEnv {
+export function environmentForHost(): NodeJS.ProcessEnv {
   const environment = { ...process.env };
-  let sdkLib = environment.SEARCHKERNEL_SDK_LIB;
-  if (!sdkLib) {
-    const candidate = resolve(
-      repositoryRoot(),
-      "core",
-      "native",
-      "sdk",
-      "linux-x86_64",
-      "lib",
-    );
-    if (existsSync(candidate)) sdkLib = candidate;
-  }
+  const sdkLib = environment.SEARCHKERNEL_SDK_LIB;
   if (sdkLib) {
     environment.LD_LIBRARY_PATH = environment.LD_LIBRARY_PATH
       ? `${sdkLib}:${environment.LD_LIBRARY_PATH}`
