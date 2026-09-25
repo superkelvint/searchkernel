@@ -152,7 +152,11 @@ module SearchKernel
         raise ProtocolError, "invalid #{name}" unless value == true || value == false
       elsif %w[documents results results_full nodes].include?(name)
         value = name == "nodes" ? 0 : "0" unless wrapper.key?("value")
-        name == "nodes" ? Value.integer!(value, 0..0xffffffff) : Value.decimal_integer!(value, Value::UINT64)
+        value = if name == "nodes"
+                  Value.integer!(value, 0..0xffffffff)
+                else
+                  Value.decimal_integer!(value, Value::UINT64)
+                end
       else
         value = 0.0 unless wrapper.key?("value")
         value = Value.finite!(value)
