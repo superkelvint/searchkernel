@@ -367,8 +367,8 @@ truth(
 );
 same(2, count($request['filters']['textual']), 'repeated filters remain separate clauses');
 same('value', $request['filters']['textual'][0]['bindings'][0]['key'], 'first clause binding key');
-same(120, $request['filters']['textual'][0]['bindings'][0]['value']['kind']['value'], 'first clause binding value');
-same(4, $request['filters']['textual'][1]['bindings'][0]['value']['kind']['value'], 'second clause binding value');
+same('120', $request['filters']['textual'][0]['bindings'][0]['value']['kind']['value'], 'first clause binding value');
+same('4', $request['filters']['textual'][1]['bindings'][0]['value']['kind']['value'], 'second clause binding value');
 same('FieldSortTarget', $request['sort'][0]['target']['target_type'], 'field sort target');
 same('Desc', $request['sort'][0]['direction'], 'field sort direction');
 same('MissingLast', $request['sort'][0]['missing']['policy_type'], 'missing policy');
