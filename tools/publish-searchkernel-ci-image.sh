@@ -83,6 +83,21 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# This publisher must package the pinned Vespa base together with its source/
+# toolchain metadata. An inherited SK_NATIVE_SDK selects the explicit full-SDK
+# resolver path, where vespa-root is intentionally unavailable. Runner/dev
+# shells commonly export SK_NATIVE_SDK, so sanitize that ambient override here.
+if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
+    echo "Ignoring inherited SK_NATIVE_SDK for CI image publication: $SK_NATIVE_SDK"
+    unset SK_NATIVE_SDK
+fi
+
+# Image publication is deliberately source/local-base driven. Never let an
+# ambient artifact URL or generation silently reintroduce the GitHub Release
+# native-base path that this image is replacing.
+unset SK_NATIVE_BASE_ARTIFACT_URL
+unset SK_NATIVE_BASE_ARTIFACT_GENERATION
+
 echo
 echo "==> Ensuring local pinned Vespa base without GitHub Release fallback"
 
