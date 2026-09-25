@@ -65,7 +65,7 @@ required_runner = (
     "-e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib",
     "-e SEARCHKERNEL_IN_CI_IMAGE=1",
     '[[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1',
-    'artifact_volume="searchkernel-dev-artifacts-',
+    'artifact_volume="searchkernel-dev-artifacts-$(id -u)-$-${RANDOM}"',
     "-e SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage",
     'tar -C /artifacts -cf - coverage | tar -C "$ROOT" -xf -',
 )
