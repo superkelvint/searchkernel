@@ -43,6 +43,14 @@ for command in (
     if command not in dev:
         raise SystemExit(f"dev image-dispatch contract is missing {command!r}")
 
+coverage_start = dev.index("coverage_target() {")
+coverage_end = dev.index("\nlint_target()", coverage_start)
+coverage_body = dev[coverage_start:coverage_end]
+if "install_native_sdk" not in coverage_body:
+    raise SystemExit("dev coverage must provision the native SDK before all-features tests")
+if coverage_body.index("install_native_sdk") > coverage_body.index('bash "$ROOT/tools/coverage.sh"'):
+    raise SystemExit("dev coverage provisions the native SDK too late")
+
 required_runner = (
     "docker.io/superkelvint/searchkernel-ci:latest",
     'IMAGE_ID=$(docker image inspect --format',
@@ -109,6 +117,7 @@ for fragment in \
     '--no-report' \
     '--summary-only' \
     'metadata.json' \
+    '"working_tree_clean": not bool(git_status)' \
     '"native_cpp_coverage": False'; do
     grep -F -- "$fragment" "$COVERAGE" >/dev/null || {
         echo "coverage runner is missing contract fragment: $fragment" >&2
