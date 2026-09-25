@@ -17,6 +17,7 @@ trap cleanup EXIT
 repo="$fixture/repo"
 mkdir -p "$repo/tools" "$repo/core/native/vespa"
 cp "$source_root/tools/resolve-native-sdk.sh" "$repo/tools/"
+cp "$source_root/tools/resolve-python.sh" "$repo/tools/"
 cp "$source_root/tools/install-native-base-artifact.sh" "$repo/tools/"
 chmod +x "$repo/tools/"*.sh
 printf '{"vespa_commit":"fixture-vespa-commit"}\n' >"$repo/core/native/vespa/manifest.json"
