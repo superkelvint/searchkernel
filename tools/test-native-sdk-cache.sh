@@ -238,12 +238,17 @@ run_resolver() {
     local native_target=${4:-x86_64-unknown-linux-gnu}
     (
         cd "$root"
-        SEARCHKERNEL_BUILD_ENV="$build_env" \
-        SK_NATIVE_TARGET="$native_target" \
-        XDG_CACHE_HOME="$fixture/machine-cache-home" \
-        SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
-        SK_NATIVE_CACHE_BUILDER="$root/tools/fake-sdk-builder.sh" \
-        VESPA_LIBRARY_ROOT="$untrusted_library_root" \
+        env \
+            -u SK_NATIVE_SDK \
+            -u VESPA_ROOT \
+            -u SK_NATIVE_BASE_ARTIFACT_URL \
+            -u SK_NATIVE_BASE_ARTIFACT_GENERATION \
+            SEARCHKERNEL_BUILD_ENV="$build_env" \
+            SK_NATIVE_TARGET="$native_target" \
+            XDG_CACHE_HOME="$fixture/machine-cache-home" \
+            SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
+            SK_NATIVE_CACHE_BUILDER="$root/tools/fake-sdk-builder.sh" \
+            VESPA_LIBRARY_ROOT="$untrusted_library_root" \
             bash "$root/tools/resolve-native-sdk.sh" "$mode"
     )
 }
