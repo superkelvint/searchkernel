@@ -56,7 +56,7 @@ concurrency:
 
 jobs:
   run:
-    name: ${{ inputs.target }} in searchkernel-ci:latest
+    name: ${{ inputs.target }} in searchkernel-ci
     runs-on: [self-hosted, linux, x64]
     env:
       CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
@@ -93,9 +93,11 @@ jobs:
             echo "::error::could not resolve immutable image ID for $CI_IMAGE"
             exit 1
           }
-          echo "Using $CI_IMAGE"
-          echo "Resolved image digest: ${digest:-unknown}"
-          echo "Resolved image ID: $image_id"
+          echo "CI IMAGE PROVENANCE"
+          printf '  ref:          %s\\n' "$CI_IMAGE"
+          printf '  digest:       %s\\n' "${digest:-unknown}"
+          printf '  image_id:     %s\\n' "$image_id"
+          printf '  vespa_commit: %s\\n' "$label"
           echo "CI_IMAGE_ID=$image_id" >> "$GITHUB_ENV"
 
           docker run --rm "$image_id" /bin/bash -lc '
