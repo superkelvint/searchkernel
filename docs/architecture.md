@@ -24,7 +24,7 @@ Transport is plumbing around that model. It must not become another semantic imp
 4. **First-party non-Rust clients use canonical FlatBuffers through thin transports.** gRPC carrying FlatBuffer bytes remains the default local/native transport. An explicitly selected HTTP edge may carry standard schema-derived FlatBuffers JSON, but it must immediately convert through the official BFBS-backed JSON bridge to the same canonical FlatBuffer envelope and dispatcher.
 5. **Protobuf is transport framing only.** It does not duplicate the Search Kernel domain model.
 6. **The only required native FFI boundary is Rust ↔ Vespa C++.** The former portable client C ABI and per-language native transports are not part of the final architecture.
-7. **Language SDKs are thin façades.** `flatc` generates FlatBuffers model types; standard gRPC tooling generates RPC stubs; Search Kernel hand-writes only the small idiomatic layer worth owning.
+7. **Language SDKs are thin façades over a mechanically schema-derived representation.** Binary clients use `flatc`-generated FlatBuffers models plus standard generated gRPC/gRPC-Web stubs. Explicitly designated HTTP-first clients use only standard FlatBuffers JSON whose schema authority is the official BFBS-backed parser/printer. Search Kernel hand-writes only the small idiomatic layer worth owning.
 8. **A new portable capability does not have to become ergonomic and executable everywhere in one change.** Representation, semantic support, backend execution, and SDK sugar are separate stages.
 
 ---
@@ -331,9 +331,11 @@ The wrapper should not invent new search semantics merely to produce a more eleg
 
 A non-Rust SDK has two layers.
 
-### Generated low-level layer
+### Mechanically derived low-level layer
 
-Owned by standard tooling:
+Owned by standard tooling and selected explicitly per client.
+
+Binary/native clients use:
 
 ```text
 flatc
@@ -343,7 +345,13 @@ gRPC generator
     → client stub for Execute(Frame)
 ```
 
-This layer should track the portable contract mechanically.
+Explicitly designated HTTP-first clients instead expose the canonical low-level
+standard-FlatBuffers-JSON envelope/value/request representation and prove it
+against the official BFBS-backed parser/printer. They do not need generated RPC
+stubs that their production path never executes.
+
+Either form must track the same canonical FlatBuffers portable contract
+mechanically.
 
 ### Handwritten ergonomic layer
 
@@ -371,21 +379,23 @@ portable error meaning
 
 Those belong in `searchkernel-ir`.
 
-A newly represented FlatBuffers feature may be available through the low-level generated API before a high-level convenience method is added.
+A newly represented FlatBuffers feature may be available through the client's low-level canonical API before a high-level convenience method is added.
 
 ---
 
-## Client generation
+## Client generation and schema derivation
 
 Standard tools should own standard work:
 
 ```text
-flatc             language FlatBuffers model generation
-gRPC toolchain    RPC client/server stub generation
+flatc             language FlatBuffers model generation for binary clients
+gRPC toolchain    RPC client/server stub generation for gRPC/gRPC-Web clients
+BFBS bridge       schema-aware standard FlatBuffers JSON for HTTP-first clients
 ```
 
-There is no Search-Kernel-specific language emitter. Do not add one merely
-because a new client language or schema field is introduced.
+There is no Search-Kernel-specific language emitter or handwritten HTTP domain
+schema. Do not add one merely because a new client language or schema field is
+introduced.
 
 ---
 

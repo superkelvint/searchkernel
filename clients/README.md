@@ -3,19 +3,38 @@
 This directory contains the non-Rust language SDKs. The portable contract is
 defined by the canonical FlatBuffers schemas in `api/*.fbs`.
 
-Rust applications use the direct in-process Rust API. Non-Rust SDKs use this
-path:
+Rust applications use the direct in-process Rust API. Non-Rust SDKs use one
+explicitly sanctioned portable transport path and converge on the same
+dispatcher.
+
+Default binary/native path:
 
 ```text
 ergonomic language-specific facade
         ↓
 flatc-generated FlatBuffer models
         ↓
-canonical request/response envelopes
+canonical request/response envelope bytes
         ↓
-generated gRPC stub
+generated gRPC/gRPC-Web stub
         ↓
 searchkerneld
+```
+
+Explicit HTTP-first path:
+
+```text
+ergonomic language-specific facade
+        ↓
+standard FlatBuffers JSON envelope
+        ↓
+generic HTTP execute edge
+        ↓
+official BFBS-backed parser/printer
+        ↓
+canonical request/response envelope bytes
+        ↓
+searchkerneld shared dispatcher
 ```
 
 ## Capability status
@@ -50,8 +69,10 @@ not by separate protobuf RPC methods.
 FlatBuffers owns the request and response model, enums, unions, serialization,
 deserialization, and wire compatibility.
 
-gRPC tooling owns RPC framing, connection handling, client and server stub
-generation, deadlines and cancellation, and UDS/TCP transport.
+For clients that use gRPC/gRPC-Web, standard gRPC tooling owns RPC framing,
+connection handling, client/server stub generation, deadlines/cancellation, and
+UDS/TCP or browser transport. Explicit HTTP-first clients do not reimplement
+gRPC; they use standard FlatBuffers JSON and the generic HTTP execute edge.
 
 Each language SDK owns only idiomatic ergonomics: builders and helpers,
 operator sugar, result convenience wrappers, and error presentation. SDKs do
@@ -68,11 +89,12 @@ searchkernel-dispatch
 searchkernel-ir
 ```
 
-The low-level complete API is the generated FlatBuffers object model. The
-high-level ergonomic API is a small handwritten language facade over those
-objects. A new FlatBuffers field is therefore immediately available through
-the generated low-level model; an ergonomic facade can add convenient syntax
-for it later.
+The low-level complete API is mechanically derived from the canonical
+FlatBuffers contract. Binary clients expose generated FlatBuffers objects;
+explicit HTTP-first clients expose supported standard-FlatBuffers-JSON
+envelope/value/request helpers whose schema fidelity is checked through the
+official BFBS bridge. The high-level ergonomic API is a small handwritten
+facade over that low-level representation.
 
 ## Python
 
@@ -111,7 +133,7 @@ client first-class.
 
 The implementation SOP covers:
 
-- generated FlatBuffers and gRPC layers;
+- generated FlatBuffers/gRPC layers for binary clients and BFBS-backed standard-JSON conformance for HTTP-first clients;
 - handwritten ergonomic facade boundaries;
 - request/response framing and error handling;
 - portable value encoding and decoding;
@@ -134,24 +156,23 @@ The integration SOP covers the repository promotion step, including:
 
 At a high level, every new first-class SDK should:
 
-1. Generate the FlatBuffers models with `flatc`.
-2. Generate or implement the standard gRPC transport from `api/rpc/searchkernel.proto`.
-3. Implement the managed local `searchkerneld` lifecycle used by `Index.create(...)`
-   and `Index.open(...)`: resolve the daemon binary, start it against the requested
-   index, use a private local endpoint, wait for readiness, and own graceful shutdown
-   and cleanup.
-4. Reuse that same transport/client stack for `Index.connect(...)` when attaching to
-   an already-running daemon.
+1. Select one architecture-sanctioned representation/transport path before implementation.
+2. For binary clients, generate FlatBuffers models and standard gRPC/gRPC-Web plumbing; for explicitly HTTP-first clients, use only standard FlatBuffers JSON and prove it mechanically through the official BFBS bridge.
+3. Implement managed local `searchkerneld` lifecycle only when that runtime claims it:
+   resolve the daemon binary, start it against the requested index, use a private local
+   endpoint, wait for readiness, and own graceful shutdown and cleanup.
+4. Reuse the same selected transport/client stack for connection to an already-running daemon.
 5. Add the thin idiomatic facade for the language.
-6. Integrate that client into the repository-wide generation, test, conformance,
+6. Integrate that client into the repository-wide generation/conformance, test,
    capability, packaging, and E2E harnesses.
-7. Run the shared protocol, semantic, packaging, managed-lifecycle, persistence/reopen,
-   and end-to-end conformance tests.
+7. Run the shared protocol, semantic, packaging, applicable lifecycle,
+   persistence/reopen, and end-to-end conformance tests.
 
 Browser-only clients cannot spawn local processes, so they expose the connection path
 only and talk to an already-running `searchkerneld` through the browser-compatible
-transport. Native runtimes should provide the managed local-host behavior rather than
-requiring users to launch the daemon manually.
+transport. Managed-local capability is explicit rather than universal: a connect-only
+native or HTTP-first client must document that lifecycle boundary rather than
+implicitly claiming daemon ownership.
 
 Adding a language should not require changes to `searchkernel-ir`,
 `searchkernel-dispatch`, `searchkerneld` protocol semantics, or Vespa lowering

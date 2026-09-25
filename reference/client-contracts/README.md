@@ -24,8 +24,13 @@ The fields mean:
 - `e2e` — the behavior reaches the real product/backend path;
 - `runtime` — the environment for that evidence.
 
-Kinds are independent. A low-level gRPC E2E can prove `e2e` without proving
-that the ergonomic facade exposes the feature.
+Kinds are independent. A low-level transport E2E can prove `e2e` without
+proving that the ergonomic facade exposes the feature. Runtime names record the
+actual execution path (`grpc`, `grpc-web`, `http`, `managed-local`, etc.);
+they do not authorize new transport architectures. An `http` first-party
+surface must be explicitly designated HTTP-first by the architecture/SOP and
+must use standard FlatBuffers JSON through the official BFBS-backed generic
+execute edge.
 
 Surfaces whose production runtime must have executable real-backend coverage
 declare `required_e2e_runtimes` in the catalog. Every listed runtime must be

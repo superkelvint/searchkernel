@@ -15,10 +15,10 @@
 
 ## 16.2 gRPC codegen tools
 
-- [ ] **SK-16-006** Rust/Python/TypeScript RPC generation uses standard upstream generators.
+- [ ] **SK-16-006** Every first-party surface that uses gRPC/gRPC-Web uses standard upstream RPC generators; current generated Rust/Python/TypeScript RPC surfaces are covered by this obligation. Explicit HTTP-first clients do not need unused RPC stubs merely to satisfy this item.
 - [ ] **SK-16-007** `check-searchkernel-rpc.sh` and `check-python-grpc.sh` detect stale generated outputs.
 - [ ] **SK-16-008** TypeScript has an equivalent authoritative generated-stub freshness check.
-- [ ] **SK-16-009** No custom Search-Kernel-specific language RPC generator owns standard gRPC framing/stubs.
+- [ ] **SK-16-009** No custom Search-Kernel-specific language RPC generator owns standard gRPC framing/stubs. An HTTP-first client is exempt from RPC generation only when its wire representation is standard FlatBuffers JSON and the official BFBS-backed parser/printer is the schema authority.
 
 ## 16.3 Native binding/ABI tools
 
@@ -54,5 +54,6 @@
 - [ ] **SK-16-027** Empty/retired `tools/searchkernel-bindgen`, `tools/searchkerneld-e2e-harness`, `core/crates/searchkernel-json`, and `reference/ffi-conformance` directories contain no active code; if retained as empty placeholders, the reason is documented or they are removed.
 - [ ] **SK-16-028** No build/test/doc still references obsolete custom bindgen/native-client transport tooling.
 - [ ] **SK-16-029** Retired `reference/ffi-conformance` is not an active product acceptance dependency.
+- [ ] **SK-16-030** Every explicitly designated HTTP-first first-party client has a mechanical conformance check that feeds representative client-emitted/requested standard FlatBuffers JSON through the official BFBS-backed bridge and fails on schema, discriminator, scalar-width, or malformed-union drift.
 
 ---
