@@ -39,7 +39,9 @@ echo
 echo "==> Pinning toolchain base image"
 docker pull "$BASE_IMAGE" >/dev/null
 PINNED_BASE_IMAGE="$(
-    docker image inspect         --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}'         "$BASE_IMAGE"
+    docker image inspect \
+        --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' \
+        "$BASE_IMAGE"
 )"
 [[ -n "$PINNED_BASE_IMAGE" ]] ||
     ci_image_die "could not resolve an immutable digest for $BASE_IMAGE"
@@ -52,7 +54,16 @@ echo "Toolchain id: $TOOLCHAIN_ID"
 echo "Base image:   $PINNED_BASE_IMAGE"
 echo "Revision:     $REVISION"
 
-DOCKER_BUILDKIT=1 docker build     --build-arg "BASE_IMAGE=$PINNED_BASE_IMAGE"     --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel"     --label "org.opencontainers.image.revision=$REVISION"     --label "io.searchkernel.toolchain-id=$TOOLCHAIN_ID"     --label "io.searchkernel.toolchain-base=$PINNED_BASE_IMAGE"     -f "$RECIPE/Dockerfile"     -t "$IMAGE_REF"     "$RECIPE"
+toolchain_build_args=(
+    --build-arg "BASE_IMAGE=$PINNED_BASE_IMAGE"
+    --label "org.opencontainers.image.source=https://github.com/superkelvint/searchkernel"
+    --label "org.opencontainers.image.revision=$REVISION"
+    --label "io.searchkernel.toolchain-id=$TOOLCHAIN_ID"
+    --label "io.searchkernel.toolchain-base=$PINNED_BASE_IMAGE"
+    -f "$RECIPE/Dockerfile"
+    -t "$IMAGE_REF"
+)
+DOCKER_BUILDKIT=1 docker build "${toolchain_build_args[@]}" "$RECIPE"
 
 ci_image_require_label "$IMAGE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
 
