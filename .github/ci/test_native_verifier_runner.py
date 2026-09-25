@@ -29,6 +29,16 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             'docker pull "$CI_IMAGE"',
             'docker volume create "$SOURCE_VOLUME"',
             'docker volume create "$TARGET_VOLUME"',
+            'git bundle create "$bundle" --all HEAD',
+            'git clone --quiet "$bundle" /workspace',
+            'git -C /workspace config core.hooksPath .githooks',
+            'CI_IMAGE_ID=$image_id',
+            'FLATBUFFERS_CPP_ROOT=/usr/local',
+            'FLATC_PATH=/usr/local/bin/flatc',
+            'CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc',
+            'CXX=/opt/rh/gcc-toolset-15/root/usr/bin/g++',
+            'CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc',
+            'LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib',
             'test -f /opt/searchkernel/native-validation-pass',
             'native_base=$(./dev native-sdk path)',
             '/opt/searchkernel/native-sdk-cache/ci/*/objects/*',
@@ -45,6 +55,8 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             "/native-artifacts/",
             "SK_NATIVE_BASE_ARTIFACT_URL=",
             "NATIVE_CONTAINER: searchkernel-native",
+            '-v "$GITHUB_WORKSPACE:/source:ro"',
+            "cp -a /source/. /work/",
         ):
             self.assertNotIn(retired, source)
 
@@ -60,6 +72,9 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             "ensure-runner-rust.sh",
             "Swatinem/rust-cache",
             "flock 9",
+            '-v "$GITHUB_WORKSPACE:/source:ro"',
+            "cp -a /source/. /work/",
+            "/work/.git/searchkernel/toolchains",
         ):
             self.assertNotIn(forbidden, source)
         for required in (

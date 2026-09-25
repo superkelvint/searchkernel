@@ -206,6 +206,35 @@ it("projects named facets only when explicitly requested", () => {
 });
 
 
+it("projects native generic named facets with non-negative Int64 counts", () => {
+  const bucket = new ResultGroupT(
+    "grouping-0",
+    "brands",
+    value("Acme"),
+    [new ValueEntryT("count", value(3))],
+  );
+  const facet = new ResultGroupT("brand", "brands", null, [], [node(bucket)]);
+  const root = new ResultGroupT(null, null, null, [], [node(facet)]);
+  const result = new SearchResults(new SearchResultT(node(root)));
+
+  result.projectFacet("brands", "brands", "brand");
+  expect(result.facets).toEqual({ brands: [{ value: "Acme", count: 3n }] });
+
+  const negativeBucket = new ResultGroupT(
+    "grouping-0",
+    "brands",
+    value("Acme"),
+    [new ValueEntryT("count", value(-1))],
+  );
+  const negativeFacet = new ResultGroupT("brand", "brands", null, [], [node(negativeBucket)]);
+  const negativeRoot = new ResultGroupT(null, null, null, [], [node(negativeFacet)]);
+  const negative = new SearchResults(new SearchResultT(node(negativeRoot)));
+
+  negative.projectFacet("brands", "brands", "brand");
+  expect(negative.facets).toEqual({});
+});
+
+
 
 it("decodes timing and result issues into facade values", () => {
   const root = new ResultGroupT();

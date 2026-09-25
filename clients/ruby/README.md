@@ -15,10 +15,18 @@ Ruby client
   -> shared dispatcher / searchkernel-ir
 ```
 
-The current foundation exposes the complete low-level operation envelope,
-portable/protocol error separation, and semantic-free HTTP transport. Higher
-level values, results, `Index` ergonomics, and managed local lifecycle are added
-in subsequent bounded slices under the full Ruby client tracker.
+The client exposes the low-level operation envelope, portable/protocol error
+separation, and HTTP transport. `SearchKernel::Value.encode` builds canonical
+Value union JSON from Ruby scalars, lists and string-keyed maps; use
+`Value.uint64`, `Value.bytes`, and `Value.tensor(type_spec, :dense/:sparse/:mixed,
+payload)` for explicit kinds. `Value.decode` checks the discriminator and
+returns Ruby values; tensors use the `$searchkernel_tensor` tagged map.
+
+`client.search_results(request_payload)` returns a read-only
+`SearchKernel::Results::SearchResults`. Its `root` retains the recursive tree;
+`hits` and `groups` are direct projections of that root. Raw `client.search`
+still returns the canonical response payload. The high-level `Index` facade
+and managed local lifecycle remain separate future slices.
 
 Run the focused tests from the repository root:
 
