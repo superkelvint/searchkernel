@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-flatc_bin=$(bash "$root/tools/resolve-flatc.sh")
+flatc_bin=$(bash "$root/tools/resolve-flatbuffers.sh" flatc)
 generated_root=${TYPESCRIPT_GENERATED_DIR:-"$root/clients/typescript/src/generated"}
 out="$generated_root/flatbuffers"
 tmp=$(mktemp -d)
