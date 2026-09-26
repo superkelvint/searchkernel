@@ -75,6 +75,10 @@ impl IndexManifest {
                 "resolved_schema_snapshot": searchkernel_ir::snapshot::index_definition(
                     resolved_context.definition(),
                 ),
+                // Keep caller-visible document_type lossless in the canonical
+                // FlatBuffer, but durably record the concrete backend identity
+                // that generated the immutable engine configuration.
+                "resolved_document_type": resolved_context.definition().resolved_document_type(),
                 "provenance": {
                     "created_by_searchkernel_version": env!("CARGO_PKG_VERSION"),
                     "created_by_native_abi": searchkernel_vespa_bindings::SK_NATIVE_ABI_VERSION,
@@ -233,6 +237,7 @@ impl IndexManifest {
                 "manifest resolved_engine_config_identity is invalid",
             ));
         }
+        self.persisted_resolved_document_type()?;
         Ok(())
     }
 
@@ -265,6 +270,34 @@ impl IndexManifest {
         Ok(())
     }
 
+    fn persisted_resolved_document_type(&self) -> Result<Option<&str>> {
+        match self.value.get("resolved_document_type") {
+            None => Ok(None),
+            Some(value) => value
+                .as_str()
+                .map(Some)
+                .ok_or_else(|| Error::corrupt_index("manifest resolved_document_type is invalid")),
+        }
+    }
+
+    fn compiled_document_type(config: &std::path::Path) -> Result<String> {
+        let schema_path = config.join("searchkernel-schema.json");
+        let schema_bytes = std::fs::read(&schema_path)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).map_err(|error| {
+            Error::corrupt_index(format!(
+                "resolved engine schema manifest is invalid: {error}"
+            ))
+        })?;
+        schema
+            .get("document_type")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                Error::corrupt_index("resolved engine schema document_type is missing or invalid")
+            })
+    }
+
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn definition(&self) -> Result<IndexDefinition> {
         let version = self
@@ -287,6 +320,41 @@ impl IndexManifest {
     }
 
     pub(crate) fn resolved_context(&self) -> Result<IndexContext> {
+        let mut definition = self.decoded_definition_ir()?;
+        if let Some(document_type) = self.persisted_resolved_document_type()? {
+            definition.set_resolved_document_type(document_type);
+        }
+        Ok(IndexContext::from_definition_ir(definition))
+    }
+
+    /// Recover the exact backend document identity used by the persisted
+    /// engine configuration before opening Vespa.
+    ///
+    /// Manifests created after identity persistence carry the value directly.
+    /// Historical v2/v3/v4 manifests do not, so the immutable compiled schema
+    /// is their compatibility authority. Never replay today's fallback over an
+    /// older index.
+    pub(crate) fn resolved_context_with_config(
+        &self,
+        config: &std::path::Path,
+    ) -> Result<IndexContext> {
+        self.validate_config(config)?;
+        let mut definition = self.decoded_definition_ir()?;
+        let compiled_document_type = Self::compiled_document_type(config)?;
+        let resolved_document_type = match self.persisted_resolved_document_type()? {
+            Some(persisted) if persisted != compiled_document_type => {
+                return Err(Error::incompatible_index(
+                    "resolved document identity differs from compiled engine configuration",
+                ));
+            }
+            Some(persisted) => persisted.to_owned(),
+            None => compiled_document_type,
+        };
+        definition.set_resolved_document_type(resolved_document_type);
+        Ok(IndexContext::from_definition_ir(definition))
+    }
+
+    fn decoded_definition_ir(&self) -> Result<searchkernel_ir::IndexDefinitionIr> {
         let version = self
             .value
             .get("manifest_format_version")
@@ -294,22 +362,16 @@ impl IndexManifest {
             .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| Error::corrupt_index("manifest format version is missing"))?;
         if version == u64::from(MANIFEST_FORMAT_VERSION) {
-            Ok(IndexContext::from_definition_ir(
-                self.resolved_definition_ir()?,
-            ))
+            self.resolved_definition_ir()
         } else if version == u64::from(PREVIOUS_MANIFEST_FORMAT_VERSION) {
-            Ok(IndexContext::from_definition_ir(
-                self.decode_resolved_definition_ir()?,
-            ))
+            self.decode_resolved_definition_ir()
         } else {
             let definition = definition_from_json(
                 self.value
                     .get("resolved_index_definition")
                     .ok_or_else(|| Error::corrupt_index("resolved definition is missing"))?,
             )?;
-            Ok(IndexContext::from_definition_ir(definition_to_ir(
-                &definition,
-            )?))
+            definition_to_ir(&definition)
         }
     }
 

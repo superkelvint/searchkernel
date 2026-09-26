@@ -276,12 +276,19 @@ fn assemble_index_definition(input: ResolvedIndexDefinition) -> Result<IndexDefi
     validate_struct_references(&input.fields, &input.structs)?;
     validate_struct_references(&input.schema_fields, &input.structs)?;
     let rank_profiles = resolve_rank_profiles(input.rank_profiles, "rank_profiles")?;
+    let resolved_document_type = input
+        .document_type
+        .as_deref()
+        .or_else(|| input.name.as_ref().map(IndexName::as_str))
+        .unwrap_or("searchkernel")
+        .to_owned();
     Ok(IndexDefinitionIr {
         name: input.name,
         fields: input.fields,
         default_search_fields: input.default_search_fields,
         properties: input.properties,
         document_type: input.document_type,
+        resolved_document_type,
         schema_inherits: input.schema_inherits,
         document_inherits: input.document_inherits,
         structs: input.structs,
