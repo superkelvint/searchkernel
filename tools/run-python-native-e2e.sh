@@ -19,9 +19,8 @@ while (($#)); do
     shift
 done
 
-if [[ "$prevalidated_native_sdk" != 1 ]]; then
-    ./dev native-sdk ensure
-fi
+source "$ROOT/tools/client-e2e-runtime.sh"
+prepare_client_e2e_runtime "$prevalidated_native_sdk"
 
 SEARCHKERNEL_RUN_NATIVE_E2E=1 "$PYTHON_BIN" -m unittest discover \
     -s clients/python/tests \

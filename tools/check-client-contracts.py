@@ -336,15 +336,23 @@ def validate_facade_support(
 def run_e2e_lanes(
     surfaces: dict[str, dict[str, Any]],
     root: Path = ROOT,
+    surface: str | None = None,
 ) -> None:
+    if surface is not None:
+        if surface not in surfaces:
+            raise RegistryError(f"unknown E2E client surface: {surface}")
+        selected_surfaces = ((surface, surfaces[surface]),)
+    else:
+        selected_surfaces = surfaces.items()
+
     seen: set[tuple[str, ...]] = set()
-    for surface, config in surfaces.items():
+    for surface_name, config in selected_surfaces:
         for lane in config["e2e_lanes"]:
             command = tuple(lane["command"])
             if command in seen:
                 continue
             seen.add(command)
-            print(f"Running E2E lane for {surface}: {' '.join(command)}")
+            print(f"Running E2E lane for {surface_name}: {' '.join(command)}")
             try:
                 subprocess.run(command, cwd=root, check=True)
             except subprocess.CalledProcessError as error:
@@ -509,9 +517,10 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--write", action="store_true")
     mode.add_argument("--run-e2e", action="store_true")
+    mode.add_argument("--run-e2e-surface")
     args = parser.parse_args(argv)
     try:
-        if args.run_e2e:
+        if args.run_e2e or args.run_e2e_surface:
             global_capabilities = load_global_capabilities()
             catalog = load_catalog()
             surfaces, scenarios, _overrides = validate_catalog(
@@ -519,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             evidence = collect_evidence(surfaces, scenarios)
             validate_facade_support(global_capabilities, surfaces, evidence)
-            run_e2e_lanes(surfaces)
+            run_e2e_lanes(surfaces, surface=args.run_e2e_surface)
             print("Client capability E2E lanes PASS.")
             return 0
         report = build_current_report()
