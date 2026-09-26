@@ -590,6 +590,7 @@ jobs:
               ;;
 
             native-full)
+              run_phase native-full-release-support "$PYTHON" tools/check-release-support.py
               # ABI-sensitive changes are covered by the dedicated exact-head
               # ABI surface workflow, which compares against the real PR/base SHA.
               # Prepare once in a tokenless child, then publish only the fixed
@@ -606,6 +607,7 @@ jobs:
               ;;
 
             client-e2e)
+              run_phase client-e2e-release-support "$PYTHON" tools/check-release-support.py
               "$PYTHON" tools/check-python-dependencies.py
               build_native_searchkerneld client-e2e-build
               run_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e

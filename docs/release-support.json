@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "release": "0.1.x beta",
+  "platform": {"os": "linux", "arch": "x86_64", "libc": "glibc"},
+  "supported": [
+    {"surface": "rust-embedded", "runtime": "native", "evidence": "native-full"},
+    {"surface": "searchkerneld", "runtime": "native", "evidence": "native-full"},
+    {"surface": "python", "runtime": "managed-local", "evidence": "client-e2e"},
+    {"surface": "python", "runtime": "connect", "evidence": "client-e2e"},
+    {"surface": "typescript-node", "runtime": "managed-local", "evidence": "client-e2e"},
+    {"surface": "typescript-node", "runtime": "connect", "evidence": "client-e2e"}
+  ],
+  "deferred": [
+    "typescript-browser-grpc-web",
+    "php",
+    "ruby",
+    "go",
+    "macos",
+    "windows",
+    "linux-aarch64"
+  ]
+}

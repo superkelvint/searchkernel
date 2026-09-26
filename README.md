@@ -58,9 +58,9 @@ It also doesn't have its own ranking language, storage engine, or schema migrati
 
 ## Installing
 
-Search Kernel links against Vespa's native libraries at build time. None of the bindings are pure-language packages.
+Search Kernel links against Vespa's native libraries at build time. None of the managed-local bindings are pure-language packages. The next beta release qualifies **Linux x86-64 with glibc** for the Rust embedded API, `searchkerneld`, Python, and TypeScript/Node.js. Browser TypeScript/gRPC-Web, PHP, Ruby, Go, macOS, Windows, and Linux ARM/aarch64 are not release-supported surfaces.
 
-*(Installation instructions — supported platforms, native dependencies, build steps, per language — go here.)*
+See the [authoritative release support matrix](docs/release-support.md) before deploying or packaging Search Kernel.
 
 ### Development prerequisites
 
@@ -151,15 +151,7 @@ models and do not maintain parallel full-schema DTOs or handwritten codecs.
 
 ## Language bindings
 
-| Language   | Status |
-|------------|--------|
-| Rust       | Direct embedded API |
-| Python     | gRPC transport and ergonomic facade present |
-| JavaScript | Planned/on demand |
-| Go         | Planned/on demand |
-| PHP        | Planned/on demand |
-
-Implemented bindings expose the same underlying operations. If one binding supports something another doesn't yet, that's a gap to close, not a difference in design.
+Release support is deliberately narrower than implementation inventory. For the next beta, Python and TypeScript/Node.js are supported non-Rust SDKs on the qualified Linux x86-64 glibc platform. PHP, Ruby, browser gRPC-Web, Go, and other language/runtime surfaces are deferred even where implementation exists. See the [release support matrix](docs/release-support.md).
 
 ## Repository layout
 
