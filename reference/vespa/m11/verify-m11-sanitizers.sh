@@ -116,6 +116,19 @@ run_lane() {
   local binary="$CARGO_TARGET_DIR/debug/searchkernel-m11-driver"
   require_native_driver "$binary" sk_test_failpoint_set sk_test_failpoint_is_blocked
 
+  # Exercise the direct C ABI descriptor boundary under the same instrumented
+  # adapter. This owns malformed packed-buffer regressions that the Rust driver
+  # cannot construct through its safe facade.
+  local abi_test="$runtime/native_adapter_coverage_test"
+  mkdir -p "$runtime"
+  local sanitizer_flags=""
+  [[ "$lane" == asan-ubsan ]] && sanitizer_flags="-fno-omit-frame-pointer -fsanitize=address,undefined"
+  [[ "$lane" == tsan ]] && sanitizer_flags="-fno-omit-frame-pointer -fsanitize=thread -no-pie"
+  ${CXX:-c++} -std=gnu++23 -O0 -g -Wall -Wextra -Werror -pthread $sanitizer_flags \
+    -DSK_ENABLE_HARDENING_FAILPOINTS -I"$sdk/include" -I"$ROOT/core/native/vespa" \
+    "$ROOT/core/native/vespa/native_adapter_coverage_test.cpp" -L"$sdk/lib" \
+    -Wl,-rpath,"$sdk/lib" -lsearchkernel_vespa $sanitizer_flags -o "$abi_test"
+
   # Scenario state is disposable even when build products are reusable.
   rm -rf "$runtime"
   mkdir -p "$runtime"
@@ -141,6 +154,9 @@ run_lane() {
     asan-ubsan)
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$binary" compile "$config"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$abi_test" "$runtime/direct-data" "$config"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$binary" malformed "$config" "$runtime/data"

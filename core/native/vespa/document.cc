@@ -26,8 +26,11 @@ std::vector<std::string> copy_string_array(const uint8_t *bytes,
                                            const uint32_t *lengths,
                                            uint32_t count, uint32_t bytes_length,
                                            const char *what) {
-    if ((bytes_length != 0 && !bytes) || (count != 0 && !lengths)) {
+    if ((count != 0 && (!bytes || !lengths)) || (count == 0 && bytes_length != 0)) {
         throw std::invalid_argument(std::string(what) + " arrays are invalid");
+    }
+    if (count > MAX_PACKED_ELEMENTS) {
+        throw std::invalid_argument(std::string(what) + " has too many elements");
     }
     if (bytes_length > MAX_TEXT_BYTES) {
         throw std::invalid_argument(std::string(what) + " data is too large");
@@ -56,9 +59,12 @@ std::vector<std::pair<std::string, std::string>> copy_predicate_features(
     const uint8_t *key_bytes, const uint32_t *key_lengths, uint32_t key_bytes_length,
     const uint8_t *value_bytes, const uint32_t *value_lengths, uint32_t value_bytes_length,
     uint32_t count) {
-    if (count == 0 || !key_lengths || !value_lengths ||
-        (key_bytes_length != 0 && !key_bytes) || (value_bytes_length != 0 && !value_bytes)) {
+    if (count == 0 || count > MAX_PACKED_ELEMENTS || !key_lengths || !value_lengths ||
+        !key_bytes || !value_bytes) {
         throw std::invalid_argument("predicate feature arrays are invalid");
+    }
+    if (key_bytes_length > MAX_TEXT_BYTES || value_bytes_length > MAX_TEXT_BYTES) {
+        throw std::invalid_argument("predicate feature data is too large");
     }
     std::vector<std::pair<std::string, std::string>> result;
     result.reserve(count);

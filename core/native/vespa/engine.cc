@@ -9,6 +9,7 @@ constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
 constexpr size_t MAX_SCHEMA_IDENTIFIER_BYTES = 256;
 constexpr size_t MAX_RANK_PROFILE_BYTES = 256;
 constexpr size_t MAX_TEXT_BYTES = 16 * 1024 * 1024;
+constexpr uint32_t MAX_PACKED_ELEMENTS = 1'000'000;
 constexpr size_t MAX_TEXT_TERM_BYTES = 1024 * 1024;
 constexpr size_t MAX_TOTAL_TEXT_TERM_BYTES = 64 * 1024 * 1024;
 constexpr size_t MAX_TEXT_TERMS = 65536;

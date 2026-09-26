@@ -162,6 +162,45 @@ void invalid_argument_surface() {
     expect_ok(sk_document_add_string_array(document, "tags", array_value_bytes,
                                            array_value_lengths, 1, 1, error.data(), ERROR_CAPACITY),
               "document array annotation value setup");
+    const uint32_t zero_length[] = {0};
+    const uint32_t two_lengths[] = {1, 1};
+    const uint8_t two_bytes[] = {'a', 'b'};
+    expect_invalid(sk_document_add_string_array(document, "bad", nullptr, zero_length, 1, 0,
+                                                error.data(), ERROR_CAPACITY),
+                   "string array null bytes with nonzero count");
+    expect_invalid(sk_document_add_string_array(document, "bad", array_value_bytes,
+                                                array_value_lengths, 1, 0, error.data(), ERROR_CAPACITY),
+                   "string array short packed total");
+    expect_invalid(sk_document_add_string_array(document, "bad", array_value_bytes,
+                                                zero_length, 1, 1, error.data(), ERROR_CAPACITY),
+                   "string array long packed total");
+    expect_ok(sk_document_add_string_array(document, "empty", nullptr, nullptr, 0, 0,
+                                           error.data(), ERROR_CAPACITY),
+              "string array empty descriptor");
+    expect_ok(sk_document_add_string_array(document, "multi", two_bytes, two_lengths, 2, 2,
+                                           error.data(), ERROR_CAPACITY),
+              "string array multi element descriptor");
+    expect_invalid(sk_document_add_string_array(document, "too-many", array_value_bytes,
+                                                array_value_lengths, 1'000'001, 1,
+                                                error.data(), ERROR_CAPACITY),
+                   "string array element count limit");
+    const uint8_t predicate_key[] = {'k'};
+    const uint8_t predicate_value[] = {'v'};
+    expect_invalid(sk_document_add_predicate(document, "pred", nullptr, zero_length, 0,
+                                             predicate_value, array_value_lengths, 1, 1,
+                                             error.data(), ERROR_CAPACITY),
+                   "predicate null key bytes with nonzero count");
+    expect_invalid(sk_document_add_predicate(document, "pred", predicate_key, array_value_lengths, 0,
+                                             predicate_value, array_value_lengths, 1, 1,
+                                             error.data(), ERROR_CAPACITY),
+                   "predicate short key total");
+    expect_invalid(sk_document_add_predicate(document, "pred", predicate_key, array_value_lengths, 1,
+                                             predicate_value, zero_length, 1, 1,
+                                             error.data(), ERROR_CAPACITY),
+                   "predicate long value total");
+    expect_invalid(sk_document_add_predicate(document, "pred", predicate_key, array_value_lengths, 1,
+                                             nullptr, zero_length, 0, 1, error.data(), ERROR_CAPACITY),
+                   "predicate null value bytes with nonzero count");
     expect_invalid(sk_document_annotate_string_array(
                        document, "tags", nullptr, 1, array_term_lengths, array_byte_starts,
                        array_byte_lengths, array_element_offsets, 1, 1, error.data(),
