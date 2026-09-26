@@ -17,14 +17,12 @@ class NativeRuntimeLinkTests(unittest.TestCase):
         self.assertNotIn("searchkernel-native-linker", config)
         self.assertNotIn("[target.x86_64-unknown-linux-gnu]", config)
 
-    def test_native_dependency_uses_runtime_loader_shim(self) -> None:
+    def test_adapter_uses_origin_qualified_soname(self) -> None:
         source = BUILD_RS.read_text(encoding="utf-8")
-        self.assertIn('native_loader.c', source)
-        self.assertIn('cargo:rustc-link-lib=dylib=dl', source)
-        self.assertNotIn('cargo:rustc-link-lib=dylib=searchkernel_vespa', source)
-        loader = (ROOT / "core/crates/searchkernel-vespa-bindings/native_loader.c").read_text(encoding="utf-8")
-        self.assertIn('/proc/self/exe', loader)
-        self.assertIn('.searchkernel-native/libsearchkernel_vespa.so.2', loader)
+        self.assertIn('$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2', source)
+        sdk = BUILD_SDK.read_text(encoding="utf-8")
+        self.assertIn("SK_NATIVE_ADAPTER_SONAME", sdk)
+        self.assertIn("-Wl,-soname,'$ADAPTER_SONAME'", sdk)
 
     def test_build_script_stages_runtime_for_cargo_executable_origins(self) -> None:
         source = BUILD_RS.read_text(encoding="utf-8")
