@@ -63,15 +63,17 @@ cat > "$test_root/preload.c" <<'C'
 void searchkernel_test_preload(void) {}
 C
 "$real_cc" -shared -fPIC "$test_root/preload.c" -o "$test_root/libpreload.so"
+export M11_TEST_REAL_CC="$real_cc"
+export M11_TEST_PRELOAD="$test_root/libpreload.so"
 
-cat > "$fixture/tools/bin/cc" <<SH
+cat > "$fixture/tools/bin/cc" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}" in
     -print-file-name=libasan.so|-print-file-name=libtsan.so.2)
-        printf '%s\n' "$test_root/libpreload.so"
+        printf '%s\n' "${M11_TEST_PRELOAD:?}"
         ;;
     *)
-        exec "$real_cc" "$@"
+        exec "${M11_TEST_REAL_CC:?}" "$@"
         ;;
 esac
 SH
