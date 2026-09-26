@@ -739,6 +739,19 @@ impl IndexDefinitionIr {
     pub fn document_type(&self) -> Option<&str> {
         self.document_type.as_deref()
     }
+
+    /// Return the canonical document identity used by backend adapters.
+    ///
+    /// document_type() preserves the caller-visible optional field for
+    /// lossless Describe/API round trips. Native execution resolves that
+    /// intent here, inside the semantic IR boundary, so adapters never invent
+    /// their own fallback.
+    pub fn resolved_document_type(&self) -> &str {
+        self.document_type
+            .as_deref()
+            .or_else(|| self.name.as_ref().map(IndexName::as_str))
+            .unwrap_or("searchkernel")
+    }
     pub fn schema_inherits(&self) -> &[String] {
         &self.schema_inherits
     }

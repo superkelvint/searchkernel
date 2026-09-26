@@ -272,20 +272,7 @@ pub fn resolve_index_definition(input: IndexDefinitionInput) -> Result<IndexDefi
     })
 }
 
-fn assemble_index_definition(mut input: ResolvedIndexDefinition) -> Result<IndexDefinitionIr> {
-    // Canonical IR owns the document identity consumed by backend adapters.
-    // Preserve an explicit document type; otherwise derive it from the schema
-    // name, falling back to the stable unnamed-schema identity.
-    if input.document_type.is_none() {
-        input.document_type = Some(
-            input
-                .name
-                .as_ref()
-                .map(IndexName::as_str)
-                .unwrap_or("searchkernel")
-                .to_owned(),
-        );
-    }
+fn assemble_index_definition(input: ResolvedIndexDefinition) -> Result<IndexDefinitionIr> {
     validate_struct_references(&input.fields, &input.structs)?;
     validate_struct_references(&input.schema_fields, &input.structs)?;
     let rank_profiles = resolve_rank_profiles(input.rank_profiles, "rank_profiles")?;

@@ -20,14 +20,7 @@ pub fn compile_index_definition(
     config_dir: impl AsRef<std::path::Path>,
 ) -> Result<()> {
     validate_index_definition(definition)?;
-    let document_type = definition.document_type().ok_or_else(|| {
-        PortableError::invalid(
-            "unresolved_document_type",
-            Some("document_type"),
-            "canonical index definition must contain a resolved document type",
-        )
-    })?;
-    let mut schema = Schema::new(document_type);
+    let mut schema = Schema::new(definition.resolved_document_type());
     for profile in definition.rank_profiles().iter().map(lower_rank_profile) {
         schema = schema.rank_profile(profile?);
     }

@@ -540,14 +540,16 @@ fn parity_schema() -> RustIndexDefinitionInput {
 }
 
 #[test]
-fn canonical_schema_resolves_document_identity_before_adapter_boundary() {
+fn canonical_schema_resolves_document_identity_without_changing_public_intent() {
     let mut unnamed = parity_schema();
     unnamed.name = None;
     let unnamed = resolve_rust_index_definition(unnamed).expect("valid unnamed schema");
-    assert_eq!(unnamed.document_type(), Some("searchkernel"));
+    assert_eq!(unnamed.document_type(), None);
+    assert_eq!(unnamed.resolved_document_type(), "searchkernel");
 
     let named = resolve_rust_index_definition(parity_schema()).expect("valid named schema");
-    assert_eq!(named.document_type(), Some("catalog"));
+    assert_eq!(named.document_type(), None);
+    assert_eq!(named.resolved_document_type(), "catalog");
 }
 
 #[test]

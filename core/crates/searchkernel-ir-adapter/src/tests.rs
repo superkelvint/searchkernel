@@ -2472,7 +2472,7 @@ fn typed_index_and_summary_settings_cannot_disagree_with_resolved_capabilities()
 }
 
 #[test]
-fn adapter_rejects_unresolved_document_identity() {
+fn adapter_consumes_canonical_resolved_document_identity() {
     let title = FieldIr::new(
         field("title"),
         DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
@@ -2480,13 +2480,16 @@ fn adapter_rejects_unresolved_document_identity() {
         FieldCapabilities::new(true, true, false, false, false),
     );
     let definition = IndexDefinitionIr::new(None, vec![title], Vec::new()).unwrap();
+    assert_eq!(definition.document_type(), None);
+    assert_eq!(definition.resolved_document_type(), "searchkernel");
+
     let config_dir = std::env::temp_dir().join(format!(
-        "searchkernel-unresolved-document-type-{}",
+        "searchkernel-resolved-document-type-{}",
         std::process::id()
     ));
-    let error = compile_index_definition(&definition, &config_dir)
-        .expect_err("adapter must not invent document identity");
-    assert_eq!(error.details[0].code, "unresolved_document_type");
+    compile_index_definition(&definition, &config_dir)
+        .expect("adapter accepts identity resolved by canonical IR");
+    std::fs::remove_dir_all(config_dir).expect("remove generated config");
 }
 
 #[test]
