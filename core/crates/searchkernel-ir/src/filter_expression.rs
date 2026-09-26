@@ -97,7 +97,17 @@ pub(crate) fn bind_parsed_filter(
         return Err(error);
     }
     let mut referenced_parameters = BTreeSet::new();
-    let expression = bind_expr(parsed, schema, bindings, &mut referenced_parameters)?;
+    // Runtime list parameters bypass the lexer. Bound their aggregate scalar
+    // expansion by the same frozen token budget that limits literal input so a
+    // compact parameterized expression cannot amplify into unbounded IR.
+    let mut expanded_in_parameter_values = 0usize;
+    let expression = bind_expr(
+        parsed,
+        schema,
+        bindings,
+        &mut referenced_parameters,
+        &mut expanded_in_parameter_values,
+    )?;
     Ok(BoundFilter {
         expression,
         referenced_parameters,
@@ -150,6 +160,7 @@ fn bind_expr(
     schema: &IndexDefinitionIr,
     params: &FilterParameters,
     referenced_parameters: &mut BTreeSet<String>,
+    expanded_in_parameter_values: &mut usize,
 ) -> Result<FilterIr> {
     match &expression.node {
         Expr::Predicate(predicate) => bind_predicate(
@@ -158,11 +169,20 @@ fn bind_expr(
             schema,
             params,
             referenced_parameters,
+            expanded_in_parameter_values,
         ),
         Expr::And(children) => {
             let children = children
                 .iter()
-                .map(|child| bind_expr(child, schema, params, referenced_parameters))
+                .map(|child| {
+                    bind_expr(
+                        child,
+                        schema,
+                        params,
+                        referenced_parameters,
+                        expanded_in_parameter_values,
+                    )
+                })
                 .collect::<Result<Vec<_>>>()?;
             if children.is_empty() {
                 return Err(filter_error(
@@ -176,7 +196,15 @@ fn bind_expr(
         Expr::Or(children) => {
             let children = children
                 .iter()
-                .map(|child| bind_expr(child, schema, params, referenced_parameters))
+                .map(|child| {
+                    bind_expr(
+                        child,
+                        schema,
+                        params,
+                        referenced_parameters,
+                        expanded_in_parameter_values,
+                    )
+                })
                 .collect::<Result<Vec<_>>>()?;
             if children.is_empty() {
                 return Err(filter_error(
@@ -192,6 +220,7 @@ fn bind_expr(
             schema,
             params,
             referenced_parameters,
+            expanded_in_parameter_values,
         )?))),
     }
 }
@@ -202,6 +231,7 @@ fn bind_predicate(
     schema: &IndexDefinitionIr,
     params: &FilterParameters,
     referenced_parameters: &mut BTreeSet<String>,
+    expanded_in_parameter_values: &mut usize,
 ) -> Result<FilterIr> {
     match predicate {
         Predicate::Compare { field, op, value } => {
@@ -219,7 +249,13 @@ fn bind_predicate(
             let field_ir = resolve_field(field.node.0.as_str(), field.span, schema)?;
             ensure_filterable(field_ir, field.span)?;
             ensure_in_operator(field_ir.kind(), expression_span)?;
-            let values = bind_in_values(values, field_ir.kind(), params, referenced_parameters)?;
+            let values = bind_in_values(
+                values,
+                field_ir.kind(),
+                params,
+                referenced_parameters,
+                expanded_in_parameter_values,
+            )?;
             Ok(FilterIr::In {
                 field: field_ir.name().clone(),
                 values,
@@ -329,6 +365,7 @@ fn bind_in_values(
     kind: FieldKind,
     params: &FilterParameters,
     referenced_parameters: &mut BTreeSet<String>,
+    expanded_in_parameter_values: &mut usize,
 ) -> Result<Vec<ScalarValueIr>> {
     match values {
         InValues::Values(values) => values
@@ -366,6 +403,18 @@ fn bind_in_values(
                     limit: Some(ComplexityLimit::InValues),
                 }));
             }
+            let expanded = expanded_in_parameter_values
+                .checked_add(values.len())
+                .unwrap_or(usize::MAX);
+            if expanded > searchkernel_filter::limits::MAX_TOKENS {
+                return Err(parse_error_to_portable(ParseError {
+                    kind: ErrorKind::ExpressionTooComplex,
+                    span: parameter.span,
+                    reason: None,
+                    limit: Some(ComplexityLimit::InValues),
+                }));
+            }
+            *expanded_in_parameter_values = expanded;
             values
                 .iter()
                 .map(|value| bind_runtime_scalar(value, kind, parameter.span))
