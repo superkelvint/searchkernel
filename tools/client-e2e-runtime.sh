@@ -19,17 +19,11 @@ prepare_client_e2e_runtime() {
         *) target_root="$root/$target_root" ;;
     esac
 
-    host=${SEARCHKERNEL_LOCAL_HOST:-"$target_root/debug/searchkerneld"}
-    adapter_lib=${SEARCHKERNEL_SDK_LIB:-}
-
-    if [[ -x "$host" &&
-          -n "$adapter_lib" &&
-          -f "$adapter_lib/libsearchkernel_vespa.so.2" ]]; then
-        export SEARCHKERNEL_LOCAL_HOST="$host"
-        export SEARCHKERNEL_SDK_LIB="$adapter_lib"
-        export LD_LIBRARY_PATH="$adapter_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-        return 0
-    fi
+    # E2E acceptance must execute artifacts built from this checkout. Never
+    # short-circuit on caller-provided or previously built daemon/adapter paths:
+    # their existence does not prove exact-head provenance.
+    host="$target_root/debug/searchkerneld"
+    adapter_lib=
 
     cargo=$(bash "$root/tools/resolve-rust.sh" cargo)
     python=$(bash "$root/tools/resolve-python.sh")
@@ -54,7 +48,7 @@ prepare_client_e2e_runtime() {
     fi
     rm -f -- "$cargo_messages"
 
-    host=${SEARCHKERNEL_LOCAL_HOST:-"$target_root/debug/searchkerneld"}
+    host="$target_root/debug/searchkerneld"
     [[ -x "$host" ]] || {
         echo "client E2E host binary missing after build: $host" >&2
         return 1
