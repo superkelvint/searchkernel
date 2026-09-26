@@ -14,6 +14,28 @@ bash -n "$source_root/tools/fetch-native-base.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
 bash -n "$source_root/tools/test-fetch-native-base.sh"
 bash -n "$source_root/tools/test-native-base-publish-policy.sh"
+
+# Docker-backed native provisioning must consume the digest-addressed Vespa
+# bundle already mounted by run-in-ci-image.sh. It must never consult the
+# parallel GitHub native-base release stream and replace that mounted authority.
+python3 - "$source_root/tools/resolve-native-sdk.sh" <<'PY'
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+if "canonical_mounted_install()" not in text:
+    raise SystemExit("native SDK resolver is missing the canonical mounted-image boundary")
+if 'SEARCHKERNEL_IN_CI_IMAGE' not in text or '/opt/searchkernel/native-validation-pass' not in text:
+    raise SystemExit("mounted-image detection must recognize the canonical CI-image execution path")
+valid = text.index("if valid_install; then")
+mounted = text.index("if canonical_mounted_install; then", valid)
+freshness = text.index("if published_install_is_current; then", valid)
+if not (valid < mounted < freshness):
+    raise SystemExit(
+        "mounted canonical Vespa image must short-circuit before legacy release freshness checks"
+    )
+PY
+
 bash "$source_root/tools/test-hermetic-env.sh"
 python3 "$source_root/tools/test_check_native_base_release_selection.py"
 python3 "$source_root/tools/test_check_native_runtime_closure.py"
