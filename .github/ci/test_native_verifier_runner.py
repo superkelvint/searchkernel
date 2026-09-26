@@ -126,7 +126,9 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertIn(
             'export SEARCHKERNEL_VERIFIER_SDK_PREPARED=1', helper
         )
-        self.assertNotIn("HEAD_CHECK_TOKEN", helper)
+        self.assertNotIn("$HEAD_CHECK_TOKEN", helper)
+        self.assertNotIn("HEAD_CHECK_TOKEN=", helper)
+        self.assertNotIn("$GH_TOKEN", helper)
         self.assertNotIn("GH_TOKEN=", helper)
 
         prepare_pos = native_full.index("prepare_native_full_verifier_sdk")
