@@ -209,7 +209,6 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             [closed],
             set(),
             set(),
-            {},
             now=self.NOW,
             stale_after=self.STALE_AFTER,
         )
@@ -232,7 +231,6 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             [],
             {"codex/issue-7"},
             set(),
-            {"codex/issue-7": 0},
             now=self.NOW,
             stale_after=self.STALE_AFTER,
         )
@@ -252,7 +250,6 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             [],
             set(),
             set(),
-            {},
             now=self.NOW,
             stale_after=self.STALE_AFTER,
         )
@@ -275,7 +272,6 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             [],
             {"codex/issue-9"},
             set(),
-            {"codex/issue-9": 0},
             now=self.NOW,
             stale_after=self.STALE_AFTER,
         )
@@ -298,7 +294,6 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             [],
             {"codex/issue-10"},
             set(),
-            {"codex/issue-10": 3},
             now=self.NOW,
             stale_after=self.STALE_AFTER,
         )
@@ -321,7 +316,6 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             [],
             {"codex/issue-11"},
             {"codex/issue-11"},
-            {"codex/issue-11": 2},
             now=self.NOW,
             stale_after=self.STALE_AFTER,
         )
@@ -342,7 +336,6 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             [],
             {"codex/issue-12"},
             set(),
-            {"codex/issue-12": 0},
             now=self.NOW,
             stale_after=self.STALE_AFTER,
         )
