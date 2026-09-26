@@ -19,6 +19,8 @@ cargo build --quiet \
   --target-dir "$TARGET_DIR" \
   --manifest-path "$M3/rust-driver/Cargo.toml" \
   >"$CARGO_MESSAGES"
+# The driver links against the adapter produced in Cargo OUT_DIR. Resolve that
+# exact directory from Cargo's build event so runtime loading matches link-time.
 ADAPTER_LIB="$(python3 "$ROOT/.github/ci/resolve-native-adapter-lib.py" "$CARGO_MESSAGES" "$TARGET_DIR")"
 BIN="$TARGET_DIR/debug/searchkernel-m3-conformance-driver"
 LD_LIBRARY_PATH="$ADAPTER_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \

@@ -86,6 +86,6 @@ emit_case("response", "recursive-search-response", {
     "trace" => value.encode({ "events" => [] }), "metadata" => [],
     "coverage" => { "full" => { "value" => false }, "degraded" => { "timeout" => { "value" => true } } },
     "timing" => { "query_time_seconds" => { "value" => 0.5 } },
-    "errors" => [{ "code" => 7, "summary" => "partial", "transient" => { "value" => true }, "metadata" => [] }]
+    "errors" => [{ "code" => "7", "summary" => "partial", "transient" => { "value" => true }, "metadata" => [] }]
   }
 })
