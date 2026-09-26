@@ -1019,6 +1019,27 @@ mod tests {
     }
 
     #[test]
+    fn present_empty_container_controls_are_rejected_at_preflight() {
+        for (label, request, code) in [
+            (
+                "query_profile",
+                base_request(QueryIr::MatchAll).with_query_profile(""),
+                "query_profile_not_supported",
+            ),
+            (
+                "search_chain",
+                base_request(QueryIr::MatchAll).with_search_chain(""),
+                "search_chain_not_supported",
+            ),
+        ] {
+            let error = preflight_search_request(&request)
+                .expect_err("present-empty control must not execute as omitted");
+            assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported, "{label}");
+            assert_eq!(error.details[0].code, code, "{label}");
+        }
+    }
+
+    #[test]
     fn preflight_disposition_matrix_covers_entire_search_request_surface() {
         let request = base_request(QueryIr::MatchAll);
         let dispositions = [
