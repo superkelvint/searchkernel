@@ -14,7 +14,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python=$("$source_root/tools/resolve-python.sh")
+python=$(bash "$source_root/tools/resolve-python.sh")
 python_helpers=(
     "$source_root/tools/test-native-base-artifact-python/01_write_legacy_v2_manifest.py"
     "$source_root/tools/test-native-base-artifact-python/02_remove_static_link_closure.py"
