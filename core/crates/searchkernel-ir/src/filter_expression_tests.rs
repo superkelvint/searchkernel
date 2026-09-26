@@ -764,6 +764,42 @@ fn binder_rejects_invalid_parameter_use() {
 }
 
 #[test]
+fn in_list_parameter_enforces_expanded_value_limit() {
+    let at_limit = Value::List(
+        (0..searchkernel_filter::limits::MAX_IN_VALUES)
+            .map(|i| Value::String(format!("brand-{i}")))
+            .collect(),
+    );
+    let bound = bind_filter_expression(
+        "brand IN (:brands)",
+        &schema(),
+        &parameters([("brands", at_limit)]),
+    )
+    .expect("IN list parameter at the canonical limit must bind");
+    assert!(
+        matches!(bound, FilterIr::In { values, .. } if values.len() == searchkernel_filter::limits::MAX_IN_VALUES)
+    );
+
+    let over_limit = Value::List(
+        (0..=searchkernel_filter::limits::MAX_IN_VALUES)
+            .map(|i| Value::String(format!("brand-{i}")))
+            .collect(),
+    );
+    let error = bind_filter_expression(
+        "brand IN (:brands)",
+        &schema(),
+        &parameters([("brands", over_limit)]),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, crate::ErrorCode::InvalidArgument);
+    assert_eq!(error.details[0].code, "expression_too_complex");
+    assert_eq!(
+        error.details[0].metadata.get("limit").map(String::as_str),
+        Some("InValues")
+    );
+}
+
+#[test]
 fn numeric_parameters_are_normalized_to_the_field_type() {
     assert_eq!(
         bind_filter_expression(
