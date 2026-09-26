@@ -1,17 +1,97 @@
 #!/usr/bin/env python3
-import hashlib,json,sys,tempfile,subprocess,tarfile,zipfile
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import tarfile
+import tempfile
+import zipfile
 from pathlib import Path
-out=Path(sys.argv[1]); m=json.loads((out/'manifest.json').read_text()); assert m['platform']=='linux-x86_64-glibc'
-for a in m['artifacts']:
- p=out/a['file']; assert hashlib.sha256(p.read_bytes()).hexdigest()==a['sha256']
-# Assert artifacts are independently consumable and contain their runtime entry points.
-rust=next(out.glob('searchkernel-rust-*.tar.gz'))
-with tarfile.open(rust) as t:
- names=t.getnames(); assert 'core/crates/searchkernel/Cargo.toml' in names and 'native-sdk.lock.json' in names
-wheel=next(out.glob('searchkernel-*.whl'))
-with zipfile.ZipFile(wheel) as z: assert any(n.endswith('searchkernel/__init__.py') for n in z.namelist())
-npm=next(out.glob('searchkernel-client-*.tgz'))
-with tarfile.open(npm) as t: assert 'package/dist/node.js' in t.getnames()
-daemon=next(out.glob('searchkerneld-*.tar.gz'))
-with tarfile.open(daemon) as t: assert 'bin/searchkerneld' in t.getnames()
-print('consumer release artifacts PASS')
+
+ROOT = Path(__file__).resolve().parents[1]
+out = Path(sys.argv[1])
+manifest = json.loads((out / "manifest.json").read_text())
+assert manifest["platform"] == "linux-x86_64-glibc"
+for artifact in manifest["artifacts"]:
+    path = out / artifact["file"]
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+
+def clean_runtime_env() -> dict[str, str]:
+    env = os.environ.copy()
+    for key in (
+        "LD_LIBRARY_PATH",
+        "SEARCHKERNEL_LOCAL_HOST",
+        "SEARCHKERNEL_SDK_LIB",
+        "SK_NATIVE_SDK",
+        "SK_NATIVE_CACHE_DIR",
+    ):
+        env.pop(key, None)
+    return env
+
+def verify_daemon_tree(root: Path) -> None:
+    daemon = root / "bin" / "searchkerneld"
+    libdir = root / "lib"
+    assert daemon.is_file(), f"packaged daemon missing: {daemon}"
+    assert (libdir / "libsearchkernel_vespa.so.2").is_file(), (
+        f"packaged native adapter missing: {libdir / 'libsearchkernel_vespa.so.2'}"
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools" / "check-native-runtime-closure.py"),
+            str(libdir),
+            str(daemon),
+        ],
+        check=True,
+        env=clean_runtime_env(),
+    )
+    subprocess.run(
+        [str(daemon), "--help"],
+        check=True,
+        env=clean_runtime_env(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
+    temp = Path(raw)
+
+    rust = next(out.glob("searchkernel-rust-*.tar.gz"))
+    rust_root = temp / "rust"
+    rust_root.mkdir()
+    with tarfile.open(rust) as archive:
+        archive.extractall(rust_root)
+    subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+        cwd=rust_root,
+        check=True,
+        env=clean_runtime_env(),
+        stdout=subprocess.DEVNULL,
+    )
+
+    daemon = next(out.glob("searchkerneld-*.tar.gz"))
+    daemon_root = temp / "daemon"
+    daemon_root.mkdir()
+    with tarfile.open(daemon) as archive:
+        archive.extractall(daemon_root)
+    verify_daemon_tree(daemon_root)
+
+    wheel = next(out.glob("searchkernel-*.whl"))
+    wheel_root = temp / "wheel"
+    wheel_root.mkdir()
+    with zipfile.ZipFile(wheel) as archive:
+        archive.extractall(wheel_root)
+    assert (wheel_root / "searchkernel" / "__init__.py").is_file()
+    verify_daemon_tree(wheel_root / "searchkernel")
+
+    npm = next(out.glob("searchkernel-client-*.tgz"))
+    npm_root = temp / "npm"
+    npm_root.mkdir()
+    with tarfile.open(npm) as archive:
+        archive.extractall(npm_root)
+    assert (npm_root / "package" / "dist" / "node.js").is_file()
+    verify_daemon_tree(npm_root / "package")
+
+print("consumer release artifacts PASS")
