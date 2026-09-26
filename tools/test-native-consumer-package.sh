@@ -39,11 +39,11 @@ case "${CARGO_TARGET_DIR:-}" in
   *) CONSUMER_TARGET="$CONSUMER/$CARGO_TARGET_DIR" ;;
 esac
 BIN="$CONSUMER_TARGET/debug/searchkernel-native-consumer"
-readelf -d "$BIN" | grep -Fq '$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2' || {
-  echo "packaged Rust consumer lacks self-resolving Search Kernel adapter DT_NEEDED entry" >&2
+if readelf -d "$BIN" | grep -Fq 'Shared library: [libsearchkernel_vespa.so.2]'; then
+  echo "packaged Rust consumer still has a direct loader dependency on libsearchkernel_vespa.so.2" >&2
   readelf -d "$BIN" >&2
   exit 1
-}
+fi
 [[ -f "$CONSUMER_TARGET/debug/.searchkernel-native/libsearchkernel_vespa.so.2" ]] || {
   echo "packaged Rust consumer did not stage its native adapter beside the executable" >&2
   exit 1

@@ -178,8 +178,23 @@ fn main() {
         });
     }
 
+    #[cfg(feature = "native")]
+    {
+        let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo must provide OUT_DIR"));
+        stage_adapter_for_cargo_outputs(&out_dir, &sdk)
+            .unwrap_or_else(|error| panic!("stage Search Kernel native adapter: {error}"));
+        cc::Build::new()
+            .file(manifest_dir.join("native_loader.c"))
+            .include(support_root.join("core/native/vespa"))
+            .warnings(true)
+            .compile("searchkernel_vespa_loader");
+        println!("cargo:rustc-link-lib=dylib=dl");
+        println!(
+            "cargo:rerun-if-changed={}",
+            manifest_dir.join("native_loader.c").display()
+        );
+    }
     let lib_dir = sdk.join("lib");
-    println!("cargo:rustc-link-search=native={}", lib_dir.display());
     #[cfg(feature = "native")]
     if let Some(base) = base_sdk.as_deref() {
         println!(
@@ -195,8 +210,6 @@ fn main() {
             base.join("lib").display()
         );
     }
-    println!("cargo:rustc-link-lib=dylib=searchkernel_vespa");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SDK");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ABI_HEADER");
     println!("cargo:rerun-if-changed={}", source_header.display());
@@ -417,14 +430,6 @@ fn build_local_adapter(
         .env("SK_NATIVE_BUILD_DIR", &build)
         .env("SK_NATIVE_TARGET", target)
         .env("SK_NATIVE_ADAPTER_ONLY", "1")
-        // Cargo does not propagate dependency build-script rustc-link-arg values to
-        // the consuming application final link. Encode an $ORIGIN-qualified SONAME
-        // instead, then stage the adapter beside each normal Cargo executable dir.
-        // The resulting DT_NEEDED entry is self-resolving for downstream consumers.
-        .env(
-            "SK_NATIVE_ADAPTER_SONAME",
-            "$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2",
-        )
         .env("SK_NATIVE_BASE_SDK", base_sdk)
         .env(
             "SK_NATIVE_ENABLE_FAILPOINTS",
