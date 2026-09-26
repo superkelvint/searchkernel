@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { environmentForHost } from "../src/node/managed-local-host.js";
 
 let sdkLib: string | undefined;
 let loaderPath: string | undefined;
@@ -35,19 +36,17 @@ describe("managed-local native runtime contract", () => {
     expect(source).not.toContain("core/native/sdk");
   });
 
-  it("leaves the inherited loader path alone without an explicit adapter path", async () => {
+  it("leaves the inherited loader path alone without an explicit adapter path", () => {
     delete process.env.SEARCHKERNEL_SDK_LIB;
     process.env.LD_LIBRARY_PATH = "/existing";
 
-    const { environmentForHost } = await import("../src/node/managed-local-host.js");
     expect(environmentForHost().LD_LIBRARY_PATH).toBe("/existing");
   });
 
-  it("prepends the exact explicit adapter path without mutating process env", async () => {
+  it("prepends the exact explicit adapter path without mutating process env", () => {
     process.env.SEARCHKERNEL_SDK_LIB = "/exact/native-adapter/lib";
     process.env.LD_LIBRARY_PATH = "/existing";
 
-    const { environmentForHost } = await import("../src/node/managed-local-host.js");
     const environment = environmentForHost();
 
     expect(environment.LD_LIBRARY_PATH).toBe(
