@@ -1,4 +1,5 @@
 // Search Kernel native adapter: hardening and timing support.
+#include <thread>
 // This file is included by abi.cc so the private adapter remains one native
 // boundary while responsibilities stay physically searchable by subsystem.
 
@@ -48,8 +49,10 @@ class FailpointController {
         uint32_t hits = 0;
         bool blocked = false;
         bool armed = false;
+        std::thread::id owner;
     };
 
+    bool _thread_affine;
     mutable std::mutex _mutex;
     std::condition_variable _condition;
     std::map<std::string, Entry> _entries;
@@ -68,6 +71,9 @@ class FailpointController {
     }
 
 public:
+    explicit FailpointController(bool thread_affine = false) noexcept
+        : _thread_affine(thread_affine) {}
+
     void set(const char *name, uint32_t trigger, uint32_t action) {
         if (!name || !known(name)) {
             throw std::invalid_argument("unknown hardening failpoint");
@@ -79,7 +85,10 @@ public:
             throw std::invalid_argument("unsupported hardening failpoint action");
         }
         std::lock_guard<std::mutex> guard(_mutex);
-        _entries[name] = Entry{trigger, action, 0, false, true};
+        _entries[name] = Entry{
+            trigger, action, 0, false, true,
+            _thread_affine ? std::this_thread::get_id() : std::thread::id{}
+        };
     }
 
     void clear(const char *name) {
@@ -125,6 +134,9 @@ public:
         if (entry == self->_entries.end() || !entry->second.armed) {
             return;
         }
+        if (self->_thread_affine && entry->second.owner != std::this_thread::get_id()) {
+            return;
+        }
         ++entry->second.hits;
         if (entry->second.hits != entry->second.trigger) {
             return;
@@ -153,7 +165,11 @@ public:
     }
 };
 
-FailpointController OPEN_FAILPOINTS;
+// Open failpoints are process-global because no Engine exists yet. Make them
+// thread-affine so parallel tests cannot consume a failpoint armed by another
+// test thread. Engine-owned failpoints remain non-affine and retain their
+// cross-thread lifecycle/concurrency semantics.
+FailpointController OPEN_FAILPOINTS(true);
 
 class TimingProbe {
 public:

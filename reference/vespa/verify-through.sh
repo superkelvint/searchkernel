@@ -63,95 +63,95 @@ case "${1:-}" in
         list_targets
         ;;
     vespa.native-sdk)
-        "$ROOT/verifiers/native-sdk/verify.sh"
+        "$ROOT/verifiers/native-sdk/verify.sh" "${@:2}"
         ;;
     vespa.rust-ownership)
-        "$ROOT/verifiers/rust-ownership/verify.sh"
+        "$ROOT/verifiers/rust-ownership/verify.sh" "${@:2}"
         ;;
     vespa.document-mutation)
-        "$ROOT/verifiers/document-mutation/verify.sh"
+        "$ROOT/verifiers/document-mutation/verify.sh" "${@:2}"
         ;;
     vespa.linguistics)
-        "$ROOT/verifiers/linguistics/verify.sh"
+        "$ROOT/verifiers/linguistics/verify.sh" "${@:2}"
         ;;
     vespa.text-indexing)
-        "$ROOT/verifiers/text-indexing/verify.sh"
+        "$ROOT/verifiers/text-indexing/verify.sh" "${@:2}"
         ;;
     vespa.persistence.reopen)
-        "$ROOT/verifiers/persistence/reopen/verify.sh"
+        "$ROOT/verifiers/persistence/reopen/verify.sh" "${@:2}"
         ;;
     vespa.schema-config)
-        "$ROOT/verifiers/schema-config/verify.sh"
+        "$ROOT/verifiers/schema-config/verify.sh" "${@:2}"
         ;;
     vespa.query-compilation)
-        "$ROOT/verifiers/query-compilation/verify.sh"
+        "$ROOT/verifiers/query-compilation/verify.sh" "${@:2}"
         ;;
     vespa.results)
-        "$ROOT/verifiers/results/verify.sh"
+        "$ROOT/verifiers/results/verify.sh" "${@:2}"
         ;;
     vespa.grouping)
-        "$ROOT/verifiers/grouping/attributes-facets/verify.sh"
+        "$ROOT/verifiers/grouping/attributes-facets/verify.sh" "${@:2}"
         ;;
     vespa.grouping.recursive)
-        "$ROOT/verifiers/grouping/recursive/verify.sh"
+        "$ROOT/verifiers/grouping/recursive/verify.sh" "${@:2}"
         ;;
     vespa.grouping.yql)
-        "$ROOT/verifiers/grouping/yql/verify.sh"
+        "$ROOT/verifiers/grouping/yql/verify.sh" "${@:2}"
         ;;
     vespa.ranking)
-        "$ROOT/verifiers/ranking/verify.sh"
+        "$ROOT/verifiers/ranking/verify.sh" "${@:2}"
         ;;
     vespa.ranking.feature-values)
-        "$ROOT/verifiers/ranking/feature-values/verify.sh"
+        "$ROOT/verifiers/ranking/feature-values/verify.sh" "${@:2}"
         ;;
     vespa.search-reply)
-        "$ROOT/verifiers/search-reply/verify.sh"
+        "$ROOT/verifiers/search-reply/verify.sh" "${@:2}"
         ;;
     vespa.hardening)
-        "$ROOT/verifiers/hardening/full/verify.sh"
+        "$ROOT/verifiers/hardening/full/verify.sh" "${@:2}"
         ;;
     vespa.hardening.core)
-        "$ROOT/verifiers/hardening/core/verify.sh"
+        "$ROOT/verifiers/hardening/core/verify.sh" "${@:2}"
         ;;
     vespa.hardening.stress)
-        "$ROOT/verifiers/hardening/stress/verify.sh"
+        "$ROOT/verifiers/hardening/stress/verify.sh" "${@:2}"
         ;;
     vespa.hardening.sanitizers)
-        "$ROOT/verifiers/hardening/sanitizers/verify.sh"
+        "$ROOT/verifiers/hardening/sanitizers/verify.sh" "${@:2}"
         ;;
     vespa.nearest-neighbor.query)
-        "$ROOT/verifiers/nearest-neighbor/query/verify.sh"
+        "$ROOT/verifiers/nearest-neighbor/query/verify.sh" "${@:2}"
         ;;
     vespa.tensor.document-crud)
-        "$ROOT/verifiers/tensor/document-crud/verify.sh"
+        "$ROOT/verifiers/tensor/document-crud/verify.sh" "${@:2}"
         ;;
     vespa.nearest-neighbor.hnsw)
-        "$ROOT/verifiers/nearest-neighbor/hnsw/verify.sh"
+        "$ROOT/verifiers/nearest-neighbor/hnsw/verify.sh" "${@:2}"
         ;;
     vespa.recovery)
-        "$ROOT/verifiers/recovery/verify.sh"
+        "$ROOT/verifiers/recovery/verify.sh" "${@:2}"
         ;;
     product.rust-real-engine)
-        "$ROOT/verifiers/product/rust-real-engine/verify.sh"
+        "$ROOT/verifiers/product/rust-real-engine/verify.sh" "${@:2}"
         ;;
     product.integration)
-        "$ROOT/verifiers/product/integration/verify.sh"
+        "$ROOT/verifiers/product/integration/verify.sh" "${@:2}"
         ;;
     milestone.m0|milestone.m1|milestone.m2|milestone.m3|milestone.m4|milestone.m5|milestone.m6|milestone.m7|milestone.m8|milestone.m9|milestone.m10|milestone.m11|milestone.m12|milestone.m13|milestone.m14)
         milestone="${1#milestone.}"
-        "$ROOT/$milestone/verify-$milestone.sh"
+        "$ROOT/$milestone/verify-$milestone.sh" "${@:2}"
         ;;
     m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|m14)
-        "$ROOT/$1/verify-$1.sh"
+        "$ROOT/$1/verify-$1.sh" "${@:2}"
         ;;
     searchreply)
-        "$ROOT/verifiers/search-reply/verify.sh"
+        "$ROOT/verifiers/search-reply/verify.sh" "${@:2}"
         ;;
     phase10)
-        "$ROOT/verifiers/product/rust-real-engine/verify.sh"
+        "$ROOT/verifiers/product/rust-real-engine/verify.sh" "${@:2}"
         ;;
     integration|i)
-        "$ROOT/verifiers/product/integration/verify.sh"
+        "$ROOT/verifiers/product/integration/verify.sh" "${@:2}"
         ;;
     *)
         echo "unknown verifier target: ${1:-<empty>}" >&2

@@ -14,6 +14,7 @@ bash -n "$source_root/tools/fetch-native-base.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
 bash -n "$source_root/tools/test-fetch-native-base.sh"
 bash -n "$source_root/tools/test-native-base-publish-policy.sh"
+bash "$source_root/tools/test-hermetic-env.sh"
 python3 "$source_root/tools/test_check_native_base_release_selection.py"
 python3 "$source_root/tools/test_check_native_runtime_closure.py"
 python3 "$source_root/tools/test_bundle_native_runtime_closure.py"
@@ -231,28 +232,47 @@ echo 'unrelated rust-side change' >"$worktree/unrelated.txt"
 git -C "$worktree" add unrelated.txt
 git -C "$worktree" commit -qm 'unrelated branch change'
 
+hermetic_home="$fixture/hermetic-home"
+hermetic_tmp="$fixture/hermetic-tmp"
+mkdir -p "$hermetic_home" "$hermetic_tmp"
+
 run_resolver() {
     local root=$1
     local mode=${2:-ensure}
     local build_env=${3:-cache-regression}
     local native_target=${4:-x86_64-unknown-linux-gnu}
+    local execution_path=${PATH:-/usr/local/bin:/usr/bin:/bin}
     (
         cd "$root"
-        env \
-            -u SK_NATIVE_SDK \
-            -u SK_NATIVE_CACHE_DIR \
-            -u VESPA_ROOT \
-            -u SK_NATIVE_BASE_ARTIFACT_URL \
-            -u SK_NATIVE_BASE_ARTIFACT_GENERATION \
-            SEARCHKERNEL_BUILD_ENV="$build_env" \
-            SK_NATIVE_TARGET="$native_target" \
-            XDG_CACHE_HOME="$fixture/machine-cache-home" \
-            SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
-            SK_NATIVE_CACHE_BUILDER="$root/tools/fake-sdk-builder.sh" \
-            VESPA_LIBRARY_ROOT="$untrusted_library_root" \
-            bash "$root/tools/resolve-native-sdk.sh" "$mode"
+        bash "$source_root/tools/run-hermetic-env.sh" \
+            "PATH=$execution_path" \
+            "HOME=$hermetic_home" \
+            "TMPDIR=$hermetic_tmp" \
+            "LANG=C" \
+            "LC_ALL=C" \
+            "SEARCHKERNEL_BUILD_ENV=$build_env" \
+            "SK_NATIVE_TARGET=$native_target" \
+            "XDG_CACHE_HOME=$fixture/machine-cache-home" \
+            "SK_NATIVE_DISABLE_PUBLISHED_BASE=1" \
+            "SK_NATIVE_CACHE_BUILDER=$root/tools/fake-sdk-builder.sh" \
+            "VESPA_LIBRARY_ROOT=$untrusted_library_root" \
+            -- bash "$root/tools/resolve-native-sdk.sh" "$mode"
     )
 }
+
+# Poison the parent process with representative explicit native/Vespa overrides.
+# Every resolver invocation below must behave identically because the synthetic
+# fixture receives only the inputs declared above.
+export SEARCHKERNEL_AMBIENT_SENTINEL=must-not-leak
+export SK_NATIVE_SDK="$fixture/ambient-sdk"
+export SK_NATIVE_CACHE_DIR="$fixture/ambient-cache"
+export SK_NATIVE_BASE_ARTIFACT_URL="file://$fixture/ambient-native-base.tar.gz"
+export SK_NATIVE_BASE_ARTIFACT_GENERATION=999
+export VESPA_ROOT="$fixture/ambient-vespa-root"
+export VESPA_DEPS="$fixture/ambient-vespa-deps"
+export VESPA_DEPS_LIB_DIR="$fixture/ambient-vespa-deps/lib"
+export VESPA_EXTRA_LIB_DIR="$fixture/ambient-vespa-extra"
+export VESPA_AWS_LIB_DIR="$fixture/ambient-vespa-aws"
 
 common=$(git -C "$repo" rev-parse --git-common-dir)
 [[ "$common" = /* ]] || common="$repo/$common"
