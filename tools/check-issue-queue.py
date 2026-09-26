@@ -11,9 +11,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 
 WORKFLOW_STATES = {
@@ -32,8 +31,7 @@ REQUIRED_CLASSIFICATION_STATES = WORKFLOW_STATES - {"status:needs-followup"}
 DEFAULT_STALE_AFTER_HOURS = 24
 
 
-@dataclass(frozen=True)
-class ReconcileAction:
+class ReconcileAction(NamedTuple):
     """One conservative issue-state repair."""
 
     kind: str
