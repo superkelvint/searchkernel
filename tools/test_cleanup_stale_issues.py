@@ -124,6 +124,22 @@ class CleanupPlannerTests(unittest.TestCase):
         )
         self.assertEqual([action.kind for action in actions], ["close-issue"])
 
+    def test_reopened_after_merge_is_not_auto_closed(self) -> None:
+        actions = MODULE.plan_cleanup(
+            [issue(12, "open", "status:in-progress")],
+            [
+                {
+                    "number": 34,
+                    "state": "MERGED",
+                    "base_ref_name": "main",
+                    "merged_at": "2026-09-26T20:00:00Z",
+                    "closing_issue_numbers": [12],
+                    "closing_issue_reopened_at": {"12": "2026-09-26T21:00:00Z"},
+                }
+            ],
+        )
+        self.assertEqual(actions, [])
+
     def test_non_default_branch_merge_does_not_resolve_issue(self) -> None:
         actions = MODULE.plan_cleanup(
             [issue(12, "open", "status:in-progress")],
