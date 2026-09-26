@@ -6,7 +6,9 @@ IMAGE=${SEARCHKERNEL_CI_IMAGE:-docker.io/superkelvint/searchkernel-ci:latest}
 PULL_MODE=${SEARCHKERNEL_CI_PULL:-always}
 KEEP_STATE=${SEARCHKERNEL_CI_KEEP_STATE:-0}
 PRECOMMIT_SNAPSHOT=0
+COVERAGE_SNAPSHOT=0
 [[ "${1:-}" == "precommit-verify" ]] && PRECOMMIT_SNAPSHOT=1
+[[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1
 
 die() {
     echo "error: $*" >&2
@@ -88,6 +90,10 @@ docker run --rm "$IMAGE_ID" /bin/bash -lc '
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-image.XXXXXX")
 source_volume="searchkernel-dev-src-$(id -u)-$$-${RANDOM}"
 target_volume="searchkernel-dev-target-$(id -u)-$$-${RANDOM}"
+artifact_volume=""
+if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
+    artifact_volume="searchkernel-dev-artifacts-$(id -u)-$$-${RANDOM}"
+fi
 container_name="searchkernel-dev-$(id -u)-$$-${RANDOM}"
 
 cleanup() {
@@ -97,11 +103,13 @@ cleanup() {
         echo "Search Kernel CI-image volumes retained:"
         echo "  source volume: $source_volume"
         echo "  target volume: $target_volume"
+        [[ -n "$artifact_volume" ]] && echo "  artifact volume: $artifact_volume"
         return "$status"
     fi
 
     docker rm -f "$container_name" >/dev/null 2>&1 || true
     docker volume rm -f "$source_volume" "$target_volume" >/dev/null 2>&1 || true
+    [[ -z "$artifact_volume" ]] || docker volume rm -f "$artifact_volume" >/dev/null 2>&1 || true
     return "$status"
 }
 trap cleanup EXIT
@@ -110,6 +118,9 @@ trap 'exit 143' TERM
 
 docker volume create "$source_volume" >/dev/null
 docker volume create "$target_volume" >/dev/null
+if [[ -n "$artifact_volume" ]]; then
+    docker volume create "$artifact_volume" >/dev/null
+fi
 
 head_sha=$(git -C "$ROOT" rev-parse HEAD)
 bundle="$tmp/repository.bundle"
@@ -218,10 +229,41 @@ while IFS= read -r name; do
     esac
 done < <(compgen -e)
 
+docker_volume_args=(
+    -v "$source_volume:/work"
+    -v "$target_volume:/cargo-target"
+    -v "$native_volume:/opt/searchkernel/native-sdk-cache:ro"
+)
+if [[ -n "$artifact_volume" ]]; then
+    docker_volume_args+=(
+        -v "$artifact_volume:/artifacts"
+    )
+    docker_env+=(
+        -e SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage
+    )
+fi
+
 tty_args=(-i)
 if [[ -t 0 && -t 1 ]]; then
     tty_args+=(-t)
 fi
 
 echo "==> dev: running in $IMAGE ($IMAGE_ID)"
-docker run --rm     --name "$container_name"     --pids-limit=-1     "${tty_args[@]}"     -v "$source_volume:/work"     -v "$target_volume:/cargo-target"     -v "$native_volume:/opt/searchkernel/native-sdk-cache:ro"     -w /work     "${docker_env[@]}"     "$IMAGE_ID"     ./dev "$@"
+status=0
+docker run --rm     --name "$container_name"     --pids-limit=-1     "${tty_args[@]}"     "${docker_volume_args[@]}"     -w /work     "${docker_env[@]}"     "$IMAGE_ID"     ./dev "$@" || status=$?
+
+if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
+    rm -rf -- "$ROOT/coverage"
+    if [[ "$status" -eq 0 ]]; then
+        if ! docker run --rm -v "$artifact_volume:/artifacts" "$IMAGE_ID" test -d /artifacts/coverage; then
+            die "coverage command succeeded without producing /artifacts/coverage"
+        fi
+        docker run --rm -v "$artifact_volume:/artifacts" "$IMAGE_ID" \
+            tar -C /artifacts -cf - coverage | tar -C "$ROOT" -xf -
+        echo "==> dev: exported coverage reports to $ROOT/coverage"
+    else
+        echo "==> dev: coverage failed; no canonical report was exported" >&2
+    fi
+fi
+
+exit "$status"

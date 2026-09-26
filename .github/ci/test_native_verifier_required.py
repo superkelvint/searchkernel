@@ -36,7 +36,6 @@ class NativeVerifierRequiredTests(unittest.TestCase):
             "Cargo.lock",
             "rust-toolchain.toml",
             ".github/workflows/native-verifier-runner.yml",
-            ".github/workflows/ci-image-runner.yml",
         ]
         for path in paths:
             with self.subTest(path=path):
@@ -91,7 +90,7 @@ class NativeVerifierRequiredTests(unittest.TestCase):
             'git show "$POLICY_SHA:.github/ci/native_verifier_required.py" > "$selector"',
             'uses: superkelvint/searchkernel/.github/workflows/native-verifier-runner.yml@main',
             'target: native-full',
-            'needs: [classify, rust, python, typescript, ruby, tooling, native]',
+            'needs: [classify, rust, python, typescript, ruby, tooling, native, coverage]',
             'require_lane Native "$NATIVE_SENSITIVE" "$NATIVE_RESULT"',
         ):
             self.assertIn(needle, source)

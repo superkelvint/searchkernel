@@ -131,8 +131,10 @@ fn native_open_failpoints_are_thread_affine() {
     .join()
     .expect("unrelated open thread must not panic");
 
-    let error = Engine::open(&owner_data, &owner_config)
-        .expect_err("arming thread must still consume its open failpoint");
+    let error = match Engine::open(&owner_data, &owner_config) {
+        Ok(_) => panic!("arming thread must still consume its open failpoint"),
+        Err(error) => error,
+    };
     hardening::clear_open("open_constructor").expect("clear owner-thread open failpoint");
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 
