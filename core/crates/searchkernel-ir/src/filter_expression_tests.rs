@@ -797,6 +797,20 @@ fn in_list_parameter_enforces_expanded_value_limit() {
         error.details[0].metadata.get("limit").map(String::as_str),
         Some("InValues")
     );
+    assert_eq!(
+        error.details[0]
+            .metadata
+            .get("start_offset")
+            .map(String::as_str),
+        Some("10")
+    );
+    assert_eq!(
+        error.details[0]
+            .metadata
+            .get("end_offset")
+            .map(String::as_str),
+        Some("17")
+    );
 }
 
 #[test]
