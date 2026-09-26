@@ -4,19 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
-./dev native-sdk ensure
-cargo build -p searchkerneld
+source "$ROOT/tools/client-e2e-runtime.sh"
+prepare_client_e2e_runtime
 
-target_root="${CARGO_TARGET_DIR:-target/host}"
-case "$target_root" in
-  /*) host_binary="$target_root/debug/searchkerneld" ;;
-  *) host_binary="$ROOT/$target_root/debug/searchkerneld" ;;
-esac
-
-if [[ ! -x "$host_binary" ]]; then
-  echo "TypeScript E2E host binary missing after build: $host_binary" >&2
-  exit 1
-fi
+host_binary="$SEARCHKERNEL_LOCAL_HOST"
 
 npm ci --prefix clients/typescript
 npm run build --prefix clients/typescript
