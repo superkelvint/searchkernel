@@ -27,10 +27,12 @@ def main():
    values={lang:traces[lang][sid] for lang in traces}
    MAP_KEYS = {'inputs','properties'}
    def norm(v, key=None):
+    # Only normalize the representation mismatch explicitly allowed by the
+    # canonical snapshot contract. Numeric kinds remain exact: coercing ints
+    # to floats can hide signedness, precision, and large-integer regressions.
     if key in MAP_KEYS and v == []: return {}
     if isinstance(v,dict): return {k:norm(x,k) for k,x in v.items()}
     if isinstance(v,list): return [norm(x) for x in v]
-    if isinstance(v,(int,float)) and not isinstance(v,bool): return float(v)
     return v
    first=norm(values['rust'])
    if any(norm(v)!=first for v in values.values()):

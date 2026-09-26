@@ -43,6 +43,40 @@
           "foo": "bar"
         }
       }
+    },
+    {
+      "id": "text-filter-int64-max-exact",
+      "intent": {
+        "kind": "search",
+        "query": "running shoes",
+        "filter": {
+          "source": "price <= :max",
+          "bindings": {
+            "max": {
+              "int64": "9223372036854775807"
+            }
+          }
+        },
+        "limit": 20,
+        "offset": 0
+      }
+    },
+    {
+      "id": "text-filter-uint64-max-exact",
+      "intent": {
+        "kind": "search",
+        "query": "running shoes",
+        "filter": {
+          "source": "price <= :max",
+          "bindings": {
+            "max": {
+              "uint64": "18446744073709551615"
+            }
+          }
+        },
+        "limit": 20,
+        "offset": 0
+      }
     }
   ],
   "capability_gaps": [
