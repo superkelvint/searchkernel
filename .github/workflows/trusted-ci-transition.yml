@@ -150,7 +150,7 @@ jobs:
           TRUSTED_CI_APP_TOKEN: ${{ steps.app-token.outputs.token }}
           TRUSTED_CI_APP_ID: ${{ vars.TRUSTED_CI_APP_ID }}
           PR: ${{ needs.evidence.outputs.pr }}
-          HEAD: ${{ neds.evidence.outputs.head }}
+          HEAD: ${{ needs.evidence.outputs.head }}
           REASON: ${{ inputs.reason }}
         run: |
           set -euo pipefail
@@ -167,4 +167,4 @@ jobs:
             --name "Trusted invariant gate" \
             --external-id "trusted-pr:$PR:$HEAD" \
             --app-id "$TRUSTED_CI_APP_ID" \
-            --conclusion success --summary "$sumaary" --details-url "$details"
+            --conclusion success --summary "$summary" --details-url "$details"
