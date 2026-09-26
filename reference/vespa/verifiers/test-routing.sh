@@ -7,12 +7,16 @@ VERIFY="$ROOT/reference/vespa/verify-through.sh"
 DEV="$ROOT/dev"
 INTEGRATION="$ROOT/reference/vespa/i/verify-i.sh"
 PHASE9="$ROOT/reference/vespa/phase9/verify-phase9.sh"
+HNSW="$ROOT/reference/vespa/verifiers/nearest-neighbor/hnsw/verify.sh"
+M14="$ROOT/reference/vespa/m14/verify-m14.sh"
 CI_IMAGE_RUNNER="$ROOT/.github/workflows/ci-image-runner.yml"
 
 bash -n "$VERIFY"
 bash -n "$DEV"
 bash -n "$INTEGRATION"
 bash -n "$PHASE9"
+bash -n "$HNSW"
+bash -n "$M14"
 
 # Sourcing verify-common must be read-only. Supply every resolved path so this
 # check needs no native installation, then shadow bash to detect any accidental
@@ -123,6 +127,15 @@ for script in "$INTEGRATION" "$PHASE9"; do
 done
 grep -F '"$ROOT/reference/vespa/verify-through.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"' "$INTEGRATION" >/dev/null || {
     echo "integration no longer forwards verifier args to Phase 10" >&2
+    exit 1
+}
+
+grep -F 'exec "$ROOT/reference/vespa/m14/verify-m14.sh" "$@"' "$HNSW" >/dev/null || {
+    echo "HNSW semantic verifier no longer establishes the M14 cumulative baseline" >&2
+    exit 1
+}
+grep -F '"$ROOT/reference/vespa/m13/verify-m13.sh" --skip-workspace-quality' "$M14" >/dev/null || {
+    echo "M14 no longer proves M13 before native-full reuses that baseline" >&2
     exit 1
 }
 
