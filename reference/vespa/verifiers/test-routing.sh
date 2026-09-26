@@ -97,4 +97,16 @@ for milestone in 4 5 6 7 8 9 10 11 12 13 14; do
     }
 done
 
+integration="$ROOT/reference/vespa/i/verify-i.sh"
+grep -F 'parse_verifier_args "$@"' "$integration" >/dev/null || {
+    echo "product.integration does not parse verifier arguments" >&2
+    exit 1
+}
+for target in m13 phase10; do
+    grep -F '"$ROOT/reference/vespa/verify-through.sh" '"$target"' "$@"' "$integration" >/dev/null || {
+        echo "product.integration does not forward verifier arguments to $target" >&2
+        exit 1
+    }
+done
+
 echo "semantic verifier routing PASS"
