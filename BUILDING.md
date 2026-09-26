@@ -371,17 +371,27 @@ dependencies.
 
 ## Vespa base and adapter builds
 
-Bootstrap or repair the immutable Vespa base explicitly before the first native
-build (or after a declared base-input change):
+Normal development uses the same immutable Vespa Docker bundle as CI. Validate
+that canonical bundle explicitly when needed:
 
 ```bash
 ./dev native-sdk ensure
+```
+
+This command enters the normal CI-image runner, mounts the exact digest-addressed
+`searchkernel-ci-vespa` input referenced by `searchkernel-ci:latest`, and
+validates that mounted base. It does not populate a parallel host-native cache.
+
+Host-native SDK provisioning is an explicit compatibility/debugging mode:
+
+```bash
+SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev native-sdk ensure
 ./dev native-sdk path
 ```
 
-The resolver first checks the machine-global object for the pinned Vespa checkout
-hash and the machine-global registration of the one configured checkout with that
-same hash. A fresh independent Git clone therefore reuses the installed base and
+In that explicit host mode, the resolver first checks the machine-global object
+for the pinned Vespa checkout hash and the machine-global registration of the one
+configured checkout with that same hash. A fresh independent Git clone therefore reuses the installed base and
 the already-configured immutable checkout; it does not need to clone, configure,
 or build Vespa itself.
 
