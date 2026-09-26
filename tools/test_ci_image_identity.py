@@ -29,9 +29,16 @@ def call(function: str, *args: str, check: bool = True) -> subprocess.CompletedP
 
 with tempfile.TemporaryDirectory(prefix="searchkernel-ci-image-identity.") as raw_tmp:
     tmp = pathlib.Path(raw_tmp)
-    toolchain = tmp / "toolchain"
-    toolchain.mkdir()
+    repo_root = tmp / "repo"
+    toolchain = repo_root / "docker/searchkernel-ci-toolchain"
+    typescript = repo_root / "clients/typescript"
+    toolchain.mkdir(parents=True)
+    typescript.mkdir(parents=True)
     (toolchain / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    (typescript / "package.json").write_text('{"name":"fixture"}\n', encoding="utf-8")
+    lockfile = typescript / "package-lock.json"
+    lockfile.write_text('{"lockfileVersion":3,"fixture":"a"}\n', encoding="utf-8")
+
     environment = tmp / "base.Dockerfile"
     environment.write_text("FROM scratch\n", encoding="utf-8")
 
@@ -40,14 +47,21 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-ci-image-identity.") as ra
     vespa_a = "registry.example/vespa@sha256:" + "c" * 64
     vespa_b = "registry.example/vespa@sha256:" + "d" * 64
 
-    toolchain_a = call("ci_image_toolchain_id", str(toolchain), digest_a).stdout.strip()
-    toolchain_b = call("ci_image_toolchain_id", str(toolchain), digest_b).stdout.strip()
+    toolchain_a = call("ci_image_toolchain_id", str(repo_root), digest_a).stdout.strip()
+    toolchain_b = call("ci_image_toolchain_id", str(repo_root), digest_b).stdout.strip()
     if toolchain_a == toolchain_b:
         raise SystemExit("toolchain identity ignored the upstream base digest")
 
+    lockfile.write_text('{"lockfileVersion":3,"fixture":"b"}\n', encoding="utf-8")
+    toolchain_lock_changed = call(
+        "ci_image_toolchain_id", str(repo_root), digest_a
+    ).stdout.strip()
+    if toolchain_a == toolchain_lock_changed:
+        raise SystemExit("toolchain identity ignored the TypeScript dependency lockfile")
+
     mutable = call(
         "ci_image_toolchain_id",
-        str(toolchain),
+        str(repo_root),
         "registry.example/base:latest",
         check=False,
     )
