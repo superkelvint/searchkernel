@@ -177,6 +177,10 @@ SH
 cat > "$SOURCE_TEST/m3-bin/python3" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == */.github/ci/resolve-native-adapter-lib.py ]]; then
+    printf '%s\n' "$CARGO_TARGET_DIR/fake-native-adapter"
+    exit 0
+fi
 expected="$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver"
 actual="${@: -2:1}"
 [[ "$actual" == "$expected" ]] || {
