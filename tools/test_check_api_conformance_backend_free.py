@@ -47,23 +47,21 @@ class BackendFreeConformanceGuardTest(unittest.TestCase):
             fixtures.write_text("#!/bin/sh\nexit 0\n")
             fixtures.chmod(fixtures.stat().st_mode | stat.S_IXUSR)
             (tools / CHECKER.name).write_text(CHECKER.read_text())
+            (tools / "resolve-python.sh").write_text(
+                "#!/bin/sh\nprintf '%s\\n' /usr/bin/python3\n"
+            )
+            (tools / "resolve-rust.sh").write_text(
+                f'#!/bin/sh\nprintf \'%s\\n\' "{fake_bin / "cargo"}"\n'
+            )
 
             (testkit / "Cargo.toml").write_text("searchkernel-vespa = \"forbidden\"\n")
             (fake_bin / "cargo").write_text("#!/bin/sh\nexit 0\n")
             (fake_bin / "cargo").chmod(
                 (fake_bin / "cargo").stat().st_mode | stat.S_IXUSR
             )
-            (fake_bin / "dirname").write_text(
-                '#!/bin/sh\n\nif [ "$1" = "--" ]; then\n    shift\nfi\nprintf \'%s\\n\' "${1%/*}"\n'
-            )
-            (fake_bin / "dirname").chmod(
-                (fake_bin / "dirname").stat().st_mode | stat.S_IXUSR
-            )
-            (fake_bin / "python3").write_text(
-                '#!/bin/sh\nexec /usr/bin/python3 "$@"\n'
-            )
-            (fake_bin / "python3").chmod(
-                (fake_bin / "python3").stat().st_mode | stat.S_IXUSR
+            (fake_bin / "bash").write_text('#!/bin/sh\nexec /bin/bash "$@"\n')
+            (fake_bin / "bash").chmod(
+                (fake_bin / "bash").stat().st_mode | stat.S_IXUSR
             )
 
             environment = os.environ.copy()
