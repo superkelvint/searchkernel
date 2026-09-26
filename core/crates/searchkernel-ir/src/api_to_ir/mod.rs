@@ -6,6 +6,7 @@ mod grouping;
 mod query;
 mod ranking;
 mod resolve;
+mod result;
 mod schema;
 mod search;
 mod value;
@@ -15,6 +16,11 @@ pub use query::{
     DEFAULT_NEAREST_APPROXIMATE, DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS,
     DEFAULT_PROXIMITY_DISTANCE, DEFAULT_WAND_SCORE_THRESHOLD, DEFAULT_WAND_THRESHOLD_BOOST_FACTOR,
     DEFAULT_WEAK_AND_TARGET_HITS,
+};
+pub use result::{
+    analyze_result_from_api, delete_result_from_api, get_result_from_api, insert_result_from_api,
+    patch_result_from_api, portable_error_from_api, search_result_from_api, update_result_from_api,
+    upsert_result_from_api,
 };
 
 #[cfg(test)]

@@ -21,19 +21,21 @@ pub mod session;
 pub mod snapshot;
 
 pub use api_to_ir::{
-    analyzer_to_ir, facet_grouping_input, field_to_ir, filter_binding_value_from_json,
-    index_definition_to_ir, request_value_from_json, resolve_analyze, resolve_delete,
-    resolve_document, resolve_facets, resolve_facets_at, resolve_get, resolve_index_definition,
-    resolve_insert, resolve_patch, resolve_projection, resolve_rust_index_definition,
-    resolve_rust_index_definition_with_profiles, resolve_rust_index_definition_with_schema,
-    resolve_search, resolve_update, resolve_upsert, AnalyzeInput, AnalyzeTargetInput,
-    AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput, FilterBoundInput,
-    FilterInput, GetInput, GroupingInput, IndexContext, IndexDefinitionInput, PatchOperationInput,
-    PresentationInput, QueryModelInput, QuerySourceInput, RankingInput, RustAnalyzerInput,
-    RustFieldInput, RustFieldKind, RustIndexDefinitionInput, RustRankProfileInput,
-    RustSearchFieldInput, SearchFieldInput, SearchInput, SearchIntent, SortInput, SortTargetInput,
-    TextualFilterInput, UnresolvedFieldInput, UnresolvedRankProfileInput, UpdateOperationInput,
-    WriteRequestRef, DEFAULT_SEARCH_LIMIT,
+    analyze_result_from_api, analyzer_to_ir, delete_result_from_api, facet_grouping_input,
+    field_to_ir, filter_binding_value_from_json, get_result_from_api, index_definition_to_ir,
+    insert_result_from_api, patch_result_from_api, portable_error_from_api,
+    request_value_from_json, resolve_analyze, resolve_delete, resolve_document, resolve_facets,
+    resolve_facets_at, resolve_get, resolve_index_definition, resolve_insert, resolve_patch,
+    resolve_projection, resolve_rust_index_definition, resolve_rust_index_definition_with_profiles,
+    resolve_rust_index_definition_with_schema, resolve_search, resolve_update, resolve_upsert,
+    search_result_from_api, update_result_from_api, upsert_result_from_api, AnalyzeInput,
+    AnalyzeTargetInput, AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput,
+    FilterBoundInput, FilterInput, GetInput, GroupingInput, IndexContext, IndexDefinitionInput,
+    PatchOperationInput, PresentationInput, QueryModelInput, QuerySourceInput, RankingInput,
+    RustAnalyzerInput, RustFieldInput, RustFieldKind, RustIndexDefinitionInput,
+    RustRankProfileInput, RustSearchFieldInput, SearchFieldInput, SearchInput, SearchIntent,
+    SortInput, SortTargetInput, TextualFilterInput, UnresolvedFieldInput,
+    UnresolvedRankProfileInput, UpdateOperationInput, WriteRequestRef, DEFAULT_SEARCH_LIMIT,
 };
 pub use backend::Backend;
 pub use error::{ErrorCode, ErrorDetail, PortableError, Result};

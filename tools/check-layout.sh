@@ -6,6 +6,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 required=(
     core/crates/searchkernel
     core/crates/searchkernel-protocol
+    core/crates/searchkernel-rpc
     core/crates/searchkernel-ir
     core/crates/searchkernel-dispatch
     core/crates/searchkernel-testkit

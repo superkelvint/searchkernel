@@ -32,6 +32,16 @@ FlatBuffers bytes
     -> searchkernel-vespa-bindings
 ```
 
+The optional Rust remote client (`searchkernel` feature `remote`) uses this
+canonical transport path while preserving the public `Index` facade. Plain
+`host:port` and `http://` endpoints use plaintext gRPC, and the built-in
+client does not add TLS or authentication credentials. Treat that TCP endpoint
+as a trusted-network boundary: use a private network, tunnel, or service mesh
+when transport security or authentication is required, and do not expose it
+directly to an untrusted Internet. On Unix platforms, `unix:///path` is
+available when a local Unix-domain socket is the appropriate deployment
+boundary.
+
 `searchkernel-protocol::json` is a small generic boundary around the official
 schema-aware FlatBuffers JSON parser/printer; it contains no Search Kernel
 field mappings. `searchkernel-dispatch` is the canonical bytes-to-IR routing

@@ -10,6 +10,8 @@ mod patch;
 #[cfg(any(feature = "native", test))]
 mod portable_definition;
 mod query;
+#[cfg(feature = "remote")]
+mod remote;
 mod result;
 mod schema;
 mod search;
@@ -25,6 +27,8 @@ pub use query::{
     NearestNeighborOptions, Query, QueryAlternative, QueryBound, QueryValue, WandOptions,
     WeightedQueryItem,
 };
+#[cfg(feature = "remote")]
+pub use remote::RemoteOptions;
 pub use result::{
     Coverage, CoverageDegraded, FacetResult, FacetValue, FeatureSet, FeatureValue, GroupingResult,
     HighlightFragment, HighlightResult, HighlightSpan, Hit, ResultIssue, SearchResult,

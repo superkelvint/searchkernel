@@ -12,6 +12,7 @@ mod ranking;
 mod result;
 mod schema;
 mod search;
+mod transport;
 mod value;
 
 #[cfg(test)]
@@ -42,4 +43,9 @@ pub use schema::{
 };
 pub use search::{
     inspect_query_result_offset, inspect_query_result_to_api, search_request_ir_to_api,
+};
+pub use transport::{
+    encode_analyze_request, encode_delete_request, encode_describe_request, encode_get_request,
+    encode_insert_request, encode_patch_request, encode_search_request, encode_update_request,
+    encode_upsert_request,
 };
