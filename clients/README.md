@@ -49,6 +49,8 @@ When adding client behavior, annotate the test that proves it rather than
 editing the matrix. See
 [`reference/client-contracts/README.md`](../reference/client-contracts/README.md).
 
+Implementation/capability status is distinct from release support. The next beta's authoritative distribution scope is the [release support matrix](../docs/release-support.md): Python (managed-local/connect) and TypeScript/Node.js (connect) are release-qualified on Linux x86-64 glibc; browser gRPC-Web, PHP, Ruby, Go, and other platforms/runtimes remain deferred even when code exists.
+
 The gRPC service is intentionally a small transport boundary:
 
 ```proto

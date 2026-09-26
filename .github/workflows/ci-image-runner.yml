@@ -453,6 +453,7 @@ jobs:
               run_phase ci-image-publishing-contract bash tools/test-ci-image-publishing.sh
               run_phase ci-image-identity "$PYTHON" tools/test_ci_image_identity.py
               run_phase native-sdk-packaging bash tools/test-native-sdk-packaging.sh
+              run_phase native-consumer-contract "$PYTHON" tools/check-native-consumer-contract.py
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
               run_phase clippy-runner "$PYTHON" tools/test_run_clippy.py
@@ -590,6 +591,7 @@ jobs:
               ;;
 
             native-full)
+              run_phase native-full-release-support "$PYTHON" tools/check-release-support.py
               # ABI-sensitive changes are covered by the dedicated exact-head
               # ABI surface workflow, which compares against the real PR/base SHA.
               # Prepare once in a tokenless child, then publish only the fixed
@@ -603,9 +605,11 @@ jobs:
               run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved
               run_phase native-full-python-e2e tools/run-python-native-e2e.sh --prevalidated-native-sdk
               run_phase native-full-persistence ./dev verify persistence
+              run_phase native-full-consumer-package bash tools/test-native-consumer-package.sh
               ;;
 
             client-e2e)
+              run_phase client-e2e-release-support "$PYTHON" tools/check-release-support.py
               "$PYTHON" tools/check-python-dependencies.py
               build_native_searchkerneld client-e2e-build
               run_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e

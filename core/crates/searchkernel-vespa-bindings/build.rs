@@ -1,9 +1,27 @@
+mod consumer_bundle;
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 #[cfg(feature = "native")]
 use std::process::{Command, Stdio};
+
+fn support_root(manifest_dir: &Path) -> PathBuf {
+    let source_root = manifest_dir.join("../../..");
+    if source_root.join("tools/resolve-native-sdk.sh").is_file() {
+        return source_root;
+    }
+    let root = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo must provide OUT_DIR"))
+        .join("consumer-support");
+    for (relative, contents) in consumer_bundle::FILES {
+        let path = root.join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create consumer support directory");
+        }
+        fs::write(&path, contents).expect("materialize packaged consumer support file");
+    }
+    root
+}
 
 fn main() {
     if env::var_os("CARGO_FEATURE_NATIVE").is_none() {
@@ -14,6 +32,8 @@ fn main() {
     }
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let support_root = support_root(&manifest_dir);
+    env::set_var("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT", &support_root);
     #[cfg(feature = "native")]
     let target = env::var("TARGET").expect("Cargo must provide TARGET to native build scripts");
     #[cfg(feature = "native")]
@@ -38,20 +58,23 @@ fn main() {
             (configured, None)
         }
     } else {
-        let base = resolve_shared_native_sdk(&manifest_dir, &target, "path").unwrap_or_else(|error| {
+        // Consumer builds own native provisioning: `ensure` acquires and validates
+        // the pinned release artifact into the machine cache when it is absent,
+        // stale, or corrupt. SK_NATIVE_SDK remains a maintainer override only.
+        let base = resolve_shared_native_sdk(&manifest_dir, &target, "ensure").unwrap_or_else(|error| {
             panic!(
-                "immutable Vespa base prerequisite is unavailable: {error}\nRun './dev native-sdk ensure' to bootstrap or repair it. Cargo never builds or repairs the shared Vespa base."
+                "Search Kernel native runtime is unavailable or incompatible for target {target}: {error}\nThe supported consumer path provisions the pinned runtime automatically; do not set SK_NATIVE_SDK. Check network access and platform support, then retry."
             )
         });
         let base = fs::canonicalize(&base).unwrap_or_else(|error| {
             panic!(
-                "canonicalize shared Vespa base SDK '{}': {error}\nRun './dev native-sdk ensure' to bootstrap or repair it.",
+                "Search Kernel native runtime cache is unreadable after automatic provisioning at '{}': {error}\nRemove no files manually; retry so the resolver can repair the cache.",
                 base.display()
             )
         });
         verify_shared_cache_object(&manifest_dir, &base).unwrap_or_else(|error| {
             panic!(
-                "immutable Vespa base prerequisite is invalid: {error}\nRun './dev native-sdk ensure' to bootstrap or repair it."
+                "Search Kernel native runtime failed compatibility validation after automatic provisioning: {error}\nThe cache is repaired automatically on the next provisioning attempt."
             )
         });
         let adapter = build_local_adapter(&manifest_dir, &base, &target, hardening_required)
@@ -61,7 +84,7 @@ fn main() {
     #[cfg(not(feature = "native"))]
     let sdk = fs::canonicalize(default_native_sdk(&manifest_dir))
         .unwrap_or_else(|error| panic!("canonicalize native SDK: {error}"));
-    let source_header = manifest_dir.join("../../native/vespa/searchkernel_vespa.h");
+    let source_header = support_root.join("core/native/vespa/searchkernel_vespa.h");
     let source_header = fs::canonicalize(&source_header).unwrap_or_else(|error| {
         panic!(
             "canonicalize source native ABI header '{}': {error}",
@@ -306,7 +329,9 @@ fn default_native_sdk(manifest_dir: &Path) -> PathBuf {
 
 #[cfg(feature = "native")]
 fn prepare_native_sdk(manifest_dir: &Path, configured: PathBuf, target: &str) -> PathBuf {
-    let root = manifest_dir.join("../../..");
+    let root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("../../.."));
     let configured = if configured.is_absolute() {
         configured
     } else {
@@ -342,7 +367,9 @@ fn resolve_shared_native_sdk(
     target: &str,
     mode: &str,
 ) -> Result<PathBuf, String> {
-    let root = manifest_dir.join("../../..");
+    let root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("../../.."));
     let output = Command::new("bash")
         .arg(root.join("tools/resolve-native-sdk.sh"))
         .arg(mode)
@@ -373,7 +400,9 @@ fn build_local_adapter(
     target: &str,
     hardening_required: bool,
 ) -> Result<PathBuf, String> {
-    let root = manifest_dir.join("../../..");
+    let root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("../../.."));
     let out_dir = PathBuf::from(
         env::var_os("OUT_DIR").ok_or_else(|| "Cargo did not provide OUT_DIR".to_owned())?,
     );
@@ -395,6 +424,10 @@ fn build_local_adapter(
         )
         .env("SK_NATIVE_REGENERATE_BINDINGS", "0")
         .env("SK_NATIVE_SKIP_BINDINGS_CHECK", "1")
+        .env(
+            "SK_NATIVE_SKIP_ABI_AUTHORITIES",
+            if root.join(".git").exists() { "0" } else { "1" },
+        )
         .output()
         .map_err(|error| format!("spawn adapter-only native build: {error}"))?;
     if !output.status.success() {
@@ -420,7 +453,9 @@ fn verify_shared_cache_object(manifest_dir: &Path, sdk: &Path) -> Result<(), Str
         ));
     }
 
-    let root = manifest_dir.join("../../..");
+    let root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("../../.."));
     let source_manifest_path = root.join("core/native/vespa/manifest.json");
     let source_manifest = fs::read_to_string(&source_manifest_path).map_err(|error| {
         format!(
@@ -491,7 +526,9 @@ fn manifest_string_field<'a>(manifest: &'a str, field: &str) -> Option<&'a str> 
 
 #[cfg(feature = "native")]
 fn rebuild_native_sdk(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
-    let root = manifest_dir.join("../../..");
+    let root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("../../.."));
     let output = Command::new("bash")
         .arg(root.join("core/native/vespa/build-sdk.sh"))
         .env("SK_NATIVE_SDK", sdk)
@@ -515,7 +552,9 @@ fn rebuild_native_sdk(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
 
 #[cfg(feature = "native")]
 fn verify_hardening_sdk(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
-    let root = manifest_dir.join("../../..");
+    let root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("../../.."));
     let output = Command::new("bash")
         .arg(root.join("tools/check-native-sdk-hardening.sh"))
         .arg(sdk)
@@ -548,7 +587,9 @@ fn verify_native_provenance(manifest_dir: &Path, sdk: &Path, target: &str) -> Re
             fingerprint_path.display()
         )
     })?;
-    let root = manifest_dir.join("../../..");
+    let root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("../../.."));
     let vespa_root = env::var_os("VESPA_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("upstream/vespa"));

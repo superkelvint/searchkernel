@@ -8,6 +8,8 @@ import { SearchKernelError } from "../client/index.js";
 
 const activeProcessGroups = new Set<number>();
 let exitCleanupInstalled = false;
+const HOST_STARTUP_TIMEOUT_MS = 60_000;
+const MAX_HOST_OUTPUT_LENGTH = 8_192;
 
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
   try {
@@ -121,6 +123,7 @@ export class ManagedLocalHost {
   readonly endpoint: string;
   private child: ChildProcess | null = null;
   private closed = false;
+  private hostOutput = "";
 
   private constructor(
     readonly indexPath: string,
@@ -173,7 +176,14 @@ export class ManagedLocalHost {
     this.child = spawn(binary, args, {
       env: environmentForHost(),
       detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    this.child.stdout?.on("data", (chunk: Buffer | string) => {
+      this.captureHostOutput("stdout", chunk);
+    });
+    this.child.stderr?.on("data", (chunk: Buffer | string) => {
+      this.captureHostOutput("stderr", chunk);
     });
 
     if (!this.child.pid) {
@@ -190,15 +200,29 @@ export class ManagedLocalHost {
     const child = this.child;
     if (!child) throw new SearchKernelError("managed local host is not running");
 
-    const deadline = Date.now() + 15_000;
+    // The daemon opens or creates the Vespa index before binding its socket.
+    // Cold native startup can therefore take longer than a short RPC timeout.
+    const deadline = Date.now() + HOST_STARTUP_TIMEOUT_MS;
     while (Date.now() < deadline) {
       if (child.exitCode !== null || child.signalCode !== null) {
-        throw new SearchKernelError("managed local host exited during startup");
+        throw this.startupError("managed local host exited during startup");
       }
       if (await canConnect(this.socketPath)) return;
       await delay(50);
     }
-    throw new SearchKernelError("managed local host did not open its gRPC socket");
+    throw this.startupError("managed local host did not open its gRPC socket before the startup deadline");
+  }
+
+  private captureHostOutput(stream: "stdout" | "stderr", chunk: Buffer | string): void {
+    const text = chunk.toString();
+    this.hostOutput = `${this.hostOutput}[${stream}] ${text}`.slice(-MAX_HOST_OUTPUT_LENGTH);
+  }
+
+  private startupError(message: string): SearchKernelError {
+    const output = this.hostOutput.trim();
+    return new SearchKernelError(
+      output ? `${message}\nmanaged local host output:\n${output}` : message,
+    );
   }
 
   async close(options: { force?: boolean } = {}): Promise<void> {
