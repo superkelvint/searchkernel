@@ -124,22 +124,28 @@ import sys
 root = pathlib.Path(sys.argv[1])
 base_image_digest = sys.argv[2]
 if not root.is_dir():
-    raise SystemExit(f"toolchain recipe directory does not exist: {root}")
+    raise SystemExit(f"repository root does not exist: {root}")
 if "@sha256:" not in base_image_digest:
     raise SystemExit(
         "toolchain identity requires an immutable base-image digest, "
         f"found {base_image_digest!r}"
     )
 
-h = hashlib.sha256()
-files = sorted(path for path in root.rglob("*") if path.is_file())
-if not files:
-    raise SystemExit(f"toolchain recipe directory has no files: {root}")
+recipe = root / "docker/searchkernel-ci-toolchain"
+inputs = [
+    *sorted(path for path in recipe.rglob("*") if path.is_file()),
+    root / "clients/typescript/package.json",
+    root / "clients/typescript/package-lock.json",
+]
+for path in inputs:
+    if not path.is_file():
+        raise SystemExit(f"toolchain identity input does not exist: {path}")
 
-h.update(b"searchkernel-ci-toolchain-v2\0")
+h = hashlib.sha256()
+h.update(b"searchkernel-ci-toolchain-v3\0")
 h.update(base_image_digest.encode())
 h.update(b"\0")
-for path in files:
+for path in inputs:
     relative = path.relative_to(root).as_posix().encode()
     data = path.read_bytes()
     h.update(relative)

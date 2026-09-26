@@ -25,7 +25,8 @@ ENV GCC_TOOLSET_ROOT="/opt/rh/gcc-toolset-15/root/usr" \
     SEARCHKERNEL_BUILD_ENV="ci" \
     SK_NATIVE_TARGET="x86_64-unknown-linux-gnu" \
     SK_NATIVE_CACHE_DIR="/opt/searchkernel/native-sdk-cache" \
-    SK_NATIVE_DISABLE_PUBLISHED_BASE="1"
+    SK_NATIVE_DISABLE_PUBLISHED_BASE="1" \
+    SEARCHKERNEL_TYPESCRIPT_NODE_MODULES="/opt/searchkernel/typescript/node_modules"
 
 # Stable OS/tooling surface. This image is published only when the CI toolchain
 # changes (for example, adding a client language or bumping a compiler/runtime).
@@ -88,6 +89,17 @@ RUN curl --fail --location --retry 5 --silent --show-error \
     && node -e 'const [M,m]=process.versions.node.split(".").map(Number); if (M < 20 || (M === 20 && m < 19)) process.exit(1)' \
     && node --version \
     && npm --version
+
+# TypeScript package/tooling dependencies belong to the reusable toolchain
+# axis. Verification source snapshots deliberately exclude node_modules, so
+# install the exact lockfile once into an image-owned immutable location.
+COPY clients/typescript/package.json clients/typescript/package-lock.json /opt/searchkernel/typescript/
+RUN npm ci --prefix /opt/searchkernel/typescript --no-audit --no-fund \
+    && test -x /opt/searchkernel/typescript/node_modules/grpc-tools/bin/protoc \
+    && test -x /opt/searchkernel/typescript/node_modules/grpc-tools/bin/grpc_node_plugin \
+    && test -x /opt/searchkernel/typescript/node_modules/protoc-gen-grpc-web/bin/protoc-gen-grpc-web \
+    && test -x /opt/searchkernel/typescript/node_modules/.bin/tsc \
+    && test -x /opt/searchkernel/typescript/node_modules/.bin/vitest
 
 RUN curl --fail --location --retry 5 --silent --show-error \
         "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-${RUBY_VERSION}.tar.gz" \
@@ -164,6 +176,10 @@ RUN test "$("$CC" -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 \
     && command -v gh \
     && command -v node \
     && command -v npm \
+    && test -x "$SEARCHKERNEL_TYPESCRIPT_NODE_MODULES/grpc-tools/bin/protoc" \
+    && test -x "$SEARCHKERNEL_TYPESCRIPT_NODE_MODULES/protoc-gen-grpc-web/bin/protoc-gen-grpc-web" \
+    && test -x "$SEARCHKERNEL_TYPESCRIPT_NODE_MODULES/.bin/tsc" \
+    && test -x "$SEARCHKERNEL_TYPESCRIPT_NODE_MODULES/.bin/vitest" \
     && command -v php \
     && command -v ruby \
     && command -v composer \

@@ -162,9 +162,11 @@ Rust, Node, Ruby, PHP, Python, FlatBuffers, and Vespa base/toolchain.
 Image publishing has three independent identities:
 
 - `superkelvint/searchkernel-ci-toolchain:<toolchain-id>` contains the OS,
-  compilers, language runtimes, FlatBuffers, and reusable client tooling. The
-  toolchain id hashes `docker/searchkernel-ci-toolchain/` together with the
-  resolved repository digest of its upstream base image.
+  compilers, language runtimes, FlatBuffers, and reusable client tooling,
+  including the locked TypeScript dependency tree used by generation/tests.
+  The toolchain id hashes `docker/searchkernel-ci-toolchain/`,
+  `clients/typescript/package.json`, `clients/typescript/package-lock.json`, and
+  the resolved repository digest of its upstream base image.
 - `superkelvint/searchkernel-ci-vespa:<vespa-commit>-<bundle-id>` contains
   the immutable native runtime closure plus configured Vespa headers/static-link
   metadata. This is the only image that carries the large Vespa/native payload.
