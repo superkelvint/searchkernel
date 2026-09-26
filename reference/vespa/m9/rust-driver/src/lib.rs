@@ -289,8 +289,8 @@ mod tests {
             match_features: Default::default(),
         };
         assert_eq!(
-            grouping_output(&GroupingOutput::HitList(vec![hit.clone()])),
-            json!({"type":"hit_list","values":[super::hit(hit)]})
+            grouping_output(&GroupingOutput::HitList(vec![hit])),
+            json!({"type":"hit_list","values":[{"document_id":"doc:1","score_bits":"0x3ff0000000000000","summary":{}}]})
         );
     }
 }
