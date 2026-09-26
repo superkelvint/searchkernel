@@ -203,6 +203,12 @@ jobs:
             "$CI_VESPA_BUNDLE_ID")
           echo "Using immutable Vespa volume: $NATIVE_VOLUME"
 
+          read -r SCCACHE_BINARY_VOLUME SCCACHE_SOCKET_VOLUME < <(
+            bash tools/ensure-ci-sccache.sh "$CI_IMAGE_ID"
+          )
+          echo "Using pinned sccache binary volume: $SCCACHE_BINARY_VOLUME"
+          echo "Using shared sccache socket volume: $SCCACHE_SOCKET_VOLUME"
+
           bundle="$RUNNER_TEMP/searchkernel-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$SAFE_TARGET.bundle"
           rm -f "$bundle"
           git bundle create "$bundle" --all HEAD
@@ -237,11 +243,13 @@ jobs:
             echo "SOURCE_VOLUME=$SOURCE_VOLUME"
             echo "TARGET_VOLUME=$TARGET_VOLUME"
             echo "NATIVE_VOLUME=$NATIVE_VOLUME"
+            echo "SCCACHE_BINARY_VOLUME=$SCCACHE_BINARY_VOLUME"
+            echo "SCCACHE_SOCKET_VOLUME=$SCCACHE_SOCKET_VOLUME"
             echo "CONTAINER_NAME=$CONTAINER_NAME"
             echo "ARTIFACT_DIR=$ARTIFACT_DIR"
           } >> "$GITHUB_ENV"
 
-      - name: Execute lane with zero shared mutable worker state
+      - name: Execute lane with isolated source and target state
         env:
           EXPECTED_HEAD: ${{ steps.revision.outputs.sha }}
           CI_TARGET: ${{ inputs.target }}
@@ -255,9 +263,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker run --rm -i             --name "$CONTAINER_NAME"             --pids-limit=-1             -v "$SOURCE_VOLUME:/work"             -v "$TARGET_VOLUME:/cargo-target"             -v "$NATIVE_VOLUME:/opt/searchkernel/native-sdk-cache:ro"             -v "$ARTIFACT_DIR:/artifacts"             -w /work             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e CI_TARGET="$CI_TARGET"             -e ABI_BASELINE_SHA="$ABI_BASELINE_SHA"             -e HEAD_REF="$HEAD_REF"             -e AUTOFIX_TOKEN="$AUTOFIX_TOKEN"             -e GH_TOKEN="$GH_TOKEN"             -e PR_NUMBER="$PR_NUMBER"             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY"             -e GITHUB_API_URL="$GITHUB_API_URL"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR=/cargo-target             -e FLATBUFFERS_CPP_ROOT=/usr/local             -e FLATC_PATH=/usr/local/bin/flatc             -e CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             -e CXX=/opt/rh/gcc-toolset-15/root/usr/bin/g++             -e AR=/opt/rh/gcc-toolset-15/root/usr/bin/ar             -e RANLIB=/opt/rh/gcc-toolset-15/root/usr/bin/ranlib             -e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib             -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             "$CI_IMAGE_ID"             /bin/bash -s <<'BASH'
+          docker run --rm -i             --name "$CONTAINER_NAME"             --pids-limit=-1             -v "$SOURCE_VOLUME:/work"             -v "$TARGET_VOLUME:/cargo-target"             -v "$NATIVE_VOLUME:/opt/searchkernel/native-sdk-cache:ro"             -v "$SCCACHE_BINARY_VOLUME:/opt/searchkernel/sccache:ro"             -v "$SCCACHE_SOCKET_VOLUME:/sccache:ro"             -v "$ARTIFACT_DIR:/artifacts"             -w /work             -e EXPECTED_HEAD="$EXPECTED_HEAD"             -e CI_TARGET="$CI_TARGET"             -e ABI_BASELINE_SHA="$ABI_BASELINE_SHA"             -e HEAD_REF="$HEAD_REF"             -e AUTOFIX_TOKEN="$AUTOFIX_TOKEN"             -e GH_TOKEN="$GH_TOKEN"             -e PR_NUMBER="$PR_NUMBER"             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY"             -e GITHUB_API_URL="$GITHUB_API_URL"             -e SEARCHKERNEL_BUILD_ENV=ci             -e CARGO_TARGET_DIR=/cargo-target             -e RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache             -e SCCACHE_SERVER_UDS=/sccache/sccache.sock             -e SCCACHE_CLIENT_SIDE=1             -e SCCACHE_IGNORE_SERVER_IO_ERROR=1             -e FLATBUFFERS_CPP_ROOT=/usr/local             -e FLATC_PATH=/usr/local/bin/flatc             -e CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             -e CXX=/opt/rh/gcc-toolset-15/root/usr/bin/g++             -e AR=/opt/rh/gcc-toolset-15/root/usr/bin/ar             -e RANLIB=/opt/rh/gcc-toolset-15/root/usr/bin/ranlib             -e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib             -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc             "$CI_IMAGE_ID"             /bin/bash -s <<'BASH'
           set -euo pipefail
-          trap 'chmod -R a+rwX /artifacts 2>/dev/null || true' EXIT
+          finish_lane() {
+            echo "SCCACHE STATS"
+            /opt/searchkernel/sccache/sccache --show-stats || true
+            chmod -R a+rwX /artifacts 2>/dev/null || true
+          }
+          trap finish_lane EXIT
 
           HEAD_CHECK_TOKEN="${GH_TOKEN:-}"
           unset GH_TOKEN
@@ -277,8 +290,9 @@ jobs:
           printf '%s %s\n' "$EXPECTED_HEAD" "$CI_TARGET" > /artifacts/lane-started
 
           # No workflow is allowed to repair or mutate a host toolchain. These
-          # are immutable image inputs; Cargo outputs and package caches live
-          # only in this disposable container and its job-private target volume.
+          # are immutable image inputs. Source and Cargo target state stay
+          # job-private; only sccache compiler outputs are shared through the
+          # runner-local content-addressed cache server.
           for compiler in /opt/rh/gcc-toolset-15/root/usr/bin/gcc /opt/rh/gcc-toolset-15/root/usr/bin/g++; do
             [[ -x "$compiler" ]] || {
               echo "required GCC 15 compiler is unavailable: $compiler" >&2
@@ -453,6 +467,7 @@ jobs:
               run_phase ci-image-publishing-contract bash tools/test-ci-image-publishing.sh
               run_phase ci-image-identity "$PYTHON" tools/test_ci_image_identity.py
               run_phase native-sdk-packaging bash tools/test-native-sdk-packaging.sh
+              run_phase native-consumer-contract "$PYTHON" tools/check-native-consumer-contract.py
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
               run_phase clippy-runner "$PYTHON" tools/test_run_clippy.py
@@ -475,7 +490,8 @@ jobs:
               run_phase abi-authority-tests "$ABI_PYTHON" tools/test_check_native_abi_authorities.py
               run_phase abi-authorities "$ABI_PYTHON" tools/check-native-abi-authorities.py
               run_phase abi-surface-tests "$ABI_PYTHON" tools/test_check_abi_surface.py
-              run_phase checked-in-bindings env                 SK_NATIVE_ABI_HEADER=/work/core/native/vespa/searchkernel_vespa.h                 bash tools/check-native-bindings.sh
+              run_phase native-bindings-regression bash tools/test-check-native-bindings.sh
+              run_phase checked-in-bindings bash tools/check-native-bindings.sh
               run_phase layout bash tools/check-layout.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
 
@@ -590,6 +606,7 @@ jobs:
               ;;
 
             native-full)
+              run_phase native-full-release-support "$PYTHON" tools/check-release-support.py
               # ABI-sensitive changes are covered by the dedicated exact-head
               # ABI surface workflow, which compares against the real PR/base SHA.
               # Prepare once in a tokenless child, then publish only the fixed
@@ -603,10 +620,14 @@ jobs:
               run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved
               run_phase native-full-python-e2e tools/run-python-native-e2e.sh --prevalidated-native-sdk
               run_phase native-full-persistence ./dev verify persistence
+              run_phase native-full-consumer-package bash tools/test-native-consumer-package.sh
               ;;
 
             client-e2e)
+              run_phase client-e2e-release-support "$PYTHON" tools/check-release-support.py
               "$PYTHON" tools/check-python-dependencies.py
+              run_phase client-release-build "$PYTHON" tools/package-consumer-release.py --output /tmp/searchkernel-consumer-release
+              run_phase client-release-verify "$PYTHON" tools/check-consumer-release.py /tmp/searchkernel-consumer-release
               build_native_searchkerneld client-e2e-build
               run_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e
               ;;

@@ -4346,19 +4346,24 @@ public:
                                        make_value_document(document));
         failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
-        const bool has_tensor = std::any_of(
-            document.fields.begin(), document.fields.end(),
-            [](const auto &field) { return field.value.kind == SK_VALUE_TENSOR; });
+        // Hardening can hold the completed feed at the exact boundary the
+        // visibility barrier is required to close. This makes the regression
+        // deterministic instead of relying on Vespa publication timing.
+        failpoint("mutation_before_visibility_wait");
         const bool has_struct_array = std::any_of(
             document.fields.begin(), document.fields.end(),
             [](const auto &field) { return field.value.kind == SK_VALUE_STRUCT_ARRAY; });
         const bool has_position = std::any_of(
             document.fields.begin(), document.fields.end(),
             [](const auto &field) { return field.value.kind == SK_VALUE_POSITION; });
-        if (!has_tensor && !has_struct_array && !has_position) {
-            wait_for_source_state(id, true, expected_fields(document), true);
-        } else if (has_struct_array || has_position) {
+        // A successful put is the synchronization point for immediate GET and
+        // search. TensorFieldValue presence is intentionally a valid match in
+        // value_matches(), so tensors must not bypass this publication barrier.
+        // Struct-array/position values retain their presence-only contract.
+        if (has_struct_array || has_position) {
             wait_for_source_state(id, true, {}, true);
+        } else {
+            wait_for_source_state(id, true, expected_fields(document), true);
         }
     }
 
