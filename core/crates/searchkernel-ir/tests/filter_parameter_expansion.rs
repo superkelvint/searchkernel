@@ -210,17 +210,11 @@ fn repeated_list_parameter_references_are_bounded_across_rust_and_portable_ingre
 
     let exact_source = repeated_source("brands", exact_references);
     let exact_bindings = BTreeMap::from([("brands".to_owned(), strings("brands", per_list))]);
-    let rust = resolve_search(
-        &context,
-        rust_request(exact_source.clone(), exact_bindings),
-    )
-    .expect("aggregate expansion at the token budget must resolve");
+    let rust = resolve_search(&context, rust_request(exact_source.clone(), exact_bindings))
+        .expect("aggregate expansion at the token budget must resolve");
     let portable = portable_result(
         &context,
-        &portable_request(
-            &exact_source,
-            &[("brands".to_owned(), per_list)],
-        ),
+        &portable_request(&exact_source, &[("brands".to_owned(), per_list)]),
     )
     .expect("portable aggregate expansion at the token budget must resolve");
     assert_eq!(rust, portable);
@@ -231,10 +225,7 @@ fn repeated_list_parameter_references_are_bounded_across_rust_and_portable_ingre
         resolve_search(&context, rust_request(over_source.clone(), over_bindings)).unwrap_err();
     let portable_error = portable_result(
         &context,
-        &portable_request(
-            &over_source,
-            &[("brands".to_owned(), per_list)],
-        ),
+        &portable_request(&over_source, &[("brands".to_owned(), per_list)]),
     )
     .unwrap_err();
     assert_eq!(rust_error, portable_error);
@@ -256,14 +247,10 @@ fn multiple_list_parameters_enforce_exact_aggregate_boundary_and_one_over() {
     let exact_portable = (0..full_lists)
         .map(|i| (format!("p{i}"), per_list))
         .collect::<Vec<_>>();
-    let rust = resolve_search(
-        &context,
-        rust_request(exact_source.clone(), exact_bindings),
-    )
-    .expect("distinct parameter expansion at the aggregate budget must resolve");
-    let portable =
-        portable_result(&context, &portable_request(&exact_source, &exact_portable))
-            .expect("portable distinct expansion at the aggregate budget must resolve");
+    let rust = resolve_search(&context, rust_request(exact_source.clone(), exact_bindings))
+        .expect("distinct parameter expansion at the aggregate budget must resolve");
+    let portable = portable_result(&context, &portable_request(&exact_source, &exact_portable))
+        .expect("portable distinct expansion at the aggregate budget must resolve");
     assert_eq!(rust, portable);
 
     let over_source = distinct_source(full_lists + 1);
