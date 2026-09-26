@@ -329,7 +329,14 @@ impl IndexManifest {
         if generation != STORAGE_COMPATIBILITY_GENERATION {
             return Err(Error::incompatible_index(format!(
                 "storage compatibility generation {generation}"
-            )));
+            ))
+            .with_detail(
+                "unsupported_storage_generation",
+                Some("storage_compatibility_generation"),
+                format!(
+                    "storage generation {generation} is not supported; this release supports generation {STORAGE_COMPATIBILITY_GENERATION}"
+                ),
+            ));
         }
         if require_snapshot {
             let snapshot_version = object
