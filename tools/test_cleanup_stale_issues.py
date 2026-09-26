@@ -26,10 +26,16 @@ def issue(number: int, state: str = "open", *labels: str) -> dict[str, object]:
     }
 
 
-def pr(number: int, state: str, *closing_issues: int) -> dict[str, object]:
+def pr(
+    number: int,
+    state: str,
+    *closing_issues: int,
+    base_ref_name: str = "main",
+) -> dict[str, object]:
     return {
         "number": number,
         "state": state,
+        "base_ref_name": base_ref_name,
         "closing_issue_numbers": list(closing_issues),
     }
 
@@ -114,6 +120,110 @@ class CleanupPlannerTests(unittest.TestCase):
             [pr(34, "MERGED", 12), pr(35, "CLOSED", 12)],
         )
         self.assertEqual([action.kind for action in actions], ["close-issue"])
+
+    def test_non_default_branch_merge_does_not_resolve_issue(self) -> None:
+        actions = MODULE.plan_cleanup(
+            [issue(12, "open", "status:in-progress")],
+            [pr(34, "MERGED", 12, base_ref_name="release")],
+        )
+        self.assertEqual(
+            actions,
+            [
+                MODULE.CleanupAction(
+                    "return-to-ready",
+                    12,
+                    remove_labels=("status:in-progress",),
+                    add_labels=("status:ready",),
+                    reason=(
+                        "all linked closing-reference PRs are terminal without "
+                        "a merge to the default branch"
+                    ),
+                )
+            ],
+        )
+
+
+class GhReadTests(unittest.TestCase):
+    def test_graphql_paginates_without_slurp_and_carries_base_ref(self) -> None:
+        first = {
+            "data": {
+                "repository": {
+                    "pullRequests": {
+                        "nodes": [
+                            {
+                                "number": 34,
+                                "state": "MERGED",
+                                "baseRefName": "release",
+                                "closingIssuesReferences": {
+                                    "nodes": [{"number": 12}],
+                                    "pageInfo": {"hasNextPage": False},
+                                },
+                            }
+                        ],
+                        "pageInfo": {
+                            "hasNextPage": True,
+                            "endCursor": "cursor-1",
+                        },
+                    }
+                }
+            }
+        }
+        second = {
+            "data": {
+                "repository": {
+                    "pullRequests": {
+                        "nodes": [],
+                        "pageInfo": {
+                            "hasNextPage": False,
+                            "endCursor": None,
+                        },
+                    }
+                }
+            }
+        }
+
+        with mock.patch.object(
+            MODULE,
+            "_json_from_gh",
+            side_effect=[first, second],
+        ) as json_from_gh:
+            result = MODULE._graphql_pages("owner/repo")
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "number": 34,
+                    "state": "MERGED",
+                    "base_ref_name": "release",
+                    "closing_issue_numbers": [12],
+                }
+            ],
+        )
+        calls = [call.args[0] for call in json_from_gh.call_args_list]
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("--slurp", calls[0])
+        self.assertNotIn("--paginate", calls[0])
+        self.assertIn("endCursor=cursor-1", calls[1])
+
+    def test_issue_loader_paginates_without_slurp(self) -> None:
+        first_page = [issue(number) for number in range(1, 101)]
+        second_page = [issue(101)]
+
+        with mock.patch.object(
+            MODULE,
+            "_json_from_gh",
+            side_effect=[first_page, second_page],
+        ) as json_from_gh:
+            result = MODULE.load_issues("owner/repo")
+
+        self.assertEqual([item["number"] for item in result], list(range(1, 102)))
+        calls = [call.args[0] for call in json_from_gh.call_args_list]
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("--slurp", calls[0])
+        self.assertNotIn("--paginate", calls[0])
+        self.assertIn("page=1", calls[0][-1])
+        self.assertIn("page=2", calls[1][-1])
 
 
 class GhMutationTests(unittest.TestCase):
