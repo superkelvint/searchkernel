@@ -1,4 +1,5 @@
 // Search Kernel native adapter: hardening and timing support.
+#include <thread>
 // This file is included by abi.cc so the private adapter remains one native
 // boundary while responsibilities stay physically searchable by subsystem.
 
