@@ -2170,6 +2170,36 @@ fn component_filter_resolution_matches_full_search_ir() {
     assert_eq!(search.filter(), Some(&component));
 }
 
+#[test]
+fn present_empty_container_controls_survive_resolution_and_own_property_namespaces() {
+    for (field, property) in [
+        ("query_profile", "queryProfile"),
+        ("search_chain", "searchChain"),
+    ] {
+        let mut input = match_all_search(Vec::new());
+        match field {
+            "query_profile" => input.query_profile = Some(String::new()),
+            "search_chain" => input.search_chain = Some(String::new()),
+            _ => unreachable!(),
+        }
+        let resolved = resolve_search(&context(), input.clone())
+            .expect("present-empty control remains represented");
+        match field {
+            "query_profile" => assert_eq!(resolved.query_profile(), Some("")),
+            "search_chain" => assert_eq!(resolved.search_chain(), Some("")),
+            _ => unreachable!(),
+        }
+
+        input.properties.insert(
+            property.to_owned(),
+            RequestValueIr::String("generic".to_owned()),
+        );
+        let error = resolve_search(&context(), input)
+            .expect_err("typed present-empty control owns its property namespace");
+        assert_eq!(error.details[0].code, "property_overlaps_typed_field");
+    }
+}
+
 fn match_all_search(grouping: Vec<GroupingInput>) -> SearchIntent {
     SearchIntent {
         query: QuerySourceInput::MatchAll,
