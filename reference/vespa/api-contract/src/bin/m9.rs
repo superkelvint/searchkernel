@@ -1,6 +1,6 @@
 use searchkernel_vespa_engine::{
     AttributeBound, Document, DocumentUpdate, Engine, GroupingAggregation, GroupingExpression,
-    GroupingLevel, GroupingOutput, GroupingPlan, GroupingResult, GroupingResultValue, Query,
+    GroupingLevel, GroupingOutput, GroupingPlan, GroupingResult, GroupingResultValue, Hit, Query,
     Result, SearchRequest, SortField, SummaryRequest, Value,
 };
 
@@ -82,7 +82,7 @@ fn visit_group(result: GroupingResult) {
                 let _: Vec<(f64, f64)> = values;
             }
             GroupingOutput::HitList(hits) => {
-                let _: Vec<String> = hits;
+                let _: Vec<Hit> = hits;
             }
         }
     }
