@@ -559,6 +559,36 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         panic!("after-call failure incorrectly rolled back native mutation");
     }
 
+    // Hold a completed feed immediately before its publication barrier. The
+    // put must remain blocked here; releasing the failpoint lets the native
+    // visibility wait establish the same postcondition used by immediate GET
+    // and search, including tensor puts exercised by M13.
+    hardening::set(
+        &engine,
+        "mutation_before_visibility_wait",
+        1,
+        Action::Block,
+    )?;
+    let visibility_engine = Arc::clone(&engine);
+    let visibility_put = thread::spawn(move || put(&visibility_engine, "visibility", 9));
+    for _ in 0..100 {
+        if hardening::is_blocked(&engine, "mutation_before_visibility_wait")? {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    if !hardening::is_blocked(&engine, "mutation_before_visibility_wait")? {
+        panic!("put did not reach the post-feed visibility boundary");
+    }
+    if visibility_put.is_finished() {
+        panic!("put returned before its visibility barrier");
+    }
+    hardening::release(&engine, "mutation_before_visibility_wait")?;
+    visibility_put.join().map_err(|_| "visibility put panicked")??;
+    if !search_ids(&engine, 9, 10)?.iter().any(|id| id == "visibility") {
+        panic!("put visibility barrier returned before searchable state");
+    }
+
     hardening::set(
         &engine,
         "attribute_mutation_before_native_call",
