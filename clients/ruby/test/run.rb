@@ -484,3 +484,5 @@ with_http_server(status: 503, body: "bad\r\ninjected\x00\xff".b, content_type: "
 end
 
 puts "Ruby protocol/transport tests PASS"
+
+require_relative "facade"
