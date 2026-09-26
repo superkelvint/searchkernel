@@ -642,7 +642,7 @@ fn json_value(value: Value) -> Result<serde_json::Value> {
                                 .into_iter()
                                 .map(|cell| {
                                     serde_json::json!({
-                                        "address": cell.address,
+                                        "address": tensor_address_json(cell.address),
                                         "value": cell.value,
                                     })
                                 })
@@ -658,7 +658,7 @@ fn json_value(value: Value) -> Result<serde_json::Value> {
                                 .into_iter()
                                 .map(|block| {
                                     serde_json::json!({
-                                        "address": block.address,
+                                        "address": tensor_address_json(block.address),
                                         "values": block.values,
                                     })
                                 })
@@ -672,12 +672,23 @@ fn json_value(value: Value) -> Result<serde_json::Value> {
     })
 }
 
+fn tensor_address_json(address: std::collections::BTreeMap<String, String>) -> serde_json::Value {
+    // Keep the dimension-label entry list used by the FlatBuffers decoders in
+    // the other SDKs, so one canonical tensor address has the same public shape.
+    serde_json::Value::Array(
+        address
+            .into_iter()
+            .map(|(dimension, label)| serde_json::json!({"dimension": dimension, "label": label}))
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use searchkernel_testkit::{
         canonical_facet_result, canonical_result_fixtures, mixed_hit_and_group_children_result,
-        non_facet_grouping_result, sibling_groups_result,
+        non_facet_grouping_result, sibling_groups_result, sparse_mixed_tensor_result,
     };
     use std::collections::BTreeMap;
 
@@ -1233,7 +1244,11 @@ mod tests {
 
         let sparse_json = json_value(sparse.clone()).expect("sparse tensor must be public");
         assert_eq!(
-            sparse_json["$searchkernel_tensor"]["sparse"][0]["address"]["label"],
+            sparse_json["$searchkernel_tensor"]["sparse"][0]["address"][0]["dimension"],
+            "label"
+        );
+        assert_eq!(
+            sparse_json["$searchkernel_tensor"]["sparse"][0]["address"][0]["label"],
             "a"
         );
         assert_eq!(
@@ -1244,7 +1259,11 @@ mod tests {
 
         let mixed_json = json_value(mixed.clone()).expect("mixed tensor must be public");
         assert_eq!(
-            mixed_json["$searchkernel_tensor"]["mixed"][0]["address"]["label"],
+            mixed_json["$searchkernel_tensor"]["mixed"][0]["address"][0]["dimension"],
+            "label"
+        );
+        assert_eq!(
+            mixed_json["$searchkernel_tensor"]["mixed"][0]["address"][0]["label"],
             "b"
         );
         assert_eq!(
@@ -1262,6 +1281,36 @@ mod tests {
         };
         let converted = convert_result_group(group).expect("group tensor must convert");
         assert_eq!(converted.value, Some(mixed_json));
+    }
+
+    #[test]
+    fn public_result_conversion_preserves_sparse_hit_fields_and_mixed_group_values() {
+        let converted: SearchResult<serde_json::Value> =
+            search_result(sparse_mixed_tensor_result(), &[]).unwrap();
+        let ResultNode::Group(root) = converted.root else {
+            panic!("tensor fixture root must remain a group");
+        };
+        assert_eq!(
+            root.value,
+            Some(serde_json::json!({
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(label{},x[2])",
+                    "mixed": [{"address": [{"dimension": "label", "label": "b"}], "values": [0.25, 0.75]}]
+                }
+            }))
+        );
+        let ResultNode::Hit(hit) = &root.children[0] else {
+            panic!("tensor fixture child must remain a hit");
+        };
+        assert_eq!(
+            hit.fields["sparse"],
+            serde_json::json!({
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(label{})",
+                    "sparse": [{"address": [{"dimension": "label", "label": "a"}], "value": 0.5}]
+                }
+            })
+        );
     }
 
     #[test]
