@@ -53,7 +53,10 @@ class CleanupPlannerTests(unittest.TestCase):
                     "close-issue",
                     12,
                     remove_labels=("status:in-progress",),
-                    reason="all linked closing-reference PRs are terminal and one was merged",
+                    reason=(
+                        "all linked closing-reference PRs are terminal and one "
+                        "merged to the default branch"
+                    ),
                 )
             ],
         )
@@ -206,6 +209,16 @@ class GhReadTests(unittest.TestCase):
         self.assertNotIn("--paginate", calls[0])
         self.assertIn("endCursor=cursor-1", calls[1])
 
+    def test_load_default_branch_reads_repository_metadata(self) -> None:
+        with mock.patch.object(
+            MODULE,
+            "_json_from_gh",
+            return_value={"default_branch": "trunk"},
+        ) as json_from_gh:
+            self.assertEqual(MODULE.load_default_branch("owner/repo"), "trunk")
+
+        json_from_gh.assert_called_once_with(["api", "repos/owner/repo"])
+
     def test_issue_loader_paginates_without_slurp(self) -> None:
         first_page = [issue(number) for number in range(1, 101)]
         second_page = [issue(101)]
@@ -281,6 +294,7 @@ class GhMutationTests(unittest.TestCase):
         with (
             mock.patch.object(MODULE, "load_issues", return_value=[issue(12)]),
             mock.patch.object(MODULE, "_graphql_pages", return_value=[pr(34, "MERGED", 12)]),
+            mock.patch.object(MODULE, "load_default_branch", return_value="main"),
             mock.patch.object(MODULE, "apply_action") as apply_action,
             mock.patch("builtins.print"),
         ):
@@ -294,6 +308,7 @@ class GhMutationTests(unittest.TestCase):
         with (
             mock.patch.object(MODULE, "load_issues", return_value=[issue(12)]),
             mock.patch.object(MODULE, "_graphql_pages", return_value=[pr(34, "MERGED", 12)]),
+            mock.patch.object(MODULE, "load_default_branch", return_value="main"),
             mock.patch.object(
                 MODULE,
                 "_refresh_actions",
