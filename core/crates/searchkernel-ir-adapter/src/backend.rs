@@ -20,7 +20,7 @@ use searchkernel_vespa_engine::{
     TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 #[cfg(test)]
 use std::time::{Duration, Instant};
 
@@ -91,7 +91,7 @@ pub(crate) fn portable_errors_from_native_issues(
 /// A real Vespa-backed implementation of the portable backend contract.
 pub struct VespaBackend {
     pub(crate) engine: Engine,
-    existence_mutation_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    existence_mutation_locks: Mutex<HashMap<String, Weak<Mutex<()>>>>,
     #[cfg(test)]
     mutation_probe: Option<std::sync::Arc<MutationProbe>>,
     #[cfg(test)]
@@ -167,11 +167,18 @@ impl VespaBackend {
             .existence_mutation_locks
             .lock()
             .map_err(|_| internal("existence mutation lock table is poisoned"))?;
-        Ok(Arc::clone(
-            locks
-                .entry(id.to_owned())
-                .or_insert_with(|| Arc::new(Mutex::new(()))),
-        ))
+        if let Some(lock) = locks.get(id).and_then(Weak::upgrade) {
+            return Ok(lock);
+        }
+        let lock = Arc::new(Mutex::new(()));
+        locks.insert(id.to_owned(), Arc::downgrade(&lock));
+        // Weak entries do not retain per-document locks. Opportunistically
+        // remove dead entries so high-cardinality document IDs cannot grow
+        // this coordination table without bound.
+        if locks.len() > 256 {
+            locks.retain(|_, candidate| candidate.strong_count() != 0);
+        }
+        Ok(lock)
     }
 }
 
