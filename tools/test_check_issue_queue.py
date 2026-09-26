@@ -390,7 +390,7 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             state="open",
         )
 
-    def test_apply_reconciliation_preserves_non_workflow_labels(self) -> None:
+    def test_apply_reconciliation_mutates_only_workflow_labels(self) -> None:
         live = {
             "number": 8,
             "state": "open",
@@ -409,22 +409,47 @@ class IssueQueueReconciliationTests(unittest.TestCase):
         )
         with (
             mock.patch.object(MODULE, "_live_issue", return_value=live),
-            mock.patch.object(MODULE, "_github_patch") as github_patch,
+            mock.patch.object(MODULE, "_github_delete_label") as delete_label,
+            mock.patch.object(MODULE, "_github_add_labels") as add_labels,
         ):
             messages = MODULE.apply_reconciliation("owner/repo", [action])
 
-        github_patch.assert_called_once_with(
+        delete_label.assert_called_once_with(
             "owner/repo",
-            "issues/8",
-            {
-                "labels": [
-                    "area:ci",
-                    "priority:p1",
-                    "status:ready",
-                    "type:hardening",
-                ]
-            },
+            8,
+            "status:in-progress",
         )
+        add_labels.assert_called_once_with(
+            "owner/repo",
+            8,
+            ["status:ready"],
+        )
+        self.assertEqual(len(messages), 1)
+
+    def test_closed_issue_cleanup_removes_only_workflow_labels(self) -> None:
+        live = {
+            "number": 42,
+            "state": "closed",
+            "labels": [
+                {"name": "status:blocked"},
+                {"name": "priority:p2"},
+                {"name": "area:ci"},
+            ],
+        }
+        action = MODULE.ReconcileAction(
+            "remove-workflow-states",
+            42,
+            reason="fixture cleanup",
+        )
+        with (
+            mock.patch.object(MODULE, "_live_issue", return_value=live),
+            mock.patch.object(MODULE, "_github_delete_label") as delete_label,
+            mock.patch.object(MODULE, "_github_add_labels") as add_labels,
+        ):
+            messages = MODULE.apply_reconciliation("owner/repo", [action])
+
+        delete_label.assert_called_once_with("owner/repo", 42, "status:blocked")
+        add_labels.assert_not_called()
         self.assertEqual(len(messages), 1)
 
 
