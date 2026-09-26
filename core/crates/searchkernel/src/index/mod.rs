@@ -104,7 +104,7 @@ impl Index {
     ) -> Result<Self> {
         #[cfg(feature = "native")]
         {
-            return Self::from_owned_backend(context, session, None);
+            Self::from_owned_backend(context, session, None)
         }
         #[cfg(not(feature = "native"))]
         {
