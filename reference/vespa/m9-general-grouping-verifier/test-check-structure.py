@@ -4,6 +4,7 @@
 from pathlib import Path
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 
@@ -162,7 +163,69 @@ def main():
                 "depending on C-series IR terminology"
             )
 
-    print("check-structure source-extension and comment-only regressions passed")
+    # Published verifier images intentionally carry pinned build artifacts and
+    # provenance without a full upstream Vespa source checkout. The structure
+    # checker must honor the resolved VESPA_ROOT instead of hard-coding
+    # ROOT/upstream/vespa, and must not require source-trace files from a
+    # provenance-validated published toolchain.
+    with tempfile.TemporaryDirectory() as directory:
+        sandbox = Path(directory)
+        checker = (
+            sandbox
+            / "reference/vespa/m9-general-grouping-verifier/check-structure.sh"
+        )
+        checker.parent.mkdir(parents=True)
+        shutil.copy2(CHECKER, checker)
+
+        native_parent = sandbox / "core/native"
+        native_parent.mkdir(parents=True)
+        (native_parent / "vespa").symlink_to(
+            ROOT / "core/native/vespa", target_is_directory=True
+        )
+
+        published_vespa = sandbox / "published-vespa"
+        published_vespa.mkdir()
+        (published_vespa / ".searchkernel-vespa-artifact.json").write_text(
+            "{}\\n", encoding="utf-8"
+        )
+
+        environment = os.environ.copy()
+        environment["VESPA_ROOT"] = str(published_vespa)
+        environment.pop("SK_GROUPING_NATIVE_CPP", None)
+        result = subprocess.run(
+            [str(checker)],
+            cwd=sandbox,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise SystemExit(
+                "check-structure.sh rejected a published Vespa toolchain "
+                "without a full source checkout:\\n"
+                + result.stdout
+                + result.stderr
+            )
+
+        unproven_vespa = sandbox / "unproven-vespa"
+        unproven_vespa.mkdir()
+        environment["VESPA_ROOT"] = str(unproven_vespa)
+        result = subprocess.run(
+            [str(checker)],
+            cwd=sandbox,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0 or "missing pinned Vespa source-trace file" not in result.stderr:
+            raise SystemExit(
+                "check-structure.sh must still require source-trace files for "
+                "an unproven Vespa source root"
+            )
+
+    print("check-structure source-extension, comment-only, and published-toolchain regressions passed")
 
 
 if __name__ == "__main__":
