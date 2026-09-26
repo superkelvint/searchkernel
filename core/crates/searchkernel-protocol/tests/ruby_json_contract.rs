@@ -126,10 +126,19 @@ fn ruby_emitted_standard_json_matches_canonical_bfbs() {
                             .unwrap_or_else(|| panic!("missing {key}"))["value"]
                     };
                     assert_eq!(value("min")["kind_type"], "Int64Value");
-                    assert_eq!(value("min")["kind"]["value"].as_i64(), Some(i64::MIN));
-                    assert_eq!(value("max")["kind"]["value"].as_i64(), Some(i64::MAX));
+                    assert_eq!(
+                        value("min")["kind"]["value"].as_str(),
+                        Some("-9223372036854775808")
+                    );
+                    assert_eq!(
+                        value("max")["kind"]["value"].as_str(),
+                        Some("9223372036854775807")
+                    );
                     assert_eq!(value("unsigned")["kind_type"], "UInt64Value");
-                    assert_eq!(value("unsigned")["kind"]["value"].as_u64(), Some(u64::MAX));
+                    assert_eq!(
+                        value("unsigned")["kind"]["value"].as_str(),
+                        Some("18446744073709551615")
+                    );
                     for (key, kind) in [
                         ("dense", "DenseTensorValues"),
                         ("sparse", "SparseTensorCells"),
@@ -139,6 +148,36 @@ fn ruby_emitted_standard_json_matches_canonical_bfbs() {
                     }
                     assert_eq!(value("bytes")["kind"]["value"], serde_json::json!([0, 255]));
                     assert_eq!(value("nested")["kind_type"], "ValueList");
+
+                    let unicode_keys = |document: &serde_json::Value| {
+                        document["payload"]["document"]["fields"]
+                            .as_array()
+                            .expect("ValueEntry vector")
+                            .iter()
+                            .find(|entry| entry["key"] == "unicode_object")
+                            .expect("unicode_object field")["value"]["kind"]["fields"]
+                            .as_array()
+                            .expect("unicode ValueObject fields")
+                            .iter()
+                            .map(|entry| {
+                                entry["key"]
+                                    .as_str()
+                                    .expect("unicode object key")
+                                    .to_owned()
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    let expected_unicode_order = vec!["a", "z", "é", "😀"];
+                    assert_eq!(
+                        unicode_keys(&input),
+                        expected_unicode_order,
+                        "Ruby must emit canonical UTF-8 key ordering before BFBS parsing"
+                    );
+                    assert_eq!(
+                        unicode_keys(&round_trip),
+                        expected_unicode_order,
+                        "canonical Unicode key ordering must survive BFBS parse/print"
+                    );
                 }
             }
             "response" => {
@@ -173,10 +212,6 @@ fn ruby_rejects_adversarial_values_after_bfbs_printing() {
             "missing Value discriminator",
             br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind":{"value":1}}}]}}}"#,
         ),
-        (
-            "missing Value payload",
-            br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind_type":"Int64Value"}}]}}}"#,
-        ),
     ];
 
     for (name, input) in cases {
@@ -188,4 +223,14 @@ fn ruby_rejects_adversarial_values_after_bfbs_printing() {
             assert_ruby_consumes_printed_response(&repo_root, "rejected-value-response", &printed);
         }
     }
+
+    // Scalar fields use FlatBuffers defaults. An Int64Value table with its
+    // scalar omitted therefore means canonical zero, not a missing payload.
+    // Verify the BFBS printer and Ruby decoder agree on that default.
+    let canonical_default = br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:default","fields":[{"key":"zero","value":{"kind_type":"Int64Value","kind":{}}}]}}}"#;
+    let buffer = response_json_to_flatbuffer(canonical_default)
+        .expect("canonical Int64Value default must parse");
+    let printed =
+        response_flatbuffer_to_json(&buffer).expect("canonical Int64Value default must print");
+    assert_ruby_consumes_printed_response(&repo_root, "portable-int64-default-response", &printed);
 }

@@ -15,6 +15,14 @@ concurrency:
 
 
 jobs:
+  universe:
+    name: Full ./dev universe
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.sha }}
+      target: nightly-universe
+    secrets: inherit
+
   rust:
     name: Rust all-target verification
     uses: ./.github/workflows/ci-image-runner.yml

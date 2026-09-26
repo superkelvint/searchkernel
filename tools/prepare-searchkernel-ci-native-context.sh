@@ -351,7 +351,9 @@ path, build_env, target, commit = sys.argv[1:]
 with open(path, "w", encoding="utf-8") as stream:
     json.dump(
         {
-            "format_version": 3,
+            "format_version": 2,
+            "artifact_generation": 1,
+            "adapter_static_link_closure": True,
             "build_environment": build_env,
             "native_target": target,
             "vespa_commit": commit,

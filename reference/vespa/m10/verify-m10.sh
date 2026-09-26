@@ -3,6 +3,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"; cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+parse_verifier_args "$@"
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
 if live_oracle_enabled; then
@@ -21,7 +22,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
 done
 
 # M10 is cumulative and must preserve the full implemented M0-M9 surface.
-reference/vespa/m9/verify-m9.sh
+reference/vespa/m9/verify-m9.sh --skip-workspace-quality
 run_workspace_quality
 cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m10
 "$SCRIPT_DIR/check-structure.sh"

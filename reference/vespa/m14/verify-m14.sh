@@ -4,6 +4,7 @@ M14="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$M14/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+parse_verifier_args "$@"
 
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
@@ -20,7 +21,7 @@ python3 "$M14/test_symbol_expectations.py"
 python3 "$M14/test_flatc_invocation.py"
 
 # M14 is cumulative.
-"$ROOT/reference/vespa/m13/verify-m13.sh"
+"$ROOT/reference/vespa/m13/verify-m13.sh" --skip-workspace-quality
 run_workspace_quality
 cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m14
 "$M14/check-structure.sh"

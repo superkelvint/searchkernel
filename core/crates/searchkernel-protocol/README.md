@@ -20,6 +20,13 @@ FlatBuffers schemas in `api/`.
   tooling, never an individual generated file.
 - `json` is only the generic standard FlatBuffers JSON ↔ BFBS boundary; it does
   not define a Search Kernel JSON dialect or semantic mapping layer.
+- Canonical JSON spells schema `long`/`ulong` scalars as quoted decimal
+  strings. The official FlatBuffers parser accepts that standard scalar
+  spelling, while FlatBuffers 25.12.19 `GenText` emits bare JSON numbers.
+  The native bridge therefore performs a BFBS-driven lexical normalization
+  around the official parser/printer: it rejects bare 64-bit input numbers and
+  quotes only schema-typed 64-bit printer output. It contains no Search Kernel
+  field-name mappings and does not bypass the canonical FlatBuffer/IR path.
 
 The native JSON bridge links against the repository's vendored FlatBuffers
 25.12.19 build. Its compiler, target, libc, C++ runtime, CMake configuration,

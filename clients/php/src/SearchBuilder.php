@@ -552,7 +552,7 @@ class SearchBuilder
             $request['offset'] = ['value' => $this->offset];
         }
         if ($this->timeoutMs !== null) {
-            $request['timeout_ms'] = ['value' => $this->timeoutMs];
+            $request['timeout_ms'] = ['value' => (string) $this->timeoutMs];
         }
 
         $presentation = [];

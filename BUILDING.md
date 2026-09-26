@@ -148,6 +148,55 @@ environment for compilation, tests, client verification, and real-Vespa
 verification. GitHub Actions and local developer commands use the same pinned
 Rust, Node, Ruby, PHP, Python, FlatBuffers, and Vespa base/toolchain.
 
+Image publishing has three independent identities:
+
+- `superkelvint/searchkernel-ci-toolchain:<toolchain-id>` contains the OS,
+  compilers, language runtimes, FlatBuffers, and reusable client tooling. The
+  toolchain id hashes `docker/searchkernel-ci-toolchain/` together with the
+  resolved repository digest of its upstream base image.
+- `superkelvint/searchkernel-ci-vespa:<vespa-commit>-<bundle-id>` contains
+  the immutable native runtime closure plus configured Vespa headers/static-link
+  metadata. This is the only image that carries the large Vespa/native payload.
+- `superkelvint/searchkernel-ci:<searchkernel-revision>` contains only the
+  toolchain plus the source-specific validation receipt. During image build,
+  the exact Vespa image is mounted read-only with BuildKit for compatibility and
+  native-adapter validation; its files are never copied into a committed
+  `searchkernel-ci` layer.
+
+Publish only the axis that changed:
+
+```bash
+# New client language, compiler/runtime bump, or other CI tooling change.
+./dev image toolchain publish
+
+# Pinned Vespa/native bundle change.
+./dev image vespa publish
+
+# Normal Search Kernel source publish. This does not republish Vespa bytes.
+./dev image publish
+```
+
+The leaf records the exact toolchain and Vespa repository digests in labels.
+GitHub CI and local `./dev` resolve the Vespa digest from the leaf, materialize
+that digest once into a content-addressed Docker volume on the machine, and
+mount the volume read-only at `/opt/searchkernel/native-sdk-cache`. Multiple
+jobs reuse the same immutable volume; source and Cargo-target volumes remain
+job-private.
+
+This means the large Vespa payload is uploaded to Docker Hub only by
+`./dev image vespa publish`. An ordinary `./dev image publish` pushes the
+toolchain-derived leaf layers and source-validation metadata only. It does not
+create or push a composite image and does not copy the Vespa filesystem into
+`superkelvint/searchkernel-ci`.
+
+All image publishers require a clean Git checkout. Updating
+`searchkernel-ci:latest` additionally requires the local `main` branch.
+The literal `latest` and `base-*` leaf tags remain reserved.
+
+The leaf's BuildKit caches are namespaced by the exact toolchain/Vespa
+environment identity. Changing either immutable input therefore cannot reuse a
+stale native target cache.
+
 These commands dispatch to one disposable image container by default:
 
 ```bash
@@ -212,11 +261,25 @@ come from a different toolchain than CI.
 
 ## Environment isolation
 
+Container isolation does not by itself make a synthetic test hermetic. Tests that
+model resolver, cache, bootstrap, publication, or other environment-sensitive
+state MUST start from a clean environment and explicitly declare every variable
+they consume. They must not inherit the parent shell and then maintain a
+blacklist of known-dangerous `SK_NATIVE_*`, `VESPA_*`, toolchain, or cache
+overrides.
+
+Use `tools/run-hermetic-env.sh` for these fixtures. The runner starts with
+`env -i`; callers pass execution basics such as `PATH`, a fixture-local
+`HOME`/`TMPDIR`, deterministic locale, and the fixture inputs as explicit
+`NAME=VALUE` arguments. Ambient variables are unavailable unless the fixture
+deliberately opts them in. Regression tests should poison representative parent
+variables so accidental ambient authority becomes a deterministic failure.
+
 Supported build/test execution now has two deliberate modes:
 
 | Environment | Cargo target root | Vespa SDK source |
 | --- | --- | --- |
-| Canonical Docker-backed dev/CI | private `/cargo-target` volume | baked `/opt/searchkernel/native-sdk-cache/ci/.../objects/<vespa-commit>` |
+| Canonical Docker-backed dev/CI | private `/cargo-target` volume | read-only digest-addressed Vespa Docker volume mounted at `/opt/searchkernel/native-sdk-cache` |
 | Explicit host override | `target/host` (or caller override) | host resolver/cache or explicit `SK_NATIVE_SDK` |
 
 The Docker-backed path is the default. The host mode exists for toolchain

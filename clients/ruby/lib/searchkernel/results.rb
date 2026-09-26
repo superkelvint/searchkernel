@@ -71,7 +71,7 @@ module SearchKernel
         @groups = (@root.is_a?(ResultGroup) ? @root.groups || [] : []).freeze
         if raw.key?("total_hits")
           total = Value.object!(raw["total_hits"], "TotalHits")
-          @total_hits = Value.integer!(total.fetch("value", 0), Value::UINT64)
+          @total_hits = Value.decimal_integer!(total.fetch("value", "0"), Value::UINT64)
           @total_hits_relation = total.fetch("relation", "Unspecified")
           raise ProtocolError, "unknown total hits relation" unless %w[Unspecified Exact LowerBound Approximate Unknown].include?(@total_hits_relation)
         end
@@ -151,8 +151,12 @@ module SearchKernel
         value = false unless wrapper.key?("value")
         raise ProtocolError, "invalid #{name}" unless value == true || value == false
       elsif %w[documents results results_full nodes].include?(name)
-        value = 0 unless wrapper.key?("value")
-        Value.integer!(value, name == "nodes" ? (0..0xffffffff) : Value::UINT64)
+        value = name == "nodes" ? 0 : "0" unless wrapper.key?("value")
+        value = if name == "nodes"
+                  Value.integer!(value, 0..0xffffffff)
+                else
+                  Value.decimal_integer!(value, Value::UINT64)
+                end
       else
         value = 0.0 unless wrapper.key?("value")
         value = Value.finite!(value)
@@ -190,7 +194,8 @@ module SearchKernel
 
     def issue(raw)
       Value.object!(raw, "SearchResultError")
-      ResultIssue.new(code: raw.fetch("code", 0), summary: raw["summary"],
+      ResultIssue.new(code: Value.decimal_integer!(raw.fetch("code", "0"), Value::INT64),
+                      summary: raw["summary"],
                       message: raw["message"], source: raw["source"],
                       stack_trace: raw["stack_trace"], transient: optional(raw, "transient"),
                       metadata: Value.optional_entries(raw["metadata"])).freeze

@@ -137,7 +137,7 @@ final class Protocol
         if (is_int($value)) {
             return [
                 'kind_type' => 'Int64Value',
-                'kind' => ['value' => $value],
+                'kind' => ['value' => (string) $value],
             ];
         }
         if (is_float($value)) {
@@ -535,14 +535,11 @@ final class Protocol
             }
 
             $parts = [];
-            $uint64Kind = ($value['kind_type'] ?? null) === 'UInt64Value';
             foreach ($value as $key => $item) {
                 if (!is_string($key)) {
                     throw new ProtocolException('standard FlatBuffers JSON object keys must be strings');
                 }
-                $encoded = $uint64Kind && $key === 'kind' && is_array($item)
-                    ? self::encodeUInt64Kind($item)
-                    : self::encodeJsonNode($item);
+                $encoded = self::encodeJsonNode($item);
                 try {
                     $encodedKey = json_encode($key, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
                 } catch (\JsonException $error) {
@@ -565,16 +562,6 @@ final class Protocol
         } catch (\JsonException $error) {
             throw new ProtocolException('encode Search Kernel request JSON', 0, $error);
         }
-    }
-
-    /** @param array<string,mixed> $kind */
-    private static function encodeUInt64Kind(array $kind): string
-    {
-        if (array_keys($kind) !== ['value']) {
-            throw new ProtocolException('UInt64Value.kind must contain only value');
-        }
-        $value = self::decodeUInt64Scalar($kind['value'], 'UInt64Value.value');
-        return '{"value":' . (string) $value . '}';
     }
 
     /** @param array<string,mixed> $payload */

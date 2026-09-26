@@ -4,6 +4,7 @@ M12="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$M12/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+parse_verifier_args "$@"
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
 if live_oracle_enabled; then
@@ -15,7 +16,7 @@ fi
 "$M12/validate_expected.py"
 
 # M12 is cumulative.
-reference/vespa/m11/verify-m11.sh
+reference/vespa/m11/verify-m11.sh --skip-workspace-quality
 run_workspace_quality
 cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m12
 "$M12/check-structure.sh"
