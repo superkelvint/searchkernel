@@ -2,7 +2,7 @@ name: Issue queue reconcile
 
 on:
   issues:
-    types: [closed, reopened, labeled, unlabeled]
+    types: [closed, reopened]
   pull_request:
     types: [closed]
   workflow_dispatch:
