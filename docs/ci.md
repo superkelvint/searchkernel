@@ -949,8 +949,8 @@ A candidate that changes verification authority cannot pass the normal trusted
 gate. Intentional changes use `trusted-ci-transition.yml`, manually dispatched
 from the default branch for an exact PR head. The transition workflow accepts
 only authority changes plus documentation; it rejects mixed product/authority
-PRs, revalidates head/base before authorization, and never executes candidate
-code while holding the App credential. Candidate self-tests remain additive
+PRs, requires an admin or maintainer actor, revalidates head/base before
+authorization, and never executes candidate code while holding the App credential. Candidate self-tests remain additive
 evidence. After the transition lands, the new default-branch authority governs
 subsequent PRs.
 
