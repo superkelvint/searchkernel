@@ -107,6 +107,40 @@ fn native_open_failures_preserve_error_kinds_and_leave_no_handle() {
     let _ = fs::remove_dir_all(data);
 }
 
+#[cfg(feature = "hardening")]
+#[test]
+fn native_open_failpoints_are_thread_affine() {
+    let (owner_config, owner_data) = compile_config(
+        "open-failpoint-owner",
+        &Schema::new("typea").field(Field::new("qty", FieldType::Integer).attribute()),
+    );
+    let (other_config, other_data) = compile_config(
+        "open-failpoint-other",
+        &Schema::new("typea").field(Field::new("qty", FieldType::Integer).attribute()),
+    );
+
+    hardening::set_open("open_constructor", 1, hardening::Action::Error)
+        .expect("arm owner-thread open failpoint");
+
+    let other = std::thread::spawn(move || {
+        let engine = Engine::open(&other_data, &other_config)
+            .expect("another thread must not consume the owner thread's open failpoint");
+        engine.close().expect("close unrelated engine");
+        (other_config, other_data)
+    })
+    .join()
+    .expect("unrelated open thread must not panic");
+
+    let error = Engine::open(&owner_data, &owner_config)
+        .expect_err("arming thread must still consume its open failpoint");
+    hardening::clear_open("open_constructor").expect("clear owner-thread open failpoint");
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+
+    for path in [owner_config, owner_data, other.0, other.1] {
+        let _ = fs::remove_dir_all(path);
+    }
+}
+
 #[cfg(feature = "native-contract-tests")]
 unsafe extern "C" {
     fn searchkernel_query_outlives_engine_regression(
