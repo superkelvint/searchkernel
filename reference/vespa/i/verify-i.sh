@@ -5,7 +5,11 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
-parse_verifier_args "$@"
+parse_cumulative_verifier_args "$@"
+CHILD_VERIFIER_ARGS=()
+if [[ "$SKIP_WORKSPACE_QUALITY" == 1 ]]; then
+  CHILD_VERIFIER_ARGS+=(--skip-workspace-quality)
+fi
 
 require_pinned_vespa
 require_sdk_manifest "$SDK/manifest.json"
@@ -14,8 +18,10 @@ python3 "$SCRIPT_DIR/validate.py"
 # I-series is only meaningful when the latest frozen cumulative native
 # baseline remains green. M13 is the current baseline; it transitively
 # preserves M0-M12 before the public Phase 10 product-path check runs.
-"$ROOT/reference/vespa/verify-through.sh" m13 "$@"
-"$ROOT/reference/vespa/verify-through.sh" phase10 "$@"
+if [[ "$BASELINE_ALREADY_PROVED" != 1 ]]; then
+  "$ROOT/reference/vespa/verify-through.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"
+fi
+"$ROOT/reference/vespa/verify-through.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"
 
 if rg -n 'searchkernel-(ir-adapter|vespa-engine|vespa-bindings)|searchkernel_ir|searchkernel_vespa|RecordingBackend|ScriptedBackend' \
     "$SCRIPT_DIR/rust-driver/Cargo.toml" "$SCRIPT_DIR/rust-driver/src"; then

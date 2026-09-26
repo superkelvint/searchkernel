@@ -142,6 +142,25 @@ parse_verifier_args() {
   done
 }
 
+parse_cumulative_verifier_args() {
+  SKIP_WORKSPACE_QUALITY=0
+  BASELINE_ALREADY_PROVED=0
+  while (($#)); do
+    case "$1" in
+      --skip-workspace-quality)
+        SKIP_WORKSPACE_QUALITY=1
+        ;;
+      --baseline-already-proved|--skip-cumulative)
+        BASELINE_ALREADY_PROVED=1
+        ;;
+      *)
+        fail_verification "unknown cumulative verifier argument: $1"
+        ;;
+    esac
+    shift
+  done
+}
+
 require_pinned_vespa() {
   local vespa="$VESPA_ROOT"
   local expected actual marker build_env target

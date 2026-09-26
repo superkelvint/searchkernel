@@ -5,9 +5,14 @@ DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DIR/../../.." && pwd)"
 VERIFY="$ROOT/reference/vespa/verify-through.sh"
 DEV="$ROOT/dev"
+INTEGRATION="$ROOT/reference/vespa/i/verify-i.sh"
+PHASE9="$ROOT/reference/vespa/phase9/verify-phase9.sh"
+CI_IMAGE_RUNNER="$ROOT/.github/workflows/ci-image-runner.yml"
 
 bash -n "$VERIFY"
 bash -n "$DEV"
+bash -n "$INTEGRATION"
+bash -n "$PHASE9"
 
 # Sourcing verify-common must be read-only. Supply every resolved path so this
 # check needs no native installation, then shadow bash to detect any accidental
@@ -100,10 +105,42 @@ done
 grep -F 'universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality' "$DEV" >/dev/null
 grep -F "universe_dev_step 'cumulative milestone.m14 closure' verify milestone.m14 --skip-workspace-quality" "$DEV" >/dev/null
 
-integration="$ROOT/reference/vespa/i/verify-i.sh"
-grep -F 'parse_verifier_args "$@"' "$integration" >/dev/null
-for target in m13 phase10; do
-    grep -F '"$ROOT/reference/vespa/verify-through.sh" '"$target"' "$@"' "$integration" >/dev/null
+grep -F 'parse_cumulative_verifier_args "$@"' "$INTEGRATION" >/dev/null
+grep -F 'parse_cumulative_verifier_args "$@"' "$PHASE9" >/dev/null
+grep -F -- '--baseline-already-proved|--skip-cumulative)' "$COMMON" >/dev/null || {
+    echo "cumulative verifier baseline skip aliases are missing" >&2
+    exit 1
+}
+for script in "$INTEGRATION" "$PHASE9"; do
+    grep -F 'if [[ "$BASELINE_ALREADY_PROVED" != 1 ]]; then' "$script" >/dev/null || {
+        echo "cumulative verifier does not guard its M13 baseline: $script" >&2
+        exit 1
+    }
+    grep -F '"$ROOT/reference/vespa/verify-through.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"' "$script" >/dev/null || {
+        echo "cumulative verifier no longer proves M13 by default: $script" >&2
+        exit 1
+    }
 done
+grep -F '"$ROOT/reference/vespa/verify-through.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"' "$INTEGRATION" >/dev/null || {
+    echo "integration no longer forwards verifier args to Phase 10" >&2
+    exit 1
+}
+
+grep -F 'run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved' "$CI_IMAGE_RUNNER" >/dev/null || {
+    echo "native-full product integration does not reuse the established cumulative baseline" >&2
+    exit 1
+}
+grep -F 'run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved' "$CI_IMAGE_RUNNER" >/dev/null || {
+    echo "native-full Phase 9 does not reuse the established cumulative baseline" >&2
+    exit 1
+}
+hnsw_line="$(grep -nF 'run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
+integration_line="$(grep -nF 'run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
+phase9_line="$(grep -nF 'run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
+[[ -n "$hnsw_line" && -n "$integration_line" && -n "$phase9_line" ]] &&
+    (( hnsw_line < integration_line && hnsw_line < phase9_line )) || {
+        echo "native-full skips the cumulative baseline before HNSW/M14 has proved it" >&2
+        exit 1
+    }
 
 echo "semantic verifier routing PASS"
