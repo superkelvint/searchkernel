@@ -58,9 +58,9 @@ It also doesn't have its own ranking language, storage engine, or schema migrati
 
 ## Installing
 
-Search Kernel links against Vespa's native libraries at build time. None of the bindings are pure-language packages.
+On a supported platform, install/build Search Kernel normally. Native-enabled Cargo builds automatically acquire the pinned, target-specific Vespa runtime artifact, verify its checksum and provenance, and reuse it from a machine cache. Consumers do **not** clone or build Vespa, configure `SK_NATIVE_SDK`, understand native cache layout, or delete caches to recover from stale artifacts. Missing, stale, or corrupt cached runtime state is acquired/refreshed under the resolver lock.
 
-*(Installation instructions — supported platforms, native dependencies, build steps, per language — go here.)*
+`SK_NATIVE_SDK`, native-base generation controls, source-build fallbacks, and CI cache mounts are contributor/maintainer interfaces, not consumer installation steps. See [`BUILDING.md`](BUILDING.md) for contributor native-build details.
 
 ### Development prerequisites
 

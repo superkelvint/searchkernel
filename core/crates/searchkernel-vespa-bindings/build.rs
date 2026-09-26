@@ -38,20 +38,23 @@ fn main() {
             (configured, None)
         }
     } else {
-        let base = resolve_shared_native_sdk(&manifest_dir, &target, "path").unwrap_or_else(|error| {
+        // Consumer builds own native provisioning: `ensure` acquires and validates
+        // the pinned release artifact into the machine cache when it is absent,
+        // stale, or corrupt. SK_NATIVE_SDK remains a maintainer override only.
+        let base = resolve_shared_native_sdk(&manifest_dir, &target, "ensure").unwrap_or_else(|error| {
             panic!(
-                "immutable Vespa base prerequisite is unavailable: {error}\nRun './dev native-sdk ensure' to bootstrap or repair it. Cargo never builds or repairs the shared Vespa base."
+                "Search Kernel native runtime is unavailable or incompatible for target {target}: {error}\nThe supported consumer path provisions the pinned runtime automatically; do not set SK_NATIVE_SDK. Check network access and platform support, then retry."
             )
         });
         let base = fs::canonicalize(&base).unwrap_or_else(|error| {
             panic!(
-                "canonicalize shared Vespa base SDK '{}': {error}\nRun './dev native-sdk ensure' to bootstrap or repair it.",
+                "Search Kernel native runtime cache is unreadable after automatic provisioning at '{}': {error}\nRemove no files manually; retry so the resolver can repair the cache.",
                 base.display()
             )
         });
         verify_shared_cache_object(&manifest_dir, &base).unwrap_or_else(|error| {
             panic!(
-                "immutable Vespa base prerequisite is invalid: {error}\nRun './dev native-sdk ensure' to bootstrap or repair it."
+                "Search Kernel native runtime failed compatibility validation after automatic provisioning: {error}\nThe cache is repaired automatically on the next provisioning attempt."
             )
         });
         let adapter = build_local_adapter(&manifest_dir, &base, &target, hardening_required)

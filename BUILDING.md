@@ -1,5 +1,8 @@
 # Building Search Kernel
 
+> **Consumer note:** the native SDK/cache controls below are contributor tooling. Supported consumer builds automatically provision the pinned native runtime; consumers should not set `SK_NATIVE_SDK` or pre-populate the native cache.
+
+
 Search Kernel builds Rust code against pinned native prerequisites. FlatBuffers
 C++ 25.12.19 is installed once as a clone-wide toolchain and is never rebuilt by
 ordinary Cargo commands. The default native feature links a small Search Kernel-owned Vespa adapter

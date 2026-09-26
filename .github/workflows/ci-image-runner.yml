@@ -453,6 +453,7 @@ jobs:
               run_phase ci-image-publishing-contract bash tools/test-ci-image-publishing.sh
               run_phase ci-image-identity "$PYTHON" tools/test_ci_image_identity.py
               run_phase native-sdk-packaging bash tools/test-native-sdk-packaging.sh
+              run_phase native-consumer-contract "$PYTHON" tools/check-native-consumer-contract.py
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
               run_phase clippy-runner "$PYTHON" tools/test_run_clippy.py
