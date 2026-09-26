@@ -241,7 +241,7 @@ fn grouping_result_value(v: &GroupingResultValue) -> Json {
 fn grouping_output(v: &GroupingOutput) -> Json {
     match v {
         GroupingOutput::Value(value) => grouping_result_value(value),
-        GroupingOutput::HitList(hits) => json!({"type":"hit_list","values":hits}),
+        GroupingOutput::HitList(hits) => json!({"type":"hit_list","values":hits.iter().cloned().map(hit).collect::<Vec<_>>()}),
     }
 }
 fn grouping_result(result: GroupingResult) -> Json {
@@ -273,6 +273,26 @@ fn hit(h: searchkernel_vespa_engine::Hit) -> Json {
         })
         .collect();
     json!({"document_id":h.document_id,"score_bits":format!("0x{:016x}",h.score.to_bits()),"summary":summary})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hit_list_uses_the_same_canonical_hit_encoding_as_search_results() {
+        let hit = searchkernel_vespa_engine::Hit {
+            document_id: "doc:1".to_owned(),
+            score: 1.0,
+            fields: Default::default(),
+            highlights: Vec::new(),
+            match_features: Default::default(),
+        };
+        assert_eq!(
+            grouping_output(&GroupingOutput::HitList(vec![hit.clone()])),
+            json!({"type":"hit_list","values":[super::hit(hit)]})
+        );
+    }
 }
 
 pub fn run_positive(engine: &Engine, root: &Json) -> Json {
