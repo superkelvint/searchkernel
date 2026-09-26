@@ -61,16 +61,41 @@ jobs:
     env:
       CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
     steps:
+      - name: Allocate job-private checkout path
+        id: checkout
+        env:
+          CI_TARGET: ${{ inputs.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$CI_TARGET" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::invalid CI target for checkout path: $CI_TARGET"
+            exit 1
+          fi
+
+          relative=".ci-checkouts/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${CI_TARGET}"
+          absolute="$GITHUB_WORKSPACE/$relative"
+          if [[ -e "$absolute" ]]; then
+            echo "::error::job-private checkout path already exists: $absolute"
+            exit 1
+          fi
+
+          echo "relative=$relative" >> "$GITHUB_OUTPUT"
+          echo "absolute=$absolute" >> "$GITHUB_OUTPUT"
+
       - name: Check out requested revision
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.revision || github.sha }}
+          path: ${{ steps.checkout.outputs.relative }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Resolve exact revision
         id: revision
         shell: bash
+        working-directory: ${{ steps.checkout.outputs.absolute }}
         run: |
           set -euo pipefail
           actual=$(git rev-parse HEAD)
@@ -79,6 +104,7 @@ jobs:
 
       - name: Pull immutable CI image
         shell: bash
+        working-directory: ${{ steps.checkout.outputs.absolute }}
         run: |
           set -euo pipefail
           docker pull "$CI_IMAGE"
@@ -152,6 +178,7 @@ jobs:
           EXPECTED_HEAD: ${{ steps.revision.outputs.sha }}
           CI_TARGET: ${{ inputs.target }}
         shell: bash
+        working-directory: ${{ steps.checkout.outputs.absolute }}
         run: |
           set -euo pipefail
 
@@ -224,6 +251,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
+        working-directory: ${{ steps.checkout.outputs.absolute }}
         run: |
           set -euo pipefail
 
@@ -592,3 +620,19 @@ jobs:
             docker volume rm -f "${SOURCE_VOLUME:-}" "${TARGET_VOLUME:-}" >/dev/null 2>&1 || true
           fi
           rm -rf "${ARTIFACT_DIR:-}"
+
+      - name: Remove job-private checkout
+        if: always() && steps.checkout.outputs.absolute != ''
+        env:
+          CHECKOUT_DIR: ${{ steps.checkout.outputs.absolute }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$CHECKOUT_DIR" in
+            "$GITHUB_WORKSPACE"/.ci-checkouts/*) ;;
+            *)
+              echo "::error::refusing to clean unexpected checkout path: $CHECKOUT_DIR"
+              exit 1
+              ;;
+          esac
+          rm -rf -- "$CHECKOUT_DIR"
