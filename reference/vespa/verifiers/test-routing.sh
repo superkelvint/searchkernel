@@ -129,6 +129,10 @@ grep -F '"$ROOT/reference/vespa/verify-through.sh" phase10 "${CHILD_VERIFIER_ARG
     echo "integration no longer forwards verifier args to Phase 10" >&2
     exit 1
 }
+grep -F '"$SCRIPT_DIR/verify-entry-parity.sh"' "$INTEGRATION" >/dev/null || {
+    echo "integration no longer runs the real-engine Rust-direct/gRPC parity gate" >&2
+    exit 1
+}
 
 grep -F 'exec "$ROOT/reference/vespa/m14/verify-m14.sh" "$@"' "$HNSW" >/dev/null || {
     echo "HNSW semantic verifier no longer establishes the M14 cumulative baseline" >&2
