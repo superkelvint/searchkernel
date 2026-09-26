@@ -167,9 +167,18 @@ for forbidden in (
     "COMPOSITE_ID",
     "ci_image_composite_id",
     "COPY --link",
+    "--build-context",
 ):
     if forbidden in leaf_publish:
-        raise SystemExit(f"leaf publisher still has composite-image behavior: {forbidden!r}")
+        raise SystemExit(f"leaf publisher still has unsupported/composite image behavior: {forbidden!r}")
+
+if 'docker build "${leaf_build_args[@]}" "$SOURCE_CONTEXT"' not in leaf_publish:
+    raise SystemExit("leaf publisher must build from the exact archived source context")
+
+if "COPY . /tmp/searchkernel-source/" not in leaf:
+    raise SystemExit("thin CI leaf must copy source from the ordinary Docker build context")
+if "COPY --from=searchkernel-source" in leaf:
+    raise SystemExit("thin CI leaf must not require a named additional build context")
 
 for fragment in (
     'VOLUME="searchkernel-ci-vespa-',
