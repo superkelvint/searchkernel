@@ -1531,6 +1531,41 @@ fn described_canonical_fixture() -> (
     (canonical, described)
 }
 
+#[test]
+fn document_identity_resolution_preserves_public_intent_across_ingress_paths() {
+    let cases = [
+        (None, None, "searchkernel"),
+        (Some("catalog"), None, "catalog"),
+        (None, Some("product_document"), "product_document"),
+        (
+            Some("catalog"),
+            Some("product_document"),
+            "product_document",
+        ),
+    ];
+
+    for (name, document_type, expected_identity) in cases {
+        let mut definition = IndexDefinition::new().field(Field::text("title").stored(true));
+        if let Some(name) = name {
+            definition = definition.name(name);
+        }
+        definition.document_type = document_type.map(str::to_owned);
+
+        let direct = definition_to_ir(&definition).expect("direct Rust schema resolves");
+        assert_eq!(direct.document_type(), document_type);
+        assert_eq!(direct.resolved_document_type(), expected_identity);
+
+        let bytes = crate::portable_definition::encode_portable_definition(&definition);
+        let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+            .expect("portable schema parses");
+        let portable =
+            searchkernel_ir::index_definition_to_ir(portable).expect("portable schema resolves");
+        assert_eq!(portable, direct);
+        assert_eq!(portable.document_type(), document_type);
+        assert_eq!(portable.resolved_document_type(), expected_identity);
+    }
+}
+
 pub(super) fn public_described_canonical_fixture(
 ) -> (searchkernel_ir::IndexDefinitionIr, IndexDefinition) {
     let canonical = canonical_fixture_ir();
@@ -2946,6 +2981,38 @@ fn create_persists_rich_schema_provenance_and_reopens_consistently() {
     assert_eq!(reopened_resolved, expected_resolved);
     reopened.close().expect("close reopened index");
     std::fs::remove_dir_all(root).expect("remove provenance test index");
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn unnamed_index_keeps_resolved_document_identity_after_reopen() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-unnamed-document-identity-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let definition = IndexDefinition::new().field(Field::text("title").stored(true));
+    let expected = definition_to_ir(&definition).expect("unnamed schema resolves");
+    assert_eq!(expected.document_type(), None);
+    assert_eq!(expected.resolved_document_type(), "searchkernel");
+
+    let index = Index::create(&root, definition).expect("create unnamed index");
+    let described = index.describe().expect("describe created index");
+    let described = definition_to_ir(&described).expect("created schema resolves");
+    assert_eq!(described, expected);
+    index.close().expect("close unnamed index");
+
+    let reopened = Index::open(&root).expect("reopen unnamed index");
+    let described = reopened.describe().expect("describe reopened index");
+    let described = definition_to_ir(&described).expect("reopened schema resolves");
+    assert_eq!(described, expected);
+    assert_eq!(described.document_type(), None);
+    assert_eq!(described.resolved_document_type(), "searchkernel");
+    reopened.close().expect("close reopened unnamed index");
+    std::fs::remove_dir_all(root).expect("remove unnamed index");
 }
 
 #[test]

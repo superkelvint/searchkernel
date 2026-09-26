@@ -2489,6 +2489,12 @@ fn adapter_consumes_canonical_resolved_document_identity() {
     ));
     compile_index_definition(&definition, &config_dir)
         .expect("adapter accepts identity resolved by canonical IR");
+    let manifest = std::fs::read_to_string(config_dir.join("searchkernel-schema.json"))
+        .expect("compiled schema manifest");
+    assert!(manifest.contains(&format!(
+        "\"document_type\":\"{}\"",
+        definition.resolved_document_type()
+    )));
     std::fs::remove_dir_all(config_dir).expect("remove generated config");
 }
 
