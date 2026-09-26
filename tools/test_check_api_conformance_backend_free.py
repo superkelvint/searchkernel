@@ -63,6 +63,12 @@ class BackendFreeConformanceGuardTest(unittest.TestCase):
             (fake_bin / "bash").chmod(
                 (fake_bin / "bash").stat().st_mode | stat.S_IXUSR
             )
+            (fake_bin / "dirname").write_text(
+                '#!/bin/sh\n\nif [ "$1" = "--" ]; then\n    shift\nfi\nprintf \'%s\\n\' "${1%/*}"\n'
+            )
+            (fake_bin / "dirname").chmod(
+                (fake_bin / "dirname").stat().st_mode | stat.S_IXUSR
+            )
 
             environment = os.environ.copy()
             environment["PATH"] = str(fake_bin)
