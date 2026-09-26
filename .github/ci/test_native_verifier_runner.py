@@ -105,27 +105,35 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(needle, source)
 
-    def test_native_full_prepares_verifier_sdk_once_in_parent_shell(self) -> None:
+    def test_native_full_prepares_verifier_sdk_once_without_token_exposure(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
+        helper = source.split("          prepare_native_full_verifier_sdk() {", 1)[1].split(
+            "\n          }", 1
+        )[0]
         native_full = source.split("            native-full)", 1)[1].split(
             "            client-e2e)", 1
         )[0]
 
-        source_pos = native_full.index(
-            "source reference/vespa/common/verify-common.sh"
+        self.assertIn(
+            "run_phase native-full-prepare-verifier-sdk env", helper
         )
-        prepare_pos = native_full.index("prepare_verifier_sdk")
+        self.assertIn(
+            "source reference/vespa/common/verify-common.sh", helper
+        )
+        self.assertEqual(1, helper.count("prepare_verifier_sdk"))
+        self.assertIn(
+            'export SEARCHKERNEL_VERIFIER_SDK_PREPARED=1', helper
+        )
+        self.assertNotIn("HEAD_CHECK_TOKEN", helper)
+        self.assertNotIn("GH_TOKEN=", helper)
+
+        prepare_pos = native_full.index("prepare_native_full_verifier_sdk")
         hnsw_pos = native_full.index(
             "run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw"
         )
-
-        self.assertEqual(1, native_full.count("prepare_verifier_sdk"))
-        self.assertIn(
-            "assert_current_pr_head native-full-prepare-verifier-sdk", native_full
+        self.assertNotIn(
+            "source reference/vespa/common/verify-common.sh", native_full
         )
-        self.assertNotIn("native_full_gh_token", native_full)
-        self.assertNotIn("GH_TOKEN=", native_full)
-        self.assertLess(source_pos, prepare_pos)
         self.assertLess(prepare_pos, hnsw_pos)
 
     def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
