@@ -5,7 +5,8 @@ use crate::{
     Result, ScalarValueIr, Value,
 };
 use searchkernel_filter::{
-    CompareOp, ErrorKind, Expr, InValues, ParseError, Predicate, Span, Spanned, ValueExpr,
+    CompareOp, ComplexityLimit, ErrorKind, Expr, InValues, ParseError, Predicate, Span, Spanned,
+    ValueExpr,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -356,6 +357,14 @@ fn bind_in_values(
                     parameter.span,
                     "IN parameter list must not be empty",
                 ));
+            }
+            if values.len() > searchkernel_filter::limits::MAX_IN_VALUES {
+                return Err(parse_error_to_portable(ParseError {
+                    kind: ErrorKind::ExpressionTooComplex,
+                    span: parameter.span,
+                    reason: None,
+                    limit: Some(ComplexityLimit::InValues),
+                }));
             }
             values
                 .iter()
