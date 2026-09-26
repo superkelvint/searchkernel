@@ -47,6 +47,10 @@ jobs:
           set -euo pipefail
           [[ -n "$PR" && -n "$HEAD" && -n "$BASE" ]] || { echo '::error::workflow_run has no PR identity'; exit 1; }
           git fetch --no-tags --filter=blob:none origin "+$HEAD:refs/searchkernel/trusted-head" "+$BASE:refs/searchkernel/trusted-base"
+          git merge-base --is-ancestor "$BASE" "$HEAD" || {
+            echo "::error::candidate head $HEAD does not contain current PR base $BASE; update the branch before trusted verification"
+            exit 1
+          }
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
           echo "head=$HEAD" >> "$GITHUB_OUTPUT"
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
