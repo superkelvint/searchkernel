@@ -8,8 +8,10 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
+ABI_WORKFLOW = ROOT / ".github" / "workflows" / "abi-surface.yml"
 WORKFLOWS = ROOT / ".github" / "workflows"
 INTEGRATION = ROOT / "reference" / "vespa" / "i" / "verify-i.sh"
+PYTHON_NATIVE_E2E = ROOT / "tools" / "run-python-native-e2e.sh"
 
 
 class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
@@ -94,16 +96,50 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
             "native-full)",
-            "./dev verify abi",
             "./dev verify vespa.nearest-neighbor.hnsw",
             "./dev verify product.integration",
             "./dev verify vespa.grouping.yql",
             "./dev verify vespa.recovery",
             "reference/vespa/phase9/verify-phase9.sh",
-            "tools/run-python-native-e2e.sh",
+            "tools/run-python-native-e2e.sh --prevalidated-native-sdk",
             "./dev verify persistence",
         ):
             self.assertIn(needle, source)
+
+    def test_native_full_delegates_abi_to_exact_head_abi_workflow(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        native_full = source.split("            native-full)", 1)[1].split(
+            "            client-e2e)", 1
+        )[0]
+        abi_workflow = ABI_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertNotIn("native-full-abi", native_full)
+        self.assertNotIn("./dev verify abi", native_full)
+        self.assertIn(
+            'revision: ${{ github.event.pull_request.head.sha || github.sha }}',
+            abi_workflow,
+        )
+        self.assertIn(
+            "baseline_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}",
+            abi_workflow,
+        )
+        self.assertIn("target: abi-surface", abi_workflow)
+
+    def test_python_native_e2e_skips_ensure_only_when_explicitly_prevalidated(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        native_full = source.split("            native-full)", 1)[1].split(
+            "            client-e2e)", 1
+        )[0]
+        script = PYTHON_NATIVE_E2E.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "tools/run-python-native-e2e.sh --prevalidated-native-sdk",
+            native_full,
+        )
+        self.assertIn("--prevalidated-native-sdk", script)
+        self.assertIn('prevalidated_native_sdk=0', script)
+        self.assertIn('if [[ "$prevalidated_native_sdk" != 1 ]]; then', script)
+        self.assertIn("./dev native-sdk ensure", script)
 
     def test_native_full_does_not_rerun_phase10_after_integration(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
@@ -149,7 +185,6 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertNotIn("$GH_TOKEN", helper)
         self.assertNotIn("GH_TOKEN=", helper)
 
-        abi_pos = native_full.index("run_phase native-full-abi ./dev verify abi")
         prepare_pos = native_full.index("prepare_native_full_verifier_sdk")
         hnsw_pos = native_full.index(
             "run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw"
@@ -158,7 +193,6 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertNotIn(
             "source reference/vespa/common/verify-common.sh", native_full
         )
-        self.assertLess(abi_pos, prepare_pos)
         self.assertLess(prepare_pos, hnsw_pos)
 
     def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
@@ -315,7 +349,6 @@ echo AFTER_GUARD
             "Superseded verification",
             "run_phase()",
             "assert_current_pr_head preflight",
-            "run_phase native-full-abi",
             "run_phase native-full-hnsw",
             "run_phase native-full-product-integration",
             "run_phase native-full-grouping-yql",
