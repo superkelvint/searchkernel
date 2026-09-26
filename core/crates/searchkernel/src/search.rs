@@ -894,6 +894,58 @@ mod tests {
     }
 
     #[test]
+    fn public_textual_in_binding_enforces_expanded_value_limit() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::keyword("brand").filterable(true)),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+
+        const MAX_IN_VALUES: usize = 1_024;
+        let at_limit = (0..MAX_IN_VALUES)
+            .map(|i| format!("brand-{i}"))
+            .collect::<Vec<_>>();
+        runtime
+            .index()
+            .browse()
+            .filter((
+                "brand IN (:brands)",
+                crate::params! { "brands" => at_limit },
+            ))
+            .inspect()
+            .expect("public Rust IN binding at the canonical limit must resolve");
+
+        let over_limit = (0..=MAX_IN_VALUES)
+            .map(|i| format!("brand-{i}"))
+            .collect::<Vec<_>>();
+        let error = runtime
+            .index()
+            .browse()
+            .filter((
+                "brand IN (:brands)",
+                crate::params! { "brands" => over_limit },
+            ))
+            .inspect()
+            .expect_err("public Rust IN binding over the canonical limit must fail");
+        assert_eq!(error.code(), ErrorCode::InvalidArgument);
+        let detail = &error.details()[0];
+        assert_eq!(detail.code, "expression_too_complex");
+        assert_eq!(detail.path.as_deref(), Some("filters.textual[0].source"));
+        assert_eq!(
+            detail.metadata.get("limit").map(String::as_str),
+            Some("InValues")
+        );
+        assert_eq!(
+            detail.metadata.get("start_offset").map(String::as_str),
+            Some("10")
+        );
+        assert_eq!(
+            detail.metadata.get("end_offset").map(String::as_str),
+            Some("17")
+        );
+    }
+
+    #[test]
     fn structured_and_textual_filters_keep_separate_input_lanes_and_resolve_together() {
         let runtime = IndexRuntime::from_backend(
             IndexDefinition::new()
