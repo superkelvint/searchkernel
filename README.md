@@ -151,7 +151,7 @@ models and do not maintain parallel full-schema DTOs or handwritten codecs.
 
 ## Language bindings
 
-Release support is deliberately narrower than implementation inventory. For the next beta, Python and TypeScript/Node.js are supported non-Rust SDKs on the qualified Linux x86-64 glibc platform. PHP, Ruby, browser gRPC-Web, Go, and other language/runtime surfaces are deferred even where implementation exists. See the [release support matrix](docs/release-support.md).
+Release support is deliberately narrower than implementation inventory. For the next beta, Python (managed-local/connect) and TypeScript/Node.js (connect) are supported non-Rust SDK modes on the qualified Linux x86-64 glibc platform. PHP, Ruby, browser gRPC-Web, Go, and other language/runtime surfaces are deferred even where implementation exists. See the [release support matrix](docs/release-support.md).
 
 ## Repository layout
 

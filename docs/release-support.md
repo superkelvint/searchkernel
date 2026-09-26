@@ -9,7 +9,7 @@ release surface. The machine-readable authority is [`release-support.json`](rele
 | Rust embedded API | Supported | in-process native engine |
 | `searchkerneld` | Supported | native daemon |
 | Python | Supported | managed-local and connect-to-daemon |
-| TypeScript / Node.js | Supported | managed-local and connect-to-daemon |
+| TypeScript / Node.js | Supported | connect-to-daemon |
 | TypeScript in browsers | Deferred | gRPC-Web implementation exists, but is not release-qualified |
 | PHP | Deferred | implementation exists, but is not release-qualified |
 | Ruby | Deferred | implementation exists, but is not release-qualified |

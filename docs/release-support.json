@@ -1,14 +1,42 @@
 {
   "version": 1,
   "release": "0.1.x beta",
-  "platform": {"os": "linux", "arch": "x86_64", "libc": "glibc"},
+  "platform": {
+    "os": "linux",
+    "arch": "x86_64",
+    "libc": "glibc"
+  },
   "supported": [
-    {"surface": "rust-embedded", "runtime": "native", "evidence": "native-full"},
-    {"surface": "searchkerneld", "runtime": "native", "evidence": "native-full"},
-    {"surface": "python", "runtime": "managed-local", "evidence": "client-e2e"},
-    {"surface": "python", "runtime": "connect", "evidence": "client-e2e"},
-    {"surface": "typescript-node", "runtime": "managed-local", "evidence": "client-e2e"},
-    {"surface": "typescript-node", "runtime": "connect", "evidence": "client-e2e"}
+    {
+      "surface": "rust-embedded",
+      "runtime": "native",
+      "evidence": "native-full",
+      "verification": "./dev verify persistence"
+    },
+    {
+      "surface": "searchkerneld",
+      "runtime": "native",
+      "evidence": "client-e2e",
+      "verification": "tools/check-client-contracts.py --run-e2e"
+    },
+    {
+      "surface": "python",
+      "runtime": "managed-local",
+      "evidence": "native-full",
+      "verification": "tools/run-python-native-e2e.sh --prevalidated-native-sdk"
+    },
+    {
+      "surface": "python",
+      "runtime": "connect",
+      "evidence": "client-e2e",
+      "verification": "tools/check-client-contracts.py --run-e2e"
+    },
+    {
+      "surface": "typescript-node",
+      "runtime": "connect",
+      "evidence": "client-e2e",
+      "verification": "tools/check-client-contracts.py --run-e2e"
+    }
   ],
   "deferred": [
     "typescript-browser-grpc-web",
