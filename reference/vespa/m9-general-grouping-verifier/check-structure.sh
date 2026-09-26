@@ -4,7 +4,8 @@ DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DIR/../../.." && pwd)"
 HEADER="$ROOT/core/native/vespa/searchkernel_vespa.h"
 MAP="$ROOT/core/native/vespa/searchkernel_vespa.map"
-VESPA="$ROOT/upstream/vespa"
+VESPA="${VESPA_ROOT:-$ROOT/upstream/vespa}"
+PUBLISHED_VESPA_MARKER="$VESPA/.searchkernel-vespa-artifact.json"
 
 trace_sources=(
   searchlib/src/vespa/searchlib/aggregation/group.h
@@ -29,12 +30,18 @@ trace_sources=(
   searchcore/src/vespa/searchcore/proton/matching/matcher.cpp
 )
 
-for source in "${trace_sources[@]}"; do
-  [[ -f "$VESPA/$source" ]] || {
-    echo "missing pinned Vespa source-trace file: $source" >&2
-    exit 1
-  }
-done
+# verify-recursive-grouping.sh validates published-toolchain provenance before
+# invoking this structural checker. Published images intentionally retain the
+# pinned build artifacts/metadata without a full Vespa source tree, so source
+# trace existence is only meaningful for a source checkout.
+if [[ ! -f "$PUBLISHED_VESPA_MARKER" ]]; then
+  for source in "${trace_sources[@]}"; do
+    [[ -f "$VESPA/$source" ]] || {
+      echo "missing pinned Vespa source-trace file: $source" >&2
+      exit 1
+    }
+  done
+fi
 
 symbols=(
   sk_grouping_plan_create
