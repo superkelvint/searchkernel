@@ -28,7 +28,7 @@ pub use resolve::{
     AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput, FilterBoundInput,
     FilterInput, GetInput, GroupingInput, PatchOperationInput, PresentationInput, QueryModelInput,
     QuerySourceInput, RankingInput, SearchFieldInput, SearchInput, SearchIntent, SortInput,
-    SortTargetInput, TextualFilterInput, UpdateOperationInput,
+    SortTargetInput, TextualFilterInput, UpdateOperationInput, DEFAULT_SEARCH_LIMIT,
 };
 pub use schema::{
     analyzer_to_ir, field_to_ir, index_definition_to_ir, resolve_index_definition,
