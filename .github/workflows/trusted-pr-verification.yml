@@ -1,0 +1,121 @@
+name: Trusted PR verification authority
+
+# workflow_run workflows are loaded from the default branch, not from the PR.
+# This controller therefore cannot be weakened by the candidate it authorizes.
+on:
+  workflow_run:
+    workflows: ["CI invariant verification"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  authorize:
+    name: Trusted authorization
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: [self-hosted, linux, x64]
+    outputs:
+      head: ${{ steps.refs.outputs.head }}
+      rust: ${{ steps.plan.outputs.rust }}
+      python: ${{ steps.plan.outputs.python }}
+      typescript: ${{ steps.plan.outputs.typescript }}
+      ruby: ${{ steps.plan.outputs.ruby }}
+      native: ${{ steps.plan.outputs.native }}
+      coverage: ${{ steps.plan.outputs.coverage }}
+    steps:
+      - name: Check out trusted default-branch authority
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+      - name: Resolve immutable PR refs
+        id: refs
+        env:
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          HEAD: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
+          BASE: ${{ github.event.workflow_run.pull_requests[0].base.sha }}
+        run: |
+          set -euo pipefail
+          [[ -n "$PR" && -n "$HEAD" && -n "$BASE" ]] || { echo '::error::workflow_run has no PR identity'; exit 1; }
+          git fetch --no-tags --filter=blob:none origin "+$HEAD:refs/searchkernel/trusted-head" "+$BASE:refs/searchkernel/trusted-base"
+          echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+          git diff --name-only --no-renames "$BASE" "$HEAD" > "$RUNNER_TEMP/changed.txt"
+      - name: Reject candidate-controlled authorization changes
+        run: python3 .github/ci/trusted_pr_authority.py --changed-paths "$RUNNER_TEMP/changed.txt"
+      - name: Plan from trusted base DAG
+        id: plan
+        env:
+          BASE: ${{ github.event.workflow_run.pull_requests[0].base.sha }}
+        run: |
+          set -euo pipefail
+          d=$(mktemp -d)
+          for helper in behavioral_lanes_required.py native_verifier_required.py coverage_verifier_required.py; do
+            git show "$BASE:.github/ci/$helper" > "$d/$helper"
+          done
+          python3 "$d/behavioral_lanes_required.py" --github-output "$GITHUB_OUTPUT" < "$RUNNER_TEMP/changed.txt"
+          native=$(python3 "$d/native_verifier_required.py" < "$RUNNER_TEMP/changed.txt")
+          coverage=$(python3 "$d/coverage_verifier_required.py" < "$RUNNER_TEMP/changed.txt")
+          echo "native=$native" >> "$GITHUB_OUTPUT"
+          echo "coverage=$coverage" >> "$GITHUB_OUTPUT"
+
+  rust:
+    needs: authorize
+    if: needs.authorize.outputs.rust == 'true'
+    uses: ./.github/workflows/ci-image-runner.yml
+    with: { revision: "${{ needs.authorize.outputs.head }}", target: rust-non-native }
+  python:
+    needs: authorize
+    if: needs.authorize.outputs.python == 'true'
+    uses: ./.github/workflows/ci-image-runner.yml
+    with: { revision: "${{ needs.authorize.outputs.head }}", target: python }
+  typescript:
+    needs: authorize
+    if: needs.authorize.outputs.typescript == 'true'
+    uses: ./.github/workflows/ci-image-runner.yml
+    with: { revision: "${{ needs.authorize.outputs.head }}", target: typescript }
+  ruby:
+    needs: authorize
+    if: needs.authorize.outputs.ruby == 'true'
+    uses: ./.github/workflows/ci-image-runner.yml
+    with: { revision: "${{ needs.authorize.outputs.head }}", target: ruby }
+  native:
+    needs: authorize
+    if: needs.authorize.outputs.native == 'true'
+    uses: ./.github/workflows/ci-image-runner.yml
+    with: { revision: "${{ needs.authorize.outputs.head }}", target: native-full }
+
+  coverage:
+    needs: authorize
+    if: needs.authorize.outputs.coverage == 'true'
+    uses: ./.github/workflows/ci-image-runner.yml
+    with: { revision: "${{ needs.authorize.outputs.head }}", target: nightly-coverage }
+
+  gate:
+    name: Trusted invariant gate
+    if: ${{ always() && !cancelled() }}
+    needs: [authorize, rust, python, typescript, ruby, native, coverage]
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Require trusted authorization and selected lanes
+        env:
+          AUTH: ${{ needs.authorize.result }}
+          RUST_REQ: ${{ needs.authorize.outputs.rust }}
+          RUST: ${{ needs.rust.result }}
+          PY_REQ: ${{ needs.authorize.outputs.python }}
+          PY: ${{ needs.python.result }}
+          TS_REQ: ${{ needs.authorize.outputs.typescript }}
+          TS: ${{ needs.typescript.result }}
+          RUBY_REQ: ${{ needs.authorize.outputs.ruby }}
+          RUBY: ${{ needs.ruby.result }}
+          NATIVE_REQ: ${{ needs.authorize.outputs.native }}
+          NATIVE: ${{ needs.native.result }}
+          COVERAGE_REQ: ${{ needs.authorize.outputs.coverage }}
+          COVERAGE: ${{ needs.coverage.result }}
+        run: |
+          set -euo pipefail
+          [[ "$AUTH" == success ]] || { echo '::error::trusted authorization failed'; exit 1; }
+          check() { [[ "$2" != true || "$3" == success ]] || { echo "::error::$1 trusted lane ended as $3"; exit 1; }; }
+          check Rust "$RUST_REQ" "$RUST"; check Python "$PY_REQ" "$PY"; check TypeScript "$TS_REQ" "$TS"
+          check Ruby "$RUBY_REQ" "$RUBY"; check Native "$NATIVE_REQ" "$NATIVE"; check Coverage "$COVERAGE_REQ" "$COVERAGE"
