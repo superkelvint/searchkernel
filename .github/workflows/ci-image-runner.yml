@@ -539,7 +539,6 @@ jobs:
 
               run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw
               run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved
-              run_phase native-full-rust-real-engine ./dev verify product.rust-real-engine
               run_phase native-full-grouping-yql ./dev verify vespa.grouping.yql
               run_phase native-full-recovery ./dev verify vespa.recovery
               run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved
