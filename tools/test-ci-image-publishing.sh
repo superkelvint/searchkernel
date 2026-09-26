@@ -24,6 +24,7 @@ python3 - \
     "$ROOT/tools/publish-searchkernel-ci-image.sh" \
     "$ROOT/tools/ensure-ci-vespa-volume.sh" \
     "$ROOT/tools/run-in-ci-image.sh" \
+    "$ROOT/tools/generate-typescript-grpc-web.sh" \
     "$ROOT/.github/workflows/ci-image-runner.yml" <<'PY'
 from pathlib import Path
 import sys
@@ -38,6 +39,7 @@ import sys
     leaf_publish_path,
     ensure_volume_path,
     local_runner_path,
+    typescript_generator_path,
     workflow_path,
 ) = map(Path, sys.argv[1:])
 
@@ -50,6 +52,7 @@ vespa_publish = vespa_publish_path.read_text(encoding="utf-8")
 leaf_publish = leaf_publish_path.read_text(encoding="utf-8")
 ensure_volume = ensure_volume_path.read_text(encoding="utf-8")
 local_runner = local_runner_path.read_text(encoding="utf-8")
+typescript_generator = typescript_generator_path.read_text(encoding="utf-8")
 workflow = workflow_path.read_text(encoding="utf-8")
 
 for fragment in (
@@ -57,6 +60,9 @@ for fragment in (
     "ARG RUST_TOOLCHAIN=",
     "ARG FLATBUFFERS_VERSION=",
     "cargo-llvm-cov",
+    "SEARCHKERNEL_TYPESCRIPT_NODE_MODULES",
+    "COPY clients/typescript/package.json clients/typescript/package-lock.json",
+    "npm ci --prefix /opt/searchkernel/typescript",
 ):
     if fragment not in toolchain:
         raise SystemExit(f"toolchain image is missing {fragment!r}")
@@ -99,7 +105,7 @@ for forbidden in (
         raise SystemExit(f"CI leaf republishes Vespa payload: {forbidden!r}")
 
 for fragment in (
-    "searchkernel-ci-toolchain-v2",
+    "searchkernel-ci-toolchain-v3",
     "searchkernel-ci-vespa-bundle-v1",
     "searchkernel-ci-vespa-producer-v1",
     "searchkernel-ci-environment-v1",
@@ -113,9 +119,22 @@ for fragment in (
     "superkelvint/searchkernel-ci-toolchain",
     "PINNED_BASE_IMAGE",
     "io.searchkernel.toolchain-base",
+    'ci_image_toolchain_id "$ROOT" "$PINNED_BASE_IMAGE"',
+    "clients/typescript/package-lock.json",
+    'docker build "${toolchain_build_args[@]}" "$BUILD_CONTEXT"',
 ):
     if fragment not in toolchain_publish:
         raise SystemExit(f"toolchain publisher is missing {fragment!r}")
+
+for fragment in (
+    "SEARCHKERNEL_TYPESCRIPT_NODE_MODULES",
+    "/opt/searchkernel/typescript/node_modules",
+    'ln -s "$toolchain_node_modules" "$client/node_modules"',
+):
+    if fragment not in typescript_generator:
+        raise SystemExit(
+            f"TypeScript generator does not consume the image-owned dependency store: missing {fragment!r}"
+        )
 
 for fragment in (
     "superkelvint/searchkernel-ci-vespa",
