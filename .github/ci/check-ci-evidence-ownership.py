@@ -57,6 +57,7 @@ def main() -> int:
         ("Ruby", "target: ruby"),
         ("Tooling", "target: tooling"),
         ("Native", "target: native-full"),
+        ("Coverage", "target: nightly-coverage"),
     )
     for language, target in required_delegations:
         if f"name: {language} invariant" not in canonical and language not in {"Tooling", "Native"}:

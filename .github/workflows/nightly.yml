@@ -31,6 +31,14 @@ jobs:
       target: nightly-rust
     secrets: inherit
 
+  coverage:
+    name: Rust code coverage
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.sha }}
+      target: nightly-coverage
+    secrets: inherit
+
   contracts:
     name: Contracts and generated artifacts
     uses: ./.github/workflows/ci-image-runner.yml
