@@ -6,6 +6,7 @@ WORK="$M4/target/verify"
 mkdir -p "$WORK"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+parse_verifier_args "$@"
 
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
@@ -19,7 +20,7 @@ fi
   echo "M4 frozen goldens are missing. Complete verifier authoring and run freeze-goldens.sh first." >&2
   exit 1
 }
-"$ROOT/reference/vespa/m3/verify-m3.sh"
+"$ROOT/reference/vespa/m3/verify-m3.sh" --skip-workspace-quality
 
 run_workspace_quality
 

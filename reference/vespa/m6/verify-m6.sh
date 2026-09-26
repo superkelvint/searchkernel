@@ -4,6 +4,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+parse_verifier_args "$@"
 
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
@@ -21,7 +22,7 @@ for scenario in "$SCRIPT_DIR/scenarios"/[0-9][0-9]-*.json; do
     "$ROOT/core/crates/searchkernel-vespa-bindings/src" "$ROOT/core/native/vespa"
 done
 
-if [[ -x reference/vespa/m5/verify-m5.sh ]]; then
+if [[ -x reference/vespa/m5/verify-m5.sh --skip-workspace-quality ]]; then
   reference/vespa/m5/verify-m5.sh
 else
   echo "missing cumulative M5 verifier" >&2

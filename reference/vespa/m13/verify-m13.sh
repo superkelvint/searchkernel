@@ -5,6 +5,7 @@ M13="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$M13/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+parse_verifier_args "$@"
 
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
@@ -16,7 +17,8 @@ fi
 require_sdk_manifest "$SDK/manifest.json"
 
 # M13 is cumulative: the previous dense-query milestone must remain green.
-"$ROOT/reference/vespa/m12/verify-m12.sh"
+"$ROOT/reference/vespa/m12/verify-m12.sh" --skip-workspace-quality
+run_workspace_quality
 
 cargo fmt --all --check
 cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m13

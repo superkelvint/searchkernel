@@ -3,12 +3,14 @@ set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$ROOT/common/verify-common.sh"
+parse_verifier_args "$@"
 
 TARGET=$REPO_ROOT/target/vespa-verifier/m5
 CONFIG="$SDK/share/embedded_crud_cfg"
 mkdir -p "$TARGET"
 
-"$ROOT/m4/verify-m4.sh"
+"$ROOT/m4/verify-m4.sh" --skip-workspace-quality
+run_workspace_quality
 
 for scenario in "$ROOT/m5/scenarios"/*.json; do
     check_fixture_literals "$scenario" "$REPO_ROOT/core/crates/searchkernel-vespa-engine/src" \

@@ -43,4 +43,27 @@ grep -F "unknown verifier target: vespa.this-target-does-not-exist" <<<"$unknown
     exit 1
 }
 
+grep -F 'verify_target "$@"' "$DEV" >/dev/null || {
+    echo "./dev verify does not forward verifier arguments" >&2
+    exit 1
+}
+grep -F '"${@:2}"' "$VERIFY" >/dev/null || {
+    echo "verify-through does not forward verifier arguments" >&2
+    exit 1
+}
+for milestone in 3 4 5 6 7 8 9 10 11 12 13 14; do
+    script="$ROOT/reference/vespa/m$milestone/verify-m$milestone.sh"
+    grep -F 'parse_verifier_args "$@"' "$script" >/dev/null || {
+        echo "M$milestone does not parse verifier arguments" >&2
+        exit 1
+    }
+done
+for milestone in 4 5 6 7 8 9 10 11 12 13 14; do
+    script="$ROOT/reference/vespa/m$milestone/verify-m$milestone.sh"
+    grep -F -- '--skip-workspace-quality' "$script" >/dev/null || {
+        echo "M$milestone cumulative child does not skip nested workspace quality" >&2
+        exit 1
+    }
+done
+
 echo "semantic verifier routing PASS"
