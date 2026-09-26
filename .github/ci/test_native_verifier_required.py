@@ -36,6 +36,7 @@ class NativeVerifierRequiredTests(unittest.TestCase):
             "Cargo.lock",
             "rust-toolchain.toml",
             ".github/workflows/native-verifier-runner.yml",
+            ".github/workflows/ci-image-runner.yml",
         ]
         for path in paths:
             with self.subTest(path=path):
