@@ -72,41 +72,40 @@ def fetch_releases_with_gh(repo):
     if gh is None:
         return None
 
-    result = subprocess.run(
-        [
-            gh,
-            "api",
-            "--paginate",
-            "--slurp",
-            "repos/{}/releases?per_page=100".format(repo),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        detail = result.stderr.strip()
-        message = "could not discover published native-base generations with authenticated gh"
-        if detail:
-            message += ": " + detail
-        raise SystemExit(message)
-
-    try:
-        pages = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(
-            "authenticated gh returned invalid JSON while discovering native-base generations"
-        ) from exc
-
-    if not isinstance(pages, list):
-        raise SystemExit("authenticated gh releases response was not a page list")
-
     releases = []
-    for page in pages:
-        if not isinstance(page, list) or not all(isinstance(item, dict) for item in page):
-            raise SystemExit("authenticated gh releases response contained an invalid page")
-        releases.extend(page)
+    page = 1
+    while True:
+        result = subprocess.run(
+            [
+                gh,
+                "api",
+                "repos/{}/releases?per_page=100&page={}".format(repo, page),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = result.stderr.strip()
+            message = "could not discover published native-base generations with authenticated gh"
+            if detail:
+                message += ": " + detail
+            raise SystemExit(message)
+
+        try:
+            batch = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(
+                "authenticated gh returned invalid JSON while discovering native-base generations"
+            ) from exc
+
+        if not isinstance(batch, list) or not all(isinstance(item, dict) for item in batch):
+            raise SystemExit("authenticated gh releases response was not a release list")
+        releases.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
     return releases
 
 
