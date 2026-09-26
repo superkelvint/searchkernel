@@ -3005,6 +3005,12 @@ fn unnamed_index_keeps_resolved_document_identity_after_reopen() {
     assert_eq!(described, expected);
     index.close().expect("close unnamed index");
 
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(root.join("manifest/index.json")).expect("read index manifest"),
+    )
+    .expect("parse index manifest");
+    assert_eq!(manifest["resolved_document_type"], json!("searchkernel"));
+
     let reopened = Index::open(&root).expect("reopen unnamed index");
     let described = reopened.describe().expect("describe reopened index");
     let described = definition_to_ir(&described).expect("reopened schema resolves");
@@ -3013,6 +3019,111 @@ fn unnamed_index_keeps_resolved_document_identity_after_reopen() {
     assert_eq!(described.resolved_document_type(), "searchkernel");
     reopened.close().expect("close reopened unnamed index");
     std::fs::remove_dir_all(root).expect("remove unnamed index");
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn unnamed_index_rejects_persisted_resolved_document_identity_mismatch() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-unnamed-document-identity-mismatch-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let index = Index::create(
+        &root,
+        IndexDefinition::new().field(Field::text("title").stored(true)),
+    )
+    .expect("create unnamed index");
+    index.close().expect("close unnamed index");
+
+    let manifest_path = root.join("manifest/index.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).expect("read index manifest"))
+            .expect("parse index manifest");
+    manifest["resolved_document_type"] = json!("different_document");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).expect("encode index manifest"),
+    )
+    .expect("rewrite index manifest");
+
+    let error = match Index::open(&root) {
+        Ok(index) => {
+            index.close().expect("close unexpectedly reopened index");
+            panic!("reopen accepted a mismatched persisted document identity")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), crate::ErrorCode::IncompatibleIndex);
+    assert!(
+        error.to_string().contains("resolved document identity"),
+        "identity mismatch must fail in the persistence compatibility domain: {error}"
+    );
+    std::fs::remove_dir_all(root).expect("remove mismatched index");
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn pre_identity_v4_manifest_rejects_document_identity_drift_from_compiled_config() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-v4-document-identity-compat-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let index = Index::create(
+        &root,
+        IndexDefinition::new().field(Field::text("title").stored(true)),
+    )
+    .expect("create unnamed index");
+    index.close().expect("close unnamed index");
+
+    let manifest_path = root.join("manifest/index.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).expect("read index manifest"))
+            .expect("parse index manifest");
+    manifest
+        .as_object_mut()
+        .expect("manifest object")
+        .remove("resolved_document_type");
+
+    let config = root.join("config");
+    let schema_path = config.join("searchkernel-schema.json");
+    let mut schema: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&schema_path).expect("read schema manifest"))
+            .expect("parse schema manifest");
+    schema["document_type"] = json!("different_document");
+    std::fs::write(
+        &schema_path,
+        serde_json::to_vec(&schema).expect("encode schema manifest"),
+    )
+    .expect("rewrite schema manifest");
+    manifest["resolved_engine_config_identity"] =
+        config_identity(&config).expect("recompute config identity");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).expect("encode index manifest"),
+    )
+    .expect("rewrite index manifest");
+
+    let error = match Index::open(&root) {
+        Ok(index) => {
+            index.close().expect("close unexpectedly reopened index");
+            panic!("pre-identity v4 manifest accepted a changed compiled document identity")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), crate::ErrorCode::IncompatibleIndex);
+    assert!(
+        error.to_string().contains("resolved document identity"),
+        "legacy compatibility check must reject identity drift before backend open: {error}"
+    );
+    std::fs::remove_dir_all(root).expect("remove compatibility index");
 }
 
 #[test]
