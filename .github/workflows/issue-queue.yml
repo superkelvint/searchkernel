@@ -10,6 +10,7 @@ on:
       - ".github/ci/select-python.sh"
       - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/issue-queue.yml"
+      - ".github/workflows/issue-queue-reconcile.yml"
   push:
     branches: [main]
     paths:
@@ -20,6 +21,7 @@ on:
       - ".github/ci/select-python.sh"
       - ".github/ci/check-python-workflows.sh"
       - ".github/workflows/issue-queue.yml"
+      - ".github/workflows/issue-queue-reconcile.yml"
   workflow_dispatch:
   schedule:
     - cron: "17 * * * *"

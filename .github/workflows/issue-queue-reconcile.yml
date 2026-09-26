@@ -1,0 +1,42 @@
+name: Issue queue reconcile
+
+on:
+  issues:
+    types: [closed, reopened]
+  pull_request_target:
+    types: [closed]
+  schedule:
+    - cron: "11 * * * *"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: issue-queue-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: [self-hosted, linux, x64]
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Mutating queue maintenance must always execute trusted default-branch
+      # code. Never check out a pull-request head in this workflow.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Select runner Python
+        run: bash .github/ci/select-python.sh
+      - name: Enforce runner-Python workflow policy
+        run: bash .github/ci/check-python-workflows.sh
+      - name: Verify reconciliation policy
+        run: python tools/test_check_issue_queue.py
+      - name: Reconcile stale workflow state
+        run: >-
+          python tools/check-issue-queue.py
+          --repo "${{ github.repository }}"
+          --fix
+          --stale-after-hours 24
