@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
 WORKFLOWS = ROOT / ".github" / "workflows"
 INTEGRATION = ROOT / "reference" / "vespa" / "i" / "verify-i.sh"
+VERIFY_COMMON = ROOT / "reference" / "vespa" / "common" / "verify-common.sh"
 
 
 class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
@@ -160,6 +161,53 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         )
         self.assertLess(abi_pos, prepare_pos)
         self.assertLess(prepare_pos, hnsw_pos)
+
+    def test_prepared_verifier_sdk_runtime_path_reaches_nested_process(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            sdk = temp / "sdk"
+            base = temp / "base"
+            vespa = temp / "vespa"
+            (sdk / "include").mkdir(parents=True)
+            (sdk / "lib").mkdir()
+            (base / "lib").mkdir(parents=True)
+            vespa.mkdir()
+            (sdk / "manifest.json").write_text("{}\n", encoding="utf-8")
+            (sdk / "include" / "searchkernel_vespa.h").write_text(
+                "/* test */\n", encoding="utf-8"
+            )
+
+            existing = temp / "existing-runtime"
+            existing.mkdir()
+            env = os.environ.copy()
+            env.update(
+                {
+                    "SEARCHKERNEL_VERIFIER_SDK": str(sdk),
+                    "SEARCHKERNEL_VERIFIER_BASE_SDK": str(base),
+                    "SEARCHKERNEL_VERIFIER_VESPA_ROOT": str(vespa),
+                    "SEARCHKERNEL_VERIFIER_SDK_PREPARED": "1",
+                    "LD_LIBRARY_PATH": str(existing),
+                }
+            )
+            script = f"""
+set -euo pipefail
+source {str(VERIFY_COMMON)!r}
+prepare_verifier_sdk
+bash -c 'printf "%s" "$LD_LIBRARY_PATH"'
+"""
+            completed = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            self.assertEqual(
+                completed.stdout,
+                f"{sdk / 'lib'}:{base / 'lib'}:{existing}",
+            )
 
     def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
