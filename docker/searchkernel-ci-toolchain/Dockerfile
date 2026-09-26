@@ -171,7 +171,7 @@ RUN work="$(mktemp -d /tmp/flatbuffers.XXXXXX)" \
     && rm -rf "$work" \
     && test "$(flatc --version)" = "flatc version ${FLATBUFFERS_VERSION}"
 
-RUN "${PYTHON}" -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+RUN "${PYTHON}" -m pip install --no-cache-dir --upgrade pip setuptools wheel build \
     && "${PYTHON}" -m pip install --no-cache-dir \
         flatbuffers==25.12.19 \
         grpcio==1.84.0 \

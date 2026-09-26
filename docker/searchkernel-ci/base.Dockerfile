@@ -107,7 +107,7 @@ RUN base="/opt/searchkernel/native-sdk-cache/ci/x86_64-unknown-linux-gnu/objects
     && [[ "$(c++ -dumpfullversion)" == 15.* ]] \
     && test -f "$(c++ -print-file-name=libstdc++.so)" \
     && /usr/bin/python3 -c "import clang.cindex" \
-    && "${PYTHON}" -c "import flatbuffers, grpc, google.protobuf"
+    && "${PYTHON}" -c "import build, flatbuffers, grpc, google.protobuf"
 
 WORKDIR /work
 CMD ["/bin/bash"]
