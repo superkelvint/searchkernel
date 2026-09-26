@@ -453,6 +453,7 @@ jobs:
               run_phase ci-image-publishing-contract bash tools/test-ci-image-publishing.sh
               run_phase ci-image-identity "$PYTHON" tools/test_ci_image_identity.py
               run_phase native-sdk-packaging bash tools/test-native-sdk-packaging.sh
+              run_phase native-consumer-contract "$PYTHON" tools/check-native-consumer-contract.py
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
               run_phase clippy-runner "$PYTHON" tools/test_run_clippy.py
@@ -604,6 +605,7 @@ jobs:
               run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved
               run_phase native-full-python-e2e tools/run-python-native-e2e.sh --prevalidated-native-sdk
               run_phase native-full-persistence ./dev verify persistence
+              run_phase native-full-consumer-package bash tools/test-native-consumer-package.sh
               ;;
 
             client-e2e)
