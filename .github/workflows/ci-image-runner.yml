@@ -606,6 +606,10 @@ jobs:
               run_phase nightly-native-sdk-cache bash tools/test-native-sdk-cache.sh
               ;;
 
+            persistence)
+              run_phase persistence-executable ./dev verify persistence
+              ;;
+
             native-full)
               run_phase native-full-release-support "$PYTHON" tools/check-release-support.py
               # ABI-sensitive changes are covered by the dedicated exact-head
