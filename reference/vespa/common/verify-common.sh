@@ -53,8 +53,8 @@ activate_verifier_runtime() {
 
   # The revision-local adapter must win over any ambient installation, while
   # the immutable base remains available for the adapter's Vespa dependencies.
-  for lib_dir in "${BASE_SDK:-}/lib" "$SDK/lib"; do
-    [[ -d "$lib_dir" ]] || continue
+  for lib_dir in "${BASE_SDK:+$BASE_SDK/lib}" "$SDK/lib"; do
+    [[ -n "$lib_dir" && -d "$lib_dir" ]] || continue
     case ":${runtime_path}:" in
       *":$lib_dir:"*) ;;
       *) runtime_path="$lib_dir${runtime_path:+:$runtime_path}" ;;
