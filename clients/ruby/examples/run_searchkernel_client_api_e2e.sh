@@ -3,16 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-CARGO="$(bash "$ROOT/tools/resolve-rust.sh" cargo)"
+source "$ROOT/tools/client-e2e-runtime.sh"
+prepare_client_e2e_runtime
 
-./dev native-sdk ensure
-"$CARGO" build -p searchkerneld
-
-TARGET_DIR="${CARGO_TARGET_DIR:-target/host}"
-if [[ "$TARGET_DIR" != /* ]]; then
-  TARGET_DIR="$ROOT/$TARGET_DIR"
-fi
-HOST="${SEARCHKERNEL_LOCAL_HOST:-$TARGET_DIR/debug/searchkerneld}"
+HOST="$SEARCHKERNEL_LOCAL_HOST"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
