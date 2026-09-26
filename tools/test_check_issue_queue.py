@@ -460,6 +460,7 @@ class IssueQueueReconciliationTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("pull_request_target:", workflow)
         self.assertNotIn("\n  pull_request:\n", workflow)
+        self.assertNotIn("\n  workflow_dispatch:\n", workflow)
         self.assertIn("ref: main", workflow)
 
 
