@@ -31,6 +31,7 @@ NATIVE_PATTERNS = (
     "core/crates/searchkernel/src/search.rs",
     "core/crates/searchkernel/src/filter.rs",
     "core/crates/searchkernel/src/result.rs",
+    "core/crates/searchkernel/tests/native_e2e.rs",
     "core/crates/searchkernel/tests/persistence_compatibility.rs",
     "core/crates/searchkernel-ir/src/api_to_ir/schema.rs",
     "core/crates/searchkernel-ir/src/ir_to_api/schema.rs",
