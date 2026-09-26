@@ -97,4 +97,13 @@ for milestone in 4 5 6 7 8 9 10 11 12 13 14; do
     }
 done
 
+grep -F 'universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality' "$DEV" >/dev/null
+grep -F "universe_dev_step 'cumulative milestone.m14 closure' verify milestone.m14 --skip-workspace-quality" "$DEV" >/dev/null
+
+integration="$ROOT/reference/vespa/i/verify-i.sh"
+grep -F 'parse_verifier_args "$@"' "$integration" >/dev/null
+for target in m13 phase10; do
+    grep -F '"$ROOT/reference/vespa/verify-through.sh" '"$target"' "$@"' "$integration" >/dev/null
+done
+
 echo "semantic verifier routing PASS"
