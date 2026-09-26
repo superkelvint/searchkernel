@@ -43,6 +43,7 @@ EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
 SANITIZER=${SK_NATIVE_SANITIZER:-none}
 REGENERATE_BINDINGS=${SK_NATIVE_REGENERATE_BINDINGS:-1}
 ADAPTER_ONLY=${SK_NATIVE_ADAPTER_ONLY:-0}
+ADAPTER_SONAME=${SK_NATIVE_ADAPTER_SONAME:-libsearchkernel_vespa.so.2}
 BASE_ONLY=${SK_NATIVE_BASE_ONLY:-0}
 BASE_SDK=${SK_NATIVE_BASE_SDK:-}
 if [ "$ADAPTER_ONLY" = 1 ] && [ "$BASE_ONLY" = 1 ]; then
@@ -243,7 +244,7 @@ LINK_LINE=$(sed \
     "$LINK_FILE")
 LINK_LINE=$(printf '%s\n' "$LINK_LINE" | sed \
     "s#CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o#$BUILD/searchkernel_vespa.o#; \
-     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,libsearchkernel_vespa.so.2 -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.2#")
+     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,$ADAPTER_SONAME -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.2#")
 LINK_ARGS=${LINK_LINE#*c++   }
 LINK_ARGS=${LINK_ARGS#*c++ }
 # The harvested command targets an executable and requests a complete dynamic

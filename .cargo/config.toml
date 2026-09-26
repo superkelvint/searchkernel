@@ -3,6 +3,3 @@ target-dir = "target/host"
 
 [env]
 SEARCHKERNEL_BUILD_ENV = { value = "host", force = false }
-
-[target.x86_64-unknown-linux-gnu]
-linker = "tools/searchkernel-native-linker.sh"

@@ -1,223 +1,54 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
-
 ROOT = Path(__file__).resolve().parents[1]
-WRAPPER = ROOT / "tools" / "searchkernel-native-linker.sh"
+BUILD_RS = ROOT / "core/crates/searchkernel-vespa-bindings/build.rs"
+BUILD_SDK = ROOT / "core/native/vespa/build-sdk.sh"
 CONFIG = ROOT / ".cargo" / "config.toml"
 
-
-class SearchKernelNativeLinkerTests(unittest.TestCase):
-    def _fixture(self, root: Path) -> tuple[Path, Path, Path]:
-        target = root / "target"
-        adapter = (
-            target
-            / "debug"
-            / "build"
-            / "searchkernel-vespa-bindings-hash"
-            / "out"
-            / "native-adapter"
-            / "lib"
-        )
-        adapter.mkdir(parents=True)
-        (adapter / "libsearchkernel_vespa.so.2").write_bytes(b"adapter")
-
-        capture = root / "linker-args.txt"
-        fake_linker = root / "fake-linker.sh"
-        fake_linker.write_text(
-            "#!/usr/bin/env bash\n"
-            "set -euo pipefail\n"
-            "printf '%s\\n' \"$@\" > \"$SEARCHKERNEL_LINKER_CAPTURE\"\n",
-            encoding="utf-8",
-        )
-        fake_linker.chmod(0o755)
-        return target, adapter, capture
-
-    def _run(
-        self,
-        root: Path,
-        capture: Path,
-        args: list[str],
-    ) -> subprocess.CompletedProcess[str]:
-        env = os.environ.copy()
-        env["SEARCHKERNEL_REAL_LINKER"] = str(root / "fake-linker.sh")
-        env["SEARCHKERNEL_LINKER_CAPTURE"] = str(capture)
-        return subprocess.run(
-            [str(WRAPPER), *args],
-            cwd=ROOT,
-            env=env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-
-    def test_cargo_config_routes_linux_links_through_wrapper(self) -> None:
+class NativeRuntimeLinkTests(unittest.TestCase):
+    def test_repository_does_not_require_a_custom_cargo_linker(self) -> None:
         config = CONFIG.read_text(encoding="utf-8")
-        self.assertIn("[target.x86_64-unknown-linux-gnu]", config)
-        self.assertIn('linker = "tools/searchkernel-native-linker.sh"', config)
-        self.assertTrue(os.access(WRAPPER, os.X_OK))
+        self.assertNotIn("searchkernel-native-linker", config)
+        self.assertNotIn("[target.x86_64-unknown-linux-gnu]", config)
 
-    def test_native_binary_gets_output_relative_origin_runpath(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            target, adapter, capture = self._fixture(root)
-            output = target / "debug" / "searchkernel-searchreply-config"
-            output.parent.mkdir(parents=True, exist_ok=True)
+    def test_adapter_uses_origin_qualified_soname(self) -> None:
+        source = BUILD_RS.read_text(encoding="utf-8")
+        self.assertIn('$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2', source)
+        sdk = BUILD_SDK.read_text(encoding="utf-8")
+        self.assertIn("SK_NATIVE_ADAPTER_SONAME", sdk)
+        self.assertIn("-Wl,-soname,$ADAPTER_SONAME", sdk)
 
-            completed = self._run(
-                root,
-                capture,
-                ["-o", str(output), f"-L{adapter}", "-lsearchkernel_vespa"],
-            )
+    def test_build_script_stages_runtime_for_cargo_executable_origins(self) -> None:
+        source = BUILD_RS.read_text(encoding="utf-8")
+        self.assertIn('profile_dir.join("deps")', source)
+        self.assertIn('profile_dir.join("examples")', source)
+        self.assertIn('stage_adapter_for_cargo_outputs(&out_dir, &adapter)', source)
 
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            args = capture.read_text(encoding="utf-8").splitlines()
-            expected = "$ORIGIN/build/searchkernel-vespa-bindings-hash/out/native-adapter/lib"
-            self.assertIn("-Wl,--enable-new-dtags", args)
-            self.assertIn("-Wl,-z,origin", args)
-            self.assertIn(expected, args)
-
-    def test_native_test_binary_gets_parent_relative_origin_runpath(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            target, adapter, capture = self._fixture(root)
-            output = target / "debug" / "deps" / "native_test_hash"
-            output.parent.mkdir(parents=True, exist_ok=True)
-
-            completed = self._run(
-                root,
-                capture,
-                ["-o", str(output), "-L", str(adapter), "-l", "searchkernel_vespa"],
-            )
-
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            args = capture.read_text(encoding="utf-8").splitlines()
-            expected = "$ORIGIN/../build/searchkernel-vespa-bindings-hash/out/native-adapter/lib"
-            self.assertIn(expected, args)
-
-    def test_non_native_link_is_unchanged(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            target, adapter, capture = self._fixture(root)
-            output = target / "debug" / "portable-tool"
-            output.parent.mkdir(parents=True, exist_ok=True)
-
-            completed = self._run(
-                root,
-                capture,
-                ["-o", str(output), f"-L{adapter}", "-lm"],
-            )
-
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            args = capture.read_text(encoding="utf-8").splitlines()
-            self.assertNotIn("-rpath", args)
-            self.assertNotIn("-Wl,--enable-new-dtags", args)
-
-    def test_native_link_fails_closed_without_exact_adapter_library(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            target, _adapter, capture = self._fixture(root)
-            empty = target / "debug" / "missing-adapter"
-            empty.mkdir(parents=True)
-            output = target / "debug" / "broken-native-tool"
-
-            completed = self._run(
-                root,
-                capture,
-                ["-o", str(output), f"-L{empty}", "-lsearchkernel_vespa"],
-            )
-
-            self.assertEqual(completed.returncode, 70)
-            self.assertIn(
-                "could not resolve libsearchkernel_vespa.so.2",
-                completed.stderr,
-            )
-            self.assertFalse(capture.exists())
-
-
-    def test_real_elf_runs_without_loader_environment(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            adapter = root / "adapter" / "lib"
-            adapter.mkdir(parents=True)
-            adapter_source = root / "adapter.c"
-            adapter_source.write_text(
-                "int sk_runtime_probe(void) { return 42; }\n",
-                encoding="utf-8",
-            )
-            versioned = adapter / "libsearchkernel_vespa.so.2"
-            subprocess.run(
-                [
-                    "cc",
-                    "-shared",
-                    "-fPIC",
-                    "-Wl,-soname,libsearchkernel_vespa.so.2",
-                    str(adapter_source),
-                    "-o",
-                    str(versioned),
-                ],
-                check=True,
-            )
-            (adapter / "libsearchkernel_vespa.so").symlink_to(versioned.name)
-
-            main_source = root / "main.c"
-            main_source.write_text(
-                "extern int sk_runtime_probe(void);\n"
-                "int main(void) { return sk_runtime_probe() == 42 ? 0 : 1; }\n",
-                encoding="utf-8",
-            )
-            output = root / "target" / "debug" / "runtime-probe"
-            output.parent.mkdir(parents=True)
-
-            env = os.environ.copy()
-            env["SEARCHKERNEL_REAL_LINKER"] = "cc"
-            env.pop("LD_LIBRARY_PATH", None)
-            linked = subprocess.run(
-                [
-                    str(WRAPPER),
-                    str(main_source),
-                    "-o",
-                    str(output),
-                    f"-L{adapter}",
-                    "-lsearchkernel_vespa",
-                ],
-                cwd=ROOT,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-            self.assertEqual(linked.returncode, 0, linked.stderr)
-
-            dynamic = subprocess.run(
-                ["readelf", "-d", str(output)],
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-            ).stdout
-            self.assertIn("(RUNPATH)", dynamic)
-            self.assertIn("$ORIGIN/../../adapter/lib", dynamic)
-
-            ran = subprocess.run(
-                [str(output)],
-                cwd="/",
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-            self.assertEqual(ran.returncode, 0, ran.stderr)
-
+    def test_origin_needed_entry_resolves_without_loader_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            runtime = root / "target" / "debug" / ".searchkernel-native"
+            runtime.mkdir(parents=True)
+            lib = runtime / "libsearchkernel_vespa.so.2"
+            lib_src = root / "adapter.c"
+            lib_src.write_text("int sk_runtime_probe(void) { return 42; }\n")
+            subprocess.run(["cc", "-shared", "-fPIC", "-Wl,-soname,$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2", str(lib_src), "-o", str(lib)], check=True)
+            (runtime / "libsearchkernel_vespa.so").symlink_to(lib.name)
+            main = root / "main.c"
+            main.write_text("extern int sk_runtime_probe(void); int main(void) { return sk_runtime_probe() == 42 ? 0 : 1; }\n")
+            binary = root / "target" / "debug" / "probe"
+            subprocess.run(["cc", str(main), f"-L{runtime}", "-lsearchkernel_vespa", "-o", str(binary)], check=True)
+            dynamic = subprocess.run(["readelf", "-d", str(binary)], text=True, stdout=subprocess.PIPE, check=True).stdout
+            self.assertIn("$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2", dynamic)
+            env = os.environ.copy(); env.pop("LD_LIBRARY_PATH", None)
+            ran = subprocess.run([str(binary)], cwd="/", env=env, check=False)
+            self.assertEqual(ran.returncode, 0)
 
 if __name__ == "__main__":
     unittest.main()

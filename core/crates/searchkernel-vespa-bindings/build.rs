@@ -417,6 +417,14 @@ fn build_local_adapter(
         .env("SK_NATIVE_BUILD_DIR", &build)
         .env("SK_NATIVE_TARGET", target)
         .env("SK_NATIVE_ADAPTER_ONLY", "1")
+        // Cargo does not propagate dependency build-script rustc-link-arg values to
+        // the consuming application final link. Encode an $ORIGIN-qualified SONAME
+        // instead, then stage the adapter beside each normal Cargo executable dir.
+        // The resulting DT_NEEDED entry is self-resolving for downstream consumers.
+        .env(
+            "SK_NATIVE_ADAPTER_SONAME",
+            "$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2",
+        )
         .env("SK_NATIVE_BASE_SDK", base_sdk)
         .env(
             "SK_NATIVE_ENABLE_FAILPOINTS",
@@ -438,8 +446,50 @@ fn build_local_adapter(
             String::from_utf8_lossy(&output.stderr)
         ));
     }
+    stage_adapter_for_cargo_outputs(&out_dir, &adapter)?;
     fs::canonicalize(&adapter)
         .map_err(|error| format!("canonicalize adapter '{}': {error}", adapter.display()))
+}
+
+#[cfg(feature = "native")]
+fn stage_adapter_for_cargo_outputs(out_dir: &Path, adapter: &Path) -> Result<(), String> {
+    let profile_dir = out_dir
+        .ancestors()
+        .nth(3)
+        .ok_or_else(|| format!("unexpected Cargo OUT_DIR layout: {}", out_dir.display()))?;
+    let source = adapter.join("lib/libsearchkernel_vespa.so.2");
+    if !source.is_file() {
+        return Err(format!(
+            "native adapter build did not produce '{}'",
+            source.display()
+        ));
+    }
+
+    // Cargo places ordinary binaries at <profile>/ and test/bench binaries in
+    // <profile>/deps. Examples have their own executable directory. The SONAME
+    // uses $ORIGIN, so stage the same adapter at each possible executable origin.
+    for executable_dir in [
+        profile_dir.to_path_buf(),
+        profile_dir.join("deps"),
+        profile_dir.join("examples"),
+    ] {
+        let runtime_dir = executable_dir.join(".searchkernel-native");
+        fs::create_dir_all(&runtime_dir).map_err(|error| {
+            format!(
+                "create native runtime directory '{}': {error}",
+                runtime_dir.display()
+            )
+        })?;
+        let destination = runtime_dir.join("libsearchkernel_vespa.so.2");
+        fs::copy(&source, &destination).map_err(|error| {
+            format!(
+                "stage native adapter '{}' -> '{}': {error}",
+                source.display(),
+                destination.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 #[cfg(feature = "native")]
