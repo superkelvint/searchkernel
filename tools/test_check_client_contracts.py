@@ -284,13 +284,19 @@ class ClientContractTests(unittest.TestCase):
         dev.chmod(0o755)
 
         tools_dir = repo / "tools"
-        tools_dir.mkdir(parents=True)
+        tools_dir.mkdir(parents=True, exist_ok=True)
         resolve_python = tools_dir / "resolve-python.sh"
         resolve_python.write_text(
             "#!/usr/bin/env bash\ncommand -v python3\n",
             encoding="utf-8",
         )
         resolve_python.chmod(0o755)
+        resolve_rust = tools_dir / "resolve-rust.sh"
+        resolve_rust.write_text(
+            "#!/usr/bin/env bash\ncommand -v \"$1\"\n",
+            encoding="utf-8",
+        )
+        resolve_rust.chmod(0o755)
 
         adapter_resolver = repo / ".github" / "ci" / "resolve-native-adapter-lib.py"
         adapter_resolver.parent.mkdir(parents=True)

@@ -22,7 +22,8 @@ def main():
    if path.exists(): tf.add(path,arcname=rel)
  # Daemon executable distribution.
  run('cargo','build','-p','searchkerneld','--release','--features','native')
- daemon=ROOT/'target/release/searchkerneld'; bundle=out/f'searchkerneld-{VERSION}-linux-x86_64-glibc.tar.gz'
+ target_root=Path(os.environ.get('CARGO_TARGET_DIR', ROOT/'target/host'))
+ daemon=target_root/'release/searchkerneld'; bundle=out/f'searchkerneld-{VERSION}-linux-x86_64-glibc.tar.gz'
  with tarfile.open(bundle,'w:gz') as tf: tf.add(daemon,arcname='bin/searchkerneld')
  # Supported managed-local packages carry the exact same versioned daemon.
  for package_dir in (ROOT/'clients/python/searchkernel', ROOT/'clients/typescript'):
