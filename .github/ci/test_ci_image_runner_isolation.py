@@ -10,6 +10,11 @@ PERSISTENCE = ROOT / ".github" / "workflows" / "persistence-compatibility.yml"
 
 
 class CiImageRunnerIsolationTests(unittest.TestCase):
+    def _step_section(self, source: str, step_name: str) -> str:
+        marker = f"- name: {step_name}"
+        self.assertIn(marker, source, msg=f"missing workflow step: {step_name}")
+        return source.split(marker, 1)[1].split("\n      - name:", 1)[0]
+
     def test_host_checkout_is_job_private_from_first_git_operation(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
 
@@ -36,7 +41,7 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
             "Create job-private Docker state",
             "Execute lane with isolated source and target state",
         ):
-            section = source.split(f"- name: {step_name}", 1)[1].split("\n      - name:", 1)[0]
+            section = self._step_section(source, step_name)
             self.assertIn(
                 "working-directory: ${{ steps.checkout.outputs.absolute }}",
                 section,
@@ -112,7 +117,7 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
             "Verify exact pull-request head",
             "Verify frozen fixture structure and provenance",
             "Enforce append-only historical fixtures",
-            "Native verification policy",
+            "Verify release persistence contract",
         ):
             section = source.split(f"- name: {step_name}", 1)[1].split("\n      - name:", 1)[0]
             self.assertIn(
