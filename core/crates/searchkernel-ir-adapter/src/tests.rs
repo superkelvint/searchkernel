@@ -2469,6 +2469,21 @@ fn typed_index_and_summary_settings_cannot_disagree_with_resolved_capabilities()
 }
 
 #[test]
+fn adapter_rejects_unresolved_document_identity() {
+    let title = FieldIr::new(
+        field("title"),
+        DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+        None,
+        FieldCapabilities::new(false, false, true, false, false),
+    );
+    let definition = IndexDefinitionIr::new(None, vec![title], Vec::new()).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let error = compile_index_definition(&definition, dir.path())
+        .expect_err("adapter must not invent document identity");
+    assert_eq!(error.details[0].code, "unresolved_document_type");
+}
+
+#[test]
 fn word_matching_is_rejected_instead_of_narrowed_to_exact() {
     let mut title = FieldIr::new(
         field("title"),

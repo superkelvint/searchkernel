@@ -540,6 +540,17 @@ fn parity_schema() -> RustIndexDefinitionInput {
 }
 
 #[test]
+fn canonical_schema_resolves_document_identity_before_adapter_boundary() {
+    let mut unnamed = parity_schema();
+    unnamed.name = None;
+    let unnamed = resolve_rust_index_definition(unnamed).expect("valid unnamed schema");
+    assert_eq!(unnamed.document_type(), Some("searchkernel"));
+
+    let named = resolve_rust_index_definition(parity_schema()).expect("valid named schema");
+    assert_eq!(named.document_type(), Some("catalog"));
+}
+
+#[test]
 fn rust_tensor_hnsw_fields_preserve_metric_and_graph_configuration() {
     let definition = resolve_rust_index_definition(RustIndexDefinitionInput {
         name: Some("vectors".to_owned()),
