@@ -323,9 +323,7 @@ impl Index {
                 "index data/config directories are missing",
             ));
         }
-        manifest.validate_config(&config)?;
-        let resolved_context = manifest.resolved_context_for_config(&config)?;
-        manifest.validate_config_document_identity(&config, resolved_context.definition())?;
+        let resolved_context = manifest.resolved_context_with_config(&config)?;
         let backend = open_native_backend(&root.join("data"), &config)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
         Self::from_owned_backend(

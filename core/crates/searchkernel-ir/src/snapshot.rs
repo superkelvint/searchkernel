@@ -65,6 +65,7 @@ pub fn index_definition(value: &IndexDefinitionIr) -> Value {
         default_search_fields,
         properties,
         document_type,
+        resolved_document_type: _,
         schema_inherits,
         document_inherits,
         structs,

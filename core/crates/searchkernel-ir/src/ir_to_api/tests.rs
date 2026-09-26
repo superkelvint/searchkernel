@@ -320,6 +320,7 @@ fn rich_v2_index_definition_round_trips_through_ir() {
         default_search_fields: _,
         properties: _,
         document_type: _,
+        resolved_document_type: _,
         schema_inherits: _,
         document_inherits: _,
         structs: _,

@@ -3067,7 +3067,7 @@ fn unnamed_index_rejects_persisted_resolved_document_identity_mismatch() {
 
 #[cfg(feature = "native")]
 #[test]
-fn pre_identity_v4_manifest_rejects_document_identity_drift_from_compiled_config() {
+fn pre_identity_v4_manifest_recovers_document_identity_from_compiled_config() {
     let root = std::env::temp_dir().join(format!(
         "searchkernel-v4-document-identity-compat-{}-{}",
         std::process::id(),
@@ -3111,18 +3111,15 @@ fn pre_identity_v4_manifest_rejects_document_identity_drift_from_compiled_config
     )
     .expect("rewrite index manifest");
 
-    let error = match Index::open(&root) {
-        Ok(index) => {
-            index.close().expect("close unexpectedly reopened index");
-            panic!("pre-identity v4 manifest accepted a changed compiled document identity")
-        }
-        Err(error) => error,
-    };
-    assert_eq!(error.code(), crate::ErrorCode::IncompatibleIndex);
-    assert!(
-        error.to_string().contains("resolved document identity"),
-        "legacy compatibility check must reject identity drift before backend open: {error}"
+    let manifest = IndexManifest::read(&root).expect("read pre-identity v4 manifest");
+    let recovered = manifest
+        .resolved_context_with_config(&config)
+        .expect("pre-identity v4 manifest must recover the compiled document identity");
+    assert_eq!(
+        recovered.definition().resolved_document_type(),
+        "different_document"
     );
+    assert_eq!(recovered.definition().document_type(), None);
     std::fs::remove_dir_all(root).expect("remove compatibility index");
 }
 

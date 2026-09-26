@@ -1182,18 +1182,15 @@ fn persistence_fault_matrix_rejects_resolved_document_identity_drift() {
     )
     .unwrap();
 
-    let error = match Index::open(&root) {
-        Ok(index) => {
-            index.close().unwrap();
-            panic!("pre-identity v4 manifest accepted compiled document identity drift")
-        }
-        Err(error) => error,
-    };
-    assert_eq!(error.code(), crate::ErrorCode::IncompatibleIndex);
-    assert!(
-        error.to_string().contains("resolved document identity"),
-        "legacy compatibility path failed in the wrong error domain: {error}"
+    let loaded = IndexManifest::read(&root).expect("read pre-identity v4 manifest");
+    let recovered = loaded
+        .resolved_context_with_config(&config)
+        .expect("pre-identity v4 manifest must recover compiled document identity");
+    assert_eq!(
+        recovered.definition().resolved_document_type(),
+        "different_document"
     );
+    assert_eq!(recovered.definition().document_type(), None);
 
     let _ = std::fs::remove_dir_all(root);
 }
