@@ -475,7 +475,8 @@ jobs:
               run_phase abi-authority-tests "$ABI_PYTHON" tools/test_check_native_abi_authorities.py
               run_phase abi-authorities "$ABI_PYTHON" tools/check-native-abi-authorities.py
               run_phase abi-surface-tests "$ABI_PYTHON" tools/test_check_abi_surface.py
-              run_phase checked-in-bindings env                 SK_NATIVE_ABI_HEADER=/work/core/native/vespa/searchkernel_vespa.h                 bash tools/check-native-bindings.sh
+              run_phase native-bindings-regression bash tools/test-check-native-bindings.sh
+              run_phase checked-in-bindings bash tools/check-native-bindings.sh
               run_phase layout bash tools/check-layout.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
 
