@@ -21,6 +21,8 @@ class TrustedAuthorityTests(unittest.TestCase):
             "verification/dag.toml",
             "dev",
             "reference/vespa/m14/verify-m14.sh",
+            "reference/api-conformance/verify.sh",
+            "reference/persistence/manifest.json",
             "tools/check-layout.sh",
             ".moon/tasks.yml",
             "docker/searchkernel-ci/Dockerfile",
