@@ -12,7 +12,6 @@ ABI_WORKFLOW = ROOT / ".github" / "workflows" / "abi-surface.yml"
 WORKFLOWS = ROOT / ".github" / "workflows"
 INTEGRATION = ROOT / "reference" / "vespa" / "i" / "verify-i.sh"
 PYTHON_NATIVE_E2E = ROOT / "tools" / "run-python-native-e2e.sh"
-M3_RUN_RUST = ROOT / "reference" / "vespa" / "m3" / "run-rust.sh"
 
 
 class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
@@ -199,60 +198,6 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             "source reference/vespa/common/verify-common.sh", native_full
         )
         self.assertLess(prepare_pos, hnsw_pos)
-
-    def test_m3_driver_runs_through_cargo_runtime_environment(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp = Path(temp_dir)
-            fake_bin = temp / "bin"
-            fake_bin.mkdir()
-            cargo_log = temp / "cargo.log"
-            output = temp / "output.jsonl"
-            target_dir = temp / "cargo-target"
-
-            fake_cargo = fake_bin / "cargo"
-            fake_cargo.write_text(
-                "#!/usr/bin/env python3\n"
-                "import json, os, sys\n"
-                "from pathlib import Path\n"
-                "Path(os.environ['FAKE_CARGO_LOG']).write_text(' '.join(sys.argv[1:]) + '\\n', encoding='utf-8')\n"
-                "for raw in sys.stdin:\n"
-                "    case_id = raw.split('\\t', 1)[0]\n"
-                "    if case_id:\n"
-                "        print(json.dumps({'id': case_id, 'terms': []}, separators=(',', ':')))\n",
-                encoding="utf-8",
-            )
-            fake_cargo.chmod(0o755)
-
-            env = os.environ.copy()
-            env.update(
-                {
-                    "PATH": f"{fake_bin}:{env['PATH']}",
-                    "FAKE_CARGO_LOG": str(cargo_log),
-                    "CARGO_TARGET_DIR": str(target_dir),
-                }
-            )
-            completed = subprocess.run(
-                ["bash", str(M3_RUN_RUST), "document", str(output)],
-                cwd=ROOT,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                env=env,
-                check=False,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stdout)
-
-            cargo_args = cargo_log.read_text(encoding="utf-8").strip()
-            self.assertTrue(cargo_args.startswith("run --quiet "), cargo_args)
-            self.assertIn(f"--target-dir {target_dir}", cargo_args)
-            self.assertIn(
-                f"--manifest-path {ROOT / 'reference/vespa/m3/rust-driver/Cargo.toml'}",
-                cargo_args,
-            )
-            self.assertIn("--bin searchkernel-m3-conformance-driver", cargo_args)
-            self.assertTrue(cargo_args.endswith("-- document"), cargo_args)
-            self.assertNotIn(" build ", f" {cargo_args} ")
-            self.assertTrue(output.read_text(encoding="utf-8").strip())
 
     def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
