@@ -626,6 +626,8 @@ jobs:
             client-e2e)
               run_phase client-e2e-release-support "$PYTHON" tools/check-release-support.py
               "$PYTHON" tools/check-python-dependencies.py
+              run_phase client-release-build "$PYTHON" tools/package-consumer-release.py --output /tmp/searchkernel-consumer-release
+              run_phase client-release-verify "$PYTHON" tools/check-consumer-release.py /tmp/searchkernel-consumer-release
               build_native_searchkerneld client-e2e-build
               run_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e
               ;;
