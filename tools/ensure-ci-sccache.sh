@@ -109,12 +109,13 @@ if ! validate_server; then
         -e SCCACHE_CACHE_SIZE=20G \
         -e SCCACHE_SERVER_UDS=/sccache/sccache.sock \
         -e SCCACHE_IDLE_TIMEOUT=0 \
+        -e SCCACHE_START_SERVER=1 \
         -e SCCACHE_NO_DAEMON=1 \
         -v "$BINARY_VOLUME:/opt/searchkernel/sccache:ro" \
         -v "$CACHE_VOLUME:/cache" \
         -v "$SOCKET_VOLUME:/sccache" \
         "$CI_IMAGE" \
-        /bin/bash -lc 'rm -f /sccache/sccache.sock; exec /opt/searchkernel/sccache/sccache --start-server' >/dev/null
+        /bin/bash -lc 'rm -f /sccache/sccache.sock; exec /opt/searchkernel/sccache/sccache' >/dev/null
 
     healthy=0
     for _ in $(seq 1 50); do
@@ -125,10 +126,10 @@ if ! validate_server; then
         sleep 0.1
     done
     if [[ "$healthy" != "1" ]]; then
-        echo "shared sccache server failed to become healthy: $SERVER" >&2
+        echo "warning: shared sccache server failed to become healthy: $SERVER" >&2
         docker logs "$SERVER" >&2 || true
         docker rm -f "$SERVER" >/dev/null 2>&1 || true
-        exit 1
+        echo "warning: continuing with sccache's local-compiler fallback; the build remains authoritative" >&2
     fi
 else
     echo "Reusing shared sccache v$SCCACHE_VERSION server" >&2
