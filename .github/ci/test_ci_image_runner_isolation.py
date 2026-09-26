@@ -119,7 +119,7 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
             "Enforce append-only historical fixtures",
             "Verify release persistence contract",
         ):
-            section = source.split(f"- name: {step_name}", 1)[1].split("\n      - name:", 1)[0]
+            section = self._step_section(source, step_name)
             self.assertIn(
                 "working-directory: ${{ steps.checkout.outputs.absolute }}",
                 section,
