@@ -33,13 +33,18 @@ EOF
   env -u LD_LIBRARY_PATH -u SK_NATIVE_SDK -u SK_NATIVE_CACHE_DIR \
     -u SK_NATIVE_DISABLE_PUBLISHED_BASE XDG_CACHE_HOME="$TMP/cache" cargo build
 )
-BIN="$CONSUMER/target/debug/searchkernel-native-consumer"
+case "${CARGO_TARGET_DIR:-}" in
+  /*) CONSUMER_TARGET=$CARGO_TARGET_DIR ;;
+  "") CONSUMER_TARGET="$CONSUMER/target" ;;
+  *) CONSUMER_TARGET="$CONSUMER/$CARGO_TARGET_DIR" ;;
+esac
+BIN="$CONSUMER_TARGET/debug/searchkernel-native-consumer"
 readelf -d "$BIN" | grep -Fq '\$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2' || {
   echo "packaged Rust consumer lacks self-resolving Search Kernel adapter DT_NEEDED entry" >&2
   readelf -d "$BIN" >&2
   exit 1
 }
-[[ -f "$CONSUMER/target/debug/.searchkernel-native/libsearchkernel_vespa.so.2" ]] || {
+[[ -f "$CONSUMER_TARGET/debug/.searchkernel-native/libsearchkernel_vespa.so.2" ]] || {
   echo "packaged Rust consumer did not stage its native adapter beside the executable" >&2
   exit 1
 }
