@@ -163,6 +163,22 @@ def main() -> int:
                 "until exact-head provenance closure is implemented"
             )
 
+    # Workflows may delegate acceptance commands to repository scripts. Scan
+    # executable/config text under the repository as well, otherwise a workflow
+    # can hide forbidden result reuse behind `tools/foo.sh`.
+    delegated_roots = [ROOT / "tools", ROOT / ".github" / "ci", ROOT / "verification"]
+    delegated_suffixes = {".sh", ".py", ".toml", ".yml", ".yaml"}
+    for delegated_root in delegated_roots:
+        if not delegated_root.exists():
+            continue
+        for path in sorted(p for p in delegated_root.rglob("*") if p.is_file() and p.suffix in delegated_suffixes):
+            if path.resolve() == Path(__file__).resolve() or path.name.startswith("test_"):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for pattern, description in FORBIDDEN_IN_WORKFLOWS[3:5]:
+                for match in pattern.finditer(text):
+                    failures.append(f"{path}:{line_for(text, match.start())}: forbidden delegated {description}")
+
     for path in sorted(WORKFLOWS.glob("*.y*ml")):
         text = path.read_text(encoding="utf-8")
 

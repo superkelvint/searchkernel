@@ -12,13 +12,17 @@ RUNNER = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
 
 
 class VerificationCachePolicyTests(unittest.TestCase):
-    def run_fixture(self, workflow_extra: str = "", moon: bool = False) -> subprocess.CompletedProcess[str]:
+    def run_fixture(self, workflow_extra: str = "", moon: bool = False, delegated_script: str = "") -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             workflows = root / ".github" / "workflows"
             workflows.mkdir(parents=True)
             runner = RUNNER.read_text(encoding="utf-8")
             (workflows / "ci-image-runner.yml").write_text(runner + workflow_extra, encoding="utf-8")
+            if delegated_script:
+                tools = root / "tools"
+                tools.mkdir()
+                (tools / "acceptance.sh").write_text(delegated_script, encoding="utf-8")
             if moon:
                 moon_dir = root / ".moon"
                 moon_dir.mkdir()
@@ -35,6 +39,11 @@ class VerificationCachePolicyTests(unittest.TestCase):
         result = self.run_fixture("\n# cargo nextest run --archive-file stale.tar.zst\n")
         self.assertNotEqual(0, result.returncode)
         self.assertIn("nextest archive reuse", result.stderr)
+
+    def test_rejects_delegated_nextest_archive_reuse(self) -> None:
+        result = self.run_fixture(delegated_script="#!/bin/sh\ncargo nextest archive --archive-file stale.tar.zst\n")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("forbidden delegated nextest archive reuse", result.stderr)
 
     def test_rejects_moon_task_execution(self) -> None:
         result = self.run_fixture("\n# moon run test\n")
