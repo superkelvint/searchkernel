@@ -14,7 +14,6 @@ trap 'rm -f "$cargo_messages"' EXIT
 cargo build -p searchkerneld --features native --message-format=json-render-diagnostics | tee "$cargo_messages"
 adapter_lib="$("$PYTHON" "$ROOT/.github/ci/resolve-native-adapter-lib.py" "$cargo_messages" "$target_root")"
 
-target_root="${CARGO_TARGET_DIR:-target/host}"
 case "$target_root" in
   /*) host_binary="$target_root/debug/searchkerneld" ;;
   *) host_binary="$ROOT/$target_root/debug/searchkerneld" ;;
