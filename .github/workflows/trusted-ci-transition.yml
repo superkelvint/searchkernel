@@ -1,0 +1,170 @@
+name: Trusted CI authority transition
+
+# Manual trust-root transition for authority-only pull requests. This workflow
+# must be dispatched from the default branch by a maintainer. It never executes
+# candidate code while holding the trusted GitHub App credential.
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number containing only CI/verifier authority changes plus documentation
+        required: true
+        type: string
+      head_sha:
+        description: Exact candidate head SHA being authorized
+        required: true
+        type: string
+      reason:
+        description: Human review/transition reason recorded in the trusted check
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  evidence:
+    name: Validate authority-only exact head
+    runs-on: [self-hosted, linux, x64]
+    outputs:
+      pr: ${{ steps.refs.outputs.pr }}
+      head: ${{ steps.refs.outputs.head }}
+      base: ${{ steps.refs.outputs.base }}
+    steps:
+      - name: Require default-branch workflow authority
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" ]] || {
+            echo "::error::trusted transition must be dispatched from $DEFAULT_BRANCH"
+            exit 1
+          }
+      - name: Check out trusted default-branch authority
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Resolve exact current PR head/base
+        id: refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr_number }}
+          REQUESTED_HEAD: ${{ inputs.head_sha }}
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR")
+          read -r head base state < <(
+            python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("head",{}).get("sha",""), d.get("base",{}).get("sha",""), d.get("state",""))' <<<"$response"
+          )
+          [[ "$state" == open ]] || { echo "::error::PR #$PR is $state"; exit 1; }
+          [[ "${head,,}" == "${REQUESTED_HEAD,,}" ]] || {
+            echo "::error::requested head $REQUESTED_HEAD is stale; PR #$PR is $head"
+            exit 1
+          }
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          git fetch --no-tags --filter=blob:none origin "+$head:refs/searchkernel/transition-head" "+$base:refs/searchkernel/transition-base"
+          git diff --name-only --no-renames "$base" "$head" > "$RUNNER_TEMP/changed.txt"
+          git diff --check "$base" "$head"
+      - name: Require an authority-only transition
+        env:
+          HEAD: ${{ steps.refs.outputs.head }}
+          BASE: ${{ steps.refs.outputs.base }}
+        run: |
+          set -euo pipefail
+          python3 .github/ci/trusted_pr_authority.py \
+            --changed-paths "$RUNNER_TEMP/changed.txt" \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --require-transition-only
+      - name: Syntax-check candidate Python authority without executing it
+        env:
+          HEAD: ${{ steps.refs.outputs.head }}
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          while IFS= read -r path; do
+            case "$path" in
+              .github/ci/*.py)
+                mkdir -p "$tmp/$(dirname "$path")"
+                git show "$HEAD:$path" > "$tmp/$path"
+                python3 -m py_compile "$tmp/$path"
+                ;;
+            esac
+          done < "$RUNNER_TEMP/changed.txt"
+
+  publish:
+    name: Publish explicit trusted transition
+    needs: evidence
+    runs-on: [self-hosted, linux, x64]
+    environment: trusted-ci-authority
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out trusted publisher
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Revalidate exact head immediately before authorization
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.evidence.outputs.pr }}
+          HEAD: ${{ needs.evidence.outputs.head }}
+          BASE: ${{ needs.evidence.outputs.base }}
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR")
+          read -r current_head current_base state < <(
+            python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("head",{}).get("sha",""), d.get("base",{}).get("sha",""), d.get("state",""))' <<<"$response"
+          )
+          [[ "$state" == open && "${current_head,,}" == "${HEAD,,}" && "${current_base,,}" == "${BASE,,}" ]] || {
+            echo "::error::PR changed after transition evidence: state=$state head=$current_head base=$current_base"
+            exit 1
+          }
+      - name: Mint dedicated trusted-CI App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.TRUSTED_CI_APP_ID }}
+          private-key: ${{ secrets.TRUSTED_CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+      - name: Publish transition and merge-authorizing checks
+        env:
+          TRUSTED_CI_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          TRUSTED_CI_APP_ID: ${{ vars.TRUSTED_CI_APP_ID }}
+          PR: ${{ needs.evidence.outputs.pr }}
+          HEAD: ${{ neds.evidence.outputs.head }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          set -euo pipefail
+          summary="Trusted authority-only transition approved by $GITHUB_ACTOR for exact head $HEAD. Reason: $REASON"
+          details="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          python3 .github/ci/trusted_check.py \
+            --repo "$GITHUB_REPOSITORY" --sha "$HEAD" \
+            --name "Trusted CI transition" \
+            --external-id "trusted-transition:$PR:$HEAD" \
+            --app-id "$TRUSTED_CI_APP_ID" \
+            --conclusion success --summary "$summary" --details-url "$details"
+          python3 .github/ci/trusted_check.py \
+            --repo "$GITHUB_REPOSITORY" --sha "$HEAD" \
+            --name "Trusted invariant gate" \
+            --external-id "trusted-pr:$PR:$HEAD" \
+            --app-id "$TRUSTED_CI_APP_ID" \
+            --conclusion success --summary "$sumaary" --details-url "$details"
