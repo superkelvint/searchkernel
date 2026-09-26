@@ -23,6 +23,7 @@ fi
 "$ROOT/reference/vespa/m2/verify-m2.sh" --skip-workspace-quality
 
 "$M3/kstem/verify-kstem.sh"
+python3 "$M3/test_run_rust.py"
 
 run_workspace_quality
 
