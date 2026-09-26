@@ -911,3 +911,23 @@ The design is complete when:
    immutable dependencies; and
 9. the selector/task-graph/executor/cache/provisioning system has adversarial
    regression tests against the false-green cases above.
+
+### Trusted PR authorization controller
+
+Merge authorization must not be produced solely by a `pull_request` workflow,
+because that workflow definition and the repository commands it invokes are
+part of the candidate revision. `trusted-pr-verification.yml` is therefore a
+`workflow_run` controller loaded from the default branch. It recomputes lane
+selection from the PR's trusted base and invokes the default-branch reusable CI
+executor against the immutable candidate SHA with read-only permissions.
+
+The controller rejects a candidate that changes verification authority
+(workflows, CI policy, the verification DAG, moon configuration, `dev`, verifier
+scripts, or verification tools). Such a change may still run candidate
+self-tests as additive evidence, but it cannot authorize itself. Intentional
+changes to those surfaces require an explicit trusted transition/review; after
+they land on the trusted base, the new authority applies to later PRs. This is
+deliberately conservative: it prevents a PR from preserving a task/check name
+while replacing its command, dependency graph, workflow, or verifier with a
+no-op. The trusted gate should be the branch/ruleset-required check; the
+candidate-owned invariant gate is diagnostic evidence only.
