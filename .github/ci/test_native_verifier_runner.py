@@ -105,6 +105,31 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(needle, source)
 
+    def test_native_full_prepares_verifier_sdk_once_in_parent_shell(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        native_full = source.split("            native-full)", 1)[1].split(
+            "            client-e2e)", 1
+        )[0]
+
+        source_pos = native_full.index(
+            "source reference/vespa/common/verify-common.sh"
+        )
+        prepare_pos = native_full.index("prepare_verifier_sdk")
+        hnsw_pos = native_full.index(
+            "run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw"
+        )
+
+        self.assertEqual(1, native_full.count("prepare_verifier_sdk"))
+        self.assertIn(
+            "assert_current_pr_head native-full-prepare-verifier-sdk", native_full
+        )
+        unset_token_pos = native_full.index("unset GH_TOKEN")
+        restore_token_pos = native_full.index("export GH_TOKEN=$native_full_gh_token")
+        self.assertLess(unset_token_pos, source_pos)
+        self.assertLess(source_pos, prepare_pos)
+        self.assertLess(prepare_pos, restore_token_pos)
+        self.assertLess(restore_token_pos, hnsw_pos)
+
     def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
