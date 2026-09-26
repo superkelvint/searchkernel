@@ -11,7 +11,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Iterable, Sequence
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, NamedTuple
 
 
 WORKFLOW_STATES = {
@@ -27,6 +28,16 @@ LEGACY_WORKFLOW_LABELS = {
     "followup-in-progress",
 }
 REQUIRED_CLASSIFICATION_STATES = WORKFLOW_STATES - {"status:needs-followup"}
+DEFAULT_STALE_AFTER_HOURS = 24
+
+
+class ReconcileAction(NamedTuple):
+    """One conservative issue-state repair."""
+
+    kind: str
+    issue_number: int
+    value: str | None = None
+    reason: str = ""
 
 
 class QueueError(ValueError):
@@ -157,6 +168,164 @@ def validate_closed_issue_labels(
     return errors
 
 
+
+def _updated_at(issue: dict[str, Any]) -> datetime | None:
+    value = issue.get("updated_at")
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def plan_reconciliation(
+    open_issues: Sequence[dict[str, Any]],
+    closed_issues: Sequence[dict[str, Any]],
+    claim_branches: Iterable[str],
+    open_pr_heads: Iterable[str],
+    *,
+    now: datetime,
+    stale_after: timedelta,
+) -> list[ReconcileAction]:
+    """Plan only repairs that are safe without deleting repository data.
+
+    Closed issues can always shed workflow-state labels. Open in-progress work
+    receives a lease based on the issue's updated_at timestamp. Once that lease
+    expires, an open implementation PR keeps the claim active. A stale claim
+    branch with no PR is preserved and moved to blocked; an in-progress issue
+    with no claim branch can safely return to ready.
+
+    Missing or multiple workflow states are intentionally not reconstructed:
+    those remain validator errors because trackers and other special issues
+    cannot safely be inferred from branch state alone.
+    """
+    if now.tzinfo is None:
+        raise QueueError("reconciliation clock must be timezone-aware")
+    if stale_after < timedelta(0):
+        raise QueueError("stale_after must not be negative")
+
+    actions: list[ReconcileAction] = []
+    branches = set(claim_branches)
+    pr_heads = set(open_pr_heads)
+
+    for issue in sorted(closed_issues, key=_issue_number):
+        number = _issue_number(issue)
+        if _labels(issue) & WORKFLOW_STATES:
+            actions.append(
+                ReconcileAction(
+                    "remove-workflow-states",
+                    number,
+                    reason="closed issues do not participate in the active workflow queue",
+                )
+            )
+
+    for issue in sorted(open_issues, key=_issue_number):
+        number = _issue_number(issue)
+        state_labels = _labels(issue) & WORKFLOW_STATES
+        if state_labels != {"status:in-progress"}:
+            continue
+
+        branch = f"codex/issue-{number}"
+        has_branch = branch in branches
+        has_pr = branch in pr_heads
+
+        # The claim protocol creates the canonical branch before changing the
+        # issue to in-progress. Missing the branch is therefore invalid
+        # immediately rather than merely old. An open PR with a missing claim
+        # branch is preserved as blocked because its implementation ref needs
+        # explicit reconciliation before the issue can be safely requeued.
+        if not has_branch:
+            actions.append(
+                ReconcileAction(
+                    "set-state",
+                    number,
+                    "status:blocked" if has_pr else "status:ready",
+                    (
+                        "open implementation PR exists but the canonical claim branch is missing"
+                        if has_pr
+                        else "in-progress issue has no canonical claim branch"
+                    ),
+                )
+            )
+            continue
+
+        if has_pr:
+            continue
+
+        # A branch without a PR is valid while implementation is actively in
+        # progress. Give it a lease before treating the claim as abandoned.
+        updated = _updated_at(issue)
+        if updated is None:
+            continue
+        if now.astimezone(timezone.utc) - updated < stale_after:
+            continue
+
+        actions.append(
+            ReconcileAction(
+                "set-state",
+                number,
+                "status:blocked",
+                "stale claim branch has no open implementation PR; preserving the ref",
+            )
+        )
+
+    return actions
+
+
+def _github_request(
+    repo: str,
+    path: str,
+    *,
+    method: str = "GET",
+    page: int | None = None,
+    state: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise QueueError("GH_TOKEN or GITHUB_TOKEN is required for live issue queue validation")
+
+    query = {"per_page": "100"} if method == "GET" else {}
+    if page is not None:
+        query["page"] = str(page)
+    if state is not None:
+        query["state"] = state
+    url = f"https://api.github.com/repos/{repo}/{path}"
+    if query:
+        url = f"{url}?{urllib.parse.urlencode(query)}"
+
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+
+    request = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "searchkernel-issue-queue-check",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            if response.status == 204:
+                return None
+            return json.load(response)
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
+        detail = getattr(error, "reason", None) or str(error)
+        raise QueueError(
+            f"GitHub API {method} failed for {path}: {detail}"
+        ) from error
+
+
 def _github_json(
     repo: str,
     path: str,
@@ -164,31 +333,25 @@ def _github_json(
     page: int | None = None,
     state: str | None = None,
 ) -> Any:
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not token:
-        raise QueueError("GH_TOKEN or GITHUB_TOKEN is required for live issue queue validation")
+    return _github_request(repo, path, page=page, state=state)
 
-    query = {"per_page": "100"}
-    if page is not None:
-        query["page"] = str(page)
-    if state is not None:
-        query["state"] = state
-    url = f"https://api.github.com/repos/{repo}/{path}?{urllib.parse.urlencode(query)}"
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "searchkernel-issue-queue-check",
-        },
+
+def _github_delete_label(repo: str, issue_number: int, label: str) -> Any:
+    encoded = urllib.parse.quote(label, safe="")
+    return _github_request(
+        repo,
+        f"issues/{issue_number}/labels/{encoded}",
+        method="DELETE",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
-        detail = getattr(error, "reason", None) or str(error)
-        raise QueueError(f"GitHub API request failed for {path}: {detail}") from error
+
+
+def _github_add_labels(repo: str, issue_number: int, labels: Sequence[str]) -> Any:
+    return _github_request(
+        repo,
+        f"issues/{issue_number}/labels",
+        method="POST",
+        payload={"labels": list(labels)},
+    )
 
 
 def load_issues(repo: str, *, state: str) -> list[dict[str, Any]]:
@@ -244,15 +407,138 @@ def load_claim_branches(repo: str) -> set[str]:
     return result
 
 
+def load_open_pr_heads(repo: str) -> set[str]:
+    """Return same-repository head refs for all open pull requests."""
+    result: set[str] = set()
+    page = 1
+    while True:
+        value = _github_json(repo, "pulls", page=page, state="open")
+        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+            raise QueueError("GitHub pulls API returned an invalid pull request snapshot")
+        for item in value:
+            head = item.get("head")
+            if not isinstance(head, dict):
+                continue
+            ref = head.get("ref")
+            head_repo = head.get("repo")
+            full_name = head_repo.get("full_name") if isinstance(head_repo, dict) else None
+            if isinstance(ref, str) and full_name == repo:
+                result.add(ref)
+        if len(value) < 100:
+            break
+        page += 1
+    return result
+
+
+def _live_issue(repo: str, number: int) -> dict[str, Any]:
+    value = _github_json(repo, f"issues/{number}")
+    if not isinstance(value, dict) or value.get("number") != number:
+        raise QueueError(f"GitHub issue #{number} returned an invalid payload")
+    return value
+
+
+def apply_reconciliation(repo: str, actions: Sequence[ReconcileAction]) -> list[str]:
+    """Apply a precomputed plan without replacing unrelated issue labels."""
+    messages: list[str] = []
+    for action in actions:
+        issue = _live_issue(repo, action.issue_number)
+        labels = _labels(issue)
+        state_labels = labels & WORKFLOW_STATES
+
+        if action.kind == "remove-workflow-states":
+            if issue.get("state") != "closed" or not state_labels:
+                continue
+            for state in sorted(state_labels):
+                _github_delete_label(repo, action.issue_number, state)
+        elif action.kind == "set-state":
+            if (
+                issue.get("state") != "open"
+                or state_labels != {"status:in-progress"}
+                or action.value not in {"status:ready", "status:blocked"}
+            ):
+                continue
+
+            # Fail closed during the two-call state transition: remove the
+            # ownership label before exposing the issue as ready/blocked. If
+            # adding the target label fails, the verifier sees a missing state
+            # rather than a false-ready issue.
+            _github_delete_label(
+                repo,
+                action.issue_number,
+                "status:in-progress",
+            )
+            _github_add_labels(repo, action.issue_number, [action.value])
+        else:
+            raise QueueError(f"unsupported reconciliation action: {action.kind}")
+
+        suffix = f" -> {action.value}" if action.value else ""
+        messages.append(
+            f"issue #{action.issue_number}: {action.kind}{suffix} ({action.reason})"
+        )
+    return messages
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True, help="GitHub repository owner/name")
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="repair conservative stale workflow-state cases before validating",
+    )
+    parser.add_argument(
+        "--stale-after-hours",
+        type=float,
+        default=DEFAULT_STALE_AFTER_HOURS,
+        help=(
+            "minimum issue inactivity before repairing open status:in-progress "
+            f"claims (default: {DEFAULT_STALE_AFTER_HOURS})"
+        ),
+    )
     args = parser.parse_args(argv)
+
+    if args.stale_after_hours < 0:
+        parser.error("--stale-after-hours must not be negative")
 
     try:
         issues = load_open_issues(args.repo)
         closed_issues = load_closed_issues(args.repo)
         branches = load_claim_branches(args.repo)
+
+        if args.fix:
+            pr_heads = load_open_pr_heads(args.repo)
+            actions = plan_reconciliation(
+                issues,
+                closed_issues,
+                branches,
+                pr_heads,
+                now=datetime.now(timezone.utc),
+                stale_after=timedelta(hours=args.stale_after_hours),
+            )
+            if actions:
+                issues = load_open_issues(args.repo)
+                closed_issues = load_closed_issues(args.repo)
+                branches = load_claim_branches(args.repo)
+                pr_heads = load_open_pr_heads(args.repo)
+                actions = plan_reconciliation(
+                    issues,
+                    closed_issues,
+                    branches,
+                    pr_heads,
+                    now=datetime.now(timezone.utc),
+                    stale_after=timedelta(hours=args.stale_after_hours),
+                )
+
+            messages = apply_reconciliation(args.repo, actions)
+            for message in messages:
+                print(f"reconciled: {message}")
+
+            # Validate a fresh snapshot after mutation. The reconciler is not a
+            # substitute for the structural checker and never masks ambiguity.
+            issues = load_open_issues(args.repo)
+            closed_issues = load_closed_issues(args.repo)
+            branches = load_claim_branches(args.repo)
+
         errors = validate_queue(issues, branches)
         errors.extend(validate_closed_issue_labels(closed_issues))
     except (QueueError, json.JSONDecodeError) as error:
@@ -265,8 +551,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"- {error}", file=sys.stderr)
         return 1
 
+    verb = "reconcile" if args.fix else "check"
     print(
-        f"Issue queue check PASS ({len(issues)} open issues; "
+        f"Issue queue {verb} PASS ({len(issues)} open issues; "
         f"{len(closed_issues)} closed issues)."
     )
     return 0

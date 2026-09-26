@@ -5,6 +5,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -65,8 +67,56 @@ def select_generation(releases, build_env, target, commit):
     return max(generations)
 
 
+def fetch_releases_with_gh(repo):
+    gh = shutil.which("gh")
+    if gh is None:
+        return None
+
+    result = subprocess.run(
+        [
+            gh,
+            "api",
+            "--paginate",
+            "--slurp",
+            "repos/{}/releases?per_page=100".format(repo),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip()
+        message = "could not discover published native-base generations with authenticated gh"
+        if detail:
+            message += ": " + detail
+        raise SystemExit(message)
+
+    try:
+        pages = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            "authenticated gh returned invalid JSON while discovering native-base generations"
+        ) from exc
+
+    if not isinstance(pages, list):
+        raise SystemExit("authenticated gh releases response was not a page list")
+
+    releases = []
+    for page in pages:
+        if not isinstance(page, list) or not all(isinstance(item, dict) for item in page):
+            raise SystemExit("authenticated gh releases response contained an invalid page")
+        releases.extend(page)
+    return releases
+
+
 def fetch_releases(repo):
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        releases = fetch_releases_with_gh(repo)
+        if releases is not None:
+            return releases
+
     releases = []
     page = 1
     while True:
@@ -85,7 +135,10 @@ def fetch_releases(repo):
             with urllib.request.urlopen(request) as response:
                 batch = json.load(response)
         except urllib.error.HTTPError as exc:
-            hint = "set GH_TOKEN/GITHUB_TOKEN when the repository is private"
+            hint = (
+                "authenticate with gh ('gh auth login') or set "
+                "GH_TOKEN/GITHUB_TOKEN when the repository is private"
+            )
             raise SystemExit(
                 "could not discover published native-base generations "
                 "({}); {}".format(exc.code, hint)
@@ -97,8 +150,6 @@ def fetch_releases(repo):
             break
         page += 1
     return releases
-
-
 def read_releases_file(path):
     with open(path, encoding="utf-8") as stream:
         data = json.load(stream)
