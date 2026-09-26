@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -15,7 +16,7 @@ CHECKER = ROOT / "tools" / "check-ir-boundary.sh"
 
 
 def run_checker(
-    model_source: str, production_source: str | None = None
+    model_source: str, production_source: str | None = None, *, without_rg: bool = False
 ) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory() as directory:
         fixture_root = Path(directory)
@@ -42,16 +43,36 @@ def run_checker(
         (core / "backend.rs").touch()
         (core / "error.rs").touch()
 
+        env = os.environ.copy()
+        if without_rg:
+            bin_dir = fixture_root / "bin"
+            bin_dir.mkdir()
+            for command in ("dirname", "grep", "sed", "awk"):
+                (bin_dir / command).symlink_to(shutil.which(command))
+            env["PATH"] = str(bin_dir)
+
         return subprocess.run(
             [str(checker)],
             cwd=fixture_root,
             text=True,
             capture_output=True,
             check=False,
+            env=env,
         )
 
 
 class IrBoundaryCheckerTests(unittest.TestCase):
+    def test_checker_runs_without_ripgrep_and_still_rejects_wire_leaks(self) -> None:
+        accepted = run_checker("pub enum QueryIr { Typed }\n", without_rg=True)
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        rejected = run_checker(
+            "pub enum QueryIr { Typed }\n",
+            "fn leaked() { let _ = flatbuffers::root; }\n",
+            without_rg=True,
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("generated protocol type interpreted", rejected.stderr)
+
     def test_repository_test_feature_gates_are_accepted(self) -> None:
         result = run_checker(
             """
