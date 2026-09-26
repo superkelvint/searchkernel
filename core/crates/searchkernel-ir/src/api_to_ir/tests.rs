@@ -2200,7 +2200,6 @@ fn present_empty_container_controls_survive_resolution_and_own_property_namespac
     }
 }
 
-
 fn portable_container_control_request(
     query_profile: Option<&str>,
     search_chain: Option<&str>,
@@ -2246,15 +2245,25 @@ fn container_control_presence_matches_direct_and_portable_round_trips() {
             };
             let bytes = portable_container_control_request(query_profile, search_chain, None);
             let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-            assert_eq!(request.query_profile(), query_profile, "{field} wire presence");
-            assert_eq!(request.search_chain(), search_chain, "{field} wire presence");
+            assert_eq!(
+                request.query_profile(),
+                query_profile,
+                "{field} wire presence"
+            );
+            assert_eq!(
+                request.search_chain(),
+                search_chain,
+                "{field} wire presence"
+            );
 
-            let portable = context().search_to_ir(request).expect("portable control resolves");
+            let portable = context()
+                .search_to_ir(request)
+                .expect("portable control resolves");
             let mut direct_input = match_all_search(Vec::new());
             direct_input.query_profile = query_profile.map(ToOwned::to_owned);
             direct_input.search_chain = search_chain.map(ToOwned::to_owned);
-            let direct = resolve_search(&context(), direct_input.clone())
-                .expect("direct control resolves");
+            let direct =
+                resolve_search(&context(), direct_input.clone()).expect("direct control resolves");
             assert_eq!(portable, direct, "{field} {value:?} direct/portable parity");
             assert_eq!(portable.query_profile(), query_profile);
             assert_eq!(portable.search_chain(), search_chain);
@@ -2264,7 +2273,9 @@ fn container_control_presence_matches_direct_and_portable_round_trips() {
             assert_eq!(encoded.query_profile(), query_profile, "{field} IR-to-API");
             assert_eq!(encoded.search_chain(), search_chain, "{field} IR-to-API");
             assert_eq!(
-                context().search_to_ir(encoded).expect("IR-to-API-to-IR resolves"),
+                context()
+                    .search_to_ir(encoded)
+                    .expect("IR-to-API-to-IR resolves"),
                 portable,
                 "{field} {value:?} IR-to-API-to-IR"
             );
@@ -2272,9 +2283,19 @@ fn container_control_presence_matches_direct_and_portable_round_trips() {
             let inspected = crate::inspect_query_result_to_api(&portable);
             let inspected = crate::__flatbuffers::root::<api::InspectQueryResult>(&inspected)
                 .expect("resolved request decodes");
-            let resolved = inspected.resolved_request().expect("resolved request exists");
-            assert_eq!(resolved.query_profile(), query_profile, "{field} resolved presence");
-            assert_eq!(resolved.search_chain(), search_chain, "{field} resolved presence");
+            let resolved = inspected
+                .resolved_request()
+                .expect("resolved request exists");
+            assert_eq!(
+                resolved.query_profile(),
+                query_profile,
+                "{field} resolved presence"
+            );
+            assert_eq!(
+                resolved.search_chain(),
+                search_chain,
+                "{field} resolved presence"
+            );
 
             if value.is_some() {
                 direct_input.properties.insert(
@@ -2283,15 +2304,16 @@ fn container_control_presence_matches_direct_and_portable_round_trips() {
                 );
                 let direct_error = resolve_search(&context(), direct_input)
                     .expect_err("direct typed/property collision is rejected");
-                let bytes = portable_container_control_request(
-                    query_profile,
-                    search_chain,
-                    Some(property),
-                );
+                let bytes =
+                    portable_container_control_request(query_profile, search_chain, Some(property));
                 let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-                let portable_error = context().search_to_ir(request)
+                let portable_error = context()
+                    .search_to_ir(request)
                     .expect_err("portable typed/property collision is rejected");
-                assert_eq!(portable_error.details[0].code, "property_overlaps_typed_field");
+                assert_eq!(
+                    portable_error.details[0].code,
+                    "property_overlaps_typed_field"
+                );
                 assert_same_error(&portable_error, &direct_error);
             }
         }

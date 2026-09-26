@@ -1034,7 +1034,11 @@ mod tests {
         ] {
             let error = preflight_search_request(&request)
                 .expect_err("present-empty control must not execute as omitted");
-            assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported, "{label}");
+            assert_eq!(
+                error.code,
+                searchkernel_ir::ErrorCode::Unsupported,
+                "{label}"
+            );
             assert_eq!(error.details[0].code, code, "{label}");
         }
     }
