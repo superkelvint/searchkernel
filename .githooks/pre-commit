@@ -23,7 +23,6 @@ if [[ "$precommit_in_container" == "1" ]]; then
     abi_required=${SEARCHKERNEL_PRECOMMIT_ABI_REQUIRED:-false}
     persistence_required=${SEARCHKERNEL_PRECOMMIT_PERSISTENCE_REQUIRED:-false}
     issue_queue_required=${SEARCHKERNEL_PRECOMMIT_ISSUE_QUEUE_REQUIRED:-false}
-    verification_required=${SEARCHKERNEL_PRECOMMIT_VERIFICATION_REQUIRED:-false}
     python_native_e2e_required="$native_required"
 else
     if ! git diff --cached --quiet -- docs/capabilities.json; then
@@ -39,42 +38,20 @@ else
         git add docs/CAPABILITIES.md LIMITATIONS.md
     fi
 
-    selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-selection.XXXXXX")
-    untracked_selection=$(mktemp "${TMPDIR:-/tmp}/searchkernel-precommit-untracked.XXXXXX")
-    trap 'rm -f -- "$selection" "$untracked_selection"' EXIT
-    git diff --cached --name-only --no-renames -z \
-        | "$PYTHON" .github/ci/exact_head.py classify --github-output "$selection" >/dev/null
-
-    lane_required() {
-        local lane=$1
-        grep -qx "$lane=true" "$selection"
-    }
-
-    native_required=false
-    python_required=false
-    typescript_required=false
-    php_required=false
-    ruby_required=false
-    protocol_required=false
-    api_conformance_required=false
-    contracts_required=false
-    abi_required=false
-    persistence_required=false
-    issue_queue_required=false
-    verification_required=false
-
-    lane_required native && native_required=true
-    lane_required python && python_required=true
-    lane_required typescript && typescript_required=true
-    lane_required php && php_required=true
-    lane_required ruby && ruby_required=true
-    lane_required protocol && protocol_required=true
-    lane_required api_conformance && api_conformance_required=true
-    lane_required contracts && contracts_required=true
-    lane_required abi && abi_required=true
-    lane_required persistence && persistence_required=true
-    lane_required issue_queue && issue_queue_required=true
-    lane_required verification && verification_required=true
+    # Local commits do not derive verification scope from repository policy.
+    # Run every product lane so removing policy-based selection cannot hide an
+    # affected behavior.
+    native_required=true
+    python_required=true
+    typescript_required=true
+    php_required=true
+    ruby_required=true
+    protocol_required=true
+    api_conformance_required=true
+    contracts_required=true
+    abi_required=true
+    persistence_required=true
+    issue_queue_required=true
 
     # Lane selection is based on the staged tree while the container receives
     # the working tree. Require them to agree for every tracked path.
@@ -84,15 +61,18 @@ else
         exit 1
     fi
 
-    # Relevant untracked files could influence the containerized build without
-    # being present in the commit. Scratch files that select no lane remain OK.
-    git ls-files --others --exclude-standard -z \
-        | "$PYTHON" .github/ci/exact_head.py classify --allow-local-scratch --github-output "$untracked_selection" >/dev/null
-    if grep -Eq '=true$' "$untracked_selection"; then
-        echo "pre-commit: behaviorally relevant untracked files exist" >&2
-        echo "pre-commit: add, remove, or ignore them so verification matches the commit" >&2
-        exit 1
-    fi
+    # Untracked source can affect the container build even when it is not part
+    # of the commit. Permit only disposable editor/runtime files.
+    while IFS= read -r path; do
+        case "$path" in
+            *.tmp|*.log|*.swp|.DS_Store|*/.DS_Store) ;;
+            *)
+                echo "pre-commit: untracked files exist: $path" >&2
+                echo "pre-commit: add, remove, or ignore them before committing" >&2
+                exit 1
+                ;;
+        esac
+    done < <(git ls-files --others --exclude-standard)
 
     python_native_e2e_required="$native_required"
 
@@ -136,7 +116,6 @@ else
         SEARCHKERNEL_PRECOMMIT_ABI_REQUIRED="$abi_required" \
         SEARCHKERNEL_PRECOMMIT_PERSISTENCE_REQUIRED="$persistence_required" \
         SEARCHKERNEL_PRECOMMIT_ISSUE_QUEUE_REQUIRED="$issue_queue_required" \
-        SEARCHKERNEL_PRECOMMIT_VERIFICATION_REQUIRED="$verification_required" \
             "$ROOT/dev" precommit-verify
         exit $?
     fi
@@ -159,11 +138,6 @@ echo "pre-commit: running clippy"
 
 echo "pre-commit: running workspace unit tests"
 "$CARGO" test --workspace --all-targets --no-default-features
-
-if [[ "$verification_required" == true && "${SEARCHKERNEL_PRECOMMIT_SELFTEST:-0}" != "1" ]]; then
-    echo "pre-commit: verification tooling changed; running selector/hook regressions"
-    SEARCHKERNEL_PRECOMMIT_SELFTEST=1 "$PYTHON" .github/ci/test_exact_head.py
-fi
 
 if [[ "$protocol_required" == true ]]; then
     echo "pre-commit: protocol/generated-artifact changes detected; checking generated contracts"
