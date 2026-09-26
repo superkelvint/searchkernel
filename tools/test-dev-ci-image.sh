@@ -41,6 +41,13 @@ for command in (
     if command not in dev:
         raise SystemExit(f"dev image-dispatch contract is missing {command!r}")
 
+for fragment in (
+    'universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality',
+    "universe_dev_step 'cumulative milestone.m14 closure' verify milestone.m14 --skip-workspace-quality",
+):
+    if fragment not in dev:
+        raise SystemExit(f"universe must skip repeated workspace quality for {fragment!r}")
+
 required_runner = (
     "docker.io/superkelvint/searchkernel-ci:latest",
     'IMAGE_ID=$(docker image inspect --format',
