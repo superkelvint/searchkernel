@@ -5355,7 +5355,7 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
             {"name": "Grace", "age": 85, "active": false, "score": 9.87654321}
         ],
         "people_ref": [
-            {"name": "Margaret", "score": 3.141592653589793}
+            {"name": "Margaret", "score": std::f64::consts::PI}
         ],
         "location": {"latitude": 37.774929, "longitude": -122.419416},
         "feature_access": {"features": {"hobby": "music"}},
