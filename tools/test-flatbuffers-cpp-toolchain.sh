@@ -134,3 +134,6 @@ fi
 grep -q "FlatBuffers source checksum mismatch" "$tmp/corrupt.err"
 
 echo "PASS corrupted FlatBuffers source bytes are rejected before extraction"
+
+# Atomic publication regression.
+bash "$ROOT/tools/test-flatbuffers-publication.sh"
