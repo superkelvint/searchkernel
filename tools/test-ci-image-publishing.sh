@@ -10,7 +10,8 @@ for script in \
     "$ROOT/tools/publish-searchkernel-ci-vespa.sh" \
     "$ROOT/tools/publish-searchkernel-ci-image.sh" \
     "$ROOT/tools/ensure-ci-vespa-volume.sh" \
-    "$ROOT/tools/run-in-ci-image.sh"; do
+    "$ROOT/tools/run-in-ci-image.sh" \
+    "$ROOT/tools/generate-typescript-grpc-web.sh"; do
     bash -n "$script"
 done
 
@@ -130,6 +131,8 @@ for fragment in (
     "SEARCHKERNEL_TYPESCRIPT_NODE_MODULES",
     "/opt/searchkernel/typescript/node_modules",
     'ln -s "$toolchain_node_modules" "$client/node_modules"',
+    "SEARCHKERNEL_IN_CI_IMAGE",
+    'ci --prefix "$client" --no-audit --no-fund',
 ):
     if fragment not in typescript_generator:
         raise SystemExit(
@@ -153,6 +156,7 @@ for fragment in (
     'VESPA_IMAGE=$PINNED_VESPA_REF',
     "io.searchkernel.vespa-image-digest",
     "Vespa remains external and is NOT republished",
+    'ci_image_toolchain_id "$ROOT" "$PINNED_TOOLCHAIN_BASE"',
 ):
     if fragment not in leaf_publish:
         raise SystemExit(f"leaf publisher is missing external-Vespa behavior {fragment!r}")
