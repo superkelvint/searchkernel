@@ -13,7 +13,9 @@ npm ci --prefix clients/typescript
 npm run build --prefix clients/typescript
 
 SEARCHKERNEL_LOCAL_HOST="$host_binary" \
+SEARCHKERNEL_SDK_LIB="$SEARCHKERNEL_SDK_LIB" \
   node clients/typescript/scripts/verify-installed-managed-local-e2e.cjs
 
 SEARCHKERNEL_LOCAL_HOST="$host_binary" \
+SEARCHKERNEL_SDK_LIB="$SEARCHKERNEL_SDK_LIB" \
   npm run example:e2e --prefix clients/typescript

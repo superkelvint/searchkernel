@@ -283,6 +283,31 @@ class ClientContractTests(unittest.TestCase):
         dev.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
         dev.chmod(0o755)
 
+        tools_dir = repo / "tools"
+        tools_dir.mkdir(parents=True)
+        resolve_python = tools_dir / "resolve-python.sh"
+        resolve_python.write_text(
+            "#!/usr/bin/env bash\ncommand -v python3\n",
+            encoding="utf-8",
+        )
+        resolve_python.chmod(0o755)
+
+        adapter_resolver = repo / ".github" / "ci" / "resolve-native-adapter-lib.py"
+        adapter_resolver.parent.mkdir(parents=True)
+        adapter_resolver.write_text(
+            """#!/usr/bin/env python3
+from pathlib import Path
+import sys
+
+target = Path(sys.argv[2]).resolve() / "fake-adapter"
+target.mkdir(parents=True, exist_ok=True)
+(target / "libsearchkernel_vespa.so.2").touch()
+print(target)
+""",
+            encoding="utf-8",
+        )
+        adapter_resolver.chmod(0o755)
+
         fakebin = fixture / "bin"
         fakebin.mkdir(parents=True)
         cargo = fakebin / "cargo"
@@ -314,6 +339,7 @@ if [[ "${1:-}" == "run" && "${2:-}" == "example:e2e" ]]; then
         echo "TypeScript E2E dependencies were not installed" >&2
         exit 42
     fi
+    [[ -n "${SEARCHKERNEL_SDK_LIB:-}" ]] || { echo "native adapter runtime path was not passed to example E2E" >&2; exit 45; }
     exit 0
 fi
 exit 0
@@ -328,6 +354,7 @@ exit 0
 set -euo pipefail
 [[ -f "$NPM_READY" ]] || { echo "TypeScript E2E dependencies were not installed" >&2; exit 42; }
 [[ -n "${SEARCHKERNEL_LOCAL_HOST:-}" ]] || { echo "managed-local host was not passed to installed-package E2E" >&2; exit 43; }
+[[ -n "${SEARCHKERNEL_SDK_LIB:-}" ]] || { echo "native adapter runtime path was not passed to installed-package E2E" >&2; exit 45; }
 [[ "$1" == "clients/typescript/scripts/verify-installed-managed-local-e2e.cjs" ]] || exit 44
 printf '%s\\n' "installed-package-e2e" >>"$NPM_LOG"
 """,

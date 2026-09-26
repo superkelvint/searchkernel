@@ -549,8 +549,13 @@ valid_install() {
 }
 
 canonical_mounted_install() {
-    [[ "$CACHE_ROOT" == "/opt/searchkernel/native-sdk-cache/ci/$TARGET" ]] || return 1
-    [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" == 1 || -f /opt/searchkernel/native-validation-pass ]]
+    [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" == 1 || -f /opt/searchkernel/native-validation-pass ]] || return 1
+
+    # Being inside searchkernel-ci is not sufficient: tests and deliberate
+    # custom runs may point the resolver at an unrelated XDG/SK cache. Only
+    # the immutable CI bundle mounted at its canonical path is exempt from
+    # published-generation discovery/refresh.
+    [[ "$OBJECT" == "/opt/searchkernel/native-sdk-cache/ci/$TARGET/objects/$PINNED_VESPA_COMMIT" ]]
 }
 
 install_published_base() {
