@@ -146,7 +146,7 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
             .get::<serde_json::Value>("absent")
             .expect("get absent bool document")
             .expect("absent bool document exists")["active"],
-        json!(false)
+        serde_json::Value::Null
     );
 
     index
@@ -157,7 +157,7 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
             .get::<serde_json::Value>("true")
             .expect("get cleared bool document")
             .expect("cleared bool document exists")["active"],
-        json!(false)
+        serde_json::Value::Null
     );
     index.close().expect("close native bool index");
     let reopened = searchkernel::Index::open(&path).expect("reopen native bool index");
