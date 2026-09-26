@@ -121,7 +121,6 @@ REVISION="$(git rev-parse HEAD)"
 echo
 echo "==> Building thin CI leaf $IMAGE_REF"
 leaf_build_args=(
-    --build-context "searchkernel-source=$SOURCE_CONTEXT"
     --build-arg "TOOLCHAIN_IMAGE=$PINNED_TOOLCHAIN_REF"
     --build-arg "VESPA_IMAGE=$PINNED_VESPA_REF"
     --build-arg "TOOLCHAIN_ID=$TOOLCHAIN_ID"
@@ -140,7 +139,7 @@ leaf_build_args=(
     -f "$ROOT/docker/searchkernel-ci/Dockerfile"
     -t "$IMAGE_REF"
 )
-DOCKER_BUILDKIT=1 docker build "${leaf_build_args[@]}" "$ROOT/docker/searchkernel-ci"
+DOCKER_BUILDKIT=1 docker build "${leaf_build_args[@]}" "$SOURCE_CONTEXT"
 
 ci_image_require_label "$IMAGE_REF" io.searchkernel.environment-id "$CI_ENVIRONMENT_ID"
 ci_image_require_label "$IMAGE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
