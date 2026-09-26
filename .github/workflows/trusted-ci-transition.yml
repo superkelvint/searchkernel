@@ -89,6 +89,10 @@ jobs:
           echo "head=$head" >> "$GITHUB_OUTPUT"
           echo "base=$base" >> "$GITHUB_OUTPUT"
           git fetch --no-tags --filter=blob:none origin "+$head:refs/searchkernel/transition-head" "+$base:refs/searchkernel/transition-base"
+          git merge-base --is-ancestor "$base" "$head" || {
+            echo "::error::candidate head $head does not contain current PR base $base; update the branch before trusted transition"
+            exit 1
+          }
           git diff --name-only --no-renames "$base" "$head" > "$RUNNER_TEMP/changed.txt"
           git diff --check "$base" "$head"
       - name: Require an authority-only transition
