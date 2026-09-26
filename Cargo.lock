@@ -643,6 +643,7 @@ dependencies = [
  "flatbuffers",
  "searchkernel-ir",
  "searchkernel-protocol",
+ "serde",
  "serde_json",
 ]
 
