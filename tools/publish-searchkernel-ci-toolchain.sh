@@ -8,7 +8,8 @@ set -euo pipefail
 #   bash tools/publish-searchkernel-ci-toolchain.sh
 #
 # The immutable tag is a content hash of docker/searchkernel-ci-toolchain/ plus
-# the resolved digest of its upstream base image. Adding a client language,
+# the TypeScript package manifest/lockfile and the resolved digest of the
+# upstream base image. Adding a client language, changing pinned client tooling,
 # changing a compiler/runtime, or changing the upstream base bytes therefore
 # creates a new toolchain identity without changing the Vespa bundle identity.
 
@@ -20,6 +21,8 @@ source "$ROOT/tools/searchkernel-ci-image-common.sh"
 IMAGE="${SEARCHKERNEL_CI_TOOLCHAIN_IMAGE:-superkelvint/searchkernel-ci-toolchain}"
 BASE_IMAGE="${SEARCHKERNEL_CI_TOOLCHAIN_BASE_IMAGE:-docker.io/vespaengine/vespa-dev-almalinux-8:latest}"
 RECIPE="$ROOT/docker/searchkernel-ci-toolchain"
+TYPESCRIPT_PACKAGE="$ROOT/clients/typescript/package.json"
+TYPESCRIPT_LOCK="$ROOT/clients/typescript/package-lock.json"
 
 ci_image_require_commands docker git python3
 ci_image_require_docker
@@ -30,7 +33,7 @@ echo
 echo "==> Resolving immutable toolchain base image"
 PINNED_BASE_IMAGE="$(ci_image_pull_and_resolve_digest "$BASE_IMAGE")"
 
-TOOLCHAIN_ID="$(ci_image_toolchain_id "$RECIPE" "$PINNED_BASE_IMAGE")"
+TOOLCHAIN_ID="$(ci_image_toolchain_id "$ROOT" "$PINNED_BASE_IMAGE")"
 IMAGE_REF="$IMAGE:$TOOLCHAIN_ID"
 
 if ci_image_pull_if_available "$IMAGE_REF"; then
@@ -45,6 +48,13 @@ fi
 
 REVISION="$(git rev-parse HEAD)"
 
+BUILD_CONTEXT="$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-toolchain.XXXXXX")"
+trap 'rm -rf -- "$BUILD_CONTEXT"' EXIT
+mkdir -p "$BUILD_CONTEXT/clients/typescript"
+cp "$RECIPE/Dockerfile" "$BUILD_CONTEXT/Dockerfile"
+cp "$TYPESCRIPT_PACKAGE" "$BUILD_CONTEXT/clients/typescript/package.json"
+cp "$TYPESCRIPT_LOCK" "$BUILD_CONTEXT/clients/typescript/package-lock.json"
+
 echo
 echo "==> Building reusable CI toolchain"
 echo "Toolchain id: $TOOLCHAIN_ID"
@@ -57,10 +67,10 @@ toolchain_build_args=(
     --label "org.opencontainers.image.revision=$REVISION"
     --label "io.searchkernel.toolchain-id=$TOOLCHAIN_ID"
     --label "io.searchkernel.toolchain-base=$PINNED_BASE_IMAGE"
-    -f "$RECIPE/Dockerfile"
+    -f "$BUILD_CONTEXT/Dockerfile"
     -t "$IMAGE_REF"
 )
-DOCKER_BUILDKIT=1 docker build "${toolchain_build_args[@]}" "$RECIPE"
+DOCKER_BUILDKIT=1 docker build "${toolchain_build_args[@]}" "$BUILD_CONTEXT"
 
 ci_image_require_label "$IMAGE_REF" io.searchkernel.toolchain-id "$TOOLCHAIN_ID"
 ci_image_require_label "$IMAGE_REF" io.searchkernel.toolchain-base "$PINNED_BASE_IMAGE"
@@ -77,6 +87,11 @@ node -e '"'"'const [M,m]=process.versions.node.split(".").map(Number); if (M < 2
 ruby -e '"'"'abort if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.3.0")'"'"'
 /usr/bin/python3 -c "import clang.cindex"
 "$PYTHON" -c "import flatbuffers, grpc, google.protobuf"
+test -x "$SEARCHKERNEL_TYPESCRIPT_NODE_MODULES/grpc-tools/bin/protoc"
+test -x "$SEARCHKERNEL_TYPESCRIPT_NODE_MODULES/grpc-tools/bin/grpc_node_plugin"
+test -x "$SEARCHKERNEL_TYPESCRIPT_NODE_MODULES/protoc-gen-grpc-web/bin/protoc-gen-grpc-web"
+test -x "$SEARCHKERNEL_TYPESCRIPT_NODE_MODULES/.bin/tsc"
+test -x "$SEARCHKERNEL_TYPESCRIPT_NODE_MODULES/.bin/vitest"
 '
 
 echo
