@@ -94,16 +94,17 @@ if [[ ! -x "$source_root/core/native/vespa/build-sdk.sh" ]]; then
     exit 1
 fi
 
-# Cargo must not bootstrap or repair the immutable Vespa base. The default
-# build-script path is read-only; mutation belongs to ./dev native-sdk ensure.
-grep -q 'resolve_shared_native_sdk(&manifest_dir, &target, "path")' \
+# Supported consumer builds own native provisioning. Cargo must use the
+# automatic ensure path and must not regress to the retired contributor-only
+# prerequisite that required consumers to provision the shared base manually.
+grep -Fq 'resolve_shared_native_sdk(&manifest_dir, &target, "ensure")' \
     "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
-if grep -Eq 'resolve_shared_native_sdk\([^\n]*"ensure"\)' \
+if grep -Fq 'resolve_shared_native_sdk(&manifest_dir, &target, "path")' \
     "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"; then
-    echo 'Cargo build.rs must not invoke the mutating shared-base ensure path' >&2
+    echo 'Cargo build.rs must not require manual shared-base prerequisite provisioning' >&2
     exit 1
 fi
-grep -q "./dev native-sdk ensure" \
+grep -q "do not set SK_NATIVE_SDK" \
     "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
 grep -q '.searchkernel-native-base-artifact.json' \
     "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
