@@ -15,6 +15,9 @@ SCCACHE_HELPER = ROOT / "tools" / "ensure-ci-sccache.sh"
 FORBIDDEN_IN_WORKFLOWS = (
     (re.compile(r"ensure-runner-rust\.sh"), "host Rust repair helper"),
     (re.compile(r"Swatinem/rust-cache@"), "shared/persistent Cargo build cache"),
+    (re.compile(r"actions/cache@"), "unreviewed shared workflow cache"),
+    (re.compile(r"(?<!s)\bccache\b"), "unreviewed compiler cache"),
+    (re.compile(r"\bcachepot\b"), "unreviewed compiler cache"),
     (re.compile(r"dtolnay/rust-toolchain@"), "job-local host Rust installation"),
     (re.compile(r"actions/setup-node@"), "host Node toolcache mutation"),
     (re.compile(r"actions/setup-python@"), "host Python toolcache mutation"),
@@ -80,11 +83,7 @@ def main() -> int:
         # fully job-private model remains valid. If a candidate opts into
         # sccache, fail closed unless it uses the reviewed helper contract and
         # keeps the actual compiler inside the exact-head job container.
-        uses_sccache = (
-            "ensure-ci-sccache.sh" in runner
-            or "SCCACHE_" in runner
-            or "RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache" in runner
-        )
+        uses_sccache = "sccache" in runner.lower()
         if uses_sccache:
             required_sccache_runner = (
                 "ensure-ci-sccache.sh",
