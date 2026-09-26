@@ -132,6 +132,35 @@ class IssueQueueTests(unittest.TestCase):
         )
 
 
+    def test_load_closed_issues_deduplicates_pagination_overlap(self) -> None:
+        closed_issue = issue(42, "priority:p1")
+        first_page = [closed_issue]
+        first_page.extend(
+            {
+                "number": 1000 + index,
+                "title": "pull request fixture",
+                "labels": [],
+                "pull_request": {"url": "https://example.invalid/pulls/fixture"},
+            }
+            for index in range(99)
+        )
+        second_page = [closed_issue]
+
+        with mock.patch.object(
+            MODULE,
+            "_github_json",
+            side_effect=[first_page, second_page],
+        ) as github_json:
+            self.assertEqual(MODULE.load_closed_issues("owner/repo"), [closed_issue])
+
+        self.assertEqual(
+            github_json.call_args_list,
+            [
+                mock.call("owner/repo", "issues", page=1, state="closed"),
+                mock.call("owner/repo", "issues", page=2, state="closed"),
+            ],
+        )
+
     def test_load_closed_issues_requests_closed_state_and_ignores_pull_requests(self) -> None:
         closed_issue = issue(42, "priority:p1")
         pull_request = {
