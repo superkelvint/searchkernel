@@ -7,7 +7,11 @@ import { Index } from "../src/client/index.js";
 import { int64, uint64 } from "../src/client/values.js";
 import { packObject } from "../src/protocol/envelope.js";
 import type { GrpcWebTransport } from "../src/transport/grpc-web.js";
-it("executes frozen cross-language semantic corpus", () => {
+const parityEnabled =
+  Boolean(process.env.SEARCHKERNEL_PARITY_CORPUS) &&
+  Boolean(process.env.SEARCHKERNEL_PARITY_OUTPUT);
+
+it.skipIf(!parityEnabled)("executes frozen cross-language semantic corpus", () => {
   const root=resolve(process.cwd(),"../.."); const corpus=process.env.SEARCHKERNEL_PARITY_CORPUS!; const data=JSON.parse(readFileSync(corpus,"utf8"));
   execFileSync("cargo",["build","--quiet","--no-default-features","-p","searchkernel-testkit","--bin","searchkernel-semantic-snapshot"],{cwd:root}); const meta=JSON.parse(execFileSync("cargo",["metadata","--no-deps","--format-version","1"],{cwd:root,encoding:"utf8"})); const binary=join(meta.target_directory,"debug","searchkernel-semantic-snapshot"); const fixture=join(root,data.index); const out:Record<string,unknown>={};
   for(const scenario of data.scenarios){ const i=scenario.intent; const index=Index.connect("unused",{execute:async()=>new Uint8Array()} as unknown as GrpcWebTransport); let b=i.kind==="browse"?index.browse():index.search(i.query);
