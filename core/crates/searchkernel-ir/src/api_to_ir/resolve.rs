@@ -1986,8 +1986,11 @@ pub(crate) fn resolve_language(value: &str, path: &str) -> Result<LanguageHint> 
     })
 }
 
+/// Canonical result limit used when a search request omits `limit`.
+pub const DEFAULT_SEARCH_LIMIT: u32 = 20;
+
 pub(crate) fn resolve_pagination(limit: Option<u32>, offset: Option<u32>) -> (u32, u32) {
-    (limit.unwrap_or(20), offset.unwrap_or(0))
+    (limit.unwrap_or(DEFAULT_SEARCH_LIMIT), offset.unwrap_or(0))
 }
 
 pub(crate) fn resolve_timeout(timeout: Duration) -> Result<Duration> {
