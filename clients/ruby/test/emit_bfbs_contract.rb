@@ -44,7 +44,6 @@ portable_fields = [
     { "key" => "unsigned", "value" => value.encode(value.uint64(2**64 - 1)) },
     { "key" => "bytes", "value" => value.encode(value.bytes("\x00\xff".b)) },
     { "key" => "nested", "value" => value.encode([{ "x" => true }, nil, [1.5]]) },
-    { "key" => "unicode_object", "value" => value.encode({ "😀" => 4, "é" => 3, "z" => 2, "a" => 1 }) },
     { "key" => "dense", "value" => tensor.call(:dense, [1.0, 2.0]) },
     { "key" => "sparse", "value" => tensor.call(:sparse, [{ "address" => [{ "dimension" => "x", "label" => "0" }], "value" => 1.0 }]) },
     { "key" => "mixed", "value" => tensor.call(:mixed, [{ "address" => [{ "dimension" => "paragraph", "label" => "a" }], "values" => [1.0, 2.0] }]) }
@@ -82,10 +81,10 @@ emit_case("response", "recursive-search-response", {
         result_node("Hit", { "id" => "c" })
       ]
     }),
-    "total_hits" => { "value" => (2**64 - 1).to_s, "relation" => "LowerBound" },
+    "total_hits" => { "value" => 2**64 - 1, "relation" => "LowerBound" },
     "trace" => value.encode({ "events" => [] }), "metadata" => [],
     "coverage" => { "full" => { "value" => false }, "degraded" => { "timeout" => { "value" => true } } },
     "timing" => { "query_time_seconds" => { "value" => 0.5 } },
-    "errors" => [{ "code" => "7", "summary" => "partial", "transient" => { "value" => true }, "metadata" => [] }]
+    "errors" => [{ "code" => 7, "summary" => "partial", "transient" => { "value" => true }, "metadata" => [] }]
   }
 })

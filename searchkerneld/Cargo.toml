@@ -12,8 +12,10 @@ categories.workspace = true
 [features]
 default = ["native"]
 native = ["searchkernel/native"]
+test-support = []
 
 [dependencies]
+flatbuffers = "=25.12.19"
 base64 = "0.22"
 bytes = "1"
 http = "1"
@@ -21,6 +23,7 @@ http-body-util = "0.1"
 prost = "0.13"
 searchkernel = { path = "../core/crates/searchkernel", default-features = false, features = ["internal-api"] }
 searchkernel-dispatch = { path = "../core/crates/searchkernel-dispatch" }
+searchkernel-ir = { path = "../core/crates/searchkernel-ir" }
 searchkernel-protocol = { path = "../core/crates/searchkernel-protocol" }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["net"] }
@@ -32,7 +35,6 @@ tower = { version = "0.4", default-features = false, features = ["util"] }
 libc = "0.2"
 
 [dev-dependencies]
-flatbuffers = "=25.12.19"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }

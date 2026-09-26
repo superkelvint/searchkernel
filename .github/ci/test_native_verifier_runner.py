@@ -8,9 +8,11 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
+ABI_WORKFLOW = ROOT / ".github" / "workflows" / "abi-surface.yml"
 WORKFLOWS = ROOT / ".github" / "workflows"
 INTEGRATION = ROOT / "reference" / "vespa" / "i" / "verify-i.sh"
-VERIFY_COMMON = ROOT / "reference" / "vespa" / "common" / "verify-common.sh"
+PYTHON_NATIVE_E2E = ROOT / "tools" / "run-python-native-e2e.sh"
+M3_RUN_RUST = ROOT / "reference" / "vespa" / "m3" / "run-rust.sh"
 
 
 class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
@@ -95,16 +97,54 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         source = WORKFLOW.read_text(encoding="utf-8")
         for needle in (
             "native-full)",
-            "./dev verify abi",
             "./dev verify vespa.nearest-neighbor.hnsw",
             "./dev verify product.integration",
             "./dev verify vespa.grouping.yql",
             "./dev verify vespa.recovery",
             "reference/vespa/phase9/verify-phase9.sh",
-            "tools/run-python-native-e2e.sh",
+            "tools/run-python-native-e2e.sh --prevalidated-native-sdk",
             "./dev verify persistence",
         ):
             self.assertIn(needle, source)
+
+    def test_native_full_delegates_abi_to_exact_head_abi_workflow(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        native_full = source.split("            native-full)", 1)[1].split(
+            "            client-e2e)", 1
+        )[0]
+        abi_workflow = ABI_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertNotIn("native-full-abi", native_full)
+        self.assertNotIn("./dev verify abi", native_full)
+        self.assertIn(
+            'revision: ${{ github.event.pull_request.head.sha || github.sha }}',
+            abi_workflow,
+        )
+        self.assertIn(
+            "baseline_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}",
+            abi_workflow,
+        )
+        self.assertIn("target: abi-surface", abi_workflow)
+        self.assertEqual(
+            2,
+            abi_workflow.count('      - ".github/workflows/ci-image-runner.yml"'),
+        )
+
+    def test_python_native_e2e_skips_ensure_only_when_explicitly_prevalidated(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        native_full = source.split("            native-full)", 1)[1].split(
+            "            client-e2e)", 1
+        )[0]
+        script = PYTHON_NATIVE_E2E.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "tools/run-python-native-e2e.sh --prevalidated-native-sdk",
+            native_full,
+        )
+        self.assertIn("--prevalidated-native-sdk", script)
+        self.assertIn('prevalidated_native_sdk=0', script)
+        self.assertIn('if [[ "$prevalidated_native_sdk" != 1 ]]; then', script)
+        self.assertIn("./dev native-sdk ensure", script)
 
     def test_native_full_does_not_rerun_phase10_after_integration(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
@@ -150,7 +190,6 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertNotIn("$GH_TOKEN", helper)
         self.assertNotIn("GH_TOKEN=", helper)
 
-        abi_pos = native_full.index("run_phase native-full-abi ./dev verify abi")
         prepare_pos = native_full.index("prepare_native_full_verifier_sdk")
         hnsw_pos = native_full.index(
             "run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw"
@@ -159,44 +198,112 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertNotIn(
             "source reference/vespa/common/verify-common.sh", native_full
         )
-        self.assertLess(abi_pos, prepare_pos)
         self.assertLess(prepare_pos, hnsw_pos)
 
-    def test_prepared_verifier_sdk_runtime_path_reaches_nested_process(self) -> None:
+    def test_m3_driver_runs_through_cargo_runtime_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)
-            sdk = temp / "sdk"
-            base = temp / "base"
-            vespa = temp / "vespa"
-            (sdk / "include").mkdir(parents=True)
-            (sdk / "lib").mkdir()
-            (base / "lib").mkdir(parents=True)
-            vespa.mkdir()
-            (sdk / "manifest.json").write_text("{}\n", encoding="utf-8")
-            (sdk / "include" / "searchkernel_vespa.h").write_text(
-                "/* test */\n", encoding="utf-8"
-            )
+            fake_bin = temp / "bin"
+            fake_bin.mkdir()
+            cargo_log = temp / "cargo.log"
+            output = temp / "output.jsonl"
+            target_dir = temp / "cargo-target"
 
-            existing = temp / "existing-runtime"
-            existing.mkdir()
+            fake_cargo = fake_bin / "cargo"
+            fake_cargo.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' \"$*\" > \"$FAKE_CARGO_LOG\"\n"
+                "while IFS=        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "client-e2e)",
+            '"$PYTHON" tools/check-python-dependencies.py',
+            "build_native_searchkerneld client-e2e-build",
+            'SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"',
+            'SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"',
+            '"$PYTHON" tools/check-client-contracts.py --run-e2e',
+        ):
+            self.assertIn(needle, source)
+
+    def test_native_searchkerneld_build_resolves_exact_adapter_runtime_lib(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "build_native_searchkerneld()",
+            "--message-format=json-render-diagnostics",
+            ".github/ci/resolve-native-adapter-lib.py",
+            "NATIVE_ADAPTER_LIB=",
+            "build_native_searchkerneld closure-422-build",
+            'SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"',
+        ):
+            self.assertIn(needle, source)
+
+    def test_supports_422_closure_bundle(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "closure-422)",
+            "export CARGO_TARGET_DIR=/cargo-target/closure-422",
+            "unset VESPA_LIBRARY_ROOT || true",
+            "unset VESPA_DEPS || true",
+            "unset VESPA_EXTRA_LIB_DIR || true",
+            '/opt/searchkernel/native-sdk-cache/ci/*/objects/*',
+            'closure-422 requires a checkout with no configured source Vespa tree',
+            'bash tools/resolve-native-sdk.sh vespa-root',
+            '/opt/searchkernel/native-sdk-cache/ci/*/toolchains/*/upstream/vespa',
+            'build_native_searchkerneld closure-422-build',
+            "./dev verify m14",
+            "./dev verify product.rust-real-engine",
+            "./dev verify integration",
+            'bash clients/php/examples/run_searchkernel_client_api_e2e.sh',
+        ):
+            self.assertIn(needle, source)
+        self.assertNotIn("SEARCHKERNEL_VERIFY_LIVE_ORACLE=skip", source)
+
+
+    def _run_embedded_head_guard(
+        self,
+        payload: str,
+        *,
+        expected_head: str = "aaaaaaaa",
+        pr_number: str = "123",
+        curl_exit: int = 0,
+    ) -> subprocess.CompletedProcess[str]:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        start = source.index("          assert_current_pr_head() {")
+        end = source.index("\n          assert_current_pr_head preflight", start)
+        function_source = "\n".join(
+            line[10:] if line.startswith("          ") else line
+            for line in source[start:end].splitlines()
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_curl = Path(temp_dir) / "curl"
+            fake_curl.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s' \"$FAKE_CURL_PAYLOAD\"\n"
+                "exit \"$FAKE_CURL_EXIT\"\n",
+                encoding="utf-8",
+            )
+            fake_curl.chmod(0o755)
             env = os.environ.copy()
             env.update(
                 {
-                    "SEARCHKERNEL_VERIFIER_SDK": str(sdk),
-                    "SEARCHKERNEL_VERIFIER_BASE_SDK": str(base),
-                    "SEARCHKERNEL_VERIFIER_VESPA_ROOT": str(vespa),
-                    "SEARCHKERNEL_VERIFIER_SDK_PREPARED": "1",
-                    "LD_LIBRARY_PATH": str(existing),
+                    "PATH": f"{temp_dir}:{env['PATH']}",
+                    "FAKE_CURL_PAYLOAD": payload,
+                    "FAKE_CURL_EXIT": str(curl_exit),
                 }
             )
             script = f"""
 set -euo pipefail
-source {str(VERIFY_COMMON)!r}
-prepare_verifier_sdk
-prepare_verifier_sdk
-bash -c 'printf "%s" "$LD_LIBRARY_PATH"'
+HEAD_CHECK_TOKEN=dummy
+PR_NUMBER={pr_number!r}
+EXPECTED_HEAD={expected_head!r}
+GITHUB_REPOSITORY=superkelvint/searchkernel
+GITHUB_API_URL=https://api.github.invalid
+{function_source}
+assert_current_pr_head test-phase
+echo AFTER_GUARD
 """
-            completed = subprocess.run(
+            return subprocess.run(
                 ["bash", "-c", script],
                 text=True,
                 stdout=subprocess.PIPE,
@@ -204,11 +311,139 @@ bash -c 'printf "%s" "$LD_LIBRARY_PATH"'
                 env=env,
                 check=False,
             )
-            self.assertEqual(completed.returncode, 0, completed.stdout)
-            self.assertEqual(
-                completed.stdout,
-                f"{sdk / 'lib'}:{base / 'lib'}:{existing}",
+
+    def test_head_guard_stops_closed_pr_even_when_sha_is_unchanged(self) -> None:
+        completed = self._run_embedded_head_guard(
+            '{"state":"closed","head":{"sha":"aaaaaaaa"}}'
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        self.assertNotIn("AFTER_GUARD", completed.stdout)
+        self.assertIn("stopping obsolete verification", completed.stdout)
+
+    def test_head_guard_runtime_current_stale_and_api_failure(self) -> None:
+        current = self._run_embedded_head_guard(
+            '{"state":"open","head":{"sha":"aaaaaaaa"}}'
+        )
+        self.assertEqual(current.returncode, 0, current.stdout)
+        self.assertIn("AFTER_GUARD", current.stdout)
+
+        stale = self._run_embedded_head_guard(
+            '{"state":"open","head":{"sha":"bbbbbbbb"}}'
+        )
+        self.assertEqual(stale.returncode, 0, stale.stdout)
+        self.assertNotIn("AFTER_GUARD", stale.stdout)
+        self.assertIn("Superseded verification", stale.stdout)
+
+        malformed = self._run_embedded_head_guard(
+            '{"head":{"sha":"aaaaaaaa"}}'
+        )
+        self.assertNotEqual(malformed.returncode, 0, malformed.stdout)
+        self.assertNotIn("AFTER_GUARD", malformed.stdout)
+
+        failed = self._run_embedded_head_guard("", curl_exit=22)
+        self.assertNotEqual(failed.returncode, 0, failed.stdout)
+        self.assertNotIn("AFTER_GUARD", failed.stdout)
+
+        manual = self._run_embedded_head_guard(
+            "",
+            pr_number="",
+            curl_exit=22,
+        )
+        self.assertEqual(manual.returncode, 0, manual.stdout)
+        self.assertIn("AFTER_GUARD", manual.stdout)
+
+    def test_superseded_pr_heads_stop_before_each_expensive_native_phase(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        for needle in (
+            "pull-requests: read",
+            'PR_NUMBER: ${{ github.event.pull_request.number }}',
+            "assert_current_pr_head()",
+            "curl --fail --silent --show-error",
+            "--connect-timeout 5",
+            "--max-time 15",
+            'python3 -c \'import json,sys; data=json.load(sys.stdin); print(data.get("head", {}).get("sha", ""), data.get("state", ""))\'',
+            'if [[ "$state" != "open" ]]; then',
+            "env -u GH_TOKEN",
+            "Superseded verification",
+            "run_phase()",
+            "assert_current_pr_head preflight",
+            "run_phase native-full-hnsw",
+            "run_phase native-full-product-integration",
+            "run_phase native-full-grouping-yql",
+            "run_phase native-full-recovery",
+            "run_phase native-full-phase9",
+            "run_phase native-full-python-e2e",
+            "run_phase native-full-persistence",
+            'run_phase "$phase"',
+            "build_native_searchkerneld client-e2e-build",
+            "run_phase client-e2e-run",
+            "build_native_searchkerneld closure-422-build",
+            "run_phase closure-422-m14",
+            "run_phase closure-422-rust-real-engine",
+            "run_phase closure-422-integration",
+            "run_phase closure-422-php-e2e",
+            "run_phase requested-target",
+        ):
+            self.assertIn(needle, source)
+
+
+    def test_pr_callers_grant_live_head_lookup_permission(self) -> None:
+        callers: list[Path] = []
+        workflows = sorted(
+            [*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")]
+        )
+        for workflow in workflows:
+            source = workflow.read_text(encoding="utf-8")
+            if "uses: ./.github/workflows/ci-image-runner.yml" not in source:
+                continue
+            callers.append(workflow)
+            header = source.split("\njobs:", 1)[0]
+            self.assertIn("permissions:", header, workflow)
+            self.assertIn("contents: read", header, workflow)
+            self.assertIn("pull-requests: read", header, workflow)
+        self.assertTrue(callers, "expected at least one ci-image-runner caller")
+
+
+if __name__ == "__main__":
+    unittest.main()
+\\t' read -r case_id _; do\n"
+                "  [[ -n \"$case_id\" ]] || continue\n"
+                "  printf '{\"id\":\"%s\",\"terms\":[]}\\n' \"$case_id\"\n"
+                "done\n",
+                encoding="utf-8",
             )
+            fake_cargo.chmod(0o755)
+
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{fake_bin}:{env['PATH']}",
+                    "FAKE_CARGO_LOG": str(cargo_log),
+                    "CARGO_TARGET_DIR": str(target_dir),
+                }
+            )
+            completed = subprocess.run(
+                ["bash", str(M3_RUN_RUST), "document", str(output)],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+
+            cargo_args = cargo_log.read_text(encoding="utf-8").strip()
+            self.assertTrue(cargo_args.startswith("run --quiet "), cargo_args)
+            self.assertIn(f"--target-dir {target_dir}", cargo_args)
+            self.assertIn(
+                f"--manifest-path {ROOT / 'reference/vespa/m3/rust-driver/Cargo.toml'}",
+                cargo_args,
+            )
+            self.assertIn("--bin searchkernel-m3-conformance-driver", cargo_args)
+            self.assertTrue(cargo_args.endswith("-- document"), cargo_args)
+            self.assertNotIn(" build ", f" {cargo_args} ")
+            self.assertTrue(output.read_text(encoding="utf-8").strip())
 
     def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
@@ -364,7 +599,6 @@ echo AFTER_GUARD
             "Superseded verification",
             "run_phase()",
             "assert_current_pr_head preflight",
-            "run_phase native-full-abi",
             "run_phase native-full-hnsw",
             "run_phase native-full-product-integration",
             "run_phase native-full-grouping-yql",

@@ -226,6 +226,27 @@ fn packed_strings(values: &[String]) -> Result<(Vec<u8>, Vec<u32>), Error> {
 
 type PackedPredicate = (Vec<u8>, Vec<u32>, Vec<u8>, Vec<u32>);
 
+fn validate_predicate_expression_numbers(value: &serde_json::Value) -> Result<(), Error> {
+    match value {
+        serde_json::Value::Number(number) if number.as_i64().is_none() => Err(Error::unsupported(
+            "predicate expression numbers must be signed 64-bit integers",
+        )),
+        serde_json::Value::Array(values) => {
+            for value in values {
+                validate_predicate_expression_numbers(value)?;
+            }
+            Ok(())
+        }
+        serde_json::Value::Object(values) => {
+            for value in values.values() {
+                validate_predicate_expression_numbers(value)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 fn native_predicate_expression(expression: &str) -> Result<String, Error> {
     let parsed = serde_json::from_str::<serde_json::Value>(expression).map_err(|error| {
         Error::message(format!("predicate expression is invalid JSON: {error}"))
@@ -233,6 +254,7 @@ fn native_predicate_expression(expression: &str) -> Result<String, Error> {
     let object = parsed
         .as_object()
         .ok_or_else(|| Error::message("predicate expression must be a JSON object"))?;
+    validate_predicate_expression_numbers(&parsed)?;
     let Some(kind) = object.get("type") else {
         return Ok(expression.to_owned());
     };
@@ -2593,6 +2615,13 @@ mod native_slice_tests {
             r#"{"type":6}"#
         );
         assert!(native_predicate_expression("[]").is_err());
+        assert!(
+            native_predicate_expression(
+                r#"{"type":4,"key":"hobby","feature_set":["music"],"weight":1.23456789}"#
+            )
+            .is_err(),
+            "floating predicate JSON must fail before Vespa's lossy JSON result encoder"
+        );
     }
 
     #[test]

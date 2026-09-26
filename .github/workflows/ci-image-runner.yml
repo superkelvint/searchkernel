@@ -416,6 +416,8 @@ jobs:
               run_phase protocol-bfbs bash tools/check-flatbuffers-bfbs.sh
               run_phase protocol-rust-generated bash tools/check-searchkernel-protocol-generated.sh
               run_phase rust-test cargo test --workspace --all-targets --no-default-features
+              run_phase search-endpoint-hostile-inputs cargo test -p searchkerneld --no-default-features --features test-support --test search_endpoints
+              run_phase instantsearch-request-compat cargo test -p searchkerneld --no-default-features --features test-support --test instantsearch_compat
               run_phase api-conformance reference/api-conformance/verify.sh
               ;;
 
@@ -531,8 +533,8 @@ jobs:
               ;;
 
             native-full)
-              run_phase native-full-abi ./dev verify abi
-
+              # ABI-sensitive changes are covered by the dedicated exact-head
+              # ABI surface workflow, which compares against the real PR/base SHA.
               # Prepare once in a tokenless child, then publish only the fixed
               # verifier paths/marker into the parent for later verifier reuse.
               prepare_native_full_verifier_sdk
@@ -542,7 +544,7 @@ jobs:
               run_phase native-full-grouping-yql ./dev verify vespa.grouping.yql
               run_phase native-full-recovery ./dev verify vespa.recovery
               run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved
-              run_phase native-full-python-e2e tools/run-python-native-e2e.sh
+              run_phase native-full-python-e2e tools/run-python-native-e2e.sh --prevalidated-native-sdk
               run_phase native-full-persistence ./dev verify persistence
               ;;
 

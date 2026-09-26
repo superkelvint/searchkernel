@@ -455,8 +455,24 @@ class VerificationDagTests(unittest.TestCase):
             ):
                 verification_dag.load_dag(path)
 
-    def test_search_endpoints_are_pre_registered_before_product_ingress_lands(self) -> None:
+    def test_search_endpoints_have_focused_verification_ownership(self) -> None:
         current = verification_dag.load_dag(DAG_PATH)
+
+        endpoint_task = current.tasks["search-endpoints"]
+        self.assertEqual(endpoint_task.kind, "command")
+        self.assertEqual(
+            endpoint_task.command,
+            "cargo test -p searchkerneld --no-default-features --features test-support --test search_endpoints",
+        )
+        self.assertIn("instantsearch-compat", endpoint_task.depends_on)
+
+        instantsearch_task = current.tasks["instantsearch-compat"]
+        self.assertEqual(instantsearch_task.kind, "command")
+        self.assertEqual(
+            instantsearch_task.command,
+            "cargo test -p searchkerneld --no-default-features --features test-support --test instantsearch_compat",
+        )
+
         probe = "searchkerneld/src/search_endpoints.rs"
         owners = verification_dag.matching_subsystems(current, probe)
         owner_ids = [owner.id for owner in owners]
@@ -467,15 +483,21 @@ class VerificationDagTests(unittest.TestCase):
             owner for owner in owners if owner.id == "searchkerneld-search-endpoints"
         )
         self.assertIn("search-endpoints", endpoint_owner.requires)
+        self.assertIn("instantsearch-compat", endpoint_owner.requires)
 
         closure = verification_dag.task_closure(current, ("search-endpoints",))
-        self.assertIn("rust-non-native", closure)
+        self.assertIn("instantsearch-compat", closure)
+        self.assertIn("rust-quality", closure)
         self.assertIn("protocol-generated", closure)
-        self.assertIn("client-contracts", closure)
         self.assertIn("search-endpoints", verification_dag.task_closure(current, ("full",)))
 
-        lanes = verification_dag.legacy_lanes_for_tasks(current, closure)
-        self.assertTrue(lanes["rust"])
+        integration_owners = verification_dag.matching_subsystems(
+            current, "integrations/instantsearch/README.md"
+        )
+        self.assertIn(
+            "instantsearch-integration",
+            [owner.id for owner in integration_owners],
+        )
 
     def test_unknown_task_reference_is_rejected(self) -> None:
         source = DAG_PATH.read_text(encoding="utf-8")
