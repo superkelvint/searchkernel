@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+cd "$ROOT"
+CARGO="$(bash "$ROOT/tools/resolve-rust.sh" cargo)"
+
+./dev native-sdk ensure
+"$CARGO" build -p searchkerneld
+
 TARGET_DIR="${CARGO_TARGET_DIR:-target/host}"
 if [[ "$TARGET_DIR" != /* ]]; then
   TARGET_DIR="$ROOT/$TARGET_DIR"
