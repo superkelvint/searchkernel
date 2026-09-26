@@ -315,13 +315,23 @@ fn rejects_malformed_unknown_and_closed_requests() {
         "a response envelope cannot be reused as a request"
     );
     dispatcher.close().unwrap();
-    assert_eq!(
-        dispatcher.dispatch(&describe_request(
+    let response = dispatcher
+        .dispatch(&describe_request(
             PROTOCOL_VERSION,
-            wire::RequestPayload::SearchKernel_V2_DescribeRequest
-        )),
-        Err(DispatchError::Closed)
+            wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+        ))
+        .expect("closed target is a canonical response");
+    let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
     );
+    let error = envelope.payload_as_search_kernel_v2_error().unwrap();
+    assert_eq!(error.code(), api::ErrorCode::FailedPrecondition);
+    assert_eq!(error.message(), Some("Search Kernel target is closed"));
+    let details = error.details().expect("closed target detail");
+    assert_eq!(details.len(), 1);
+    assert_eq!(details.get(0).code(), Some("target_closed"));
 }
 
 #[test]
