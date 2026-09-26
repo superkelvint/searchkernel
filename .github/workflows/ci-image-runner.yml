@@ -502,6 +502,14 @@ jobs:
 
             native-full)
               run_phase native-full-abi ./dev verify abi
+
+              # Prepare the verifier-owned adapter SDK in this parent shell so
+              # every later verifier process inherits and reuses the same
+              # revision-local SDK instead of rebuilding it independently.
+              assert_current_pr_head native-full-prepare-verifier-sdk
+              source reference/vespa/common/verify-common.sh
+              prepare_verifier_sdk
+
               run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw
               run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved
               run_phase native-full-rust-real-engine ./dev verify product.rust-real-engine
