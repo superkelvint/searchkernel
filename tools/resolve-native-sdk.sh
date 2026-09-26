@@ -603,7 +603,8 @@ if [[ "$MODE" == path ]]; then
     else
         echo "native Vespa base is not installed for checkout $PINNED_VESPA_COMMIT" >&2
     fi
-    echo "run './dev native-sdk ensure' from the one configured Vespa checkout when provisioning this machine" >&2
+    echo "normal development uses the canonical Docker-backed Vespa bundle via './dev native-sdk ensure'" >&2
+    echo "for intentional host-native provisioning, run 'SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev native-sdk ensure'" >&2
     exit 1
 fi
 
