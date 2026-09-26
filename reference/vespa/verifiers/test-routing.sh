@@ -9,6 +9,37 @@ DEV="$ROOT/dev"
 bash -n "$VERIFY"
 bash -n "$DEV"
 
+# Sourcing verify-common must be read-only. Supply every resolved path so this
+# check needs no native installation, then shadow bash to detect any accidental
+# source-time build-sdk invocation.
+COMMON="$ROOT/reference/vespa/common/verify-common.sh"
+SOURCE_TEST="$(mktemp -d)"
+trap 'rm -rf "$SOURCE_TEST"' EXIT
+mkdir -p "$SOURCE_TEST/bin" "$SOURCE_TEST/base" "$SOURCE_TEST/vespa" "$SOURCE_TEST/sdk"
+cat > "$SOURCE_TEST/bin/bash" <<'SH'
+#!/bin/bash
+if [[ "${1:-}" == */core/native/vespa/build-sdk.sh ]]; then
+    : > "$SEARCHKERNEL_BUILD_SDK_MARKER"
+    exit 97
+fi
+exec /bin/bash "$@"
+SH
+chmod +x "$SOURCE_TEST/bin/bash"
+SEARCHKERNEL_BUILD_SDK_MARKER="$SOURCE_TEST/build-sdk-called" \
+SEARCHKERNEL_VERIFIER_BASE_SDK="$SOURCE_TEST/base" \
+SEARCHKERNEL_VERIFIER_VESPA_ROOT="$SOURCE_TEST/vespa" \
+SEARCHKERNEL_VERIFIER_SDK="$SOURCE_TEST/sdk" \
+PATH="$SOURCE_TEST/bin:$PATH" \
+    /bin/bash -euo pipefail -c 'unset SK_NATIVE_SDK; source "$1"' _ "$COMMON"
+[[ ! -e "$SOURCE_TEST/build-sdk-called" ]] || {
+    echo "verify-common.sh ran build-sdk.sh while being sourced" >&2
+    exit 1
+}
+grep -F 'prepare_verifier_sdk' "$VERIFY" >/dev/null || {
+    echo "verify-through does not explicitly prepare the verifier SDK" >&2
+    exit 1
+}
+
 while IFS= read -r wrapper; do
     bash -n "$wrapper"
 done < <(find "$DIR" -type f -name verify.sh -print | sort)
