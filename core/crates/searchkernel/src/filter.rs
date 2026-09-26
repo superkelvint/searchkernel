@@ -366,6 +366,16 @@ mod tests {
     }
 
     #[test]
+    fn structured_filters_reject_non_finite_values_without_coercing_to_null() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let error =
+                to_resolver_input(&field("ratio").eq(value)).expect_err("non-finite filter value");
+            assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
+        }
+        assert!(to_resolver_input(&field("ratio").eq(Option::<f64>::None)).is_ok());
+    }
+
+    #[test]
     fn range_defaults_and_pending_errors_are_preserved() {
         let range = Range::default();
         assert!(range.lower.is_none());
