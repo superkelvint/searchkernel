@@ -33,11 +33,17 @@ command -v flock >/dev/null 2>&1 || {
 }
 
 SAFE_VERSION=${SCCACHE_VERSION//./-}
-SERVER="searchkernel-ci-sccache-v$SAFE_VERSION"
+TOOLCHAIN_ID=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.toolchain-id"}}' "$CI_IMAGE")
+[[ "$TOOLCHAIN_ID" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "CI image is missing a valid io.searchkernel.toolchain-id label: ${TOOLCHAIN_ID:-<missing>}" >&2
+    exit 1
+}
+CACHE_NAMESPACE=$TOOLCHAIN_ID
+SERVER="searchkernel-ci-sccache-v$SAFE_VERSION-$CACHE_NAMESPACE"
 BINARY_VOLUME="searchkernel-ci-sccache-bin-v$SAFE_VERSION"
-CACHE_VOLUME="searchkernel-ci-sccache-cache-v$SAFE_VERSION"
-SOCKET_VOLUME="searchkernel-ci-sccache-socket-v$SAFE_VERSION"
-LOCK="${TMPDIR:-/tmp}/searchkernel-ci-sccache-v$SAFE_VERSION.lock"
+CACHE_VOLUME="searchkernel-ci-sccache-cache-v$SAFE_VERSION-$CACHE_NAMESPACE"
+SOCKET_VOLUME="searchkernel-ci-sccache-socket-v$SAFE_VERSION-$CACHE_NAMESPACE"
+LOCK="${TMPDIR:-/tmp}/searchkernel-ci-sccache-v$SAFE_VERSION-$CACHE_NAMESPACE.lock"
 SCCACHE_BIN=/opt/searchkernel/sccache/sccache
 
 exec 9>"$LOCK"
@@ -105,6 +111,7 @@ if ! validate_server; then
         --name "$SERVER" \
         --restart unless-stopped \
         --label "io.searchkernel.sccache-version=$SCCACHE_VERSION" \
+        --label "io.searchkernel.toolchain-id=$TOOLCHAIN_ID" \
         -e SCCACHE_DIR=/cache \
         -e SCCACHE_CACHE_SIZE=20G \
         -e SCCACHE_SERVER_UDS=/sccache/sccache.sock \

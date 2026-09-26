@@ -249,7 +249,9 @@ toolchain Dockerfile installs that same binary, while the runner also materializ
 it into a versioned read-only Docker volume so rollout does not depend on image
 publication order. Docker-backed builds set
 `RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache`. One runner-local sccache
-server per pinned sccache version owns a bounded 20 GiB local compiler cache.
+server per pinned sccache version and immutable CI toolchain identity owns a
+bounded 20 GiB local compiler cache. A toolchain identity change therefore starts
+a new compiler-cache namespace instead of reusing the previous environment.
 Build containers connect to it over a read-only mounted Unix socket and use
 sccache client-side mode, so rustc still executes inside the job's exact-head
 container with its private source and `/cargo-target` volumes. The shared cache

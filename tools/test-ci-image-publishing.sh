@@ -190,12 +190,16 @@ for fragment in (
         raise SystemExit(f"Vespa volume materializer is missing {fragment!r}")
 
 for fragment in (
-    'SERVER="searchkernel-ci-sccache-v$SAFE_VERSION"',
+    'TOOLCHAIN_ID=$(docker image inspect',
+    'io.searchkernel.toolchain-id',
+    'CACHE_NAMESPACE=$TOOLCHAIN_ID',
+    'SERVER="searchkernel-ci-sccache-v$SAFE_VERSION-$CACHE_NAMESPACE"',
     'BINARY_VOLUME="searchkernel-ci-sccache-bin-v$SAFE_VERSION"',
-    'CACHE_VOLUME="searchkernel-ci-sccache-cache-v$SAFE_VERSION"',
-    'SOCKET_VOLUME="searchkernel-ci-sccache-socket-v$SAFE_VERSION"',
+    'CACHE_VOLUME="searchkernel-ci-sccache-cache-v$SAFE_VERSION-$CACHE_NAMESPACE"',
+    'SOCKET_VOLUME="searchkernel-ci-sccache-socket-v$SAFE_VERSION-$CACHE_NAMESPACE"',
     "SCCACHE_VERSION=0.17.0",
     "SCCACHE_SHA256=67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006",
+    "SCCACHE_START_SERVER=1",
     "SCCACHE_NO_DAEMON=1",
     "SCCACHE_CACHE_SIZE=20G",
     "flock 9",
