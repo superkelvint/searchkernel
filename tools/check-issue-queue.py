@@ -229,34 +229,49 @@ def plan_reconciliation(
         if state_labels != {"status:in-progress"}:
             continue
 
+        branch = f"codex/issue-{number}"
+        has_branch = branch in branches
+        has_pr = branch in pr_heads
+
+        # The claim protocol creates the canonical branch before changing the
+        # issue to in-progress. Missing the branch is therefore invalid
+        # immediately rather than merely old. An open PR with a missing claim
+        # branch is preserved as blocked because its implementation ref needs
+        # explicit reconciliation before the issue can be safely requeued.
+        if not has_branch:
+            actions.append(
+                ReconcileAction(
+                    "set-state",
+                    number,
+                    "status:blocked" if has_pr else "status:ready",
+                    (
+                        "open implementation PR exists but the canonical claim branch is missing"
+                        if has_pr
+                        else "in-progress issue has no canonical claim branch"
+                    ),
+                )
+            )
+            continue
+
+        if has_pr:
+            continue
+
+        # A branch without a PR is valid while implementation is actively in
+        # progress. Give it a lease before treating the claim as abandoned.
         updated = _updated_at(issue)
         if updated is None:
             continue
         if now.astimezone(timezone.utc) - updated < stale_after:
             continue
 
-        branch = f"codex/issue-{number}"
-        if branch in pr_heads:
-            continue
-
-        if branch in branches:
-            actions.append(
-                ReconcileAction(
-                    "set-state",
-                    number,
-                    "status:blocked",
-                    "stale claim branch has no open implementation PR; preserving the ref",
-                )
+        actions.append(
+            ReconcileAction(
+                "set-state",
+                number,
+                "status:blocked",
+                "stale claim branch has no open implementation PR; preserving the ref",
             )
-        else:
-            actions.append(
-                ReconcileAction(
-                    "set-state",
-                    number,
-                    "status:ready",
-                    "stale in-progress issue has no canonical claim branch",
-                )
-            )
+        )
 
     return actions
 
@@ -274,7 +289,7 @@ def _github_request(
     if not token:
         raise QueueError("GH_TOKEN or GITHUB_TOKEN is required for live issue queue validation")
 
-    query = {"per_page": "100"}
+    query = {"per_page": "100"} if method == "GET" else {}
     if page is not None:
         query["page"] = str(page)
     if state is not None:
@@ -489,6 +504,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 now=datetime.now(timezone.utc),
                 stale_after=timedelta(hours=args.stale_after_hours),
             )
+            if actions:
+                issues = load_open_issues(args.repo)
+                closed_issues = load_closed_issues(args.repo)
+                branches = load_claim_branches(args.repo)
+                pr_heads = load_open_pr_heads(args.repo)
+                actions = plan_reconciliation(
+                    issues,
+                    closed_issues,
+                    branches,
+                    pr_heads,
+                    now=datetime.now(timezone.utc),
+                    stale_after=timedelta(hours=args.stale_after_hours),
+                )
+
             messages = apply_reconciliation(args.repo, actions)
             for message in messages:
                 print(f"reconciled: {message}")
