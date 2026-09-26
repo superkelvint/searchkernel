@@ -363,7 +363,7 @@ async fn ergonomic_remote_search_preserves_direct_normalized_ir_through_daemon()
     )]));
     let hosted =
         Index::from_backend(definition, scripted.clone()).expect("build hosted scripted index");
-    let expected_definition = hosted.describe().expect("describe hosted index");
+    // let expected_definition = hosted.describe().expect("describe hosted index");
     let (context, session) = hosted.into_session_parts();
     let dispatcher = Arc::new(Dispatcher::new(context, session));
     let server = start(
