@@ -47,8 +47,26 @@ fi
 export VESPA_ROOT
 export CARGO_TARGET_DIR
 
+activate_verifier_runtime() {
+  local runtime_path="${LD_LIBRARY_PATH:-}"
+  local lib_dir
+
+  # The revision-local adapter must win over any ambient installation, while
+  # the immutable base remains available for the adapter's Vespa dependencies.
+  for lib_dir in "${BASE_SDK:-}/lib" "$SDK/lib"; do
+    [[ -d "$lib_dir" ]] || continue
+    case ":${runtime_path}:" in
+      *":$lib_dir:"*) ;;
+      *) runtime_path="$lib_dir${runtime_path:+:$runtime_path}" ;;
+    esac
+  done
+
+  export LD_LIBRARY_PATH="$runtime_path"
+}
+
 prepare_verifier_sdk() {
   if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
+    activate_verifier_runtime
     return 0
   fi
 
@@ -61,6 +79,7 @@ prepare_verifier_sdk() {
       echo "verification error: prepared verifier SDK header is missing: $SDK/include/searchkernel_vespa.h" >&2
       return 1
     }
+    activate_verifier_runtime
     return 0
   fi
 
@@ -84,6 +103,7 @@ prepare_verifier_sdk() {
   export SEARCHKERNEL_VERIFIER_BASE_SDK
   export SEARCHKERNEL_VERIFIER_VESPA_ROOT
   export SEARCHKERNEL_VERIFIER_SDK_PREPARED
+  activate_verifier_runtime
 }
 
 published_vespa_marker_path() {
