@@ -631,7 +631,6 @@ class EmbeddedEngine {
     // owns operation-level concurrency. Close and cleanup take the exclusive
     // holder and therefore cannot race an active operation.
     mutable std::shared_mutex _lifecycle_mutex;
-    mutable std::mutex _mutation_mutex;
     // This container is owned by this adapter rather than Vespa. Hold this
     // narrow lock only while preparing a previously unseen bucket; native feed
     // calls themselves remain concurrent and are serialized by Vespa as needed.
@@ -1900,7 +1899,6 @@ class EmbeddedEngine {
 
     ValueDocument get_value_document(const std::string &external_id) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         validate_document_id(external_id.c_str());
         const DocumentId id(internal_document_id(external_id, _document_type));
@@ -3236,7 +3234,6 @@ public:
 
     void put(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         Bucket bucket = bucket_for(document_id);
@@ -3256,7 +3253,6 @@ public:
 
     void update(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         const bool was_present = source_document_present(document_id);
@@ -3273,7 +3269,6 @@ public:
 
     bool remove(const std::string &id) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         failpoint("mutation_before_native_call");
@@ -3393,7 +3388,6 @@ public:
 
     void put_text(const TextDocument &text) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -3413,7 +3407,6 @@ public:
 
     void update_text(const TextUpdate &text) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         const bool was_present = source_document_present(id);
@@ -3487,7 +3480,6 @@ public:
     std::optional<std::string> id_for_gid(const document::GlobalId &gid) const {
         // Keep the mutation lock through the copy because the provider returns
         // a string_view into mutable document metadata.
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         return id_for_gid_unlocked(gid);
     }
 
@@ -4182,7 +4174,6 @@ public:
     sk_grouping_tree_result group_tree(const NativeQueryState &query,
                                        const sk_grouping_plan &plan) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
 
         SearchRequest request;
@@ -4239,7 +4230,6 @@ public:
                                        const sk_grouping_plan &plan,
                                        const LocalSearchRequestState &options) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
 
         SearchRequest request;
@@ -4316,7 +4306,6 @@ public:
 
     void put_attributes(const AttributeDocumentState &document) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(document.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -4333,7 +4322,6 @@ public:
 
     void update_attributes(const AttributeUpdateState &update) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(update.id, _document_type));
         const bool was_present = source_document_present(id);
@@ -4346,7 +4334,6 @@ public:
 
     void put_document(const ValueDocument &document) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(document.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -4377,7 +4364,6 @@ public:
 
     void update_document(const ValueUpdate &update) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(update.id, _document_type));
         const bool was_present = source_document_present(id);
@@ -4421,7 +4407,6 @@ public:
     LocalSearchResultState search_local_result(const NativeQueryState &query,
                                                 const LocalSearchRequestState &request) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         return search_local(query, request);
     }
@@ -4429,7 +4414,6 @@ public:
     LocalGroupingResultState group_local_result(const NativeQueryState &query,
                                                  const LocalGroupingRequestState &request) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         return group_local(query, request);
     }

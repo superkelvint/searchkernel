@@ -19,7 +19,8 @@ use searchkernel_vespa_engine::{
     GroupingResultValue, MatchFeatureValue, ScalarValue,
     TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
-use std::sync::Mutex;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 #[cfg(test)]
 use std::time::{Duration, Instant};
 
@@ -90,7 +91,7 @@ pub(crate) fn portable_errors_from_native_issues(
 /// A real Vespa-backed implementation of the portable backend contract.
 pub struct VespaBackend {
     pub(crate) engine: Engine,
-    existence_mutation_lock: Mutex<()>,
+    existence_mutation_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     #[cfg(test)]
     mutation_probe: Option<std::sync::Arc<MutationProbe>>,
     #[cfg(test)]
@@ -123,7 +124,7 @@ impl VespaBackend {
     pub fn from_engine(engine: Engine) -> Self {
         Self {
             engine,
-            existence_mutation_lock: Mutex::new(()),
+            existence_mutation_locks: Mutex::new(HashMap::new()),
             #[cfg(test)]
             mutation_probe: None,
             #[cfg(test)]
@@ -138,7 +139,7 @@ impl VespaBackend {
     ) -> Self {
         Self {
             engine,
-            existence_mutation_lock: Mutex::new(()),
+            existence_mutation_locks: Mutex::new(HashMap::new()),
             mutation_probe: Some(probe),
             search_grouping_probe: None,
         }
@@ -151,7 +152,7 @@ impl VespaBackend {
     ) -> Self {
         Self {
             engine,
-            existence_mutation_lock: Mutex::new(()),
+            existence_mutation_locks: Mutex::new(HashMap::new()),
             mutation_probe: None,
             search_grouping_probe: Some(probe),
         }
@@ -159,6 +160,18 @@ impl VespaBackend {
 
     pub fn engine(&self) -> &Engine {
         &self.engine
+    }
+
+    fn existence_mutation_lock(&self, id: &str) -> Result<Arc<Mutex<()>>> {
+        let mut locks = self
+            .existence_mutation_locks
+            .lock()
+            .map_err(|_| internal("existence mutation lock table is poisoned"))?;
+        Ok(Arc::clone(
+            locks
+                .entry(id.to_owned())
+                .or_insert_with(|| Arc::new(Mutex::new(()))),
+        ))
     }
 }
 
@@ -395,10 +408,10 @@ impl Backend for VespaBackend {
     fn insert(&self, request: InsertRequestIr) -> Result<InsertResult> {
         let document = lower_document(request.document())?;
         let id = document.id().to_owned();
-        let _existence_mutation_guard = self
-            .existence_mutation_lock
+        let existence_mutation_lock = self.existence_mutation_lock(&id)?;
+        let _existence_mutation_guard = existence_mutation_lock
             .lock()
-            .map_err(|_| internal("existence mutation lock is poisoned"))?;
+            .map_err(|_| internal("document existence mutation lock is poisoned"))?;
         if self.engine.get(&id).map_err(native_error)?.is_some() {
             return Err(PortableError::new(
                 searchkernel_ir::ErrorCode::AlreadyExists,
@@ -428,10 +441,10 @@ impl Backend for VespaBackend {
         if let Some(probe) = &self.mutation_probe {
             probe.rendezvous.wait();
         }
-        let _existence_mutation_guard = self
-            .existence_mutation_lock
+        let existence_mutation_lock = self.existence_mutation_lock(&id)?;
+        let _existence_mutation_guard = existence_mutation_lock
             .lock()
-            .map_err(|_| internal("existence mutation lock is poisoned"))?;
+            .map_err(|_| internal("document existence mutation lock is poisoned"))?;
         self.engine.put(document).map_err(native_error)?;
         Ok(UpsertResult { id })
     }
@@ -556,15 +569,18 @@ impl Backend for VespaBackend {
         // create_if_nonexistent(true) is an existence-changing mutation and
         // must share the same serialization boundary as insert/upsert. Ordinary
         // updates cannot create a missing document and remain outside this lock.
-        let _existence_mutation_guard = if request.create() == Some(true) {
-            Some(
-                self.existence_mutation_lock
-                    .lock()
-                    .map_err(|_| internal("existence mutation lock is poisoned"))?,
-            )
+        let existence_mutation_lock = if request.create() == Some(true) {
+            Some(self.existence_mutation_lock(request.id().as_str())?)
         } else {
             None
         };
+        let _existence_mutation_guard = existence_mutation_lock
+            .as_ref()
+            .map(|lock| {
+                lock.lock()
+                    .map_err(|_| internal("document existence mutation lock is poisoned"))
+            })
+            .transpose()?;
         self.engine.update(update).map_err(native_error)?;
         #[cfg(test)]
         if let Some(probe) = &self.mutation_probe {
