@@ -244,8 +244,11 @@ writable Cargo registry, rustup, native SDK, node_modules, or target directory i
 shared between concurrent developer/CI workers.
 
 Rust compilation is the deliberate exception to otherwise disposable build
-state: the toolchain image contains pinned sccache 0.17.0, and Docker-backed
-builds set `RUSTC_WRAPPER=/usr/local/bin/sccache`. One runner-local sccache
+state: the repository pins sccache 0.17.0 with its release checksum. The current
+toolchain Dockerfile installs that same binary, while the runner also materializes
+it into a versioned read-only Docker volume so rollout does not depend on image
+publication order. Docker-backed builds set
+`RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache`. One runner-local sccache
 server per pinned sccache version owns a bounded 20 GiB local compiler cache.
 Build containers connect to it over a read-only mounted Unix socket and use
 sccache client-side mode, so rustc still executes inside the job's exact-head

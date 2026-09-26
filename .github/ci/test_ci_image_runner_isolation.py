@@ -55,7 +55,8 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
         source = RUNNER.read_text(encoding="utf-8")
 
         self.assertIn("ensure-ci-sccache.sh", source)
-        self.assertIn('RUSTC_WRAPPER=/usr/local/bin/sccache', source)
+        self.assertIn('RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache', source)
+        self.assertIn('-v "$SCCACHE_BINARY_VOLUME:/opt/searchkernel/sccache:ro"', source)
         self.assertIn('SCCACHE_SERVER_UDS=/sccache/sccache.sock', source)
         self.assertIn('SCCACHE_CLIENT_SIDE=1', source)
         self.assertIn('-v "$SCCACHE_SOCKET_VOLUME:/sccache:ro"', source)

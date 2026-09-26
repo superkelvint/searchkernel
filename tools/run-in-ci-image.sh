@@ -75,7 +75,7 @@ fi
 [[ "$vespa_ref" == *@sha256:* ]] || die "could not resolve immutable Vespa image digest"
 
 native_volume=$(bash "$ROOT/tools/ensure-ci-vespa-volume.sh" "$IMAGE_ID" "$vespa_ref" "$label" "$vespa_bundle")
-sccache_socket_volume=$(bash "$ROOT/tools/ensure-ci-sccache.sh" "$IMAGE_ID")
+read -r sccache_binary_volume sccache_socket_volume < <(bash "$ROOT/tools/ensure-ci-sccache.sh" "$IMAGE_ID")
 
 docker run --rm "$IMAGE_ID" test -f /opt/searchkernel/native-validation-pass ||
     die "$IMAGE is missing its native validation marker"
@@ -209,7 +209,7 @@ docker_env=(
     -e SEARCHKERNEL_IN_CI_IMAGE=1
     -e SEARCHKERNEL_BUILD_ENV=ci
     -e CARGO_TARGET_DIR=/cargo-target
-    -e RUSTC_WRAPPER=/usr/local/bin/sccache
+    -e RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache
     -e SCCACHE_SERVER_UDS=/sccache/sccache.sock
     -e SCCACHE_CLIENT_SIDE=1
     -e SCCACHE_IGNORE_SERVER_IO_ERROR=1
@@ -238,6 +238,7 @@ docker_volume_args=(
     -v "$source_volume:/work"
     -v "$target_volume:/cargo-target"
     -v "$native_volume:/opt/searchkernel/native-sdk-cache:ro"
+    -v "$sccache_binary_volume:/opt/searchkernel/sccache:ro"
     -v "$sccache_socket_volume:/sccache:ro"
 )
 if [[ -n "$artifact_volume" ]]; then

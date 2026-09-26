@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Maintain one runner-local sccache server per pinned sccache version. Build
+# Maintain one runner-local sccache service per pinned sccache version. Build
 # containers keep private source and CARGO_TARGET_DIR volumes and connect only
 # to this non-authoritative compiler cache over a shared Unix socket.
+#
+# The pinned binary is also materialized into a versioned Docker volume. That
+# makes rollout independent of whether searchkernel-ci:latest has already been
+# rebuilt from the Dockerfile that now includes the same sccache version.
 #
 # Usage:
 #   tools/ensure-ci-sccache.sh <ci-image>
 #
-# Prints only the Docker socket-volume name on stdout. Diagnostics go to stderr.
+# Prints "<binary-volume> <socket-volume>" on stdout. Diagnostics go to stderr.
 
 [[ $# -eq 1 ]] || {
     echo "usage: $0 <ci-image>" >&2
@@ -16,6 +20,8 @@ set -euo pipefail
 }
 
 CI_IMAGE=$1
+SCCACHE_VERSION=0.17.0
+SCCACHE_SHA256=67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006
 
 command -v docker >/dev/null 2>&1 || {
     echo "docker is required" >&2
@@ -26,32 +32,71 @@ command -v flock >/dev/null 2>&1 || {
     exit 1
 }
 
-VERSION=$(docker run --rm "$CI_IMAGE" sccache --version | awk 'NR == 1 { print $2 }')
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-    echo "could not resolve pinned sccache version from $CI_IMAGE: $VERSION" >&2
-    exit 1
-}
-
-SAFE_VERSION=${VERSION//./-}
+SAFE_VERSION=${SCCACHE_VERSION//./-}
 SERVER="searchkernel-ci-sccache-v$SAFE_VERSION"
+BINARY_VOLUME="searchkernel-ci-sccache-bin-v$SAFE_VERSION"
 CACHE_VOLUME="searchkernel-ci-sccache-cache-v$SAFE_VERSION"
 SOCKET_VOLUME="searchkernel-ci-sccache-socket-v$SAFE_VERSION"
 LOCK="${TMPDIR:-/tmp}/searchkernel-ci-sccache-v$SAFE_VERSION.lock"
+SCCACHE_BIN=/opt/searchkernel/sccache/sccache
 
 exec 9>"$LOCK"
 flock 9
+
+validate_binary() {
+    docker volume inspect "$BINARY_VOLUME" >/dev/null 2>&1 || return 1
+    docker run --rm \
+        -v "$BINARY_VOLUME:/opt/searchkernel/sccache:ro" \
+        "$CI_IMAGE" \
+        "$SCCACHE_BIN" --version 2>/dev/null |
+        grep -qx "sccache $SCCACHE_VERSION"
+}
+
+if ! validate_binary; then
+    echo "Materializing pinned sccache v$SCCACHE_VERSION binary" >&2
+    docker rm -f "$SERVER" >/dev/null 2>&1 || true
+    docker volume rm -f "$BINARY_VOLUME" >/dev/null 2>&1 || true
+    docker volume create "$BINARY_VOLUME" >/dev/null
+
+    docker run --rm \
+        -e SCCACHE_VERSION="$SCCACHE_VERSION" \
+        -e SCCACHE_SHA256="$SCCACHE_SHA256" \
+        -v "$BINARY_VOLUME:/out" \
+        "$CI_IMAGE" \
+        /bin/bash -lc '
+            set -euo pipefail
+            work=$(mktemp -d /tmp/sccache.XXXXXX)
+            trap "rm -rf -- \"$work\"" EXIT
+            asset="sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+            curl --fail --location --retry 5 --silent --show-error \
+                "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/$asset" \
+                -o "$work/$asset"
+            printf "%s  %s\n" "$SCCACHE_SHA256" "$work/$asset" | sha256sum -c -
+            tar -xzf "$work/$asset" -C "$work"
+            install -m 0755 \
+                "$work/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache" \
+                /out/sccache
+        '
+
+    validate_binary || {
+        echo "materialized sccache binary failed validation" >&2
+        docker volume rm -f "$BINARY_VOLUME" >/dev/null 2>&1 || true
+        exit 1
+    }
+fi
 
 validate_server() {
     [[ "$(docker inspect --format '{{.State.Running}}' "$SERVER" 2>/dev/null || true)" == "true" ]] || return 1
     docker run --rm \
         -e SCCACHE_SERVER_UDS=/sccache/sccache.sock \
+        -v "$BINARY_VOLUME:/opt/searchkernel/sccache:ro" \
         -v "$SOCKET_VOLUME:/sccache:ro" \
         "$CI_IMAGE" \
-        sccache --show-stats >/dev/null 2>&1
+        "$SCCACHE_BIN" --show-stats >/dev/null 2>&1
 }
 
 if ! validate_server; then
-    echo "Starting shared sccache v$VERSION server" >&2
+    echo "Starting shared sccache v$SCCACHE_VERSION server" >&2
     docker rm -f "$SERVER" >/dev/null 2>&1 || true
     docker volume create "$CACHE_VOLUME" >/dev/null
     docker volume create "$SOCKET_VOLUME" >/dev/null
@@ -59,16 +104,17 @@ if ! validate_server; then
     docker run -d \
         --name "$SERVER" \
         --restart unless-stopped \
-        --label "io.searchkernel.sccache-version=$VERSION" \
+        --label "io.searchkernel.sccache-version=$SCCACHE_VERSION" \
         -e SCCACHE_DIR=/cache \
         -e SCCACHE_CACHE_SIZE=20G \
         -e SCCACHE_SERVER_UDS=/sccache/sccache.sock \
         -e SCCACHE_IDLE_TIMEOUT=0 \
         -e SCCACHE_NO_DAEMON=1 \
+        -v "$BINARY_VOLUME:/opt/searchkernel/sccache:ro" \
         -v "$CACHE_VOLUME:/cache" \
         -v "$SOCKET_VOLUME:/sccache" \
         "$CI_IMAGE" \
-        /bin/bash -lc 'rm -f /sccache/sccache.sock; exec sccache --start-server' >/dev/null
+        /bin/bash -lc 'rm -f /sccache/sccache.sock; exec /opt/searchkernel/sccache/sccache --start-server' >/dev/null
 
     healthy=0
     for _ in $(seq 1 50); do
@@ -85,7 +131,7 @@ if ! validate_server; then
         exit 1
     fi
 else
-    echo "Reusing shared sccache v$VERSION server" >&2
+    echo "Reusing shared sccache v$SCCACHE_VERSION server" >&2
 fi
 
-printf '%s\n' "$SOCKET_VOLUME"
+printf '%s %s\n' "$BINARY_VOLUME" "$SOCKET_VOLUME"

@@ -191,8 +191,11 @@ for fragment in (
 
 for fragment in (
     'SERVER="searchkernel-ci-sccache-v$SAFE_VERSION"',
+    'BINARY_VOLUME="searchkernel-ci-sccache-bin-v$SAFE_VERSION"',
     'CACHE_VOLUME="searchkernel-ci-sccache-cache-v$SAFE_VERSION"',
     'SOCKET_VOLUME="searchkernel-ci-sccache-socket-v$SAFE_VERSION"',
+    "SCCACHE_VERSION=0.17.0",
+    "SCCACHE_SHA256=67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006",
     "SCCACHE_NO_DAEMON=1",
     "SCCACHE_CACHE_SIZE=20G",
     "flock 9",
@@ -207,7 +210,8 @@ for surface, text in (("local runner", local_runner), ("CI workflow", workflow))
         "io.searchkernel.vespa-image-digest",
         "/opt/searchkernel/native-sdk-cache:ro",
         "ensure-ci-sccache.sh",
-        "RUSTC_WRAPPER=/usr/local/bin/sccache",
+        "RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache",
+        "/opt/searchkernel/sccache:ro",
         "SCCACHE_SERVER_UDS=/sccache/sccache.sock",
         "SCCACHE_CLIENT_SIDE=1",
     ):
