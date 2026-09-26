@@ -120,6 +120,7 @@ def main() -> int:
                     'SOCKET_VOLUME="searchkernel-ci-sccache-socket-v$SAFE_VERSION"',
                     "SCCACHE_CACHE_SIZE=20G",
                     "SCCACHE_SERVER_UDS=/sccache/sccache.sock",
+                    "SCCACHE_START_SERVER=1",
                     "SCCACHE_NO_DAEMON=1",
                     "flock 9",
                 )
@@ -133,6 +134,10 @@ def main() -> int:
                         failures.append(
                             f"{SCCACHE_HELPER}: compiler-cache helper must not share job build/package state: {needle}"
                         )
+                if "--start-server" in helper:
+                    failures.append(
+                        f"{SCCACHE_HELPER}: service container must run the sccache server directly in foreground mode"
+                    )
 
     for path in sorted(WORKFLOWS.glob("*.y*ml")):
         text = path.read_text(encoding="utf-8")
