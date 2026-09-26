@@ -10,6 +10,7 @@ for script in \
     "$ROOT/tools/publish-searchkernel-ci-vespa.sh" \
     "$ROOT/tools/publish-searchkernel-ci-image.sh" \
     "$ROOT/tools/ensure-ci-vespa-volume.sh" \
+    "$ROOT/tools/ensure-ci-sccache.sh" \
     "$ROOT/tools/run-in-ci-image.sh" \
     "$ROOT/tools/generate-typescript-grpc-web.sh"; do
     bash -n "$script"
@@ -24,6 +25,7 @@ python3 - \
     "$ROOT/tools/publish-searchkernel-ci-vespa.sh" \
     "$ROOT/tools/publish-searchkernel-ci-image.sh" \
     "$ROOT/tools/ensure-ci-vespa-volume.sh" \
+    "$ROOT/tools/ensure-ci-sccache.sh" \
     "$ROOT/tools/run-in-ci-image.sh" \
     "$ROOT/tools/generate-typescript-grpc-web.sh" \
     "$ROOT/.github/workflows/ci-image-runner.yml" <<'PY'
@@ -39,6 +41,7 @@ import sys
     vespa_publish_path,
     leaf_publish_path,
     ensure_volume_path,
+    ensure_sccache_path,
     local_runner_path,
     typescript_generator_path,
     workflow_path,
@@ -52,6 +55,7 @@ toolchain_publish = toolchain_publish_path.read_text(encoding="utf-8")
 vespa_publish = vespa_publish_path.read_text(encoding="utf-8")
 leaf_publish = leaf_publish_path.read_text(encoding="utf-8")
 ensure_volume = ensure_volume_path.read_text(encoding="utf-8")
+ensure_sccache = ensure_sccache_path.read_text(encoding="utf-8")
 local_runner = local_runner_path.read_text(encoding="utf-8")
 typescript_generator = typescript_generator_path.read_text(encoding="utf-8")
 workflow = workflow_path.read_text(encoding="utf-8")
@@ -60,6 +64,10 @@ for fragment in (
     "ARG BASE_IMAGE=",
     "ARG RUST_TOOLCHAIN=",
     "ARG FLATBUFFERS_VERSION=",
+    "ARG SCCACHE_VERSION=0.17.0",
+    "ARG SCCACHE_SHA256=67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006",
+    "sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz",
+    "command -v sccache",
     "cargo-llvm-cov",
     "SEARCHKERNEL_TYPESCRIPT_NODE_MODULES",
     "COPY clients/typescript/package.json clients/typescript/package-lock.json",
@@ -181,11 +189,27 @@ for fragment in (
     if fragment not in ensure_volume:
         raise SystemExit(f"Vespa volume materializer is missing {fragment!r}")
 
+for fragment in (
+    'SERVER="searchkernel-ci-sccache-v$SAFE_VERSION"',
+    'CACHE_VOLUME="searchkernel-ci-sccache-cache-v$SAFE_VERSION"',
+    'SOCKET_VOLUME="searchkernel-ci-sccache-socket-v$SAFE_VERSION"',
+    "SCCACHE_NO_DAEMON=1",
+    "SCCACHE_CACHE_SIZE=20G",
+    "flock 9",
+    "sccache --show-stats",
+):
+    if fragment not in ensure_sccache:
+        raise SystemExit(f"sccache server helper is missing {fragment!r}")
+
 for surface, text in (("local runner", local_runner), ("CI workflow", workflow)):
     for fragment in (
         "ensure-ci-vespa-volume.sh",
         "io.searchkernel.vespa-image-digest",
         "/opt/searchkernel/native-sdk-cache:ro",
+        "ensure-ci-sccache.sh",
+        "RUSTC_WRAPPER=/usr/local/bin/sccache",
+        "SCCACHE_SERVER_UDS=/sccache/sccache.sock",
+        "SCCACHE_CLIENT_SIDE=1",
     ):
         if fragment not in text:
             raise SystemExit(f"{surface} does not externalize Vespa correctly: missing {fragment!r}")

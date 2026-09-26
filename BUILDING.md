@@ -194,7 +194,8 @@ GitHub CI and local `./dev` resolve the Vespa digest from the leaf, materialize
 that digest once into a content-addressed Docker volume on the machine, and
 mount the volume read-only at `/opt/searchkernel/native-sdk-cache`. Multiple
 jobs reuse the same immutable volume; source and Cargo-target volumes remain
-job-private.
+job-private. Rust compiler outputs are separately reused through the pinned
+runner-local sccache service described below; no target directory is shared.
 
 This means the large Vespa payload is uploaded to Docker Hub only by
 `./dev image vespa publish`. An ordinary `./dev image publish` pushes the
@@ -239,9 +240,19 @@ the commit being created.
 
 Each invocation receives a private source volume and a private
 `/cargo-target` volume. Those volumes are removed after the command. No
-writable Cargo registry, rustup, native SDK, node_modules, or target cache is
-shared between concurrent developer/CI workers. Docker image layers are the
-only intentionally shared execution state.
+writable Cargo registry, rustup, native SDK, node_modules, or target directory is
+shared between concurrent developer/CI workers.
+
+Rust compilation is the deliberate exception to otherwise disposable build
+state: the toolchain image contains pinned sccache 0.17.0, and Docker-backed
+builds set `RUSTC_WRAPPER=/usr/local/bin/sccache`. One runner-local sccache
+server per pinned sccache version owns a bounded 20 GiB local compiler cache.
+Build containers connect to it over a read-only mounted Unix socket and use
+sccache client-side mode, so rustc still executes inside the job's exact-head
+container with its private source and `/cargo-target` volumes. The shared cache
+is non-authoritative and content-addressed; compiler/cache misses simply compile
+normally. CI prints sccache statistics at lane exit. Do not replace this with a
+shared Cargo target directory.
 
 The pre-commit hook keeps Git-index responsibilities on the host: lane
 selection, staged-vs-unstaged validation, generated capability staging, and
@@ -292,7 +303,7 @@ Supported build/test execution now has two deliberate modes:
 
 | Environment | Cargo target root | Vespa SDK source |
 | --- | --- | --- |
-| Canonical Docker-backed dev/CI | private `/cargo-target` volume | read-only digest-addressed Vespa Docker volume mounted at `/opt/searchkernel/native-sdk-cache` |
+| Canonical Docker-backed dev/CI | private `/cargo-target` volume; shared compiler outputs only through sccache | read-only digest-addressed Vespa Docker volume mounted at `/opt/searchkernel/native-sdk-cache` |
 | Explicit host override | `target/host` (or caller override) | host resolver/cache or explicit `SK_NATIVE_SDK` |
 
 The Docker-backed path is the default. The host mode exists for toolchain
