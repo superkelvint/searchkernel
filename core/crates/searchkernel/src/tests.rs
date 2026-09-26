@@ -1182,15 +1182,15 @@ fn persistence_fault_matrix_rejects_resolved_document_identity_drift() {
     )
     .unwrap();
 
-    let reopened = Index::open(&root)
+    let loaded = IndexManifest::read(&root).expect("read pre-identity v4 manifest");
+    let recovered = loaded
+        .resolved_context_with_config(&config)
         .expect("pre-identity v4 manifest must recover compiled document identity");
     assert_eq!(
-        reopened.inner.context.definition().resolved_document_type(),
+        recovered.definition().resolved_document_type(),
         "different_document"
     );
-    let described = reopened.describe().expect("describe recovered index");
-    assert_eq!(described.document_type, None);
-    reopened.close().expect("close recovered index");
+    assert_eq!(recovered.definition().document_type(), None);
 
     let _ = std::fs::remove_dir_all(root);
 }

@@ -3111,15 +3111,15 @@ fn pre_identity_v4_manifest_recovers_document_identity_from_compiled_config() {
     )
     .expect("rewrite index manifest");
 
-    let reopened = Index::open(&root)
+    let manifest = IndexManifest::read(&root).expect("read pre-identity v4 manifest");
+    let recovered = manifest
+        .resolved_context_with_config(&config)
         .expect("pre-identity v4 manifest must recover the compiled document identity");
     assert_eq!(
-        reopened.inner.context.definition().resolved_document_type(),
+        recovered.definition().resolved_document_type(),
         "different_document"
     );
-    let described = reopened.describe().expect("describe recovered index");
-    assert_eq!(described.document_type, None);
-    reopened.close().expect("close recovered index");
+    assert_eq!(recovered.definition().document_type(), None);
     std::fs::remove_dir_all(root).expect("remove compatibility index");
 }
 

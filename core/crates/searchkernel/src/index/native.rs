@@ -317,15 +317,13 @@ impl Index {
             return Err(Error::not_found(root.display().to_string()));
         }
         let manifest = super::manifest::IndexManifest::read(root)?;
-        let resolved_context = manifest.resolved_context()?;
         let config = root.join("config");
         if !root.join("data").is_dir() || !config.is_dir() {
             return Err(Error::corrupt_index(
                 "index data/config directories are missing",
             ));
         }
-        manifest.validate_config(&config)?;
-        manifest.validate_config_document_identity(&config, resolved_context.definition())?;
+        let resolved_context = manifest.resolved_context_with_config(&config)?;
         let backend = open_native_backend(&root.join("data"), &config)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
         Self::from_owned_backend(
