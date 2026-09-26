@@ -40,7 +40,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             'FLATC_PATH=/usr/local/bin/flatc',
             'CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc',
             'CXX=/opt/rh/gcc-toolset-15/root/usr/bin/g++',
-            'CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc',
+            'SEARCHKERNEL_REAL_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc',\n            'CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/work/tools/searchkernel-native-linker.sh',
             'LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib',
             'test -f /opt/searchkernel/native-validation-pass',
             'native_base=$(./dev native-sdk path)',
