@@ -142,5 +142,82 @@ class SearchKernelNativeLinkerTests(unittest.TestCase):
             self.assertFalse(capture.exists())
 
 
+    def test_real_elf_runs_without_loader_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            adapter = root / "adapter" / "lib"
+            adapter.mkdir(parents=True)
+            adapter_source = root / "adapter.c"
+            adapter_source.write_text(
+                "int sk_runtime_probe(void) { return 42; }\n",
+                encoding="utf-8",
+            )
+            versioned = adapter / "libsearchkernel_vespa.so.2"
+            subprocess.run(
+                [
+                    "cc",
+                    "-shared",
+                    "-fPIC",
+                    "-Wl,-soname,libsearchkernel_vespa.so.2",
+                    str(adapter_source),
+                    "-o",
+                    str(versioned),
+                ],
+                check=True,
+            )
+            (adapter / "libsearchkernel_vespa.so").symlink_to(versioned.name)
+
+            main_source = root / "main.c"
+            main_source.write_text(
+                "extern int sk_runtime_probe(void);\n"
+                "int main(void) { return sk_runtime_probe() == 42 ? 0 : 1; }\n",
+                encoding="utf-8",
+            )
+            output = root / "target" / "debug" / "runtime-probe"
+            output.parent.mkdir(parents=True)
+
+            env = os.environ.copy()
+            env["SEARCHKERNEL_REAL_LINKER"] = "cc"
+            env.pop("LD_LIBRARY_PATH", None)
+            linked = subprocess.run(
+                [
+                    str(WRAPPER),
+                    str(main_source),
+                    "-o",
+                    str(output),
+                    f"-L{adapter}",
+                    "-lsearchkernel_vespa",
+                ],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(linked.returncode, 0, linked.stderr)
+
+            dynamic = subprocess.run(
+                ["readelf", "-d", str(output)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            ).stdout
+            self.assertIn("(RUNPATH)", dynamic)
+            self.assertIn("$ORIGIN/../../adapter/lib", dynamic)
+
+            ran = subprocess.run(
+                [str(output)],
+                cwd="/",
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(ran.returncode, 0, ran.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
