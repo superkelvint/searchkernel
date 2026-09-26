@@ -145,6 +145,9 @@ else
     export CARGO
 fi
 
+echo "pre-commit: checking shell syntax"
+bash "$ROOT/tools/check-shell-syntax.sh"
+
 echo "pre-commit: enforcing canonical toolchain authorities"
 "$PYTHON" tools/test_toolchain_authorities.py
 

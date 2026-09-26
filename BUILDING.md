@@ -85,6 +85,17 @@ compile/link validation, Cargo metadata, and a real native `searchkerneld`
 build. A green doctor means those execution paths are usable, not merely that
 similarly named binaries exist somewhere on PATH.
 
+## Shell script syntax
+
+All tracked files with a Bash or POSIX-sh shebang are parsed by `tools/check-shell-syntax.sh`. The check includes extensionless entrypoints such as `dev` and repository hooks, runs in `./dev check-fast`, and is enforced by pre-commit. It uses `bash -n` or `sh -n` according to the script shebang, so malformed conditionals, unbalanced control structures, and similar parser errors fail before expensive native verification begins.
+
+When changing shell tooling, run:
+
+```bash
+bash tools/check-shell-syntax.sh
+bash tools/test-shell-syntax.sh
+```
+
 ## Normal development
 
 Run the prerequisite check first when setting up a checkout or diagnosing an

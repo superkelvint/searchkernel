@@ -324,6 +324,8 @@ run_ruby_tests() {
 }
 
 check_fast() {
+    bash "$ROOT/tools/check-shell-syntax.sh"
+    bash "$ROOT/tools/test-shell-syntax.sh"
     bash "$ROOT/tools/test-dev-ci-image.sh"
     bash "$ROOT/tools/test-ci-image-publishing.sh"
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"

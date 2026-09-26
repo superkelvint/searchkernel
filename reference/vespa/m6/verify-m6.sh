@@ -22,8 +22,8 @@ for scenario in "$SCRIPT_DIR/scenarios"/[0-9][0-9]-*.json; do
     "$ROOT/core/crates/searchkernel-vespa-bindings/src" "$ROOT/core/native/vespa"
 done
 
-if [[ -x reference/vespa/m5/verify-m5.sh --skip-workspace-quality ]]; then
-  reference/vespa/m5/verify-m5.sh
+if [[ -x reference/vespa/m5/verify-m5.sh ]]; then
+  reference/vespa/m5/verify-m5.sh --skip-workspace-quality
 else
   echo "missing cumulative M5 verifier" >&2
   exit 1
