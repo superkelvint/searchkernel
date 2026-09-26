@@ -4,6 +4,8 @@ PHASE9="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$PHASE9/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+# Phase 9 is also invoked directly by native-full, outside verify-through.
+prepare_verifier_sdk
 require_pinned_vespa
 require_sdk_manifest "$SDK/manifest.json"
 
