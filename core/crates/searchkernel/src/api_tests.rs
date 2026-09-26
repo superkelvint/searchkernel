@@ -5253,8 +5253,8 @@ fn rich_schema_negative_semantics_match_portable_ingress() {
 #[test]
 fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
     use searchkernel_ir::{
-        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr, PrimitiveDataTypeIr,
-        StructFieldIr,
+        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr,
+        NamedStructDefinitionIr, PrimitiveDataTypeIr, StructFieldIr,
     };
 
     // Vespa stores these composite values in attribute-backed fields. The
@@ -5285,7 +5285,19 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
                         name: "active".to_owned(),
                         data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
                     },
+                    StructFieldIr {
+                        name: "score".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+                    },
                 ],
+            })),
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("people_ref").unwrap(),
+            DataTypeIr::Array(Box::new(DataTypeIr::StructReference {
+                name: "person_ref".to_owned(),
             })),
             None,
             stored_attribute(),
@@ -5309,8 +5321,22 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
             stored_attribute(),
         ),
     ];
-    let canonical = IndexDefinitionIr::new(None, fields, Vec::new())
+    let mut canonical = IndexDefinitionIr::new(None, fields, Vec::new())
         .expect("composite product schema should be valid canonical IR");
+    canonical.set_structs(vec![NamedStructDefinitionIr {
+        name: "person_ref".to_owned(),
+        fields: vec![
+            StructFieldIr {
+                name: "name".to_owned(),
+                data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            },
+            StructFieldIr {
+                name: "score".to_owned(),
+                data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+            },
+        ],
+        properties: std::collections::BTreeMap::new(),
+    }]);
     let definition = definition_from_ir(&canonical);
     let path = std::env::temp_dir().join(format!(
         "searchkernel-public-composite-get-{}-{}",
@@ -5325,10 +5351,13 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
     let expected = json!({
         "tags": ["alpha", "", "omega"],
         "people": [
-            {"name": "Ada", "age": 37, "active": true},
-            {"name": "Grace", "age": 85, "active": false}
+            {"name": "Ada", "age": 37, "active": true, "score": 1.23456789},
+            {"name": "Grace", "age": 85, "active": false, "score": 9.87654321}
         ],
-        "location": {"latitude": 1.25, "longitude": -2.5},
+        "people_ref": [
+            {"name": "Margaret", "score": 3.141592653589793}
+        ],
+        "location": {"latitude": 37.774929, "longitude": -122.419416},
         "feature_access": {"features": {"hobby": "music"}},
         "expression_access": {
             "expression": {"type": 4, "key": "hobby", "feature_set": ["music"]}
@@ -5339,6 +5368,18 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
     index
         .upsert("composite-1", &expected)
         .expect("write composite product document");
+    index
+        .upsert(
+            "explicit-empty",
+            &json!({"tags": [], "people": [], "people_ref": []}),
+        )
+        .expect("write explicit empty collections");
+    index
+        .upsert(
+            "absent-collections",
+            &json!({"feature_access": {"features": {"hobby": "music"}}}),
+        )
+        .expect("write document with absent collection fields");
 
     let full = index
         .get::<serde_json::Value>("composite-1")
@@ -5349,7 +5390,12 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
     let projected = index
         .get_with_projection::<serde_json::Value>(
             "composite-1",
-            ["people", "feature_access", "expression_access"],
+            [
+                "people",
+                "people_ref",
+                "feature_access",
+                "expression_access",
+            ],
         )
         .expect("get projected composite document")
         .expect("projected document exists");
@@ -5357,6 +5403,7 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
         projected,
         json!({
             "people": expected["people"].clone(),
+            "people_ref": expected["people_ref"].clone(),
             "feature_access": expected["feature_access"].clone(),
             "expression_access": expected["expression_access"].clone()
         })
@@ -5368,6 +5415,27 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
         .expect("document exists for empty projection");
     assert_eq!(empty, json!({}));
 
+    let explicit_empty = index
+        .get_with_projection::<serde_json::Value>(
+            "explicit-empty",
+            ["tags", "people", "people_ref"],
+        )
+        .expect("get explicit empty collections")
+        .expect("explicit-empty document exists");
+    assert_eq!(
+        explicit_empty,
+        json!({"tags": [], "people": [], "people_ref": []})
+    );
+
+    let absent_collections = index
+        .get_with_projection::<serde_json::Value>(
+            "absent-collections",
+            ["tags", "people", "people_ref"],
+        )
+        .expect("get absent collections")
+        .expect("absent-collections document exists");
+    assert_eq!(absent_collections, json!({}));
+
     index.close().expect("close composite product index");
     let reopened = Index::open(&path).expect("reopen composite product index");
     let persisted = reopened
@@ -5375,6 +5443,28 @@ fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
         .expect("get composite document after reopen")
         .expect("reopened composite document exists");
     assert_eq!(persisted, expected);
+
+    let persisted_empty = reopened
+        .get_with_projection::<serde_json::Value>(
+            "explicit-empty",
+            ["tags", "people", "people_ref"],
+        )
+        .expect("get persisted explicit empty collections")
+        .expect("persisted explicit-empty document exists");
+    assert_eq!(
+        persisted_empty,
+        json!({"tags": [], "people": [], "people_ref": []})
+    );
+
+    let persisted_absent = reopened
+        .get_with_projection::<serde_json::Value>(
+            "absent-collections",
+            ["tags", "people", "people_ref"],
+        )
+        .expect("get persisted absent collections")
+        .expect("persisted absent-collections document exists");
+    assert_eq!(persisted_absent, json!({}));
+
     reopened
         .close()
         .expect("close reopened composite product index");
