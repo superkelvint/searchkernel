@@ -112,7 +112,7 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
             "Verify exact pull-request head",
             "Verify frozen fixture structure and provenance",
             "Enforce append-only historical fixtures",
-            "Native verification policy",
+            "Verify release persistence contract",
         ):
             section = source.split(f"- name: {step_name}", 1)[1].split("\n      - name:", 1)[0]
             self.assertIn(
