@@ -23,6 +23,7 @@ class ToolingInvariantRequiredTests(unittest.TestCase):
             "tools/test-dev-ci-image.sh",
             ".github/ci/behavioral_lanes_required.py",
             ".github/ci/test_exact_head.py",
+            "reference/vespa/verifiers/test-routing.sh",
         ):
             with self.subTest(path=path):
                 self.assertIsNotNone(POLICY.matching_rule(path))

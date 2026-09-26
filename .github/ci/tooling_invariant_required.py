@@ -10,6 +10,7 @@ from collections.abc import Iterable
 TOOLING_PATTERNS = (
     "tools/**",
     ".github/ci/**",
+    "reference/vespa/verifiers/**",
 )
 
 
