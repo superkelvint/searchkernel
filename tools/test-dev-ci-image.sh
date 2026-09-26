@@ -13,6 +13,7 @@ bash -n "$RUNNER"
 bash -n "$HOOK"
 bash -n "$COVERAGE"
 python3 -m py_compile "$ROOT/.github/ci/test_exact_head.py"
+python3 "$ROOT/tools/test_dev_client_e2e.py"
 
 python3 - "$DEV" "$RUNNER" "$HOOK" "$ROOT/.github/ci/test_exact_head.py" "$CI_WORKFLOW" <<'PY'
 from pathlib import Path
