@@ -9,6 +9,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -126,6 +127,22 @@ class ClientContractTests(unittest.TestCase):
         markdown = MODULE.render_markdown(report)
         self.assertIn("ergonomic · E2E 1/2 (native)", markdown)
         self.assertIn("rust-tests/e2e.rs", markdown)
+
+
+    def test_run_e2e_lanes_can_select_one_surface(self) -> None:
+        _, surfaces, _, _ = self.load()
+        with mock.patch.object(MODULE.subprocess, "run") as run:
+            MODULE.run_e2e_lanes(surfaces, self.root, surface="rust")
+        run.assert_called_once_with(
+            ("python3", "-c", "pass"),
+            cwd=self.root,
+            check=True,
+        )
+
+    def test_run_e2e_lanes_rejects_unknown_surface(self) -> None:
+        _, surfaces, _, _ = self.load()
+        with self.assertRaisesRegex(MODULE.RegistryError, "unknown E2E client surface"):
+            MODULE.run_e2e_lanes(surfaces, self.root, surface="missing")
 
 
     def test_required_e2e_runtime_requires_lane(self) -> None:
