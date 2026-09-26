@@ -3,6 +3,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"; cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+parse_verifier_args "$@"
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
 if live_oracle_enabled; then
@@ -15,7 +16,7 @@ fi
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   check_fixture_literals --keys text "$s" "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src" "$ROOT/core/native/vespa"
 done
-reference/vespa/m7/verify-m7.sh
+reference/vespa/m7/verify-m7.sh --skip-workspace-quality
 run_workspace_quality
 cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m8
 "$SCRIPT_DIR/check-structure.sh"

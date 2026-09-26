@@ -95,6 +95,21 @@ fail_verification() {
   exit 1
 }
 
+parse_verifier_args() {
+  SKIP_WORKSPACE_QUALITY=0
+  while (($#)); do
+    case "$1" in
+      --skip-workspace-quality)
+        SKIP_WORKSPACE_QUALITY=1
+        ;;
+      *)
+        fail_verification "unknown verifier argument: $1"
+        ;;
+    esac
+    shift
+  done
+}
+
 require_pinned_vespa() {
   local vespa="$VESPA_ROOT"
   local expected actual marker build_env target
@@ -243,6 +258,10 @@ require_native_driver() {
 }
 
 run_workspace_quality() {
+  if [[ "${SKIP_WORKSPACE_QUALITY:-0}" == 1 ]]; then
+    echo "workspace quality skipped for nested cumulative verifier"
+    return
+  fi
   SK_NATIVE_ABI_HEADER="$SDK/include/searchkernel_vespa.h"     "$REPO_ROOT/tools/check-vespa-bindings.sh"
   cargo fmt --all --check
   cargo clippy --workspace --all-targets --all-features -- -D warnings

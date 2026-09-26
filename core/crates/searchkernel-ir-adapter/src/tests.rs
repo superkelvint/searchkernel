@@ -210,7 +210,7 @@ fn canonical_two_level_grouping_lowers_to_linear_attribute_plan() {
                 )
                 .aggregation_label(
                     searchkernel_vespa_engine::GroupingAggregation::Count,
-                    "count"
+                    "count",
                 )
                 .aggregation_label(
                     searchkernel_vespa_engine::GroupingAggregation::Average(
@@ -225,7 +225,7 @@ fn canonical_two_level_grouping_lowers_to_linear_attribute_plan() {
                 )
                 .aggregation_label(
                     searchkernel_vespa_engine::GroupingAggregation::Count,
-                    "count"
+                    "count",
                 )
                 .aggregation_label(
                     searchkernel_vespa_engine::GroupingAggregation::Average(
