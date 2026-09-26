@@ -29,6 +29,7 @@ if [[ "${SEARCHKERNEL_DEV_USE_CI_IMAGE:-1}" != "0" &&
 fi
 
 EXPECTED_FLATBUFFERS_VERSION=25.12.19
+EXPECTED_FLATBUFFERS_SOURCE_SHA256=f81c3162b1046fe8b84b9a0dbdd383e24fdbcf88583b9cb6028f90d04d90696a
 PYTHON=$(bash "$ROOT/tools/resolve-python.sh")
 export PYTHON
 
@@ -576,7 +577,7 @@ install_flatbuffers() (
     local prefix=${FLATBUFFERS_INSTALL_PREFIX:-${FLATBUFFERS_CPP_ROOT:-$(shared_flatbuffers_prefix)}}
     local workdir source_dir build_dir archive_url archive_path download_tool lockfile
     local jobs=1
-    local flatc header library actual_version
+    local flatc header library actual_version actual_source_sha256
 
     mkdir -p "$(dirname -- "$prefix")"
     lockfile="$prefix.lock"
@@ -635,6 +636,24 @@ install_flatbuffers() (
     else
         wget --quiet --output-document="$archive_path" "$archive_url"
     fi
+
+    actual_source_sha256=$(
+        "$PYTHON" - "$archive_path" <<'PY'
+import hashlib
+import sys
+
+digest = hashlib.sha256()
+with open(sys.argv[1], "rb") as stream:
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+print(digest.hexdigest())
+PY
+    )
+    if [[ "$actual_source_sha256" != "$EXPECTED_FLATBUFFERS_SOURCE_SHA256" ]]; then
+        echo "error: FlatBuffers source checksum mismatch: expected $EXPECTED_FLATBUFFERS_SOURCE_SHA256, got $actual_source_sha256" >&2
+        return 1
+    fi
+
     tar --extract --gzip --strip-components=1 --file="$archive_path" --directory="$source_dir"
 
     # Cargo links this static C++ library into a position-independent Rust
