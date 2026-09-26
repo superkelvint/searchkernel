@@ -241,7 +241,10 @@ fn grouping_result_value(v: &GroupingResultValue) -> Json {
 fn grouping_output(v: &GroupingOutput) -> Json {
     match v {
         GroupingOutput::Value(value) => grouping_result_value(value),
-        GroupingOutput::HitList(hits) => json!({"type":"hit_list","values":hits}),
+        GroupingOutput::HitList(hits) => json!({
+            "type":"hit_list",
+            "values":hits.iter().map(hit).collect::<Vec<_>>()
+        }),
     }
 }
 fn grouping_result(result: GroupingResult) -> Json {
@@ -251,7 +254,7 @@ fn grouping_result(result: GroupingResult) -> Json {
         "groups": result.groups.into_iter().map(grouping_result).collect::<Vec<_>>()
     })
 }
-fn hit(h: searchkernel_vespa_engine::Hit) -> Json {
+fn hit(h: &searchkernel_vespa_engine::Hit) -> Json {
     let summary: Map<String, Json> = h
         .fields
         .iter()
@@ -290,7 +293,7 @@ pub fn run_positive(engine: &Engine, root: &Json) -> Json {
             }
             "search" => {
                 let r = engine.search(search_request(&step["request"])).unwrap();
-                outputs.push(json!({"id":id,"op":"search","total_hit_count":r.total_hits,"hits":r.hits.into_iter().map(hit).collect::<Vec<_>>() }));
+                outputs.push(json!({"id":id,"op":"search","total_hit_count":r.total_hits,"hits":r.hits.iter().map(hit).collect::<Vec<_>>() }));
             }
             "group" => {
                 let (query, plan) = grouping_request(&step["request"]);
