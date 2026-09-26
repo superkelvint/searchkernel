@@ -52,6 +52,27 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
         self.assertNotIn("*.lock", source)
 
 
+    def test_native_full_bootstraps_split_sdk_and_runs_product_integration(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        helper = source.split("prepare_native_full_verifier_sdk() {", 1)[1].split("\n          }", 1)[0]
+        lane = source.split("            native-full)", 1)[1].split("            client-e2e)", 1)[0]
+
+        self.assertIn("tools/resolve-native-sdk.sh vespa-root", helper)
+        self.assertIn("SEARCHKERNEL_VERIFIER_BASE_SDK=\"$native_base\"", helper)
+        self.assertIn("prepare_verifier_sdk", helper)
+        self.assertNotIn("core/native/sdk/linux-x86_64", helper)
+        self.assertIn("prepare_native_full_verifier_sdk", lane)
+        self.assertIn("./dev verify product.integration --baseline-already-proved", lane)
+
+        common = (ROOT / "reference/vespa/common/verify-common.sh").read_text(encoding="utf-8")
+        self.assertNotIn("core/native/sdk/linux-x86_64", common)
+        self.assertIn('tools/resolve-native-sdk.sh" path', common)
+        self.assertIn("SK_NATIVE_ADAPTER_ONLY=1", common)
+
+        integration = (ROOT / "reference/vespa/i/verify-i.sh").read_text(encoding="utf-8")
+        self.assertIn('verify-through.sh" m13', integration)
+        self.assertIn('verify-through.sh" phase10', integration)
+
     def test_persistence_checkout_is_job_private(self) -> None:
         source = PERSISTENCE.read_text(encoding="utf-8")
 
