@@ -16,7 +16,7 @@ while IFS= read -r -d '' file; do
     interpreter=
     case "$first_line" in
         '#!'*bash*) interpreter=bash ;;
-        '#!'*/sh|'#! /bin/sh'|'#! /usr/bin/sh') interpreter=sh ;;
+        '#!'*/sh|'#! '*'/sh'|'#! '*'/env sh'|'#! '*'/env -S sh'*) interpreter=sh ;;
         *) continue ;;
     esac
 
