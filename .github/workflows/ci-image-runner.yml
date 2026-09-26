@@ -288,7 +288,7 @@ jobs:
           [[ "$(/opt/rh/gcc-toolset-15/root/usr/bin/gcc -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 ]]
           [[ "$(/opt/rh/gcc-toolset-15/root/usr/bin/g++ -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 ]]
 
-          for cmd in cargo rustc rustfmt cargo-clippy c++ flatc python3 curl rg gh php ruby composer node npm ldd sha256sum nm readelf; do
+          for cmd in cargo rustc rustfmt cargo-clippy c++ flatc python3 curl rg gh php ruby composer node npm ldd sha256sum nm readelf realpath; do
             command -v "$cmd" >/dev/null 2>&1 || {
               echo "required CI-image command is unavailable from $CI_IMAGE: $cmd" >&2
               exit 1
