@@ -38,6 +38,7 @@ query($owner: String!, $name: String!, $endCursor: String) {
       nodes {
         number
         state
+        baseRefName
         closingIssuesReferences(first: 100) {
           nodes { number }
           pageInfo { hasNextPage }
@@ -88,17 +89,23 @@ def _issue_number(issue: dict[str, Any]) -> int:
 def plan_cleanup(
     issues: Sequence[dict[str, Any]],
     pull_requests: Sequence[dict[str, Any]],
+    default_branch: str = "main",
 ) -> list[CleanupAction]:
     """Plan safe cleanup for issues whose closing-reference PRs are terminal."""
+    if not isinstance(default_branch, str) or not default_branch:
+        raise CleanupError("repository has invalid default branch")
     prs_by_issue: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for pr in pull_requests:
         number = pr.get("number")
         state = pr.get("state")
         refs = pr.get("closing_issue_numbers", [])
+        base_ref_name = pr.get("base_ref_name")
         if not isinstance(number, int) or number <= 0:
             raise CleanupError(f"pull request has invalid number: {number!r}")
         if state not in {"OPEN", "CLOSED", "MERGED"}:
             raise CleanupError(f"pull request #{number} has invalid state: {state!r}")
+        if not isinstance(base_ref_name, str) or not base_ref_name:
+            raise CleanupError(f"pull request #{number} has invalid base branch")
         if not isinstance(refs, list) or not all(
             isinstance(ref, int) and ref > 0 for ref in refs
         ):
@@ -138,13 +145,19 @@ def plan_cleanup(
         if not linked_prs or any(pr["state"] == "OPEN" for pr in linked_prs):
             continue
 
-        if any(pr["state"] == "MERGED" for pr in linked_prs):
+        if any(
+            pr["state"] == "MERGED" and pr["base_ref_name"] == default_branch
+            for pr in linked_prs
+        ):
             actions.append(
                 CleanupAction(
                     "close-issue",
                     number,
                     remove_labels=tuple(sorted(labels & WORKFLOW_LABELS)),
-                    reason="all linked closing-reference PRs are terminal and one was merged",
+                    reason=(
+                        "all linked closing-reference PRs are terminal and one "
+                        "merged to the default branch"
+                    ),
                 )
             )
             continue
@@ -154,13 +167,22 @@ def plan_cleanup(
                 CANONICAL_WORKFLOW_LABELS - IN_PROGRESS_LABELS
             )
             add_labels = () if remaining_state_labels else ("status:ready",)
+            had_non_default_merge = any(
+                pr["state"] == "MERGED" for pr in linked_prs
+            )
+            reason = (
+                "all linked closing-reference PRs are terminal without "
+                "a merge to the default branch"
+                if had_non_default_merge
+                else "all linked closing-reference PRs closed without a merge"
+            )
             actions.append(
                 CleanupAction(
                     "return-to-ready",
                     number,
                     remove_labels=in_progress,
                     add_labels=add_labels,
-                    reason="all linked closing-reference PRs closed without a merge",
+                    reason=reason,
                 )
             )
 
@@ -197,32 +219,34 @@ def _json_from_gh(arguments: Sequence[str]) -> Any:
 
 def _graphql_pages(repo: str) -> list[dict[str, Any]]:
     owner, name = repo.split("/", 1)
-    pages = _json_from_gh(
-        [
+    result: list[dict[str, Any]] = []
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+
+    while True:
+        arguments = [
             "api",
             "graphql",
-            "--paginate",
-            "--slurp",
             "-F",
             f"owner={owner}",
             "-F",
             f"name={name}",
-            "-f",
-            f"query={PULL_REQUESTS_QUERY}",
         ]
-    )
-    if not isinstance(pages, list):
-        raise CleanupError("gh GraphQL response was not a paginated result list")
+        if cursor is not None:
+            arguments.extend(["-F", f"endCursor={cursor}"])
+        arguments.extend(["-f", f"query={PULL_REQUESTS_QUERY}"])
+        page = _json_from_gh(arguments)
 
-    result: list[dict[str, Any]] = []
-    for page in pages:
         try:
             connection = page["data"]["repository"]["pullRequests"]
             prs = connection["nodes"]
+            page_info = connection["pageInfo"]
+            has_next_page = page_info["hasNextPage"]
+            end_cursor = page_info.get("endCursor")
         except (KeyError, TypeError) as error:
             raise CleanupError("gh GraphQL response omitted pull request data") from error
-        if not isinstance(prs, list):
-            raise CleanupError("gh GraphQL response had an invalid pull request list")
+        if not isinstance(prs, list) or not isinstance(has_next_page, bool):
+            raise CleanupError("gh GraphQL response had invalid pull request pagination")
         for pr in prs:
             if not isinstance(pr, dict):
                 raise CleanupError("gh GraphQL response contained an invalid pull request")
@@ -232,12 +256,15 @@ def _graphql_pages(repo: str) -> list[dict[str, Any]]:
                 has_more = references["pageInfo"]["hasNextPage"]
                 state = pr["state"]
                 number = pr["number"]
+                base_ref_name = pr["baseRefName"]
             except (KeyError, TypeError) as error:
                 raise CleanupError("gh GraphQL response omitted PR closing references") from error
             if has_more:
                 raise CleanupError(
                     f"pull request #{number} has more than 100 closing issue references"
                 )
+            if not isinstance(base_ref_name, str) or not base_ref_name:
+                raise CleanupError(f"pull request #{number} has invalid base branch")
             if not isinstance(nodes, list) or not all(
                 isinstance(node, dict) and isinstance(node.get("number"), int)
                 for node in nodes
@@ -247,21 +274,50 @@ def _graphql_pages(repo: str) -> list[dict[str, Any]]:
                 {
                     "number": number,
                     "state": state,
+                    "base_ref_name": base_ref_name,
                     "closing_issue_numbers": [node["number"] for node in nodes],
                 }
             )
+
+        if not has_next_page:
+            break
+        if not isinstance(end_cursor, str) or not end_cursor:
+            raise CleanupError("gh GraphQL pagination omitted the next cursor")
+        if end_cursor in seen_cursors:
+            raise CleanupError("gh GraphQL pagination repeated a cursor")
+        seen_cursors.add(end_cursor)
+        cursor = end_cursor
+
     return result
 
 
+def load_default_branch(repo: str) -> str:
+    value = _json_from_gh(["api", f"repos/{repo}"])
+    if not isinstance(value, dict):
+        raise CleanupError("gh repository response was not an object")
+    default_branch = value.get("default_branch")
+    if not isinstance(default_branch, str) or not default_branch:
+        raise CleanupError("gh repository response omitted the default branch")
+    return default_branch
+
+
 def load_issues(repo: str) -> list[dict[str, Any]]:
-    value = _json_from_gh(
-        ["api", "--paginate", "--slurp", f"repos/{repo}/issues?state=all&per_page=100"]
-    )
-    if not isinstance(value, list) or not all(isinstance(page, list) for page in value):
-        raise CleanupError("gh issues response was not a paginated issue list")
     issues: list[dict[str, Any]] = []
     seen: set[int] = set()
-    for page in value:
+    page_number = 1
+
+    while True:
+        page = _json_from_gh(
+            [
+                "api",
+                (
+                    f"repos/{repo}/issues?state=all&per_page=100"
+                    f"&page={page_number}"
+                ),
+            ]
+        )
+        if not isinstance(page, list):
+            raise CleanupError("gh issues response was not a paginated issue list")
         for issue in page:
             if not isinstance(issue, dict):
                 raise CleanupError("gh issues response contained an invalid issue")
@@ -272,6 +328,11 @@ def load_issues(repo: str) -> list[dict[str, Any]]:
                 continue
             seen.add(number)
             issues.append(issue)
+
+        if len(page) < 100:
+            break
+        page_number += 1
+
     return issues
 
 
@@ -328,6 +389,7 @@ def _refresh_actions(repo: str, actions: Sequence[CleanupAction]) -> list[Cleanu
         return []
     current_issues = load_issues(repo)
     current_prs = _graphql_pages(repo)
+    current_default_branch = load_default_branch(repo)
     current_by_number = {_issue_number(issue): issue for issue in current_issues}
     planned_by_number = {action.issue_number: action for action in actions}
     relevant = [
@@ -335,7 +397,7 @@ def _refresh_actions(repo: str, actions: Sequence[CleanupAction]) -> list[Cleanu
         for number, issue in current_by_number.items()
         if number in planned_by_number
     ]
-    refreshed = plan_cleanup(relevant, current_prs)
+    refreshed = plan_cleanup(relevant, current_prs, current_default_branch)
     return [action for action in refreshed if action.issue_number in planned_by_number]
 
 
@@ -359,7 +421,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         _validate_repo(args.repo)
         issues = load_issues(args.repo)
         pull_requests = _graphql_pages(args.repo)
-        actions = plan_cleanup(issues, pull_requests)
+        default_branch = load_default_branch(args.repo)
+        actions = plan_cleanup(issues, pull_requests, default_branch)
         if not args.dry_run:
             actions = _refresh_actions(args.repo, actions)
         for action in actions:
