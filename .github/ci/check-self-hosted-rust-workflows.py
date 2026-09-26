@@ -16,6 +16,14 @@ FORBIDDEN_IN_WORKFLOWS = (
     (re.compile(r"ensure-runner-rust\.sh"), "host Rust repair helper"),
     (re.compile(r"Swatinem/rust-cache@"), "shared/persistent Cargo build cache"),
     (re.compile(r"actions/cache@"), "unreviewed shared workflow cache"),
+    (
+        re.compile(r"\bmoon\s+(?:run|ci|check|task)\b"),
+        "moon task-result execution without proven exact-head provenance closure",
+    ),
+    (
+        re.compile(r"\bcargo\s+nextest\s+archive\b|\bnextest\s+archive\b|--archive-file(?:=|\s)|--archive-format(?:=|\s)"),
+        "nextest archive reuse without proven exact-head provenance closure",
+    ),
     (re.compile(r"(?<!s)\bccache\b"), "unreviewed compiler cache"),
     (re.compile(r"\bcachepot\b"), "unreviewed compiler cache"),
     (re.compile(r"dtolnay/rust-toolchain@"), "job-local host Rust installation"),
@@ -141,6 +149,19 @@ def main() -> int:
                     failures.append(
                         f"{SCCACHE_HELPER}: service container must run the sccache server directly in foreground mode"
                     )
+
+    # Moon task-result caching is intentionally not an evidence authority yet.
+    # Fail closed if task configuration is introduced before a reviewed
+    # provenance closure can bind cache results to the exact candidate and
+    # every semantic external input. sccache remains a compiler-output-only
+    # exception and can never stand in for executed tests.
+    moon_root = ROOT / ".moon"
+    if moon_root.exists():
+        for path in sorted(moon_root.rglob("*.y*ml")):
+            failures.append(
+                f"{path}: moon task-result configuration is forbidden for acceptance evidence "
+                "until exact-head provenance closure is implemented"
+            )
 
     for path in sorted(WORKFLOWS.glob("*.y*ml")):
         text = path.read_text(encoding="utf-8")
