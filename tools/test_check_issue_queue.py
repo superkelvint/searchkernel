@@ -261,7 +261,7 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             [("set-state", 8, "status:ready")],
         )
 
-    def test_stale_empty_claim_is_deleted_before_requeue(self) -> None:
+    def test_stale_claim_branch_is_preserved_and_blocked(self) -> None:
         stale = self._open_issue(
             9,
             "status:in-progress",
@@ -281,10 +281,7 @@ class IssueQueueReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(
             [(action.kind, action.issue_number, action.value) for action in actions],
-            [
-                ("delete-branch", 9, "codex/issue-9"),
-                ("set-state", 9, "status:ready"),
-            ],
+            [("set-state", 9, "status:blocked")],
         )
 
     def test_stale_claim_with_unique_commits_is_preserved_and_blocked(self) -> None:
