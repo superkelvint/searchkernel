@@ -56,6 +56,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             "./dev native-sdk ensure",
             "dnf install",
             "Resolve trusted native-base release",
+            "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc",
             "/native-artifacts/",
             "SK_NATIVE_BASE_ARTIFACT_URL=",
             "NATIVE_CONTAINER: searchkernel-native",
