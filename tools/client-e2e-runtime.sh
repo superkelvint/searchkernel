@@ -5,13 +5,13 @@
 # The function resolves the exact Cargo-built native adapter from Cargo build
 # metadata and exports the daemon and runtime library paths consumed by clients.
 
+CLIENT_E2E_RUNTIME_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+
 prepare_client_e2e_runtime() {
     local prevalidated_native_sdk=${1:-0}
     local root cargo python target_root host adapter_lib cargo_messages
 
-    root=$(git rev-parse --show-toplevel)
-    cargo=$(bash "$root/tools/resolve-rust.sh" cargo)
-    python=$(bash "$root/tools/resolve-python.sh")
+    root=$CLIENT_E2E_RUNTIME_ROOT
 
     target_root=${CARGO_TARGET_DIR:-"$root/target/host"}
     case "$target_root" in
@@ -30,6 +30,9 @@ prepare_client_e2e_runtime() {
         export LD_LIBRARY_PATH="$adapter_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         return 0
     fi
+
+    cargo=$(bash "$root/tools/resolve-rust.sh" cargo)
+    python=$(bash "$root/tools/resolve-python.sh")
 
     if [[ "$prevalidated_native_sdk" != 1 ]]; then
         "$root/dev" native-sdk ensure
