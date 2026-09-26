@@ -47,6 +47,34 @@ IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE")
 label=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-commit"}}' "$IMAGE_ID")
 [[ -n "$label" && "$label" != "<no value>" ]] ||
     die "$IMAGE is missing the io.searchkernel.vespa-commit label"
+vespa_bundle=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-bundle-id"}}' "$IMAGE_ID")
+vespa_ref=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-image-digest"}}' "$IMAGE_ID")
+if [[ "$vespa_ref" != *@sha256:* ]]; then
+    vespa_ref="docker.io/superkelvint/searchkernel-ci-vespa:$label-$vespa_bundle"
+fi
+
+case "$PULL_MODE" in
+    always)
+        echo "==> dev: pulling external Vespa input $vespa_ref"
+        docker pull "$vespa_ref" >/dev/null
+        ;;
+    missing)
+        if ! docker image inspect "$vespa_ref" >/dev/null 2>&1; then
+            echo "==> dev: pulling missing external Vespa input $vespa_ref"
+            docker pull "$vespa_ref" >/dev/null
+        fi
+        ;;
+    never)
+        docker image inspect "$vespa_ref" >/dev/null 2>&1 ||
+            die "$vespa_ref is not available locally and SEARCHKERNEL_CI_PULL=never"
+        ;;
+esac
+if [[ "$vespa_ref" != *@sha256:* ]]; then
+    vespa_ref=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$vespa_ref")
+fi
+[[ "$vespa_ref" == *@sha256:* ]] || die "could not resolve immutable Vespa image digest"
+
+native_volume=$(bash "$ROOT/tools/ensure-ci-vespa-volume.sh" "$IMAGE_ID" "$vespa_ref" "$label" "$vespa_bundle")
 
 docker run --rm "$IMAGE_ID" test -f /opt/searchkernel/native-validation-pass ||
     die "$IMAGE is missing its native validation marker"
@@ -204,6 +232,7 @@ done < <(compgen -e)
 docker_volume_args=(
     -v "$source_volume:/work"
     -v "$target_volume:/cargo-target"
+    -v "$native_volume:/opt/searchkernel/native-sdk-cache:ro"
 )
 if [[ -n "$artifact_volume" ]]; then
     docker_volume_args+=(
