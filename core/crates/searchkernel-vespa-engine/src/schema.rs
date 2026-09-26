@@ -775,6 +775,28 @@ impl StructFieldType {
 
 fn validate_schema(schema: &Schema) -> Result<()> {
     validate_name(&schema.document_type, "document type")?;
+
+    let has_long = schema.fields.iter().any(|field| {
+        matches!(field.field_type, FieldType::Long)
+            || matches!(
+                &field.field_type,
+                FieldType::ArrayStruct(fields)
+                    if fields.iter().any(|field| matches!(field.field_type, StructFieldType::Long))
+            )
+    });
+    let has_legacy_integer = schema.fields.iter().any(|field| {
+        matches!(field.field_type, FieldType::Integer)
+            || matches!(
+                &field.field_type,
+                FieldType::ArrayStruct(fields)
+                    if fields.iter().any(|field| matches!(field.field_type, StructFieldType::Integer))
+            )
+    });
+    if has_long && has_legacy_integer {
+        return Err(Error::message(
+            "mixed INT32 and INT64 integer fields are not supported by the embedded native document type; use FieldType::Long consistently for signed 64-bit schemas",
+        ));
+    }
     for (index, field) in schema.fields.iter().enumerate() {
         validate_name(&field.name, &format!("field at index {index}"))?;
         if RESERVED_FIELD_NAMES.contains(&field.name.as_str()) {
@@ -1327,6 +1349,19 @@ mod tests {
         assert!(ConfigCompiler
             .compile_to(&duplicate, temporary_path("duplicate"))
             .is_err());
+    }
+
+    #[test]
+    fn rejects_mixed_legacy_and_current_integer_widths() {
+        let schema = Schema::new("mixed_integer_widths")
+            .field(Field::new("legacy", FieldType::Integer).attribute())
+            .field(Field::new("current", FieldType::Long).attribute());
+        let error = ConfigCompiler
+            .compile_to(&schema, temporary_path("mixed-integer-widths"))
+            .expect_err("mixed INT32/INT64 schemas must fail before native open");
+        assert!(error
+            .to_string()
+            .contains("mixed INT32 and INT64 integer fields are not supported"));
     }
 
     #[test]
