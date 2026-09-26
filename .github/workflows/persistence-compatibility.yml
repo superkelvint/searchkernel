@@ -93,18 +93,6 @@ jobs:
         working-directory: ${{ steps.checkout.outputs.absolute }}
         run: python3 tools/check-release-persistence-contract.py
 
-      - name: Execute historical reopen and mutation matrix
-        working-directory: ${{ steps.checkout.outputs.absolute }}
-        run: cargo test -p searchkernel --test persistence_compatibility --features native -- --nocapture
-
-      - name: Execute persistence fault matrix
-        working-directory: ${{ steps.checkout.outputs.absolute }}
-        run: cargo test -p searchkernel --features native --lib persistence_fault_matrix_ -- --nocapture
-
-      - name: Prove persistence gate sensitivity
-        working-directory: ${{ steps.checkout.outputs.absolute }}
-        run: bash tools/check-persistence-sensitivity.sh
-
       - name: Remove job-private checkout
         if: always() && steps.checkout.outputs.absolute != ''
         env:

@@ -18,14 +18,11 @@ for path in fixtures.glob("manifest-v*-storage-v*/METADATA.json"):
 if fixture_generations != {generation}:
     raise SystemExit(f"advertised generation {generation} lacks exact historical fixture coverage: {sorted(fixture_generations)}")
 workflow = (ROOT / ".github/workflows/persistence-compatibility.yml").read_text()
-required = [
-    "cargo test -p searchkernel --test persistence_compatibility --features native -- --nocapture",
-    "bash tools/check-persistence-sensitivity.sh",
-    "python3 tools/check-release-persistence-contract.py",
-]
-for command in required:
-    if command not in workflow:
-        raise SystemExit(f"release persistence workflow does not execute required evidence: {command}")
-if "Native verification policy" in workflow:
-    raise SystemExit("release persistence workflow still treats executable native evidence as notice-only")
+runner = (ROOT / ".github/workflows/ci-image-runner.yml").read_text()
+if "python3 tools/check-release-persistence-contract.py" not in workflow:
+    raise SystemExit("persistence workflow does not check the release persistence contract")
+if "run_phase native-full-persistence ./dev verify persistence" not in runner:
+    raise SystemExit("native-full lane does not execute the persistence verifier")
+if "run_phase client-e2e-run" not in runner or "tools/check-client-contracts.py --run-e2e" not in runner:
+    raise SystemExit("client-e2e lane does not execute public daemon/client evidence")
 print(f"Release persistence contract PASS: storage generation {generation} has executable historical reopen coverage")
