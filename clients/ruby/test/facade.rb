@@ -36,7 +36,7 @@ class FacadeRecordingTransport
               when :search
                 {
                   "root" => nil,
-                  "total_hits" => { "value" => 0, "relation" => "Exact" }
+                  "total_hits" => { "value" => "0", "relation" => "Exact" }
                 }
               when :analyze
                 {
