@@ -23,6 +23,9 @@ class TrustedAuthorityTests(unittest.TestCase):
             "reference/vespa/m14/verify-m14.sh",
             "tools/check-layout.sh",
             ".moon/tasks.yml",
+            "docker/searchkernel-ci/Dockerfile",
+            "docker/searchkernel-ci-toolchain/Dockerfile",
+            "docker/searchkernel-ci-vespa/Dockerfile",
         ):
             with self.subTest(path=path):
                 self.assertTrue(M.protected(path))
