@@ -549,6 +549,7 @@ valid_install() {
 }
 
 canonical_mounted_install() {
+    [[ "$CACHE_ROOT" == "/opt/searchkernel/native-sdk-cache/ci/$TARGET" ]] || return 1
     [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" == 1 || -f /opt/searchkernel/native-validation-pass ]]
 }
 
