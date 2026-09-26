@@ -86,12 +86,12 @@ jobs:
     with: { revision: "${{ needs.authorize.outputs.head }}", target: rust-non-native }
   python:
     needs: authorize
-    if: needs.authorize.outputs.authority_changed == 'false' && neds.authorize.outputs.python == 'true'
+    if: needs.authorize.outputs.authority_changed == 'false' && needs.authorize.outputs.python == 'true'
     uses: ./.github/workflows/ci-image-runner.yml
     with: { revision: "${{ needs.authorize.outputs.head }}", target: python }
   typescript:
     needs: authorize
-    if: needs.authorize.outputs.authority_changed == 'false' && neds.authorize.outputs.typescript == 'true'
+    if: needs.authorize.outputs.authority_changed == 'false' && needs.authorize.outputs.typescript == 'true'
     uses: ./.github/workflows/ci-image-runner.yml
     with: { revision: "${{ needs.authorize.outputs.head }}", target: typescript }
   ruby:
@@ -139,22 +139,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TRUSTED_CI_APP_TOKEN: ${{ steps.app-token.outputs.token }}
           TRUSTED_CI_APP_ID: ${{ vars.TRUSTED_CI_APP_ID }}
-          PR: ${{ neds.authorize.outputs.pr }}
+          PR: ${{ needs.authorize.outputs.pr }}
           HEAD: ${{ needs.authorize.outputs.head }}
           BASE: ${{ needs.authorize.outputs.base }}
-          AUTH: ${{ neds.authorize.result }}
+          AUTH: ${{ needs.authorize.result }}
           AUTHORITY_CHANGED: ${{ needs.authorize.outputs.authority_changed }}
           TRANSITION_ONLY: ${{ needs.authorize.outputs.transition_only }}
-          RUST_REQ: ${{ neds.authorize.outputs.rust }}
-          RUST: ${{ neds.rust.result }}
-          PY_REQ: ${{ neds.authorize.outputs.python }}
-          PY: ${{ neds.python.result }}
+          RUST_REQ: ${{ needs.authorize.outputs.rust }}
+          RUST: ${{ needs.rust.result }}
+          PY_REQ: ${{ needs.authorize.outputs.python }}
+          PY: ${{ needs.python.result }}
           TS_REQ: ${{ needs.authorize.outputs.typescript }}
           TS: ${{ needs.typescript.result }}
           RUBY_REQ: ${{ needs.authorize.outputs.ruby }}
           RUBY: ${{ needs.ruby.result }}
           NATIVE_REQ: ${{ needs.authorize.outputs.native }}
-          NATIVE: ${{ neds.native.result }}
+          NATIVE: ${{ needs.native.result }}
           COVERAGE_REQ: ${{ needs.authorize.outputs.coverage }}
           COVERAGE: ${{ needs.coverage.result }}
         run: |
