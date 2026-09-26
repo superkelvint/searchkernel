@@ -26,21 +26,24 @@ std::vector<std::string> copy_string_array(const uint8_t *bytes,
                                            const uint32_t *lengths,
                                            uint32_t count, uint32_t bytes_length,
                                            const char *what) {
-    if ((bytes_length != 0 && !bytes) || (count != 0 && !lengths)) {
-        throw std::invalid_argument(std::string(what) + " arrays are invalid");
+    if (count > MAX_PACKED_DOCUMENT_ITEMS) {
+        throw std::invalid_argument(std::string(what) + " has too many items");
     }
-    if (bytes_length > MAX_TEXT_BYTES) {
+    if (bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES) {
         throw std::invalid_argument(std::string(what) + " data is too large");
+    }
+    if (count != 0 && (!bytes || !lengths)) {
+        throw std::invalid_argument(std::string(what) + " arrays are invalid");
     }
     std::vector<std::string> result;
     result.reserve(count);
     size_t offset = 0;
     for (uint32_t index = 0; index < count; ++index) {
         const size_t length = lengths[index];
-        if (offset > std::numeric_limits<size_t>::max() - length) {
-            throw std::invalid_argument(std::string(what) + " data is too large");
+        if (length > MAX_PACKED_DOCUMENT_ELEMENT_BYTES) {
+            throw std::invalid_argument(std::string(what) + " item is too large");
         }
-        if (length > bytes_length - offset) {
+        if (offset > bytes_length || length > bytes_length - offset) {
             throw std::invalid_argument(std::string(what) + " lengths exceed packed data");
         }
         result.emplace_back(reinterpret_cast<const char *>(bytes + offset), length);
@@ -56,8 +59,14 @@ std::vector<std::pair<std::string, std::string>> copy_predicate_features(
     const uint8_t *key_bytes, const uint32_t *key_lengths, uint32_t key_bytes_length,
     const uint8_t *value_bytes, const uint32_t *value_lengths, uint32_t value_bytes_length,
     uint32_t count) {
-    if (count == 0 || !key_lengths || !value_lengths ||
-        (key_bytes_length != 0 && !key_bytes) || (value_bytes_length != 0 && !value_bytes)) {
+    if (count == 0 || count > MAX_PACKED_DOCUMENT_ITEMS) {
+        throw std::invalid_argument("predicate feature count is invalid");
+    }
+    if (key_bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES ||
+        value_bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES) {
+        throw std::invalid_argument("predicate feature data is too large");
+    }
+    if (!key_bytes || !key_lengths || !value_bytes || !value_lengths) {
         throw std::invalid_argument("predicate feature arrays are invalid");
     }
     std::vector<std::pair<std::string, std::string>> result;
@@ -67,11 +76,12 @@ std::vector<std::pair<std::string, std::string>> copy_predicate_features(
     for (uint32_t index = 0; index < count; ++index) {
         const size_t key_length = key_lengths[index];
         const size_t value_length = value_lengths[index];
-        if (key_offset > std::numeric_limits<size_t>::max() - key_length ||
-            value_offset > std::numeric_limits<size_t>::max() - value_length) {
-            throw std::invalid_argument("predicate feature data is too large");
+        if (key_length > MAX_PACKED_DOCUMENT_ELEMENT_BYTES ||
+            value_length > MAX_PACKED_DOCUMENT_ELEMENT_BYTES) {
+            throw std::invalid_argument("predicate feature item is too large");
         }
-        if (key_length > key_bytes_length - key_offset ||
+        if (key_offset > key_bytes_length || key_length > key_bytes_length - key_offset ||
+            value_offset > value_bytes_length ||
             value_length > value_bytes_length - value_offset) {
             throw std::invalid_argument("predicate feature lengths exceed packed data");
         }

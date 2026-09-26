@@ -94,6 +94,193 @@ void expect_invalid(int32_t status, const char *operation) {
     expect(status, SK_NATIVE_STATUS_INVALID_ARGUMENT, operation);
 }
 
+void packed_document_buffer_contract() {
+    ErrorBuffer error;
+    sk_document *document = nullptr;
+    sk_document_update *update = nullptr;
+    expect_ok(sk_document_create_empty("packed-doc", &document, error.data(), ERROR_CAPACITY),
+              "packed buffer document setup");
+    expect_ok(sk_document_update_create_empty("packed-update", &update, error.data(),
+                                              ERROR_CAPACITY),
+              "packed buffer update setup");
+
+    const uint8_t bytes[] = {'x', 'y'};
+    const uint32_t one_length[] = {1};
+    const uint32_t empty_length[] = {0};
+    const uint32_t multiple_lengths[] = {1, 0, 1};
+    expect_ok(sk_document_add_string_array(document, "empty-list", bytes, one_length, 0, 0,
+                                           error.data(), ERROR_CAPACITY),
+              "empty packed string array");
+    expect_ok(sk_document_add_string_array(document, "empty-item", bytes, empty_length, 1, 0,
+                                           error.data(), ERROR_CAPACITY),
+              "zero-length packed string item");
+    expect_ok(sk_document_add_string_array(document, "multiple-items", bytes, multiple_lengths,
+                                           3, 2, error.data(), ERROR_CAPACITY),
+              "multi-item packed string array");
+
+    expect_invalid(sk_document_add_string_array(document, "short-total", bytes, one_length, 1, 0,
+                                                 error.data(), ERROR_CAPACITY),
+                   "string array total shorter than lengths");
+    expect_invalid(sk_document_add_string_array(document, "long-total", bytes, one_length, 1, 2,
+                                                 error.data(), ERROR_CAPACITY),
+                   "string array total longer than lengths");
+    expect_invalid(sk_document_add_string_array(document, "null-nonzero", nullptr, one_length, 1,
+                                                 1, error.data(), ERROR_CAPACITY),
+                   "string array null bytes with nonzero total");
+    expect_invalid(sk_document_add_string_array(document, "null-empty-item", nullptr,
+                                                 empty_length, 1, 0, error.data(), ERROR_CAPACITY),
+                   "string array null bytes for zero-length item");
+    expect_invalid(sk_document_add_string_array(document, "too-many-items", bytes, one_length,
+                                                 65537, 0, error.data(), ERROR_CAPACITY),
+                   "string array count limit");
+    const uint32_t oversized_total[] = {16 * 1024 * 1024 + 1};
+    expect_invalid(sk_document_add_string_array(document, "oversized-total", bytes, one_length,
+                                                 1, oversized_total[0], error.data(),
+                                                 ERROR_CAPACITY),
+                   "string array total size limit");
+    const uint32_t overflow_boundary[] = {std::numeric_limits<uint32_t>::max()};
+    expect_invalid(sk_document_add_string_array(document, "overflow-boundary", bytes,
+                                                 overflow_boundary, 1, overflow_boundary[0],
+                                                 error.data(), ERROR_CAPACITY),
+                   "string array uint32 length boundary");
+
+    expect_ok(sk_document_update_assign_string_array(update, "empty-list", bytes, one_length, 0,
+                                                     0, error.data(), ERROR_CAPACITY),
+              "empty packed update string array");
+    expect_ok(sk_document_update_assign_string_array(update, "empty-item", bytes, empty_length,
+                                                     1, 0, error.data(), ERROR_CAPACITY),
+              "zero-length packed update string item");
+    expect_ok(sk_document_update_assign_string_array(update, "multiple-items", bytes,
+                                                     multiple_lengths, 3, 2, error.data(),
+                                                     ERROR_CAPACITY),
+              "multi-item packed update string array");
+    expect_invalid(sk_document_update_assign_string_array(update, "short-total", bytes,
+                                                           one_length, 1, 0, error.data(),
+                                                           ERROR_CAPACITY),
+                   "update string array total shorter than lengths");
+    expect_invalid(sk_document_update_assign_string_array(update, "long-total", bytes,
+                                                           one_length, 1, 2, error.data(),
+                                                           ERROR_CAPACITY),
+                   "update string array total longer than lengths");
+    expect_invalid(sk_document_update_assign_string_array(update, "null-empty-item", nullptr,
+                                                           empty_length, 1, 0, error.data(),
+                                                           ERROR_CAPACITY),
+                   "update string array null bytes for zero-length item");
+    expect_invalid(sk_document_update_assign_string_array(update, "too-many-items", bytes,
+                                                           one_length, 65537, 0, error.data(),
+                                                           ERROR_CAPACITY),
+                   "update string array count limit");
+
+    const uint32_t max_element_length[] = {1024 * 1024 + 1};
+    expect_invalid(sk_document_add_string_array(document, "oversized-element", bytes,
+                                                 max_element_length, 1, max_element_length[0],
+                                                 error.data(), ERROR_CAPACITY),
+                   "oversized string array element");
+    expect_invalid(sk_document_update_assign_string_array(update, "oversized-element", bytes,
+                                                           max_element_length, 1,
+                                                           max_element_length[0], error.data(),
+                                                           ERROR_CAPACITY),
+                   "oversized update string array element");
+
+    const uint32_t key_length[] = {1};
+    const uint32_t value_length[] = {1};
+    expect_ok(sk_document_add_predicate(document, "valid-predicate", bytes, key_length, 1,
+                                        bytes, value_length, 1, 1, error.data(), ERROR_CAPACITY),
+              "valid packed predicate");
+    expect_ok(sk_document_add_predicate(document, "empty-predicate-feature", bytes,
+                                        empty_length, 0, bytes, empty_length, 0, 1,
+                                        error.data(), ERROR_CAPACITY),
+              "zero-length packed predicate feature");
+    const uint32_t multiple_feature_lengths[] = {1, 0, 1};
+    expect_ok(sk_document_add_predicate(document, "multiple-predicate-features", bytes,
+                                        multiple_feature_lengths, 2, bytes,
+                                        multiple_feature_lengths, 2, 3, error.data(),
+                                        ERROR_CAPACITY),
+              "multi-feature packed predicate");
+    expect_invalid(sk_document_add_predicate(document, "short-key-total", bytes, key_length, 0,
+                                             bytes, value_length, 1, 1, error.data(),
+                                             ERROR_CAPACITY),
+                   "predicate key total shorter than lengths");
+    expect_invalid(sk_document_add_predicate(document, "long-key-total", bytes, key_length, 2,
+                                             bytes, value_length, 1, 1, error.data(),
+                                             ERROR_CAPACITY),
+                   "predicate key total longer than lengths");
+    expect_invalid(sk_document_add_predicate(document, "short-value-total", bytes, key_length, 1,
+                                             bytes, value_length, 0, 1, error.data(),
+                                             ERROR_CAPACITY),
+                   "predicate value total shorter than lengths");
+    expect_invalid(sk_document_add_predicate(document, "long-value-total", bytes, key_length, 1,
+                                             bytes, value_length, 2, 1, error.data(),
+                                             ERROR_CAPACITY),
+                   "predicate value total longer than lengths");
+    expect_invalid(sk_document_add_predicate(document, "null-key-nonzero", nullptr, key_length, 1,
+                                             bytes, value_length, 1, 1, error.data(),
+                                             ERROR_CAPACITY),
+                   "predicate null key bytes with nonzero total");
+    expect_invalid(sk_document_add_predicate(document, "null-value-nonzero", bytes, key_length, 1,
+                                             nullptr, value_length, 1, 1, error.data(),
+                                             ERROR_CAPACITY),
+                   "predicate null value bytes with nonzero total");
+    expect_invalid(sk_document_add_predicate(document, "too-many-features", bytes, key_length, 0,
+                                             bytes, value_length, 0, 65537, error.data(),
+                                             ERROR_CAPACITY),
+                   "predicate feature count limit");
+    const uint32_t empty_lengths[] = {0};
+    expect_invalid(sk_document_add_predicate(document, "null-empty-key", nullptr, empty_lengths, 0,
+                                             bytes, value_length, 1, 1, error.data(),
+                                             ERROR_CAPACITY),
+                   "predicate null key bytes for zero-length feature");
+    expect_invalid(sk_document_add_predicate(document, "null-empty-value", bytes, key_length, 1,
+                                             nullptr, empty_lengths, 0, 1, error.data(),
+                                             ERROR_CAPACITY),
+                   "predicate null value bytes for zero-length feature");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "short-key-total", bytes, key_length, 0, bytes, value_length, 1,
+                       1, error.data(), ERROR_CAPACITY),
+                   "update predicate key total shorter than lengths");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "short-value-total", bytes, key_length, 1, bytes, value_length, 0,
+                       1, error.data(), ERROR_CAPACITY),
+                   "update predicate value total shorter than lengths");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "null-key-nonzero", nullptr, key_length, 1, bytes, value_length, 1,
+                       1, error.data(), ERROR_CAPACITY),
+                   "update predicate null key bytes with nonzero total");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "null-value-nonzero", bytes, key_length, 1, nullptr, value_length,
+                       1, 1, error.data(), ERROR_CAPACITY),
+                   "update predicate null value bytes with nonzero total");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "null-empty-key", nullptr, empty_lengths, 0, bytes, value_length,
+                       1, 1, error.data(), ERROR_CAPACITY),
+                   "update predicate null key bytes for zero-length feature");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "null-empty-value", bytes, key_length, 1, nullptr, empty_lengths,
+                       0, 1, error.data(), ERROR_CAPACITY),
+                   "update predicate null value bytes for zero-length feature");
+
+    const uint32_t oversized_length[] = {16 * 1024 * 1024 + 1};
+    expect_invalid(sk_document_add_predicate(document, "oversized-key", bytes, oversized_length,
+                                             oversized_length[0], bytes, value_length, 1, 1,
+                                             error.data(), ERROR_CAPACITY),
+                   "oversized predicate key");
+    expect_invalid(sk_document_add_predicate(document, "overflow-boundary", bytes,
+                                             overflow_boundary, overflow_boundary[0], bytes,
+                                             value_length, 1, 1, error.data(), ERROR_CAPACITY),
+                   "predicate uint32 length boundary");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "oversized-value", bytes, key_length, 1, bytes, oversized_length,
+                       oversized_length[0], 1, error.data(), ERROR_CAPACITY),
+                   "oversized update predicate value");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "too-many-features", bytes, key_length, 0, bytes, value_length, 0,
+                       65537, error.data(), ERROR_CAPACITY),
+                   "update predicate feature count limit");
+
+    sk_document_update_destroy(update);
+    sk_document_destroy(document);
+}
+
 void invalid_argument_surface() {
     ErrorBuffer error;
     sk_engine *engine = nullptr;
@@ -199,7 +386,7 @@ void invalid_argument_surface() {
                                               ERROR_CAPACITY),
               "update array annotation setup");
     expect_ok(sk_document_update_assign_string_array(update, "tags", array_value_bytes,
-                                                     array_value_lengths, 1, error.data(),
+                                                     array_value_lengths, 1, 1, error.data(),
                                                      ERROR_CAPACITY),
               "update array annotation value setup");
     expect_invalid(sk_document_update_annotate_string_array(
@@ -897,6 +1084,7 @@ void exercise_native_engine(const std::filesystem::path &data,
 
 int main(int argc, char **argv) {
     highlighting_decoder_unit();
+    packed_document_buffer_contract();
     if (std::getenv("SK_NATIVE_HIGHLIGHTING_UNIT_ONLY") != nullptr) {
         std::cout << "native highlighting decoder unit passed\n";
         return 0;

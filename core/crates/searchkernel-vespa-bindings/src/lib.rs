@@ -291,3 +291,60 @@ mod text_soa_abi_regression_tests {
         unsafe { sk_text_request_destroy(request) };
     }
 }
+
+#[cfg(all(test, feature = "native"))]
+mod packed_document_buffer_tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn zero_total_null_packed_buffers_are_rejected_for_nonempty_items() {
+        let id = CString::new("packed-buffer-test").expect("literal has no NUL");
+        let field = CString::new("values").expect("literal has no NUL");
+        let mut error = [0_u8; SK_ERROR_MESSAGE_CAPACITY as usize];
+        let mut document = std::ptr::null_mut();
+        let status = unsafe {
+            sk_document_create_empty(
+                id.as_ptr(),
+                &mut document,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_OK as i32);
+
+        let empty_length = [0_u32];
+        let status = unsafe {
+            sk_document_add_string_array(
+                document,
+                field.as_ptr(),
+                std::ptr::null(),
+                empty_length.as_ptr(),
+                1,
+                0,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_INVALID_ARGUMENT as i32);
+
+        let status = unsafe {
+            sk_document_add_predicate(
+                document,
+                field.as_ptr(),
+                std::ptr::null(),
+                empty_length.as_ptr(),
+                0,
+                std::ptr::null(),
+                empty_length.as_ptr(),
+                0,
+                1,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_INVALID_ARGUMENT as i32);
+
+        unsafe { sk_document_destroy(document) };
+    }
+}
