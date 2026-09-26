@@ -17,7 +17,7 @@ jobs:
   authorize:
     name: Trusted authorization
     if: github.event.workflow_run.event == 'pull_request'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     outputs:
       pr: ${{ steps.refs.outputs.pr }}
       head: ${{ steps.refs.outputs.head }}
@@ -114,7 +114,7 @@ jobs:
     name: Publish trusted candidate-head gate
     if: ${{ always() && !cancelled() && needs.authorize.outputs.head != '' }}
     needs: [authorize, rust, python, typescript, ruby, native, coverage]
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     environment: trusted-ci-authority
     permissions:
       contents: read
