@@ -409,8 +409,8 @@ pub fn resolve_search(context: &IndexContext, input: SearchInput) -> Result<Sear
         query_model,
         presentation,
         properties: input.properties,
-        query_profile: input.query_profile.filter(|value| !value.is_empty()),
-        search_chain: input.search_chain.filter(|value| !value.is_empty()),
+        query_profile: input.query_profile,
+        search_chain: input.search_chain,
         timeout,
         prefix_policy: PrefixPolicy::Disabled,
         typo_policy: TypoPolicy::Disabled,
@@ -1363,18 +1363,10 @@ fn validate_search_request_combinations(input: &SearchInput, query: &QueryIr) ->
     {
         owned.insert("presentation");
     }
-    if input
-        .query_profile
-        .as_deref()
-        .is_some_and(|value| !value.is_empty())
-    {
+    if input.query_profile.is_some() {
         owned.insert("queryProfile");
     }
-    if input
-        .search_chain
-        .as_deref()
-        .is_some_and(|value| !value.is_empty())
-    {
+    if input.search_chain.is_some() {
         owned.insert("searchChain");
     }
     for key in input.properties.keys() {

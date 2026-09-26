@@ -44,7 +44,7 @@ class NativeBaseAuthTest(unittest.TestCase):
             log = tmp / "gh.log"
             tag = "vespa-base-v7-host-x86_64-unknown-linux-gnu-fixture-vespa-commit"
             asset = "searchkernel-vespa-base-v7-host-x86_64-unknown-linux-gnu-fixture-vespa-commit.tar.gz"
-            payload = [[{
+            payload = [{
                 "draft": False,
                 "prerelease": False,
                 "published_at": "2026-09-26T00:00:00Z",
@@ -53,7 +53,7 @@ class NativeBaseAuthTest(unittest.TestCase):
                     {"state": "uploaded", "size": 1, "name": asset},
                     {"state": "uploaded", "size": 1, "name": asset + ".sha256"},
                 ],
-            }]]
+            }]
             gh = fakebin / "gh"
             self.write_executable(
                 gh,
@@ -75,7 +75,7 @@ class NativeBaseAuthTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), "7")
-            self.assertIn("api --paginate --slurp", log.read_text(encoding="utf-8"))
+            self.assertIn("api repos/", log.read_text(encoding="utf-8"))
 
     def test_installer_tries_gh_release_download_without_exported_token(self):
         with tempfile.TemporaryDirectory() as tmp:

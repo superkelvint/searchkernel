@@ -14,6 +14,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+python=$(bash "$source_root/tools/resolve-python.sh")
+python_helpers=(
+    "$source_root/tools/test-native-base-artifact-python/01_write_legacy_v2_manifest.py"
+    "$source_root/tools/test-native-base-artifact-python/02_remove_static_link_closure.py"
+    "$source_root/tools/test-native-base-artifact-python/03_restore_static_link_closure.py"
+    "$source_root/tools/test-native-base-artifact-python/04_set_legacy_generation_v3.py"
+    "$source_root/tools/test-native-base-artifact-python/05_restore_legacy_generation_v2.py"
+    "$source_root/tools/test-native-base-artifact-python/06_make_cached_marker_stale.py"
+    "$source_root/tools/test-native-base-artifact-python/07_assert_generation_v2.py"
+    "$source_root/tools/test-native-base-artifact-python/08_write_generation_v3_manifest.py"
+    "$source_root/tools/test-native-base-artifact-python/09_assert_generation_v3.py"
+)
+PYTHONPYCACHEPREFIX="$fixture/pycache" "$python" -m py_compile "${python_helpers[@]}"
+
 repo="$fixture/repo"
 mkdir -p "$repo/tools" "$repo/core/native/vespa"
 cp "$source_root/tools/resolve-native-sdk.sh" "$repo/tools/"
@@ -52,24 +66,8 @@ mkdir -p "$static_dir"
 printf 'fixture-static\n' >"$static_dir/libsearchcore_server.a"
 printf 'c++ CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o ../../../vespa/searchcore/proton/server/libsearchcore_server.a -o searchcore_embedded_crud_spike_app\n' >"$configured/link.txt"
 printf '#define FIXTURE_DEP 1\n' >"$bundle/toolchain/vespa-deps/include/fixture.h"
-python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
-import json
-import sys
-payload = {
-    # Match the legacy schema-1 shape that is safe to consume only when the
-    # publisher attests and packages the complete adapter static-link closure.
-    "format_version": 1,
-    "artifact_generation": 2,
-    "adapter_static_link_closure": True,
-    "build_environment": "artifact-regression",
-    "native_target": "x86_64-unknown-linux-gnu",
-    "vespa_commit": "fixture-vespa-commit",
-}
-for path in sys.argv[1:]:
-    with open(path, "w", encoding="utf-8") as stream:
-        json.dump(payload, stream, sort_keys=True)
-        stream.write("\n")
-PY
+"$python" "$source_root/tools/test-native-base-artifact-python/01_write_legacy_v2_manifest.py" \
+    "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json"
 archive="$fixture/searchkernel-vespa-base-v2-artifact-regression-x86_64-unknown-linux-gnu-fixture-vespa-commit.tar.gz"
 (
     cd "$bundle_parent"
@@ -80,66 +78,30 @@ artifact_url="file://$archive"
 
 # Schema-1 is not accepted generically. Compatibility requires the explicit
 # static-link-closure attestation and the installer still verifies that closure.
-python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
-import json
-import sys
-for path in sys.argv[1:]:
-    with open(path, encoding="utf-8") as stream:
-        data = json.load(stream)
-    data.pop("adapter_static_link_closure", None)
-    with open(path, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, sort_keys=True)
-        stream.write("\n")
-PY
+"$python" "$source_root/tools/test-native-base-artifact-python/02_remove_static_link_closure.py" \
+    "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json"
 bad_legacy="$fixture/searchkernel-vespa-base-v2-no-closure-artifact-regression-x86_64-unknown-linux-gnu-fixture-vespa-commit.tar.gz"
 (
     cd "$bundle_parent"
     tar -czf "$bad_legacy" searchkernel-vespa-base
 )
 sha256sum "$bad_legacy" >"$bad_legacy.sha256"
-python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
-import json
-import sys
-for path in sys.argv[1:]:
-    with open(path, encoding="utf-8") as stream:
-        data = json.load(stream)
-    data["adapter_static_link_closure"] = True
-    with open(path, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, sort_keys=True)
-        stream.write("\n")
-PY
+"$python" "$source_root/tools/test-native-base-artifact-python/03_restore_static_link_closure.py" \
+    "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json"
 
 # Schema-1 compatibility is deliberately pinned to the canonical generation 2.
 # A later generation must use the current schema even if it carries the closure
 # attestation.
-python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
-import json
-import sys
-for path in sys.argv[1:]:
-    with open(path, encoding="utf-8") as stream:
-        data = json.load(stream)
-    data["artifact_generation"] = 3
-    with open(path, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, sort_keys=True)
-        stream.write("\n")
-PY
+"$python" "$source_root/tools/test-native-base-artifact-python/04_set_legacy_generation_v3.py" \
+    "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json"
 bad_legacy_generation="$fixture/searchkernel-vespa-base-v3-legacy-schema-artifact-regression-x86_64-unknown-linux-gnu-fixture-vespa-commit.tar.gz"
 (
     cd "$bundle_parent"
     tar -czf "$bad_legacy_generation" searchkernel-vespa-base
 )
 sha256sum "$bad_legacy_generation" >"$bad_legacy_generation.sha256"
-python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
-import json
-import sys
-for path in sys.argv[1:]:
-    with open(path, encoding="utf-8") as stream:
-        data = json.load(stream)
-    data["artifact_generation"] = 2
-    with open(path, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, sort_keys=True)
-        stream.write("\n")
-PY
+"$python" "$source_root/tools/test-native-base-artifact-python/05_restore_legacy_generation_v2.py" \
+    "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json"
 
 cache_home="$fixture/cache-home"
 
@@ -215,19 +177,8 @@ stale_toolchain="$cache_root/toolchains/fixture-vespa-commit"
 mkdir -p "$stale_object" "$stale_toolchain" "$cache_root/checkouts"
 cp -a "$bundle/base/." "$stale_object/"
 cp -a "$bundle/toolchain/." "$stale_toolchain/"
-python3 - "$stale_toolchain/upstream/vespa/.searchkernel-vespa-artifact.json" <<'PY'
-import json
-import sys
-path = sys.argv[1]
-with open(path, encoding="utf-8") as stream:
-    data = json.load(stream)
-data["format_version"] = 1
-data.pop("artifact_generation", None)
-data.pop("adapter_static_link_closure", None)
-with open(path, "w", encoding="utf-8") as stream:
-    json.dump(data, stream, sort_keys=True)
-    stream.write("\n")
-PY
+"$python" "$source_root/tools/test-native-base-artifact-python/06_make_cached_marker_stale.py" \
+    "$stale_toolchain/upstream/vespa/.searchkernel-vespa-artifact.json"
 ln -s "$stale_toolchain/upstream/vespa" "$cache_root/checkouts/fixture-vespa-commit"
 chmod -R a-w "$stale_object" "$stale_toolchain"
 
@@ -245,13 +196,8 @@ expected="$cache_home/searchkernel/native-sdk-cache/artifact-regression/x86_64-u
 [[ ! -e "$after/lib/libsearchkernel_vespa.so" ]]
 [[ -z "$(find "$after" ! -type l -perm /222 -print -quit)" ]]
 [[ "$(cat "$after/generation.txt")" == "generation-2" ]]
-python3 - "$after/.searchkernel-native-base-artifact.json" <<'PY'
-import json
-import sys
-with open(sys.argv[1], encoding="utf-8") as stream:
-    data = json.load(stream)
-assert data["artifact_generation"] == 2
-PY
+"$python" "$source_root/tools/test-native-base-artifact-python/07_assert_generation_v2.py" \
+    "$after/.searchkernel-native-base-artifact.json"
 grep -q 'published native-base cache is older than the desired generation; refresh required' "$fixture/install.err"
 grep -q 'refreshing published native-base cache to generation v2' "$fixture/install.err"
 grep -q 'installed published Vespa base generation v2' "$fixture/install.err"
@@ -268,19 +214,8 @@ resolved_root=$(run_resolver vespa-root)
 # object/toolchain atomically at the same cache path. No manual cache deletion
 # is allowed, and read-only "path" lookups remain offline.
 printf 'generation-3\n' >"$bundle/base/generation.txt"
-python3 - "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json" <<'PY'
-import json
-import sys
-for path in sys.argv[1:]:
-    with open(path, encoding="utf-8") as stream:
-        data = json.load(stream)
-    data["format_version"] = 2
-    data["artifact_generation"] = 3
-    data["adapter_static_link_closure"] = True
-    with open(path, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, sort_keys=True)
-        stream.write("\n")
-PY
+"$python" "$source_root/tools/test-native-base-artifact-python/08_write_generation_v3_manifest.py" \
+    "$bundle/manifest.json" "$vespa_toolchain/.searchkernel-vespa-artifact.json"
 archive_v3="$fixture/searchkernel-vespa-base-v3-artifact-regression-x86_64-unknown-linux-gnu-fixture-vespa-commit.tar.gz"
 (
     cd "$bundle_parent"
@@ -293,14 +228,9 @@ refreshed=$(run_resolver ensure artifact-regression x86_64-unknown-linux-gnu "fi
 [[ "$(cat "$refreshed/generation.txt")" == "generation-3" ]]
 grep -q 'refreshing published native-base cache to generation v3' "$fixture/refresh.err"
 grep -q 'installed published Vespa base generation v3' "$fixture/refresh.err"
-python3 - "$refreshed/.searchkernel-native-base-artifact.json" "$resolved_root/.searchkernel-vespa-artifact.json" <<'PY'
-import json
-import sys
-for path in sys.argv[1:]:
-    with open(path, encoding="utf-8") as stream:
-        data = json.load(stream)
-    assert data["artifact_generation"] == 3, (path, data)
-PY
+"$python" "$source_root/tools/test-native-base-artifact-python/09_assert_generation_v3.py" \
+    "$refreshed/.searchkernel-native-base-artifact.json" \
+    "$resolved_root/.searchkernel-vespa-artifact.json"
 
 # A stale override must never downgrade an already newer installed generation.
 not_downgraded=$(run_resolver ensure artifact-regression x86_64-unknown-linux-gnu "$artifact_url")

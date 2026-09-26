@@ -8,6 +8,12 @@ should_use_ci_image() {
         check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify)
             return 0
             ;;
+        native-sdk)
+            if [[ "${2:-ensure}" == "ensure" ]]; then
+                return 0
+            fi
+            return 1
+            ;;
         *)
             return 1
             ;;
@@ -24,6 +30,15 @@ if [[ "${SEARCHKERNEL_DEV_USE_CI_IMAGE:-1}" != "0" &&
    should_use_ci_image "$@"; then
     if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         git -C "$ROOT" config --local core.hooksPath .githooks
+    fi
+    if [[ "${1:-}" == "universe" ]]; then
+        UNIVERSE_LOG=${SEARCHKERNEL_UNIVERSE_LOG:-/tmp/searchkernel-universe-$(date +%Y%m%d-%H%M%S).log}
+        echo "Search Kernel universe log: $UNIVERSE_LOG"
+        set +e
+        bash "$ROOT/tools/run-in-ci-image.sh" "$@" 2>&1 | tee "$UNIVERSE_LOG"
+        status=${PIPESTATUS[0]}
+        set -e
+        exit "$status"
     fi
     exec bash "$ROOT/tools/run-in-ci-image.sh" "$@"
 fi
@@ -151,8 +166,8 @@ Search Kernel development commands
   ./dev verify persistence    Verify persistence compatibility
   ./dev verify issue-queue    Test issue-queue consistency tooling
   ./dev install flatbuffers   Build and install the pinned FlatBuffers toolchain
-  ./dev native-sdk ensure     Resolve/build the immutable shared Vespa SDK
-  ./dev native-sdk path       Print the SDK object selected for this worktree
+  ./dev native-sdk ensure     Validate the canonical Docker-backed Vespa SDK
+  ./dev native-sdk path       Print an intentionally provisioned host SDK object
   ./dev image publish         Build/push the thin CI image and update :latest
   ./dev image toolchain publish  Publish reusable language/compiler tooling
   ./dev image vespa publish      Publish reusable pinned Vespa/native bundle
@@ -1158,7 +1173,14 @@ case "${1:-help}" in
         check_all
         ;;
     universe)
-        universe
+        UNIVERSE_LOG=${SEARCHKERNEL_UNIVERSE_LOG:-/tmp/searchkernel-universe-$(date +%Y%m%d-%H%M%S).log}
+        : > "$UNIVERSE_LOG"
+        echo "Search Kernel universe log: $UNIVERSE_LOG"
+        set +e
+        universe 2>&1 | tee -a "$UNIVERSE_LOG"
+        status=${PIPESTATUS[0]}
+        set -e
+        exit "$status"
         ;;
     check-fast)
         check_fast

@@ -576,7 +576,11 @@ jobs:
               run_phase nightly-layout bash tools/check-layout.sh
               run_phase nightly-ir-boundary bash tools/check-ir-boundary.sh
               run_phase nightly-semantic-entry "$PYTHON" tools/check-search-semantic-entry-points.py
-              run_phase nightly-abi-surface "$PYTHON" tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
+              # python3-clang belongs to the distro Python in the canonical AlmaLinux image.
+              # Keep the client/codegen lane on $PYTHON, but run the ABI parser with the
+              # interpreter that owns its libclang bindings, as the dedicated ABI lane does.
+              ABI_PYTHON=/usr/bin/python3
+              run_phase nightly-abi-surface "$ABI_PYTHON" tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h
               run_phase nightly-python-boundary "$PYTHON" tools/check-python-flatbuffers-boundary.py
               run_phase nightly-bfbs bash tools/check-flatbuffers-bfbs.sh
               run_phase nightly-rpc bash tools/check-searchkernel-rpc.sh

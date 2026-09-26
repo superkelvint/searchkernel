@@ -55,12 +55,22 @@ for fragment in (
 
 for command in (
     "check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify",
+    "native-sdk)",
+    '[[ "${2:-ensure}" == "ensure" ]]',
     "SEARCHKERNEL_DEV_USE_CI_IMAGE",
     "SEARCHKERNEL_IN_CI_IMAGE",
     "/opt/searchkernel/native-validation-pass",
 ):
     if command not in dev:
         raise SystemExit(f"dev image-dispatch contract is missing {command!r}")
+
+native_dispatch = dev.index("native-sdk)")
+native_case_end = dev.index(";;", native_dispatch)
+native_case = dev[native_dispatch:native_case_end]
+if '"ensure"' not in native_case:
+    raise SystemExit("dev must dispatch native-sdk ensure through the CI image")
+if '"path"' in native_case:
+    raise SystemExit("dev must keep native-sdk path host-local; container paths are not host-usable")
 
 coverage_start = dev.index("coverage_target() {")
 coverage_end = dev.index("\nlint_target()", coverage_start)

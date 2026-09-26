@@ -7,6 +7,177 @@ against an immutable pinned Vespa/runtime base. Cargo build outputs, including
 the adapter, remain environment-local; the Vespa base is installed once in a
 machine-global cache and reused by independent clones and worktrees.
 
+
+## Fresh developer machine
+
+For a new Linux developer machine, the supported path is intentionally small:
+install the host bootstrap tools, authenticate GitHub, clone the repository, and
+let `./dev doctor` repair and verify the rest. Normal repository verification
+runs in the canonical `searchkernel-ci` Docker image, so developers do not need
+to manually reproduce CI's Ruby, PHP, Node, GCC, FlatBuffers, or Vespa
+toolchains on the host.
+
+### 1. Install host bootstrap prerequisites
+
+The host needs:
+
+- Git and `curl`;
+- Docker Engine, usable by the developer without `sudo`;
+- GitHub CLI (`gh`);
+- Python 3.10 or newer with `venv`;
+- `rustup`;
+- a basic C/C++ build environment and CMake.
+
+On Ubuntu/Debian, a suitable baseline is:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  git curl ca-certificates \
+  build-essential cmake \
+  python3 python3-venv python3-pip \
+  clang libclang-dev python3-clang \
+  ripgrep
+```
+
+Install Docker Engine and GitHub CLI through their supported distribution
+packages, then install Rust through `rustup`. Do not install the language/runtime
+matrix used by CI manually; the canonical Docker image owns those versions.
+
+Verify the bootstrap tools before cloning:
+
+```bash
+docker version
+docker run --rm hello-world
+
+gh auth login
+gh auth status
+
+python3 --version
+rustup --version
+```
+
+The authenticated GitHub account must have access to the private
+`superkelvint/searchkernel` repository. A normal developer shell does not need
+to export `GH_TOKEN` or `GITHUB_TOKEN`; native-base discovery and private
+release downloads reuse the authenticated `gh` session when explicit token
+variables are absent.
+
+### 2. Clone and bootstrap the repository
+
+```bash
+gh repo clone superkelvint/searchkernel
+cd searchkernel
+
+./dev doctor
+```
+
+`./dev doctor` is the authoritative first-run bootstrap and recovery command.
+It repairs or verifies the host Rust/Node/Python/system tooling, installs the
+pinned FlatBuffers prerequisite when needed, installs repository Python and
+TypeScript dependencies, provisions the host native prerequisite, configures the
+repository hooks, verifies generated protocol artifacts, and performs a real
+native `searchkerneld` build.
+
+A successful doctor means the host compile/link path is usable, not merely that
+similarly named executables exist on `PATH`.
+
+### 3. Validate the canonical Docker-backed native environment
+
+Normal build/test verification uses the same immutable environment as CI.
+Validate that environment explicitly once after bootstrap:
+
+```bash
+./dev native-sdk ensure
+```
+
+This command runs through the normal CI-image path and validates the exact
+digest-addressed Vespa/native bundle referenced by
+`docker.io/superkelvint/searchkernel-ci:latest`. It does not create a second
+host-native cache.
+
+### 4. Build
+
+For an explicit host build:
+
+```bash
+cargo build -p searchkerneld
+```
+
+The normal host target root is `target/host`; the daemon is therefore normally
+written to:
+
+```text
+target/host/debug/searchkerneld
+```
+
+The host build is useful for direct daemon development. Repository acceptance
+checks should still use `./dev`, because those checks intentionally execute in
+the canonical Docker environment.
+
+### 5. Run the test gates
+
+Run these in increasing order of scope:
+
+```bash
+# Fast development gate.
+./dev check-fast
+
+# Full normal repository quality/test gate.
+./dev check
+
+# Complete qualification: clients, E2E lanes, native/semantic verifiers,
+# ignored tests, and cumulative milestone closure.
+./dev universe
+```
+
+Focused test commands are available when iterating on one surface:
+
+```bash
+./dev test ir
+./dev test rust-api
+./dev test python
+./dev test typescript
+./dev test php
+./dev test ruby
+
+./dev lint --profile rust-clippy-all-features
+
+./dev verify product.integration
+./dev verify persistence
+./dev verify milestone.m14
+```
+
+A new developer machine should be considered fully qualified only after
+`./dev universe` passes.
+
+### Copy/paste happy path
+
+After the operating-system packages, Docker, GitHub CLI, and `rustup` are
+installed:
+
+```bash
+gh auth status
+docker version
+
+gh repo clone superkelvint/searchkernel
+cd searchkernel
+
+./dev doctor
+./dev native-sdk ensure
+
+cargo build -p searchkerneld
+
+./dev check-fast
+./dev check
+./dev universe
+```
+
+If any compiler, linker, FlatBuffers, SDK, dependency, cache, or provenance
+failure appears during this sequence, run `./dev doctor` first. Do not use
+`cargo clean`, delete `target/`, copy SDK directories between machines, or
+manually rebuild Vespa as an ad-hoc repair.
+
 ## Authority and failure handling
 
 This file is the authoritative guide for building, compiling, toolchain setup,
@@ -389,17 +560,27 @@ dependencies.
 
 ## Vespa base and adapter builds
 
-Bootstrap or repair the immutable Vespa base explicitly before the first native
-build (or after a declared base-input change):
+Normal development uses the same immutable Vespa Docker bundle as CI. Validate
+that canonical bundle explicitly when needed:
 
 ```bash
 ./dev native-sdk ensure
+```
+
+This command enters the normal CI-image runner, mounts the exact digest-addressed
+`searchkernel-ci-vespa` input referenced by `searchkernel-ci:latest`, and
+validates that mounted base. It does not populate a parallel host-native cache.
+
+Host-native SDK provisioning is an explicit compatibility/debugging mode:
+
+```bash
+SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev native-sdk ensure
 ./dev native-sdk path
 ```
 
-The resolver first checks the machine-global object for the pinned Vespa checkout
-hash and the machine-global registration of the one configured checkout with that
-same hash. A fresh independent Git clone therefore reuses the installed base and
+In that explicit host mode, the resolver first checks the machine-global object
+for the pinned Vespa checkout hash and the machine-global registration of the one
+configured checkout with that same hash. A fresh independent Git clone therefore reuses the installed base and
 the already-configured immutable checkout; it does not need to clone, configure,
 or build Vespa itself.
 
