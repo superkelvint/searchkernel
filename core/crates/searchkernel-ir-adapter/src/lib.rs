@@ -211,6 +211,31 @@ fn lower_field_value(value: &FieldValueIr) -> Result<FieldValue> {
     }
 }
 
+fn validate_predicate_expression_numbers(value: &serde_json::Value) -> Result<()> {
+    match value {
+        serde_json::Value::Number(number) if number.as_i64().is_none() => {
+            Err(PortableError::unsupported(
+                "predicate_float_not_supported",
+                Some("document.value.expression".to_owned()),
+                "predicate expression numbers must be signed 64-bit integers",
+            ))
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                validate_predicate_expression_numbers(value)?;
+            }
+            Ok(())
+        }
+        serde_json::Value::Object(values) => {
+            for value in values.values() {
+                validate_predicate_expression_numbers(value)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Vespa normalizes predicate JSON while constructing the native value. The
 /// native result decoder uses the root key order to preserve the distinction
 /// between feature-form and expression-form predicates, so put the expression
@@ -230,6 +255,7 @@ fn native_predicate_expression(expression: &str) -> Result<String> {
             "predicate expression must be a JSON object",
         ));
     };
+    validate_predicate_expression_numbers(&parsed)?;
     let Some(kind) = object.get("type") else {
         return Ok(expression.to_owned());
     };
@@ -518,4 +544,24 @@ fn internal(message: impl Into<String>) -> PortableError {
 
 fn unsupported(message: impl Into<String>) -> PortableError {
     PortableError::unsupported("m_lowering", None::<String>, message)
+}
+
+#[cfg(test)]
+mod predicate_expression_number_tests {
+    use super::native_predicate_expression;
+    use searchkernel_ir::ErrorCode;
+
+    #[test]
+    fn predicate_expression_float_numbers_fail_before_native_lowering() {
+        let error = native_predicate_expression(
+            r#"{"type":4,"key":"hobby","feature_set":["music"],"weight":1.23456789}"#,
+        )
+        .expect_err("floating predicate JSON must fail before native mutation");
+        assert_eq!(error.code, ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "predicate_float_not_supported");
+        assert_eq!(
+            error.details[0].path.as_deref(),
+            Some("document.value.expression")
+        );
+    }
 }
