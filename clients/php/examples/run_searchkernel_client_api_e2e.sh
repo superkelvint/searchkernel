@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-PYTHON="${CI_PYTHON:-python3}"
+cd "$ROOT"
+PYTHON="$(bash "$ROOT/tools/resolve-python.sh")"
+CARGO="$(bash "$ROOT/tools/resolve-rust.sh" cargo)"
+
+./dev native-sdk ensure
+"$CARGO" build -p searchkerneld
+
 TARGET_DIR="${CARGO_TARGET_DIR:-target/host}"
 if [[ "$TARGET_DIR" != /* ]]; then
   TARGET_DIR="$ROOT/$TARGET_DIR"
