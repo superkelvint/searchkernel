@@ -209,7 +209,7 @@ fn repeated_list_parameter_references_are_bounded_across_rust_and_portable_ingre
     let exact_references = aggregate / per_list;
 
     let exact_source = repeated_source("brands", exact_references);
-    let exact_bindings = BTreeMap::from([("brands".to_owned(), strings("brand", per_list))]);
+    let exact_bindings = BTreeMap::from([("brands".to_owned(), strings("brands", per_list))]);
     let rust = resolve_search(
         &context,
         rust_request(exact_source.clone(), exact_bindings),
@@ -226,7 +226,7 @@ fn repeated_list_parameter_references_are_bounded_across_rust_and_portable_ingre
     assert_eq!(rust, portable);
 
     let over_source = repeated_source("brands", exact_references + 1);
-    let over_bindings = BTreeMap::from([("brands".to_owned(), strings("brand", per_list))]);
+    let over_bindings = BTreeMap::from([("brands".to_owned(), strings("brands", per_list))]);
     let rust_error =
         resolve_search(&context, rust_request(over_source.clone(), over_bindings)).unwrap_err();
     let portable_error = portable_result(
