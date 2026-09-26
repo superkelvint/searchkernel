@@ -21,6 +21,10 @@ if name == "rejected-value-response"
     # A BFBS-printed response can preserve structurally valid duplicate map
     # entries; Ruby must reject them before converting to a Hash.
   end
+elsif name == "portable-int64-default-response"
+  raw = SearchKernel::Protocol.expect_response(:get, envelope)
+  fields = SearchKernel::Value.entries(raw.fetch("document").fetch("fields"))
+  raise "default Int64Value did not decode as zero" unless fields.fetch("zero") == 0
 elsif name == "portable-values-response"
   raw = SearchKernel::Protocol.expect_response(:get, envelope)
   fields = SearchKernel::Value.entries(raw.fetch("document").fetch("fields"))
