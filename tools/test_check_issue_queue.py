@@ -236,17 +236,17 @@ class IssueQueueReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(actions, [])
 
-    def test_stale_in_progress_without_claim_is_requeued(self) -> None:
-        stale = self._open_issue(
+    def test_in_progress_without_claim_is_requeued_immediately(self) -> None:
+        current = self._open_issue(
             8,
             "status:in-progress",
             "priority:p1",
             "area:ci",
             "type:hardening",
-            updated_hours_ago=48,
+            updated_hours_ago=1,
         )
         actions = MODULE.plan_reconciliation(
-            [stale],
+            [current],
             [],
             set(),
             set(),
@@ -256,6 +256,28 @@ class IssueQueueReconciliationTests(unittest.TestCase):
         self.assertEqual(
             [(action.kind, action.issue_number, action.value) for action in actions],
             [("set-state", 8, "status:ready")],
+        )
+
+    def test_missing_claim_with_open_pr_is_blocked_immediately(self) -> None:
+        current = self._open_issue(
+            13,
+            "status:in-progress",
+            "priority:p1",
+            "area:ci",
+            "type:hardening",
+            updated_hours_ago=1,
+        )
+        actions = MODULE.plan_reconciliation(
+            [current],
+            [],
+            set(),
+            {"codex/issue-13"},
+            now=self.NOW,
+            stale_after=self.STALE_AFTER,
+        )
+        self.assertEqual(
+            [(action.kind, action.issue_number, action.value) for action in actions],
+            [("set-state", 13, "status:blocked")],
         )
 
     def test_stale_claim_branch_is_preserved_and_blocked(self) -> None:
@@ -340,6 +362,74 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             stale_after=self.STALE_AFTER,
         )
         self.assertEqual(actions, [])
+
+
+    def test_load_open_pr_heads_ignores_fork_heads(self) -> None:
+        same_repo = {
+            "head": {
+                "ref": "codex/issue-21",
+                "repo": {"full_name": "owner/repo"},
+            }
+        }
+        fork = {
+            "head": {
+                "ref": "codex/issue-22",
+                "repo": {"full_name": "fork/repo"},
+            }
+        }
+        with mock.patch.object(
+            MODULE,
+            "_github_json",
+            return_value=[same_repo, fork],
+        ) as github_json:
+            self.assertEqual(
+                MODULE.load_open_pr_heads("owner/repo"),
+                {"codex/issue-21"},
+            )
+        github_json.assert_called_once_with(
+            "owner/repo",
+            "pulls",
+            page=1,
+            state="open",
+        )
+
+    def test_apply_reconciliation_preserves_non_workflow_labels(self) -> None:
+        live = {
+            "number": 8,
+            "state": "open",
+            "labels": [
+                {"name": "status:in-progress"},
+                {"name": "priority:p1"},
+                {"name": "area:ci"},
+                {"name": "type:hardening"},
+            ],
+        }
+        action = MODULE.ReconcileAction(
+            "set-state",
+            8,
+            "status:ready",
+            "fixture repair",
+        )
+        with (
+            mock.patch.object(MODULE, "_live_issue", return_value=live),
+            mock.patch.object(MODULE, "_github_patch") as github_patch,
+        ):
+            messages = MODULE.apply_reconciliation("owner/repo", [action])
+
+        github_patch.assert_called_once_with(
+            "owner/repo",
+            "issues/8",
+            {
+                "labels": [
+                    "area:ci",
+                    "priority:p1",
+                    "status:ready",
+                    "type:hardening",
+                ]
+            },
+        )
+        self.assertEqual(len(messages), 1)
+
 
 
 if __name__ == "__main__":
