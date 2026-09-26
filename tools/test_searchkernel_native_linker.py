@@ -22,7 +22,7 @@ class NativeRuntimeLinkTests(unittest.TestCase):
         self.assertIn('$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2', source)
         sdk = BUILD_SDK.read_text(encoding="utf-8")
         self.assertIn("SK_NATIVE_ADAPTER_SONAME", sdk)
-        self.assertIn("-Wl,-soname,'\$ADAPTER_SONAME'", sdk)
+        self.assertIn("-Wl,-soname,'$ADAPTER_SONAME'", sdk)
 
     def test_build_script_stages_runtime_for_cargo_executable_origins(self) -> None:
         source = BUILD_RS.read_text(encoding="utf-8")
