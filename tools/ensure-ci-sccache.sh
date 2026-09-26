@@ -64,25 +64,35 @@ if ! validate_binary; then
     docker volume rm -f "$BINARY_VOLUME" >/dev/null 2>&1 || true
     docker volume create "$BINARY_VOLUME" >/dev/null
 
-    docker run --rm \
-        -e SCCACHE_VERSION="$SCCACHE_VERSION" \
-        -e SCCACHE_SHA256="$SCCACHE_SHA256" \
-        -v "$BINARY_VOLUME:/out" \
-        "$CI_IMAGE" \
-        /bin/bash -lc '
-            set -euo pipefail
-            work=$(mktemp -d /tmp/sccache.XXXXXX)
-            trap "rm -rf -- \"$work\"" EXIT
-            asset="sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz"
-            curl --fail --location --retry 5 --silent --show-error \
-                "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/$asset" \
-                -o "$work/$asset"
-            printf "%s  %s\n" "$SCCACHE_SHA256" "$work/$asset" | sha256sum -c - >/dev/null
-            tar -xzf "$work/$asset" -C "$work"
-            install -m 0755 \
-                "$work/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache" \
-                /out/sccache
-        '
+    if docker run --rm "$CI_IMAGE" /usr/local/bin/sccache --version 2>/dev/null |
+        grep -qx "sccache $SCCACHE_VERSION"; then
+        echo "Seeding pinned sccache binary from the immutable CI image" >&2
+        docker run --rm \
+            -v "$BINARY_VOLUME:/out" \
+            "$CI_IMAGE" \
+            /bin/bash -lc 'install -m 0755 /usr/local/bin/sccache /out/sccache'
+    else
+        echo "CI image predates pinned sccache; downloading checksum-verified bootstrap binary" >&2
+        docker run --rm \
+            -e SCCACHE_VERSION="$SCCACHE_VERSION" \
+            -e SCCACHE_SHA256="$SCCACHE_SHA256" \
+            -v "$BINARY_VOLUME:/out" \
+            "$CI_IMAGE" \
+            /bin/bash -lc '
+                set -euo pipefail
+                work=$(mktemp -d /tmp/sccache.XXXXXX)
+                trap "rm -rf -- \"$work\"" EXIT
+                asset="sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+                curl --fail --location --retry 5 --silent --show-error \
+                    "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/$asset" \
+                    -o "$work/$asset"
+                printf "%s  %s\n" "$SCCACHE_SHA256" "$work/$asset" | sha256sum -c - >/dev/null
+                tar -xzf "$work/$asset" -C "$work"
+                install -m 0755 \
+                    "$work/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache" \
+                    /out/sccache
+            '
+    fi
 
     validate_binary || {
         echo "materialized sccache binary failed validation" >&2

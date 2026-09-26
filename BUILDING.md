@@ -247,7 +247,9 @@ Rust compilation is the deliberate exception to otherwise disposable build
 state: the repository pins sccache 0.17.0 with its release checksum. The current
 toolchain Dockerfile installs that same binary, while the runner also materializes
 it into a versioned read-only Docker volume so rollout does not depend on image
-publication order. Docker-backed builds set
+publication order. Once the canonical image contains the pin, runners seed that
+volume from the immutable image; older images use the checksum-verified release
+artifact only for the bootstrap transition. Docker-backed builds set
 `RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache`. One runner-local sccache
 server per pinned sccache version and immutable CI toolchain identity owns a
 bounded 20 GiB local compiler cache. A toolchain identity change therefore starts
