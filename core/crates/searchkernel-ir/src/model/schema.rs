@@ -543,6 +543,7 @@ pub struct IndexDefinitionIr {
     pub(crate) default_search_fields: Vec<SearchFieldIr>,
     pub(crate) properties: SchemaPropertiesIr,
     pub(crate) document_type: Option<String>,
+    pub(crate) resolved_document_type: String,
     pub(crate) schema_inherits: Vec<String>,
     pub(crate) document_inherits: Vec<String>,
     pub(crate) structs: Vec<NamedStructDefinitionIr>,
@@ -569,12 +570,18 @@ impl IndexDefinitionIr {
                 "an index must define at least one field",
             ));
         }
+        let resolved_document_type = name
+            .as_ref()
+            .map(IndexName::as_str)
+            .unwrap_or("searchkernel")
+            .to_owned();
         Ok(Self {
             name,
             fields,
             default_search_fields,
             properties: SchemaPropertiesIr::new(),
             document_type: None,
+            resolved_document_type,
             schema_inherits: Vec::new(),
             document_inherits: Vec::new(),
             structs: Vec::new(),
@@ -595,7 +602,17 @@ impl IndexDefinitionIr {
 
     #[cfg(any(test, feature = "test"))]
     pub fn set_document_type(&mut self, document_type: impl Into<String>) {
-        self.document_type = Some(document_type.into());
+        let document_type = document_type.into();
+        self.resolved_document_type.clone_from(&document_type);
+        self.document_type = Some(document_type);
+    }
+
+    /// Restore the backend identity captured by a durable index manifest.
+    /// Caller-visible `document_type` remains unchanged so Describe can retain
+    /// the original optional intent.
+    #[doc(hidden)]
+    pub fn set_resolved_document_type(&mut self, document_type: impl Into<String>) {
+        self.resolved_document_type = document_type.into();
     }
 
     #[doc(hidden)]
@@ -667,6 +684,16 @@ impl IndexDefinitionIr {
         schema_inherits: Vec<String>,
         document_inherits: Vec<String>,
     ) {
+        if let Some(value) = document_type.as_deref() {
+            self.resolved_document_type = value.to_owned();
+        } else {
+            self.resolved_document_type = self
+                .name
+                .as_ref()
+                .map(IndexName::as_str)
+                .unwrap_or("searchkernel")
+                .to_owned();
+        }
         self.document_type = document_type;
         self.schema_inherits = schema_inherits;
         self.document_inherits = document_inherits;
@@ -747,10 +774,7 @@ impl IndexDefinitionIr {
     /// intent here, inside the semantic IR boundary, so adapters never invent
     /// their own fallback.
     pub fn resolved_document_type(&self) -> &str {
-        self.document_type
-            .as_deref()
-            .or_else(|| self.name.as_ref().map(IndexName::as_str))
-            .unwrap_or("searchkernel")
+        &self.resolved_document_type
     }
     pub fn schema_inherits(&self) -> &[String] {
         &self.schema_inherits

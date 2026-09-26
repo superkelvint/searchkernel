@@ -231,7 +231,7 @@ fn rich_v2_index_definition_round_trips_through_ir() {
         Vec::new(),
     )
     .unwrap();
-    definition.document_type = Some("doc".to_owned());
+    definition.set_document_type("doc");
     definition.schema_inherits = vec!["base".to_owned()];
     definition.structs = vec![NamedStructDefinitionIr {
         name: "address".to_owned(),
@@ -330,6 +330,7 @@ fn rich_v2_index_definition_round_trips_through_ir() {
         rank_profiles: _,
         constants: _,
         onnx_models: _,
+        resolved_document_type: _,
     } = &definition;
 
     let bytes = index_definition_ir_to_api(&definition);

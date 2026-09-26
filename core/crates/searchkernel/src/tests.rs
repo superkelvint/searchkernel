@@ -1147,7 +1147,11 @@ fn persistence_fault_matrix_rejects_resolved_document_identity_drift() {
     assert_eq!(manifest["resolved_document_type"], "searchkernel");
 
     manifest["resolved_document_type"] = serde_json::json!("different_document");
-    std::fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
     let error = match Index::open(&root) {
         Ok(index) => {
             index.close().unwrap();
@@ -1172,7 +1176,11 @@ fn persistence_fault_matrix_rejects_resolved_document_identity_drift() {
     schema["document_type"] = serde_json::json!("different_document");
     std::fs::write(&schema_path, serde_json::to_vec(&schema).unwrap()).unwrap();
     manifest["resolved_engine_config_identity"] = config_identity(&config).unwrap();
-    std::fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
 
     let error = match Index::open(&root) {
         Ok(index) => {

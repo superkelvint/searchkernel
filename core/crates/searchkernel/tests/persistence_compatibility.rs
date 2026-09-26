@@ -131,6 +131,19 @@ fn every_supported_historical_fixture_reopens_searches_mutates_and_reopens_again
 }
 
 #[test]
+fn v3_and_v4_fixtures_keep_omitted_document_type_while_reopening() {
+    for version in [3, 4] {
+        let root = materialize_fixture(version);
+        let index = Index::open(&root).unwrap_or_else(|error| panic!("v{version} open: {error}"));
+        let described = index.describe().expect("describe historical index");
+        assert_eq!(described.document_type, None);
+        assert_expected_searches(&index);
+        index.close().unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
 fn repeated_failed_real_opens_do_not_mutate_or_destroy_a_valid_fixture() {
     let root = materialize_fixture(4);
     let manifest = root.join("manifest/index.json");

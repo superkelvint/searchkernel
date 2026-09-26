@@ -298,20 +298,7 @@ impl IndexManifest {
             return Ok(());
         }
 
-        let schema_path = config.join("searchkernel-schema.json");
-        let schema_bytes = std::fs::read(&schema_path)
-            .map_err(|error| Error::Infrastructure(error.to_string()))?;
-        let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).map_err(|error| {
-            Error::corrupt_index(format!(
-                "resolved engine schema manifest is invalid: {error}"
-            ))
-        })?;
-        let compiled_document_type = schema
-            .get("document_type")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                Error::corrupt_index("resolved engine schema document_type is missing or invalid")
-            })?;
+        let compiled_document_type = Self::compiled_document_type(config)?;
 
         let expected_document_type = self
             .persisted_resolved_document_type()?
@@ -324,12 +311,51 @@ impl IndexManifest {
         Ok(())
     }
 
+    fn compiled_document_type(config: &std::path::Path) -> Result<String> {
+        let schema_path = config.join("searchkernel-schema.json");
+        let schema_bytes = std::fs::read(&schema_path)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).map_err(|error| {
+            Error::corrupt_index(format!(
+                "resolved engine schema manifest is invalid: {error}"
+            ))
+        })?;
+        let document_type = schema
+            .get("document_type")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                Error::corrupt_index("resolved engine schema document_type is missing or invalid")
+            })?;
+        let proton = std::fs::read_to_string(config.join("proton.cfg"))
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        let encoded_proton_document_type = proton
+            .lines()
+            .find_map(|line| line.strip_prefix("documentdb[0].inputdoctypename "))
+            .ok_or_else(|| {
+                Error::corrupt_index("resolved Vespa config document identity is missing")
+            })?;
+        let proton_document_type: String = serde_json::from_str(encoded_proton_document_type)
+            .map_err(|error| {
+                Error::corrupt_index(format!(
+                    "resolved Vespa config document identity is invalid: {error}"
+                ))
+            })?;
+        if proton_document_type != document_type {
+            return Err(Error::incompatible_index(
+                "resolved document identity differs from compiled engine configuration",
+            ));
+        }
+        Ok(document_type)
+    }
+
     fn persisted_resolved_document_type(&self) -> Result<Option<&str>> {
         match self.value.get("resolved_document_type") {
             None => Ok(None),
-            Some(value) => value.as_str().map(Some).ok_or_else(|| {
-                Error::corrupt_index("manifest resolved_document_type is invalid")
-            }),
+            Some(value) => value
+                .as_str()
+                .map(Some)
+                .ok_or_else(|| Error::corrupt_index("manifest resolved_document_type is invalid")),
         }
     }
 
@@ -390,6 +416,33 @@ impl IndexManifest {
         };
         self.validate_resolved_document_type(&definition)?;
         Ok(IndexContext::from_definition_ir(definition))
+    }
+
+    pub(crate) fn resolved_context_for_config(
+        &self,
+        config: &std::path::Path,
+    ) -> Result<IndexContext> {
+        let mut context = self.resolved_context()?;
+        let version = self
+            .value
+            .get("manifest_format_version")
+            .or_else(|| self.value.get("format_version"))
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| Error::corrupt_index("manifest format version is missing"))?;
+        if matches!(
+            version,
+            value if value == u64::from(MANIFEST_FORMAT_VERSION)
+                || value == u64::from(PREVIOUS_MANIFEST_FORMAT_VERSION)
+        ) && self.persisted_resolved_document_type()?.is_none()
+        {
+            // v3/v4 manifests preserved caller intent but not the fallback
+            // chosen by the adapter. Their immutable generated config is the
+            // only durable record of the identity used to open Vespa.
+            let mut definition = context.definition().clone();
+            definition.set_resolved_document_type(Self::compiled_document_type(config)?);
+            context = IndexContext::from_definition_ir(definition);
+        }
+        Ok(context)
     }
 
     fn validate_binary_identity(

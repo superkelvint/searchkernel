@@ -75,6 +75,7 @@ pub fn index_definition(value: &IndexDefinitionIr) -> Value {
         rank_profiles,
         constants,
         onnx_models,
+        ..
     } = value;
 
     json!({
