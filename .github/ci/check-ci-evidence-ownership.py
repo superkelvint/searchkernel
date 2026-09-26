@@ -98,8 +98,8 @@ def main() -> int:
                 f"canonical PR workflow must not own mutable worker state: {forbidden!r}"
             )
 
-    if "zero shared mutable worker state" not in executor:
-        errors.append("CI image runner must declare the zero-shared-state execution contract")
+    if "isolated source and target state" not in executor:
+        errors.append("CI image runner must declare the isolated-state execution contract")
 
     if errors:
         print_errors(errors)
