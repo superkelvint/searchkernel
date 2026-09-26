@@ -12,6 +12,8 @@ if grep -E 'RecordingBackend|ScriptedBackend|searchkernel_testkit' "$TEST"; then
   fail_verification "real-engine entry parity test references a fake backend"
 fi
 grep -F 'Index::create' "$TEST" >/dev/null || fail_verification "Rust-direct path is missing"
+grep -F 'env!("CARGO_BIN_EXE_searchkerneld")' "$TEST" >/dev/null || fail_verification "production searchkerneld process launch is missing"
+grep -F '.arg("--definition-json")' "$TEST" >/dev/null || fail_verification "daemon definition ingress is missing"
 grep -F 'Index::connect' "$TEST" >/dev/null || fail_verification "generated gRPC remote path is missing"
 grep -F 'assert_eq!(grpc_outcome, direct_outcome' "$TEST" >/dev/null || fail_verification "cross-entry semantic comparison is missing"
 "$SCRIPT_DIR/test-entry-parity-gate.sh"

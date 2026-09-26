@@ -2,15 +2,14 @@
 
 use std::{
     collections::BTreeSet,
-    net::SocketAddr,
+    net::TcpListener,
     path::PathBuf,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    process::{Child, Command, Stdio},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use searchkernel::{field, ErrorCode, Field, Index, IndexDefinition, Sort};
-use searchkernel_dispatch::Dispatcher;
-use searchkerneld::{start, ServerConfig};
 use serde_json::{json, Value};
 
 struct TempIndex(PathBuf);
@@ -30,6 +29,73 @@ impl Drop for TempIndex {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+struct Daemon(Child);
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn definition_json() -> Value {
+    let primitive = |kind: &str| json!({"kind_type":"PrimitiveDataType","kind":{"kind":kind}});
+    json!({
+        "name":"entry_parity",
+        "fields":[
+            {"name":"title","data_type":primitive("String"),"stored":{"value":true},"searchable":{"value":true},"matching":{"mode":"Text"}},
+            {"name":"category","data_type":primitive("String"),"stored":{"value":true},"filterable":{"value":true},"sortable":{"value":true}},
+            {"name":"price","data_type":primitive("Float64"),"stored":{"value":true},"filterable":{"value":true},"sortable":{"value":true}}
+        ],
+        "default_search_fields":{"fields":[{"field":"title"}]}
+    })
+}
+
+fn unused_tcp_addr() -> std::net::SocketAddr {
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+}
+
+fn launch_production_daemon(index_path: &std::path::Path) -> (Daemon, String) {
+    let definition_path = index_path.with_extension("definition.json");
+    std::fs::write(
+        &definition_path,
+        serde_json::to_vec(&definition_json()).unwrap(),
+    )
+    .unwrap();
+    let addr = unused_tcp_addr();
+    let child = Command::new(env!("CARGO_BIN_EXE_searchkerneld"))
+        .arg("--index")
+        .arg(index_path)
+        .arg("--definition-json")
+        .arg(&definition_path)
+        .arg("--listen")
+        .arg(addr.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("launch production searchkerneld binary");
+    let mut daemon = Daemon(child);
+    let endpoint = format!("http://{addr}");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        if let Some(status) = daemon.0.try_wait().unwrap() {
+            panic!("production searchkerneld exited before accepting gRPC: {status}");
+        }
+        if std::net::TcpStream::connect(addr).is_ok() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "production searchkerneld did not start"
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+    (daemon, endpoint)
 }
 
 fn definition() -> IndexDefinition {
@@ -114,25 +180,10 @@ async fn public_rust_direct_and_generated_grpc_match_on_real_engine() {
     direct.close().unwrap();
 
     let grpc_path = TempIndex::new("grpc");
-    let hosted = Index::create(&grpc_path.0, definition()).unwrap();
-    let (context, session) = hosted.clone().into_session_parts();
-    let dispatcher = Arc::new(Dispatcher::new(context, session));
-    let mut server = start(
-        ServerConfig::new("127.0.0.1:0".parse::<SocketAddr>().unwrap()),
-        dispatcher,
-    )
-    .await
-    .unwrap();
-    let endpoint = format!("http://{}", server.tcp_addr().unwrap());
-
+    let (_daemon, endpoint) = launch_production_daemon(&grpc_path.0);
     let remote = Index::connect(endpoint).unwrap();
-    let mut grpc_outcome = exercise(&remote);
-    if std::env::var_os("SEARCHKERNEL_TEST_PERTURB_GRPC_PARITY").is_some() {
-        grpc_outcome["total_hits"] = json!(999_u64);
-    }
+    let grpc_outcome = exercise(&remote);
     remote.close().unwrap();
-    server.shutdown().await.unwrap();
-    hosted.close().unwrap();
 
     assert_eq!(
         grpc_outcome, direct_outcome,
