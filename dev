@@ -5,7 +5,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 should_use_ci_image() {
     case "${1:-}" in
-        check|universe|check-fast|check-protocol|lint|test|verify|precommit-verify)
+        check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify)
             return 0
             ;;
         *)
@@ -131,6 +131,7 @@ Search Kernel development commands
   ./dev universe              Run every repository test, E2E lane, and verifier
   ./dev check-fast            Run formatting, compile, and boundary checks
   ./dev check-protocol        Verify generated FlatBuffers/gRPC artifacts
+  ./dev coverage              Generate Rust code coverage reports under coverage/
   ./dev lint --profile <id>   Run a canonical Clippy verification profile
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
@@ -482,6 +483,15 @@ regen_protocol() {
 
 regen_result_fixtures() {
     "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures
+}
+
+coverage_target() {
+    [[ "$#" -eq 0 ]] || {
+        echo "usage: ./dev coverage" >&2
+        return 2
+    }
+    native_sdk_command ensure >/dev/null
+    bash "$ROOT/tools/coverage.sh"
 }
 
 lint_target() {
@@ -1134,6 +1144,10 @@ case "${1:-help}" in
         ;;
     check-protocol)
         check_protocol
+        ;;
+    coverage)
+        shift
+        coverage_target "$@"
         ;;
     lint)
         shift

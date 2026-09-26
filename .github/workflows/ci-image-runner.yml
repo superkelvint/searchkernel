@@ -433,6 +433,59 @@ jobs:
               run_phase nightly-universe ./dev universe
               ;;
 
+            nightly-coverage)
+              run_phase nightly-coverage env SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage ./dev coverage
+              run_phase nightly-coverage-evidence python3 - "$EXPECTED_HEAD" <<'PY'
+          import json
+          import pathlib
+          import sys
+          
+          root = pathlib.Path("/artifacts/coverage")
+          expected_head = sys.argv[1]
+          required_files = (
+              "coverage.json",
+              "summary.json",
+              "lcov.info",
+              "summary.txt",
+              "README.txt",
+              "metadata.json",
+              "html/index.html",
+          )
+          missing = [
+              relative
+              for relative in required_files
+              if not (root / relative).is_file() or (root / relative).stat().st_size == 0
+          ]
+          if missing:
+              raise SystemExit(f"coverage evidence missing or empty: {', '.join(missing)}")
+          
+          with (root / "metadata.json").open(encoding="utf-8") as stream:
+              metadata = json.load(stream)
+          
+          if metadata.get("git_head", "").lower() != expected_head.lower():
+              raise SystemExit(
+                  f"coverage metadata head mismatch: expected {expected_head}, "
+                  f"found {metadata.get('git_head')!r}"
+              )
+          if metadata.get("working_tree_clean") is not True:
+              raise SystemExit(
+                  f"coverage metadata reports dirty exact-head snapshot: "
+                  f"{metadata.get('working_tree_status')!r}"
+              )
+          if metadata.get("tool") != "cargo-llvm-cov 0.9.1":
+              raise SystemExit(
+                  f"unexpected coverage tool version: {metadata.get('tool')!r}"
+              )
+          if metadata.get("native_cpp_coverage") is not False:
+              raise SystemExit("coverage metadata must explicitly exclude native C++ coverage")
+          
+          for relative in ("coverage.json", "summary.json"):
+              with (root / relative).open(encoding="utf-8") as stream:
+                  json.load(stream)
+          
+          print(f"Coverage evidence PASS for exact head {expected_head}.")
+          PY
+              ;;
             nightly-rust)
               run_phase nightly-format cargo fmt --all --check
               run_phase nightly-check cargo check --workspace --all-targets --no-default-features
@@ -571,6 +624,16 @@ jobs:
             exit 1
           fi
 
+      - name: Upload nightly coverage
+        if: ${{ always() && inputs.target == 'nightly-coverage' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}-${{ github.job }}
+          path: ${{ env.ARTIFACT_DIR }}/coverage
+          # Superseded exact-head jobs can exit cleanly before producing coverage.
+          # Current-head coverage validates every required file inside the lane.
+          if-no-files-found: warn
+          retention-days: 30
       - name: Upload nightly Clippy repair packet
         if: ${{ always() && inputs.target == 'nightly-rust' }}
         uses: actions/upload-artifact@v4
