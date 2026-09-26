@@ -23,7 +23,7 @@ jobs:
       python: ${{ steps.behavioral.outputs.python }}
       typescript: ${{ steps.behavioral.outputs.typescript }}
       ruby: ${{ steps.behavioral.outputs.ruby }}
-      tooling: ${{ steps.fixed.outputs.tooling }}
+      tooling: ${{ steps.tooling.outputs.required }}
       native: ${{ steps.native.outputs.required }}
       coverage: ${{ steps.coverage.outputs.required }}
     steps:
@@ -71,10 +71,6 @@ jobs:
       - name: Test candidate behavioral lane selector
         run: |
           "$CI_PYTHON" .github/ci/test_behavioral_lanes_required.py
-
-      - name: Keep tooling invariant fixed while DAG authorization is offline
-        id: fixed
-        run: echo "tooling=true" >> "$GITHUB_OUTPUT"
 
       - name: Resolve changed paths against current target
         id: changes
@@ -181,6 +177,43 @@ jobs:
           fi
 
           "$CI_PYTHON" "$selector" --github-output "$GITHUB_OUTPUT" < "$RUNNER_TEMP/searchkernel-changed-paths.txt"
+
+      - name: Select tooling invariant lane
+        id: tooling
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGES_RESOLVED: ${{ steps.changes.outputs.resolved }}
+          POLICY_SHA: ${{ steps.changes.outputs.policy_sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$CHANGES_RESOLVED" != "true" ]]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "Tooling invariant required: true (changed paths unresolved)"
+            exit 0
+          fi
+
+          selector="$RUNNER_TEMP/tooling_invariant_required.py"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ -z "${POLICY_SHA:-}" ]] || ! git cat-file -e "$POLICY_SHA:.github/ci/tooling_invariant_required.py" 2>/dev/null; then
+              echo "required=true" >> "$GITHUB_OUTPUT"
+              echo "Tooling invariant required: true (trusted target branch lacks selector)"
+              exit 0
+            fi
+            git show "$POLICY_SHA:.github/ci/tooling_invariant_required.py" > "$selector"
+            echo "Tooling invariant policy loaded from trusted target at $POLICY_SHA."
+          else
+            cp .github/ci/tooling_invariant_required.py "$selector"
+          fi
+
+          required=$("$CI_PYTHON" "$selector" < "$RUNNER_TEMP/searchkernel-changed-paths.txt")
+          if [[ "$required" != "true" && "$required" != "false" ]]; then
+            echo "::error::tooling invariant selector returned invalid value '$required'"
+            exit 1
+          fi
+
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+          echo "Tooling invariant required: $required"
 
       - name: Select coverage verifier lane
         id: coverage

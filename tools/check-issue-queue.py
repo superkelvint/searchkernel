@@ -196,6 +196,7 @@ def load_issues(repo: str, *, state: str) -> list[dict[str, Any]]:
         raise QueueError(f"unsupported issue state: {state}")
 
     issues: list[dict[str, Any]] = []
+    seen_numbers: set[int] = set()
     page = 1
     while True:
         value = _github_json(repo, "issues", page=page, state=state)
@@ -203,7 +204,20 @@ def load_issues(repo: str, *, state: str) -> list[dict[str, Any]]:
             raise QueueError("GitHub issues API returned an invalid issue snapshot")
         # GitHub's REST issues collection includes pull requests. Queue state is
         # defined only for issues, matching `gh issue list` semantics.
-        issues.extend(item for item in value if "pull_request" not in item)
+        #
+        # Pagination is not a transactional snapshot: an issue changing state while
+        # pages are fetched can shift the collection and make the same issue appear
+        # on adjacent pages. Normalize that transport-level overlap here; the pure
+        # validators still reject duplicate numbers in deterministic snapshots.
+        for item in value:
+            if "pull_request" in item:
+                continue
+            number = item.get("number")
+            if isinstance(number, int) and number > 0:
+                if number in seen_numbers:
+                    continue
+                seen_numbers.add(number)
+            issues.append(item)
         if len(value) < 100:
             break
         page += 1

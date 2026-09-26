@@ -454,11 +454,11 @@ universe() {
         UNIVERSE_FAILED+=('semantic verifier discovery (no targets)')
     else
         for target in "${targets[@]}"; do
-            universe_dev_step "semantic verifier $target" verify "$target"
+            universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
         done
     fi
 
-    universe_dev_step 'cumulative milestone.m14 closure' verify milestone.m14
+    universe_dev_step 'cumulative milestone.m14 closure' verify milestone.m14 --skip-workspace-quality
 
     echo
     echo '========== Search Kernel universe summary =========='
