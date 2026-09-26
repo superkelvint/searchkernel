@@ -22,6 +22,9 @@ PROTECTED_PREFIXES = (
     "reference/vespa/",
     "tools/",
     ".moon/",
+    "docker/searchkernel-ci/",
+    "docker/searchkernel-ci-toolchain/",
+    "docker/searchkernel-ci-vespa/",
 )
 PROTECTED_FILES = {"dev", "moon.yml", "workspace.yml", ".prototools"}
 TRANSITION_COMPANION_PREFIXES = ("docs/",)
