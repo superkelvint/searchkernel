@@ -45,6 +45,8 @@
 #include <vespa/document/update/documentupdate.h>
 #include <vespa/document/update/fieldupdate.h>
 #include <vespa/fnet/transport.h>
+#include <vespa/searchlib/docstore/idocumentstore.h>
+#include <vespa/searchcore/proton/docsummary/isummarymanager.h>
 #include <vespa/searchcore/proton/matching/querylimiter.h>
 #include <vespa/searchcore/proton/matching/querynodes.h>
 #include <vespa/searchcore/proton/metrics/metricswireservice.h>

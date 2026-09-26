@@ -1059,6 +1059,35 @@ class EmbeddedEngine {
         }
     }
 
+    struct PredicateNumberValidator final
+        : vespalib::slime::ArrayTraverser,
+          vespalib::slime::ObjectTraverser {
+        void validate(const vespalib::slime::Inspector &value) {
+            switch (value.type().getId()) {
+            case vespalib::slime::DOUBLE::ID:
+                throw std::invalid_argument(
+                    "predicate expression numbers must be signed 64-bit integers");
+            case vespalib::slime::ARRAY::ID:
+                value.traverse(static_cast<vespalib::slime::ArrayTraverser &>(*this));
+                break;
+            case vespalib::slime::OBJECT::ID:
+                value.traverse(static_cast<vespalib::slime::ObjectTraverser &>(*this));
+                break;
+            default:
+                break;
+            }
+        }
+
+        void entry(size_t, const vespalib::slime::Inspector &value) override {
+            validate(value);
+        }
+
+        void field(const vespalib::Memory &,
+                   const vespalib::slime::Inspector &value) override {
+            validate(value);
+        }
+    };
+
     static std::unique_ptr<document::PredicateFieldValue>
     make_predicate_value(const OwnedValue &value, uint32_t arity = 8) {
         if (value.kind != SK_VALUE_PREDICATE ||
@@ -1072,6 +1101,8 @@ class EmbeddedEngine {
                 !is_slime_type(slime->get(), vespalib::slime::OBJECT::ID)) {
                 throw std::invalid_argument("predicate expression is not a JSON object");
             }
+            PredicateNumberValidator number_validator;
+            number_validator.validate(slime->get());
             expand_predicate_ranges(slime->get(), arity);
             return std::make_unique<document::PredicateFieldValue>(std::move(slime));
         }
@@ -1372,11 +1403,16 @@ class EmbeddedEngine {
     std::unique_ptr<Document> read_source_document(const DocumentId &id) const {
         search::IDocumentMetaStore::DocId lid = 0;
         if (!find_lid(id, lid)) return {};
-        auto retrievers = _db->getDocumentRetrievers(storage::spi::ReadConsistency::STRONG);
-        if (!retrievers || retrievers->empty()) {
-            throw std::runtime_error("Vespa DocumentDB has no document retriever");
-        }
-        return (*retrievers)[0]->getFullDocument(lid);
+        auto ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        const auto &summary_manager = ready_sub_db->getSummaryManager();
+        if (!summary_manager) throw std::runtime_error("Vespa DocumentDB has no summary manager");
+        // DocumentRetriever::getFullDocument() patches attribute values into the
+        // stored document and deliberately removes zero-valued multivalue
+        // attributes. Read the backing document store directly when source
+        // presence matters so an explicitly stored empty collection remains
+        // distinguishable from an absent field.
+        return summary_manager->getBackingStore().read(lid, *_repo);
     }
 
     std::unique_ptr<Document> read_retrieved_document(const DocumentId &id) const {
@@ -1389,6 +1425,63 @@ class EmbeddedEngine {
         return (*retrievers)[0]->getFullDocument(lid);
     }
 
+    bool update_requires_document_store_sync(const ValueUpdate &update) const {
+        return std::any_of(update.fields.begin(), update.fields.end(), [this](const auto &entry) {
+            const auto &field = require_manifest_field(entry.first);
+            return field.type == "array<string>" || field.type == "array<struct>";
+        });
+    }
+
+    std::unique_ptr<Document> read_document_for_rewrite(const DocumentId &id) const {
+        auto source = read_source_document(id);
+        if (!source) return {};
+        auto observed = read_retrieved_document(id);
+        if (!observed) return source;
+
+        // The backing document is authoritative for explicit presence, while
+        // the retriever is authoritative for current attribute values. Merge
+        // the two before a read-modify-write update so memory-only attribute
+        // updates are not overwritten by a later collection rewrite.
+        for (const auto &manifest_field : _manifest.fields) {
+            if (!manifest_field.attribute || manifest_field.virtual_field) continue;
+            const auto &field = _doc_type->getField(manifest_field.name);
+            auto observed_value = observed->getValue(field);
+            const bool observed_has_value =
+                observed_value &&
+                (observed->hasValue(field) || manifest_field.type == "tensor");
+            if (observed_has_value) {
+                if (!source->hasValue(field) &&
+                    observed_value->type() == document::FieldValue::Type::BOOL &&
+                    observed_value->getAsLong() == 0) {
+                    continue;
+                }
+                source->setFieldValue(field, std::move(observed_value));
+                continue;
+            }
+
+            auto source_value = source->getValue(field);
+            if (!source_value) continue;
+            bool preserve_source_presence = false;
+            if (source_value->type() == document::FieldValue::Type::STRING) {
+                preserve_source_presence = source_value->getAsString().empty();
+            } else if (source_value->type() == document::FieldValue::Type::LONG ||
+                       source_value->type() == document::FieldValue::Type::INT) {
+                preserve_source_presence =
+                    source_value->getAsLong() ==
+                    (_legacy_state ? std::numeric_limits<int32_t>::min()
+                                   : std::numeric_limits<int64_t>::min());
+            } else if (source_value->type() == document::FieldValue::Type::ARRAY) {
+                const auto *array =
+                    dynamic_cast<const document::ArrayFieldValue *>(source_value.get());
+                preserve_source_presence = array && array->isEmpty();
+            }
+            if (!preserve_source_presence) {
+                source->remove(field);
+            }
+        }
+        return source;
+    }
+
     static std::string slime_json(const vespalib::Slime &slime) {
         vespalib::SmartBuffer output(1024);
         vespalib::slime::JsonFormat::encode(slime, output, true);
@@ -1396,33 +1489,71 @@ class EmbeddedEngine {
         return std::string(json.data, json.size);
     }
 
-    static void set_slime_scalar(vespalib::slime::Cursor &cursor,
-                                 const document::FieldValue &value,
-                                 const std::string &field_name) {
-        switch (value.type()) {
-        case document::FieldValue::Type::STRING:
-            cursor.setString("type", "string");
-            cursor.setString("value", value.getAsString());
-            break;
-        case document::FieldValue::Type::LONG:
-            cursor.setString("type", "integer");
-            cursor.setLong("value", value.getAsLong());
-            break;
-        case document::FieldValue::Type::INT:
-            cursor.setString("type", "integer");
-            cursor.setLong("value", value.getAsInt());
-            break;
-        case document::FieldValue::Type::DOUBLE:
-            cursor.setString("type", "float");
-            cursor.setDouble("value", value.getAsDouble());
-            break;
-        case document::FieldValue::Type::BOOL:
-            cursor.setString("type", "boolean");
-            cursor.setBool("value", value.getAsLong() != 0);
-            break;
-        default:
-            throw std::invalid_argument("unsupported struct member type in field: " + field_name);
+    static std::string json_string(const std::string &value) {
+        vespalib::Slime encoded;
+        encoded.setString(value);
+        return slime_json(encoded);
+    }
+
+    static std::string json_double(double value) {
+        if (!std::isfinite(value)) {
+            throw std::invalid_argument("non-finite composite float cannot be encoded");
         }
+        std::ostringstream output;
+        output.imbue(std::locale::classic());
+        output << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+        if (!output) throw std::runtime_error("could not encode composite float");
+        return output.str();
+    }
+
+    static const char *struct_scalar_type(const OwnedValue &value) {
+        switch (value.kind) {
+        case SK_VALUE_STRING: return "string";
+        case SK_VALUE_INTEGER: return "integer";
+        case SK_VALUE_FLOAT: return "float";
+        case SK_VALUE_BOOLEAN: return "boolean";
+        default: throw std::invalid_argument("unsupported struct member value kind");
+        }
+    }
+
+    static std::string struct_scalar_json(const OwnedValue &value) {
+        switch (value.kind) {
+        case SK_VALUE_STRING:
+            return json_string(value.string);
+        case SK_VALUE_INTEGER:
+            return std::to_string(value.integer);
+        case SK_VALUE_FLOAT:
+            return json_double(value.floating);
+        case SK_VALUE_BOOLEAN:
+            return value.boolean ? "true" : "false";
+        default:
+            throw std::invalid_argument("unsupported struct member value kind");
+        }
+    }
+
+    static std::string struct_array_json(
+        const std::vector<std::vector<std::pair<std::string, OwnedValue>>> &elements) {
+        std::string result = "[";
+        bool first_element = true;
+        for (const auto &element : elements) {
+            if (!first_element) result += ',';
+            first_element = false;
+            result += '{';
+            bool first_field = true;
+            for (const auto &[name, value] : element) {
+                if (!first_field) result += ',';
+                first_field = false;
+                result += json_string(name);
+                result += ":{\"type\":\"";
+                result += struct_scalar_type(value);
+                result += "\",\"value\":";
+                result += struct_scalar_json(value);
+                result += '}';
+            }
+            result += '}';
+        }
+        result += ']';
+        return result;
     }
 
     OwnedValue owned_value(const document::FieldValue &value, const std::string &field_name) const {
@@ -1452,8 +1583,6 @@ class EmbeddedEngine {
             const auto *array = dynamic_cast<const document::ArrayFieldValue *>(&value);
             if (!array) throw std::invalid_argument("array field has no value: " + field_name);
             const bool struct_array = require_manifest_field(field_name).type == "array<struct>";
-            vespalib::Slime encoded;
-            auto &encoded_array = encoded.setArray();
             if (struct_array) {
                 owned.kind = SK_VALUE_STRUCT_ARRAY;
                 for (const auto &entry : *array) {
@@ -1462,7 +1591,6 @@ class EmbeddedEngine {
                         throw std::invalid_argument("retrieved struct array field has a non-struct element: " + field_name);
                     }
                     std::vector<std::pair<std::string, OwnedValue>> fields;
-                    auto &encoded_object = encoded_array.addObject();
                     for (auto iterator = struct_value->begin(); iterator != struct_value->end(); ++iterator) {
                         const auto &member = iterator.field();
                         const auto full_name = member.getName();
@@ -1473,13 +1601,14 @@ class EmbeddedEngine {
                         auto member_value = struct_value->getValue(member_name);
                         if (!member_value) continue;
                         fields.emplace_back(member_name, owned_value(*member_value, field_name));
-                        auto &encoded_member = encoded_object.setObject(member_name);
-                        set_slime_scalar(encoded_member, *member_value, field_name);
                     }
                     owned.struct_elements.push_back(std::move(fields));
                 }
+                owned.string = struct_array_json(owned.struct_elements);
             } else {
                 owned.kind = SK_VALUE_STRING_ARRAY;
+                vespalib::Slime encoded;
+                auto &encoded_array = encoded.setArray();
                 for (const auto &entry : *array) {
                     if (entry.type() != document::FieldValue::Type::STRING) {
                         throw std::invalid_argument("retrieved array field is not string-valued: " + field_name);
@@ -1487,8 +1616,8 @@ class EmbeddedEngine {
                     owned.strings.push_back(entry.getAsString());
                     encoded_array.addString(entry.getAsString());
                 }
+                owned.string = slime_json(encoded);
             }
-            owned.string = slime_json(encoded);
             break;
         }
         case document::FieldValue::Type::STRUCT: {
@@ -1502,11 +1631,8 @@ class EmbeddedEngine {
             owned.kind = SK_VALUE_POSITION;
             owned.longitude = static_cast<double>(x->getAsInt()) / 1'000'000.0;
             owned.latitude = static_cast<double>(y->getAsInt()) / 1'000'000.0;
-            vespalib::Slime encoded;
-            auto &object = encoded.setObject();
-            object.setDouble("latitude", owned.latitude);
-            object.setDouble("longitude", owned.longitude);
-            owned.string = slime_json(encoded);
+            owned.string = "{\"latitude\":" + json_double(owned.latitude) +
+                           ",\"longitude\":" + json_double(owned.longitude) + "}";
             break;
         }
         case document::FieldValue::Type::PREDICATE:
@@ -1682,19 +1808,21 @@ class EmbeddedEngine {
                 }
                 continue;
             }
-            // Vespa uses the minimum signed integer as the undefined value in
-            // its numeric attribute view. The source document still carries
-            // an explicitly assigned minimum, but the native document reader
-            // cannot use the attribute presence bit to acknowledge it.
-            const bool native_default_value =
-                exact && is_attribute &&
-                ((value->kind == SK_VALUE_BOOLEAN && !value->boolean) ||
-                 (value->kind == SK_VALUE_STRING && value->string.empty()) ||
-                 (value->kind == SK_VALUE_INTEGER &&
-                  value->integer == (_legacy_state ? std::numeric_limits<int32_t>::min()
-                                                    : std::numeric_limits<int64_t>::min())));
-            if (native_default_value) continue;
             auto actual = field_document->getValue(field);
+            if (!exact && is_attribute &&
+                ((value->kind == SK_VALUE_STRING_ARRAY && value->strings.empty()) ||
+                 (value->kind == SK_VALUE_STRUCT_ARRAY && value->struct_elements.empty()))) {
+                // Vespa's attribute-patched retriever removes zero-valued
+                // multivalue fields. Confirm the assignment against the raw
+                // backing document instead of waiting forever for a presence
+                // bit that intentionally remains false.
+                auto source_actual = document->getValue(field);
+                if (source_actual && value_matches(
+                        *source_actual, *value,
+                        manifest != _manifest.fields.end() ? manifest->predicate_arity : 8)) {
+                    continue;
+                }
+            }
             if (value->kind == SK_VALUE_STRUCT_ARRAY) {
                 // Vespa may normalize array-of-struct members while publishing
                 // the source document. Presence is the stable visibility
@@ -1710,44 +1838,16 @@ class EmbeddedEngine {
         }
         if (exact) {
             for (const auto &field : _manifest.fields) {
+                // Struct member paths are represented in the manifest for
+                // projection, but are not top-level document fields.
+                if (field.name.find('.') != std::string::npos) continue;
                 const bool expected = std::any_of(
                     expected_fields.begin(), expected_fields.end(),
                     [&field](const auto &entry) { return entry.first == field.name && entry.second.has_value(); });
-                const bool is_attribute = field.attribute;
-                const bool expected_integer_sentinel = std::any_of(
-                    expected_fields.begin(), expected_fields.end(), [&field, this](const auto &entry) {
-                        return entry.first == field.name && entry.second.has_value() &&
-                               entry.second->kind == SK_VALUE_INTEGER &&
-                               entry.second->integer == (_legacy_state ? std::numeric_limits<int32_t>::min()
-                                                                       : std::numeric_limits<int64_t>::min());
-                    });
-                const bool expected_attribute_default = std::any_of(
-                    expected_fields.begin(), expected_fields.end(), [&field, this](const auto &entry) {
-                        if (entry.first != field.name || !entry.second.has_value() || !field.attribute) return false;
-                        const auto &value = *entry.second;
-                        return (value.kind == SK_VALUE_BOOLEAN && !value.boolean) ||
-                               (value.kind == SK_VALUE_STRING && value.string.empty()) ||
-                               (value.kind == SK_VALUE_INTEGER &&
-                                value.integer == (_legacy_state ? std::numeric_limits<int32_t>::min()
-                                                                 : std::numeric_limits<int64_t>::min()));
-                    });
-                if (expected_integer_sentinel || expected_attribute_default) continue;
-                auto actual = value_document->getValue(_doc_type->getField(field.name));
-                bool actual_present = static_cast<bool>(actual);
-                if (!expected && is_attribute && actual) {
-                    if (field.type == "boolean" && actual->type() == document::FieldValue::Type::BOOL &&
-                        actual->getAsLong() == 0) {
-                        actual_present = false;
-                    } else if ((field.type == "string" || field.type == "text") &&
-                               actual->type() == document::FieldValue::Type::STRING && actual->getAsString().empty()) {
-                        actual_present = false;
-                    } else if (field.type == "integer" &&
-                               actual->type() == document::FieldValue::Type::LONG &&
-                               actual->getAsLong() == (_legacy_state ? std::numeric_limits<int32_t>::min()
-                                                                      : std::numeric_limits<int64_t>::min())) {
-                        actual_present = false;
-                    }
-                }
+                // getValue() can materialize an empty default for an absent
+                // array. The source document's presence bit distinguishes
+                // that from an explicitly stored empty collection.
+                const bool actual_present = value_document->hasValue(_doc_type->getField(field.name));
                 if (actual_present != expected) {
                     return false;
                 }
@@ -1844,6 +1944,17 @@ class EmbeddedEngine {
                     if (manifest_field.attribute && existing != result.fields.end() &&
                         existing->value.kind == SK_VALUE_STRING &&
                         existing->value.string.empty()) {
+                        continue;
+                    }
+                    if (manifest_field.attribute && existing != result.fields.end() &&
+                        ((existing->value.kind == SK_VALUE_STRING_ARRAY &&
+                          existing->value.strings.empty()) ||
+                         (existing->value.kind == SK_VALUE_STRUCT_ARRAY &&
+                          existing->value.struct_elements.empty()))) {
+                        // The attribute-patched retriever intentionally removes
+                        // zero-valued multivalue fields. The backing document
+                        // remains authoritative for explicit collection
+                        // presence so [] does not collapse to absence.
                         continue;
                     }
                     // Signed integer attributes use their minimum value as the
@@ -4270,10 +4381,37 @@ public:
         require_open();
         const DocumentId id(internal_document_id(update.id, _document_type));
         const bool was_present = source_document_present(id);
+        auto native_update = make_value_update(update);
+
+        if (update_requires_document_store_sync(update)) {
+            auto document = read_document_for_rewrite(id);
+            if (document || update.create_if_nonexistent) {
+                if (!document) {
+                    document = std::make_unique<Document>(*_repo, *_doc_type, id);
+                }
+                native_update->applyTo(*document);
+                const Bucket bucket = bucket_for(id);
+                {
+                    std::lock_guard<std::mutex> bucket_lock(_bucket_mutex);
+                    prepare_bucket(bucket);
+                }
+                failpoint("mutation_before_native_call");
+                failpoint("attribute_mutation_before_native_call");
+                auto result = _persistence.put(
+                    bucket, Timestamp(next_timestamp()),
+                    std::shared_ptr<Document>(std::move(document)));
+                failpoint("attribute_mutation_after_native_call");
+                failpoint("mutation_after_native_call");
+                if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+                wait_for_source_state(id, true, update.fields, false);
+                return;
+            }
+        }
+
         failpoint("mutation_before_native_call");
         failpoint("attribute_mutation_before_native_call");
         auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()),
-                                          make_value_update(update));
+                                          std::move(native_update));
         failpoint("attribute_mutation_after_native_call");
         failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
