@@ -85,7 +85,7 @@ RUN --mount=from=vespa,source=/opt/searchkernel/native-sdk-cache,target=/mnt/sea
 # Rebuild the native adapter from the exact source revision while the Vespa
 # image is mounted read-only. Cargo caches are scoped by CI_ENVIRONMENT_ID.
 FROM environment-validation AS native-validation
-COPY --from=searchkernel-source / /tmp/searchkernel-source/
+COPY . /tmp/searchkernel-source/
 WORKDIR /tmp/searchkernel-source
 RUN --mount=from=vespa,source=/opt/searchkernel/native-sdk-cache,target=/mnt/searchkernel-native-cache,ro \
     --mount=type=cache,id=searchkernel-ci-publish-cargo-registry,target=/root/.cargo/registry \
