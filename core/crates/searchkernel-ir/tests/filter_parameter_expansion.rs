@@ -270,3 +270,36 @@ fn multiple_list_parameters_enforce_exact_aggregate_boundary_and_one_over() {
     assert_eq!(rust_error, portable_error);
     assert_expansion_error(&rust_error);
 }
+
+
+#[test]
+fn aggregate_budget_is_shared_across_nested_boolean_branches() {
+    let context = index_context();
+    let per_list = searchkernel_filter::limits::MAX_IN_VALUES;
+    let aggregate = searchkernel_filter::limits::MAX_TOKENS;
+    assert_eq!(aggregate % per_list, 0);
+    let exact_references = aggregate / per_list;
+    let left_references = exact_references / 2;
+    let right_references = exact_references - left_references;
+
+    let exact_source = format!(
+        "({}) AND NOT ({})",
+        repeated_source("brands", left_references),
+        repeated_source("brands", right_references)
+    );
+    let exact_bindings =
+        BTreeMap::from([("brands".to_owned(), strings("brands", per_list))]);
+    resolve_search(&context, rust_request(exact_source, exact_bindings))
+        .expect("nested aggregate expansion at the token budget must resolve");
+
+    let over_source = format!(
+        "({}) AND NOT ({})",
+        repeated_source("brands", left_references),
+        repeated_source("brands", right_references + 1)
+    );
+    let over_bindings =
+        BTreeMap::from([("brands".to_owned(), strings("brands", per_list))]);
+    let error = resolve_search(&context, rust_request(over_source, over_bindings))
+        .expect_err("nested boolean branches must share one aggregate expansion budget");
+    assert_expansion_error(&error);
+}
