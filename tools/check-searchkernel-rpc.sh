@@ -3,7 +3,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cargo=$(bash "$root/tools/resolve-rust.sh" cargo)
-checked_in="$root/searchkerneld/src/generated/rpc.rs"
+checked_in="$root/core/crates/searchkernel-rpc/src/generated/rpc.rs"
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
 

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "core/crates/searchkernel-protocol",
+    "core/crates/searchkernel-rpc",
     "core/crates/searchkernel-ir",
     "core/crates/searchkernel-filter",
     "core/crates/searchkernel",
