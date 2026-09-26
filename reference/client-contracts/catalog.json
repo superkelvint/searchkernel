@@ -80,6 +80,32 @@
           ]
         }
       ]
+    },
+    "ruby": {
+      "title": "Ruby",
+      "runtimes": [
+        "http",
+        "managed-local"
+      ],
+      "evidence_roots": [
+        "clients/ruby/test",
+        "clients/ruby/examples"
+      ],
+      "required_e2e_runtimes": [
+        "managed-local"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "managed-local"
+          ],
+          "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+          "command": [
+            "bash",
+            "clients/ruby/examples/run_searchkernel_client_api_e2e.sh"
+          ]
+        }
+      ]
     }
   },
   "scenarios": [

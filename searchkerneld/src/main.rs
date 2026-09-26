@@ -22,6 +22,7 @@ mod native_main {
     struct Config {
         index_path: PathBuf,
         definition_path: Option<PathBuf>,
+        definition_json_path: Option<PathBuf>,
         server: ServerConfig,
     }
 
@@ -29,6 +30,7 @@ mod native_main {
         let mut args = env::args_os().skip(1);
         let mut index_path = None;
         let mut definition_path = None;
+        let mut definition_json_path = None;
         let mut listen = None;
         let mut web_listen = None;
         let mut execution_limit = None;
@@ -47,6 +49,13 @@ mod native_main {
                     definition_path = Some(
                         args.next()
                             .ok_or("--definition requires a path")
+                            .map(PathBuf::from)?,
+                    )
+                }
+                "--definition-json" => {
+                    definition_json_path = Some(
+                        args.next()
+                            .ok_or("--definition-json requires a path")
                             .map(PathBuf::from)?,
                     )
                 }
@@ -81,6 +90,11 @@ mod native_main {
             .ok_or("--index or SEARCHKERNEL_INDEX_PATH is required")?;
         let definition_path = definition_path
             .or_else(|| env::var_os("SEARCHKERNEL_INDEX_DEFINITION").map(PathBuf::from));
+        let definition_json_path = definition_json_path
+            .or_else(|| env::var_os("SEARCHKERNEL_INDEX_DEFINITION_JSON").map(PathBuf::from));
+        if definition_path.is_some() && definition_json_path.is_some() {
+            return Err("--definition and --definition-json are mutually exclusive".into());
+        }
         let server = match listen {
             Some(value) => config_from_address(Some(&value.to_string_lossy()))?,
             None => match env::var("SEARCHKERNEL_GRPC_ADDR") {
@@ -123,6 +137,7 @@ mod native_main {
         Ok(Config {
             index_path,
             definition_path,
+            definition_json_path,
             server: server
                 .with_execution_limit(execution_limit)
                 .with_admission_limit(admission_limit),
@@ -142,17 +157,33 @@ mod native_main {
 
     fn open_index(config: &Config) -> Result<Index, Box<dyn Error>> {
         if config.index_path.is_dir() {
-            if config.definition_path.is_some() {
-                return Err("--definition is only valid when creating an index".into());
+            if config.definition_path.is_some() || config.definition_json_path.is_some() {
+                return Err(
+                    "--definition and --definition-json are only valid when creating an index"
+                        .into(),
+                );
             }
             return Ok(Index::open(&config.index_path)?);
         }
 
-        let definition_path = config
-            .definition_path
-            .as_ref()
-            .ok_or("--definition is required when creating an index")?;
-        let definition = std::fs::read(definition_path)?;
+        let definition = match (
+            config.definition_path.as_ref(),
+            config.definition_json_path.as_ref(),
+        ) {
+            (Some(path), None) => std::fs::read(path)?,
+            (None, Some(path)) => {
+                let json = std::fs::read(path)?;
+                searchkernel_protocol::json::index_definition_json_to_flatbuffer(&json)?
+            }
+            (None, None) => {
+                return Err(
+                    "--definition or --definition-json is required when creating an index".into(),
+                )
+            }
+            (Some(_), Some(_)) => {
+                return Err("--definition and --definition-json are mutually exclusive".into())
+            }
+        };
         Ok(Index::create_from_definition_bytes(
             &config.index_path,
             &definition,

@@ -61,16 +61,41 @@ jobs:
     env:
       CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
     steps:
+      - name: Allocate job-private checkout path
+        id: checkout
+        env:
+          CI_TARGET: ${{ inputs.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$CI_TARGET" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::invalid CI target for checkout path: $CI_TARGET"
+            exit 1
+          fi
+
+          relative=".ci-checkouts/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${CI_TARGET}"
+          absolute="$GITHUB_WORKSPACE/$relative"
+          if [[ -e "$absolute" ]]; then
+            echo "::error::job-private checkout path already exists: $absolute"
+            exit 1
+          fi
+
+          echo "relative=$relative" >> "$GITHUB_OUTPUT"
+          echo "absolute=$absolute" >> "$GITHUB_OUTPUT"
+
       - name: Check out requested revision
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.revision || github.sha }}
+          path: ${{ steps.checkout.outputs.relative }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Resolve exact revision
         id: revision
         shell: bash
+        working-directory: ${{ steps.checkout.outputs.absolute }}
         run: |
           set -euo pipefail
           actual=$(git rev-parse HEAD)
@@ -79,6 +104,7 @@ jobs:
 
       - name: Pull immutable CI image
         shell: bash
+        working-directory: ${{ steps.checkout.outputs.absolute }}
         run: |
           set -euo pipefail
           docker pull "$CI_IMAGE"
@@ -152,6 +178,7 @@ jobs:
           EXPECTED_HEAD: ${{ steps.revision.outputs.sha }}
           CI_TARGET: ${{ inputs.target }}
         shell: bash
+        working-directory: ${{ steps.checkout.outputs.absolute }}
         run: |
           set -euo pipefail
 
@@ -224,6 +251,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
+        working-directory: ${{ steps.checkout.outputs.absolute }}
         run: |
           set -euo pipefail
 
@@ -353,11 +381,43 @@ jobs:
             export NATIVE_ADAPTER_LIB
           }
 
+          prepare_native_full_verifier_sdk() {
+            local verifier_sdk="$CARGO_TARGET_DIR/native-verifier-sdk"
+            local verifier_build="$CARGO_TARGET_DIR/native-verifier-sdk-build"
+            local verifier_vespa_root
+
+            verifier_vespa_root=$(bash tools/resolve-native-sdk.sh vespa-root)
+
+            run_phase native-full-prepare-verifier-sdk env \
+              -u HEAD_CHECK_TOKEN \
+              -u AUTOFIX_TOKEN \
+              SEARCHKERNEL_VERIFIER_SDK="$verifier_sdk" \
+              SEARCHKERNEL_VERIFIER_SDK_BUILD="$verifier_build" \
+              SEARCHKERNEL_VERIFIER_BASE_SDK="$native_base" \
+              SEARCHKERNEL_VERIFIER_VESPA_ROOT="$verifier_vespa_root" \
+              bash -c '
+                set -euo pipefail
+                source reference/vespa/common/verify-common.sh
+                prepare_verifier_sdk
+              '
+
+            [[ -f "$verifier_sdk/manifest.json" ]]
+            [[ -f "$verifier_sdk/include/searchkernel_vespa.h" ]]
+
+            export SEARCHKERNEL_VERIFIER_SDK="$verifier_sdk"
+            export SEARCHKERNEL_VERIFIER_SDK_BUILD="$verifier_build"
+            export SEARCHKERNEL_VERIFIER_BASE_SDK="$native_base"
+            export SEARCHKERNEL_VERIFIER_VESPA_ROOT="$verifier_vespa_root"
+            export SEARCHKERNEL_VERIFIER_SDK_PREPARED=1
+          }
+
           case "$CI_TARGET" in
             rust-non-native)
               run_phase protocol-bfbs bash tools/check-flatbuffers-bfbs.sh
               run_phase protocol-rust-generated bash tools/check-searchkernel-protocol-generated.sh
               run_phase rust-test cargo test --workspace --all-targets --no-default-features
+              run_phase search-endpoint-hostile-inputs cargo test -p searchkerneld --no-default-features --features test-support --test search_endpoints
+              run_phase instantsearch-request-compat cargo test -p searchkerneld --no-default-features --features test-support --test instantsearch_compat
               run_phase api-conformance reference/api-conformance/verify.sh
               ;;
 
@@ -385,10 +445,13 @@ jobs:
               ;;
 
             tooling)
+              run_phase tooling-python-syntax "$PYTHON" -m compileall -q tools .github/ci
+              run_phase ci-runner-isolation "$PYTHON" .github/ci/test_ci_image_runner_isolation.py
               run_phase dev-syntax bash -n dev
               run_phase dev-help bash dev help
               run_phase dev-ci-image-contract bash tools/test-dev-ci-image.sh
               run_phase ci-image-publishing-contract bash tools/test-ci-image-publishing.sh
+              run_phase ci-image-identity "$PYTHON" tools/test_ci_image_identity.py
               run_phase native-sdk-packaging bash tools/test-native-sdk-packaging.sh
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
@@ -470,14 +533,18 @@ jobs:
               ;;
 
             native-full)
-              run_phase native-full-abi ./dev verify abi
+              # ABI-sensitive changes are covered by the dedicated exact-head
+              # ABI surface workflow, which compares against the real PR/base SHA.
+              # Prepare once in a tokenless child, then publish only the fixed
+              # verifier paths/marker into the parent for later verifier reuse.
+              prepare_native_full_verifier_sdk
+
               run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw
-              run_phase native-full-product-integration ./dev verify product.integration
-              run_phase native-full-rust-real-engine ./dev verify product.rust-real-engine
+              run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved
               run_phase native-full-grouping-yql ./dev verify vespa.grouping.yql
               run_phase native-full-recovery ./dev verify vespa.recovery
-              run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh
-              run_phase native-full-python-e2e tools/run-python-native-e2e.sh
+              run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved
+              run_phase native-full-python-e2e tools/run-python-native-e2e.sh --prevalidated-native-sdk
               run_phase native-full-persistence ./dev verify persistence
               ;;
 
@@ -589,3 +656,19 @@ jobs:
             docker volume rm -f "${SOURCE_VOLUME:-}" "${TARGET_VOLUME:-}" >/dev/null 2>&1 || true
           fi
           rm -rf "${ARTIFACT_DIR:-}"
+
+      - name: Remove job-private checkout
+        if: always() && steps.checkout.outputs.absolute != ''
+        env:
+          CHECKOUT_DIR: ${{ steps.checkout.outputs.absolute }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$CHECKOUT_DIR" in
+            "$GITHUB_WORKSPACE"/.ci-checkouts/*) ;;
+            *)
+              echo "::error::refusing to clean unexpected checkout path: $CHECKOUT_DIR"
+              exit 1
+              ;;
+          esac
+          rm -rf -- "$CHECKOUT_DIR"

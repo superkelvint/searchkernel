@@ -35,7 +35,7 @@ pub use api_to_ir::{
     RustAnalyzerInput, RustFieldInput, RustFieldKind, RustIndexDefinitionInput,
     RustRankProfileInput, RustSearchFieldInput, SearchFieldInput, SearchInput, SearchIntent,
     SortInput, SortTargetInput, TextualFilterInput, UnresolvedFieldInput,
-    UnresolvedRankProfileInput, UpdateOperationInput, WriteRequestRef,
+    UnresolvedRankProfileInput, UpdateOperationInput, WriteRequestRef, DEFAULT_SEARCH_LIMIT,
 };
 pub use backend::Backend;
 pub use error::{ErrorCode, ErrorDetail, PortableError, Result};

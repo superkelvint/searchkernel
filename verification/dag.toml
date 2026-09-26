@@ -34,6 +34,7 @@ include = [
   "searchkerneld/**",
   "clients/**",
   "searchkernel-web/**",
+  "integrations/**",
   "verification/**",
 ]
 
@@ -104,13 +105,22 @@ cache_result = false
 notes = "Exercises the ergonomic Rust Index client across real gRPC framing and the canonical dispatcher."
 
 [[task]]
-id = "search-endpoints"
-legacy_lanes = ["rust"]
-kind = "aggregate"
+id = "instantsearch-compat"
+kind = "command"
 runner = "linux"
-depends_on = ["rust-non-native", "protocol-generated", "client-contracts"]
+command = "cargo test -p searchkerneld --no-default-features --features test-support --test instantsearch_compat"
+depends_on = ["rust-quality", "protocol-generated"]
 cache_result = false
-notes = "Pre-registered ownership for the public Search Endpoint ingress. The product change replaces this aggregate with its focused executable verifier once the dedicated target exists."
+notes = "Hard compatibility gate for the InstantSearch.js core SearchClient request vocabulary consumed by Search Endpoints."
+
+[[task]]
+id = "search-endpoints"
+kind = "command"
+runner = "linux"
+command = "cargo test -p searchkerneld --no-default-features --features test-support --test search_endpoints"
+depends_on = ["instantsearch-compat", "rust-quality", "protocol-generated"]
+cache_result = false
+notes = "Focused verifier for the searchkerneld public Search Endpoint binding/serving ingress. InstantSearch compatibility is a required dependency, not optional follow-up coverage."
 
 [[task]]
 id = "python-client"
@@ -938,14 +948,23 @@ paths = ["core/native/**"]
 requires = ["rust-non-native", "client-contracts", "abi", "native-full"]
 
 [[subsystem]]
+id = "instantsearch-integration"
+paths = [
+  "integrations/instantsearch/**",
+  "searchkerneld/tests/instantsearch_compat.rs",
+]
+requires = ["instantsearch-compat", "search-endpoints", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
+
+[[subsystem]]
 id = "searchkerneld-search-endpoints"
 paths = [
   "searchkerneld/src/search_endpoints.rs",
   "searchkerneld/src/search_endpoints/**",
   "searchkerneld/tests/search_endpoints.rs",
   "searchkerneld/tests/search_endpoints/**",
+  "searchkerneld/tests/instantsearch_compat.rs",
 ]
-requires = ["search-endpoints", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
+requires = ["instantsearch-compat", "search-endpoints", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
 
 [[subsystem]]
 id = "searchkerneld"

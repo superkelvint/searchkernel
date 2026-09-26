@@ -4,6 +4,19 @@
 //! semantic work is delegated to the canonical transport-independent
 //! dispatcher.
 
+mod search_endpoints;
+
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod search_endpoint_test_support {
+    pub use crate::search_endpoints::{
+        await_blocking_with_timeout, SearchEndpointAdmissionPermit, SearchEndpointBindError,
+        SearchEndpointConcurrency, SearchEndpointConcurrencyError, SearchEndpointConfig,
+        SearchEndpointExecutionWaitError, SearchEndpointPolicy, SearchEndpointRouteError,
+        SearchEndpointRouter,
+    };
+}
+
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 #[cfg(unix)]

@@ -8,16 +8,31 @@ source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
 python3 "$M11/validate.py"
 
-TARGET="$ROOT/target/vespa-verifier/m11/sanitizer"
-rm -rf "$TARGET"
+# CARGO_TARGET_DIR is verification-plan-local under ./dev. Keep all expensive
+# sanitizer build products beneath it so repeated M11 consumers in the same
+# plan reuse them, while a distinct plan naturally gets a fresh artifact root.
+M11_PLAN_CARGO_TARGET="$CARGO_TARGET_DIR"
+TARGET="${M11_SANITIZER_TARGET:-$M11_PLAN_CARGO_TARGET/m11/sanitizer}"
 mkdir -p "$TARGET"
 M11_BASE_RUSTFLAGS="${RUSTFLAGS:-}"
+
+sanitizer_sdk_ready() {
+  local lane="$1"
+  local sdk="$2"
+  local manifest="$sdk/manifest.json"
+
+  [[ -f "$manifest" ]] || return 1
+  [[ -f "$sdk/include/searchkernel_vespa.h" ]] || return 1
+  [[ -f "$sdk/lib/libsearchkernel_vespa.so.2" ]] || return 1
+  grep -Eq '"hardening_failpoints"[[:space:]]*:[[:space:]]*true' "$manifest" || return 1
+  grep -Eq "\"sanitizer\"[[:space:]]*:[[:space:]]*\"$lane\"" "$manifest"
+}
 
 run_tsan() {
   local sdk="$1"
   local suppression="$2"
   shift 2
-  local output="$TARGET/tsan-attempt.log"
+  local output="$TARGET/tsan/runtime/tsan-attempt.log"
   local attempt
   local status
   local preload
@@ -65,19 +80,29 @@ run_tsan() {
 
 run_lane() {
   local lane="$1"
-  local sdk="$TARGET/$lane/sdk"
-  local build="$TARGET/$lane/native-build"
-  if using_published_vespa_toolchain; then
-    M11_BASE_SDK="$(resolved_native_base_sdk)"
-    SK_NATIVE_BASE_SDK="$M11_BASE_SDK" SK_NATIVE_ADAPTER_ONLY=1 VESPA_DEPS="$VESPA_DEPS" \
+  local lane_root="$TARGET/$lane"
+  local sdk="$lane_root/sdk"
+  local build="$lane_root/native-build"
+  local cargo_target="$lane_root/cargo"
+  local runtime="$lane_root/runtime"
+
+  if ! sanitizer_sdk_ready "$lane" "$sdk"; then
+    if using_published_vespa_toolchain; then
+      M11_BASE_SDK="$(resolved_native_base_sdk)"
+      SK_NATIVE_BASE_SDK="$M11_BASE_SDK" SK_NATIVE_ADAPTER_ONLY=1 VESPA_DEPS="$VESPA_DEPS" \
+        SK_NATIVE_SDK="$sdk" SK_NATIVE_BUILD_DIR="$build" \
+        "$ROOT/core/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
+    else
       SK_NATIVE_SDK="$sdk" SK_NATIVE_BUILD_DIR="$build" \
-      "$ROOT/core/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
-  else
-    SK_NATIVE_SDK="$sdk" SK_NATIVE_BUILD_DIR="$build" \
-      "$ROOT/core/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
+        "$ROOT/core/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
+    fi
   fi
+
+  # Keep Cargo products lane-local. ASan/UBSan and TSan use different linker
+  # flags, so sharing one target directory makes Cargo invalidate the other
+  # lane on every pass even when the native SDK itself is reusable.
   export SK_NATIVE_SDK="$sdk"
-  export CARGO_TARGET_DIR="$CARGO_TARGET_DIR"
+  export CARGO_TARGET_DIR="$cargo_target"
   export RUSTFLAGS="$M11_BASE_RUSTFLAGS -C link-arg=-Wl,-rpath,$sdk/lib"
   cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
   if [[ "$lane" == tsan ]]; then
@@ -90,13 +115,17 @@ run_lane() {
   fi
   local binary="$CARGO_TARGET_DIR/debug/searchkernel-m11-driver"
   require_native_driver "$binary" sk_test_failpoint_set sk_test_failpoint_is_blocked
+
+  # Scenario state is disposable even when build products are reusable.
+  rm -rf "$runtime"
+  mkdir -p "$runtime"
+
   local base_preload="${LD_PRELOAD:-}"
   local asan_runtime="$(cc -print-file-name=libasan.so)"
   local tsan_runtime="$(cc -print-file-name=libtsan.so.2)"
   [[ -f "$asan_runtime" ]] || fail_verification "libasan runtime was not found"
   [[ -f "$tsan_runtime" ]] || fail_verification "libtsan runtime was not found"
-  local config="$TARGET/$lane/config"
-  rm -rf "$config"
+  local config="$runtime/config"
   local options=""
   if [[ "$lane" == asan-ubsan ]]; then
     options="$(tr '\n' ':' < "$M11/sanitizer/asan.options")"
@@ -114,38 +143,38 @@ run_lane() {
         "$binary" compile "$config"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" malformed "$config" "$TARGET/$lane/data"
+        "$binary" malformed "$config" "$runtime/data"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" failures "$config" "$TARGET/$lane/failures"
+        "$binary" failures "$config" "$runtime/failures"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" lifecycle "$config" "$TARGET/$lane/lifecycle"
+        "$binary" lifecycle "$config" "$runtime/lifecycle"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" reopen "$config" "$TARGET/$lane/reopen"
+        "$binary" reopen "$config" "$runtime/reopen"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" advanced "$config" "$TARGET/$lane/advanced"
+        "$binary" advanced "$config" "$runtime/advanced"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" adapter "$config" "$TARGET/$lane/adapter"
+        "$binary" adapter "$config" "$runtime/adapter"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
-        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" concurrency "$config" "$TARGET/$lane/concurrency"
+        "$binary" concurrency "$config" "$runtime/concurrency"
       ;;
     tsan)
       run_tsan "$sdk" "$tsan" "$binary" compile "$config"
-      run_tsan "$sdk" "$tsan" "$binary" concurrency "$config" "$TARGET/$lane/data"
-      run_tsan "$sdk" "$tsan" "$binary" lifecycle "$config" "$TARGET/$lane/lifecycle"
-      run_tsan "$sdk" "$tsan" "$binary" reopen "$config" "$TARGET/$lane/reopen"
-      run_tsan "$sdk" "$tsan" "$binary" advanced "$config" "$TARGET/$lane/advanced"
-      run_tsan "$sdk" "$tsan" "$binary" adapter "$config" "$TARGET/$lane/adapter"
+      run_tsan "$sdk" "$tsan" "$binary" concurrency "$config" "$runtime/data"
+      run_tsan "$sdk" "$tsan" "$binary" lifecycle "$config" "$runtime/lifecycle"
+      run_tsan "$sdk" "$tsan" "$binary" reopen "$config" "$runtime/reopen"
+      run_tsan "$sdk" "$tsan" "$binary" advanced "$config" "$runtime/advanced"
+      run_tsan "$sdk" "$tsan" "$binary" adapter "$config" "$runtime/adapter"
       ;;
   esac
   export LD_PRELOAD="$base_preload"
+  export CARGO_TARGET_DIR="$M11_PLAN_CARGO_TARGET"
+  export RUSTFLAGS="$M11_BASE_RUSTFLAGS"
 }
 
 for lane in ${M11_SANITIZER_LANES:-asan-ubsan tsan}; do

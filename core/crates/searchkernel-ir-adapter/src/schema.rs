@@ -125,7 +125,11 @@ pub fn compile_index_definition(
         ) || matches!(
             field.data_type(),
             searchkernel_ir::DataTypeIr::Array(element)
-                if matches!(element.as_ref(), searchkernel_ir::DataTypeIr::Struct { .. })
+                if matches!(
+                    element.as_ref(),
+                    searchkernel_ir::DataTypeIr::Struct { .. }
+                        | searchkernel_ir::DataTypeIr::StructReference { .. }
+                )
         );
         if capabilities.stored() && !summary_unsupported {
             native = native.summary();
@@ -797,6 +801,62 @@ mod predicate_schema_tests {
             .expect("portable Predicate schema should compile");
         let attributes = std::fs::read_to_string(root.join("attributes.cfg")).unwrap();
         assert!(attributes.contains(&format!("attribute[0].arity {PORTABLE_PREDICATE_ARITY}")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod struct_reference_schema_tests {
+    use super::compile_index_definition;
+    use searchkernel_ir::{
+        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr,
+        NamedStructDefinitionIr, PrimitiveDataTypeIr, StructFieldIr,
+    };
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn stored_struct_reference_array_omits_unsupported_native_summary() {
+        let mut definition = IndexDefinitionIr::new(
+            None,
+            vec![FieldIr::new(
+                FieldName::parse("people").unwrap(),
+                DataTypeIr::Array(Box::new(DataTypeIr::StructReference {
+                    name: "person".to_owned(),
+                })),
+                None,
+                FieldCapabilities::new(true, false, true, false, false),
+            )],
+            Vec::new(),
+        )
+        .unwrap();
+        definition.set_structs(vec![NamedStructDefinitionIr {
+            name: "person".to_owned(),
+            fields: vec![
+                StructFieldIr {
+                    name: "name".to_owned(),
+                    data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                },
+                StructFieldIr {
+                    name: "score".to_owned(),
+                    data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+                },
+            ],
+            properties: BTreeMap::new(),
+        }]);
+
+        let root = std::env::temp_dir().join(format!(
+            "searchkernel-adapter-struct-reference-summary-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+
+        compile_index_definition(&definition, &root)
+            .expect("stored struct-reference arrays should compile");
+        let summary = std::fs::read_to_string(root.join("summary.cfg")).unwrap();
+        assert!(
+            !summary.contains("people"),
+            "array<struct> is GET-readable from the document store but is not a native summary type"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }
