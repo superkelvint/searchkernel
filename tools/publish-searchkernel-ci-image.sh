@@ -52,7 +52,7 @@ echo
 echo "==> Resolving immutable toolchain base"
 PINNED_TOOLCHAIN_BASE="$(ci_image_pull_and_resolve_digest "$TOOLCHAIN_BASE_IMAGE")"
 
-TOOLCHAIN_ID="$(ci_image_toolchain_id "$ROOT/docker/searchkernel-ci-toolchain" "$PINNED_TOOLCHAIN_BASE")"
+TOOLCHAIN_ID="$(ci_image_toolchain_id "$ROOT" "$PINNED_TOOLCHAIN_BASE")"
 VESPA_COMMIT="$(ci_image_vespa_commit "$ROOT")"
 VESPA_BUNDLE_ID="$(ci_image_vespa_bundle_id "$ROOT")"
 
