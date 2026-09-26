@@ -21,8 +21,6 @@ pub(crate) const STORAGE_COMPATIBILITY_GENERATION: u32 = 1;
 #[cfg(feature = "native")]
 pub(crate) const RESOLVED_SCHEMA_SNAPSHOT_VERSION: u32 = 1;
 #[cfg(feature = "native")]
-pub(crate) const NATIVE_ABI_VERSION: u32 = 5;
-#[cfg(feature = "native")]
 pub(crate) const VESPA_REVISION: &str = "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e";
 
 #[cfg(feature = "native")]
@@ -79,7 +77,7 @@ impl IndexManifest {
                 ),
                 "provenance": {
                     "created_by_searchkernel_version": env!("CARGO_PKG_VERSION"),
-                    "created_by_native_abi": NATIVE_ABI_VERSION,
+                    "created_by_native_abi": searchkernel_vespa_bindings::SK_NATIVE_ABI_VERSION,
                     "created_by_vespa_revision": VESPA_REVISION,
                 },
                 "portable_index_definition": "portable-index-definition.bfbs",
