@@ -106,4 +106,37 @@ for target in m13 phase10; do
     grep -F '"$ROOT/reference/vespa/verify-through.sh" '"$target"' "$@"' "$integration" >/dev/null
 done
 
+# M3 must execute the driver from Cargo's active target directory. The verifier
+# exports a shared CARGO_TARGET_DIR, so crate-local target/debug is not reliable.
+M3_RUN="$ROOT/reference/vespa/m3/run-rust.sh"
+mkdir -p "$SOURCE_TEST/m3-bin" "$SOURCE_TEST/m3-target"
+cat > "$SOURCE_TEST/m3-bin/cargo" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == build ]] || {
+    echo "unexpected cargo invocation: $*" >&2
+    exit 96
+}
+mkdir -p "$CARGO_TARGET_DIR/debug"
+cat > "$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver" <<'DRIVER'
+#!/usr/bin/env bash
+exit 0
+DRIVER
+chmod +x "$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver"
+SH
+cat > "$SOURCE_TEST/m3-bin/python3" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+expected="$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver"
+actual="${@: -2:1}"
+[[ "$actual" == "$expected" ]] || {
+    echo "M3 run-rust used $actual instead of Cargo target driver $expected" >&2
+    exit 95
+}
+SH
+chmod +x "$SOURCE_TEST/m3-bin/cargo" "$SOURCE_TEST/m3-bin/python3"
+PATH="$SOURCE_TEST/m3-bin:$PATH" \
+CARGO_TARGET_DIR="$SOURCE_TEST/m3-target" \
+    "$M3_RUN" document "$SOURCE_TEST/m3-output.jsonl"
+
 echo "semantic verifier routing PASS"
