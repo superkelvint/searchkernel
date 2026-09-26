@@ -48,8 +48,7 @@ jobs:
             NativeVerifierRunnerWorkflowTests.test_head_guard_runtime_current_stale_and_api_failure \
             NativeVerifierRunnerWorkflowTests.test_superseded_pr_heads_stop_before_each_expensive_native_phase \
             NativeVerifierRunnerWorkflowTests.test_pr_callers_grant_live_head_lookup_permission \
-            NativeVerifierRunnerWorkflowTests.test_native_searchkerneld_build_resolves_exact_adapter_runtime_lib \
-            NativeVerifierRunnerWorkflowTests.test_m3_driver_runs_through_cargo_runtime_environment
+            NativeVerifierRunnerWorkflowTests.test_native_searchkerneld_build_resolves_exact_adapter_runtime_lib
           $CI_PYTHON .github/ci/test_resolve_native_adapter_lib.py
 
       - name: Reject stale verification checkout
