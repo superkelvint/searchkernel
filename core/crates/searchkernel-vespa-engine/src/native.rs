@@ -459,6 +459,8 @@ pub(crate) fn add_document_field(
                     lengths.as_ptr(),
                     u32::try_from(values.len())
                         .map_err(|_| Error::message("string array exceeds native capacity"))?,
+                    u32::try_from(bytes.len())
+                        .map_err(|_| Error::message("string array bytes exceed native capacity"))?,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -510,8 +512,12 @@ pub(crate) fn add_document_field(
                     field.as_ptr(),
                     key_bytes.as_ptr(),
                     key_lengths.as_ptr(),
+                    u32::try_from(key_bytes.len())
+                        .map_err(|_| Error::message("predicate keys exceed native capacity"))?,
                     value_bytes.as_ptr(),
                     value_lengths.as_ptr(),
+                    u32::try_from(value_bytes.len())
+                        .map_err(|_| Error::message("predicate values exceed native capacity"))?,
                     u32::try_from(value.features.len())
                         .map_err(|_| Error::message("predicate features exceed native capacity"))?,
                     error.as_mut_ptr(),
@@ -632,6 +638,8 @@ pub(crate) fn add_update_field(
                     lengths.as_ptr(),
                     u32::try_from(values.len())
                         .map_err(|_| Error::message("string array exceeds native capacity"))?,
+                    u32::try_from(bytes.len())
+                        .map_err(|_| Error::message("string array bytes exceed native capacity"))?,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -679,8 +687,12 @@ pub(crate) fn add_update_field(
                     field.as_ptr(),
                     key_bytes.as_ptr(),
                     key_lengths.as_ptr(),
+                    u32::try_from(key_bytes.len())
+                        .map_err(|_| Error::message("predicate keys exceed native capacity"))?,
                     value_bytes.as_ptr(),
                     value_lengths.as_ptr(),
+                    u32::try_from(value_bytes.len())
+                        .map_err(|_| Error::message("predicate values exceed native capacity"))?,
                     u32::try_from(value.features.len())
                         .map_err(|_| Error::message("predicate features exceed native capacity"))?,
                     error.as_mut_ptr(),

@@ -160,7 +160,7 @@ void invalid_argument_surface() {
     expect_ok(sk_document_create_empty("array-doc", &document, error.data(), ERROR_CAPACITY),
               "document array annotation setup");
     expect_ok(sk_document_add_string_array(document, "tags", array_value_bytes,
-                                           array_value_lengths, 1, error.data(), ERROR_CAPACITY),
+                                           array_value_lengths, 1, 1, error.data(), ERROR_CAPACITY),
               "document array annotation value setup");
     expect_invalid(sk_document_annotate_string_array(
                        document, "tags", nullptr, 1, array_term_lengths, array_byte_starts,
