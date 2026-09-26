@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce zero shared mutable toolchain state on self-hosted CI workers."""
+"""Enforce job-private CI state with one bounded shared compiler-output cache."""
 
 from __future__ import annotations
 
@@ -54,7 +54,10 @@ def main() -> int:
             '-v "$SOURCE_VOLUME:/work"',
             '-v "$TARGET_VOLUME:/cargo-target"',
             "CARGO_TARGET_DIR=/cargo-target",
-            "zero shared mutable worker state",
+            "isolated source and target state",
+            "ensure-ci-sccache.sh",
+            "RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache",
+            "SCCACHE_CLIENT_SIDE=1",
         )
         for needle in required:
             if needle not in runner:
@@ -105,14 +108,15 @@ def main() -> int:
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
         print(
-            "\nWorkers may share immutable Docker image layers only. "
-            "Rust/Node/Ruby/Python package state, Cargo outputs, native caches, "
-            "and job workspaces must remain job-private.",
+            "\nWorkers may share immutable Docker image layers and the "
+            "version-pinned sccache compiler-output cache only. Rust/Node/Ruby/"
+            "Python package state, Cargo target directories, native caches, "
+            "source snapshots, and job workspaces must remain job-private.",
             file=sys.stderr,
         )
         return 1
 
-    print("Self-hosted zero-shared-state CI policy: PASS")
+    print("Self-hosted isolated-state CI policy: PASS")
     return 0
 
 

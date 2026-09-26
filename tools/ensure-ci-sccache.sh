@@ -71,7 +71,7 @@ if ! validate_binary; then
             curl --fail --location --retry 5 --silent --show-error \
                 "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/$asset" \
                 -o "$work/$asset"
-            printf "%s  %s\n" "$SCCACHE_SHA256" "$work/$asset" | sha256sum -c -
+            printf "%s  %s\n" "$SCCACHE_SHA256" "$work/$asset" | sha256sum -c - >/dev/null
             tar -xzf "$work/$asset" -C "$work"
             install -m 0755 \
                 "$work/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache" \
