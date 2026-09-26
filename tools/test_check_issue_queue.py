@@ -302,27 +302,24 @@ class IssueQueueReconciliationTests(unittest.TestCase):
             [("set-state", 9, "status:blocked")],
         )
 
-    def test_stale_claim_with_unique_commits_is_preserved_and_blocked(self) -> None:
-        stale = self._open_issue(
+    def test_claim_with_invalid_updated_at_is_left_alone(self) -> None:
+        current = issue(
             10,
             "status:in-progress",
             "priority:p1",
             "area:ci",
             "type:hardening",
-            updated_hours_ago=48,
         )
+        current["updated_at"] = "not-a-timestamp"
         actions = MODULE.plan_reconciliation(
-            [stale],
+            [current],
             [],
             {"codex/issue-10"},
             set(),
             now=self.NOW,
             stale_after=self.STALE_AFTER,
         )
-        self.assertEqual(
-            [(action.kind, action.issue_number, action.value) for action in actions],
-            [("set-state", 10, "status:blocked")],
-        )
+        self.assertEqual(actions, [])
 
     def test_open_pr_keeps_stale_claim_in_progress(self) -> None:
         stale = self._open_issue(
