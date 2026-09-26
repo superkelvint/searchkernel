@@ -914,20 +914,49 @@ The design is complete when:
 
 ### Trusted PR authorization controller
 
-Merge authorization must not be produced solely by a `pull_request` workflow,
-because that workflow definition and the repository commands it invokes are
-part of the candidate revision. `trusted-pr-verification.yml` is therefore a
-`workflow_run` controller loaded from the default branch. It recomputes lane
-selection from the PR's trusted base and invokes the default-branch reusable CI
-executor against the immutable candidate SHA with read-only permissions.
+Merge authorization is not produced by candidate-owned `pull_request` workflow
+state. `trusted-pr-verification.yml` is a `workflow_run` controller loaded from
+the default branch. It resolves the immutable PR head/base, recomputes lane
+selection from trusted-base selectors, and invokes the default-branch reusable
+CI executor against the exact candidate SHA. Candidate code receives only the
+ordinary read-only CI token.
 
-The controller rejects a candidate that changes verification authority
-(workflows, CI policy, the verification DAG, moon configuration, `dev`, verifier
-scripts, or verification tools). Such a change may still run candidate
-self-tests as additive evidence, but it cannot authorize itself. Intentional
-changes to those surfaces require an explicit trusted transition/review; after
-they land on the trusted base, the new authority applies to later PRs. This is
-deliberately conservative: it prevents a PR from preserving a task/check name
-while replacing its command, dependency graph, workflow, or verifier with a
-no-op. The trusted gate should be the branch/ruleset-required check; the
-candidate-owned invariant gate is diagnostic evidence only.
+The final `Trusted invariant gate` is an external Check Run attached directly to
+that candidate SHA by a dedicated GitHub App. The publishing job runs only from
+the trusted controller, re-reads the PR immediately before publication, and
+fails if the PR head, base, or open state changed while verification ran. Branch
+protection/rulesets must require `Trusted invariant gate` **from that GitHub App
+source**, not merely a same-named check from any source.
+
+Provision the trust root as follows:
+
+- install a dedicated GitHub App on this repository with only Metadata read and
+  Checks read/write permissions;
+- create the `trusted-ci-authority` Actions environment and restrict it to the
+  default branch;
+- store the App ID as environment variable `TRUSTED_CI_APP_ID` and its private
+  key as environment secret `TRUSTED_CI_APP_PRIVATE_KEY`; and
+- require `Trusted invariant gate` from that App in the merge ruleset.
+
+Verification authority includes workflows, CI policy, verification/DAG files,
+Vespa verifier scripts, tools, moon configuration, `dev`, and semantic command
+mappings such as the TypeScript `package.json` `scripts` object. Dependency-only
+manifest edits remain ordinary candidate changes. This prevents a PR from
+preserving a task/check name while replacing its workflow, command, task,
+wrapper, verifier, or package script with a no-op.
+
+A candidate that changes verification authority cannot pass the normal trusted
+gate. Intentional changes use `trusted-ci-transition.yml`, manually dispatched
+from the default branch for an exact PR head. The transition workflow accepts
+only authority changes plus documentation; it rejects mixed product/authority
+PRs, revalidates head/base before authorization, and never executes candidate
+code while holding the App credential. Candidate self-tests remain additive
+evidence. After the transition lands, the new default-branch authority governs
+subsequent PRs.
+
+The initial landing of this trust root is necessarily a bootstrap transition:
+before these workflows, App credentials, environment restriction, and
+source-pinned required check exist on `main`, this PR cannot use the mechanism it
+is introducing to authorize itself. Bootstrap it once through explicit
+maintainer/admin review; thereafter authority changes use the transition
+workflow rather than candidate self-authorization.
