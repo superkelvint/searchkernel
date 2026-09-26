@@ -83,8 +83,8 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, source)
         for required in (
-            'SOURCE_VOLUME="searchkernel-ci-src-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${SAFE_TARGET}"',
-            'TARGET_VOLUME="searchkernel-ci-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${SAFE_TARGET}"',
+            'SOURCE_VOLUME="searchkernel-ci-src-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$SAFE_TARGET"',
+            'TARGET_VOLUME="searchkernel-ci-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$SAFE_TARGET"',
             'docker volume create "$SOURCE_VOLUME"',
             'docker volume create "$TARGET_VOLUME"',
             '-v "$SOURCE_VOLUME:/work"',
