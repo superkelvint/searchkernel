@@ -131,13 +131,16 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertNotIn("$GH_TOKEN", helper)
         self.assertNotIn("GH_TOKEN=", helper)
 
+        abi_pos = native_full.index("run_phase native-full-abi ./dev verify abi")
         prepare_pos = native_full.index("prepare_native_full_verifier_sdk")
         hnsw_pos = native_full.index(
             "run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw"
         )
+        self.assertEqual(1, native_full.count("prepare_native_full_verifier_sdk"))
         self.assertNotIn(
             "source reference/vespa/common/verify-common.sh", native_full
         )
+        self.assertLess(abi_pos, prepare_pos)
         self.assertLess(prepare_pos, hnsw_pos)
 
     def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
