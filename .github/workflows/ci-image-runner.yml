@@ -507,8 +507,12 @@ jobs:
               # every later verifier process inherits and reuses the same
               # revision-local SDK instead of rebuilding it independently.
               assert_current_pr_head native-full-prepare-verifier-sdk
+              native_full_gh_token=$GH_TOKEN
+              unset GH_TOKEN
               source reference/vespa/common/verify-common.sh
               prepare_verifier_sdk
+              export GH_TOKEN=$native_full_gh_token
+              unset native_full_gh_token
 
               run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw
               run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved
