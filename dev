@@ -31,6 +31,15 @@ if [[ "${SEARCHKERNEL_DEV_USE_CI_IMAGE:-1}" != "0" &&
     if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         git -C "$ROOT" config --local core.hooksPath .githooks
     fi
+    if [[ "${1:-}" == "universe" ]]; then
+        UNIVERSE_LOG=${SEARCHKERNEL_UNIVERSE_LOG:-/tmp/searchkernel-universe-$(date +%Y%m%d-%H%M%S).log}
+        echo "Search Kernel universe log: $UNIVERSE_LOG"
+        set +e
+        bash "$ROOT/tools/run-in-ci-image.sh" "$@" 2>&1 | tee "$UNIVERSE_LOG"
+        status=${PIPESTATUS[0]}
+        set -e
+        exit "$status"
+    fi
     exec bash "$ROOT/tools/run-in-ci-image.sh" "$@"
 fi
 
@@ -1168,7 +1177,14 @@ case "${1:-help}" in
         check_all
         ;;
     universe)
-        universe
+        UNIVERSE_LOG=${SEARCHKERNEL_UNIVERSE_LOG:-/tmp/searchkernel-universe-$(date +%Y%m%d-%H%M%S).log}
+        : > "$UNIVERSE_LOG"
+        echo "Search Kernel universe log: $UNIVERSE_LOG"
+        set +e
+        universe 2>&1 | tee -a "$UNIVERSE_LOG"
+        status=${PIPESTATUS[0]}
+        set -e
+        exit "$status"
         ;;
     check-fast)
         check_fast
