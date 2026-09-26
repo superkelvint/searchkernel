@@ -264,6 +264,20 @@ class ClientContractTests(unittest.TestCase):
         script = repo / "clients" / "typescript" / "scripts" / "run-real-e2e.sh"
         script.parent.mkdir(parents=True)
         script.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        runtime_helper = repo / "tools" / "client-e2e-runtime.sh"
+        runtime_helper.parent.mkdir(parents=True)
+        runtime_helper.write_text(
+            (ROOT / "tools" / "client-e2e-runtime.sh").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        host = repo / "target" / "host" / "debug" / "searchkerneld"
+        host.parent.mkdir(parents=True)
+        host.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        host.chmod(0o755)
+        adapter_lib = repo / "target" / "host" / "native-adapter"
+        adapter_lib.mkdir(parents=True)
+        (adapter_lib / "libsearchkernel_vespa.so.2").write_bytes(b"fixture")
 
         dev = repo / "dev"
         dev.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
@@ -329,6 +343,8 @@ printf '%s\\n' "installed-package-e2e" >>"$NPM_LOG"
                 "REPO_ROOT": str(repo),
                 "NPM_LOG": str(fixture / "npm.log"),
                 "NPM_READY": str(fixture / "npm-ready"),
+                "SEARCHKERNEL_LOCAL_HOST": str(host),
+                "SEARCHKERNEL_SDK_LIB": str(adapter_lib),
             }
         )
         completed = subprocess.run(
