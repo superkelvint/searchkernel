@@ -203,7 +203,7 @@ for fragment in (
     "SCCACHE_NO_DAEMON=1",
     "SCCACHE_CACHE_SIZE=20G",
     "flock 9",
-    "sccache --show-stats",
+    '"$SCCACHE_BIN" --show-stats',
 ):
     if fragment not in ensure_sccache:
         raise SystemExit(f"sccache server helper is missing {fragment!r}")
