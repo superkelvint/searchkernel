@@ -29,6 +29,9 @@ std::vector<std::string> copy_string_array(const uint8_t *bytes,
     if (count > MAX_PACKED_DOCUMENT_ITEMS) {
         throw std::invalid_argument(std::string(what) + " has too many items");
     }
+    if (count == 0 && bytes_length != 0) {
+        throw std::invalid_argument(std::string(what) + " arrays are invalid");
+    }
     if (bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES) {
         throw std::invalid_argument(std::string(what) + " data is too large");
     }
