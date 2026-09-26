@@ -1132,6 +1132,65 @@ fn persistence_fault_matrix_rejects_truncated_and_missing_binary_state() {
 }
 
 #[test]
+fn persistence_fault_matrix_rejects_resolved_document_identity_drift() {
+    let root = temporary_path("resolved-document-identity-drift");
+    let index = Index::create(
+        &root,
+        IndexDefinition::new().field(Field::text("title").stored(true)),
+    )
+    .expect("create unnamed index");
+    index.close().expect("close unnamed index");
+
+    let manifest_path = root.join("manifest/index.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    assert_eq!(manifest["resolved_document_type"], "searchkernel");
+
+    manifest["resolved_document_type"] = serde_json::json!("different_document");
+    std::fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    let error = match Index::open(&root) {
+        Ok(index) => {
+            index.close().unwrap();
+            panic!("persisted document identity mismatch unexpectedly reopened")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), crate::ErrorCode::IncompatibleIndex);
+    assert!(
+        error.to_string().contains("resolved document identity"),
+        "unexpected mismatch error: {error}"
+    );
+
+    manifest
+        .as_object_mut()
+        .unwrap()
+        .remove("resolved_document_type");
+    let config = root.join("config");
+    let schema_path = config.join("searchkernel-schema.json");
+    let mut schema: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&schema_path).unwrap()).unwrap();
+    schema["document_type"] = serde_json::json!("different_document");
+    std::fs::write(&schema_path, serde_json::to_vec(&schema).unwrap()).unwrap();
+    manifest["resolved_engine_config_identity"] = config_identity(&config).unwrap();
+    std::fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+
+    let error = match Index::open(&root) {
+        Ok(index) => {
+            index.close().unwrap();
+            panic!("pre-identity v4 manifest accepted compiled document identity drift")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), crate::ErrorCode::IncompatibleIndex);
+    assert!(
+        error.to_string().contains("resolved document identity"),
+        "legacy compatibility path failed in the wrong error domain: {error}"
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn persistence_fault_matrix_rejects_unknown_versions_without_touching_state() {
     fn write_version(root: &std::path::Path, version: u32, generation: u32) {
         let config = root.join("config");

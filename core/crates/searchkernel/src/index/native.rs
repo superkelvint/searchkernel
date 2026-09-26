@@ -325,6 +325,7 @@ impl Index {
             ));
         }
         manifest.validate_config(&config)?;
+        manifest.validate_config_document_identity(&config, resolved_context.definition())?;
         let backend = open_native_backend(&root.join("data"), &config)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
         Self::from_owned_backend(
