@@ -5,13 +5,16 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 DEV="$ROOT/dev"
 RUNNER="$ROOT/tools/run-in-ci-image.sh"
 HOOK="$ROOT/.githooks/pre-commit"
+COVERAGE="$ROOT/tools/coverage.sh"
+CI_WORKFLOW="$ROOT/.github/workflows/ci-image-runner.yml"
 
 bash -n "$DEV"
 bash -n "$RUNNER"
 bash -n "$HOOK"
+bash -n "$COVERAGE"
 python3 -m py_compile "$ROOT/.github/ci/test_exact_head.py"
 
-python3 - "$DEV" "$RUNNER" "$HOOK" "$ROOT/.github/ci/test_exact_head.py" <<'PY'
+python3 - "$DEV" "$RUNNER" "$HOOK" "$ROOT/.github/ci/test_exact_head.py" "$CI_WORKFLOW" <<'PY'
 from pathlib import Path
 import sys
 
@@ -19,6 +22,7 @@ dev = Path(sys.argv[1]).read_text(encoding="utf-8")
 runner = Path(sys.argv[2]).read_text(encoding="utf-8")
 hook = Path(sys.argv[3]).read_text(encoding="utf-8")
 exact_head = Path(sys.argv[4]).read_text(encoding="utf-8")
+ci_workflow = Path(sys.argv[5]).read_text(encoding="utf-8")
 
 if exact_head.count('if __name__ == "__main__":') != 1:
     raise SystemExit("exact-head regression module must contain exactly one module terminator")
@@ -32,14 +36,39 @@ if dev.index(dispatch) > dev.index(resolve_python):
 if "Configured repository-managed Git hooks at .githooks' >&2" not in dev:
     raise SystemExit("dev hook auto-configuration must not contaminate machine-readable stdout")
 
+for fragment in (
+    "nightly-coverage-evidence",
+    '"coverage.json"',
+    '"summary.json"',
+    '"lcov.info"',
+    '"summary.txt"',
+    '"README.txt"',
+    '"metadata.json"',
+    '"html/index.html"',
+    'metadata.get("git_head", "").lower() != expected_head.lower()',
+    'metadata.get("working_tree_clean") is not True',
+    'metadata.get("tool") != "cargo-llvm-cov 0.9.1"',
+    "if-no-files-found: warn",
+):
+    if fragment not in ci_workflow:
+        raise SystemExit(f"CI coverage evidence contract is missing {fragment!r}")
+
 for command in (
-    "check|universe|check-fast|check-protocol|lint|test|verify|precommit-verify",
+    "check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify",
     "SEARCHKERNEL_DEV_USE_CI_IMAGE",
     "SEARCHKERNEL_IN_CI_IMAGE",
     "/opt/searchkernel/native-validation-pass",
 ):
     if command not in dev:
         raise SystemExit(f"dev image-dispatch contract is missing {command!r}")
+
+coverage_start = dev.index("coverage_target() {")
+coverage_end = dev.index("\nlint_target()", coverage_start)
+coverage_body = dev[coverage_start:coverage_end]
+if "native_sdk_command ensure >/dev/null" not in coverage_body:
+    raise SystemExit("dev coverage must provision the native SDK before all-features tests")
+if coverage_body.index("native_sdk_command ensure >/dev/null") > coverage_body.index('bash "$ROOT/tools/coverage.sh"'):
+    raise SystemExit("dev coverage provisions the native SDK too late")
 
 required_runner = (
     "docker.io/superkelvint/searchkernel-ci:latest",
@@ -54,9 +83,6 @@ required_runner = (
     "git add -A && git diff --quiet",
     '-v "$source_volume:/work"',
     '-v "$target_volume:/cargo-target"',
-    '-v "$native_volume:/opt/searchkernel/native-sdk-cache:ro"',
-    'ensure-ci-vespa-volume.sh',
-    'io.searchkernel.vespa-image-digest',
     "-e CARGO_TARGET_DIR=/cargo-target",
     "-e FLATBUFFERS_CPP_ROOT=/usr/local",
     "-e FLATC_PATH=/usr/local/bin/flatc",
@@ -65,6 +91,12 @@ required_runner = (
     "-e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc",
     "-e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib",
     "-e SEARCHKERNEL_IN_CI_IMAGE=1",
+    '[[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1',
+    'artifact_volume="searchkernel-dev-artifacts-$(id -u)-$$-${RANDOM}"',
+    "-e SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage",
+    'tar -C /artifacts -cf - coverage | tar -C "$ROOT" -xf -',
+    'if [[ "$status" -eq 0 ]]; then',
+    'coverage failed; no canonical report was exported',
 )
 for fragment in required_runner:
     if fragment not in runner:
@@ -97,6 +129,27 @@ if hook.index('"$ROOT/dev" precommit-verify') > hook.index('echo "pre-commit: ch
 
 print("dev/pre-commit CI-image source contract: PASS")
 PY
+
+for fragment in \
+    '"$CARGO" llvm-cov clean --workspace' \
+    '--workspace' \
+    '--all-targets' \
+    '--all-features' \
+    '--no-report' \
+    '--summary-only' \
+    'metadata.json' \
+    '"working_tree_clean": not bool(git_status)' \
+    '"native_cpp_coverage": False' \
+    'refusing destructive coverage output directory'; do
+    grep -F -- "$fragment" "$COVERAGE" >/dev/null || {
+        echo "coverage runner is missing contract fragment: $fragment" >&2
+        exit 1
+    }
+done
+if grep -F -- 'cargo install' "$COVERAGE" >/dev/null; then
+    echo 'coverage endpoint must not install/mutate the immutable CI toolchain' >&2
+    exit 1
+fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-dev-image-test.XXXXXX")
 trap 'rm -rf -- "$tmp"' EXIT
