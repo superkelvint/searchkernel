@@ -4,7 +4,7 @@ use searchkernel_vespa_engine::{
     GroupingResult, GroupingResultValue, Query, Schema, SearchRequest, SortField, SummaryRequest,
     Value,
 };
-use serde_json::{json, Map, Value as Json};
+use serde_json::{Map, Value as Json, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -43,9 +43,7 @@ pub fn compile_schema(root: &Json, config_dir: &Path) {
         schema = schema.field(field);
     }
     fs::create_dir_all(config_dir).unwrap();
-    ConfigCompiler
-        .compile_to(&schema, config_dir)
-        .unwrap();
+    ConfigCompiler.compile_to(&schema, config_dir).unwrap();
     if let Some(profile) = root.get("fixture_rank_profile") {
         assert_eq!(profile["name"], "attribute_price");
         assert_eq!(profile["expression"], "attribute(price)");
@@ -133,12 +131,7 @@ pub fn query(v: &Json) -> Query {
         };
     }
     if let Some(x) = o.get("and") {
-        return Query::And(x
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(query)
-            .collect());
+        return Query::And(x.as_array().unwrap().iter().map(query).collect());
     }
     panic!("unsupported M9 verifier query: {v}");
 }
@@ -193,9 +186,9 @@ pub fn grouping_request(v: &Json) -> (Query, GroupingPlan) {
         let object = aggregation.as_object().unwrap();
         assert_eq!(object.len(), 1);
         if let Some(field) = object.get("average").and_then(Json::as_str) {
-            level = level.aggregation(GroupingAggregation::Average(
-                GroupingExpression::attribute(field),
-            ));
+            level = level.aggregation(GroupingAggregation::Average(GroupingExpression::attribute(
+                field,
+            )));
             continue;
         }
         if let Some(field) = ["sum", "min", "max"]
@@ -206,9 +199,9 @@ pub fn grouping_request(v: &Json) -> (Query, GroupingPlan) {
             // negative corpus; lowering them to the nearest supported native
             // operation keeps field-validation errors observable without
             // reintroducing unsupported public enum variants.
-            level = level.aggregation(GroupingAggregation::Average(
-                GroupingExpression::attribute(field),
-            ));
+            level = level.aggregation(GroupingAggregation::Average(GroupingExpression::attribute(
+                field,
+            )));
             continue;
         }
         panic!("unsupported grouping aggregation: {aggregation}");
@@ -231,7 +224,9 @@ fn grouping_result_value(v: &GroupingResultValue) -> Json {
     match v {
         GroupingResultValue::String(x) => json!({"type":"string","value":x}),
         GroupingResultValue::Integer(x) => json!({"type":"integer","value":x}),
-        GroupingResultValue::Float(x) => json!({"type":"float","bits":format!("0x{:016x}",x.to_bits())}),
+        GroupingResultValue::Float(x) => {
+            json!({"type":"float","bits":format!("0x{:016x}",x.to_bits())})
+        }
         GroupingResultValue::Boolean(x) => json!({"type":"boolean","value":x}),
         GroupingResultValue::Quantiles(values) => {
             json!({"type":"quantiles","values":values})
@@ -241,7 +236,10 @@ fn grouping_result_value(v: &GroupingResultValue) -> Json {
 fn grouping_output(v: &GroupingOutput) -> Json {
     match v {
         GroupingOutput::Value(value) => grouping_result_value(value),
-        GroupingOutput::HitList(hits) => json!({"type":"hit_list","values":hits}),
+        GroupingOutput::HitList(hits) => json!({
+            "type": "hit_list",
+            "values": hits.iter().cloned().map(hit).collect::<Vec<_>>()
+        }),
     }
 }
 fn grouping_result(result: GroupingResult) -> Json {
@@ -273,6 +271,26 @@ fn hit(h: searchkernel_vespa_engine::Hit) -> Json {
         })
         .collect();
     json!({"document_id":h.document_id,"score_bits":format!("0x{:016x}",h.score.to_bits()),"summary":summary})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hit_list_uses_the_same_canonical_hit_encoding_as_search_results() {
+        let hit = searchkernel_vespa_engine::Hit {
+            document_id: "doc:1".to_owned(),
+            score: 1.0,
+            fields: Default::default(),
+            highlights: Vec::new(),
+            match_features: Default::default(),
+        };
+        assert_eq!(
+            grouping_output(&GroupingOutput::HitList(vec![hit])),
+            json!({"type":"hit_list","values":[{"document_id":"doc:1","score_bits":"0x3ff0000000000000","summary":{}}]})
+        );
+    }
 }
 
 pub fn run_positive(engine: &Engine, root: &Json) -> Json {
