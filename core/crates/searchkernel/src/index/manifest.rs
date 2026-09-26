@@ -327,9 +327,10 @@ impl IndexManifest {
     fn persisted_resolved_document_type(&self) -> Result<Option<&str>> {
         match self.value.get("resolved_document_type") {
             None => Ok(None),
-            Some(value) => value.as_str().map(Some).ok_or_else(|| {
-                Error::corrupt_index("manifest resolved_document_type is invalid")
-            }),
+            Some(value) => value
+                .as_str()
+                .map(Some)
+                .ok_or_else(|| Error::corrupt_index("manifest resolved_document_type is invalid")),
         }
     }
 
