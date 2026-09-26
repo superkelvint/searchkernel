@@ -11,6 +11,8 @@ harness is present in the repository. It does not mean that an acceptance
 verifier has been run successfully in every environment. Use the linked
 verifier when a milestone must be declared accepted.
 
+Implementation presence is also not a release-support promise. The authoritative next-release distribution scope is the [release support matrix](release-support.md).
+
 ## Read the right document
 
 | Question | Document |

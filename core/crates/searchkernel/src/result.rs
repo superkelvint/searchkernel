@@ -624,16 +624,63 @@ fn json_value(value: Value) -> Result<serde_json::Value> {
             }
             serde_json::Value::Object(object)
         }
-        Value::Tensor(tensor) => serde_json::json!({
-            "$searchkernel_tensor": {
-                "type_spec": tensor.type_spec,
-                "dense": match tensor.payload {
-                    searchkernel_ir::RequestTensorPayloadIr::Dense(values) => values,
-                    _ => return Err(Error::search(crate::ErrorCode::Unsupported, "sparse and mixed tensors are not public JSON values")),
+        Value::Tensor(tensor) => {
+            let mut payload = serde_json::Map::new();
+            payload.insert(
+                "type_spec".to_owned(),
+                serde_json::Value::String(tensor.type_spec),
+            );
+            match tensor.payload {
+                searchkernel_ir::RequestTensorPayloadIr::Dense(values) => {
+                    payload.insert("dense".to_owned(), serde_json::json!(values));
+                }
+                searchkernel_ir::RequestTensorPayloadIr::Sparse(cells) => {
+                    payload.insert(
+                        "sparse".to_owned(),
+                        serde_json::Value::Array(
+                            cells
+                                .into_iter()
+                                .map(|cell| {
+                                    serde_json::json!({
+                                        "address": tensor_address_json(cell.address),
+                                        "value": cell.value,
+                                    })
+                                })
+                                .collect(),
+                        ),
+                    );
+                }
+                searchkernel_ir::RequestTensorPayloadIr::Mixed(blocks) => {
+                    payload.insert(
+                        "mixed".to_owned(),
+                        serde_json::Value::Array(
+                            blocks
+                                .into_iter()
+                                .map(|block| {
+                                    serde_json::json!({
+                                        "address": tensor_address_json(block.address),
+                                        "values": block.values,
+                                    })
+                                })
+                                .collect(),
+                        ),
+                    );
                 }
             }
-        }),
+            serde_json::json!({"$searchkernel_tensor": payload})
+        }
     })
+}
+
+fn tensor_address_json(address: std::collections::BTreeMap<String, String>) -> serde_json::Value {
+    // Keep the dimension-label entry list used by the FlatBuffers decoders in
+    // the other SDKs, so one canonical tensor address has the same public shape.
+    serde_json::Value::Array(
+        address
+            .into_iter()
+            .map(|(dimension, label)| serde_json::json!({"dimension": dimension, "label": label}))
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -641,7 +688,7 @@ mod tests {
     use super::*;
     use searchkernel_testkit::{
         canonical_facet_result, canonical_result_fixtures, mixed_hit_and_group_children_result,
-        non_facet_grouping_result, sibling_groups_result,
+        non_facet_grouping_result, sibling_groups_result, sparse_mixed_tensor_result,
     };
     use std::collections::BTreeMap;
 
@@ -1171,6 +1218,98 @@ mod tests {
         assert_eq!(
             converted.hits[0].match_features["typed"],
             FeatureValue::Json(serde_json::json!([1, true]))
+        );
+    }
+
+    #[test]
+    fn result_conversion_preserves_sparse_and_mixed_tensor_kinds() {
+        let sparse = Value::Tensor(searchkernel_ir::RequestTensorIr {
+            type_spec: "tensor<float>(label{})".to_owned(),
+            payload: searchkernel_ir::RequestTensorPayloadIr::Sparse(vec![
+                searchkernel_ir::RequestTensorCellIr {
+                    address: BTreeMap::from([("label".to_owned(), "a".to_owned())]),
+                    value: 0.5,
+                },
+            ]),
+        });
+        let mixed = Value::Tensor(searchkernel_ir::RequestTensorIr {
+            type_spec: "tensor<float>(label{},x[2])".to_owned(),
+            payload: searchkernel_ir::RequestTensorPayloadIr::Mixed(vec![
+                searchkernel_ir::RequestTensorBlockIr {
+                    address: BTreeMap::from([("label".to_owned(), "b".to_owned())]),
+                    values: vec![0.25, 0.75],
+                },
+            ]),
+        });
+
+        let sparse_json = json_value(sparse.clone()).expect("sparse tensor must be public");
+        assert_eq!(
+            sparse_json["$searchkernel_tensor"]["sparse"][0]["address"][0]["dimension"],
+            "label"
+        );
+        assert_eq!(
+            sparse_json["$searchkernel_tensor"]["sparse"][0]["address"][0]["label"],
+            "a"
+        );
+        assert_eq!(
+            sparse_json["$searchkernel_tensor"]["sparse"][0]["value"],
+            0.5
+        );
+        assert!(sparse_json["$searchkernel_tensor"].get("dense").is_none());
+
+        let mixed_json = json_value(mixed.clone()).expect("mixed tensor must be public");
+        assert_eq!(
+            mixed_json["$searchkernel_tensor"]["mixed"][0]["address"][0]["dimension"],
+            "label"
+        );
+        assert_eq!(
+            mixed_json["$searchkernel_tensor"]["mixed"][0]["address"][0]["label"],
+            "b"
+        );
+        assert_eq!(
+            mixed_json["$searchkernel_tensor"]["mixed"][0]["values"],
+            serde_json::json!([0.25, 0.75])
+        );
+        assert!(mixed_json["$searchkernel_tensor"].get("dense").is_none());
+
+        assert!(
+            matches!(convert_feature_value(sparse).unwrap(), FeatureValue::Json(value) if value == sparse_json)
+        );
+        let group = core::ResultGroup {
+            value: Some(mixed),
+            ..core::ResultGroup::root(vec![])
+        };
+        let converted = convert_result_group(group).expect("group tensor must convert");
+        assert_eq!(converted.value, Some(mixed_json));
+    }
+
+    #[test]
+    fn public_result_conversion_preserves_sparse_hit_fields_and_mixed_group_values() {
+        let converted: SearchResult<serde_json::Value> =
+            search_result(sparse_mixed_tensor_result(), &[]).unwrap();
+        let ResultNode::Group(root) = converted.root else {
+            panic!("tensor fixture root must remain a group");
+        };
+        assert_eq!(
+            root.value,
+            Some(serde_json::json!({
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(label{},x[2])",
+                    "mixed": [{"address": [{"dimension": "label", "label": "b"}], "values": [0.25, 0.75]}]
+                }
+            }))
+        );
+        let ResultNode::Hit(hit) = &root.children[0] else {
+            panic!("tensor fixture child must remain a hit");
+        };
+        assert_eq!(
+            hit.fields["sparse"],
+            serde_json::json!({
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(label{})",
+                    "sparse": [{"address": [{"dimension": "label", "label": "a"}], "value": 0.5}]
+                }
+            })
         );
     }
 

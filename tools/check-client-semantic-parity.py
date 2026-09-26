@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""SK-23-016: execute the frozen Rust/Python/TypeScript canonical-IR parity corpus."""
+from pathlib import Path
+import json, os, subprocess, sys, tempfile
+ROOT=Path(__file__).resolve().parents[1]
+CORPUS=ROOT/'reference/client-semantic-parity/scenarios.json'
+def run(cmd, **kw):
+ print('+',' '.join(map(str,cmd)), flush=True); subprocess.run(cmd,cwd=ROOT,check=True,**kw)
+def main():
+ corpus=json.loads(CORPUS.read_text()); ids=[x['id'] for x in corpus['scenarios']]
+ if len(ids)!=len(set(ids)) or not ids: raise SystemExit('parity corpus scenario IDs must be unique and non-empty')
+ with tempfile.TemporaryDirectory(prefix='searchkernel-parity-') as d:
+  out=Path(d)
+  run(['cargo','run','--quiet','--no-default-features','-p','searchkernel-testkit','--bin','searchkernel-semantic-parity','--','--corpus',str(CORPUS),'--output',str(out/'rust.json')])
+  env=os.environ.copy(); env['PYTHONPATH']=str(ROOT/'clients/python'); env['SEARCHKERNEL_PARITY_CORPUS']=str(CORPUS); env['SEARCHKERNEL_PARITY_OUTPUT']=str(out/'python.json')
+  run([sys.executable,'-m','unittest','clients.python.tests.test_semantic_parity'],env=env)
+  env['SEARCHKERNEL_PARITY_OUTPUT']=str(out/'typescript.json')
+  run(['npm','--prefix','clients/typescript','test','--','tests/semantic-parity.test.ts'],env=env)
+  env['SEARCHKERNEL_SEMANTIC_SNAPSHOT']=str(ROOT/'target/debug/searchkernel-semantic-snapshot'); env['SEARCHKERNEL_PARITY_INDEX']=str(ROOT/corpus['index'])
+  env['SEARCHKERNEL_PARITY_OUTPUT']=str(out/'php.json'); run(['php','clients/php/tests/semantic_parity.php'],env=env)
+  env['SEARCHKERNEL_PARITY_OUTPUT']=str(out/'ruby.json'); run(['ruby','clients/ruby/test/semantic_parity.rb'],env=env)
+  traces={p.stem:json.loads(p.read_text()) for p in out.glob('*.json')}
+  for language in ('rust','python','typescript','php','ruby'):
+   if language not in traces: raise SystemExit(f'{language} parity trace missing')
+   if set(traces[language])!=set(ids): raise SystemExit(f'{language} scenario coverage differs from frozen corpus')
+  for sid in ids:
+   values={lang:traces[lang][sid] for lang in traces}
+   MAP_KEYS = {'inputs','properties'}
+   def norm(v, key=None):
+    # Only normalize the representation mismatch explicitly allowed by the
+    # canonical snapshot contract. Numeric kinds remain exact: coercing ints
+    # to floats can hide signedness, precision, and large-integer regressions.
+    if key in MAP_KEYS and v == []: return {}
+    if isinstance(v,dict): return {k:norm(x,k) for k,x in v.items()}
+    if isinstance(v,list): return [norm(x) for x in v]
+    return v
+   first=norm(values['rust'])
+   if any(norm(v)!=first for v in values.values()):
+    print(json.dumps({'scenario':sid,'traces':values},indent=2,sort_keys=True)); raise SystemExit(f'canonical IR parity mismatch: {sid}')
+ print(f'cross-language canonical IR parity PASS ({len(ids)} scenarios)')
+if __name__=='__main__': main()

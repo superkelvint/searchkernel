@@ -28,4 +28,4 @@ where = ["."]
 include = ["searchkernel*"]
 
 [tool.setuptools.package-data]
-searchkernel = ["_wire_generated/**/*.py", "_wire_generated/**/*.pyi"]
+searchkernel = ["_wire_generated/**/*.py", "_wire_generated/**/*.pyi", "bin/searchkerneld"]
