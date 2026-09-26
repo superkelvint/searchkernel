@@ -96,11 +96,12 @@ cache_result = false
 
 [[task]]
 id = "rust-remote-client"
-kind = "aggregate"
+kind = "command"
 runner = "linux"
+command = "cargo test -p searchkernel --test remote_client --features remote,internal-api"
 depends_on = ["rust-non-native", "protocol-generated", "client-contracts"]
 cache_result = false
-notes = "Pre-registered ownership for the Rust remote-client ingress. The product change replaces this aggregate with its focused executable verifier."
+notes = "Exercises the ergonomic Rust Index client across real gRPC framing and the canonical dispatcher."
 
 [[task]]
 id = "search-endpoints"
@@ -912,7 +913,7 @@ id = "searchkernel-rpc-client"
 paths = [
   "core/crates/searchkernel-rpc/**",
   "core/crates/searchkernel/src/remote.rs",
-  "searchkerneld/tests/rust_remote_client.rs",
+  "core/crates/searchkernel/tests/remote_client.rs",
 ]
 requires = ["rust-remote-client", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
 

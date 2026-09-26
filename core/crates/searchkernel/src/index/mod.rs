@@ -97,6 +97,21 @@ impl Index {
 }
 
 impl Index {
+    #[cfg(feature = "remote")]
+    pub(crate) fn from_remote_session(
+        context: IndexContext,
+        session: Arc<BackendSession>,
+    ) -> Result<Self> {
+        #[cfg(feature = "native")]
+        {
+            return Self::from_owned_backend(context, session, None);
+        }
+        #[cfg(not(feature = "native"))]
+        {
+            Self::from_owned_backend(context, session, None)
+        }
+    }
+
     /// Return a cloneable operation handle.
     pub fn index(&self) -> Index {
         self.clone()
