@@ -336,8 +336,22 @@ def _github_json(
     return _github_request(repo, path, page=page, state=state)
 
 
-def _github_patch(repo: str, path: str, payload: dict[str, Any]) -> Any:
-    return _github_request(repo, path, method="PATCH", payload=payload)
+def _github_delete_label(repo: str, issue_number: int, label: str) -> Any:
+    encoded = urllib.parse.quote(label, safe="")
+    return _github_request(
+        repo,
+        f"issues/{issue_number}/labels/{encoded}",
+        method="DELETE",
+    )
+
+
+def _github_add_labels(repo: str, issue_number: int, labels: Sequence[str]) -> Any:
+    return _github_request(
+        repo,
+        f"issues/{issue_number}/labels",
+        method="POST",
+        payload={"labels": list(labels)},
+    )
 
 
 def load_issues(repo: str, *, state: str) -> list[dict[str, Any]]:
@@ -423,17 +437,8 @@ def _live_issue(repo: str, number: int) -> dict[str, Any]:
     return value
 
 
-def _replace_workflow_state(labels: set[str], state: str | None) -> list[str]:
-    result = labels - WORKFLOW_STATES
-    if state is not None:
-        if state not in WORKFLOW_STATES:
-            raise QueueError(f"unsupported workflow state: {state}")
-        result.add(state)
-    return sorted(result)
-
-
 def apply_reconciliation(repo: str, actions: Sequence[ReconcileAction]) -> list[str]:
-    """Apply a precomputed plan with a final state check before each mutation."""
+    """Apply a precomputed plan without replacing unrelated issue labels."""
     messages: list[str] = []
     for action in actions:
         issue = _live_issue(repo, action.issue_number)
@@ -443,7 +448,8 @@ def apply_reconciliation(repo: str, actions: Sequence[ReconcileAction]) -> list[
         if action.kind == "remove-workflow-states":
             if issue.get("state") != "closed" or not state_labels:
                 continue
-            target = _replace_workflow_state(labels, None)
+            for state in sorted(state_labels):
+                _github_delete_label(repo, action.issue_number, state)
         elif action.kind == "set-state":
             if (
                 issue.get("state") != "open"
@@ -451,15 +457,20 @@ def apply_reconciliation(repo: str, actions: Sequence[ReconcileAction]) -> list[
                 or action.value not in {"status:ready", "status:blocked"}
             ):
                 continue
-            target = _replace_workflow_state(labels, action.value)
+
+            # Fail closed during the two-call state transition: remove the
+            # ownership label before exposing the issue as ready/blocked. If
+            # adding the target label fails, the verifier sees a missing state
+            # rather than a false-ready issue.
+            _github_delete_label(
+                repo,
+                action.issue_number,
+                "status:in-progress",
+            )
+            _github_add_labels(repo, action.issue_number, [action.value])
         else:
             raise QueueError(f"unsupported reconciliation action: {action.kind}")
 
-        _github_patch(
-            repo,
-            f"issues/{action.issue_number}",
-            {"labels": target},
-        )
         suffix = f" -> {action.value}" if action.value else ""
         messages.append(
             f"issue #{action.issue_number}: {action.kind}{suffix} ({action.reason})"
