@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce zero shared mutable toolchain state on self-hosted CI workers."""
+"""Enforce job-private CI state with one narrowly bounded compiler-cache exception."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
 WORKFLOWS = ROOT / ".github" / "workflows"
 IMAGE_RUNNER = WORKFLOWS / "ci-image-runner.yml"
+SCCACHE_HELPER = ROOT / "tools" / "ensure-ci-sccache.sh"
 
 FORBIDDEN_IN_WORKFLOWS = (
     (re.compile(r"ensure-runner-rust\.sh"), "host Rust repair helper"),
@@ -54,7 +55,6 @@ def main() -> int:
             '-v "$SOURCE_VOLUME:/work"',
             '-v "$TARGET_VOLUME:/cargo-target"',
             "CARGO_TARGET_DIR=/cargo-target",
-            "zero shared mutable worker state",
         )
         for needle in required:
             if needle not in runner:
@@ -74,6 +74,66 @@ def main() -> int:
                 failures.append(
                     f"{IMAGE_RUNNER}: shared mutable worker state is forbidden: {needle}"
                 )
+
+        # The sole permitted mutable cross-job build cache is a version-pinned
+        # sccache compiler-output service. It is optional during rollout: the
+        # fully job-private model remains valid. If a candidate opts into
+        # sccache, fail closed unless it uses the reviewed helper contract and
+        # keeps the actual compiler inside the exact-head job container.
+        uses_sccache = (
+            "ensure-ci-sccache.sh" in runner
+            or "SCCACHE_" in runner
+            or "RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache" in runner
+        )
+        if uses_sccache:
+            required_sccache_runner = (
+                "ensure-ci-sccache.sh",
+                '-v "$SCCACHE_BINARY_VOLUME:/opt/searchkernel/sccache:ro"',
+                '-v "$SCCACHE_SOCKET_VOLUME:/sccache:ro"',
+                "RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache",
+                "SCCACHE_SERVER_UDS=/sccache/sccache.sock",
+                "SCCACHE_CLIENT_SIDE=1",
+                "SCCACHE_IGNORE_SERVER_IO_ERROR=1",
+            )
+            for needle in required_sccache_runner:
+                if needle not in runner:
+                    failures.append(
+                        f"{IMAGE_RUNNER}: incomplete bounded sccache contract: {needle!r}"
+                    )
+
+            for needle in ("SCCACHE_DIR=", "SCCACHE_CACHE_SIZE="):
+                if needle in runner:
+                    failures.append(
+                        f"{IMAGE_RUNNER}: sccache cache storage must not be mounted/configured in job containers: {needle}"
+                    )
+
+            if not SCCACHE_HELPER.is_file():
+                failures.append(
+                    f"{SCCACHE_HELPER}: bounded sccache helper is required by the image runner"
+                )
+            else:
+                helper = SCCACHE_HELPER.read_text(encoding="utf-8")
+                required_helper = (
+                    "SCCACHE_VERSION=0.17.0",
+                    "SCCACHE_SHA256=67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006",
+                    'BINARY_VOLUME="searchkernel-ci-sccache-bin-v$SAFE_VERSION"',
+                    'CACHE_VOLUME="searchkernel-ci-sccache-cache-v$SAFE_VERSION"',
+                    'SOCKET_VOLUME="searchkernel-ci-sccache-socket-v$SAFE_VERSION"',
+                    "SCCACHE_CACHE_SIZE=20G",
+                    "SCCACHE_SERVER_UDS=/sccache/sccache.sock",
+                    "SCCACHE_NO_DAEMON=1",
+                    "flock 9",
+                )
+                for needle in required_helper:
+                    if needle not in helper:
+                        failures.append(
+                            f"{SCCACHE_HELPER}: missing bounded sccache contract {needle!r}"
+                        )
+                for needle in ("/cargo-target", ':/work', ':/root/.cargo/registry', ':/root/.cargo/git'):
+                    if needle in helper:
+                        failures.append(
+                            f"{SCCACHE_HELPER}: compiler-cache helper must not share job build/package state: {needle}"
+                        )
 
     for path in sorted(WORKFLOWS.glob("*.y*ml")):
         text = path.read_text(encoding="utf-8")
@@ -105,14 +165,15 @@ def main() -> int:
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
         print(
-            "\nWorkers may share immutable Docker image layers only. "
-            "Rust/Node/Ruby/Python package state, Cargo outputs, native caches, "
-            "and job workspaces must remain job-private.",
+            "\nWorkers may share immutable Docker image layers and only the "
+            "reviewed version-pinned sccache compiler-output cache. Rust/Node/"
+            "Ruby/Python package state, Cargo target directories, native caches, "
+            "source snapshots, and job workspaces must remain job-private.",
             file=sys.stderr,
         )
         return 1
 
-    print("Self-hosted zero-shared-state CI policy: PASS")
+    print("Self-hosted isolated-state CI policy: PASS")
     return 0
 
 
