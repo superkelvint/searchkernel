@@ -123,12 +123,10 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertIn(
             "assert_current_pr_head native-full-prepare-verifier-sdk", native_full
         )
-        unset_token_pos = native_full.index("unset GH_TOKEN")
-        restore_token_pos = native_full.index("export GH_TOKEN=$native_full_gh_token")
-        self.assertLess(unset_token_pos, source_pos)
+        self.assertNotIn("native_full_gh_token", native_full)
+        self.assertNotIn("GH_TOKEN=", native_full)
         self.assertLess(source_pos, prepare_pos)
-        self.assertLess(prepare_pos, restore_token_pos)
-        self.assertLess(restore_token_pos, hnsw_pos)
+        self.assertLess(prepare_pos, hnsw_pos)
 
     def test_supports_client_e2e_bundle_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
