@@ -566,13 +566,20 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 name = "searchkernel"
 version = "0.1.0"
 dependencies = [
+ "hyper-util",
  "libc",
+ "searchkernel-dispatch",
  "searchkernel-ir",
  "searchkernel-ir-adapter",
  "searchkernel-protocol",
+ "searchkernel-rpc",
  "searchkernel-testkit",
  "serde",
  "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower 0.4.13",
 ]
 
 [[package]]
@@ -609,6 +616,7 @@ version = "0.1.0"
 dependencies = [
  "searchkernel-ir",
  "searchkernel-vespa-engine",
+ "serde_json",
 ]
 
 [[package]]
@@ -618,6 +626,14 @@ dependencies = [
  "cc",
  "flatbuffers",
  "serde_json",
+]
+
+[[package]]
+name = "searchkernel-rpc"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "tonic",
 ]
 
 [[package]]
@@ -664,7 +680,9 @@ dependencies = [
  "searchkernel-dispatch",
  "searchkernel-ir",
  "searchkernel-protocol",
+ "searchkernel-rpc",
  "searchkernel-testkit",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "tonic",
