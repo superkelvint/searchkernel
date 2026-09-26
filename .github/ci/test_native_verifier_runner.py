@@ -124,6 +124,10 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             abi_workflow,
         )
         self.assertIn("target: abi-surface", abi_workflow)
+        self.assertEqual(
+            2,
+            abi_workflow.count('      - ".github/workflows/ci-image-runner.yml"'),
+        )
 
     def test_python_native_e2e_skips_ensure_only_when_explicitly_prevalidated(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
