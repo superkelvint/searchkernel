@@ -551,8 +551,13 @@ valid_install() {
 }
 
 canonical_mounted_install() {
-    [[ "$CACHE_ROOT" == "/opt/searchkernel/native-sdk-cache/ci/$TARGET" ]] || return 1
-    [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" == 1 || -f /opt/searchkernel/native-validation-pass ]]
+    [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" == 1 || -f /opt/searchkernel/native-validation-pass ]] || return 1
+
+    # Being inside searchkernel-ci is not sufficient: tests and deliberate
+    # custom runs may point the resolver at an unrelated XDG/SK cache. Only
+    # the immutable CI bundle mounted at its canonical path is exempt from
+    # published-generation discovery/refresh.
+    [[ "$OBJECT" == "/opt/searchkernel/native-sdk-cache/ci/$TARGET/objects/$PINNED_VESPA_COMMIT" ]]
 }
 
 install_published_base() {
@@ -7770,7 +7775,6 @@ class EmbeddedEngine {
     // owns operation-level concurrency. Close and cleanup take the exclusive
     // holder and therefore cannot race an active operation.
     mutable std::shared_mutex _lifecycle_mutex;
-    mutable std::mutex _mutation_mutex;
     // This container is owned by this adapter rather than Vespa. Hold this
     // narrow lock only while preparing a previously unseen bucket; native feed
     // calls themselves remain concurrent and are serialized by Vespa as needed.
@@ -9039,7 +9043,6 @@ class EmbeddedEngine {
 
     ValueDocument get_value_document(const std::string &external_id) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         validate_document_id(external_id.c_str());
         const DocumentId id(internal_document_id(external_id, _document_type));
@@ -10375,7 +10378,6 @@ public:
 
     void put(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         Bucket bucket = bucket_for(document_id);
@@ -10395,7 +10397,6 @@ public:
 
     void update(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         const bool was_present = source_document_present(document_id);
@@ -10412,7 +10413,6 @@ public:
 
     bool remove(const std::string &id) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         failpoint("mutation_before_native_call");
@@ -10532,7 +10532,6 @@ public:
 
     void put_text(const TextDocument &text) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -10552,7 +10551,6 @@ public:
 
     void update_text(const TextUpdate &text) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         const bool was_present = source_document_present(id);
@@ -10626,7 +10624,6 @@ public:
     std::optional<std::string> id_for_gid(const document::GlobalId &gid) const {
         // Keep the mutation lock through the copy because the provider returns
         // a string_view into mutable document metadata.
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         return id_for_gid_unlocked(gid);
     }
 
@@ -11321,7 +11318,6 @@ public:
     sk_grouping_tree_result group_tree(const NativeQueryState &query,
                                        const sk_grouping_plan &plan) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
 
         SearchRequest request;
@@ -11378,7 +11374,6 @@ public:
                                        const sk_grouping_plan &plan,
                                        const LocalSearchRequestState &options) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
 
         SearchRequest request;
@@ -11455,7 +11450,6 @@ public:
 
     void put_attributes(const AttributeDocumentState &document) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(document.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -11472,7 +11466,6 @@ public:
 
     void update_attributes(const AttributeUpdateState &update) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(update.id, _document_type));
         const bool was_present = source_document_present(id);
@@ -11485,7 +11478,6 @@ public:
 
     void put_document(const ValueDocument &document) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(document.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -11498,25 +11490,29 @@ public:
                                        make_value_document(document));
         failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
-        const bool has_tensor = std::any_of(
-            document.fields.begin(), document.fields.end(),
-            [](const auto &field) { return field.value.kind == SK_VALUE_TENSOR; });
+        // Hardening can hold the completed feed at the exact boundary the
+        // visibility barrier is required to close. This makes the regression
+        // deterministic instead of relying on Vespa publication timing.
+        failpoint("mutation_before_visibility_wait");
         const bool has_struct_array = std::any_of(
             document.fields.begin(), document.fields.end(),
             [](const auto &field) { return field.value.kind == SK_VALUE_STRUCT_ARRAY; });
         const bool has_position = std::any_of(
             document.fields.begin(), document.fields.end(),
             [](const auto &field) { return field.value.kind == SK_VALUE_POSITION; });
-        if (!has_tensor && !has_struct_array && !has_position) {
-            wait_for_source_state(id, true, expected_fields(document), true);
-        } else if (has_struct_array || has_position) {
+        // A successful put is the synchronization point for immediate GET and
+        // search. TensorFieldValue presence is intentionally a valid match in
+        // value_matches(), so tensors must not bypass this publication barrier.
+        // Struct-array/position values retain their presence-only contract.
+        if (has_struct_array || has_position) {
             wait_for_source_state(id, true, {}, true);
+        } else {
+            wait_for_source_state(id, true, expected_fields(document), true);
         }
     }
 
     void update_document(const ValueUpdate &update) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(update.id, _document_type));
         const bool was_present = source_document_present(id);
@@ -11560,7 +11556,6 @@ public:
     LocalSearchResultState search_local_result(const NativeQueryState &query,
                                                 const LocalSearchRequestState &request) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         return search_local(query, request);
     }
@@ -11568,7 +11563,6 @@ public:
     LocalGroupingResultState group_local_result(const NativeQueryState &query,
                                                  const LocalGroupingRequestState &request) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         return group_local(query, request);
     }
@@ -12051,7 +12045,7 @@ class FailpointController {
     std::map<std::string, Entry> _entries;
 
     static bool known(std::string_view name) noexcept {
-        static constexpr std::array<std::string_view, 18> names = {
+        static constexpr std::array<std::string_view, 19> names = {
             "open_before_native_create", "open_after_native_create",
             "open_constructor", "open_initialize",
             "mutation_before_native_call", "mutation_after_native_call",
@@ -12059,7 +12053,8 @@ class FailpointController {
             "result_after_allocation", "destroy_before_native_release",
             "attribute_mutation_before_native_call",
             "attribute_mutation_after_native_call", "group_before_match",
-            "group_after_match", "search_after_id_resolution", "search_after_docsums"};
+            "group_after_match", "search_after_id_resolution", "search_after_docsums",
+            "mutation_before_visibility_wait"};
         return std::find(names.begin(), names.end(), name) != names.end();
     }
 
