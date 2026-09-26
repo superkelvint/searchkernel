@@ -8,6 +8,12 @@ should_use_ci_image() {
         check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify)
             return 0
             ;;
+        native-sdk)
+            if [[ "${2:-ensure}" == "ensure" ]]; then
+                return 0
+            fi
+            return 1
+            ;;
         *)
             return 1
             ;;
