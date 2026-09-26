@@ -1017,6 +1017,43 @@ fn portable_search_with_textual_filter(source: &str) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+fn portable_search_with_textual_binding(
+    source: &str,
+    name: &str,
+    value: &RequestValueIr,
+) -> Vec<u8> {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let query_source = match_all_source(&mut builder);
+    let binding = value_entry(&mut builder, name, value);
+    let bindings = builder.create_vector(&[binding]);
+    let source = builder.create_string(source);
+    let clause = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            source: Some(source),
+            bindings: Some(bindings),
+        },
+    );
+    let textual = builder.create_vector(&[clause]);
+    let filters = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query_source),
+            filters: Some(filters),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
 fn filter_search_input(
     filters: Vec<FilterInput>,
     textual_filters: Vec<TextualFilterInput>,
@@ -1049,6 +1086,65 @@ fn assert_same_error(left: &crate::PortableError, right: &crate::PortableError) 
     assert_eq!(
         left.details.first().map(|detail| &detail.code),
         right.details.first().map(|detail| &detail.code)
+    );
+}
+
+#[test]
+fn portable_textual_in_binding_enforces_expanded_value_limit() {
+    fn brands(count: usize) -> RequestValueIr {
+        RequestValueIr::List(
+            (0..count)
+                .map(|i| RequestValueIr::String(format!("brand-{i}")))
+                .collect(),
+        )
+    }
+
+    let source = "brand IN (:brands)";
+    let bytes = portable_search_with_textual_binding(
+        source,
+        "brands",
+        &brands(searchkernel_filter::limits::MAX_IN_VALUES),
+    );
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes)
+        .expect("portable at-limit request should decode");
+    let resolved = context()
+        .search_to_ir(request)
+        .expect("portable IN binding at the canonical limit must resolve");
+    assert!(
+        matches!(
+            resolved.filter(),
+            Some(FilterIr::In { values, .. })
+                if values.len() == searchkernel_filter::limits::MAX_IN_VALUES
+        ),
+        "{:?}",
+        resolved.filter()
+    );
+
+    let bytes = portable_search_with_textual_binding(
+        source,
+        "brands",
+        &brands(searchkernel_filter::limits::MAX_IN_VALUES + 1),
+    );
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes)
+        .expect("portable over-limit request should decode");
+    let error = context()
+        .search_to_ir(request)
+        .expect_err("portable IN binding over the canonical limit must fail");
+    assert_eq!(error.code, crate::ErrorCode::InvalidArgument);
+    let detail = &error.details[0];
+    assert_eq!(detail.code, "expression_too_complex");
+    assert_eq!(detail.path.as_deref(), Some("filters.textual[0].source"));
+    assert_eq!(
+        detail.metadata.get("limit").map(String::as_str),
+        Some("InValues")
+    );
+    assert_eq!(
+        detail.metadata.get("start_offset").map(String::as_str),
+        Some("10")
+    );
+    assert_eq!(
+        detail.metadata.get("end_offset").map(String::as_str),
+        Some("17")
     );
 }
 
