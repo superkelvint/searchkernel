@@ -1,7 +1,7 @@
 # Cross-language canonical IR parity
 
 `scenarios.json` is the immutable intent corpus for SK-23-016. Each scenario is
-constructed independently through the public Rust, Python, and TypeScript
+constructed independently through the public Rust, Python, TypeScript, PHP, and Ruby
 facades; language syntax is allowed to differ. The gate compares the resulting
 `searchkernel-ir::snapshot::search_request` JSON, so semantic resolution remains
 owned exclusively by `searchkernel-ir`.

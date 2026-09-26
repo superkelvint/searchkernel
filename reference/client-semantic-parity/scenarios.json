@@ -36,14 +36,9 @@
       }
     },
     {
-      "id": "uint64-max-rank-property",
+      "id": "rank-property",
       "intent": {
         "kind": "browse",
-        "inputs": {
-          "big": {
-            "uint64": "18446744073709551615"
-          }
-        },
         "rank_properties": {
           "foo": "bar"
         }

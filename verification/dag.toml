@@ -124,7 +124,7 @@ notes = "Focused verifier for the searchkerneld public Search Endpoint binding/s
 
 [[task]]
 id = "client-semantic-parity"
-legacy_lanes = ["rust", "python", "typescript"]
+legacy_lanes = ["rust", "python", "typescript", "ruby"]
 kind = "command"
 runner = "linux"
 command = "python3 tools/check-client-semantic-parity.py"
@@ -996,7 +996,7 @@ requires = ["typescript-client", "client-contracts", "client-semantic-parity", "
 [[subsystem]]
 id = "client-php"
 paths = ["clients/php/**"]
-requires = ["php-client", "client-contracts"]
+requires = ["php-client", "client-contracts", "client-semantic-parity"]
 
 [[subsystem]]
 id = "client-ruby"
@@ -1004,7 +1004,7 @@ paths = [
   "clients/ruby/**",
   "core/crates/searchkernel-protocol/tests/ruby_json_contract.rs",
 ]
-requires = ["ruby-client", "client-contracts"]
+requires = ["ruby-client", "client-contracts", "client-semantic-parity"]
 
 [[subsystem]]
 id = "persistence"

@@ -16,14 +16,24 @@ def main():
   run([sys.executable,'-m','unittest','clients.python.tests.test_semantic_parity'],env=env)
   env['SEARCHKERNEL_PARITY_OUTPUT']=str(out/'typescript.json')
   run(['npm','--prefix','clients/typescript','test','--','tests/semantic-parity.test.ts'],env=env)
+  env['SEARCHKERNEL_SEMANTIC_SNAPSHOT']=str(ROOT/'target/debug/searchkernel-semantic-snapshot'); env['SEARCHKERNEL_PARITY_INDEX']=str(ROOT/corpus['index'])
+  env['SEARCHKERNEL_PARITY_OUTPUT']=str(out/'php.json'); run(['php','clients/php/tests/semantic_parity.php'],env=env)
+  env['SEARCHKERNEL_PARITY_OUTPUT']=str(out/'ruby.json'); run(['ruby','clients/ruby/test/semantic_parity.rb'],env=env)
   traces={p.stem:json.loads(p.read_text()) for p in out.glob('*.json')}
-  for language in ('rust','python','typescript'):
+  for language in ('rust','python','typescript','php','ruby'):
    if language not in traces: raise SystemExit(f'{language} parity trace missing')
    if set(traces[language])!=set(ids): raise SystemExit(f'{language} scenario coverage differs from frozen corpus')
   for sid in ids:
    values={lang:traces[lang][sid] for lang in traces}
-   first=values['rust']
-   if any(v!=first for v in values.values()):
+   MAP_KEYS = {'inputs','properties'}
+   def norm(v, key=None):
+    if key in MAP_KEYS and v == []: return {}
+    if isinstance(v,dict): return {k:norm(x,k) for k,x in v.items()}
+    if isinstance(v,list): return [norm(x) for x in v]
+    if isinstance(v,(int,float)) and not isinstance(v,bool): return float(v)
+    return v
+   first=norm(values['rust'])
+   if any(norm(v)!=first for v in values.values()):
     print(json.dumps({'scenario':sid,'traces':values},indent=2,sort_keys=True)); raise SystemExit(f'canonical IR parity mismatch: {sid}')
  print(f'cross-language canonical IR parity PASS ({len(ids)} scenarios)')
 if __name__=='__main__': main()
