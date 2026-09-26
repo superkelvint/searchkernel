@@ -108,3 +108,10 @@ jobs:
               ;;
           esac
           rm -rf -- "$CHECKOUT_DIR"
+
+  native:
+    name: Executable native persistence matrix
+    uses: ./.github/workflows/ci-image-runner.yml
+    with:
+      revision: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      target: persistence
