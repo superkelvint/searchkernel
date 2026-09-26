@@ -193,6 +193,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
 set -euo pipefail
 source {str(VERIFY_COMMON)!r}
 prepare_verifier_sdk
+prepare_verifier_sdk
 bash -c 'printf "%s" "$LD_LIBRARY_PATH"'
 """
             completed = subprocess.run(
