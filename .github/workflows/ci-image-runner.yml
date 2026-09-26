@@ -389,6 +389,8 @@ jobs:
             verifier_vespa_root=$(bash tools/resolve-native-sdk.sh vespa-root)
 
             run_phase native-full-prepare-verifier-sdk env \
+              -u HEAD_CHECK_TOKEN \
+              -u AUTOFIX_TOKEN \
               SEARCHKERNEL_VERIFIER_SDK="$verifier_sdk" \
               SEARCHKERNEL_VERIFIER_SDK_BUILD="$verifier_build" \
               SEARCHKERNEL_VERIFIER_BASE_SDK="$native_base" \
