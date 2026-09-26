@@ -19,7 +19,7 @@ PROTECTED_PREFIXES = (
     ".github/ci/",
     ".github/workflows/",
     "verification/",
-    "reference/vespa/",
+    "reference/",
     "tools/",
     ".moon/",
     "docker/searchkernel-ci/",
