@@ -75,3 +75,62 @@ mv "$prefix/bin/flatc" "$tmp/compiler/bin/flatc"
 bash "$CHECK" "$prefix" 25.12.19 "$tmp/compiler/bin/flatc"
 
 echo "PASS incompatible FlatBuffers C++ archive is rejected, compatible archive is accepted, and split overrides remain valid"
+
+
+# Regression: the installer must authenticate the pinned FlatBuffers source
+# archive before any extraction is attempted.
+fake_bin="$tmp/fake-bin"
+mkdir -p "$fake_bin"
+
+cat >"$fake_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+output=
+while (($#)); do
+    case "$1" in
+        --output)
+            output=$2
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+[[ -n "$output" ]] || {
+    echo "fake curl did not receive --output" >&2
+    exit 2
+}
+printf 'corrupted flatbuffers source archive\n' >"$output"
+EOF
+chmod +x "$fake_bin/curl"
+
+cat >"$fake_bin/tar" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+: "${SEARCHKERNEL_TEST_TAR_MARKER:?}"
+: >"$SEARCHKERNEL_TEST_TAR_MARKER"
+exit 1
+EOF
+chmod +x "$fake_bin/tar"
+
+corrupt_prefix="$tmp/corrupt-prefix"
+corrupt_marker="$tmp/tar-was-called"
+if env \
+    PATH="$fake_bin:$PATH" \
+    FLATBUFFERS_INSTALL_PREFIX="$corrupt_prefix" \
+    SEARCHKERNEL_TEST_TAR_MARKER="$corrupt_marker" \
+    "$ROOT/dev" install flatbuffers >"$tmp/corrupt.out" 2>"$tmp/corrupt.err"; then
+    echo "expected corrupted FlatBuffers source archive to be rejected" >&2
+    exit 1
+fi
+
+if [[ -e "$corrupt_marker" ]]; then
+    echo "expected corrupted FlatBuffers source archive to be rejected before extraction" >&2
+    cat "$tmp/corrupt.err" >&2
+    exit 1
+fi
+
+grep -q "FlatBuffers source checksum mismatch" "$tmp/corrupt.err"
+
+echo "PASS corrupted FlatBuffers source bytes are rejected before extraction"
