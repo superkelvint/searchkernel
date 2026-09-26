@@ -386,6 +386,7 @@ jobs:
 
             tooling)
               run_phase tooling-python-syntax "$PYTHON" -m compileall -q tools .github/ci
+              run_phase ci-runner-isolation "$PYTHON" .github/ci/test_ci_image_runner_isolation.py
               run_phase dev-syntax bash -n dev
               run_phase dev-help bash dev help
               run_phase dev-ci-image-contract bash tools/test-dev-ci-image.sh
