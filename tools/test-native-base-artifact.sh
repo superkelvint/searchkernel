@@ -129,6 +129,10 @@ run_resolver() {
         unset VESPA_EXTRA_LIB_DIR
         unset VESPA_AWS_LIB_DIR
 
+        # Reproduce the canonical CI execution context even when this focused
+        # regression is run from a host checkout. A fixture-local cache must
+        # not be mistaken for the immutable /opt/searchkernel CI mount.
+        SEARCHKERNEL_IN_CI_IMAGE=1 \
         SEARCHKERNEL_BUILD_ENV="$build_env" \
         SK_NATIVE_TARGET="$native_target" \
         XDG_CACHE_HOME="$cache_home" \
