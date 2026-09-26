@@ -936,7 +936,10 @@ Provision the trust root as follows:
   default branch;
 - store the App ID as environment variable `TRUSTED_CI_APP_ID` and its private
   key as environment secret `TRUSTED_CI_APP_PRIVATE_KEY`; and
-- require `Trusted invariant gate` from that App in the merge ruleset.
+- require `Trusted invariant gate` from that App in the merge ruleset; and
+- require pull-request branches to be up to date with `main` before merge. The
+  trusted controller also refuses to publish success unless its exact base is
+  already an ancestor of the candidate head.
 
 Verification authority includes workflows, CI policy, verification/DAG files,
 all `reference/**` acceptance/verifier artifacts, CI-image definitions, tools,
