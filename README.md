@@ -58,9 +58,9 @@ It also doesn't have its own ranking language, storage engine, or schema migrati
 
 ## Installing
 
-On a supported platform, install/build Search Kernel normally. Native-enabled Cargo builds automatically acquire the pinned, target-specific Vespa runtime artifact, verify its checksum and provenance, and reuse it from a machine cache. Consumers do **not** clone or build Vespa, configure `SK_NATIVE_SDK`, understand native cache layout, or delete caches to recover from stale artifacts. Missing, stale, or corrupt cached runtime state is acquired/refreshed under the resolver lock.
+Search Kernel links against Vespa's native libraries at build time. None of the managed-local bindings are pure-language packages. The next beta release qualifies **Linux x86-64 with glibc** for the Rust embedded API, `searchkerneld`, Python, and TypeScript/Node.js. Browser TypeScript/gRPC-Web, PHP, Ruby, Go, macOS, Windows, and Linux ARM/aarch64 are not release-supported surfaces.
 
-`SK_NATIVE_SDK`, native-base generation controls, source-build fallbacks, and CI cache mounts are contributor/maintainer interfaces, not consumer installation steps. See [`BUILDING.md`](BUILDING.md) for contributor native-build details.
+See the [authoritative release support matrix](docs/release-support.md) before deploying or packaging Search Kernel.
 
 ### Development prerequisites
 
@@ -151,15 +151,7 @@ models and do not maintain parallel full-schema DTOs or handwritten codecs.
 
 ## Language bindings
 
-| Language   | Status |
-|------------|--------|
-| Rust       | Direct embedded API |
-| Python     | gRPC transport and ergonomic facade present |
-| JavaScript | Planned/on demand |
-| Go         | Planned/on demand |
-| PHP        | Planned/on demand |
-
-Implemented bindings expose the same underlying operations. If one binding supports something another doesn't yet, that's a gap to close, not a difference in design.
+Release support is deliberately narrower than implementation inventory. For the next beta, Python (managed-local/connect) and TypeScript/Node.js (connect) are supported non-Rust SDK modes on the qualified Linux x86-64 glibc platform. PHP, Ruby, browser gRPC-Web, Go, and other language/runtime surfaces are deferred even where implementation exists. See the [release support matrix](docs/release-support.md).
 
 ## Repository layout
 

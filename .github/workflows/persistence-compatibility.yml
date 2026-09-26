@@ -27,6 +27,8 @@ on:
       - "tools/check-persistence-fixtures.sh"
       - "tools/check-persistence-fixture-immutability.sh"
       - "tools/check-persistence-sensitivity.sh"
+      - "tools/check-release-persistence-contract.py"
+      - "docs/persistence-compatibility.md"
       - ".github/workflows/persistence-compatibility.yml"
 
 concurrency:
@@ -87,13 +89,9 @@ jobs:
           BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: bash tools/check-persistence-fixture-immutability.sh "$BASE_REF"
 
-      - name: Native verification policy
+      - name: Verify release persistence contract
         working-directory: ${{ steps.checkout.outputs.absolute }}
-        run: |
-          echo "::notice::Real-Vespa persistence reopen/mutation verification is intentionally local under current repository policy."
-          echo "::notice::Run: cargo test -p searchkernel --test persistence_compatibility --features native -- --nocapture"
-          echo "::notice::Run: cargo test -p searchkernel --features native --lib persistence_fault_matrix_ -- --nocapture"
-          echo "::notice::Run: bash tools/check-persistence-sensitivity.sh"
+        run: python3 tools/check-release-persistence-contract.py
 
       - name: Remove job-private checkout
         if: always() && steps.checkout.outputs.absolute != ''
