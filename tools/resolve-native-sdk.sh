@@ -150,7 +150,13 @@ resolve_published_base_identity() {
         return 0
     fi
 
-    generation=$(latest_published_generation)
+    if ! generation=$(latest_published_generation); then
+        return 1
+    fi
+    [[ "$generation" =~ ^[1-9][0-9]*$ ]] || {
+        echo "invalid published native-base generation '$generation'" >&2
+        return 1
+    }
     tag="vespa-base-v${generation}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"
     asset="searchkernel-vespa-base-v${generation}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
     PUBLISHED_BASE_GENERATION=$generation

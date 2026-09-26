@@ -32,24 +32,26 @@ download_artifact() {
     local url=$1
     local destination=$2
     local token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
-    local prefix='https://github.com/superkelvint/searchkernel/releases/download/'
-    local remainder tag asset release_json asset_url
+    local repo=${SEARCHKERNEL_GITHUB_REPO:-superkelvint/searchkernel}
+    local prefix="https://github.com/${repo}/releases/download/"
+    local remainder tag asset release_json asset_url gh_download
 
-    if [[ -n "$token" && "$url" == "$prefix"* ]]; then
+    if [[ "$url" == "$prefix"* ]]; then
         remainder=${url#"$prefix"}
         tag=${remainder%%/*}
         asset=${remainder#*/}
         [[ -n "$tag" && -n "$asset" && "$asset" != "$remainder" ]] || return 1
 
-        release_json=$TMP/release.json
-        curl -fsSL \
-            -H "Authorization: Bearer $token" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/superkelvint/searchkernel/releases/tags/$tag" \
-            -o "$release_json" || return 1
+        if [[ -n "$token" ]]; then
+            release_json=$TMP/release.json
+            curl -fsSL \
+                -H "Authorization: Bearer $token" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/${repo}/releases/tags/$tag" \
+                -o "$release_json" || return 1
 
-        asset_url=$(python3 - "$release_json" "$asset" <<'PY'
+            asset_url=$(python3 - "$release_json" "$asset" <<'PY'
 import json
 import sys
 
@@ -63,14 +65,28 @@ for candidate in release.get("assets", []):
 else:
     raise SystemExit(f"release asset not found: {wanted}")
 PY
-        ) || return 1
+            ) || return 1
 
-        curl -fsSL \
-            -H "Authorization: Bearer $token" \
-            -H "Accept: application/octet-stream" \
-            "$asset_url" \
-            -o "$destination"
-        return
+            curl -fsSL \
+                -H "Authorization: Bearer $token" \
+                -H "Accept: application/octet-stream" \
+                "$asset_url" \
+                -o "$destination"
+            return
+        fi
+
+        if command -v gh >/dev/null 2>&1; then
+            gh_download="$TMP/gh-download"
+            rm -rf "$gh_download"
+            mkdir -p "$gh_download"
+            gh release download "$tag" \
+                -R "$repo" \
+                -D "$gh_download" \
+                -p "$asset" >/dev/null || return 1
+            [[ -f "$gh_download/$asset" ]] || return 1
+            mv "$gh_download/$asset" "$destination"
+            return
+        fi
     fi
 
     curl -fsSL "$url" -o "$destination"
