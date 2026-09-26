@@ -194,7 +194,6 @@ fn main() {
             manifest_dir.join("native_loader.c").display()
         );
     }
-    let lib_dir = sdk.join("lib");
     #[cfg(feature = "native")]
     if let Some(base) = base_sdk.as_deref() {
         println!(
