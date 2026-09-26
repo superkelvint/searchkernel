@@ -208,22 +208,30 @@ fn canonical_two_level_grouping_lowers_to_linear_attribute_plan() {
                 searchkernel_vespa_engine::GroupingLevel::new(
                     searchkernel_vespa_engine::GroupingExpression::attribute("category"),
                 )
-                .aggregation(searchkernel_vespa_engine::GroupingAggregation::Count)
-                .aggregation(
+                .aggregation_label(
+                    searchkernel_vespa_engine::GroupingAggregation::Count,
+                    "count",
+                )
+                .aggregation_label(
                     searchkernel_vespa_engine::GroupingAggregation::Average(
                         searchkernel_vespa_engine::GroupingExpression::attribute("price"),
-                    )
+                    ),
+                    "average(price)",
                 ),
             )
             .level(
                 searchkernel_vespa_engine::GroupingLevel::new(
                     searchkernel_vespa_engine::GroupingExpression::attribute("qty"),
                 )
-                .aggregation(searchkernel_vespa_engine::GroupingAggregation::Count)
-                .aggregation(
+                .aggregation_label(
+                    searchkernel_vespa_engine::GroupingAggregation::Count,
+                    "count",
+                )
+                .aggregation_label(
                     searchkernel_vespa_engine::GroupingAggregation::Average(
                         searchkernel_vespa_engine::GroupingExpression::attribute("price"),
-                    )
+                    ),
+                    "average(price)",
                 ),
             )
     );
@@ -1516,12 +1524,8 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
                 .attribute()
                 .summary(),
         )
-        .field(Field::new("qty", FieldType::Integer).attribute().summary())
-        .field(
-            Field::new("price", FieldType::Integer)
-                .attribute()
-                .summary(),
-        );
+        .field(Field::new("qty", FieldType::Long).attribute().summary())
+        .field(Field::new("price", FieldType::Long).attribute().summary());
     ConfigCompiler
         .compile_to(&schema, &config)
         .expect("compile typed-query schema");
