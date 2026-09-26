@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -17,19 +16,44 @@ def main() -> int:
         fake_bin = temp / "bin"
         fake_bin.mkdir()
         cargo_log = temp / "cargo.log"
+        runtime_log = temp / "runtime.log"
         output = temp / "output.jsonl"
         target_dir = temp / "cargo-target"
+        existing_runtime = temp / "existing-runtime"
+        existing_runtime.mkdir()
 
         fake_cargo = fake_bin / "cargo"
         fake_cargo.write_text(
             "#!/usr/bin/env python3\n"
             "import json, os, sys\n"
             "from pathlib import Path\n"
-            "Path(os.environ['FAKE_CARGO_LOG']).write_text(' '.join(sys.argv[1:]) + '\\n', encoding='utf-8')\n"
-            "for raw in sys.stdin:\n"
-            "    case_id = raw.split('\\t', 1)[0]\n"
-            "    if case_id:\n"
-            "        print(json.dumps({'id': case_id, 'terms': []}, separators=(',', ':')))\n",
+            "args = sys.argv[1:]\n"
+            "Path(os.environ['FAKE_CARGO_LOG']).write_text(' '.join(args) + '\\n', encoding='utf-8')\n"
+            "target = Path(args[args.index('--target-dir') + 1]).resolve()\n"
+            "out_dir = target / 'debug/build/searchkernel-vespa-bindings-fake/out'\n"
+            "adapter = out_dir / 'native-adapter/lib'\n"
+            "adapter.mkdir(parents=True)\n"
+            "(adapter / 'libsearchkernel_vespa.so.2').write_bytes(b'fake')\n"
+            "binary = target / 'debug/searchkernel-m3-conformance-driver'\n"
+            "binary.parent.mkdir(parents=True, exist_ok=True)\n"
+            "binary.write_text(\n"
+            "    '#!/usr/bin/env python3\\n'\n"
+            "    'import json, os, sys\\n'\n"
+            "    'from pathlib import Path\\n'\n"
+            "    \"Path(os.environ['FAKE_RUNTIME_LOG']).write_text(os.environ.get('LD_LIBRARY_PATH', '') + '\\\\n', encoding='utf-8')\\n\"\n"
+            "    \"for raw in sys.stdin:\\n\"\n"
+            "    \"    case_id = raw.split('\\\\t', 1)[0]\\n\"\n"
+            "    \"    if case_id:\\n\"\n"
+            "    \"        print(json.dumps({'id': case_id, 'terms': []}, separators=(',', ':')))\\n\",\n"
+            "    encoding='utf-8',\n"
+            ")\n"
+            "binary.chmod(0o755)\n"
+            "print(json.dumps({\n"
+            "    'reason': 'build-script-executed',\n"
+            "    'package_id': 'path+file:///fake#searchkernel-vespa-bindings@0.0.0',\n"
+            "    'out_dir': str(out_dir),\n"
+            "    'linked_paths': ['native=' + str(adapter)],\n"
+            "}))\n",
             encoding="utf-8",
         )
         fake_cargo.chmod(0o755)
@@ -39,7 +63,9 @@ def main() -> int:
             {
                 "PATH": f"{fake_bin}:{env['PATH']}",
                 "FAKE_CARGO_LOG": str(cargo_log),
+                "FAKE_RUNTIME_LOG": str(runtime_log),
                 "CARGO_TARGET_DIR": str(target_dir),
+                "LD_LIBRARY_PATH": str(existing_runtime),
             }
         )
         completed = subprocess.run(
@@ -56,20 +82,28 @@ def main() -> int:
 
         cargo_args = cargo_log.read_text(encoding="utf-8").strip()
         expected_manifest = M3 / "rust-driver" / "Cargo.toml"
+        expected_adapter = (
+            target_dir
+            / "debug/build/searchkernel-vespa-bindings-fake/out/native-adapter/lib"
+        ).resolve()
+        runtime_path = runtime_log.read_text(encoding="utf-8").strip()
+
         checks = (
-            (cargo_args.startswith("run --quiet "), cargo_args),
+            (cargo_args.startswith("build --quiet "), cargo_args),
+            ("--message-format=json-render-diagnostics" in cargo_args, cargo_args),
             (f"--target-dir {target_dir}" in cargo_args, cargo_args),
             (f"--manifest-path {expected_manifest}" in cargo_args, cargo_args),
-            ("--bin searchkernel-m3-conformance-driver" in cargo_args, cargo_args),
-            (cargo_args.endswith("-- document"), cargo_args),
-            (" build " not in f" {cargo_args} ", cargo_args),
+            (
+                runtime_path == f"{expected_adapter}:{existing_runtime}",
+                runtime_path,
+            ),
             (bool(output.read_text(encoding="utf-8").strip()), "empty run-rust output"),
         )
         for ok, message in checks:
             if not ok:
                 raise SystemExit(f"M3 run-rust regression failed: {message}")
 
-    print("M3 Cargo runtime launcher regression PASS")
+    print("M3 exact Cargo adapter runtime regression PASS")
     return 0
 
 
