@@ -117,6 +117,8 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertIn(
             "run_phase native-full-prepare-verifier-sdk env", helper
         )
+        self.assertIn("-u HEAD_CHECK_TOKEN", helper)
+        self.assertIn("-u AUTOFIX_TOKEN", helper)
         self.assertIn(
             "source reference/vespa/common/verify-common.sh", helper
         )
