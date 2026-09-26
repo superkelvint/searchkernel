@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
 WORKFLOWS = ROOT / ".github" / "workflows"
+INTEGRATION = ROOT / "reference" / "vespa" / "i" / "verify-i.sh"
 
 
 class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
@@ -96,7 +97,6 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             "./dev verify abi",
             "./dev verify vespa.nearest-neighbor.hnsw",
             "./dev verify product.integration",
-            "./dev verify product.rust-real-engine",
             "./dev verify vespa.grouping.yql",
             "./dev verify vespa.recovery",
             "reference/vespa/phase9/verify-phase9.sh",
@@ -104,6 +104,24 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             "./dev verify persistence",
         ):
             self.assertIn(needle, source)
+
+    def test_native_full_does_not_rerun_phase10_after_integration(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        native_full = source.split("            native-full)", 1)[1].split(
+            "            client-e2e)", 1
+        )[0]
+        integration = INTEGRATION.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'verify-through.sh" phase10',
+            integration,
+        )
+        self.assertIn(
+            "run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved",
+            native_full,
+        )
+        self.assertNotIn("native-full-rust-real-engine", native_full)
+        self.assertNotIn("./dev verify product.rust-real-engine", native_full)
 
     def test_native_full_prepares_verifier_sdk_once_without_token_exposure(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
@@ -300,7 +318,6 @@ echo AFTER_GUARD
             "run_phase native-full-abi",
             "run_phase native-full-hnsw",
             "run_phase native-full-product-integration",
-            "run_phase native-full-rust-real-engine",
             "run_phase native-full-grouping-yql",
             "run_phase native-full-recovery",
             "run_phase native-full-phase9",
