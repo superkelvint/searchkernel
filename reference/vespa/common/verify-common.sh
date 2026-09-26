@@ -17,22 +17,15 @@ if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
   fi
   export SK_NATIVE_SDK="$SDK"
 else
-  # Native verifier scripts need a Search Kernel adapter/header/manifest view,
-  # but the pinned Vespa/runtime closure is a machine-global prerequisite.
-  # Build only the small adapter locally and leave Cargo on the shared-base path.
+  # Sourcing this helper must never compile, link, or mutate verifier state.
+  # Resolve the immutable inputs and verifier-owned output paths only. The
+  # supported top-level verifier entry point calls prepare_verifier_sdk once
+  # before dispatch; nested verifier processes inherit and reuse that result.
   unset SK_NATIVE_SDK
-  BASE_SDK=$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" path)
-  VESPA_ROOT=$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)
-  SDK="$CARGO_TARGET_DIR/native-verifier-sdk"
-  SDK_BUILD="$CARGO_TARGET_DIR/native-verifier-sdk-build"
-  SK_NATIVE_SDK="$SDK" \
-  SK_NATIVE_BUILD_DIR="$SDK_BUILD" \
-  SK_NATIVE_BASE_SDK="$BASE_SDK" \
-  SK_NATIVE_ADAPTER_ONLY=1 \
-  SK_NATIVE_REGENERATE_BINDINGS=0 \
-  SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
-  VESPA_ROOT="$VESPA_ROOT" \
-    bash "$REPO_ROOT/core/native/vespa/build-sdk.sh" >/dev/null
+  BASE_SDK="${SEARCHKERNEL_VERIFIER_BASE_SDK:-$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" path)}"
+  VESPA_ROOT="${SEARCHKERNEL_VERIFIER_VESPA_ROOT:-$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)}"
+  SDK="${SEARCHKERNEL_VERIFIER_SDK:-$CARGO_TARGET_DIR/native-verifier-sdk}"
+  SDK_BUILD="${SEARCHKERNEL_VERIFIER_SDK_BUILD:-$CARGO_TARGET_DIR/native-verifier-sdk-build}"
 fi
 if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
   SK_NATIVE_SDK="$SDK"
@@ -40,7 +33,7 @@ if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
 else
   # The verifier-owned SDK is for direct probes and fixtures. Cargo must stay
   # on the shared-base path so build.rs creates its revision-local adapter and
-  # never mistakes this adapter-only SDK for a full explicit SDK.
+  # never mistakes this adapter-only verifier view for a full explicit SDK.
   unset SK_NATIVE_SDK
 fi
 # Verifier subprocesses that validate generated native bindings still need the
@@ -53,6 +46,45 @@ if [[ -z "${VESPA_ROOT:-}" ]]; then
 fi
 export VESPA_ROOT
 export CARGO_TARGET_DIR
+
+prepare_verifier_sdk() {
+  if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
+    return 0
+  fi
+
+  if [[ "${SEARCHKERNEL_VERIFIER_SDK_PREPARED:-0}" == 1 ]]; then
+    [[ -f "$SDK/manifest.json" ]] || {
+      echo "verification error: prepared verifier SDK manifest is missing: $SDK/manifest.json" >&2
+      return 1
+    }
+    [[ -f "$SDK/include/searchkernel_vespa.h" ]] || {
+      echo "verification error: prepared verifier SDK header is missing: $SDK/include/searchkernel_vespa.h" >&2
+      return 1
+    }
+    return 0
+  fi
+
+  echo "preparing Search Kernel verifier adapter SDK: $SDK" >&2
+  SK_NATIVE_SDK="$SDK" \
+  SK_NATIVE_BUILD_DIR="$SDK_BUILD" \
+  SK_NATIVE_BASE_SDK="$BASE_SDK" \
+  SK_NATIVE_ADAPTER_ONLY=1 \
+  SK_NATIVE_REGENERATE_BINDINGS=0 \
+  SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
+  VESPA_ROOT="$VESPA_ROOT" \
+    bash "$REPO_ROOT/core/native/vespa/build-sdk.sh" >/dev/null
+
+  SEARCHKERNEL_VERIFIER_SDK="$SDK"
+  SEARCHKERNEL_VERIFIER_SDK_BUILD="$SDK_BUILD"
+  SEARCHKERNEL_VERIFIER_BASE_SDK="$BASE_SDK"
+  SEARCHKERNEL_VERIFIER_VESPA_ROOT="$VESPA_ROOT"
+  SEARCHKERNEL_VERIFIER_SDK_PREPARED=1
+  export SEARCHKERNEL_VERIFIER_SDK
+  export SEARCHKERNEL_VERIFIER_SDK_BUILD
+  export SEARCHKERNEL_VERIFIER_BASE_SDK
+  export SEARCHKERNEL_VERIFIER_VESPA_ROOT
+  export SEARCHKERNEL_VERIFIER_SDK_PREPARED
+}
 
 published_vespa_marker_path() {
   printf '%s\n' "$VESPA_ROOT/.searchkernel-vespa-artifact.json"
