@@ -547,6 +547,11 @@ valid_object() {
 valid_install() {
     valid_object && registered_vespa_root >/dev/null
 }
+
+canonical_mounted_install() {
+    [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" == 1 || -f /opt/searchkernel/native-validation-pass ]]
+}
+
 install_published_base() {
     [[ "${SK_NATIVE_DISABLE_PUBLISHED_BASE:-0}" != 1 ]] || return 10
     local installer installed status
@@ -573,6 +578,14 @@ install_published_base() {
 }
 
 if valid_install; then
+    # Docker-backed development mounts the exact digest-addressed Vespa bundle
+    # selected by searchkernel-ci. That mounted object is already the canonical
+    # native authority for this invocation; never compare it to or replace it
+    # with the legacy GitHub native-base release stream.
+    if canonical_mounted_install; then
+        printf '%s\n' "$OBJECT"
+        exit 0
+    fi
     if [[ "$MODE" != ensure || "${SK_NATIVE_DISABLE_PUBLISHED_BASE:-0}" == 1 ]] || ! has_published_install; then
         printf '%s\n' "$OBJECT"
         exit 0
