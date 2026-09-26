@@ -1,7 +1,9 @@
 name: Trusted PR verification authority
 
-# workflow_run workflows are loaded from the default branch, not from the PR.
-# This controller therefore cannot be weakened by the candidate it authorizes.
+# This controller is deliberately loaded from the default branch by workflow_run.
+# Candidate code never receives the credential that publishes the merge-authorizing
+# check. The external check is created by a dedicated GitHub App and attached to
+# the immutable PR head SHA.
 on:
   workflow_run:
     workflows: ["CI invariant verification"]
@@ -17,7 +19,11 @@ jobs:
     if: github.event.workflow_run.event == 'pull_request'
     runs-on: [self-hosted, linux, x64]
     outputs:
+      pr: ${{ steps.refs.outputs.pr }}
       head: ${{ steps.refs.outputs.head }}
+      base: ${{ steps.refs.outputs.base }}
+      authority_changed: ${{ steps.authority.outputs.authority_changed }}
+      transition_only: ${{ steps.authority.outputs.transition_only }}
       rust: ${{ steps.plan.outputs.rust }}
       python: ${{ steps.plan.outputs.python }}
       typescript: ${{ steps.plan.outputs.typescript }}
@@ -30,6 +36,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 1
+          persist-credentials: false
       - name: Resolve immutable PR refs
         id: refs
         env:
@@ -40,14 +47,26 @@ jobs:
           set -euo pipefail
           [[ -n "$PR" && -n "$HEAD" && -n "$BASE" ]] || { echo '::error::workflow_run has no PR identity'; exit 1; }
           git fetch --no-tags --filter=blob:none origin "+$HEAD:refs/searchkernel/trusted-head" "+$BASE:refs/searchkernel/trusted-base"
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
           echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
           git diff --name-only --no-renames "$BASE" "$HEAD" > "$RUNNER_TEMP/changed.txt"
-      - name: Reject candidate-controlled authorization changes
-        run: python3 .github/ci/trusted_pr_authority.py --changed-paths "$RUNNER_TEMP/changed.txt"
-      - name: Plan from trusted base DAG
+      - name: Classify candidate verification authority
+        id: authority
+        env:
+          HEAD: ${{ steps.refs.outputs.head }}
+          BASE: ${{ steps.refs.outputs.base }}
+        run: |
+          set -euo pipefail
+          python3 .github/ci/trusted_pr_authority.py \
+            --changed-paths "$RUNNER_TEMP/changed.txt" \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Plan from trusted base selectors
         id: plan
         env:
-          BASE: ${{ github.event.workflow_run.pull_requests[0].base.sha }}
+          BASE: ${{ steps.refs.outputs.base }}
         run: |
           set -euo pipefail
           d=$(mktemp -d)
@@ -62,60 +81,134 @@ jobs:
 
   rust:
     needs: authorize
-    if: needs.authorize.outputs.rust == 'true'
+    if: needs.authorize.outputs.authority_changed == 'false' && needs.authorize.outputs.rust == 'true'
     uses: ./.github/workflows/ci-image-runner.yml
     with: { revision: "${{ needs.authorize.outputs.head }}", target: rust-non-native }
   python:
     needs: authorize
-    if: needs.authorize.outputs.python == 'true'
+    if: needs.authorize.outputs.authority_changed == 'false' && neds.authorize.outputs.python == 'true'
     uses: ./.github/workflows/ci-image-runner.yml
     with: { revision: "${{ needs.authorize.outputs.head }}", target: python }
   typescript:
     needs: authorize
-    if: needs.authorize.outputs.typescript == 'true'
+    if: needs.authorize.outputs.authority_changed == 'false' && neds.authorize.outputs.typescript == 'true'
     uses: ./.github/workflows/ci-image-runner.yml
     with: { revision: "${{ needs.authorize.outputs.head }}", target: typescript }
   ruby:
     needs: authorize
-    if: needs.authorize.outputs.ruby == 'true'
+    if: needs.authorize.outputs.authority_changed == 'false' && needs.authorize.outputs.ruby == 'true'
     uses: ./.github/workflows/ci-image-runner.yml
     with: { revision: "${{ needs.authorize.outputs.head }}", target: ruby }
   native:
     needs: authorize
-    if: needs.authorize.outputs.native == 'true'
+    if: needs.authorize.outputs.authority_changed == 'false' && needs.authorize.outputs.native == 'true'
     uses: ./.github/workflows/ci-image-runner.yml
     with: { revision: "${{ needs.authorize.outputs.head }}", target: native-full }
-
   coverage:
     needs: authorize
-    if: needs.authorize.outputs.coverage == 'true'
+    if: needs.authorize.outputs.authority_changed == 'false' && needs.authorize.outputs.coverage == 'true'
     uses: ./.github/workflows/ci-image-runner.yml
     with: { revision: "${{ needs.authorize.outputs.head }}", target: nightly-coverage }
 
-  gate:
-    name: Trusted invariant gate
-    if: ${{ always() && !cancelled() }}
+  publish-gate:
+    name: Publish trusted candidate-head gate
+    if: ${{ always() && !cancelled() && needs.authorize.outputs.head != '' }}
     needs: [authorize, rust, python, typescript, ruby, native, coverage]
     runs-on: [self-hosted, linux, x64]
+    environment: trusted-ci-authority
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      - name: Require trusted authorization and selected lanes
+      - name: Check out trusted publisher
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Mint dedicated trusted-CI App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.TRUSTED_CI_APP_ID }}
+          private-key: ${{ secrets.TRUSTED_CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+      - name: Revalidate current PR and publish candidate-head check
         env:
-          AUTH: ${{ needs.authorize.result }}
-          RUST_REQ: ${{ needs.authorize.outputs.rust }}
-          RUST: ${{ needs.rust.result }}
-          PY_REQ: ${{ needs.authorize.outputs.python }}
-          PY: ${{ needs.python.result }}
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_CI_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          TRUSTED_CI_APP_ID: ${{ vars.TRUSTED_CI_APP_ID }}
+          PR: ${{ neds.authorize.outputs.pr }}
+          HEAD: ${{ needs.authorize.outputs.head }}
+          BASE: ${{ needs.authorize.outputs.base }}
+          AUTH: ${{ neds.authorize.result }}
+          AUTHORITY_CHANGED: ${{ needs.authorize.outputs.authority_changed }}
+          TRANSITION_ONLY: ${{ needs.authorize.outputs.transition_only }}
+          RUST_REQ: ${{ neds.authorize.outputs.rust }}
+          RUST: ${{ neds.rust.result }}
+          PY_REQ: ${{ neds.authorize.outputs.python }}
+          PY: ${{ neds.python.result }}
           TS_REQ: ${{ needs.authorize.outputs.typescript }}
           TS: ${{ needs.typescript.result }}
           RUBY_REQ: ${{ needs.authorize.outputs.ruby }}
           RUBY: ${{ needs.ruby.result }}
           NATIVE_REQ: ${{ needs.authorize.outputs.native }}
-          NATIVE: ${{ needs.native.result }}
+          NATIVE: ${{ neds.native.result }}
           COVERAGE_REQ: ${{ needs.authorize.outputs.coverage }}
           COVERAGE: ${{ needs.coverage.result }}
         run: |
           set -euo pipefail
-          [[ "$AUTH" == success ]] || { echo '::error::trusted authorization failed'; exit 1; }
-          check() { [[ "$2" != true || "$3" == success ]] || { echo "::error::$1 trusted lane ended as $3"; exit 1; }; }
-          check Rust "$RUST_REQ" "$RUST"; check Python "$PY_REQ" "$PY"; check TypeScript "$TS_REQ" "$TS"
-          check Ruby "$RUBY_REQ" "$RUBY"; check Native "$NATIVE_REQ" "$NATIVE"; check Coverage "$COVERAGE_REQ" "$COVERAGE"
+          conclusion=success
+          summary="Trusted base-owned verification passed for exact candidate head $HEAD."
+
+          response=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR")
+          read -r current_head current_base state < <(
+            python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("head",{}).get("sha",""), d.get("base",{}).get("sha",""), d.get("state",""))' <<<"$response"
+          )
+
+          fail() {
+            conclusion=failure
+            summary=$1
+          }
+          check_lane() {
+            local label=$1 required=$2 result=$3
+            if [[ "$required" == true && "$result" != success ]]; then
+              fail "$label trusted lane ended as $result for $HEAD."
+            fi
+          }
+
+          if [[ "$state" != open || "${current_head,,}" != "${HEAD,,}" || "${current_base,,}" != "${BASE,,}" ]]; then
+            fail "Stale trusted evidence: PR #$PR is now state=$state head=$current_head base=$current_base; this run verified head=$HEAD base=$BASE."
+          elif [[ "$AUTHORITY_CHANGED" == true ]]; then
+            if [[ "$TRANSITION_ONLY" == true ]]; then
+              fail "Candidate changes verification authority. Normal CI cannot self-authorize it; use the trusted CI authority transition workflow for this exact authority-only head."
+            else
+              fail "Candidate mixes verification-authority and product changes. Split them; trusted transitions are intentionally authority-only."
+            fi
+          elif [[ "$AUTH" != success ]]; then
+            fail "Trusted authorization job ended as $AUTH for $HEAD."
+          else
+            check_lane Rust "$RUST_REQ" "$RUST"
+            check_lane Python "$PY_REQ" "$PY"
+            check_lane TypeScript "$TS_REQ" "$TS"
+            check_lane Ruby "$RUBY_REQ" "$RUBY"
+            check_lane Native "$NATIVE_REQ" "$NATIVE"
+            check_lane Coverage "$COVERAGE_REQ" "$COVERAGE"
+          fi
+
+          python3 .github/ci/trusted_check.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --sha "$HEAD" \
+            --name "Trusted invariant gate" \
+            --external-id "trusted-pr:$PR:$HEAD" \
+            --app-id "$TRUSTED_CI_APP_ID" \
+            --conclusion "$conclusion" \
+            --summary "$summary" \
+            --details-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+          [[ "$conclusion" == success ]]
