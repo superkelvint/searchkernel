@@ -221,6 +221,10 @@ fn manifest_round_trips_definition_and_config_identity() {
         loaded.value["resolved_schema_snapshot_version"],
         RESOLVED_SCHEMA_SNAPSHOT_VERSION
     );
+    assert_eq!(
+        loaded.value["provenance"]["created_by_native_abi"],
+        searchkernel_vespa_bindings::SK_NATIVE_ABI_VERSION
+    );
     assert!(loaded.value["resolved_schema_snapshot"].is_object());
     assert_eq!(
         loaded.value["resolved_schema_snapshot"],
