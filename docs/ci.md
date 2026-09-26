@@ -939,7 +939,8 @@ Provision the trust root as follows:
 - require `Trusted invariant gate` from that App in the merge ruleset.
 
 Verification authority includes workflows, CI policy, verification/DAG files,
-Vespa verifier scripts, tools, moon configuration, `dev`, and semantic command
+all `reference/**` acceptance/verifier artifacts, CI-image definitions, tools,
+moon configuration, `dev`, and semantic command
 mappings such as the TypeScript `package.json` `scripts` object. Dependency-only
 manifest edits remain ordinary candidate changes. This prevents a PR from
 preserving a task/check name while replacing its workflow, command, task,
