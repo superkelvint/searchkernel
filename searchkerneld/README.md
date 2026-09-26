@@ -9,8 +9,12 @@ Run it against an existing index with:
 searchkerneld --index /path/to/index --listen unix:///tmp/searchkerneld.sock
 ```
 
-For a new index, pass its canonical FlatBuffers definition with `--definition`;
-that option is only used during creation. On Unix, omitting `--listen` uses
+For a new index, pass its canonical FlatBuffers definition with `--definition`.
+Clients that use the standard FlatBuffers JSON edge may instead pass a canonical
+`IndexDefinition` JSON document with `--definition-json`; the daemon converts
+it with the same official FlatBuffers parser before entering the shared IR path.
+The two definition flags are mutually exclusive and are only valid during
+creation. On Unix, omitting `--listen` uses
 `/tmp/searchkerneld.sock`. TCP addresses are also supported, for example
 `--listen 127.0.0.1:50051`.
 
