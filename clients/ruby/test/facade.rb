@@ -151,6 +151,10 @@ same(%w[AssignUpdate ArithmeticUpdate], update.fetch("operations").map { |item| 
 
 tokens = index.analyze("Shoes", field: "title")
 same("shoe", tokens.first.fetch("term"), "analysis tokens decode")
+analyze_request = transport.requests.last.fetch("payload")
+same(%w[text target_type target], analyze_request.keys, "analysis union discriminator precedes payload")
+same("AnalyzeFieldTarget", analyze_request.fetch("target_type"), "analysis target discriminator")
+same({ "field" => "title" }, analyze_request.fetch("target"), "analysis target payload")
 same("index", index.describe.fetch("name"), "describe result")
 
 Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|

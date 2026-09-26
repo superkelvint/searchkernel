@@ -580,10 +580,8 @@ module SearchKernel
       request = { "text" => text }
       request["language"] = language unless language.nil?
       unless field.nil?
-        request["target"] = {
-          "target_type" => "AnalyzeFieldTarget",
-          "target" => { "field" => Wire.name!(field, "analysis field") }
-        }
+        request["target_type"] = "AnalyzeFieldTarget"
+        request["target"] = { "field" => Wire.name!(field, "analysis field") }
       end
       payload = @client.analyze(request)
       tokens = payload.fetch("tokens", [])
