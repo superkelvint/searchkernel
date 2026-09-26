@@ -423,7 +423,7 @@ fn build_local_adapter(
         // The resulting DT_NEEDED entry is self-resolving for downstream consumers.
         .env(
             "SK_NATIVE_ADAPTER_SONAME",
-            "\\$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2",
+            "$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2",
         )
         .env("SK_NATIVE_BASE_SDK", base_sdk)
         .env(

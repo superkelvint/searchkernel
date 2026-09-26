@@ -244,7 +244,7 @@ LINK_LINE=$(sed \
     "$LINK_FILE")
 LINK_LINE=$(printf '%s\n' "$LINK_LINE" | sed \
     "s#CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o#$BUILD/searchkernel_vespa.o#; \
-     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,$ADAPTER_SONAME -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.2#")
+     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,'$ADAPTER_SONAME' -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.2#")
 LINK_ARGS=${LINK_LINE#*c++   }
 LINK_ARGS=${LINK_ARGS#*c++ }
 # The harvested command targets an executable and requests a complete dynamic
