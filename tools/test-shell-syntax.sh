@@ -26,6 +26,13 @@ case "x" in
 esac
 EOF
 
+cat > "$TMP/env-sh" <<'EOF'
+#!/usr/bin/env sh
+case "x" in
+    x) printf '%s\n' ok ;;
+esac
+EOF
+
 cat > "$TMP/bad.sh" <<'EOF'
 #!/usr/bin/env bash
 if [[ -x /tmp/example --not-part-of-the-test ]]; then
@@ -33,7 +40,7 @@ if [[ -x /tmp/example --not-part-of-the-test ]]; then
 fi
 EOF
 
-git -C "$TMP" add tools/check-shell-syntax.sh good.sh extensionless bad.sh
+git -C "$TMP" add tools/check-shell-syntax.sh good.sh extensionless env-sh bad.sh
 
 if bash "$TMP/tools/check-shell-syntax.sh" "$TMP" >/dev/null 2>&1; then
     echo "shell syntax regression failed: malformed Bash was accepted" >&2
