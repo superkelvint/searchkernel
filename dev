@@ -3,17 +3,27 @@ set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
+is_ci_language_runtime() {
+    local candidate=${1:-}
+    local runtime
+
+    for runtime in python node npm php ruby; do
+        [[ "$candidate" == "$runtime" ]] && return 0
+    done
+    return 1
+}
+
 should_use_ci_image() {
     case "${1:-}" in
         check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify)
             return 0
             ;;
         run)
-            case "${2:-}" in
-                python|node|npm|php|ruby) return 0 ;;
-                native) return 1 ;;
-                *) return 0 ;;
-            esac
+            if is_ci_language_runtime "${2:-}"; then
+                return 0
+            fi
+            [[ "${2:-}" == native ]] && return 1
+            return 0
             ;;
         native-sdk)
             if [[ "${2:-ensure}" == "ensure" ]]; then

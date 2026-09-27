@@ -48,8 +48,79 @@ runtime_dirs_from_sdk_pair() {
     normalize_runtime_dirs "$adapter_sdk/lib:$base_sdk/lib"
 }
 
+runtime_dirs_from_adapter_lib() {
+    local adapter_lib=$1
+    local base_sdk=$2
+    local adapter_dir
+
+    [[ -e "$adapter_lib" || -L "$adapter_lib" ]] || {
+        echo "native runtime adapter does not exist: $adapter_lib" >&2
+        return 1
+    }
+    adapter_dir=$(cd -- "$(dirname -- "$adapter_lib")" && pwd -P)
+    normalize_runtime_dirs "$adapter_dir:$base_sdk/lib"
+}
+
+runtime_dirs_from_executable() {
+    local executable=$1
+    local origin encoded entry raw= normalized
+    local -a entries
+
+    [[ -n "$executable" && -e "$executable" ]] || return 2
+    command -v readelf >/dev/null 2>&1 || return 2
+    readelf -h "$executable" >/dev/null 2>&1 || return 2
+
+    origin=$(cd -- "$(dirname -- "$executable")" && pwd -P)
+    while IFS= read -r encoded; do
+        [[ -n "$encoded" ]] || continue
+        IFS=: read -r -a entries <<<"$encoded"
+        for entry in "${entries[@]}"; do
+            entry=${entry//\$ORIGIN/$origin}
+            entry=${entry//\${ORIGIN}/$origin}
+            [[ -n "$entry" ]] || continue
+            if [[ -z "$raw" ]]; then
+                raw=$entry
+            else
+                raw="$raw:$entry"
+            fi
+        done
+    done < <(
+        readelf -d "$executable" 2>/dev/null |
+            sed -n 's/.*Library \(rpath\|runpath\): \[\(.*\)\]/\2/p'
+    )
+
+    [[ -n "$raw" ]] || return 2
+    if normalized=$(normalize_runtime_dirs "$raw" 2>/dev/null); then
+        printf '%s\n' "$normalized"
+        return 0
+    fi
+    return 2
+}
+
 if [[ -n "${SEARCHKERNEL_RUNTIME_LIB_DIRS:-}" ]]; then
     normalize_runtime_dirs "$SEARCHKERNEL_RUNTIME_LIB_DIRS"
+    exit 0
+fi
+
+executable=${1:-}
+
+if [[ -n "$executable" ]]; then
+    if runtime_from_executable=$(runtime_dirs_from_executable "$executable"); then
+        printf '%s\n' "$runtime_from_executable"
+        exit 0
+    fi
+fi
+
+adapter_lib=${SEARCHKERNEL_RUNTIME_ADAPTER_LIB:-${NATIVE_ADAPTER_LIB:-}}
+if [[ -n "$adapter_lib" ]]; then
+    base_sdk=${SEARCHKERNEL_RUNTIME_BASE_SDK:-}
+    if [[ -z "$base_sdk" ]]; then
+        base_sdk=$(bash "$ROOT/tools/resolve-native-sdk.sh" path) || {
+            echo "exact native adapter is known but its pinned runtime base is unavailable: $adapter_lib" >&2
+            exit 1
+        }
+    fi
+    runtime_dirs_from_adapter_lib "$adapter_lib" "$base_sdk"
     exit 0
 fi
 
@@ -79,35 +150,11 @@ if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
     exit 0
 fi
 
-target_root=${CARGO_TARGET_DIR:-"$ROOT/target/${SEARCHKERNEL_BUILD_ENV:-host}"}
-case "$target_root" in
-    /*) ;;
-    *) target_root="$ROOT/$target_root" ;;
-esac
-
-base_sdk=$(bash "$ROOT/tools/resolve-native-sdk.sh" ensure)
-vespa_root=$(bash "$ROOT/tools/resolve-native-sdk.sh" vespa-root)
-runtime_sdk=${SEARCHKERNEL_RUNTIME_SDK:-"$target_root/native-runtime-sdk"}
-runtime_build=${SEARCHKERNEL_RUNTIME_SDK_BUILD:-"$target_root/native-runtime-sdk-build"}
-
-mkdir -p "$target_root"
-command -v flock >/dev/null 2>&1 || {
-    echo "canonical native runtime preparation requires flock" >&2
-    exit 1
-}
-exec 9>"$target_root/native-runtime-sdk.lock"
-flock -w 300 9 || {
-    echo "timed out waiting for canonical native runtime preparation" >&2
-    exit 1
-}
-
-SK_NATIVE_SDK="$runtime_sdk" \
-SK_NATIVE_BUILD_DIR="$runtime_build" \
-SK_NATIVE_BASE_SDK="$base_sdk" \
-SK_NATIVE_ADAPTER_ONLY=1 \
-SK_NATIVE_REGENERATE_BINDINGS=0 \
-SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
-VESPA_ROOT="$vespa_root" \
-    bash "$ROOT/core/native/vespa/build-sdk.sh" >/dev/null
-
-runtime_dirs_from_sdk_pair "$runtime_sdk" "$base_sdk"
+if [[ -n "$executable" ]]; then
+    echo "cannot determine exact native runtime adapter for $executable" >&2
+else
+    echo "cannot determine exact native runtime adapter" >&2
+fi
+echo "provide SEARCHKERNEL_RUNTIME_LIB_DIRS, SEARCHKERNEL_RUNTIME_ADAPTER_LIB (or NATIVE_ADAPTER_LIB), SEARCHKERNEL_VERIFIER_SDK, or SK_NATIVE_SDK" >&2
+echo "the runtime launcher will not synthesize a replacement adapter at exec time" >&2
+exit 1

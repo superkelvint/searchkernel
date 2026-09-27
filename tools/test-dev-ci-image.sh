@@ -60,8 +60,9 @@ for fragment in (
 for command in (
     "check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify",
     "run)",
-    'python|node|npm|php|ruby) return 0',
-    'native) return 1',
+    "is_ci_language_runtime",
+    'for runtime in python node npm php ruby; do',
+    '[[ "${2:-}" == native ]]',
     "native-sdk)",
     '[[ "${2:-ensure}" == "ensure" ]]',
     "SEARCHKERNEL_DEV_USE_CI_IMAGE",
@@ -71,12 +72,18 @@ for command in (
     if command not in dev:
         raise SystemExit(f"dev image-dispatch contract is missing {command!r}")
 
+runtime_helper = dev.index("is_ci_language_runtime() {")
+runtime_helper_end = dev.index("\n}", runtime_helper)
+runtime_helper_body = dev[runtime_helper:runtime_helper_end]
+if "for runtime in python node npm php ruby; do" not in runtime_helper_body:
+    raise SystemExit("dev language-runtime helper must enumerate the canonical CI-image runtimes")
+
 run_dispatch = dev.index("run)")
-run_case_end = dev.index(";;", run_dispatch)
-run_case = dev[run_dispatch:run_case_end]
-if "python|node|npm|php|ruby" not in run_case:
+native_dispatch = dev.index("native-sdk)", run_dispatch)
+run_case = dev[run_dispatch:native_dispatch]
+if 'is_ci_language_runtime "${2:-}"' not in run_case:
     raise SystemExit("dev must dispatch repository language runtimes through the CI image")
-if "native) return 1" not in dev[run_dispatch:dev.index("native-sdk)", run_dispatch)]:
+if '[[ "${2:-}" == native ]] && return 1' not in run_case:
     raise SystemExit("dev must keep arbitrary native binary execution host-local")
 
 native_dispatch = dev.index("native-sdk)")

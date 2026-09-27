@@ -231,7 +231,11 @@ are for focused debugging or when a contract explicitly names one. Repository
 language execution through `./dev run python|node|npm|php|ruby` enters the
 canonical CI image by default; arbitrary `./dev run native <binary>` remains
 host-local because a host-built executable is not present in the disposable
-container snapshot.
+container snapshot. Native execution reuses exact adapter identity from an
+explicit runtime closure, the binary's own RPATH/RUNPATH when it names the
+adapter, the current verifier SDK, an exact adapter-library path, or an explicit
+SDK. If none of those identifies the adapter, the launcher fails closed rather
+than rebuilding or guessing a replacement adapter.
 
 ## Canonical toolchain authorities
 
@@ -245,7 +249,7 @@ multi-install toolchain has exactly one path authority:
 | Node.js | `tools/resolve-node.sh` | `NODE`, `NPM` |
 | PHP | `tools/resolve-runtime.sh php` | `PHP` |
 | Ruby | `tools/resolve-runtime.sh ruby` | `RUBY` |
-| Runtime execution | `tools/run-runtime.sh` / `./dev run` | prepared native runtime context via `SEARCHKERNEL_RUNTIME_LIB_DIRS` |
+| Runtime execution | `tools/run-runtime.sh` / `./dev run` | `SEARCHKERNEL_RUNTIME_LIB_DIRS`, `SEARCHKERNEL_RUNTIME_ADAPTER_LIB`, verifier SDK context, or explicit native SDK |
 | FlatBuffers | `tools/resolve-flatbuffers.sh` | `FLATC_PATH`, `FLATBUFFERS_CPP_ROOT` |
 | Native SDK | `tools/resolve-native-sdk.sh` | `SK_NATIVE_SDK`, `SK_NATIVE_TARGET` |
 
@@ -256,9 +260,14 @@ Critical repository scripts must call these authorities instead of invoking bare
 `python3`, `cargo`, `rustc`, `rustfmt`, `node`, `npm`, `php`, `ruby`, or `flatc`.
 Repository-owned process launch sites should use `tools/run-runtime.sh` (or the
 public `./dev run` entry point) rather than executing the selected runtime or a
-native binary directly. Native execution resets the loader path to the resolved
-Search Kernel adapter plus pinned Vespa runtime closure, so successful linking
-cannot depend on ambient `LD_LIBRARY_PATH` state.
+native binary directly. Native execution resets the loader path to the exact
+identified Search Kernel adapter plus pinned Vespa runtime closure, so successful
+linking cannot depend on ambient `LD_LIBRARY_PATH` state. The launcher never
+builds a fresh adapter at exec time: build-specific adapters can differ through
+hardening, sanitizer, coverage, or other native flags, so substituting a
+separately synthesized adapter is forbidden. If exact adapter identity is
+unavailable, execution fails with the runtime-context variables that can provide
+it.
 For paired tools, the authority also owns pairing: npm is resolved alongside the
 selected Node.js installation, and Cargo/Rustc/Rustfmt are exported as one Rust
 toolchain view.
