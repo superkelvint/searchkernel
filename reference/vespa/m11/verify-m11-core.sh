@@ -7,6 +7,7 @@ source "$M11/verify-m11-common.sh"
 
 require_pinned_vespa
 python3 "$M11/validate.py"
+python3 "$M11/test_structure.py"
 "$M11/check-structure.sh"
 prepare_hardening_sdk
 build_m11_driver
