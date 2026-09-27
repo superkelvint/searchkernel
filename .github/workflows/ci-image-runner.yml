@@ -632,9 +632,10 @@ jobs:
             client-e2e)
               run_phase client-e2e-release-support "$PYTHON" tools/check-release-support.py
               "$PYTHON" tools/check-python-dependencies.py
-              run_phase client-release-build "$PYTHON" tools/package-consumer-release.py --output /tmp/searchkernel-consumer-release
-              run_phase client-release-verify "$PYTHON" tools/check-consumer-release.py /tmp/searchkernel-consumer-release
-              run_phase client-release-qualify "$PYTHON" tools/qualify-consumer-release.py /tmp/searchkernel-consumer-release
+              run_phase client-release-build "$PYTHON" tools/package-consumer-release.py --output /artifacts/consumer-release
+              run_phase client-release-verify "$PYTHON" tools/check-consumer-release.py /artifacts/consumer-release
+              run_phase client-release-export-qualifier mkdir -p /artifacts/consumer-release-tools
+              run_phase client-release-export-qualifier-script cp tools/qualify-consumer-release.py /artifacts/consumer-release-tools/
               build_native_searchkerneld client-e2e-build
               run_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e
               ;;
@@ -722,6 +723,36 @@ jobs:
             echo "::error::CI container exited without executing the exact-head lane preflight"
             exit 1
           fi
+
+      - name: Qualify packaged release in clean consumer
+        if: ${{ inputs.target == 'client-e2e' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$ARTIFACT_DIR/consumer-release"
+          test -f "$ARTIFACT_DIR/consumer-release-tools/qualify-consumer-release.py"
+
+          docker run --rm \
+            --pids-limit=-1 \
+            -v "$ARTIFACT_DIR/consumer-release:/release:ro" \
+            -v "$ARTIFACT_DIR/consumer-release-tools:/qualification:ro" \
+            -e GH_TOKEN \
+            -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            "$CI_IMAGE_ID" \
+            /bin/bash -lc '
+              set -euo pipefail
+              unset SEARCHKERNEL_BUILD_ENV CARGO_TARGET_DIR
+              unset RUSTC_WRAPPER SCCACHE_SERVER_UDS SCCACHE_CLIENT_SIDE
+              unset VESPA_ROOT VESPA_LIBRARY_ROOT VESPA_DEPS
+              unset VESPA_DEPS_LIB_DIR VESPA_DEPS_INCLUDE_DIR
+              unset VESPA_EXTRA_LIB_DIR VESPA_AWS_LIB_DIR
+              unset SK_NATIVE_SDK SK_NATIVE_BASE_ARTIFACT_URL
+              unset SK_NATIVE_BASE_ARTIFACT_GENERATION
+              unset LD_LIBRARY_PATH LIBRARY_PATH PYTHONPATH NODE_PATH
+              "$PYTHON" /qualification/qualify-consumer-release.py /release
+            '
 
       - name: Upload nightly coverage
         if: ${{ always() && inputs.target == 'nightly-coverage' }}
