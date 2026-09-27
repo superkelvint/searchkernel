@@ -10,7 +10,7 @@ require_relative "errors"
 
 module SearchKernel
   class ManagedLocalHost
-    STARTUP_TIMEOUT = 15.0
+    STARTUP_TIMEOUT = 60.0
     SHUTDOWN_TIMEOUT = 15.0
     KILL_TIMEOUT = 5.0
 
