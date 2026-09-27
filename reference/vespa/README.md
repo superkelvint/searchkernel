@@ -12,15 +12,15 @@ the individual milestone directories.
 
 | Status | Lane | Start here | Acceptance command | Relationship |
 | --- | --- | --- | --- | --- |
-| **ACTIVE BASELINE** | M13 | [`m13/CONTRACT.md`](m13/CONTRACT.md) | `./reference/vespa/verify-through.sh m13` | Latest cumulative native milestone; includes M0–M12. |
-| **ACTIVE INTEGRATION GATE** | I-series | [`i/CONTRACT.md`](i/CONTRACT.md) | `./reference/vespa/verify-through.sh i` | Product-path release gate; currently composes the cumulative M13 baseline and Phase 10. |
+| **ACTIVE BASELINE** | M14 | [`m14/CONTRACT.md`](m14/CONTRACT.md) | `./dev verify milestone.m14` | Latest cumulative native milestone; includes M0–M13 and the HNSW slice. |
+| **ACTIVE INTEGRATION GATE** | I-series | [`i/CONTRACT.md`](i/CONTRACT.md) | `./dev verify product.integration` | Product-path integration gate. Its legacy I-series implementation composes M13 plus Phase 10; M14 remains a separate cumulative native closure. |
 | **ACTIVE INTEGRATION SCENARIO** | Phase 10 | [`phase10/verify-phase10.sh`](phase10/verify-phase10.sh) | `./reference/vespa/phase10/verify-phase10.sh` | Canonical public Rust API / real-engine E2E used by the I-series gate. |
 | **ACTIVE SPECIALIZED** | Phase 9 | [`phase9/CONTRACT.md`](phase9/CONTRACT.md) | `./reference/vespa/phase9/verify-phase9.sh` | Additive native ABI coverage; not a numbered cumulative M milestone. |
 | **ACTIVE SPECIALIZED** | SearchReply | [`searchreply/CONTRACT.md`](searchreply/CONTRACT.md) | `./reference/vespa/verify-through.sh searchreply` | Generic result coverage, degradation, and native metadata behavior. |
 | **ACTIVE SPECIALIZED** | Recursive grouping ABI | [`m9-general-grouping-verifier/CONTRACT.md`](m9-general-grouping-verifier/CONTRACT.md) | `./reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh` | Focused low-level grouping verifier, reused by M9 and Phase 9. |
 | **ACTIVE SPECIALIZED** | Product recovery | [`recovery/CONTRACT.md`](recovery/CONTRACT.md) | `./reference/vespa/recovery/verify-recovery.sh` | Crash/reopen behavior through the product lifecycle. |
 | **ACTIVE ADDITIVE** | M13 grouping/YQL | [`m13/grouping-yql/README.md`](m13/grouping-yql/README.md) | `./reference/vespa/m13/grouping-yql/verify-grouping-yql.sh` | Additional grouping and portable YQL coverage on top of M13. |
-| **CUMULATIVE HISTORY** | M0–M12 | The matching `mN/CONTRACT.md` | `./reference/vespa/verify-through.sh mN` | Historical milestones that remain acceptance inputs because later M verifiers are cumulative. |
+| **CUMULATIVE HISTORY** | M0–M13 | The matching `mN/CONTRACT.md` | `./dev verify milestone.mN` | Historical milestones that remain acceptance inputs because later M verifiers are cumulative. |
 
 There is currently no lane classified as obsolete. Age, a numeric milestone
 name, or a parallel directory is not evidence that a verifier can be removed.
@@ -45,6 +45,7 @@ reviewed change to this index.
 | Thread safety, lifecycle hardening, or stress | [`m11/CONTRACT.md`](m11/CONTRACT.md) | `m11/verify-m11-*.sh` |
 | Dense query tensors or nearest-neighbor search | [`m12/CONTRACT.md`](m12/CONTRACT.md) | `m12/README-HARNESS.md`, `phase9/` |
 | Dense tensor document CRUD and persistence | [`m13/CONTRACT.md`](m13/CONTRACT.md) | `m13/oracle/`, `m13/verify-m13.sh` |
+| HNSW approximate nearest-neighbor search | [`m14/CONTRACT.md`](m14/CONTRACT.md) | `m14/oracle/`, `m14/verify-m14.sh` |
 | Full public product API behavior | [`i/CONTRACT.md`](i/CONTRACT.md) | `phase10/verify-phase10.sh` and `i/verify-i.sh` |
 | SearchReply coverage, degradation, or metadata | [`searchreply/CONTRACT.md`](searchreply/CONTRACT.md) | `searchreply/total-hit-accuracy/` |
 | Crash recovery after product operations | [`recovery/CONTRACT.md`](recovery/CONTRACT.md) | `recovery/scenarios/`, `recovery/verify-recovery.sh` |
@@ -54,11 +55,11 @@ reviewed change to this index.
 The numbered M-series is a chronological, cumulative acceptance chain:
 
 ```text
-M0 -> M1 -> M2 -> M3 -> M4 -> M5 -> M6 -> M7 -> M8 -> M9 -> M10 -> M11 -> M12 -> M13
+M0 -> M1 -> M2 -> M3 -> M4 -> M5 -> M6 -> M7 -> M8 -> M9 -> M10 -> M11 -> M12 -> M13 -> M14
 ```
 
-The latest baseline is M13. A later verifier normally invokes its predecessor,
-so M0–M12 are still relevant even though they are not the current feature
+The latest baseline is M14. A later verifier normally invokes its predecessor,
+so M0–M13 are still relevant even though they are not the current feature
 frontier. Read the latest contract for the capability being changed, then use
 earlier contracts to understand compatibility obligations.
 
@@ -96,9 +97,9 @@ __pycache__/
 The normal cumulative commands are:
 
 ```sh
-./reference/vespa/verify-through.sh m13       # current native baseline
-./reference/vespa/verify-through.sh i         # current product integration gate
-./reference/vespa/verify-through.sh searchreply
+./dev verify milestone.m14                    # current cumulative native baseline
+./dev verify product.integration              # current product integration gate
+./dev verify vespa.search-reply
 ```
 
 Phase 9, recovery, and the focused grouping/YQL verifier are intentionally
