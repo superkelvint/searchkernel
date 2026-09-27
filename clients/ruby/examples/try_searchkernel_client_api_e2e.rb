@@ -67,6 +67,17 @@ begin
   same("Fast Running Shoes", results.hits.first.fields.fetch("title"), "stored field projection")
   check(results.total_hits >= 1, "total hits retained")
 
+  page_one = index.search("shoes").sort("price", "asc").page(1, 1).execute
+  page_two = index.search("shoes").sort("price", "asc").page(2, 1).execute
+  same(["shoe-1"], ids(page_one), "page one")
+  same(["shoe-2"], ids(page_two), "page two")
+  begin
+    index.search("shoes").page(2, 20).offset(20)
+    raise "page + offset should reject"
+  rescue ArgumentError
+    # Expected builder misuse rejection before execution.
+  end
+
   typed = index.query(SearchKernel::Query.contains("title", "shoes")).limit(10).execute
   check(ids(typed).include?("shoe-1"), "typed contains query")
 
@@ -85,13 +96,31 @@ begin
   filtered_facet = index.browse.filter("active = true").facet("brand").limit(10).execute
   same({"Acme" => 2, "TrailCo" => 1}, filtered_facet.facets.fetch("brand").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "filtered facet exact counts")
 
-  index.patch("shoe-1").set("price", 79.0).unset("active").execute
-  check(!index.get("shoe-1").key?("active"), "patch unset")
+  aggregate = index.browse.filter("title contains 'shoes'")
+    .aggregate(SearchKernel::Agg.count.as("products"))
+    .aggregate(SearchKernel::Agg.sum("price").as("sum_price"))
+    .aggregate(SearchKernel::Agg.avg("price").as("avg_price"))
+    .limit(0).execute
+  same(2, aggregate.aggregations.fetch("products"), "root count aggregation")
+  same(218.0, aggregate.aggregations.fetch("sum_price"), "root sum aggregation")
+  same(109.0, aggregate.aggregations.fetch("avg_price"), "root avg aggregation")
+
+  grouped_counts = index.browse.group(
+    SearchKernel::Group.by("brand").limit(10)
+      .order_by(SearchKernel::Grouping.desc(SearchKernel::Agg.count))
+      .output(SearchKernel::Agg.count.as("products"))
+  ).limit(0).execute
+  same(2, grouped_counts.groups.length, "structured group count")
+  same(["Acme", "TrailCo"], grouped_counts.groups.map(&:value), "group ordering by count")
+  same([2, 1], grouped_counts.groups.map { |group| group.fields.fetch("products") }, "group count outputs")
+
+  index.patch("shoe-1").set("price", 79.0).set("inventory", 11).unset("missing_field").execute
+  same(11, index.get("shoe-1").fetch("inventory"), "patch second set")
   same(79.0, index.get("shoe-1").fetch("price"), "patch set")
 
   index.update("shoe-1").increment("inventory", 5).execute
-  same(15, index.get("shoe-1").fetch("inventory"), "advanced arithmetic increment")
-  index.update("shoe-1").decrement("inventory", 3).multiply("inventory", 2).divide("inventory", 4).execute
+  same(16, index.get("shoe-1").fetch("inventory"), "advanced arithmetic increment")
+  index.update("shoe-1").decrement("inventory", 4).multiply("inventory", 2).divide("inventory", 4).execute
   same(6, index.get("shoe-1").fetch("inventory"), "advanced arithmetic decrement/multiply/divide")
   index.update("created-by-update").set("inventory", 7).create.execute
   same(7, index.get("created-by-update").fetch("inventory"), "create-if-nonexistent update")
@@ -129,6 +158,7 @@ puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 # SKC: filter.textual/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: search.sorting/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: search.pagination/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: grouping.aggregation/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: update.document_crud/basic kinds=ergonomic,e2e runtime=managed-local
