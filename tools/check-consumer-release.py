@@ -7,7 +7,10 @@ for a in m['artifacts']:
 # Assert artifacts are independently consumable and contain their runtime entry points.
 rust=next(out.glob('searchkernel-rust-*.tar.gz'))
 with tarfile.open(rust) as t:
- names=t.getnames(); assert 'core/crates/searchkernel/Cargo.toml' in names and 'native-sdk.lock.json' in names
+ names=t.getnames(); assert 'core/crates/searchkernel/Cargo.toml' in names
+ assert 'core/native/vespa/manifest.json' in names
+ manifest=json.load(t.extractfile('core/native/vespa/manifest.json'))
+ assert isinstance(manifest.get('vespa_commit'),str) and len(manifest['vespa_commit'])==40
 wheel=next(out.glob('searchkernel-*.whl'))
 with zipfile.ZipFile(wheel) as z: assert any(n.endswith('searchkernel/__init__.py') for n in z.namelist())
 npm=next(out.glob('searchkernel-client-*.tgz'))
