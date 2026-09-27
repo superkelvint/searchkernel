@@ -62,7 +62,7 @@ module SearchKernel
 
     class SearchResults
       attr_reader :root, :hits, :groups, :total_hits, :total_hits_relation, :coverage,
-                  :timing, :errors, :issues, :trace, :metadata, :continuations, :aggregations
+                  :timing, :errors, :issues, :trace, :metadata, :continuations, :aggregations, :facets
 
       def initialize(raw)
         Value.object!(raw, "SearchResult")
@@ -83,7 +83,40 @@ module SearchKernel
         @metadata = Value.optional_entries(raw["metadata"])
         @continuations = @root.is_a?(ResultGroup) ? @root.continuations : nil
         @aggregations = @root.is_a?(ResultGroup) ? @root.fields : nil
-        freeze
+        @facets = {}
+      end
+
+      # Facets are a strict, request-derived projection over the canonical
+      # recursive grouping tree. Generic response groups are never inferred as
+      # facets without the builder supplying the requested field/name context.
+      def project_facet(expected_label, result_name, expected_field = nil)
+        expected_field ||= expected_label
+        candidates = @groups.select do |group|
+          (group.id == expected_field || group.id.nil?) && group.label == expected_label &&
+            group.value.nil? && (!group.fields || group.fields.empty?) &&
+            (!group.continuations || group.continuations.empty?) && group.source.nil? &&
+            (!group.types || group.types.empty?) && group.relevance.nil? && group.limits.nil? &&
+            (!group.metadata || group.metadata.empty?) && group.groups.length == group.children.length
+        end
+        return self unless candidates.length == 1
+
+        buckets = []
+        candidates.first.groups.each do |child|
+          optimized = child.id.nil? && child.label.nil?
+          generic = child.id == "grouping-0" && child.label == expected_label
+          return self unless optimized || generic
+          return self unless child.children.nil? || child.children.empty?
+          return self unless child.continuations.nil? || child.continuations.empty?
+          return self unless child.source.nil? && (child.types.nil? || child.types.empty?) && child.relevance.nil?
+          return self unless child.limits.nil? && (child.metadata.nil? || child.metadata.empty?)
+          fields = child.fields || {}
+          return self unless fields.length == 1 && fields.key?("count")
+          count = fields.fetch("count")
+          return self unless count.is_a?(Integer) && (!generic || count >= 0)
+          buckets << { "value" => child.value, "count" => count }
+        end
+        @facets[result_name] = buckets.freeze
+        self
       end
     end
 

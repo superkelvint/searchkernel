@@ -31,6 +31,7 @@ module SearchKernel
       @properties = {}
       @limit = nil
       @offset = nil
+      @paged = false
       @timeout_ms = nil
       @presentation_format = nil
       @bolding = nil
@@ -249,21 +250,26 @@ module SearchKernel
     end
 
     def limit(item)
-      @limit = Wire.uint32!(item, "limit")
+      value = Wire.uint32!(item, "limit")
+      raise ArgumentError, "limit cannot follow page()" if @paged
+      @limit = value
       self
     end
 
     def offset(item)
-      @offset = Wire.uint32!(item, "offset")
+      value = Wire.uint32!(item, "offset")
+      raise ArgumentError, "offset cannot follow page()" if @paged
+      @offset = value
       self
     end
 
     def page(number, size)
       number = Wire.uint32!(number, "page number")
       size = Wire.uint32!(size, "page size")
-      raise ArgumentError, "page number is 1-based" if number.zero?
+      raise ArgumentError, "invalid page() combination" if number.zero? || !@limit.nil? || !@offset.nil?
       computed = (number - 1) * size
-      raise ArgumentError, "page offset exceeds uint32" if computed > 0xffff_ffff
+      raise ArgumentError, "page range exceeds uint32" if number * size > 0xffff_ffff
+      @paged = true
       @offset = computed
       @limit = size
       self
@@ -339,7 +345,11 @@ module SearchKernel
     end
 
     def execute
-      @index.execute_search_request(request)
+      results = @index.execute_search_request(request)
+      @facets.each do |facet|
+        results.project_facet(facet.fetch(:name), facet.fetch(:name), facet.fetch(:field))
+      end
+      results
     end
 
     private
@@ -618,6 +628,7 @@ module SearchKernel
     def close
       return if @closed
       @closed = true
+      @client.close
       @owner&.close
       @owner = nil
       nil

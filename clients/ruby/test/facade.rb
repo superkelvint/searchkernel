@@ -93,10 +93,20 @@ same(3, request.dig("limit", "value"), "page sets limit")
 raises(ArgumentError, "page zero rejects") { index.search("shoes").page(0, 3) }
 raises(ArgumentError, "page offset overflow rejects") { index.search("shoes").page(0xffff_ffff, 2) }
 raises(ArgumentError, "page size outside uint32 rejects") { index.search("shoes").page(1, 0x1_0000_0000) }
+raises(ArgumentError, "page then offset rejects") { index.search("shoes").page(1, 3).offset(1) }
+raises(ArgumentError, "offset then page rejects") { index.search("shoes").offset(1).page(1, 3) }
+raises(ArgumentError, "page then limit rejects") { index.search("shoes").page(1, 3).limit(3) }
+raises(ArgumentError, "limit then page rejects") { index.search("shoes").limit(3).page(1, 3) }
+raises(ArgumentError, "page range overflow rejects") { index.search("shoes").page(0x8000_0000, 2) }
 same("Asc", request.dig("sort", 0, "direction"), "sort direction")
 same(%w[title price], request.dig("presentation", "fields", "fields"), "projection fields retain caller order")
 same(["title"], request.dig("presentation", "highlighting", "fields"), "highlight fields retained")
 assert(search.execute.is_a?(SearchKernel::Results::SearchResults), "search executes into canonical SearchResults")
+closed_transport = FacadeRecordingTransport.new
+closed_index = SearchKernel::Index.new(SearchKernel::Client.new(closed_transport))
+closed_index.close
+closed_index.close
+raises(SearchKernel::TransportError, "operation after close rejects") { closed_index.get("doc-1") }
 
 nearest = SearchKernel::Query.nearest_neighbor(
   "embedding",

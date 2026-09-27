@@ -13,19 +13,29 @@ module SearchKernel
       end
 
       @transport = transport
+      @closed = false
     end
 
     def execute(operation, payload)
+      raise TransportError, "Search Kernel client is closed" if @closed
       response = @transport.execute(Protocol.request_envelope(operation, payload))
       Protocol.expect_response(operation, response)
     end
 
     def execute_raw(envelope)
+      raise TransportError, "Search Kernel client is closed" if @closed
       @transport.execute(envelope)
     end
 
     def search_results(payload)
       Results::SearchResults.new(search(payload))
+    end
+
+    def close
+      return nil if @closed
+      @closed = true
+      @transport.close if @transport.respond_to?(:close)
+      nil
     end
 
     Protocol::OPERATIONS.each_key do |operation|

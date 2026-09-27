@@ -79,14 +79,24 @@ begin
     .execute
   same(%w[shoe-1 shoe-2], ids(yql), "YQL property and ordering")
 
-  grouped = index.search("shoes").facet("brand", limit: 10).limit(10).execute
+  grouped = index.search("shoes").facet("brand", name: "brands", limit: 10).limit(10).execute
   check(!grouped.groups.empty?, "structured facet/grouping tree retained")
+  same({"Acme" => 1, "TrailCo" => 1}, grouped.facets.fetch("brands").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "named facet exact counts")
+  filtered_facet = index.browse.filter("active = true").facet("brand").limit(10).execute
+  same({"Acme" => 2, "TrailCo" => 1}, filtered_facet.facets.fetch("brand").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "filtered facet exact counts")
 
-  index.patch("shoe-1").set("price", 79.0).execute
+  index.patch("shoe-1").set("price", 79.0).unset("active").execute
+  check(!index.get("shoe-1").key?("active"), "patch unset")
   same(79.0, index.get("shoe-1").fetch("price"), "patch set")
 
   index.update("shoe-1").increment("inventory", 5).execute
-  same(15, index.get("shoe-1").fetch("inventory"), "advanced arithmetic update")
+  same(15, index.get("shoe-1").fetch("inventory"), "advanced arithmetic increment")
+  index.update("shoe-1").decrement("inventory", 3).multiply("inventory", 2).divide("inventory", 4).execute
+  same(6, index.get("shoe-1").fetch("inventory"), "advanced arithmetic decrement/multiply/divide")
+  index.update("created-by-update").set("inventory", 7).create.execute
+  same(7, index.get("created-by-update").fetch("inventory"), "create-if-nonexistent update")
+  index.upsert("shoe-2", {"title" => "Trail Running Shoes Updated", "brand" => "TrailCo", "price" => 119.0, "inventory" => 4, "active" => true})
+  same(119.0, index.get("shoe-2").fetch("price"), "upsert replacement")
 
   tokens = index.analyze("Running shoes", field: "title")
   check(!tokens.empty? && tokens.first.fetch("term").is_a?(String), "analysis result")
@@ -100,9 +110,12 @@ end
 reopened = SearchKernel::Index.open(index_path)
 begin
   same(79.0, reopened.get("shoe-1").fetch("price"), "reopen preserves patched field")
-  same(15, reopened.get("shoe-1").fetch("inventory"), "reopen preserves arithmetic update")
+  same(6, reopened.get("shoe-1").fetch("inventory"), "reopen preserves arithmetic update")
+  same(7, reopened.get("created-by-update").fetch("inventory"), "reopen preserves create update")
+  same(119.0, reopened.get("shoe-2").fetch("price"), "reopen preserves upsert replacement")
   same(%w[shoe-1 shoe-2], ids(reopened.search("shoes").sort("price", "asc").limit(10).execute), "reopen search")
   check(reopened.delete("shoe-2"), "delete after reopen")
+  same(false, reopened.delete("shoe-2"), "duplicate delete is false")
   same(nil, reopened.get("shoe-2"), "deleted document absent")
 ensure
   reopened.close
@@ -122,3 +135,4 @@ puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 # SKC: update.arithmetic/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.yql/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: result.grouping_tree/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: grouping.facets/basic kinds=ergonomic,e2e runtime=managed-local
