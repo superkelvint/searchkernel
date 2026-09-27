@@ -61,7 +61,7 @@ GitHub on-demand workflow
 exact pushed SHA
       |
       v
-canonical environment -> ./dev test/verify ...
+canonical environment -> ./dev ci/test/verify ...
 
 Consumers
       |
@@ -266,8 +266,8 @@ The remote-only workflow must:
 
 - expose the on-demand verification workflow as a **public supported interface**, not merely as an implementation detail behind `./dev --remote`;
 - accept an exact committed SHA, bounded operation, and bounded target;
-- support at least `test <scope>` and `verify <lane>`;
-- execute the same canonical `./dev test <scope>` or `./dev verify <lane>` command inside the remote canonical environment;
+- support bounded `ci`, `test <scope>`, and `verify <lane>` operations;
+- execute the same canonical `./dev ci`, `./dev test <scope>`, or `./dev verify <lane>` command inside the remote canonical environment;
 - never require the agent to reproduce the development environment locally;
 - never require the heavy verifier matrix to become automatic PR CI;
 - expose run identity, exact revision, canonical command, result, and failure logs through GitHub;
@@ -1727,8 +1727,8 @@ Its conceptual inputs are:
 
 ```text
 revision   exact pushed commit SHA
-operation  verify | test
-target     known verifier lane or test scope
+operation  ci | verify | test
+target     known verifier lane or test scope when applicable
 ```
 
 The workflow:
@@ -1736,6 +1736,7 @@ The workflow:
 1. checks out the exact requested SHA;
 2. verifies that `git rev-parse HEAD` equals that SHA;
 3. executes exactly one canonical command:
+   - `./dev ci`,
    - `./dev verify <target>`, or
    - `./dev test <target>`;
 4. returns the resulting exit status and logs.
@@ -1788,6 +1789,8 @@ A remote-only agent has no local-worktree requirement; it supplies the exact pus
 ### 14.4 Remote-execution trust boundary
 
 The on-demand workflow executes repository code, potentially on self-hosted infrastructure with Docker access. Exact-SHA provenance is necessary but not sufficient; the workflow needs an explicit trust model.
+
+The **workflow control plane must come from trusted/default-branch infrastructure**. The exact revision being tested is supplied as data to that trusted workflow and checked out separately. A requested PR/commit under test must not be able to redefine the privileged workflow definition, permissions, runner policy, or secret exposure used to execute itself.
 
 The first version must:
 
@@ -1877,8 +1880,8 @@ If you do not have a usable Search Kernel development environment at all:
     dispatch the repository's bounded on-demand verification workflow
     with:
         revision  = exact pushed SHA
-        operation = verify | test
-        target    = known lane/scope
+        operation = ci | verify | test
+        target    = known lane/scope when applicable
 
 Remote verification always tests the exact requested pushed SHA.
 
@@ -1904,7 +1907,7 @@ The intended division is:
 | `./dev verify <lane>` | explicit local | specialist verification |
 | `./dev verify --remote <lane>` | explicit remote from a checkout | convenience wrapper for specialist verification on remote infrastructure |
 | `./dev test --remote <scope>` | explicit remote from a checkout | convenience wrapper for tests unavailable locally |
-| GitHub on-demand workflow | explicit remote-only agent dispatch | targeted test/verify when no development environment exists |
+| GitHub on-demand workflow | explicit remote-only agent dispatch | bounded ci/test/verify when no development environment exists |
 | `./dev universe` | explicit | full repository/source qualification |
 | `./dev release-check` | explicit release workflow | build and qualify actual distributable artifacts |
 
@@ -2560,38 +2563,39 @@ The convergence project is complete when:
 23. Strong verifiers remain available outside mandatory PR CI.
 24. One repository-owned canonical target registry exposes the finite test/verifier vocabulary through GitHub-visible state; local `./dev test --list` / `./dev verify --list` and remote workflow validation consume that same authority.
 25. Lightweight documentation maps major change areas to relevant focused checks.
-26. One generic bounded GitHub on-demand workflow provides direct `test`/`verify` execution for authorized coding agents with **no usable development environment**.
+26. One generic bounded GitHub on-demand workflow provides direct `ci`/`test`/`verify` execution for authorized coding agents with **no usable development environment**.
 27. `./dev verify --remote <lane>` and `./dev test --remote <scope>` provide convenience wrappers for local-capable agents/developers who cannot run a relevant check locally.
 28. Both direct GitHub dispatch and local wrappers verify an exact pushed commit SHA, never merely a mutable branch reference.
 29. The local wrapper refuses dirty/ambiguous local handoff by default when the working tree/index differs from the commit being dispatched; direct remote-only dispatch requires an exact pushed SHA and has no local-working-tree dependency.
-30. Remote execution ultimately invokes the same canonical `./dev verify <lane>` or `./dev test <scope>` command as local execution.
+30. Remote execution ultimately invokes the same canonical `./dev ci`, `./dev verify <lane>`, or `./dev test <scope>` command as local execution.
 31. GitHub Actions contains no verifier-specific semantics beyond bounded dispatch/validation/orchestration.
 32. The local wrapper waits for the exact dispatched run, surfaces its run identity and failure logs, and propagates its result; direct GitHub callers can retrieve equivalent evidence from the workflow run.
 33. Remote verification has an explicit authorized-actor/self-hosted-runner trust policy, uses read-only permissions by default, exposes no release/write secrets, and defines handling for untrusted/fork revisions.
-34. Arbitrary remote shell execution is not exposed.
-35. Repository agent guidance documents both local-wrapper and remote-only exact-SHA verification protocols and prohibits claiming verification from older commits.
-36. Local canonical-container development preserves compatible writable Cargo/native incremental state across invocations in a worktree-scoped/environment-scoped namespace; unrelated worktrees do not share writable target state.
-37. `./dev doctor` validates the minimal supported host boundary, while ordinary language/compiler toolchains remain owned by the canonical image.
-38. `./dev build` has one explicit meaning: canonical supported product build in the canonical development environment.
-39. Normal verification and Universe never automatically enter live-oracle mode; live oracle execution/golden generation require explicit maintainer opt-in.
-40. `docs/release-support.json` is the machine-readable authority for supported downstream surfaces.
-41. `./dev release-check` builds the actual release artifact set and provides artifact-level executable evidence for every supported release row.
-42. Rust embedded release qualification builds and executes a clean external consumer from the actual publishable/distributable Cargo package, not merely from a repository path or manually downloaded source bundle.
-43. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
-44. The intended release architecture treats Python, TypeScript/Node, and Ruby as managed-local first-party clients; `docs/release-support.json` is reconciled accordingly before release qualification becomes authoritative.
-45. On qualified platforms, `pip install searchkernel`, `npm install @searchkernel/client`, `gem install searchkernel`, and `cargo add searchkernel` are sufficient installation paths without a separate Vespa or `searchkerneld` install.
-46. Python, TypeScript/Node, and Ruby release artifacts each carry/launch the qualified local Search Kernel runtime and pass clean external-install managed-local E2E tests using normal package-manager installation.
-47. Rust release qualification uses a clean external Cargo consumer against the actual publishable/distributable Search Kernel package and proves build + native execution without repository-specific setup.
-48. The managed-local Python, TypeScript/Node, and Ruby packages are assembled from one qualified platform daemon/native runtime payload rather than independently assembled native closures.
-49. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
-50. Ordinary Search Kernel source/image publication does not copy or republish the large Vespa/native payload.
-51. The thin Search Kernel leaf records exact immutable toolchain and Vespa/native provenance.
-52. Canonical local and remote verification resolve the Vespa/native payload by immutable identity and mount/materialize it read-only.
-53. Release artifacts record Search Kernel revision, platform/native target, pinned Vespa/native identity, and artifact checksums/provenance sufficient to relate shipped output to qualified inputs.
-54. End-user supported artifacts do not require `searchkernel-ci`, `searchkernel-ci-toolchain`, or `searchkernel-ci-vespa` at runtime.
-55. Old compatibility/build paths are removed only after their replacements are proven.
-56. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
-57. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
+34. The on-demand workflow control plane is loaded from trusted/default-branch infrastructure; the requested revision is checked out separately and cannot redefine the workflow/permission boundary used to execute it.
+35. Arbitrary remote shell execution is not exposed.
+36. Repository agent guidance documents both local-wrapper and remote-only exact-SHA verification protocols and prohibits claiming verification from older commits.
+37. Local canonical-container development preserves compatible writable Cargo/native incremental state across invocations in a worktree-scoped/environment-scoped namespace; unrelated worktrees do not share writable target state.
+38. `./dev doctor` validates the minimal supported host boundary, while ordinary language/compiler toolchains remain owned by the canonical image.
+39. `./dev build` has one explicit meaning: canonical supported product build in the canonical development environment.
+40. Normal verification and Universe never automatically enter live-oracle mode; live oracle execution/golden generation require explicit maintainer opt-in.
+41. `docs/release-support.json` is the machine-readable authority for supported downstream surfaces.
+42. `./dev release-check` builds the actual release artifact set and provides artifact-level executable evidence for every supported release row.
+43. Rust embedded release qualification builds and executes a clean external consumer from the actual publishable/distributable Cargo package, not merely from a repository path or manually downloaded source bundle.
+44. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
+45. The intended release architecture treats Python, TypeScript/Node, and Ruby as managed-local first-party clients; `docs/release-support.json` is reconciled accordingly before release qualification becomes authoritative.
+46. On qualified platforms, `pip install searchkernel`, `npm install @searchkernel/client`, `gem install searchkernel`, and `cargo add searchkernel` are sufficient installation paths without a separate Vespa or `searchkerneld` install.
+47. Python, TypeScript/Node, and Ruby release artifacts each carry/launch the qualified local Search Kernel runtime and pass clean external-install managed-local E2E tests using normal package-manager installation.
+48. Rust release qualification uses a clean external Cargo consumer against the actual publishable/distributable Search Kernel package and proves build + native execution without repository-specific setup.
+49. The managed-local Python, TypeScript/Node, and Ruby packages are assembled from one qualified platform daemon/native runtime payload rather than independently assembled native closures.
+50. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
+51. Ordinary Search Kernel source/image publication does not copy or republish the large Vespa/native payload.
+52. The thin Search Kernel leaf records exact immutable toolchain and Vespa/native provenance.
+53. Canonical local and remote verification resolve the Vespa/native payload by immutable identity and mount/materialize it read-only.
+54. Release artifacts record Search Kernel revision, platform/native target, pinned Vespa/native identity, and artifact checksums/provenance sufficient to relate shipped output to qualified inputs.
+55. End-user supported artifacts do not require `searchkernel-ci`, `searchkernel-ci-toolchain`, or `searchkernel-ci-vespa` at runtime.
+56. Old compatibility/build paths are removed only after their replacements are proven.
+57. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
+58. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
 
 The final architecture should be boring:
 
