@@ -148,7 +148,7 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path) -> None:
     bindir.mkdir(parents=True)
     libdir.mkdir(parents=True)
 
-    staged_daemon = bindir / "searchkerneld"
+    staged_daemon = bindir / "searchkerneld.real"
     shutil.copy2(daemon, staged_daemon)
     shutil.copy2(
         adapter_lib / "libsearchkernel_vespa.so.2",
@@ -175,27 +175,30 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path) -> None:
         str(staged_daemon),
     )
 
-    patchelf = shutil.which("patchelf")
-    if patchelf is None:
-        raise SystemExit("consumer release packaging requires patchelf")
-    for library in sorted(libdir.iterdir()):
-        run(patchelf, "--force-rpath", "--set-rpath", "$ORIGIN", str(library))
-    run(
-        patchelf,
-        "--force-rpath",
-        "--set-rpath",
-        "$ORIGIN/../lib",
-        str(staged_daemon),
-    )
-
     run(
         sys.executable,
         str(ROOT / "tools/check-native-runtime-closure.py"),
         str(libdir),
         str(staged_daemon),
     )
+    launcher = bindir / "searchkerneld"
+    launcher.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "bindir=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n"
+        "root=$(dirname -- \"$bindir\")\n"
+        "if [ -n \"${LD_LIBRARY_PATH:-}\" ]; then\n"
+        "  export LD_LIBRARY_PATH=\"$root/lib:$LD_LIBRARY_PATH\"\n"
+        "else\n"
+        "  export LD_LIBRARY_PATH=\"$root/lib\"\n"
+        "fi\n"
+        "exec \"$bindir/searchkerneld.real\" \"$@\"\n",
+        encoding="utf-8",
+    )
+    launcher.chmod(0o755)
+
     subprocess.run(
-        [str(staged_daemon), "--help"],
+        [str(launcher), "--help"],
         check=True,
         env=clean_runtime_env(),
         stdout=subprocess.DEVNULL,
@@ -251,8 +254,9 @@ def main() -> None:
             archive.add(stage / "lib", arcname="lib")
 
         # Managed-local packages carry the exact same daemon and native runtime
-        # closure as the standalone distribution. The daemon has relative RPATHs,
-        # so installed packages require no SEARCHKERNEL_SDK_LIB/LD_LIBRARY_PATH.
+        # closure as the standalone distribution. A tiny POSIX launcher sets a
+        # package-relative library path before execing the real ELF, so installed
+        # packages require no SEARCHKERNEL_SDK_LIB/LD_LIBRARY_PATH.
         package_roots = (
             ROOT / "clients/python/searchkernel",
             ROOT / "clients/typescript",
