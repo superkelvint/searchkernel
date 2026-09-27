@@ -103,7 +103,7 @@ esac
             """#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *"check-client-contracts.py --run-e2e-surface"* ]]; then
-  printf '%s\\n' "$*" >>"$E2E_LOG"
+  printf '%s installed_gem=%s\\n' "$*" "${SEARCHKERNEL_RUBY_USE_INSTALLED_GEM:-0}" >>"$E2E_LOG"
 fi
 exit 0
 """,
@@ -150,6 +150,35 @@ exit 0
                     f"--run-e2e-surface {client}",
                     e2e_log.read_text(encoding="utf-8"),
                 )
+
+    def test_ruby_real_e2e_uses_the_installed_gem(self) -> None:
+        e2e_log = self.fixture / "ruby-installed.e2e.log"
+        env = os.environ.copy()
+        env.update(
+            {
+                "PATH": f"{self.fakebin}:{env['PATH']}",
+                "FAKE_BIN": str(self.fakebin),
+                "E2E_LOG": str(e2e_log),
+                "SEARCHKERNEL_DEV_USE_CI_IMAGE": "0",
+            }
+        )
+        completed = subprocess.run(
+            [str(self.repo / "dev"), "test", "ruby"],
+            cwd=self.repo,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+        self.assertIn(
+            "installed_gem=1",
+            e2e_log.read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":
