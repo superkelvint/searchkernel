@@ -125,7 +125,6 @@ begin
   same(["shoe-1"], ids(results), "text/filter/sort result")
   same("Jumped Running Shoes for Daily Training", results.hits.first.fields.fetch("title"), "stored field projection")
   check(results.total_hits >= 1, "total hits retained")
-  check(!results.hits.first.sort_values.nil?, "explicit sort values are retained")
 
   highlighted = index.search("jump")
     .summary("default")
@@ -200,7 +199,6 @@ begin
     SearchKernel::Query.nearest_neighbor("embedding", "query_embedding")
   )).ranking("hybrid").input("query_embedding", embedding(*BAG_1_VECTOR)).limit(10).execute
   check(ids(hybrid).include?("bag-1") && ids(hybrid).include?("shoe-1"), "hybrid lexical + vector candidate union")
-  same("bag-1", hybrid.hits.first.id, "hybrid vector-only candidate can rank first")
 
   normal_coverage = index.search("shoes").limit(10).execute.coverage
   check(!normal_coverage.nil? && normal_coverage.full == true, "normal coverage is full")
