@@ -56,8 +56,7 @@ def rust_source_paths(metadata: dict[str, object]) -> list[Path]:
         Path("README.md"),
         Path("api"),
         Path("core/native/vespa"),
-        Path("native-sdk.lock.json"),
-        Path("upstream/vespa.commit"),
+        Path("reference/vespa/PINNED_VESPA.json"),
     }
     for optional in (Path("core/README.md"), Path(".cargo"), Path("rust-toolchain.toml")):
         if (ROOT / optional).exists():
