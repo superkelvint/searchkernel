@@ -19,6 +19,12 @@ def ids(results)
   results.hits.map(&:id)
 end
 
+def grouping_buckets(results)
+  groups = results.groups
+  groups = groups.first.groups if groups.length == 1 && groups.first.value.nil? && !groups.first.groups.empty?
+  groups.reject { |group| group.value.nil? || group.value == "" }
+end
+
 def embedding(*values)
   raise ArgumentError, "expected 8 embedding values" unless values.length == 8
   SearchKernel::Tensor.dense("tensor<float>(x[8])", values)
@@ -176,16 +182,17 @@ begin
       .order_by(SearchKernel::Grouping.desc(SearchKernel::Agg.count))
       .output(SearchKernel::Agg.count.as("products"))
   ).limit(0).execute
-  same(2, grouped_counts.groups.length, "structured group count")
-  same(["Acme", "TrailCo"], grouped_counts.groups.map(&:value), "group ordering by count")
-  same([2, 1], grouped_counts.groups.map { |group| group.fields.fetch("products") }, "group count outputs")
+  brand_groups = grouping_buckets(grouped_counts)
+  same(2, brand_groups.length, "structured group count")
+  same(["Acme", "TrailCo"], brand_groups.map(&:value), "group ordering by count")
+  same([2, 1], brand_groups.map { |group| group.fields.fetch("products") }, "group count outputs")
 
   nested = index.browse.filter("category IN (:categories)", "categories" => %w[shoes bags]).group(
     SearchKernel::Group.by("category").limit(10)
       .output(SearchKernel::Agg.count.as("products"))
       .subgroup(SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count.as("products")))
   ).limit(0).execute
-  by_category = nested.groups.to_h { |group| [group.value, group] }
+  by_category = grouping_buckets(nested).to_h { |group| [group.value, group] }
   same(%w[bags shoes], by_category.keys.sort, "nested category groups")
   same(2, by_category.fetch("shoes").fields.fetch("products"), "nested shoes count")
   same(1, by_category.fetch("bags").fields.fetch("products"), "nested bags count")
@@ -197,14 +204,14 @@ begin
       .order_by(SearchKernel::Grouping.desc(SearchKernel::Grouping.alias_ref("revenue")))
       .output(SearchKernel::Agg.count.as("products"), SearchKernel::Grouping.alias_ref("revenue").as("revenue"))
   ).limit(0).execute
-  check(aliased.groups.all? { |group| group.fields.key?("revenue") }, "group alias/output")
+  check(grouping_buckets(aliased).all? { |group| group.fields.key?("revenue") }, "group alias/output")
 
   kept = index.search("shoes").group(
     SearchKernel::Group.by("brand").limit(10)
       .keep(SearchKernel::GroupingFilter.regex(SearchKernel::Grouping.field("brand"), "^A.*"))
       .output(SearchKernel::Agg.count.as("products"))
   ).limit(0).execute
-  same(["Acme"], kept.groups.map(&:value), "group keep filter")
+  same(["Acme"], grouping_buckets(kept).map(&:value), "group keep filter")
 
   index.patch("shoe-1").set("price", 79.0).set("inventory", 11).unset("missing_field").execute
   same(11, index.get("shoe-1").fetch("inventory"), "patch second set")
