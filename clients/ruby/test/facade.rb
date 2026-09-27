@@ -175,6 +175,49 @@ combined = SearchKernel::Query.any_of(
 )
 same("QueryOr", combined.dig("source", "query", "expr_type"), "boolean typed query")
 
+same("QueryPhrase", SearchKernel::Query.phrase("running", "shoes").dig("source", "query", "expr_type"),
+     "phrase query helper")
+same("QueryNear", SearchKernel::Query.near("running", "shoes").dig("source", "query", "expr_type"),
+     "near query helper")
+same("QueryONear", SearchKernel::Query.onear("running", "shoes").dig("source", "query", "expr_type"),
+     "ordered-near query helper")
+same(
+  "QuerySameElement",
+  SearchKernel::Query.same_element(
+    SearchKernel::Query.contains("title", "running"),
+    SearchKernel::Query.contains("title", "shoes")
+  ).dig("source", "query", "expr_type"),
+  "sameElement query helper"
+)
+same("QueryFuzzy", SearchKernel::Query.fuzzy("shoes").dig("source", "query", "expr_type"),
+     "fuzzy query helper")
+same(
+  "QueryGeoLocation",
+  SearchKernel::Query.geo_location("position", lat: 37.3, lon: -121.9, radius: "10km")
+    .dig("source", "query", "expr_type"),
+  "geo-location query helper"
+)
+same(
+  "QueryGeoBoundingBox",
+  SearchKernel::Query.geo_box("position", south: 37.0, west: -122.0, north: 38.0, east: -121.0)
+    .dig("source", "query", "expr_type"),
+  "geo bounding-box query helper"
+)
+same(
+  "QueryWeakAnd",
+  SearchKernel::Query.weak_and(
+    SearchKernel::Query.contains("title", "running"),
+    SearchKernel::Query.contains("title", "shoes")
+  ).dig("source", "query", "expr_type"),
+  "WeakAnd query helper"
+)
+same(
+  "QueryWand",
+  SearchKernel::Query.wand("title", "running" => 10, "shoes" => 5)
+    .dig("source", "query", "expr_type"),
+  "WAND query helper"
+)
+
 group = SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count.as("products"))
 grouping_request = group.to_request
 same("StructuredGroupingSource", grouping_request.fetch("source_type"), "structured grouping source")
@@ -317,3 +360,12 @@ Dir.mktmpdir("searchkernel-ruby-startup-race-") do |root|
 end
 
 puts "Ruby facade/lifecycle tests PASS"
+
+# Executable ergonomic evidence for typed-query families that share Ruby's
+# standard FlatBuffers-JSON/HTTP facade path.
+# SKC: query.phrase/basic kinds=ergonomic runtime=http
+# SKC: query.proximity/basic kinds=ergonomic runtime=http
+# SKC: query.same_element/basic kinds=ergonomic runtime=http
+# SKC: query.fuzzy/basic kinds=ergonomic runtime=http
+# SKC: query.geo/basic kinds=ergonomic runtime=http
+# SKC: query.weighted_and_wand/basic kinds=ergonomic runtime=http
