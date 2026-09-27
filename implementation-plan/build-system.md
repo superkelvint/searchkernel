@@ -2480,12 +2480,12 @@ The convergence project is complete when:
 42. Rust embedded release qualification builds and executes a clean external consumer from the actual distributable Rust artifact, not merely from a repository path.
 43. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
 44. The intended release architecture treats Python, TypeScript/Node, and Ruby as managed-local first-party clients; `docs/release-support.json` is reconciled accordingly before release qualification becomes authoritative.
-48. Python, TypeScript/Node, and Ruby release artifacts each carry/launch the qualified local Search Kernel runtime and pass clean external-install managed-local E2E tests.
-49. The managed-local Python, TypeScript/Node, and Ruby packages are assembled from one qualified platform daemon/native runtime payload rather than independently assembled native closures.
-50. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
-45. Ordinary Search Kernel source/image publication does not copy or republish the large Vespa/native payload.
-46. The thin Search Kernel leaf records exact immutable toolchain and Vespa/native provenance.
-47. Canonical local and remote verification resolve the Vespa/native payload by immutable identity and mount/materialize it read-only.
+45. Python, TypeScript/Node, and Ruby release artifacts each carry/launch the qualified local Search Kernel runtime and pass clean external-install managed-local E2E tests.
+46. The managed-local Python, TypeScript/Node, and Ruby packages are assembled from one qualified platform daemon/native runtime payload rather than independently assembled native closures.
+47. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
+48. Ordinary Search Kernel source/image publication does not copy or republish the large Vespa/native payload.
+49. The thin Search Kernel leaf records exact immutable toolchain and Vespa/native provenance.
+50. Canonical local and remote verification resolve the Vespa/native payload by immutable identity and mount/materialize it read-only.
 51. Release artifacts record Search Kernel revision, platform/native target, pinned Vespa/native identity, and artifact checksums/provenance sufficient to relate shipped output to qualified inputs.
 52. End-user supported artifacts do not require `searchkernel-ci`, `searchkernel-ci-toolchain`, or `searchkernel-ci-vespa` at runtime.
 53. Old compatibility/build paths are removed only after their replacements are proven.
