@@ -92,4 +92,43 @@ grep -F 'libsearchkernel_runtime_dep.so => not found' <<<"$broken_output" >/dev/
     exit 1
 }
 
+resolver="$ROOT/tools/resolve-native-runtime-libs.sh"
+if grep -F 'SK_NATIVE_ADAPTER_ONLY=1' "$resolver" >/dev/null ||
+   grep -F 'core/native/vespa/build-sdk.sh' "$resolver" >/dev/null; then
+    echo "native runtime resolver must reuse the exact built adapter; it must never synthesize one at exec time" >&2
+    exit 1
+fi
+
+set +e
+unresolved_output=$(
+    env \
+        -u SEARCHKERNEL_RUNTIME_LIB_DIRS \
+        -u SEARCHKERNEL_VERIFIER_SDK \
+        -u SEARCHKERNEL_VERIFIER_BASE_SDK \
+        -u SEARCHKERNEL_SDK_LIB \
+        -u SEARCHKERNEL_RUNTIME_ADAPTER_LIB \
+        -u SEARCHKERNEL_RUNTIME_BASE_SDK \
+        -u SK_NATIVE_SDK \
+        -u LD_LIBRARY_PATH \
+        -u LD_PRELOAD \
+        "$LAUNCHER" native "$TMP/native-probe" 2>&1
+)
+unresolved_status=$?
+set -e
+[[ "$unresolved_status" -eq 1 ]] || {
+    echo "native launcher returned $unresolved_status instead of failing closed without exact adapter identity" >&2
+    printf '%s\n' "$unresolved_output" >&2
+    exit 1
+}
+grep -F 'cannot determine exact native runtime adapter' <<<"$unresolved_output" >/dev/null || {
+    echo "native launcher did not explain how to provide exact adapter identity" >&2
+    printf '%s\n' "$unresolved_output" >&2
+    exit 1
+}
+
+SEARCHKERNEL_VERIFIER_SDK="$TMP/sdk" \
+SEARCHKERNEL_VERIFIER_BASE_SDK="$TMP/sdk" \
+LD_LIBRARY_PATH="$TMP/broken/lib" \
+    "$LAUNCHER" native "$TMP/native-probe"
+
 echo "canonical runtime launcher regression PASS"
