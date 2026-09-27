@@ -58,6 +58,17 @@ class M11StructureTests(unittest.TestCase):
         result = self._check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_safety_context_near_file_start_uses_valid_line_range(self):
+        self._write(
+            "core/crates/searchkernel-vespa-engine/src/lib.rs",
+            "// SAFETY: fixture owns the native handle.\n"
+            "unsafe impl Send for Engine {}\n"
+            "// SAFETY: fixture synchronizes all access.\n"
+            "unsafe impl Sync for Engine {}\n",
+        )
+        result = self._check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_driver_json_oracle_is_rejected(self):
         self._write(
             "reference/vespa/m11/rust-driver/src/main.rs",
