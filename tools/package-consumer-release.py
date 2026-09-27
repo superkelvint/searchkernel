@@ -48,34 +48,27 @@ def target_dir(metadata: dict[str, object]) -> Path:
     return Path(str(metadata["target_directory"]))
 
 
-def rust_source_paths(metadata: dict[str, object]) -> list[Path]:
-    members = set(metadata["workspace_members"])
-    paths: set[Path] = {
-        Path("Cargo.toml"),
-        Path("Cargo.lock"),
-        Path("README.md"),
-        Path("api"),
-        Path("core/native/vespa"),
-        Path("reference/vespa/PINNED_VESPA.json"),
-    }
-    for optional in (Path("core/README.md"), Path(".cargo"), Path("rust-toolchain.toml")):
-        if (ROOT / optional).exists():
-            paths.add(optional)
-    for package in metadata["packages"]:
-        if package["id"] in members:
-            manifest = Path(package["manifest_path"])
-            paths.add(manifest.parent.relative_to(ROOT))
-    for support in (
-        "tools/resolve-native-sdk.sh",
-        "tools/install-native-base-artifact.sh",
-        "tools/native-base-release-selection.py",
-        "tools/resolve-python.sh",
-        "tools/resolve-rust.sh",
-        "tools/native-build-fingerprint.py",
-        "tools/check-native-sdk-hardening.sh",
-    ):
-        paths.add(Path(support))
-    return sorted(paths, key=str)
+RUST_BUNDLE_PATHS = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "LICENSE",
+    "README.md",
+    "core/README.md",
+    "core/crates",
+    "searchkerneld",
+    "api",
+]
+
+
+def build_rust_bundle(rust_bundle: Path) -> None:
+    missing = [relative for relative in RUST_BUNDLE_PATHS if not (ROOT / relative).exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"missing Rust consumer bundle inputs: {', '.join(missing)}"
+        )
+    with tarfile.open(rust_bundle, "w:gz") as archive:
+        for relative in RUST_BUNDLE_PATHS:
+            archive.add(ROOT / relative, arcname=relative)
 
 
 def build_release_daemon(target: Path) -> tuple[Path, Path]:
@@ -134,7 +127,9 @@ def clean_runtime_env() -> dict[str, str]:
         "SEARCHKERNEL_LOCAL_HOST",
         "SEARCHKERNEL_SDK_LIB",
         "SK_NATIVE_SDK",
+        "SK_NATIVE_ABI_HEADER",
         "SK_NATIVE_CACHE_DIR",
+        "SEARCHKERNEL_PACKAGED_SUPPORT_ROOT",
     ):
         environment.pop(key, None)
     return environment
@@ -243,15 +238,10 @@ def main() -> None:
     metadata = cargo_metadata()
 
     # Rust embedded distribution is a complete versioned workspace snapshot.
-    # Derive workspace members from Cargo metadata so a newly-added path crate
-    # cannot silently be omitted from the consumer artifact.
+    # The generated bindings consumer bundle owns native provisioning support,
+    # so the source artifact must not depend on repository-only native helpers.
     rust_bundle = out / f"searchkernel-rust-{VERSION}.tar.gz"
-    with tarfile.open(rust_bundle, "w:gz") as archive:
-        for relative in rust_source_paths(metadata):
-            path = ROOT / relative
-            if not path.exists():
-                raise SystemExit(f"Rust consumer source is missing: {relative}")
-            archive.add(path, arcname=str(relative))
+    build_rust_bundle(rust_bundle)
 
     target = target_dir(metadata)
     daemon, adapter_lib = build_release_daemon(target)

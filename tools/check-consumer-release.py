@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 out = Path(sys.argv[1])
-manifest = json.loads((out / "manifest.json").read_text())
+manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
 assert manifest["platform"] == "linux-x86_64-glibc"
 release_support = json.loads((ROOT / "docs" / "release-support.json").read_text())
 wheel_platform_tag = release_support.get("python_wheel_platform_tag")
@@ -30,7 +30,9 @@ def clean_runtime_env() -> dict[str, str]:
         "SEARCHKERNEL_LOCAL_HOST",
         "SEARCHKERNEL_SDK_LIB",
         "SK_NATIVE_SDK",
+        "SK_NATIVE_ABI_HEADER",
         "SK_NATIVE_CACHE_DIR",
+        "SEARCHKERNEL_PACKAGED_SUPPORT_ROOT",
     ):
         env.pop(key, None)
     return env
@@ -76,13 +78,53 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
     rust_root = temp / "rust"
     rust_root.mkdir()
     with tarfile.open(rust) as archive:
+        names = set(archive.getnames())
+        required = {
+            "LICENSE",
+            "core/crates/searchkernel/Cargo.toml",
+            "core/crates/searchkernel-rpc/Cargo.toml",
+            "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs",
+            "searchkerneld/Cargo.toml",
+        }
+        missing = sorted(required - names)
+        assert not missing, f"Rust consumer bundle missing required entries: {missing}"
+        assert "tools/resolve-native-sdk.sh" not in names
         archive.extractall(rust_root)
+
+    cargo = subprocess.check_output(
+        ["bash", str(ROOT / "tools" / "resolve-rust.sh"), "cargo"],
+        text=True,
+    ).strip()
+    environment = clean_runtime_env()
+    environment["CARGO_TARGET_DIR"] = str(temp / "cargo-target")
     subprocess.run(
-        ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+        [
+            cargo,
+            "metadata",
+            "--no-deps",
+            "--format-version",
+            "1",
+            "--manifest-path",
+            str(rust_root / "Cargo.toml"),
+        ],
+        check=True,
+        env=environment,
+        stdout=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        [
+            cargo,
+            "check",
+            "-p",
+            "searchkernel",
+            "--features",
+            "native",
+            "--manifest-path",
+            str(rust_root / "Cargo.toml"),
+        ],
         cwd=rust_root,
         check=True,
-        env=clean_runtime_env(),
-        stdout=subprocess.DEVNULL,
+        env=environment,
     )
 
     daemon = next(out.glob("searchkerneld-*.tar.gz"))
