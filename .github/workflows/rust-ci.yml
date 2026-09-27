@@ -68,7 +68,7 @@ jobs:
 
   verify_794:
     name: issue 794 focused M11 structure test
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
