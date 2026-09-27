@@ -19,7 +19,7 @@ pub use result_fixture::{
     non_facet_grouping_result, one_group_containing_hits_result,
     positive_infinity_relevance_result, present_empty_optional_fields_result, relevance_result,
     representative_search_result, result_fixtures, root_hit_result, sibling_groups_result,
-    ResultFixture,
+    sparse_mixed_tensor_result, ResultFixture,
 };
 pub use runner::{
     build_component_transport_case, build_index_definition_from_json, ConformanceReport,

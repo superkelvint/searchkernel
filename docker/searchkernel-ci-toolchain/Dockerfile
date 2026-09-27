@@ -11,6 +11,8 @@ ARG RUBY_VERSION=3.3.9
 ARG RUST_TOOLCHAIN=1.98.0
 ARG FLATBUFFERS_VERSION=25.12.19
 ARG COMPOSER_VERSION=2.8.12
+ARG SCCACHE_VERSION=0.17.0
+ARG SCCACHE_SHA256=67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006
 
 ENV GCC_TOOLSET_ROOT="/opt/rh/gcc-toolset-15/root/usr" \
     PATH="/root/.cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
@@ -125,6 +127,19 @@ RUN curl --fail --location --retry 5 --silent --show-error \
     && php --version | head -n 1 \
     && composer --version
 
+RUN work="$(mktemp -d /tmp/sccache.XXXXXX)" \
+    && asset="sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    && curl --fail --location --retry 5 --silent --show-error \
+        "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/$asset" \
+        -o "$work/$asset" \
+    && printf '%s  %s\n' "$SCCACHE_SHA256" "$work/$asset" | sha256sum -c - \
+    && tar -xzf "$work/$asset" -C "$work" \
+    && install -m 0755 \
+        "$work/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache" \
+        /usr/local/bin/sccache \
+    && rm -rf "$work" \
+    && test "$(sccache --version)" = "sccache ${SCCACHE_VERSION}"
+
 RUN curl --proto "=https" --tlsv1.2 --retry 5 --silent --show-error --fail \
         https://sh.rustup.rs \
         | sh -s -- -y --profile minimal --default-toolchain "${RUST_TOOLCHAIN}" --no-modify-path \
@@ -186,6 +201,8 @@ RUN test "$("$CC" -dumpfullversion -dumpversion | cut -d. -f1)" -ge 15 \
     && command -v "${PYTHON}" \
     && command -v rustc \
     && command -v cargo \
+    && command -v sccache \
+    && test "$(sccache --version)" = "sccache ${SCCACHE_VERSION}" \
     && cargo llvm-cov --version \
     && command -v flatc \
     && command -v cmake \

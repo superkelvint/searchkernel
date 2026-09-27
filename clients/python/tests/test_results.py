@@ -280,6 +280,38 @@ class SharedResultFixtureTest(unittest.TestCase):
         self.assertEqual(state_only.root.limits.from_, 1)
         self.assertEqual(state_only.root.metadata, {"state": "present"})
 
+    def test_shared_fixture_preserves_sparse_and_mixed_tensors(self):
+        result = self.load("sparse-mixed-tensors")
+        hit = result.hits[0]
+        self.assertEqual(
+            hit["sparse"],
+            {
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(label{})",
+                    "sparse": [
+                        {
+                            "address": [{"dimension": "label", "label": "a"}],
+                            "value": 0.5,
+                        }
+                    ],
+                }
+            },
+        )
+        self.assertEqual(
+            result.root.value,
+            {
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(label{},x[2])",
+                    "mixed": [
+                        {
+                            "address": [{"dimension": "label", "label": "b"}],
+                            "values": [0.25, 0.75],
+                        }
+                    ],
+                }
+            },
+        )
+
     def test_shared_facet_corpus_matches_strict_rust_shape(self):
         valid = self.load("facet-valid")
         valid._project_facet("brand", "brand")

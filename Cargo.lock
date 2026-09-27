@@ -574,6 +574,7 @@ dependencies = [
  "searchkernel-protocol",
  "searchkernel-rpc",
  "searchkernel-testkit",
+ "searchkernel-vespa-bindings",
  "serde",
  "serde_json",
  "tokio",
@@ -643,6 +644,7 @@ dependencies = [
  "flatbuffers",
  "searchkernel-ir",
  "searchkernel-protocol",
+ "serde",
  "serde_json",
 ]
 

@@ -25,6 +25,7 @@ class NativeVerifierRequiredTests(unittest.TestCase):
             "core/crates/searchkernel-ir-adapter/src/search.rs",
             "core/crates/searchkernel/src/index/native.rs",
             "core/crates/searchkernel/src/search.rs",
+            "core/crates/searchkernel/tests/native_e2e.rs",
             "core/crates/searchkernel-ir/src/snapshot.rs",
             "searchkerneld/src/main.rs",
             "api/searchkernel_response.fbs",

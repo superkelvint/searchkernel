@@ -160,3 +160,32 @@ fn repeated_failed_real_opens_do_not_mutate_or_destroy_a_valid_fixture() {
     index.close().unwrap();
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn unsupported_future_storage_generation_fails_with_structured_compatibility_error() {
+    let root = materialize_fixture(4);
+    let manifest_path = root.join("manifest/index.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["storage_compatibility_generation"] = json!(999);
+    fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+
+    let error = match Index::open(&root) {
+        Ok(index) => {
+            index.close().unwrap();
+            panic!("future storage generation unexpectedly opened");
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), ErrorCode::IncompatibleIndex);
+    assert_eq!(error.details()[0].code, "unsupported_storage_generation");
+    assert_eq!(
+        error.details()[0].path.as_deref(),
+        Some("storage_compatibility_generation")
+    );
+    fs::remove_dir_all(root).unwrap();
+}

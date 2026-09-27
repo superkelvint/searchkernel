@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { environmentForHost } from "../src/node/managed-local-host.js";
@@ -21,7 +22,9 @@ afterEach(() => {
   if (localHost === undefined) delete process.env.SEARCHKERNEL_LOCAL_HOST;
   else process.env.SEARCHKERNEL_LOCAL_HOST = localHost;
   vi.resetModules();
+  vi.useRealTimers();
   vi.unmock("node:fs");
+  vi.unmock("node:net");
   vi.unmock("node:child_process");
 });
 
@@ -57,6 +60,67 @@ describe("managed-local native runtime contract", () => {
 });
 
 describe("managed-local host binary resolution", () => {
+  it("includes captured daemon output in startup errors", async () => {
+    const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");
+    const Host = ManagedLocalHost as unknown as new (
+      indexPath: string,
+      temporaryDirectory: string,
+      definitionPath: string | null,
+    ) => {
+      captureHostOutput(stream: "stdout" | "stderr", chunk: string): void;
+      startupError(message: string): Error;
+    };
+    const host = new Host("index", "/tmp/searchkernel-test", null);
+    host.captureHostOutput("stderr", "native index open failed");
+
+    expect(host.startupError("managed local host exited during startup").message).toContain(
+      "native index open failed",
+    );
+  });
+
+  it("continues waiting when native index startup takes longer than 15 seconds", async () => {
+    vi.useFakeTimers();
+    let connectionAttempts = 0;
+    vi.doMock("node:net", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:net")>();
+      return {
+        ...actual,
+        createConnection: () => {
+          const attempt = ++connectionAttempts;
+          const socket = new EventEmitter() as unknown as import("node:net").Socket;
+          socket.setTimeout = vi.fn(() => socket);
+          socket.destroy = vi.fn(() => socket);
+          queueMicrotask(() => {
+            socket.emit(attempt > 300 ? "connect" : "error");
+          });
+          return socket;
+        },
+      };
+    });
+
+    const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");
+    const Host = ManagedLocalHost as unknown as new (
+      indexPath: string,
+      temporaryDirectory: string,
+      definitionPath: string | null,
+    ) => {
+      child: { exitCode: number | null; signalCode: NodeJS.Signals | null } | null;
+      socketPath: string;
+      waitUntilReady(): Promise<void>;
+    };
+    const host = new Host("index", "/tmp/searchkernel-test", null);
+    host.child = { exitCode: null, signalCode: null };
+    host.socketPath = "/tmp/searchkernel-test/searchkerneld.sock";
+
+    const readiness = host.waitUntilReady().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(16_000);
+
+    await expect(readiness).resolves.toBeUndefined();
+  });
+
   it("fails closed outside a Search Kernel source checkout when no host is configured or bundled", async () => {
     vi.doMock("node:fs", async (importOriginal) => {
       const actual = await importOriginal<typeof import("node:fs")>();
