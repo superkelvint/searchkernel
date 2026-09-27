@@ -3,3 +3,6 @@ target-dir = "target/host"
 
 [env]
 SEARCHKERNEL_BUILD_ENV = { value = "host", force = false }
+
+[alias]
+fmt = "!echo ALIAS_EXECUTED"
