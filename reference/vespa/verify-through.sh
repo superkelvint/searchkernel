@@ -21,6 +21,7 @@ Semantic verifier targets:
   vespa.ranking
   vespa.ranking.feature-values
   vespa.search-reply
+  vespa.phase9
   vespa.hardening
   vespa.hardening.core
   vespa.hardening.stress
@@ -62,12 +63,17 @@ target="${1:-}"
 case "$target" in
     --list|list)
         ;;
-    vespa.native-sdk|vespa.rust-ownership|vespa.document-mutation|vespa.linguistics|vespa.text-indexing|vespa.persistence.reopen|vespa.schema-config|vespa.query-compilation|vespa.results|vespa.grouping|vespa.grouping.recursive|vespa.grouping.yql|vespa.ranking|vespa.ranking.feature-values|vespa.search-reply|vespa.hardening|vespa.hardening.core|vespa.hardening.stress|vespa.hardening.sanitizers|vespa.nearest-neighbor.query|vespa.tensor.document-crud|vespa.nearest-neighbor.hnsw|vespa.recovery|product.rust-real-engine|product.integration|milestone.m0|milestone.m1|milestone.m2|milestone.m3|milestone.m4|milestone.m5|milestone.m6|milestone.m7|milestone.m8|milestone.m9|milestone.m10|milestone.m11|milestone.m12|milestone.m13|milestone.m14|m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|m14|searchreply|phase10|integration|i)
+    vespa.native-sdk|vespa.rust-ownership|vespa.document-mutation|vespa.linguistics|vespa.text-indexing|vespa.persistence.reopen|vespa.schema-config|vespa.query-compilation|vespa.results|vespa.grouping|vespa.grouping.recursive|vespa.grouping.yql|vespa.ranking|vespa.ranking.feature-values|vespa.search-reply|vespa.phase9|vespa.hardening|vespa.hardening.core|vespa.hardening.stress|vespa.hardening.sanitizers|vespa.nearest-neighbor.query|vespa.tensor.document-crud|vespa.nearest-neighbor.hnsw|vespa.recovery|product.rust-real-engine|product.integration|milestone.m0|milestone.m1|milestone.m2|milestone.m3|milestone.m4|milestone.m5|milestone.m6|milestone.m7|milestone.m8|milestone.m9|milestone.m10|milestone.m11|milestone.m12|milestone.m13|milestone.m14|m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|m14|searchreply|phase10|integration|i)
         # Preparing the verifier-owned adapter is an explicit top-level action.
         # Nested verifiers inherit SEARCHKERNEL_VERIFIER_SDK_PREPARED and reuse
         # the exact same SDK instead of rebuilding it while sourcing helpers.
         source "$ROOT/common/verify-common.sh"
         prepare_verifier_sdk
+        REPO_ROOT="$(cd "$ROOT/../.." && pwd)"
+        SEARCHKERNEL_RUNTIME_LIB_DIRS=$(bash "$REPO_ROOT/tools/resolve-native-runtime-libs.sh")
+        export SEARCHKERNEL_RUNTIME_LIB_DIRS
+        export LD_LIBRARY_PATH="$SEARCHKERNEL_RUNTIME_LIB_DIRS"
+        unset LD_PRELOAD || true
         ;;
     *)
         ;;
@@ -121,6 +127,9 @@ case "${1:-}" in
         ;;
     vespa.search-reply)
         "$ROOT/verifiers/search-reply/verify.sh" "${@:2}"
+        ;;
+    vespa.phase9)
+        "$ROOT/phase9/verify-phase9.sh" "${@:2}"
         ;;
     vespa.hardening)
         "$ROOT/verifiers/hardening/full/verify.sh" "${@:2}"

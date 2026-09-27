@@ -19,9 +19,9 @@ python3 "$SCRIPT_DIR/validate.py"
 # baseline remains green. M13 is the current baseline; it transitively
 # preserves M0-M12 before the public Phase 10 product-path check runs.
 if [[ "$BASELINE_ALREADY_PROVED" != 1 ]]; then
-  "$ROOT/reference/vespa/verify-through.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"
+  "$ROOT/tools/run-verifier.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"
 fi
-"$ROOT/reference/vespa/verify-through.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"
+"$ROOT/tools/run-verifier.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"
 
 if rg -n 'searchkernel-(ir-adapter|vespa-engine|vespa-bindings)|searchkernel_ir|searchkernel_vespa|RecordingBackend|ScriptedBackend' \
     "$SCRIPT_DIR/rust-driver/Cargo.toml" "$SCRIPT_DIR/rust-driver/src"; then

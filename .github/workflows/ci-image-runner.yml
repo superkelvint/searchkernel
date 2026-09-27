@@ -623,7 +623,7 @@ jobs:
               run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved
               run_phase native-full-grouping-yql ./dev verify vespa.grouping.yql
               run_phase native-full-recovery ./dev verify vespa.recovery
-              run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved
+              run_phase native-full-phase9 ./dev verify vespa.phase9 --baseline-already-proved
               run_phase native-full-python-e2e tools/run-python-native-e2e.sh --prevalidated-native-sdk
               run_phase native-full-persistence ./dev verify persistence
               run_phase native-full-consumer-package bash tools/test-native-consumer-package.sh

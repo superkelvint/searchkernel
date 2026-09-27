@@ -54,7 +54,7 @@ VESPA_DEPS_LIB="${VESPA_DEPS_LIB_DIR:-${VESPA_DEPS:+$VESPA_DEPS/lib64}}"
 export LD_LIBRARY_PATH="$SDK/lib${VESPA_DEPS_LIB:+:$VESPA_DEPS_LIB}${VESPA_LIBS:+:$VESPA_LIBS}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 if [[ "$BASELINE_ALREADY_PROVED" != 1 ]]; then
-  "$ROOT/reference/vespa/verify-through.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"
+  "$ROOT/tools/run-verifier.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"
 fi
 "$ROOT/reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh"
 "$PHASE9/check-structure.sh"

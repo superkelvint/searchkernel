@@ -569,7 +569,7 @@ verify_target() {
 
     case "${1:-}" in
         integration|i|product.integration)
-            "$ROOT/reference/vespa/verify-through.sh" "$@"
+            "$ROOT/tools/run-verifier.sh" "$@"
             ;;
         api-conformance)
             "$ROOT/reference/api-conformance/verify.sh"
@@ -611,7 +611,7 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
             ;;
         m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|m14|milestone.*|vespa.*|product.rust-real-engine|phase10|searchreply|--list|list)
-            "$ROOT/reference/vespa/verify-through.sh" "$@"
+            "$ROOT/tools/run-verifier.sh" "$@"
             ;;
         *)
             echo "usage: ./dev verify <semantic-target>|milestone.mN|mN|integration|api-conformance|contracts|abi|persistence|issue-queue" >&2

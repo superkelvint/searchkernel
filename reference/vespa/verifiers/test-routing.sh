@@ -102,8 +102,12 @@ grep -F 'SEARCHKERNEL_RUNTIME_LIB_DIRS' "$VERIFY" >/dev/null || {
     echo "verify-through does not establish the canonical native runtime closure" >&2
     exit 1
 }
-grep -F '"$ROOT/tools/run-runtime.sh" native "$CONFIG_BIN"' "$SEARCHREPLY" >/dev/null || {
+grep -F 'run_native_executable "$CONFIG_BIN"' "$SEARCHREPLY" >/dev/null || {
     echo "SearchReply executes its Cargo-built config binary outside the canonical native launcher" >&2
+    exit 1
+}
+grep -F '"$REPO_ROOT/tools/run-runtime.sh" native "$@"' "$COMMON" >/dev/null || {
+    echo "verify-common native helper does not delegate to the canonical runtime launcher" >&2
     exit 1
 }
 grep -F '"${@:2}"' "$VERIFY" >/dev/null || {
@@ -139,12 +143,12 @@ for script in "$INTEGRATION" "$PHASE9"; do
         echo "cumulative verifier does not guard its M13 baseline: $script" >&2
         exit 1
     }
-    grep -F '"$ROOT/reference/vespa/verify-through.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"' "$script" >/dev/null || {
+    grep -F '"$ROOT/tools/run-verifier.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"' "$script" >/dev/null || {
         echo "cumulative verifier no longer proves M13 by default: $script" >&2
         exit 1
     }
 done
-grep -F '"$ROOT/reference/vespa/verify-through.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"' "$INTEGRATION" >/dev/null || {
+grep -F '"$ROOT/tools/run-verifier.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"' "$INTEGRATION" >/dev/null || {
     echo "integration no longer forwards verifier args to Phase 10" >&2
     exit 1
 }
@@ -169,6 +173,11 @@ grep -F 'run_phase native-full-phase9 ./dev verify vespa.phase9 --baseline-alrea
 hnsw_line="$(grep -nF 'run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
 integration_line="$(grep -nF 'run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
 phase9_line="$(grep -nF 'run_phase native-full-phase9 ./dev verify vespa.phase9 --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
+if grep -nE 'run_phase .*reference/vespa/.*verify.*\.sh' "$CI_IMAGE_RUNNER" >/dev/null; then
+    echo "CI image runner bypasses ./dev verify for a Vespa verifier" >&2
+    exit 1
+fi
+
 [[ -n "$hnsw_line" && -n "$integration_line" && -n "$phase9_line" ]] &&
     (( hnsw_line < integration_line && hnsw_line < phase9_line )) || {
         echo "native-full skips the cumulative baseline before HNSW/M14 has proved it" >&2

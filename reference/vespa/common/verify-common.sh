@@ -127,6 +127,10 @@ fail_verification() {
   exit 1
 }
 
+run_native_executable() {
+  "$REPO_ROOT/tools/run-runtime.sh" native "$@"
+}
+
 parse_verifier_args() {
   SKIP_WORKSPACE_QUALITY=0
   while (($#)); do
