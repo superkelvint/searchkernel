@@ -266,10 +266,13 @@ def main() -> None:
             for package_root in package_roots:
                 created.extend(copy_runtime_into(package_root, stage))
             run(
-                "python3",
+                sys.executable,
                 "-m",
-                "build",
-                "--outdir",
+                "pip",
+                "wheel",
+                "--no-deps",
+                "--no-build-isolation",
+                "--wheel-dir",
                 str(out),
                 str(ROOT / "clients/python"),
             )
