@@ -216,7 +216,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         for needle in (
             "build_native_searchkerneld()",
             "--message-format=json-render-diagnostics",
-            ".github/ci/resolve-native-adapter-lib.py",
+            "tools/resolve-cargo-native-adapter-lib.py",
             "NATIVE_ADAPTER_LIB=",
             "build_native_searchkerneld closure-422-build",
             'SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"',
