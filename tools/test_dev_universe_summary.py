@@ -63,8 +63,8 @@ failed=(
   "Rust tests (all targets/features, including ignored) (exit 101)"
 )
 repro=(
-  "./dev verify vespa.ranking --skip-workspace-quality"
-  "$(./tools/resolve-rust.sh cargo) test --workspace --all-targets --all-features -- --include-ignored"
+  './dev verify vespa.ranking --skip-workspace-quality'
+  '$(./tools/resolve-rust.sh cargo) test --workspace --all-targets --all-features -- --include-ignored'
 )
 universe_print_summary 44 failed repro
 """
