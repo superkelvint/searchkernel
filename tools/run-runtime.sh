@@ -58,6 +58,19 @@ case "$runtime" in
         export SEARCHKERNEL_RUNTIME_LIB_DIRS="$runtime_libs"
         export LD_LIBRARY_PATH="$runtime_libs"
         unset LD_PRELOAD || true
+
+        if command -v readelf >/dev/null 2>&1 &&
+           command -v ldd >/dev/null 2>&1 &&
+           readelf -h "$executable" >/dev/null 2>&1; then
+            missing=$(ldd "$executable" 2>&1 | sed -n '/=> not found/p')
+            if [[ -n "$missing" ]]; then
+                echo "native runtime dependency closure is incomplete for $executable:" >&2
+                printf '%s\n' "$missing" >&2
+                echo "resolved runtime library directories: $runtime_libs" >&2
+                exit 127
+            fi
+        fi
+
         exec "$executable" "$@"
         ;;
     *)
