@@ -27,8 +27,10 @@ if rg -n --glob '*.rs' \
 fi
 
 # The driver must derive expectations from native behavior, not a JSON oracle.
-# The production engine may decode JSON field values before passing them to Vespa.
-if rg -n --glob '*.rs' --glob '*.toml' 'serde_json' "$M11/rust-driver"; then
+# Raw bindings must remain free of a second data path. The engine may decode
+# JSON field values before passing them to Vespa.
+if rg -n --glob '*.rs' --glob '*.toml' 'serde_json' \
+    "$M11/rust-driver" "$ROOT/core/crates/searchkernel-vespa-bindings/src"; then
   fail "test driver or production wrapper has an alternate runtime/oracle path"
 fi
 
