@@ -21,7 +21,7 @@ jobs:
   format_untrusted:
     name: Produce rustfmt patch
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
     env:
       CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
@@ -92,7 +92,7 @@ jobs:
     name: Validate and push rustfmt patch
     needs: format_untrusted
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
