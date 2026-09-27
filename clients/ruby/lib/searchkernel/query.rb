@@ -272,7 +272,7 @@ module SearchKernel
       raise ArgumentError, "#{kind} requires at least one weighted item" unless items.is_a?(Hash) && !items.empty?
       weighted = items.map do |key, weight|
         raise ArgumentError, "weighted query weights must be integers" unless weight.is_a?(Integer)
-        { "key" => Value.encode(key), "weight" => weight }
+        { "key" => Value.encode(key), "weight" => weight.to_s }
       end
       weighted.sort_by! { |entry| JSON.generate(entry.fetch("key")) }
       typed("expr_type" => kind, "expr" => { "field" => { "path" => field }, "items" => weighted })

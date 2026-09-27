@@ -217,6 +217,9 @@ same(
     .dig("source", "query", "expr_type"),
   "WAND query helper"
 )
+wand_items = SearchKernel::Query.wand("title", "running" => 10, "shoes" => 5)
+  .dig("source", "query", "expr", "items")
+assert(wand_items.all? { |item| item.fetch("weight").is_a?(String) }, "WAND weights use FlatBuffers int64 JSON strings")
 
 group = SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count.as("products"))
 grouping_request = group.to_request
