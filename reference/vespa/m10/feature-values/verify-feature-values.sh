@@ -14,7 +14,6 @@ if live_oracle_enabled; then
 else
   announce_frozen_oracle_replay
 fi
-export LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 SCENARIO="$SCRIPT_DIR/scenario.json"
 EXPECTED="$SCRIPT_DIR/expected.json"
 [[ -f "$EXPECTED" ]] || fail_verification "feature-value golden is missing: $EXPECTED"
@@ -45,15 +44,16 @@ fi
 CFG="$TMP/config"
 DATA="$TMP/data"
 mkdir -p "$DATA"
-cargo run --quiet --manifest-path "$M10/rust-driver/Cargo.toml" \
-  --bin searchkernel-m10-driver -- "$SCENARIO" "$CFG" "$DATA" |
+DRIVER="$CARGO_TARGET_DIR/debug/searchkernel-m10-driver"
+require_native_driver "$DRIVER"
+run_native_executable "$DRIVER" "$SCENARIO" "$CFG" "$DATA" |
   "$M10/canonicalize.py" > "$TMP/rust.json"
 "$M10/compare.py" "$EXPECTED" "$TMP/rust.json"
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
   "$M10/compare.py" "$TMP/oracle.json" "$TMP/rust.json"
 fi
 
-"$TARGET/probe" "$DATA" "$CFG" |
+run_native_executable "$TARGET/probe" "$DATA" "$CFG" |
   "$M10/canonicalize.py" > "$TMP/native.json"
 "$M10/compare.py" "$EXPECTED" "$TMP/native.json"
 
