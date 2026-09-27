@@ -44,12 +44,23 @@ jobs:
 
           docker pull "$CI_IMAGE"
           docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            -e HOME=/tmp \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
             -v "$GITHUB_WORKSPACE:/work" \
             -w /work \
-            "$CI_IMAGE" \
-            cargo fmt --all
+            "$CI_IMAGE" /bin/bash -lc '
+              set -euo pipefail
+              chmod o+x /root
+              exec setpriv \
+                --reuid="$HOST_UID" \
+                --regid="$HOST_GID" \
+                --clear-groups \
+                env \
+                  HOME=/tmp \
+                  RUSTUP_HOME=/root/.rustup \
+                  CARGO_HOME=/root/.cargo \
+                  /root/.cargo/bin/cargo fmt --all
+            '
 
       - name: Commit formatting changes
         shell: bash
@@ -80,7 +91,7 @@ jobs:
 
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
+            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual"
             exit 1
           fi
 
