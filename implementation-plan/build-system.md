@@ -2551,7 +2551,7 @@ The convergence project is complete when:
 14. Universe invokes canonical commands only.
 15. Every Universe failure prints the exact command that reproduces it.
 16. Oracle compilation/golden generation is an explicit maintainer operation rather than an ordinary build/test dependency.
-17. A supported external Rust consumer builds and runs with `LD_LIBRARY_PATH` unset.
+17. A supported external Rust consumer installed through the normal Cargo package path builds and runs with `LD_LIBRARY_PATH` unset.
 18. Consumer execution does not require repository-local Cargo configuration or `./dev`.
 19. Runtime identity cannot silently cross worktrees or incompatible build generations.
 20. The native payload is relocatable according to its supported distribution contract.
@@ -2576,15 +2576,15 @@ The convergence project is complete when:
 39. Normal verification and Universe never automatically enter live-oracle mode; live oracle execution/golden generation require explicit maintainer opt-in.
 40. `docs/release-support.json` is the machine-readable authority for supported downstream surfaces.
 41. `./dev release-check` builds the actual release artifact set and provides artifact-level executable evidence for every supported release row.
-42. Rust embedded release qualification builds and executes a clean external consumer from the actual distributable Rust artifact, not merely from a repository path.
+42. Rust embedded release qualification builds and executes a clean external consumer from the actual publishable/distributable Cargo package, not merely from a repository path or manually downloaded source bundle.
 43. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
 44. The intended release architecture treats Python, TypeScript/Node, and Ruby as managed-local first-party clients; `docs/release-support.json` is reconciled accordingly before release qualification becomes authoritative.
 45. On qualified platforms, `pip install searchkernel`, `npm install @searchkernel/client`, `gem install searchkernel`, and `cargo add searchkernel` are sufficient installation paths without a separate Vespa or `searchkerneld` install.
 46. Python, TypeScript/Node, and Ruby release artifacts each carry/launch the qualified local Search Kernel runtime and pass clean external-install managed-local E2E tests using normal package-manager installation.
-49. Rust release qualification uses a clean external Cargo consumer against the actual publishable/distributable Search Kernel package and proves build + native execution without repository-specific setup.
-50. The managed-local Python, TypeScript/Node, and Ruby packages are assembled from one qualified platform daemon/native runtime payload rather than independently assembled native closures.
-47. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
-48. Ordinary Search Kernel source/image publication does not copy or republish the large Vespa/native payload.
+47. Rust release qualification uses a clean external Cargo consumer against the actual publishable/distributable Search Kernel package and proves build + native execution without repository-specific setup.
+48. The managed-local Python, TypeScript/Node, and Ruby packages are assembled from one qualified platform daemon/native runtime payload rather than independently assembled native closures.
+49. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
+50. Ordinary Search Kernel source/image publication does not copy or republish the large Vespa/native payload.
 51. The thin Search Kernel leaf records exact immutable toolchain and Vespa/native provenance.
 52. Canonical local and remote verification resolve the Vespa/native payload by immutable identity and mount/materialize it read-only.
 53. Release artifacts record Search Kernel revision, platform/native target, pinned Vespa/native identity, and artifact checksums/provenance sufficient to relate shipped output to qualified inputs.
