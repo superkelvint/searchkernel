@@ -5,7 +5,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 should_use_ci_image() {
     case "${1:-}" in
-        check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify)
+        check|universe|check-fast|check-protocol|coverage|lint|test|verify)
             return 0
             ;;
         native-sdk)
@@ -28,9 +28,6 @@ if [[ "${SEARCHKERNEL_DEV_USE_CI_IMAGE:-1}" != "0" &&
       "${SEARCHKERNEL_IN_CI_IMAGE:-0}" != "1" &&
       ! -f /opt/searchkernel/native-validation-pass ]] &&
    should_use_ci_image "$@"; then
-    if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        git -C "$ROOT" config --local core.hooksPath .githooks
-    fi
     if [[ "${1:-}" == "universe" ]]; then
         UNIVERSE_LOG=${SEARCHKERNEL_UNIVERSE_LOG:-/tmp/searchkernel-universe-$(date +%Y%m%d-%H%M%S).log}
         echo "Search Kernel universe log: $UNIVERSE_LOG"
@@ -127,18 +124,6 @@ configure_ca_bundle() {
 # uses the trust store that actually exists in this environment.
 configure_ca_bundle
 
-ensure_hooks() {
-    local configured
-    configured=$(git config --local --get core.hooksPath 2>/dev/null || true)
-    if [[ "$configured" != ".githooks" ]]; then
-        git config --local core.hooksPath .githooks
-        echo 'Configured repository-managed Git hooks at .githooks' >&2
-    fi
-}
-
-# Any normal use of ./dev should leave the clone correctly configured.
-ensure_hooks
-
 usage() {
     cat <<'EOF'
 Search Kernel development commands
@@ -171,7 +156,6 @@ Search Kernel development commands
   ./dev image publish         Build/push the thin CI image and update :latest
   ./dev image toolchain publish  Publish reusable language/compiler tooling
   ./dev image vespa publish      Publish reusable pinned Vespa/native bundle
-  ./dev hooks install        Install the repository-managed Git hooks
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Repair and verify local build/verification prerequisites
 
@@ -1124,11 +1108,6 @@ doctor_searchkerneld() {
     [[ -x "$binary" ]]
 }
 
-doctor_hooks() {
-    ensure_hooks
-    [[ "$(git config --local --get core.hooksPath 2>/dev/null || true)" == ".githooks" ]]
-}
-
 doctor_toolchain_authorities() {
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
 }
@@ -1161,8 +1140,6 @@ doctor() {
 
     echo "Search Kernel doctor"
 
-    doctor_hooks >/dev/null 2>&1 || status=1
-
     repair 'Rust toolchain' doctor_repair_rust
     if doctor_rust >/dev/null 2>&1; then
         repair 'Node.js toolchain' doctor_repair_node
@@ -1177,7 +1154,6 @@ doctor() {
 
     echo
     echo 'Verification'
-    doctor_check 'repository Git hooks configured' doctor_hooks
     doctor_check 'toolchain authority contract' doctor_toolchain_authorities
     doctor_check 'Rust toolchain present' doctor_rust
     doctor_check 'Node.js toolchain present' doctor_node
@@ -1205,20 +1181,6 @@ doctor() {
     fi
     rm -f "$diagnostics"
     return "$status"
-}
-
-hooks_install() {
-    ensure_hooks
-    echo 'Repository-managed Git hooks are configured at .githooks'
-}
-
-precommit_verify() {
-    if [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" != "1" &&
-          ! -f /opt/searchkernel/native-validation-pass ]]; then
-        echo 'error: precommit-verify must execute inside searchkernel-ci' >&2
-        return 1
-    fi
-    SEARCHKERNEL_PRECOMMIT_IN_CONTAINER=1         bash "$ROOT/.githooks/pre-commit"
 }
 
 case "${1:-help}" in
@@ -1270,9 +1232,6 @@ case "${1:-help}" in
         shift
         verify_target "$@"
         ;;
-    precommit-verify)
-        precommit_verify
-        ;;
     install)
         shift
         install_target "$@"
@@ -1295,13 +1254,6 @@ case "${1:-help}" in
         ;;
     doctor)
         doctor
-        ;;
-    hooks)
-        [[ "${2:-}" == install ]] || {
-            echo 'usage: ./dev hooks install' >&2
-            exit 2
-        }
-        hooks_install
         ;;
     *)
         echo "unknown command: $1" >&2

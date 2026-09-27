@@ -249,9 +249,9 @@ selected Node.js installation, and Cargo/Rustc/Rustfmt are exported as one Rust
 toolchain view.
 
 `tools/test_toolchain_authorities.py` is the fail-closed architectural guard.
-It runs in pre-commit, `./dev check-fast`, `./dev doctor`, and the always-on
-CI tooling lane. Reintroducing a direct tool invocation in a protected path is a
-test failure, not a convention violation.
+It runs in `./dev check-fast`, `./dev doctor`, and the always-on CI tooling
+lane. Reintroducing a direct tool invocation in a protected path is a test
+failure, not a convention violation.
 
 Doctor must verify the same downstream paths used by normal checks. It therefore
 runs protocol-generation reproducibility, TypeScript generation, FlatBuffers C++
@@ -261,7 +261,12 @@ similarly named binaries exist somewhere on PATH.
 
 ## Shell script syntax
 
-All tracked files with a Bash or POSIX-sh shebang are parsed by `tools/check-shell-syntax.sh`. The check includes extensionless entrypoints such as `dev` and repository hooks, runs in `./dev check-fast`, and is enforced by pre-commit. It uses `bash -n` or `sh -n` according to the script shebang, so malformed conditionals, unbalanced control structures, and similar parser errors fail before expensive native verification begins.
+All tracked files with a Bash or POSIX-sh shebang are parsed by
+`tools/check-shell-syntax.sh`. The check includes extensionless entrypoints
+such as `dev`, and runs in `./dev check-fast`. It uses `bash -n` or `sh -n`
+according to the script shebang, so malformed conditionals, unbalanced control
+structures, and similar parser errors fail before expensive native verification
+begins.
 
 When changing shell tooling, run:
 
@@ -407,10 +412,8 @@ overlays exactly the non-ignored tracked/untracked working-tree changes. This
 works from ordinary clones, linked Git worktrees, and Docker-outside-of-Docker
 developer shells. Ignored state such as `target/`, `node_modules/`, venvs,
 local SDKs, and existing build outputs never enters the verification container.
-For pre-commit specifically, relevant untracked files are rejected on the host,
-only the staged/tracked snapshot is copied, and the private clone stages that
-overlay so verifier scripts observe the same index/working-tree semantics as
-the commit being created.
+The runner overlays non-ignored tracked and untracked working-tree files so
+local verification exercises the source currently being edited.
 
 Each invocation receives a private source volume and a private
 `/cargo-target` volume. Those volumes are removed after the command. No
@@ -435,17 +438,10 @@ is non-authoritative and content-addressed; compiler/cache misses simply compile
 normally. CI prints sccache statistics at lane exit. Do not replace this with a
 shared Cargo target directory.
 
-The pre-commit hook keeps Git-index responsibilities on the host: lane
-selection, staged-vs-unstaged validation, generated capability staging, and
-the staged ABI-authority check. It then executes the complete formatting,
-Clippy, workspace-test, selected client, and selected native verifier body in
-**one** disposable `searchkernel-ci` container. Nested `./dev` calls detect
-that they are already inside the image and do not launch additional containers.
-
 Commands that intentionally modify the developer environment or checked-out
 source remain host-side: `./dev doctor`, `./dev regen ...`,
 `./dev install flatbuffers`, `./dev native-sdk ...`,
-`./dev hooks install`, and `./dev worktree create ...`.
+and `./dev worktree create ...`.
 
 The image is pulled before local verification by default. Useful overrides are:
 

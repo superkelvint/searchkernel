@@ -5,9 +5,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 IMAGE=${SEARCHKERNEL_CI_IMAGE:-docker.io/superkelvint/searchkernel-ci:latest}
 PULL_MODE=${SEARCHKERNEL_CI_PULL:-always}
 KEEP_STATE=${SEARCHKERNEL_CI_KEEP_STATE:-0}
-PRECOMMIT_SNAPSHOT=0
 COVERAGE_SNAPSHOT=0
-[[ "${1:-}" == "precommit-verify" ]] && PRECOMMIT_SNAPSHOT=1
 [[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1
 
 die() {
@@ -141,7 +139,6 @@ cat "$bundle" |
             cat > "$bundle"
             git clone --quiet "$bundle" /workspace
             git -C /workspace checkout --quiet --detach "$SOURCE_HEAD"
-            git -C /workspace config core.hooksPath .githooks
             rm -f "$bundle"
         '
 
@@ -149,13 +146,7 @@ cat "$bundle" |
 # This preserves local edits/new source files while deliberately excluding
 # target/, node_modules/, venvs, local SDKs, and all other ignored build state.
 git -C "$ROOT" diff --no-renames --name-only -z HEAD --diff-filter=ACMRTUXB > "$overlay"
-if [[ "$PRECOMMIT_SNAPSHOT" != "1" ]]; then
-    # Interactive/local dev commands include non-ignored untracked source so a
-    # developer can test a new file before committing it. Pre-commit instead
-    # verifies exactly the staged snapshot; relevant untracked files were
-    # already rejected by the host phase.
-    git -C "$ROOT" ls-files --others --exclude-standard -z >> "$overlay"
-fi
+git -C "$ROOT" ls-files --others --exclude-standard -z >> "$overlay"
 
 if [[ -s "$overlay" ]]; then
     tar -C "$ROOT" --null --files-from="$overlay" -cf - |
@@ -188,17 +179,6 @@ for raw in sys.stdin.buffer.read().split(b"\0"):
 '
 fi
 
-if [[ "$PRECOMMIT_SNAPSHOT" == "1" ]]; then
-    # The host hook rejects tracked unstaged changes before dispatch. Staging
-    # the private overlay therefore recreates the exact commit snapshot and
-    # preserves git-diff/index semantics for verifier scripts.
-    docker run --rm \
-        -v "$source_volume:/work" \
-        -w /work \
-        "$IMAGE_ID" \
-        /bin/bash -lc 'git config --global --add safe.directory /work && git add -A && git diff --quiet'
-fi
-
 # Verify that the private Git repository still names the exact host HEAD before
 # executing any build/test command.
 actual=$(docker run --rm     -v "$source_volume:/work"     -w /work     "$IMAGE_ID"     /bin/bash -lc 'git config --global --add safe.directory /work && git rev-parse HEAD')
@@ -228,7 +208,7 @@ docker_env=(
 # CARGO_TARGET_DIR into the canonical image.
 while IFS= read -r name; do
     case "$name" in
-        SEARCHKERNEL_PRECOMMIT_*|SEARCHKERNEL_MODEL_*|SEARCHKERNEL_VERIFY_*|RUST_BACKTRACE|RUST_LOG|CARGO_TERM_COLOR|CARGO_NET_OFFLINE)
+        SEARCHKERNEL_MODEL_*|SEARCHKERNEL_VERIFY_*|RUST_BACKTRACE|RUST_LOG|CARGO_TERM_COLOR|CARGO_NET_OFFLINE)
             docker_env+=(--env "$name")
             ;;
     esac

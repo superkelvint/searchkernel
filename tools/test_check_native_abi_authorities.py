@@ -305,7 +305,7 @@ class NativeAbiAuthorityTests(unittest.TestCase):
                 check=True,
             )
             # Make the working tree look healthy again. The staged commit is
-            # still wrong and must remain the authority for pre-commit.
+            # still wrong and must remain the repository ABI authority.
             source.write_text(
                 "#define SK_NATIVE_ABI_VERSION 13U\n", encoding="utf-8"
             )

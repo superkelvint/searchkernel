@@ -60,9 +60,8 @@ def assert_exact_head(expected: str, repo: Path) -> int:
 
 def _load_dag_module():
     # Loading verification policy must not mutate the checkout. In particular,
-    # pre-commit immediately scans for untracked behavioral files, so emitting a
-    # verification/__pycache__ directory here would make the selector reject its
-    # own side effect.
+    # emitting a verification/__pycache__ directory here would make the
+    # selector reject its own side effect.
     sys.dont_write_bytecode = True
     module_path = Path(
         os.environ.get(
