@@ -64,3 +64,32 @@ jobs:
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
             '
+
+
+  verify_796_fixed:
+    name: issue 796 exact-head M11 structure
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Run exact-head M11 structure verification
+        shell: bash
+        env:
+          CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
+          docker pull "$CI_IMAGE"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work:ro" \
+            -w /work \
+            "$CI_IMAGE" /bin/bash -lc '
+              set -euo pipefail
+              bash -n reference/vespa/m11/check-structure.sh
+              PYTHON=$(bash tools/resolve-python.sh)
+              "$PYTHON" reference/vespa/m11/test_structure.py
+              reference/vespa/m11/check-structure.sh
+            '
