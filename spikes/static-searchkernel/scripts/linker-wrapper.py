@@ -25,6 +25,11 @@ def is_searchkernel_final_link(args: list[str]) -> bool:
     out = output_path(args)
     if out is None or out.suffix in {".so", ".dylib"}:
         return False
+    name = out.name
+    if name.startswith("static-searchkernel-smoke") or name.startswith(
+        "static_searchkernel_smoke"
+    ):
+        return True
     return any("searchkernel_vespa_bindings" in arg for arg in args)
 
 
