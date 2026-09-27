@@ -130,6 +130,26 @@ For Bash scripts:
 Do not hide failures with broad `|| true`. Limit tolerated failures to the exact command
 whose failure is intentionally non-fatal.
 
+### Prefer portable baseline tools in critical scripts
+
+Critical bootstrap, doctor, verification, and recovery scripts must not casually depend on
+convenience binaries that may be absent on a fresh machine or reduced CI environment.
+
+- For simple recursive/text searches, prefer `grep` over `rg`.
+- Do not add a hard dependency on `rg`, `jq`, or another convenience CLI merely to save a
+  few lines of code unless that dependency is explicitly part of the documented bootstrap
+  and is verified before the script reaches it.
+- If structured processing genuinely needs Python, use a tracked Python helper invoked via
+  the canonical Python authority; do not replace the missing CLI with a Python heredoc.
+- A verifier whose first failure is `command not found` for an undeclared convenience tool
+  is a tooling bug.
+
+GitHub CLI usage must likewise respect the supported developer baseline. Do not assume the
+latest `gh` release or use newer flags without either a documented minimum-version contract
+and doctor check or a compatibility path. In particular, avoid designing bootstrap/recovery
+logic around optional convenience flags when the same operation can be implemented with
+older stable `gh api` primitives or a tracked helper.
+
 ### Do not mutate shared or immutable build state as a repair tactic
 
 Follow `BUILDING.md`. In particular, do not use `cargo clean`, delete `target/`, mutate
