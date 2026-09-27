@@ -17,15 +17,82 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-
 jobs:
   rustfmt:
     name: Apply cargo fmt
     if: github.event.pull_request.head.repo.full_name == github.repository
-    uses: ./.github/workflows/ci-image-runner.yml
-    with:
-      revision: ${{ github.event.pull_request.head.sha }}
-      target: rustfmt-autofix
-      head_ref: ${{ github.event.pull_request.head.ref }}
-    secrets:
-      autofix_token: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 15
+    env:
+      CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
+
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Apply rustfmt in pinned toolchain image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker pull "$CI_IMAGE"
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            "$CI_IMAGE" \
+            cargo fmt --all
+
+      - name: Commit formatting changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet; then
+            echo "cargo fmt produced no changes"
+            exit 0
+          fi
+
+          unexpected=$(
+            git diff --name-only |
+              grep -Ev '\.rs$' || true
+          )
+          if [[ -n "$unexpected" ]]; then
+            echo "::error::cargo fmt unexpectedly changed non-Rust files:" >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
+          git diff --check
+
+          [[ -n "${AUTOFIX_TOKEN:-}" ]] || {
+            echo "::error::RUSTFMT_AUTOFIX_TOKEN is not configured." >&2
+            exit 1
+          }
+
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git diff --cached --check
+          git -c core.hooksPath=/dev/null -c commit.gpgsign=false \
+            commit -m "style: apply cargo fmt"
+
+          # Never force-push. If the PR advanced while rustfmt was running,
+          # this push fails instead of overwriting the newer head.
+          git push \
+            "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/${HEAD_REF}"
