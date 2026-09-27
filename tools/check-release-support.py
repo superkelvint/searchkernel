@@ -50,6 +50,8 @@ for trigger in (
     "tools/test_qualify_consumer_release.py",
     "tools/bundle-native-runtime-closure.py",
     "tools/check-native-runtime-closure.py",
+    "Cargo.toml",
+    "Cargo.lock",
     "core/crates/searchkernel-vespa-bindings/**",
     "core/native/vespa/**",
     "searchkerneld/**",
