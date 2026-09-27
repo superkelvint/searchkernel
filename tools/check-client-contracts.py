@@ -18,6 +18,8 @@ GLOBAL_LEDGER_PATH = ROOT / "docs" / "capabilities.json"
 REPORT_JSON = ROOT / "docs" / "client-capabilities.json"
 REPORT_MD = ROOT / "docs" / "CLIENT_CAPABILITIES.md"
 VALID_KINDS = {"ergonomic", "conformance", "e2e"}
+VALID_STRENGTHS = {"builder", "conformance", "runtime"}
+STRENGTH_RANK = {"builder": 0, "conformance": 1, "runtime": 2}
 SOURCE_SUFFIXES = {
     ".rs", ".py", ".php", ".rb", ".ts", ".tsx", ".js", ".mjs", ".c", ".cc", ".cpp", ".h", ".sh"
 }
@@ -259,14 +261,26 @@ def collect_evidence(
                         raise RegistryError(
                             f"invalid evidence kinds at {relative}:{line_number}: {match.group('kinds')}"
                         )
-                    if "e2e" in kinds and not any(
-                        lane["path"] == relative and runtime in lane["runtimes"]
-                        for lane in config["e2e_lanes"]
-                    ):
+                    runtime_lane = next(
+                        (
+                            lane
+                            for lane in config["e2e_lanes"]
+                            if lane["path"] == relative and runtime in lane["runtimes"]
+                        ),
+                        None,
+                    )
+                    if "e2e" in kinds and runtime_lane is None:
                         raise RegistryError(
                             f"E2E evidence at {relative}:{line_number} is not covered by an E2E CI lane"
                         )
                     for kind in kinds:
+                        strength = (
+                            "runtime"
+                            if runtime_lane is not None
+                            else "conformance"
+                            if kind == "conformance"
+                            else "builder"
+                        )
                         evidence.append(
                             {
                                 "capability": capability,
@@ -274,6 +288,7 @@ def collect_evidence(
                                 "surface": surface,
                                 "runtime": runtime,
                                 "kind": kind,
+                                "strength": strength,
                                 "path": relative,
                                 "line": line_number,
                             }
@@ -290,6 +305,134 @@ def collect_evidence(
             item["line"],
         ),
     )
+
+
+def _validated_parity_requirements(
+    catalog: dict[str, Any],
+    surfaces: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    raw_requirements = catalog.get("parity_requirements", [])
+    if not isinstance(raw_requirements, list):
+        raise RegistryError("parity_requirements must be an array of tables")
+
+    requirements: list[dict[str, Any]] = []
+    for index, item in enumerate(raw_requirements):
+        label = f"parity_requirements[{index}]"
+        if not isinstance(item, dict):
+            raise RegistryError(f"{label} must be a table")
+        source = item.get("source_surface")
+        target = item.get("target_surface")
+        strength = item.get("minimum_strength")
+        if source not in surfaces:
+            raise RegistryError(f"{label}.source_surface is unknown: {source}")
+        if target not in surfaces:
+            raise RegistryError(f"{label}.target_surface is unknown: {target}")
+        if source == target:
+            raise RegistryError(f"{label} must compare different surfaces")
+        if strength not in VALID_STRENGTHS:
+            raise RegistryError(
+                f"{label}.minimum_strength must be one of {sorted(VALID_STRENGTHS)}"
+            )
+
+        normalized = dict(item)
+        for field, surface in (
+            ("source_runtimes", source),
+            ("target_runtimes", target),
+        ):
+            runtimes = item.get(field)
+            if not isinstance(runtimes, list) or not runtimes or not all(
+                isinstance(runtime, str) and runtime in surfaces[surface]["runtimes"]
+                for runtime in runtimes
+            ):
+                raise RegistryError(
+                    f"{label}.{field} must be a non-empty subset of {surface} runtimes"
+                )
+            if len(set(runtimes)) != len(runtimes):
+                raise RegistryError(f"{label}.{field} contains duplicates")
+            normalized[field] = list(runtimes)
+        requirements.append(normalized)
+    return requirements
+
+
+def validate_parity_evidence(
+    catalog: dict[str, Any],
+    surfaces: dict[str, dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    overrides: list[dict[str, Any]],
+) -> None:
+    """Fail closed when a target surface has weaker evidence than its parity source."""
+    requirements = _validated_parity_requirements(catalog, surfaces)
+    evidence_by_contract: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for item in evidence:
+        evidence_by_contract[(item["capability"], item["scenario"])].append(item)
+
+    for requirement in requirements:
+        source = requirement["source_surface"]
+        target = requirement["target_surface"]
+        minimum = requirement["minimum_strength"]
+        source_runtimes = set(requirement["source_runtimes"])
+        target_runtimes = set(requirement["target_runtimes"])
+        minimum_rank = STRENGTH_RANK[minimum]
+
+        for (capability, scenario), contract_evidence in sorted(evidence_by_contract.items()):
+            source_matches = [
+                item
+                for item in contract_evidence
+                if item["surface"] == source
+                and item["runtime"] in source_runtimes
+                and STRENGTH_RANK[item["strength"]] >= minimum_rank
+            ]
+            if not source_matches:
+                continue
+
+            target_matches = [
+                item
+                for item in contract_evidence
+                if item["surface"] == target
+                and item["runtime"] in target_runtimes
+                and STRENGTH_RANK[item["strength"]] >= minimum_rank
+            ]
+            matching_overrides = [
+                item
+                for item in overrides
+                if item["capability"] == capability
+                and item.get("scenario", "basic") == scenario
+                and item["surface"] == target
+                and item["runtime"] in target_runtimes
+            ]
+            if target_matches:
+                if matching_overrides:
+                    raise RegistryError(
+                        f"stale parity override for {capability}/{scenario}: "
+                        f"{target} now has {minimum} evidence"
+                    )
+                continue
+            if matching_overrides:
+                continue
+
+            target_evidence = [
+                item for item in contract_evidence if item["surface"] == target
+            ]
+            if target_evidence:
+                profiles = ", ".join(
+                    sorted(
+                        {
+                            f"{item['runtime']}/{item['strength']} ({item['kind']})"
+                            for item in target_evidence
+                        }
+                    )
+                )
+                target_detail = f"only weaker evidence: {profiles}"
+            else:
+                target_detail = "no evidence"
+            source_profiles = ", ".join(
+                sorted({f"{item['runtime']}/{item['strength']}" for item in source_matches})
+            )
+            raise RegistryError(
+                f"{minimum} parity mismatch for {capability}/{scenario}: "
+                f"{source} has {source_profiles}; {target} has {target_detail}. "
+                "Add matching evidence on an allowed target runtime or an explicit override."
+            )
 
 
 def validate_facade_support(
@@ -408,26 +551,26 @@ def build_report(
 def _surface_summary(capability: dict[str, Any], surface: str) -> str:
     kinds: set[str] = set()
     runtimes: set[str] = set()
-    e2e_scenarios = 0
+    runtime_scenarios = 0
     for scenario in capability["scenarios"]:
-        has_e2e = False
+        has_runtime = False
         for item in scenario["evidence"]:
             if item["surface"] != surface:
                 continue
             kinds.add(item["kind"])
             runtimes.add(item["runtime"])
-            has_e2e = has_e2e or item["kind"] == "e2e"
-        e2e_scenarios += int(has_e2e)
+            has_runtime = has_runtime or item["strength"] == "runtime"
+        runtime_scenarios += int(has_runtime)
 
     parts = []
     if "ergonomic" in kinds:
         parts.append("ergonomic")
     if "conformance" in kinds:
         parts.append("conformance")
-    if e2e_scenarios:
+    if runtime_scenarios:
         total = len(capability["scenarios"])
-        suffix = f" {e2e_scenarios}/{total}" if total > 1 else ""
-        parts.append(f"E2E{suffix}")
+        suffix = f" {runtime_scenarios}/{total}" if total > 1 else ""
+        parts.append(f"real-runtime{suffix}")
     if not parts:
         return "—"
     runtime_text = ", ".join(sorted(runtimes))
@@ -447,8 +590,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         "limited to blocked/not-applicable overrides in the catalog.",
         "",
         "Legend: ergonomic = handwritten facade coverage; conformance = shared semantic",
-        "fixture coverage; E2E = real product/backend execution. For multi-scenario",
-        "capabilities, E2E 1/3 means one of three scenarios has E2E evidence.",
+        "fixture coverage; real-runtime = evidence owned by a registered E2E lane/runtime.",
+        "For multi-scenario capabilities, real-runtime 1/3 means one of three scenarios",
+        "has real-runtime evidence.",
         "",
     ]
     headers = ["Capability", "Area"] + [surface["title"] for surface in surfaces]
@@ -470,7 +614,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- **{scenario['title']}** ({scenario['id']})")
             for item in scenario["evidence"]:
                 lines.append(
-                    f"  - {item['surface']} / {item['runtime']} / {item['kind']} — "
+                    f"  - {item['surface']} / {item['runtime']} / {item['kind']} / "
+                    f"{item['strength']} — "
                     f"[{item['path']}](../{item['path']}#L{item['line']})"
                 )
             for item in scenario["overrides"]:
@@ -508,6 +653,7 @@ def build_current_report(root: Path = ROOT) -> dict[str, Any]:
     surfaces, scenarios, overrides = validate_catalog(catalog, global_capabilities, root)
     evidence = collect_evidence(surfaces, scenarios, root)
     validate_facade_support(global_capabilities, surfaces, evidence)
+    validate_parity_evidence(catalog, surfaces, evidence, overrides)
     return build_report(global_capabilities, surfaces, scenarios, evidence, overrides)
 
 
@@ -528,6 +674,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             evidence = collect_evidence(surfaces, scenarios)
             validate_facade_support(global_capabilities, surfaces, evidence)
+            validate_parity_evidence(catalog, surfaces, evidence, _overrides)
             run_e2e_lanes(surfaces, surface=args.run_e2e_surface)
             print("Client capability E2E lanes PASS.")
             return 0

@@ -40,13 +40,36 @@ CATALOG = {
             "title": "Python",
             "runtimes": ["grpc"],
             "evidence_roots": ["python-tests"],
+            "e2e_lanes": [
+                {
+                    "runtimes": ["grpc"],
+                    "path": "python-tests/e2e.py",
+                    "command": ["python3", "-c", "pass"],
+                }
+            ],
         },
         "ruby": {
             "title": "Ruby",
-            "runtimes": ["managed-local"],
+            "runtimes": ["http", "managed-local"],
             "evidence_roots": ["ruby-tests"],
+            "e2e_lanes": [
+                {
+                    "runtimes": ["managed-local"],
+                    "path": "ruby-tests/e2e.rb",
+                    "command": ["ruby", "ruby-tests/e2e.rb"],
+                }
+            ],
         },
     },
+    "parity_requirements": [
+        {
+            "source_surface": "python",
+            "target_surface": "ruby",
+            "minimum_strength": "runtime",
+            "source_runtimes": ["grpc"],
+            "target_runtimes": ["managed-local"],
+        }
+    ],
     "scenarios": [
         {
             "capability": "result.highlighting",
@@ -72,6 +95,8 @@ class ClientContractTests(unittest.TestCase):
         (self.root / "python-tests").mkdir()
         (self.root / "ruby-tests").mkdir()
         (self.root / "rust-tests" / "e2e.rs").write_text("", encoding="utf-8")
+        (self.root / "python-tests" / "e2e.py").write_text("", encoding="utf-8")
+        (self.root / "ruby-tests" / "e2e.rb").write_text("", encoding="utf-8")
         (self.root / "docs" / "capabilities.json").write_text(
             json.dumps(
                 {
@@ -86,6 +111,11 @@ class ClientContractTests(unittest.TestCase):
                             "id": "search.pagination",
                             "title": "Pagination",
                             "area": "search",
+                        },
+                        {
+                            "id": "query.phrase",
+                            "title": "Phrase queries",
+                            "area": "query",
                         },
                     ],
                 }
@@ -131,9 +161,96 @@ class ClientContractTests(unittest.TestCase):
             global_caps, surfaces, scenarios, evidence, overrides
         )
         markdown = MODULE.render_markdown(report)
-        self.assertIn("ergonomic · E2E 1/2 (native)", markdown)
+        self.assertIn("ergonomic · real-runtime 1/2 (native)", markdown)
         self.assertIn("rust-tests/e2e.rs", markdown)
 
+    def test_registered_e2e_lane_marks_runtime_strength_without_e2e_kind(self) -> None:
+        (self.root / "python-tests" / "e2e.py").write_text(
+            "# SKC: search.pagination/basic kinds=ergonomic runtime=grpc\n",
+            encoding="utf-8",
+        )
+        _, surfaces, scenarios, _ = self.load()
+        evidence = MODULE.collect_evidence(surfaces, scenarios, self.root)
+        item = next(entry for entry in evidence if entry["surface"] == "python")
+        self.assertEqual(item["kind"], "ergonomic")
+        self.assertEqual(item["strength"], "runtime")
+
+    def test_runtime_parity_rejects_builder_only_target_evidence(self) -> None:
+        (self.root / "python-tests" / "e2e.py").write_text(
+            "# SKC: query.phrase/basic kinds=ergonomic runtime=grpc\n",
+            encoding="utf-8",
+        )
+        (self.root / "ruby-tests" / "builder.rb").write_text(
+            "# SKC: query.phrase/basic kinds=ergonomic runtime=http\n",
+            encoding="utf-8",
+        )
+        _, surfaces, scenarios, overrides = self.load()
+        evidence = MODULE.collect_evidence(surfaces, scenarios, self.root)
+        with self.assertRaisesRegex(
+            MODULE.RegistryError,
+            "runtime parity mismatch.*query.phrase/basic.*python.*ruby",
+        ):
+            MODULE.validate_parity_evidence(CATALOG, surfaces, evidence, overrides)
+
+    def test_runtime_name_without_registered_lane_remains_builder_strength(self) -> None:
+        (self.root / "ruby-tests" / "builder.rb").write_text(
+            "# SKC: search.pagination/basic kinds=ergonomic runtime=managed-local\n",
+            encoding="utf-8",
+        )
+        _, surfaces, scenarios, _ = self.load()
+        evidence = MODULE.collect_evidence(surfaces, scenarios, self.root)
+        item = next(entry for entry in evidence if entry["surface"] == "ruby")
+        self.assertEqual(item["runtime"], "managed-local")
+        self.assertEqual(item["strength"], "builder")
+
+    def test_runtime_parity_allows_explicit_blocked_override(self) -> None:
+        (self.root / "python-tests" / "e2e.py").write_text(
+            "# SKC: query.phrase/basic kinds=ergonomic runtime=grpc\n",
+            encoding="utf-8",
+        )
+        (self.root / "ruby-tests" / "builder.rb").write_text(
+            "# SKC: query.phrase/basic kinds=ergonomic runtime=http\n",
+            encoding="utf-8",
+        )
+        _, surfaces, scenarios, _ = self.load()
+        evidence = MODULE.collect_evidence(surfaces, scenarios, self.root)
+        overrides = [
+            {
+                "capability": "query.phrase",
+                "scenario": "basic",
+                "surface": "ruby",
+                "runtime": "managed-local",
+                "status": "blocked",
+                "reason": "real runtime evidence pending",
+                "issue": 803,
+            }
+        ]
+        MODULE.validate_parity_evidence(CATALOG, surfaces, evidence, overrides)
+
+    def test_runtime_parity_rejects_stale_override_after_runtime_evidence_lands(self) -> None:
+        (self.root / "python-tests" / "e2e.py").write_text(
+            "# SKC: query.phrase/basic kinds=ergonomic runtime=grpc\n",
+            encoding="utf-8",
+        )
+        (self.root / "ruby-tests" / "e2e.rb").write_text(
+            "# SKC: query.phrase/basic kinds=ergonomic runtime=managed-local\n",
+            encoding="utf-8",
+        )
+        _, surfaces, scenarios, _ = self.load()
+        evidence = MODULE.collect_evidence(surfaces, scenarios, self.root)
+        overrides = [
+            {
+                "capability": "query.phrase",
+                "scenario": "basic",
+                "surface": "ruby",
+                "runtime": "managed-local",
+                "status": "blocked",
+                "reason": "real runtime evidence pending",
+                "issue": 803,
+            }
+        ]
+        with self.assertRaisesRegex(MODULE.RegistryError, "stale parity override"):
+            MODULE.validate_parity_evidence(CATALOG, surfaces, evidence, overrides)
 
     def test_ruby_evidence_files_are_discovered(self) -> None:
         (self.root / "ruby-tests" / "evidence.rb").write_text(
@@ -152,6 +269,7 @@ class ClientContractTests(unittest.TestCase):
                     "surface": "ruby",
                     "runtime": "managed-local",
                     "kind": "ergonomic",
+                    "strength": "builder",
                     "path": "ruby-tests/evidence.rb",
                     "line": 1,
                 }
