@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
+import ast
 import importlib.util
 import os
+import subprocess
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+CLIENT_CAPABILITIES_WORKFLOW = ROOT / ".github" / "workflows" / "client-capabilities.yml"
+RELEASE_VERIFIER = ROOT / "tools" / "check-consumer-release.py"
 SPEC = importlib.util.spec_from_file_location(
     "package_consumer_release", ROOT / "tools" / "package-consumer-release.py"
 )
@@ -30,6 +35,83 @@ class ConsumerReleaseTests(unittest.TestCase):
             self.assertEqual(
                 MODULE.daemon_binary(), ROOT / "target" / "release" / "searchkerneld"
             )
+
+    def test_rust_bundle_is_self_contained_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            bundle = Path(tempdir) / "searchkernel-rust-test.tar.gz"
+            MODULE.build_rust_bundle(bundle)
+
+            with tarfile.open(bundle) as archive:
+                names = set(archive.getnames())
+                self.assertIn("LICENSE", names)
+                self.assertIn("core/crates/searchkernel/Cargo.toml", names)
+                self.assertIn("core/crates/searchkernel-rpc/Cargo.toml", names)
+                self.assertIn("searchkerneld/Cargo.toml", names)
+                self.assertIn(
+                    "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs", names
+                )
+                self.assertNotIn("tools/resolve-native-sdk.sh", names)
+                extracted = Path(tempdir) / "extracted"
+                archive.extractall(extracted)
+
+            subprocess.run(
+                [
+                    "cargo",
+                    "metadata",
+                    "--no-deps",
+                    "--format-version",
+                    "1",
+                    "--manifest-path",
+                    str(extracted / "Cargo.toml"),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+
+
+    def test_client_capability_workflow_watches_every_rust_bundle_input(self) -> None:
+        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
+        for relative in MODULE.RUST_BUNDLE_PATHS:
+            path = ROOT / relative
+            watch = f"{relative}/**" if path.is_dir() else relative
+            with self.subTest(watch=watch):
+                self.assertEqual(
+                    workflow.count(f'      - "{watch}"'),
+                    2,
+                    f"{watch} must trigger both pull_request and main push release qualification",
+                )
+
+    def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
+        verifier = RELEASE_VERIFIER.read_text(encoding="utf-8")
+        tree = ast.parse(verifier)
+        commands = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            if not (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "subprocess"
+                and func.attr == "run"
+                and isinstance(node.args[0], ast.List)
+            ):
+                continue
+            commands.append(
+                [element.value for element in node.args[0].elts if isinstance(element, ast.Constant)]
+            )
+
+        self.assertTrue(
+            any(
+                command[:5] == ["check", "-p", "searchkernel", "--features", "native"]
+                for command in commands
+            ),
+            "release verifier must cargo-check the extracted native searchkernel package",
+        )
+        self.assertIn('"CARGO_TARGET_DIR"', verifier)
+        self.assertIn('environment.pop("SK_NATIVE_SDK", None)', verifier)
+        self.assertIn('environment.pop("SK_NATIVE_ABI_HEADER", None)', verifier)
+
 
 
 if __name__ == "__main__":
