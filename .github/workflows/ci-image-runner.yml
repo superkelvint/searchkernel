@@ -476,6 +476,7 @@ jobs:
               run_phase native-consumer-contract "$PYTHON" tools/check-native-consumer-contract.py
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
+              run_phase runtime-launcher bash tools/test-runtime-launcher.sh
               run_phase clippy-runner "$PYTHON" tools/test_run_clippy.py
               run_phase python-dependency-contract "$PYTHON" tools/test_python_dependency_contract.py
               run_phase toolchain-authorities "$PYTHON" tools/test_toolchain_authorities.py
