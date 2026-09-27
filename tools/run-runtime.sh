@@ -57,7 +57,11 @@ case "$runtime" in
         runtime_libs=$(bash "$ROOT/tools/resolve-native-runtime-libs.sh")
         export SEARCHKERNEL_RUNTIME_LIB_DIRS="$runtime_libs"
         export LD_LIBRARY_PATH="$runtime_libs"
-        unset LD_PRELOAD || true
+        if [[ -n "${SEARCHKERNEL_RUNTIME_LD_PRELOAD:-}" ]]; then
+            export LD_PRELOAD="$SEARCHKERNEL_RUNTIME_LD_PRELOAD"
+        else
+            unset LD_PRELOAD || true
+        fi
 
         if command -v readelf >/dev/null 2>&1 &&
            command -v ldd >/dev/null 2>&1 &&
