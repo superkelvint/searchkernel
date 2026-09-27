@@ -40,6 +40,22 @@ clients=(ROOT/"clients/README.md").read_text()
 for text,name in [(readme,"README.md"),(clients,"clients/README.md")]:
     if "docs/release-support.md" not in text and "../docs/release-support.md" not in text:
         raise SystemExit(f"{name} does not link the authoritative release support matrix")
+client_workflow = (ROOT / ".github/workflows/client-capabilities.yml").read_text()
+for trigger in (
+    "tools/package-consumer-release.py",
+    "tools/check-consumer-release.py",
+    "tools/check-release-support.py",
+    "tools/qualify-consumer-release.py",
+    "docs/release-support.json",
+    ".github/workflows/ci-image-runner.yml",
+):
+    if client_workflow.count(f'- "{trigger}"') < 2:
+        raise SystemExit(
+            f"release qualification owner does not trigger on PR and main changes to {trigger}"
+        )
+if "target: client-e2e" not in client_workflow:
+    raise SystemExit("client capability workflow does not own executable client-e2e qualification")
+
 consumer_marker = "- name: Qualify packaged release in clean consumer"
 if consumer_marker not in runner:
     raise SystemExit("client-e2e lane has no isolated packaged consumer qualification")
