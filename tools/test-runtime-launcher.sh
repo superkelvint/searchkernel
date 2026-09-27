@@ -107,6 +107,7 @@ unresolved_output=$(
         -u SEARCHKERNEL_VERIFIER_BASE_SDK \
         -u SEARCHKERNEL_SDK_LIB \
         -u SEARCHKERNEL_RUNTIME_ADAPTER_LIB \
+        -u NATIVE_ADAPTER_LIB \
         -u SEARCHKERNEL_RUNTIME_BASE_SDK \
         -u SK_NATIVE_SDK \
         -u LD_LIBRARY_PATH \
