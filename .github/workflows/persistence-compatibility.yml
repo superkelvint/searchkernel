@@ -30,6 +30,7 @@ on:
       - "tools/check-release-persistence-contract.py"
       - "docs/persistence-compatibility.md"
       - ".github/workflows/persistence-compatibility.yml"
+      - ".github/workflows/ci-image-runner.yml"
 
 permissions:
   contents: read
