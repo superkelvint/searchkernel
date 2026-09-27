@@ -110,6 +110,58 @@ grep -F '"$REPO_ROOT/tools/run-runtime.sh" native "$@"' "$COMMON" >/dev/null || 
     echo "verify-common native helper does not delegate to the canonical runtime launcher" >&2
     exit 1
 }
+
+python3 - "$ROOT/reference/vespa" "$SEARCHREPLY" "$0" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1]).resolve()
+allowed = {Path(sys.argv[2]).resolve(), Path(sys.argv[3]).resolve()}
+violations = []
+tokens = ("$SDK", "$sdk", "$M11_SDK", "$ADAPTER_LIB")
+for path in root.rglob("*.sh"):
+    resolved = path.resolve()
+    if resolved in allowed or "oracle" in path.parts:
+        continue
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if "LD_LIBRARY_PATH=" in line and any(token in line for token in tokens):
+            violations.append(f"{path.relative_to(root)}:{lineno}:{line.strip()}")
+if violations:
+    raise SystemExit(
+        "Search Kernel verifier bypasses canonical native runtime launcher:\n  "
+        + "\n  ".join(violations)
+    )
+PY
+
+for migrated in \
+    "$ROOT/reference/vespa/i/verify-i.sh" \
+    "$ROOT/reference/vespa/m0/verify-m0.sh" \
+    "$ROOT/reference/vespa/m1/verify-m1.sh" \
+    "$ROOT/reference/vespa/m2/verify-m2.sh" \
+    "$ROOT/reference/vespa/m5/verify-m5.sh" \
+    "$ROOT/reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh" \
+    "$ROOT/reference/vespa/m10/feature-values/verify-feature-values.sh" \
+    "$ROOT/reference/vespa/m13/verify-m13.sh" \
+    "$ROOT/reference/vespa/m14/verify-m14.sh" \
+    "$ROOT/reference/vespa/recovery/verify-recovery.sh"; do
+    grep -F 'run_native_executable' "$migrated" >/dev/null || {
+        echo "native verifier does not use the canonical runtime launcher: $migrated" >&2
+        exit 1
+    }
+done
+for migrated in \
+    "$ROOT/reference/vespa/m11/verify-m11-common.sh" \
+    "$ROOT/reference/vespa/m11/verify-m11-core.sh" \
+    "$ROOT/reference/vespa/m11/verify-m11-sanitizers.sh"; do
+    grep -F 'run_native_executable_with_sdk' "$migrated" >/dev/null || {
+        echo "M11 verifier does not use the explicit-SDK canonical runtime launcher: $migrated" >&2
+        exit 1
+    }
+done
+grep -F '"$ROOT/tools/run-runtime.sh" native "$BIN" "$MODE"' "$ROOT/reference/vespa/m3/run-rust.sh" >/dev/null || {
+    echo "M3 driver does not delegate through the canonical native launcher" >&2
+    exit 1
+}
 grep -F '"${@:2}"' "$VERIFY" >/dev/null || {
     echo "verify-through does not forward verifier arguments" >&2
     exit 1
