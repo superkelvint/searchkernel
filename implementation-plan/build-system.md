@@ -113,9 +113,10 @@ cd searchkernel
 
 The bootstrap path must:
 
-- have minimal host prerequisites;
-- detect missing prerequisites clearly;
+- define a deliberately small **host contract**: Git, Docker/container runtime, repository authentication (normally GitHub CLI), and ordinary shell/filesystem support;
+- detect missing host prerequisites clearly;
 - establish the canonical development environment deterministically;
+- keep Rust, C/C++, Python, Node, PHP, Ruby, FlatBuffers, and normal build dependencies owned by the canonical image rather than requiring them on the host;
 - provision or locate the pinned native/Vespa inputs through one authority;
 - avoid requiring developers to know internal SDK/cache paths;
 - avoid manual `LD_LIBRARY_PATH`, compiler, Python, Node, PHP, Ruby, or FlatBuffers setup;
@@ -123,6 +124,10 @@ The bootstrap path must:
 - be usable by a coding agent with terminal access;
 - be idempotent enough that rerunning it does not destroy useful compatible caches;
 - document the normal path in approximately one screenful.
+
+`./dev doctor` owns validation/repair of the supported **host boundary**. Host-native toolchains may remain available as an explicitly advanced workflow, but they are not a prerequisite for ordinary repository correctness.
+
+`./dev build` means the canonical supported Search Kernel product build in the canonical development environment. It must not be an alias for an arbitrary host Cargo invocation.
 
 The bootstrapper should not need to understand:
 
@@ -166,15 +171,19 @@ git push
 
 The implementation loop must:
 
-- reuse warm Cargo/native build state;
+- reuse warm Cargo/native build state across compatible invocations;
+- keep mutable build state isolated per worktree (plus compatible toolchain/environment identity), so multiple agents/worktrees do not share a writable Cargo target tree;
 - make focused checks cheap relative to full qualification;
 - expose semantic test/verifier names rather than implementation directories;
+- provide canonical discovery through `./dev test --list` and `./dev verify --list`;
+- maintain a lightweight documented mapping from major change areas to the smallest relevant checks, without inventing a dependency-analysis framework;
 - produce deterministic exit status;
 - print useful failure output;
 - print exact local reproduction commands;
 - make the relevant specialist verifiers available even when they are not mandatory PR CI;
 - provide remote execution for checks an agent cannot run locally;
 - run remote checks against the exact pushed commit SHA;
+- fail closed by default if the local working tree/index differs from the commit being requested for remote verification, so the user cannot accidentally verify stale committed code while looking at newer uncommitted changes;
 - avoid requiring the implementer to understand GitHub Actions YAML;
 - avoid reflexively running Universe for every change.
 
@@ -223,6 +232,7 @@ Review tooling must:
 - surface run IDs/URLs and failed logs for remote checks;
 - make local reproduction commands obvious;
 - avoid mutable branch names as verification identity;
+- require remote evidence to correspond to a committed, remotely available SHA and reject ambiguous dirty-worktree handoff by default;
 - keep verifier semantics in `./dev`, not in reviewer-specific CI workflows;
 - allow a reviewer to distinguish:
   - mandatory PR gate status;
@@ -267,7 +277,11 @@ The supported downstream experience must not require:
 - ambient `LD_LIBRARY_PATH`;
 - knowledge of Search Kernel worktree or SDK paths.
 
-The package/build layer must provide:
+The downstream contract is defined **per supported release surface**, not by one generic consumer model.
+
+The machine-readable authority is `docs/release-support.json`. Every supported row must state its runtime mode and have artifact-level executable qualification. Deferred/unsupported rows must fail closed as unsupported rather than inheriting an accidental promise from source-code presence.
+
+The package/build layer must provide, as appropriate to each supported surface:
 
 - the correct Search Kernel native implementation;
 - the required Vespa/private native closure in the chosen distribution form;
@@ -277,11 +291,20 @@ The package/build layer must provide:
 - a documented platform/support matrix;
 - a clean external-consumer qualification path.
 
+Different release surfaces may legitimately have different native-delivery requirements. For example:
+
+- **Rust embedded/native** must prove a clean downstream project built from the **actual distributable Rust artifact** can execute the embedded engine outside the repository with a cleaned runtime environment;
+- **searchkerneld** must prove the packaged daemon/runtime tree executes after relocation with repository/native environment variables removed;
+- **managed-local language packages** must prove their installed package can launch/use the packaged runtime from its installed location;
+- **connect-only clients** do not need to embed Vespa, but must prove that the shipped client artifact can connect to the supported daemon contract.
+
+Source-tree smoke tests are useful but do not substitute for testing the exact artifact that will be shipped.
+
 This persona is why consumer-native runtime correctness is P0.
 
 #### Success criterion
 
-A clean downstream project outside the Search Kernel workspace can build and run a supported Search Kernel application with no repository-only runtime workaround.
+For every row marked supported in `docs/release-support.json`, the actual distributable artifact is built, installed/extracted into a clean external location where applicable, and exercised according to that row's runtime contract with no repository-only workaround.
 
 ---
 
@@ -301,14 +324,23 @@ This is deliberately stronger than "does the PR gate pass?"
 ./dev release-check
 ```
 
-plus explicit packaging/publishing operations where appropriate.
+plus explicit publishing operations only after qualification succeeds.
+
+`./dev universe` and `./dev release-check` have different meanings:
+
+- `./dev universe` is exhaustive **repository/source qualification**: tests, semantic verifiers, clients, hardening lanes, and historical closures;
+- `./dev release-check` is **shipability qualification for one exact revision**. It runs the required source qualification (directly or by consuming exact-SHA evidence), builds the actual release artifacts, then validates every supported row in `docs/release-support.json`.
+
+A green `universe` is therefore necessary evidence for release qualification when the release policy requires it, but it is not by itself proof that the artifacts are shippable.
 
 #### Requirements
 
-Release qualification must be able to include:
+Release qualification must include:
 
 - the complete intended release test/verifier set;
-- external consumer/package qualification;
+- construction of the exact release artifact set;
+- artifact-level qualification for every supported row in `docs/release-support.json`;
+- external consumer/package qualification, including execution of the actual distributable Rust artifact rather than only repository-path consumption;
 - native ABI verification;
 - persistence/backward-compatibility checks;
 - native SDK and Vespa provenance checks;
@@ -336,7 +368,14 @@ Release-only cost must not be imposed on every implementer's edit/test cycle.
 
 #### Success criterion
 
-The maintainer can qualify one exact revision using canonical repository commands and produce evidence that the artifacts being shipped correspond to that revision and its pinned native dependencies.
+The maintainer can run one canonical command for an exact revision and obtain evidence that:
+
+1. required source qualification passed for that revision;
+2. the exact artifacts intended for publication were built;
+3. every supported release surface passed its artifact-level qualification;
+4. artifact manifests/checksums/provenance identify that revision and its pinned native dependencies.
+
+Release contract checks must validate these public authorities and artifacts. They must not depend on the internal structure or continued existence of a particular GitHub Actions YAML file.
 
 ---
 
@@ -369,7 +408,11 @@ CI must:
 - produce logs useful to both humans and coding agents;
 - expose run identity;
 - avoid embedding verifier-specific semantic knowledge in workflow YAML;
-- avoid becoming a generic remote shell.
+- avoid becoming a generic remote shell;
+- define an explicit trust policy for executing repository code on self-hosted runners;
+- restrict remote-dispatch permissions to authorized repository actors;
+- use read-only repository permissions by default and expose no release/write secrets to ordinary remote verification;
+- treat a requested revision as potentially untrusted code and ensure the runner/job isolation model is appropriate for that trust level, especially when Docker or other privileged host capabilities are available.
 
 #### Success criterion
 
@@ -411,6 +454,7 @@ Oracle authoring must:
 
 - remain independent from the Search Kernel implementation path;
 - require an explicit maintainer action;
+- never be entered automatically by normal verification based on environment detection;
 - never regenerate goldens as a side effect of ordinary build/test/CI;
 - record the exact Vespa/source provenance;
 - make changes to expected behavior reviewable;
@@ -421,7 +465,7 @@ The oracle maintainer does **not** need oracle tooling to be part of the normal 
 
 #### Success criterion
 
-A maintainer can intentionally regenerate reference behavior from the pinned upstream implementation, while ordinary developers and CI consume only reviewed frozen results.
+A maintainer can intentionally opt into live-oracle execution and regenerate reference behavior from the pinned upstream implementation, while ordinary developers, agents, reviewers, CI, and Universe consume only reviewed frozen results by default.
 
 ---
 
@@ -435,10 +479,11 @@ Several requirements follow directly from serving all seven users:
 4. **Cheap path versus strong path.** The normal edit/PR path stays fast; strong specialist and release verification remains available explicitly.
 5. **Repository environment is not consumer runtime.** Development convenience must never become a downstream requirement.
 6. **Oracle authoring is not verification.** Generating truth and checking against truth remain separate operations.
-7. **Warm performance matters.** Hermetic development cannot imply rebuilding everything on every command.
-8. **Failures are actionable.** Human or agent users should receive a canonical reproduction command whenever one exists.
-9. **No hidden second build system.** GitHub Actions, Universe, verifier directories, and packaging scripts consume canonical authorities instead of redefining them.
-10. **Every mechanism needs a persona.** New build-system machinery should identify which user and requirement justify its existence.
+7. **Warm performance matters.** Hermetic development cannot imply rebuilding everything on every command; mutable warm build state is scoped per worktree and compatible environment, while immutable/content-addressed caches may be shared.
+8. **Release promises are machine-readable.** `docs/release-support.json` defines the supported downstream surfaces, and release qualification must execute the actual artifacts for every supported row.
+9. **Failures are actionable.** Human or agent users should receive a canonical reproduction command whenever one exists.
+10. **No hidden second build system.** GitHub Actions, Universe, verifier directories, release checks, and packaging scripts consume canonical authorities instead of redefining them.
+11. **Every mechanism needs a persona.** New build-system machinery should identify which user and requirement justify its existence.
 
 ---
 
@@ -461,7 +506,10 @@ Target ownership:
 | Verifier invocation | `./dev verify <lane>` |
 | Frozen behavioral evidence | `reference/vespa` |
 | Oracle authoring | explicit maintainer path |
-| Full qualification | `./dev universe` |
+| Repository/source qualification | `./dev universe` |
+| Release support matrix | `docs/release-support.json` |
+| Release/shipability qualification | `./dev release-check` |
+| Local mutable build state | per-worktree + compatible-environment target/cache authority |
 | PR gate | `./dev ci` |
 | GitHub Actions | thin invocation of `./dev` |
 | Explicit remote verification | one generic exact-SHA workflow-dispatch adapter that calls `./dev` |
@@ -478,7 +526,7 @@ Search Kernel embeds Vespa. Therefore the native implementation required by Sear
 
 ### P0.1 — Consumer artifacts must be self-sufficient
 
-A supported Search Kernel native-linked Rust consumer must not rely on:
+A supported Search Kernel distribution surface that carries or launches the native engine must not rely on:
 
 - `./dev`;
 - the Search Kernel CI image;
@@ -540,7 +588,7 @@ Where possible, runtime relationships should be output-relative, package-relativ
 
 CI and `./dev` must not pass merely because they inject a runtime environment that downstream users do not receive.
 
-A focused qualification must build a consumer outside the Search Kernel workspace and execute it with `LD_LIBRARY_PATH` unset.
+Focused qualification must exercise the **actual distributable artifacts** outside the Search Kernel workspace. Any surface carrying/launching the native engine must execute with `LD_LIBRARY_PATH` and repository-native overrides unset unless that surface's public contract explicitly defines another platform-native mechanism.
 
 Current `main` already has consumer-safe runtime work from PR #745, including an external consumer smoke path. This plan treats that behavior as a required invariant. The current mechanism is not necessarily the final mechanism.
 
@@ -652,6 +700,8 @@ The choice is deliberate:
 
 Normal build/test/verification should run in the canonical Search Kernel image.
 
+The supported host boundary should remain intentionally small: Git, Docker/container runtime, repository authentication, and ordinary shell/filesystem support. Language runtimes and compilers required for ordinary correctness belong to the canonical image. Host-native Rust/Node/Python/etc. may remain as an advanced convenience path, not as a prerequisite for the normal workflow.
+
 The container owns the normal development toolchain, including the supported versions of:
 
 - Rust/Cargo;
@@ -699,7 +749,9 @@ Normal local development should preserve compatible:
 
 `CARGO_TARGET_DIR` must have one explicit ownership model for normal builds.
 
-CI may isolate writable build outputs per job. Local development should optimize strongly for the warm edit-build-test loop.
+For local canonical-container development, writable Cargo/native incremental state must persist across compatible `./dev` invocations **without being globally shared between unrelated worktrees**. The cache key/namespace must include enough identity to prevent cross-worktree or cross-toolchain contamination. Immutable/content-addressed inputs and compiler caches may be shared safely where their own provenance model permits it.
+
+CI should isolate writable build outputs per job unless a cache is explicitly designed to be non-authoritative and content-addressed. Local development should optimize strongly for the warm edit-build-test loop.
 
 Before declaring convergence complete, benchmark:
 
@@ -901,9 +953,11 @@ The normal developer interface should converge toward:
 ./dev build
 ./dev ci
 
+./dev test --list
 ./dev test [scope]
 ./dev test --remote <scope>
 ./dev lint [scope]
+./dev verify --list
 ./dev verify <lane>
 ./dev verify --remote <lane>
 
@@ -913,7 +967,11 @@ The normal developer interface should converge toward:
 
 Advanced maintainer commands may continue to exist for image publishing, SDK inspection, protocol generation, oracle/golden generation, worktrees, and release maintenance.
 
-A developer should not need those commands to understand an ordinary build.
+`./dev build` is the canonical supported product build in the canonical development environment.
+
+`./dev test --list` and `./dev verify --list` expose the finite public vocabulary used by developers, agents, reviewers, CI, and release qualification. A small documented change-area-to-check mapping should point users toward relevant focused checks; it is guidance, not a second dependency-analysis system.
+
+A developer should not need advanced maintainer commands to understand an ordinary build.
 
 ---
 
@@ -1045,7 +1103,25 @@ result:   PASS | FAIL
 
 A verification run against an earlier commit must never be presented as verification of a newer PR head.
 
-### 13.4 `./dev` owns the remote UX
+Remote verification also verifies a **committed state**, not an arbitrary local working-tree snapshot. By default, `--remote` must fail if relevant tracked/index/untracked source changes mean the current working tree differs from the commit being dispatched. The user must first commit and push the state they intend to verify. Any future override must be explicit and must never allow the resulting run to be described as verification of uncommitted local changes.
+
+### 13.4 Remote-execution trust boundary
+
+The on-demand workflow executes repository code, potentially on self-hosted infrastructure with Docker access. Exact-SHA provenance is necessary but not sufficient; the workflow needs an explicit trust model.
+
+The first version must:
+
+- permit dispatch only by authorized repository actors;
+- request read-only repository permissions unless a narrower operation requires more;
+- expose no release, publishing, deployment, or write-capable secrets to ordinary remote verification;
+- treat the requested revision as untrusted executable input;
+- use job-private writable state;
+- define whether fork/untrusted-PR revisions are rejected or run in a separately hardened execution environment;
+- fail closed rather than silently falling back to a more privileged runner/path.
+
+The goal is not to build a general sandboxing platform. It is to ensure that a convenient remote test button does not become a privileged arbitrary-code execution path.
+
+### 13.6 `./dev` owns the remote UX
 
 Agents should not normally need to invoke `gh workflow run` or manually locate Actions runs.
 
@@ -1098,7 +1174,7 @@ Do not add an interface such as:
 
 This preserves a reviewable and safe remote execution surface.
 
-### 13.6 PR labels are not the primary interface
+### 13.7 PR labels are not the primary interface
 
 Labels may be added later as a convenience if some automation can manipulate labels but cannot dispatch Actions directly.
 
@@ -1106,7 +1182,7 @@ They should not be the primary model because label state is poor verification st
 
 The canonical interface is explicit workflow dispatch hidden behind `./dev`.
 
-### 13.7 Agent protocol
+### 13.8 Agent protocol
 
 The repository's agent guidance should eventually state:
 
@@ -1131,7 +1207,7 @@ If a remote verifier fails:
 
 Agents should choose relevant specialist checks rather than reflexively running Universe.
 
-### 13.8 CI separation
+### 13.9 CI separation
 
 The intended division is:
 
@@ -1141,7 +1217,8 @@ The intended division is:
 | `./dev verify <lane>` | explicit local | specialist verification |
 | `./dev verify --remote <lane>` | explicit remote | specialist verification on CI infrastructure |
 | `./dev test --remote <scope>` | explicit remote | tests unavailable locally |
-| `./dev universe` | explicit | full qualification |
+| `./dev universe` | explicit | full repository/source qualification |
+| `./dev release-check` | explicit release workflow | build and qualify actual distributable artifacts |
 
 This is deliberately different from rebuilding the old automatic heavy CI matrix.
 
@@ -1198,12 +1275,13 @@ Preserve the current #745 consumer-safe runtime mechanism while investigating al
 
 Whatever model wins must prove:
 
-1. a clean downstream Cargo consumer outside the workspace builds;
-2. it runs with `LD_LIBRARY_PATH` unset;
-3. it does not depend on repository Cargo configuration;
+1. a clean downstream Cargo consumer built from the actual distributable Rust artifact builds and executes outside the repository;
+2. native-carrying supported artifacts execute with `LD_LIBRARY_PATH` and repository-native overrides unset;
+3. they do not depend on repository Cargo configuration;
 4. runtime identity cannot silently cross worktrees/build generations;
 5. required native payload is relocatable according to its supported distribution contract;
-6. native SDK/provenance guarantees remain intact.
+6. every supported native-carrying row in `docs/release-support.json` has artifact-level executable evidence;
+7. native SDK/provenance guarantees remain intact.
 
 This phase is allowed to conclude that the current relocatable shared-runtime approach is the correct model. It must not assume that conclusion before testing the mostly-static alternative.
 
@@ -1238,6 +1316,8 @@ Actions should not independently know Cargo semantics, native runtime setup, com
 
 Completion criterion: every PR-gate failure has exactly one local reproduction command, `./dev ci`.
 
+Repository contract tests should validate the public `./dev ci` behavior/invariants and only the minimal workflow delegation contract. They must not encode obsolete internal workflow names or implementation details as architectural requirements.
+
 ---
 
 ### Phase 3 — Make `./dev` a thin router
@@ -1252,9 +1332,11 @@ Do not rewrite the entire script.
 
 Move implementation responsibility downward into Cargo/native/test tooling where it belongs.
 
-Keep compatible target/cache state persistent across container invocations.
+Keep compatible target/cache state persistent across container invocations using a per-worktree + compatible-environment writable namespace. Do not reintroduce shared mutable Cargo targets across unrelated agents/worktrees.
 
-Completion criterion: the routing model is obvious from the top of `./dev`.
+During this phase, define `./dev build` as the canonical product build and add `./dev test --list` alongside the existing verifier discovery.
+
+Completion criterion: the routing model is obvious from the top of `./dev`, repeated local commands reuse compatible work, and two concurrent task worktrees cannot mutate the same Cargo target tree.
 
 ---
 
@@ -1309,9 +1391,9 @@ They exist to provide independent behavioral evidence and should remain separate
 
 Do not spend this convergence project normalizing every one-off oracle build script unless a concrete maintenance problem requires it.
 
-Prefer an explicit maintainer operation for live-oracle/golden generation.
+Live-oracle execution and golden generation **must require explicit maintainer opt-in**. Remove environment-dependent `auto` behavior from the normal verification contract: ordinary verification replays committed frozen expected behavior even when a pinned Vespa source checkout happens to be available.
 
-Completion criterion: ordinary development, verification, and CI do not compile oracles.
+Completion criterion: ordinary development, verification, CI, and Universe neither compile nor automatically execute direct oracles; only an explicit maintainer authoring command/path may do so.
 
 ---
 
@@ -1391,20 +1473,69 @@ Universe must not independently choose toolchains, compile verifier programs, co
 
 Normal repository correctness should be defined inside the canonical image.
 
-The host should eventually require only enough tooling to enter that environment, conceptually:
+The supported host contract is:
 
 - Git;
 - Docker/container runtime;
-- repository access;
-- minimal filesystem/worktree support.
+- repository authentication/access (normally GitHub CLI);
+- ordinary shell/filesystem/worktree support.
 
-Host-native development may remain useful as an advanced workflow. It should not remain a second definition of correctness.
+Rust, C/C++, Python, Node, PHP, Ruby, FlatBuffers, and ordinary build dependencies belong to the canonical image for the normal workflow.
 
-Simplify it only after the canonical path is established.
+`./dev doctor` should converge on validating/repairing this host boundary plus the ability to enter the canonical environment. Host-native development may remain useful as an explicitly advanced workflow, but its toolchain bootstrap is not part of the ordinary success criterion and must not remain a second definition of correctness.
+
+Simplify only after the canonical image path can build, test, verify, and perform remote dispatch without relying on host language toolchains.
 
 ---
 
-### Phase 10 — Delete compatibility machinery
+### Phase 10 — Implement exact-SHA remote test/verify execution
+
+Implement the remote execution contract from section 13 as a first-class migration phase rather than leaving it implicit in the Definition of Done.
+
+Required deliverables:
+
+1. one bounded on-demand workflow accepting exact revision, operation (`test|verify`), and known target;
+2. `./dev test --remote <scope>` and `./dev verify --remote <lane>`;
+3. validation that the requested commit is remotely available;
+4. default refusal when the local working tree/index does not match the committed state being dispatched;
+5. deterministic capture of the dispatched run identity;
+6. wait/watch behavior, failed-step log surfacing, and result propagation;
+7. an explicit self-hosted-runner trust policy with authorized actors, read-only permissions, no release/write secrets, and a stated policy for untrusted/fork revisions;
+8. agent documentation requiring exact-head reruns after every fix.
+
+Completion criterion: an agent without local native capacity can push an exact commit, run one canonical remote command, and receive trustworthy evidence for that exact commit without learning GitHub Actions internals.
+
+---
+
+### Phase 11 — Make release qualification a first-class canonical path
+
+Implement:
+
+```bash
+./dev release-check
+```
+
+as the authority for shipability of one exact revision.
+
+It must:
+
+1. establish the exact revision being qualified;
+2. run or consume the required exact-revision repository/source qualification according to release policy;
+3. build the exact artifact set described by the release tooling;
+4. validate the release manifest/checksums/provenance;
+5. enumerate supported rows from `docs/release-support.json`;
+6. execute artifact-level qualification for every supported row;
+7. include ABI, persistence/backward-compatibility, native-runtime/relocatability, generated-artifact, and provenance checks required by the release contract;
+8. fail if a supported row lacks executable evidence;
+9. avoid depending on the name/content of a particular CI workflow YAML file.
+
+At minimum, Rust embedded qualification must build and **execute** a downstream project from the actual distributable Rust bundle in a clean external location, not merely `cargo check` the bundle or consume the repository by path.
+
+Completion criterion: `./dev release-check` is sufficient evidence for the statement "this exact revision's supported artifacts are qualified for release", while `./dev universe` remains the exhaustive repository/source qualification command.
+
+---
+
+### Phase 12 — Delete compatibility machinery
 
 Deletion comes last.
 
@@ -1477,7 +1608,15 @@ Do not re-enable the historical all-verifier PR matrix as a side effect of makin
 
 ### Rule 7 — Preserve consumer correctness before deleting runtime machinery
 
-The development system is allowed to simplify only if external consumers remain able to build and execute successfully outside the repository environment.
+The development system is allowed to simplify only if every supported row in `docs/release-support.json` remains qualified through its actual distributable artifact outside the repository environment.
+
+### Rule 8 — Normal verification never authors truth
+
+Normal test/verify/Universe execution consumes frozen reference behavior. Live oracle execution and golden regeneration require explicit maintainer intent.
+
+### Rule 9 — Validate authorities, not obsolete wiring
+
+Architectural/contract tests should assert public commands, artifact contracts, provenance, and safety invariants. They should not freeze obsolete workflow filenames or YAML implementation details once those are no longer authorities.
 
 ---
 
@@ -1516,7 +1655,9 @@ Are active Rust and native verifier programs visible to the normal repository bu
 
 ### Consumer runtime — P0
 
-Can a clean external Cargo consumer run with `LD_LIBRARY_PATH` unset and without Search Kernel repository configuration?
+For every supported row in `docs/release-support.json`, is the **actual distributable artifact** exercised according to its runtime contract?
+
+For Rust embedded/native specifically, can a clean external project built from the distributable Rust artifact execute with `LD_LIBRARY_PATH` and repository-native overrides unset?
 
 ### Runtime identity — P0
 
@@ -1538,19 +1679,25 @@ Does the direct Vespa path remain independent from Search Kernel implementation 
 
 Does CI call the same canonical operations developers use?
 
-### Universe
+### Universe and release qualification
 
-Does Universe merely orchestrate canonical commands and print exact repros?
+Does Universe merely orchestrate canonical source/repository checks and print exact repros?
+
+Does `./dev release-check` separately build and qualify the actual supported artifact set for one exact revision?
 
 ### Cache behavior
 
-Do repeated compatible builds reuse output?
+Do repeated compatible builds in the same worktree/environment reuse mutable output?
+
+Can two concurrent unrelated worktrees run without sharing a writable Cargo target tree?
 
 ### Remote verification
 
 Can an agent that cannot run a specialist check locally execute the same canonical check remotely against the exact pushed SHA?
 
 Does GitHub Actions merely invoke the canonical `./dev` operation rather than reimplementing it?
+
+Does remote execution refuse ambiguous dirty-worktree handoff by default and enforce the stated authorized-actor/self-hosted-runner trust policy?
 
 ### Complexity
 
@@ -1583,7 +1730,8 @@ A developer should need approximately this model:
 ### Tests
 
 ```bash
-./dev test
+./dev test --list
+./dev test rust
 ./dev test python
 ```
 
@@ -1603,11 +1751,19 @@ git push
 
 Remote output identifies the exact pushed SHA and GitHub Actions run, waits for completion, and returns the remote operation's status.
 
-### Full qualification
+### Full repository/source qualification
+
+```bash
+./dev universe
+```
+
+### Release qualification
 
 ```bash
 ./dev release-check
 ```
+
+`release-check` builds and validates the actual supported artifact set; it is not merely another name for `universe`.
 
 ### Failure reproduction
 
@@ -1656,16 +1812,27 @@ The convergence project is complete when:
 21. The P0 mostly-static-vs-shared native-distribution investigation is documented with evidence.
 22. Existing native SDK provenance guarantees remain intact.
 23. Strong verifiers remain available outside mandatory PR CI.
-24. `./dev verify --remote <lane>` and `./dev test --remote <scope>` provide explicit remote execution for agents/developers who cannot run a relevant check locally.
-25. Remote execution checks out and verifies the exact pushed commit SHA, never merely a mutable branch reference.
-26. Remote execution ultimately invokes the same canonical `./dev verify <lane>` or `./dev test <scope>` command as local execution.
-27. One generic bounded on-demand workflow handles remote `verify` and `test`; GitHub Actions contains no verifier-specific semantics.
-28. Remote commands wait for the exact dispatched run, surface its run identity and failure logs, and propagate its result.
-29. Arbitrary remote shell execution is not exposed.
-30. Repository agent guidance documents the exact-SHA remote verification protocol and prohibits claiming verification from older commits.
-31. Old compatibility/build paths are removed only after their replacements are proven.
-32. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
-33. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, and behavioral references live without discovering another hidden build system.
+24. `./dev test --list` and `./dev verify --list` expose the finite canonical test/verifier vocabulary, with lightweight documentation mapping major change areas to relevant checks.
+25. `./dev verify --remote <lane>` and `./dev test --remote <scope>` provide explicit remote execution for agents/developers who cannot run a relevant check locally.
+26. Remote execution checks out and verifies the exact pushed commit SHA, never merely a mutable branch reference.
+27. Remote execution refuses dirty/ambiguous local handoff by default when the working tree/index differs from the commit being dispatched.
+28. Remote execution ultimately invokes the same canonical `./dev verify <lane>` or `./dev test <scope>` command as local execution.
+29. One generic bounded on-demand workflow handles remote `verify` and `test`; GitHub Actions contains no verifier-specific semantics.
+30. Remote commands wait for the exact dispatched run, surface its run identity and failure logs, and propagate its result.
+31. Remote verification has an explicit authorized-actor/self-hosted-runner trust policy, uses read-only permissions by default, exposes no release/write secrets, and defines handling for untrusted/fork revisions.
+32. Arbitrary remote shell execution is not exposed.
+33. Repository agent guidance documents the exact-SHA remote verification protocol and prohibits claiming verification from older commits.
+34. Local canonical-container development preserves compatible writable Cargo/native incremental state across invocations in a worktree-scoped/environment-scoped namespace; unrelated worktrees do not share writable target state.
+35. `./dev doctor` validates the minimal supported host boundary, while ordinary language/compiler toolchains remain owned by the canonical image.
+36. `./dev build` has one explicit meaning: canonical supported product build in the canonical development environment.
+37. Normal verification and Universe never automatically enter live-oracle mode; live oracle execution/golden generation require explicit maintainer opt-in.
+38. `docs/release-support.json` is the machine-readable authority for supported downstream surfaces.
+39. `./dev release-check` builds the actual release artifact set and provides artifact-level executable evidence for every supported release row.
+40. Rust embedded release qualification builds and executes a clean external consumer from the actual distributable Rust artifact, not merely from a repository path.
+41. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
+42. Old compatibility/build paths are removed only after their replacements are proven.
+43. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
+44. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
 
 The final architecture should be boring:
 
@@ -1677,8 +1844,10 @@ The final architecture should be boring:
 > Consumers do not depend on `./dev`.  
 > Active verifier programs use the normal build graph.  
 > `reference/vespa` owns behavioral evidence and oracle provenance.  
-> Universe orchestrates.  
-> Explicit remote verification dispatches exact-SHA `./dev` operations.  
+> Per-worktree mutable build state keeps local iteration warm without cross-agent contamination.  
+> Universe orchestrates repository/source qualification.  
+> Release-check builds and qualifies the actual supported artifact set.  
+> Explicit remote verification dispatches authorized exact-SHA `./dev` operations.  
 > CI calls `./dev`.
 
 That is the project.
