@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -33,6 +34,21 @@ class VerificationCachePolicyTests(unittest.TestCase):
 
     def test_current_policy_passes(self) -> None:
         result = subprocess.run(["python3", str(CHECKER), str(ROOT)], text=True, capture_output=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_trusted_checker_accepts_identical_candidate_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            candidate = Path(raw)
+            for relative in (".github", "tools", "verification"):
+                source = ROOT / relative
+                if source.exists():
+                    shutil.copytree(source, candidate / relative)
+            result = subprocess.run(
+                ["python3", str(CHECKER), str(candidate)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_rejects_nextest_archive_as_test_evidence(self) -> None:
