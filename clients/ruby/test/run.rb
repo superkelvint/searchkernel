@@ -347,6 +347,72 @@ integer_result = SearchKernel::Results::SearchResults.new(
 same(2**64 - 1, integer_result.total_hits, "total hits decode canonical uint64 text")
 same(2**64 - 1, integer_result.coverage.documents, "coverage decodes canonical uint64 text")
 same(-(2**63), integer_result.errors.first.code, "result errors decode canonical int64 text")
+
+def facet_projection_result(count_value, generic: false)
+  bucket = {
+    "value" => SearchKernel::Value.encode("Acme"),
+    "fields" => [{ "key" => "count", "value" => count_value }]
+  }
+  if generic
+    bucket["id"] = "grouping-0"
+    bucket["label"] = "brands"
+  end
+
+  SearchKernel::Results::SearchResults.new(
+    "root" => {
+      "node_type" => "ResultGroup",
+      "node" => {
+        "children" => [{
+          "node_type" => "ResultGroup",
+          "node" => {
+            "id" => "brand",
+            "label" => "brands",
+            "children" => [{ "node_type" => "ResultGroup", "node" => bucket }]
+          }
+        }]
+      }
+    }
+  )
+end
+
+unsigned_facet = facet_projection_result(
+  SearchKernel::Value.encode(SearchKernel::Value.uint64(2))
+).project_facet("brands", "brands", "brand")
+same(
+  { "brands" => [{ "value" => "Acme", "count" => 2 }] },
+  unsigned_facet.facets,
+  "optimized facet accepts canonical uint64 count"
+)
+assert(unsigned_facet.frozen?, "projected SearchResults remains read-only")
+assert(unsigned_facet.facets.frozen?, "facet projection map is frozen")
+assert(unsigned_facet.facets.fetch("brands").frozen?, "facet bucket list is frozen")
+assert(unsigned_facet.facets.fetch("brands").first.frozen?, "facet bucket entries are frozen")
+
+signed_optimized = facet_projection_result(
+  SearchKernel::Value.encode(2)
+).project_facet("brands", "brands", "brand")
+same({}, signed_optimized.facets, "optimized facet rejects signed Int64 count")
+
+negative_optimized = facet_projection_result(
+  SearchKernel::Value.encode(-1)
+).project_facet("brands", "brands", "brand")
+same({}, negative_optimized.facets, "optimized facet rejects negative signed count")
+
+generic_facet = facet_projection_result(
+  SearchKernel::Value.encode(2),
+  generic: true
+).project_facet("brands", "brands", "brand")
+same(
+  { "brands" => [{ "value" => "Acme", "count" => 2 }] },
+  generic_facet.facets,
+  "generic facet accepts non-negative signed Int64 count"
+)
+
+negative_generic = facet_projection_result(
+  SearchKernel::Value.encode(-1),
+  generic: true
+).project_facet("brands", "brands", "brand")
+same({}, negative_generic.facets, "generic facet rejects negative signed count")
 same("SearchKernel_V2_SearchRequest", recording.last_request["payload_type"], "client uses centralized operation mapping")
 raw = { "protocol_version" => 2, "payload_type" => "Custom", "payload" => {} }
 same(recording.execute(raw), client.execute_raw(raw), "raw envelope escape hatch delegates unchanged")
