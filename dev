@@ -577,7 +577,7 @@ regen_result_fixtures() {
 
 run_target() {
     [[ "$#" -ge 1 ]] || {
-        echo "usage: ./dev run python|node|npm|php|ruby|native <args...>" >&2
+        echo "usage: ./dev run {python,node,npm,php,ruby,native} <args...>" >&2
         return 2
     }
     bash "$ROOT/tools/run-runtime.sh" "$@"
