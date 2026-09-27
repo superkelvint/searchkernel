@@ -10,6 +10,10 @@ def sha(p):
  with p.open('rb') as f:
   for b in iter(lambda:f.read(1024*1024),b''): h.update(b)
  return h.hexdigest()
+def daemon_binary():
+ target=Path(os.environ.get('CARGO_TARGET_DIR',ROOT/'target'))
+ if not target.is_absolute(): target=ROOT/target
+ return target/'release'/'searchkerneld'
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--output',default='dist/release'); a=ap.parse_args(); out=(ROOT/a.output).resolve(); shutil.rmtree(out,ignore_errors=True); out.mkdir(parents=True)
  # Rust embedded distribution is a versioned source bundle: internal path crates are
@@ -22,7 +26,7 @@ def main():
    if path.exists(): tf.add(path,arcname=rel)
  # Daemon executable distribution.
  run('cargo','build','-p','searchkerneld','--release','--features','native')
- daemon=ROOT/'target/release/searchkerneld'; bundle=out/f'searchkerneld-{VERSION}-linux-x86_64-glibc.tar.gz'
+ daemon=daemon_binary(); bundle=out/f'searchkerneld-{VERSION}-linux-x86_64-glibc.tar.gz'
  with tarfile.open(bundle,'w:gz') as tf: tf.add(daemon,arcname='bin/searchkerneld')
  # Supported managed-local packages carry the exact same versioned daemon.
  for package_dir in (ROOT/'clients/python/searchkernel', ROOT/'clients/typescript'):

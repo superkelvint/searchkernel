@@ -12,6 +12,10 @@ def snapshot(binary, fixture, request):
         f.write(pack_object(request)); f.flush()
         return json.loads(subprocess.check_output([str(binary),'--index-json',str(fixture),'--request',f.name],text=True))
 class SemanticParity(unittest.TestCase):
+    @unittest.skipUnless(
+        os.getenv("SEARCHKERNEL_PARITY_CORPUS") and os.getenv("SEARCHKERNEL_PARITY_OUTPUT"),
+        "run through tools/check-client-semantic-parity.py",
+    )
     def test_frozen_corpus(self):
         root=Path(__file__).parents[3]; corpus=Path(os.environ['SEARCHKERNEL_PARITY_CORPUS']); data=json.loads(corpus.read_text());
         subprocess.run(['cargo','build','--quiet','--no-default-features','-p','searchkernel-testkit','--bin','searchkernel-semantic-snapshot'],cwd=root,check=True)

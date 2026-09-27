@@ -98,6 +98,23 @@ run_lane() {
     fi
   fi
 
+  if [[ "$lane" == asan-ubsan ]]; then
+    local buffer_contract_test="$lane_root/packed-document-buffer-contract-test"
+    local asan_runtime="$(cc -print-file-name=libasan.so)"
+    local asan_options="$(tr '\n' ':' < "$M11/sanitizer/asan.options")"
+    local ubsan_options="$(tr '\n' ':' < "$M11/sanitizer/ubsan.options")"
+    [[ -f "$asan_runtime" ]] || fail_verification "libasan runtime was not found"
+    "${CXX:-c++}" -std=gnu++23 -O0 -g -Wall -Wextra -Werror -pthread \
+      -fsanitize=address,undefined -I"$sdk/include" -I"$ROOT/core/native/vespa" \
+      "$ROOT/core/native/vespa/native_adapter_coverage_test.cpp" \
+      -L"$sdk/lib" -Wl,-rpath,"$sdk/lib" -lsearchkernel_vespa \
+      -o "$buffer_contract_test"
+    ASAN_OPTIONS="$asan_options" UBSAN_OPTIONS="$ubsan_options" \
+      LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+      SK_NATIVE_HIGHLIGHTING_UNIT_ONLY=1 "$buffer_contract_test"
+    echo "packed document buffer ABI contract passed ($lane)"
+  fi
+
   # Keep Cargo products lane-local. ASan/UBSan and TSan use different linker
   # flags, so sharing one target directory makes Cargo invalidate the other
   # lane on every pass even when the native SDK itself is reusable.
