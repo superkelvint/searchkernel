@@ -41,6 +41,7 @@ fields = {
   "title" => SearchKernel::Text.new(stored: true, searchable: true),
   "brand" => SearchKernel::Keyword.new(stored: true, filterable: true, sortable: true, facetable: true),
   "price" => SearchKernel::FloatField.new(stored: true, filterable: true, sortable: true),
+  "sale_price" => SearchKernel::FloatField.new(stored: true, filterable: true, sortable: true),
   "inventory" => SearchKernel::IntegerField.new(stored: true, filterable: true, sortable: true),
   "active" => SearchKernel::BooleanField.new(stored: true, filterable: true),
   "category" => SearchKernel::Keyword.new(stored: true, filterable: true, facetable: true),
@@ -213,11 +214,11 @@ begin
   ).limit(0).execute
   same(["Acme"], grouping_buckets(kept).map(&:value), "group keep filter")
 
-  index.patch("shoe-1").set("price", 79.0).set("inventory", 11).unset("active").execute
+  index.patch("shoe-1").set("price", 79.0).set("inventory", 11).unset("sale_price").execute
   same(11, index.get("shoe-1").fetch("inventory"), "patch second set")
   patched = index.get("shoe-1")
   same(79.0, patched.fetch("price"), "patch set")
-  check(!patched.key?("active"), "patch unset")
+  check(!patched.key?("sale_price"), "patch unset")
 
   index.update("shoe-1").increment("inventory", 5).execute
   same(16, index.get("shoe-1").fetch("inventory"), "advanced arithmetic increment")
