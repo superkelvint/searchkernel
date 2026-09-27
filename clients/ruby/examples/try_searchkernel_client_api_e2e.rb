@@ -222,8 +222,12 @@ begin
 
   index.update("shoe-1").increment("inventory", 5).execute
   same(16, index.get("shoe-1").fetch("inventory"), "advanced arithmetic increment")
-  index.update("shoe-1").decrement("inventory", 4).multiply("inventory", 2).divide("inventory", 4).execute
-  same(6, index.get("shoe-1").fetch("inventory"), "advanced arithmetic decrement/multiply/divide")
+  index.update("shoe-1").decrement("inventory", 4).execute
+  same(12, index.get("shoe-1").fetch("inventory"), "advanced arithmetic decrement")
+  index.update("shoe-1").multiply("inventory", 2).execute
+  same(24, index.get("shoe-1").fetch("inventory"), "advanced arithmetic multiply")
+  index.update("shoe-1").divide("inventory", 4).execute
+  same(6, index.get("shoe-1").fetch("inventory"), "advanced arithmetic divide")
   index.update("created-by-update").set("inventory", 7).create.execute
   same(7, index.get("created-by-update").fetch("inventory"), "create-if-nonexistent update")
   index.upsert("shoe-2", {"title" => "Trail Running Shoes Updated", "brand" => "TrailCo", "price" => 119.0, "inventory" => 4, "active" => true})
