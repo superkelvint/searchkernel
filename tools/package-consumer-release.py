@@ -53,7 +53,6 @@ def rust_source_paths(metadata: dict[str, object]) -> list[Path]:
     paths: set[Path] = {
         Path("Cargo.toml"),
         Path("Cargo.lock"),
-        Path("LICENSE"),
         Path("README.md"),
         Path("api"),
         Path("core/native/vespa"),
