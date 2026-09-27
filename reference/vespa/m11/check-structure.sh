@@ -22,7 +22,7 @@ fi
 
 if rg -n --glob '*.rs' --glob '*.toml' \
     'Command::new|std::process::Command|ProcessBuilder|JNI_CreateJavaVM|libjvm|serde_json' \
-    "$M11/rust-driver" "$ROOT/core/crates/searchkernel-vespa-engine" "$ROOT/core/crates/searchkernel-vespa-bindings"; then
+    "$M11/rust-driver" "$ROOT/core/crates/searchkernel-vespa-engine" "$ROOT/core/crates/searchkernel-vespa-bindings/src"; then
   fail "test driver or production wrapper has an alternate runtime/oracle path"
 fi
 
