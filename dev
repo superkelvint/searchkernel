@@ -343,10 +343,11 @@ run_ruby_tests() {
                 {"node_type" => "Hit", "node" => {"id" => "from-installed-gem"}}]}};
               results = SearchKernel::Results::SearchResults.new({"root" => root});
               abort unless results.hits.map(&:id) == ["from-installed-gem"]'
+        GEM_HOME="$gem_home" GEM_PATH="$gem_home" SEARCHKERNEL_RUBY_USE_INSTALLED_GEM=1 \
+            run_client_e2e ruby
     ) || status=$?
     rm -rf -- "$package_dir" "$gem_home"
     [[ "$status" -eq 0 ]] || return "$status"
-    run_client_e2e ruby
 }
 
 check_fast() {
