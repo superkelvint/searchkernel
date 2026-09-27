@@ -22,11 +22,12 @@ PROTECTED_PREFIXES = (
     "reference/",
     "tools/",
     ".moon/",
+    ".cargo/",
     "docker/searchkernel-ci/",
     "docker/searchkernel-ci-toolchain/",
     "docker/searchkernel-ci-vespa/",
 )
-PROTECTED_FILES = {"dev", "moon.yml", "workspace.yml", ".prototools"}
+PROTECTED_FILES = {"dev", "Cargo.toml", "moon.yml", "workspace.yml", ".prototools"}
 TRANSITION_COMPANION_PREFIXES = ("docs/",)
 TRANSITION_COMPANION_FILES = {"README.md", "BUILDING.md", "AGENTS.md"}
 
