@@ -232,10 +232,14 @@ language execution through `./dev run python|node|npm|php|ruby` enters the
 canonical CI image by default; arbitrary `./dev run native <binary>` remains
 host-local because a host-built executable is not present in the disposable
 container snapshot. Native execution reuses exact adapter identity from an
-explicit runtime closure, the binary's own RPATH/RUNPATH when it names the
-adapter, the current verifier SDK, an exact adapter-library path, or an explicit
-SDK. If none of those identifies the adapter, the launcher fails closed rather
-than rebuilding or guessing a replacement adapter.
+explicit runtime closure, Cargo build metadata for the executable's build, the
+binary's own RPATH/RUNPATH when it names the adapter, the current verifier SDK,
+an exact adapter-library path, or an explicit SDK. Cargo-backed launches pass
+the captured JSON message stream through `SEARCHKERNEL_CARGO_MESSAGES` together
+with the matching `CARGO_TARGET_DIR`; the resolver accepts only the adapter
+published by that build-script event. If none of those identifies the adapter,
+the launcher fails closed rather than rebuilding or guessing a replacement
+adapter.
 
 ## Canonical toolchain authorities
 
@@ -249,7 +253,7 @@ multi-install toolchain has exactly one path authority:
 | Node.js | `tools/resolve-node.sh` | `NODE`, `NPM` |
 | PHP | `tools/resolve-runtime.sh php` | `PHP` |
 | Ruby | `tools/resolve-runtime.sh ruby` | `RUBY` |
-| Runtime execution | `tools/run-runtime.sh` / `./dev run` | `SEARCHKERNEL_RUNTIME_LIB_DIRS`, `SEARCHKERNEL_RUNTIME_ADAPTER_LIB`, verifier SDK context, or explicit native SDK |
+| Runtime execution | `tools/run-runtime.sh` / `./dev run` | `SEARCHKERNEL_RUNTIME_LIB_DIRS`, `SEARCHKERNEL_CARGO_MESSAGES` + `CARGO_TARGET_DIR`, `SEARCHKERNEL_RUNTIME_ADAPTER_LIB`, verifier SDK context, or explicit native SDK |
 | FlatBuffers | `tools/resolve-flatbuffers.sh` | `FLATC_PATH`, `FLATBUFFERS_CPP_ROOT` |
 | Native SDK | `tools/resolve-native-sdk.sh` | `SK_NATIVE_SDK`, `SK_NATIVE_TARGET` |
 
