@@ -20,11 +20,8 @@ TARGET="$ROOT/target/vespa-verifier/recovery"
 rm -rf "$TARGET"
 mkdir -p "$TARGET"
 
-LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  "$DRIVER" matrix "$TARGET/matrix"
-LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  "$DRIVER" repeat "$TARGET/repeated"
-LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  "$DRIVER" missing "$TARGET/missing"
+run_native_executable "$DRIVER" matrix "$TARGET/matrix"
+run_native_executable "$DRIVER" repeat "$TARGET/repeated"
+run_native_executable "$DRIVER" missing "$TARGET/missing"
 
 echo "product recovery PASS"
