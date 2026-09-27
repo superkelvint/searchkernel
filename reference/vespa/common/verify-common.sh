@@ -137,6 +137,7 @@ run_native_executable_with_sdk() {
   local base_sdk
   base_sdk="$(resolved_native_base_sdk)"
   SEARCHKERNEL_RUNTIME_LIB_DIRS="$adapter_sdk/lib:$base_sdk/lib" \
+  SEARCHKERNEL_RUNTIME_LD_PRELOAD="${SEARCHKERNEL_RUNTIME_LD_PRELOAD:-}" \
     "$REPO_ROOT/tools/run-runtime.sh" native "$@"
 }
 
