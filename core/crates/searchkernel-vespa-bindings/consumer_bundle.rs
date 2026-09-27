@@ -1699,7 +1699,12 @@ def canonical(fields: dict[str, str]) -> str:
     return "".join(f"{key}\t{escape(value)}\n" for key, value in sorted(fields.items()))
 
 
-def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
+def fingerprint(
+    root: Path,
+    vespa_root: Path,
+    target: str,
+    base_sdk: Path | None = None,
+) -> tuple[str, str]:
     cxx = resolve_program(os.environ.get("CXX", "c++"))
     fields: dict[str, str] = {
         "fingerprint.version": VERSION,
@@ -1731,6 +1736,13 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
         ),
         "native.source": source_digest(root),
     }
+    if base_sdk is not None:
+        resolved_base = base_sdk.resolve(strict=False)
+        manifest = resolved_base / "manifest.json"
+        fields["native.base_sdk.path"] = str(resolved_base)
+        fields["native.base_sdk.manifest"] = (
+            file_digest(manifest) if manifest.is_file() else "missing"
+        )
     tracked = (
         "CC", "CXX", "AR", "RANLIB", "LD", "CFLAGS", "CXXFLAGS", "CPPFLAGS",
         "LDFLAGS", "CMAKE", "CMAKE_ARGS", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH",
@@ -1770,6 +1782,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--vespa-root", type=Path)
+    parser.add_argument("--base-sdk", type=Path)
     parser.add_argument("--target", required=True)
     parser.add_argument("--scope", choices=("full",), default="full")
     parser.add_argument("--output", type=Path)
@@ -1777,7 +1790,7 @@ def main() -> int:
 
     root = args.root.resolve()
     vespa_root = (args.vespa_root or root / "upstream/vespa").resolve()
-    digest, text = fingerprint(root, vespa_root, args.target)
+    digest, text = fingerprint(root, vespa_root, args.target, args.base_sdk)
     if args.output:
         args.output.write_text(text, encoding="utf-8")
     else:
@@ -2190,6 +2203,21 @@ with open(path, "w", encoding="utf-8") as stream:
     json.dump(manifest, stream, indent=2, sort_keys=True)
     stream.write("\n")
 PY
+
+    PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
+    RUSTC_BIN=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
+    NATIVE_TARGET=${SK_NATIVE_TARGET:-$("$RUSTC_BIN" -vV | sed -n 's/^host: //p')}
+    if [ -z "$NATIVE_TARGET" ]; then
+        echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
+        exit 1
+    fi
+    RUSTC="$RUSTC_BIN" "$PYTHON_BIN" "$ROOT/tools/native-build-fingerprint.py" \
+        --root "$ROOT" \
+        --vespa-root "$VESPA_ROOT" \
+        --base-sdk "$BASE_SDK" \
+        --target "$NATIVE_TARGET" \
+        --scope full \
+        --output "$SDK/native-build-fingerprint-v2.txt"
 
     SDK_BACKUP="${SDK_PACKAGE}.old.$"
     if [ -e "$SDK_BACKUP" ]; then
