@@ -43,8 +43,7 @@ cc -std=c11 -Wall -Wextra -Werror \
     -Wl,-rpath,"$SDK/lib" \
     -o "$TARGET/probe"
 
-LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$TARGET/probe" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
+run_native_executable "$TARGET/probe" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
 
 python3 "$ROOT/common/compare_json.py" \
     "$ROOT/m0/expected/01-native-open-close.json" \
