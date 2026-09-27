@@ -621,6 +621,8 @@ jobs:
               run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved
               run_phase native-full-python-e2e tools/run-python-native-e2e.sh --prevalidated-native-sdk
               run_phase native-full-persistence ./dev verify persistence
+              run_phase native-full-consumer-release-build "$PYTHON" tools/package-consumer-release.py --output /tmp/searchkernel-consumer-release
+              run_phase native-full-consumer-release-verify "$PYTHON" tools/check-consumer-release.py /tmp/searchkernel-consumer-release
               run_phase native-full-consumer-package bash tools/test-native-consumer-package.sh
               ;;
 
