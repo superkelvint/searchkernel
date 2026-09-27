@@ -54,22 +54,22 @@ class VerificationCachePolicyTests(unittest.TestCase):
     def test_rejects_nextest_archive_as_test_evidence(self) -> None:
         result = self.run_fixture("\n# cargo nextest run --archive-file stale.tar.zst\n")
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("nextest archive reuse", result.stderr)
+        self.assertIn("archive reuse via nextest", result.stderr)
 
     def test_rejects_delegated_nextest_archive_reuse(self) -> None:
         result = self.run_fixture(delegated_script="#!/bin/sh\ncargo nextest archive --archive-file stale.tar.zst\n")
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("forbidden delegated nextest archive reuse", result.stderr)
+        self.assertIn("forbidden delegated archive reuse via nextest", result.stderr)
 
     def test_rejects_moon_task_execution(self) -> None:
         result = self.run_fixture("\n# moon run test\n")
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("moon task-result execution", result.stderr)
+        self.assertIn("task-result execution via Moon", result.stderr)
 
     def test_rejects_moon_configuration_until_provenance_closure_exists(self) -> None:
         result = self.run_fixture(moon=True)
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("moon task-result configuration is forbidden", result.stderr)
+        self.assertIn("task-result configuration through Moon is forbidden", result.stderr)
 
 
 if __name__ == "__main__":
