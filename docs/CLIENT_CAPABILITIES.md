@@ -18,16 +18,16 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Comparison queries (query.comparison) | query | — | — | — | — | conformance (http) | — |
 | Range queries (query.range) | query | — | — | — | — | conformance (http) | — |
 | Boolean query operators (query.boolean) | query | — | — | — | — | ergonomic · conformance · E2E (http) | ergonomic · E2E (managed-local) |
-| Phrase queries (query.phrase) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | — |
-| Near and ordered-near proximity queries (query.proximity) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | — |
-| sameElement query (query.same_element) | query | — | — | ergonomic (grpc) | — | conformance (http) | — |
-| Fuzzy query (query.fuzzy) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | — |
+| Phrase queries (query.phrase) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | ergonomic (http) |
+| Near and ordered-near proximity queries (query.proximity) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | ergonomic (http) |
+| sameElement query (query.same_element) | query | — | — | ergonomic (grpc) | — | conformance (http) | ergonomic (http) |
+| Fuzzy query (query.fuzzy) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | ergonomic (http) |
 | Prefix, suffix, and substring queries (query.prefix_suffix_substring) | query | — | — | — | — | — | — |
 | Alternatives queries (query.alternatives) | query | — | — | — | — | — | — |
 | Nearest-neighbor vector search (query.nearest_neighbor) | query | — | — | — | ergonomic · E2E (node, shared) | ergonomic · conformance · E2E (http) | ergonomic · E2E (managed-local) |
-| Geo-location and bounding-box queries (query.geo) | query | — | — | ergonomic (grpc) | — | conformance (http) | — |
+| Geo-location and bounding-box queries (query.geo) | query | — | — | ergonomic (grpc) | — | conformance (http) | ergonomic (http) |
 | Predicate queries (query.predicate) | query | — | — | — | — | conformance (http) | — |
-| WeakAnd and WAND queries (query.weighted_and_wand) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | — |
+| WeakAnd and WAND queries (query.weighted_and_wand) | query | — | ergonomic (native) | ergonomic (grpc) | — | conformance (http) | ergonomic (http) |
 | Weighted-set and dot-product queries (query.weighted_set_dot_product) | query | — | — | — | — | conformance (http) | — |
 | Equivalence queries (query.equivalence) | query | — | — | — | — | conformance (http) | — |
 | Rank query composition (query.rank) | query | — | — | — | — | conformance (http) | — |
@@ -41,7 +41,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Document-summary field projection (result.docsum_field_projection) | result | — | ergonomic (native) | ergonomic (grpc) | ergonomic · E2E (node, shared) | ergonomic · E2E (http) | ergonomic · E2E (managed-local) |
 | Named summary-class selection (result.named_summary_class) | result | — | — | — | — | ergonomic · E2E (http) | ergonomic · E2E (managed-local) |
 | Rich document-summary values (scalar subset) (result.rich_docsum_values) | result | — | — | — | — | — | — |
-| Summary-feature readback (result.summary_features) | result | — | — | — | — | — | — |
+| Summary-feature readback (result.summary_features) | result | — | — | — | — | — | conformance (http) |
 | Highlighting (result.highlighting) | result | — | ergonomic (native) | ergonomic · conformance (grpc, shared) | conformance (shared) | ergonomic · conformance · E2E 1/3 (http) | ergonomic · E2E 1/3 (managed-local) |
 | Dense tensor document readback (result.tensor_document_readback) | result | — | — | — | — | ergonomic · E2E (http) | ergonomic · E2E (managed-local) |
 | Typed tensor feature readback (result.tensor_feature_readback) | result | — | — | — | — | — | — |
@@ -117,6 +117,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 - **Basic behavior** (basic)
   - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1257)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L370)
+  - ruby / http / ergonomic — [clients/ruby/test/facade.rb](../clients/ruby/test/facade.rb#L366)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L415)
 
 ### Near and ordered-near proximity queries (query.proximity)
@@ -124,6 +125,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 - **Basic behavior** (basic)
   - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1258)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L371)
+  - ruby / http / ergonomic — [clients/ruby/test/facade.rb](../clients/ruby/test/facade.rb#L367)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L416)
 
 ### sameElement query (query.same_element)
@@ -131,12 +133,14 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 - **Basic behavior** (basic)
   - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1259)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L400)
+  - ruby / http / ergonomic — [clients/ruby/test/facade.rb](../clients/ruby/test/facade.rb#L368)
 
 ### Fuzzy query (query.fuzzy)
 
 - **Basic behavior** (basic)
   - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1260)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L372)
+  - ruby / http / ergonomic — [clients/ruby/test/facade.rb](../clients/ruby/test/facade.rb#L369)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L417)
 
 ### Nearest-neighbor vector search (query.nearest_neighbor)
@@ -156,6 +160,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 - **Basic behavior** (basic)
   - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1262)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L466)
+  - ruby / http / ergonomic — [clients/ruby/test/facade.rb](../clients/ruby/test/facade.rb#L370)
 
 ### Predicate queries (query.predicate)
 
@@ -167,6 +172,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 - **Basic behavior** (basic)
   - php / http / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1264)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L373)
+  - ruby / http / ergonomic — [clients/ruby/test/facade.rb](../clients/ruby/test/facade.rb#L371)
   - rust / native / ergonomic — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L418)
 
 ### Weighted-set and dot-product queries (query.weighted_set_dot_product)
@@ -254,6 +260,11 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
   - php / http / ergonomic — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L786)
   - ruby / managed-local / e2e — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L417)
   - ruby / managed-local / ergonomic — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L417)
+
+### Summary-feature readback (result.summary_features)
+
+- **Basic behavior** (basic)
+  - ruby / http / conformance — [clients/ruby/test/run.rb](../clients/ruby/test/run.rb#L595)
 
 ### Highlighting (result.highlighting)
 
