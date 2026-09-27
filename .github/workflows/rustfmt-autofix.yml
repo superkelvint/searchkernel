@@ -91,7 +91,7 @@ jobs:
 
           actual=$(git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
-            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual"
+            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
             exit 1
           fi
 
