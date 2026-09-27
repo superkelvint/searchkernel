@@ -6,7 +6,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,11 +47,6 @@ def verify_daemon_tree(root: Path) -> None:
         check=True,
         env=clean_runtime_env(),
     )
-    # zipfile does not restore Unix executable bits when extracting wheels.
-    # Package metadata is checked separately; restore the bits here so the
-    # runtime probe exercises the packaged bytes/relative library layout.
-    daemon.chmod(daemon.stat().st_mode | 0o111)
-    real_daemon.chmod(real_daemon.stat().st_mode | 0o111)
     subprocess.run(
         [str(daemon), "--help"],
         check=True,
@@ -87,9 +81,21 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
 
     wheel = next(out.glob("searchkernel-*.whl"))
     wheel_root = temp / "wheel"
-    wheel_root.mkdir()
-    with zipfile.ZipFile(wheel) as archive:
-        archive.extractall(wheel_root)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--target",
+            str(wheel_root),
+            str(wheel),
+        ],
+        check=True,
+        env=clean_runtime_env(),
+        stdout=subprocess.DEVNULL,
+    )
     assert (wheel_root / "searchkernel" / "__init__.py").is_file()
     verify_daemon_tree(wheel_root / "searchkernel")
 
