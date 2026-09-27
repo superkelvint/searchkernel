@@ -14,16 +14,23 @@ def daemon_binary():
  target=Path(os.environ.get('CARGO_TARGET_DIR',ROOT/'target'))
  if not target.is_absolute(): target=ROOT/target
  return target/'release'/'searchkerneld'
+RUST_BUNDLE_PATHS = [
+ 'Cargo.toml', 'Cargo.lock', 'LICENSE', 'README.md', 'core/README.md',
+ 'core/crates', 'searchkerneld', 'api',
+]
+def build_rust_bundle(rust_bundle):
+ missing=[rel for rel in RUST_BUNDLE_PATHS if not (ROOT/rel).exists()]
+ if missing:
+  raise FileNotFoundError(f"missing Rust consumer bundle inputs: {', '.join(missing)}")
+ with tarfile.open(rust_bundle,'w:gz') as tf:
+  for rel in RUST_BUNDLE_PATHS: tf.add(ROOT/rel,arcname=rel)
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--output',default='dist/release'); a=ap.parse_args(); out=(ROOT/a.output).resolve(); shutil.rmtree(out,ignore_errors=True); out.mkdir(parents=True)
- # Rust embedded distribution is a versioned source bundle: internal path crates are
- # included so a consumer never depends on unpublished workspace crates or this checkout.
+ # Rust embedded distribution is a versioned source bundle. Include the complete
+ # workspace/path-dependency closure, but omit repository-native helper scripts so
+ # searchkernel-vespa-bindings uses its generated consumer support bundle.
  rust_bundle=out/f'searchkernel-rust-{VERSION}.tar.gz'
- rust_paths=['Cargo.toml','Cargo.lock','LICENSE','core/crates','core/native/vespa','searchkerneld','api','reference/vespa/PINNED_VESPA.json','tools/resolve-native-sdk.sh','tools/install-native-base-artifact.sh','tools/native-base-release-selection.py']
- with tarfile.open(rust_bundle,'w:gz') as tf:
-  for rel in rust_paths:
-   path=ROOT/rel
-   if path.exists(): tf.add(path,arcname=rel)
+ build_rust_bundle(rust_bundle)
  # Daemon executable distribution.
  run('cargo','build','-p','searchkerneld','--release','--features','native')
  daemon=daemon_binary(); bundle=out/f'searchkerneld-{VERSION}-linux-x86_64-glibc.tar.gz'
