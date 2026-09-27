@@ -118,7 +118,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          actual=$(git rev-parse HEAD)
+          actual=$(/usr/bin/git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
             echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
             exit 1
@@ -136,9 +136,9 @@ jobs:
             exit 0
           fi
 
-          git apply --check --whitespace=error-all "$patch"
-          git apply --index --whitespace=error-all "$patch"
-          git diff --cached --check
+          /usr/bin/git apply --check --whitespace=error-all "$patch"
+          /usr/bin/git apply --index --whitespace=error-all "$patch"
+          /usr/bin/git diff --cached --check
 
           found=0
           while IFS= read -r -d '' status && IFS= read -r -d '' path; do
@@ -151,16 +151,21 @@ jobs:
               echo "::error::rustfmt patch changes non-Rust path '$path'" >&2
               exit 1
             }
-          done < <(git diff --cached --name-status -z)
+            IFS=' ' read -r mode _ < <(/usr/bin/git ls-files -s -- "$path")
+            [[ "$mode" == "100644" || "$mode" == "100755" ]] || {
+              echo "::error::rustfmt patch targets non-regular path '$path' (mode $mode)" >&2
+              exit 1
+            }
+          done < <(/usr/bin/git diff --cached --name-status -z)
 
           [[ "$found" == 1 ]] || {
             echo "::error::non-empty rustfmt patch produced no staged changes" >&2
             exit 1
           }
 
-          if [[ -n "$(git diff --cached --summary)" ]]; then
+          if [[ -n "$(/usr/bin/git diff --cached --summary)" ]]; then
             echo "::error::rustfmt patch changes file modes or object types" >&2
-            git diff --cached --summary >&2
+            /usr/bin/git diff --cached --summary >&2
             exit 1
           fi
 
@@ -179,19 +184,19 @@ jobs:
             exit 1
           }
 
-          actual=$(git rev-parse HEAD)
+          actual=$(/usr/bin/git rev-parse HEAD)
           if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
             echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
             exit 1
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -c core.hooksPath=/dev/null -c commit.gpgsign=false \
+          /usr/bin/git config user.name "github-actions[bot]"
+          /usr/bin/git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          /usr/bin/git -c core.hooksPath=/dev/null -c commit.gpgsign=false \
             commit -m "style: apply cargo fmt"
 
           # Never force-push. If the PR advanced while rustfmt was running,
           # this push fails instead of overwriting the newer head.
-          git -c core.hooksPath=/dev/null -c credential.helper= push \
+          /usr/bin/git -c core.hooksPath=/dev/null -c credential.helper= push \
             "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "HEAD:refs/heads/${HEAD_REF}"
