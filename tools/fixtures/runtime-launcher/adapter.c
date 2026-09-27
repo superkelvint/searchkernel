@@ -1,3 +1,5 @@
+extern int searchkernel_runtime_fixture_dependency(void);
+
 int searchkernel_runtime_fixture_answer(void) {
-    return 42;
+    return searchkernel_runtime_fixture_dependency();
 }
