@@ -330,6 +330,7 @@ run_typescript_generation_check() {
 }
 
 run_typescript_tests() {
+    "$ROOT/tools/run-runtime.sh" npm ci --prefix "$ROOT/clients/typescript"
     bash "$ROOT/tools/test-typescript-generation.sh"
     run_typescript_generation_check
     "$ROOT/tools/run-runtime.sh" npm run typecheck --prefix "$ROOT/clients/typescript"

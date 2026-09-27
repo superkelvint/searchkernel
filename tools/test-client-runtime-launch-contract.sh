@@ -106,5 +106,10 @@ for fn in run_python_tests run_typescript_tests run_php_tests run_ruby_tests; do
         exit 1
     }
 done
+typescript_body=$(sed -n '/^run_typescript_tests() {/,/^}/p' "$DEV")
+grep -F 'tools/run-runtime.sh" npm ci' <<<"$typescript_body" >/dev/null || {
+    echo "./dev TypeScript package checks do not install exact-head dependencies through canonical npm" >&2
+    exit 1
+}
 
 echo "client runtime launch contract PASS"
