@@ -26,7 +26,8 @@ searchkernel = { path = "$ROOT/core/crates/searchkernel", features = ["native"] 
 EOF
 cat > "$CONSUMER/src/main.rs" <<'EOF'
 fn main() {
-    let missing = std::env::temp_dir().join("searchkernel-native-consumer-missing-index");
+    let missing = std::env::var_os("SEARCHKERNEL_CONSUMER_MISSING_INDEX")
+        .expect("missing isolated index path");
     assert!(searchkernel::Index::open(missing).is_err());
 }
 EOF
@@ -52,6 +53,6 @@ readelf -d "$BIN" | grep -Fq '$ORIGIN/.searchkernel-native/libsearchkernel_vespa
 }
 (
   cd /
-  env -u LD_LIBRARY_PATH "$BIN"
+  env -u LD_LIBRARY_PATH SEARCHKERNEL_CONSUMER_MISSING_INDEX="$TMP/missing-index" "$BIN"
 )
-echo "Packaged native consumer PASS: external public Search Kernel Rust binary links and runs without LD_LIBRARY_PATH or repository Cargo config"
+echo "Public native consumer PASS: external Search Kernel Rust binary links and runs without LD_LIBRARY_PATH or repository Cargo config"
