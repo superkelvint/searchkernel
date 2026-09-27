@@ -12,6 +12,7 @@ ABI_WORKFLOW = ROOT / ".github" / "workflows" / "abi-surface.yml"
 WORKFLOWS = ROOT / ".github" / "workflows"
 INTEGRATION = ROOT / "reference" / "vespa" / "i" / "verify-i.sh"
 PYTHON_NATIVE_E2E = ROOT / "tools" / "run-python-native-e2e.sh"
+CLIENT_E2E_RUNTIME = ROOT / "tools" / "client-e2e-runtime.sh"
 
 
 class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
@@ -90,7 +91,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             '-v "$SOURCE_VOLUME:/work"',
             '-v "$TARGET_VOLUME:/cargo-target"',
             "CARGO_TARGET_DIR=/cargo-target",
-            "zero shared mutable worker state",
+            "job-private; only sccache compiler outputs are shared",
         ):
             self.assertIn(required, source)
 
@@ -137,6 +138,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
             "            client-e2e)", 1
         )[0]
         script = PYTHON_NATIVE_E2E.read_text(encoding="utf-8")
+        runtime = CLIENT_E2E_RUNTIME.read_text(encoding="utf-8")
 
         self.assertIn(
             "tools/run-python-native-e2e.sh --prevalidated-native-sdk",
@@ -144,8 +146,9 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         )
         self.assertIn("--prevalidated-native-sdk", script)
         self.assertIn('prevalidated_native_sdk=0', script)
-        self.assertIn('if [[ "$prevalidated_native_sdk" != 1 ]]; then', script)
-        self.assertIn("./dev native-sdk ensure", script)
+        self.assertIn('prepare_client_e2e_runtime "$prevalidated_native_sdk"', script)
+        self.assertIn('if [[ "$prevalidated_native_sdk" != 1 ]]; then', runtime)
+        self.assertIn('"$root/dev" native-sdk ensure', runtime)
 
     def test_native_full_does_not_rerun_phase10_after_integration(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
