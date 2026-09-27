@@ -469,8 +469,8 @@ geo_path = "#{index_path}-geo"
 FileUtils.rm_rf(geo_path)
 geo = SearchKernel::Index.create(geo_path, fields: { "location" => SearchKernel::PositionField.new })
 begin
-  geo.upsert("inside", "location" => {"latitude" => 37.3, "longitude" => -121.9})
-  geo.upsert("outside", "location" => {"latitude" => 40.7, "longitude" => -74.0})
+  geo.upsert("inside", {"location" => {"latitude" => 37.3, "longitude" => -121.9}})
+  geo.upsert("outside", {"location" => {"latitude" => 40.7, "longitude" => -74.0}})
   same(["inside"], ids(geo.query(SearchKernel::Query.geo_location("location", lat: 37.3, lon: -121.9, radius: "10km")).limit(10).execute), "typed geo-location query")
   same(["inside"], ids(geo.query(SearchKernel::Query.geo_box("location", south: 37.0, west: -122.2, north: 37.6, east: -121.5)).limit(10).execute), "typed geo bounding-box query")
 ensure
