@@ -162,7 +162,7 @@ begin
   filtered_facet = index.browse.filter("active = true").facet("brand").limit(10).execute
   same({"Acme" => 2, "TrailCo" => 1}, filtered_facet.facets.fetch("brand").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "filtered facet exact counts")
 
-  aggregate = index.browse.filter("title contains 'shoes'")
+  aggregate = index.search("shoes")
     .aggregate(SearchKernel::Agg.count.as("products"))
     .aggregate(SearchKernel::Agg.sum("price").as("sum_price"))
     .aggregate(SearchKernel::Agg.avg("price").as("avg_price"))
