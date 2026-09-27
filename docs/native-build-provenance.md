@@ -59,7 +59,9 @@ provenance because those packages include Search Kernel-owned compiled output.
 
 ## Lookup and provisioning
 
-Ordinary Cargo invokes only the resolver's read-only `path` mode.
+Ordinary native consumer Cargo builds invoke the resolver's `ensure` mode. It
+automatically fetches a missing pinned published base and repairs an invalid or
+stale cache object before Cargo compiles the Search Kernel adapter.
 
 The resolver:
 
@@ -72,13 +74,19 @@ The resolver:
    namespace; and
 6. returns the base without requiring a clone-local Vespa checkout.
 
+The Cargo consumer mode can reuse compatible already-built local Vespa
+libraries, but it never invokes CMake to rebuild Vespa from source. If no
+published or compatible prebuilt base is available, the build fails with a
+provisioning error. Maintainers can still use `./dev native-sdk ensure` to
+bootstrap an explicitly configured pinned Vespa checkout from source.
+
 The configured checkout registration is a machine-global symlink under the same
 build-environment/native-target namespace, keyed by the pinned Vespa checkout
 hash. A fresh
 independent Git clone therefore reuses both the installed base and the one
 already-configured immutable Vespa checkout needed to compile the local adapter.
 
-`./dev native-sdk ensure` owns the one-time provisioning/repair path. If the
+`./dev native-sdk ensure` is the maintainer provisioning/repair path. If the
 machine-global object already validates, `ensure` returns it immediately. On a
 genuine miss it uses this order:
 
@@ -96,7 +104,7 @@ Search Kernel adapter. Producer-machine absolute paths in configured metadata
 are normalized during packaging so the toolchain is relocatable. Search Kernel
 adapter source, flags and compiled output are not part of this artifact.
 
-A standalone local fallback checkout is accepted only when its Git HEAD equals
+A standalone maintainer fallback checkout is accepted only when its Git HEAD equals
 the pinned checkout hash and its tracked source is clean. If that checkout is
 already CMake-configured but has no `libvespa*.so*` outputs, `ensure` may build
 the configured `searchcore_embedded_crud_spike_app` target once.

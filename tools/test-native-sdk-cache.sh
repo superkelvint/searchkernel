@@ -94,12 +94,13 @@ if [[ ! -x "$source_root/core/native/vespa/build-sdk.sh" ]]; then
     exit 1
 fi
 
-# Consumer Cargo builds automatically provision and validate the pinned base.
+# Supported consumer builds automatically provision and validate the pinned
+# base; the retired manual `path` prerequisite is not part of that contract.
 grep -q 'resolve_shared_native_sdk(&manifest_dir, &target, "ensure")' \
     "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"
 if grep -Fq 'resolve_shared_native_sdk(&manifest_dir, &target, "path")' \
     "$source_root/core/crates/searchkernel-vespa-bindings/build.rs"; then
-    echo 'Consumer Cargo builds must not require manual native-base provisioning' >&2
+    echo 'consumer Cargo builds must not require manual shared-base provisioning' >&2
     exit 1
 fi
 grep -q 'do not set SK_NATIVE_SDK' \
@@ -262,6 +263,7 @@ run_resolver() {
     local mode=${2:-ensure}
     local build_env=${3:-cache-regression}
     local native_target=${4:-x86_64-unknown-linux-gnu}
+    local consumer_build=${5:-0}
     local execution_path=${PATH:-/usr/local/bin:/usr/bin:/bin}
     (
         cd "$root"
@@ -273,6 +275,7 @@ run_resolver() {
             "LC_ALL=C" \
             "SEARCHKERNEL_BUILD_ENV=$build_env" \
             "SK_NATIVE_TARGET=$native_target" \
+            "SEARCHKERNEL_NATIVE_CONSUMER_BUILD=$consumer_build" \
             "XDG_CACHE_HOME=$fixture/machine-cache-home" \
             "SK_NATIVE_DISABLE_PUBLISHED_BASE=1" \
             "SK_NATIVE_CACHE_BUILDER=$root/tools/fake-sdk-builder.sh" \
@@ -357,6 +360,15 @@ chmod +x "$fake_bin/cmake"
 
 mv "$legacy_sdk" "$fixture/legacy-sdk.saved"
 touch "$repo/upstream/vespa/CMakeCache.txt"
+if run_resolver "$repo" ensure consumer-test x86_64-unknown-linux-gnu 1 \
+    >"$fixture/consumer-source-build.out" 2>"$fixture/consumer-source-build.err"; then
+    echo 'native consumer provisioning unexpectedly rebuilt Vespa from source' >&2
+    exit 1
+fi
+grep -q 'consumer native build refuses to build Vespa from source' \
+    "$fixture/consumer-source-build.err"
+[[ ! -e "$repo/upstream/vespa/cmake-build-count" ]]
+
 if ! source_built=$(PATH="$fake_bin:$PATH" run_resolver "$repo" ensure source-build 2>"$fixture/source-build.err"); then
     echo 'native SDK cache failed to bootstrap from configured upstream/vespa:' >&2
     cat "$fixture/source-build.err" >&2

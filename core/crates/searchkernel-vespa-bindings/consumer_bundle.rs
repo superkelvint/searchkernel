@@ -694,6 +694,11 @@ if [[ -z "$VESPA_BUILD_ROOT" ]]; then
     register_vespa_root "$VESPA_BUILD_ROOT"
 fi
 if [[ -z "$VESPA_LIBRARY_ROOT" ]]; then
+    if [[ "${SEARCHKERNEL_NATIVE_CONSUMER_BUILD:-0}" == 1 ]]; then
+        echo "consumer native build refuses to build Vespa from source; no compatible prebuilt or published native base is available" >&2
+        echo "retry when the pinned native runtime artifact is available, or use the documented maintainer bootstrap" >&2
+        exit 1
+    fi
     VESPA_LIBRARY_ROOT=$(resolve_vespa_library_root "$VESPA_BUILD_ROOT" "$PINNED_VESPA_COMMIT")
 fi
 if [[ -e "$OBJECT" ]]; then
@@ -8541,7 +8546,14 @@ class EmbeddedEngine {
                     update->addUpdate(std::move(zcurve_update));
                 }
             } else {
-                field_update.addUpdate(std::make_unique<document::ClearValueUpdate>());
+                if (manifest_field.type == "boolean") {
+                    // Vespa's ClearValueUpdate removes the field. Portable bool
+                    // clear semantics resolve to the field's false default.
+                    field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
+                        std::make_unique<document::BoolFieldValue>(false)));
+                } else {
+                    field_update.addUpdate(std::make_unique<document::ClearValueUpdate>());
+                }
                 update->addUpdate(std::move(field_update));
                 if (manifest_field.type == "position" && manifest_field.attribute) {
                     document::FieldUpdate zcurve_update(_doc_type->getField(
@@ -9120,6 +9132,15 @@ class EmbeddedEngine {
                 const bool observed_has_value = observed_value &&
                     (observed->hasValue(schema_field) || manifest_field.type == "tensor");
                 if (!observed_has_value) {
+                    if (manifest_field.type == "boolean" && existing != result.fields.end() &&
+                        existing->value.kind == SK_VALUE_BOOLEAN && !existing->value.boolean) {
+                        // Vespa's bool attribute reads as false for both an
+                        // explicit false and an absent field. Preserve the
+                        // source-backed value when the attribute view cannot
+                        // report presence; only the source document can tell
+                        // those states apart.
+                        continue;
+                    }
                     if (manifest_field.attribute && existing != result.fields.end() &&
                         existing->value.kind == SK_VALUE_STRING &&
                         existing->value.string.empty()) {

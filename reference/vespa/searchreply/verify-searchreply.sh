@@ -38,7 +38,8 @@ fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-"$CONFIG_BIN" "$TMP/config"
+LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  "$CONFIG_BIN" "$TMP/config"
 
 PROBE="$TMP/searchreply_probe"
 "${CXX:-c++}" -std=gnu++23 -O0 -g -Wall -Wextra -Werror -pthread \

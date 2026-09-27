@@ -692,6 +692,11 @@ if [[ -z "$VESPA_BUILD_ROOT" ]]; then
     register_vespa_root "$VESPA_BUILD_ROOT"
 fi
 if [[ -z "$VESPA_LIBRARY_ROOT" ]]; then
+    if [[ "${SEARCHKERNEL_NATIVE_CONSUMER_BUILD:-0}" == 1 ]]; then
+        echo "consumer native build refuses to build Vespa from source; no compatible prebuilt or published native base is available" >&2
+        echo "retry when the pinned native runtime artifact is available, or use the documented maintainer bootstrap" >&2
+        exit 1
+    fi
     VESPA_LIBRARY_ROOT=$(resolve_vespa_library_root "$VESPA_BUILD_ROOT" "$PINNED_VESPA_COMMIT")
 fi
 if [[ -e "$OBJECT" ]]; then

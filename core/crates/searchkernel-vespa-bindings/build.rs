@@ -393,6 +393,10 @@ fn resolve_shared_native_sdk(
         .arg(root.join("tools/resolve-native-sdk.sh"))
         .arg(mode)
         .env("SK_NATIVE_TARGET", target)
+        .env(
+            "SEARCHKERNEL_NATIVE_CONSUMER_BUILD",
+            if mode == "ensure" { "1" } else { "0" },
+        )
         .output()
         .map_err(|error| format!("spawn shared native SDK resolver: {error}"))?;
     if !output.status.success() {

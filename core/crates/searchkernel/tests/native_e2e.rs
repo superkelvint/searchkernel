@@ -143,6 +143,13 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
     assert_eq!(false_hits.total_hits.value, 2);
     assert_eq!(
         index
+            .get::<serde_json::Value>("false")
+            .expect("get explicit false bool document")
+            .expect("explicit false document exists")["active"],
+        serde_json::Value::Bool(false)
+    );
+    assert_eq!(
+        index
             .get::<serde_json::Value>("absent")
             .expect("get absent bool document")
             .expect("absent bool document exists")["active"],
@@ -157,7 +164,7 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
             .get::<serde_json::Value>("true")
             .expect("get cleared bool document")
             .expect("cleared bool document exists")["active"],
-        serde_json::Value::Null
+        serde_json::Value::Bool(false)
     );
     index.close().expect("close native bool index");
     let reopened = searchkernel::Index::open(&path).expect("reopen native bool index");
@@ -167,6 +174,15 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
         .execute::<serde_json::Value>()
         .expect("search cleared bool values after reopen");
     assert_eq!(reopened_false_hits.total_hits.value, 3);
+    for id in ["false", "true"] {
+        assert_eq!(
+            reopened
+                .get::<serde_json::Value>(id)
+                .expect("get false bool document after reopen")
+                .expect("bool document exists after reopen")["active"],
+            serde_json::Value::Bool(false)
+        );
+    }
     reopened.close().expect("close reopened native bool index");
     std::fs::remove_dir_all(path).expect("remove native bool index");
 }

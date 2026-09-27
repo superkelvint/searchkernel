@@ -39,11 +39,10 @@ fi
 source "$ROOT/reference/vespa/common/verify-common.sh"
 check_fixture_literals "$SCEN" "$RUST/src" "$SYS/src" "$NATIVE"
 
-# Vespa headers belong only to core/native/vespa, never the safe Rust crate.
-if grep -RInE '#include[[:space:]]*[<\"]vespa/' "$RUST" "$SYS" --include='*.rs' --exclude='consumer_bundle.rs' 2>/dev/null; then
-  echo "Vespa C++ headers leaked outside native adapter" >&2
-  exit 1
-fi
+# Handwritten Rust/client/core code cannot own Vespa headers. The checker
+# validates the one generated packaging bundle against its canonical source.
+python3 "$ROOT/tools/check-native-include-boundary.py"
+python3 "$ROOT/tools/test_native_include_boundary.py"
 
 # Raw extern declarations belong in sys/raw layer, not safe wrapper.
 if grep -RInE 'extern[[:space:]]+"C"' "$RUST/src" 2>/dev/null; then

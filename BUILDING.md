@@ -282,12 +282,16 @@ environment failure:
 The normal host workflow uses `target/host` automatically through
 `.cargo/config.toml`. Ordinary `./dev check-fast`, standalone Rust API
 tests, and non-native workspace checks do not populate the Vespa SDK cache.
-Before the first native link, run `./dev native-sdk ensure`. Provisioning
-should run this command on every runner/bootstrap cycle: `ensure` checks whether
-a newer published native-base generation exists for the same environment, target
-and pinned Vespa checkout and atomically refreshes the machine cache when needed.
-No manual cache deletion is required. Ordinary Cargo builds use the read-only
-`path` lookup and never perform network access or mutate the shared base.
+Supported native consumer Cargo builds automatically use `ensure` to acquire,
+validate, and repair the pinned published base. They do not require a prior
+manual bootstrap, and they do not rebuild Vespa from source. The resolver checks
+whether a newer published native-base generation exists for the same
+environment, target, and pinned Vespa checkout and atomically refreshes the
+machine cache when needed. No manual cache deletion is required.
+
+Maintainers can run `./dev native-sdk ensure` to provision the cache explicitly.
+That command retains the configured pinned-source bootstrap fallback for local
+development; Cargo consumer builds do not enable that fallback.
 
 Cargo builds only Search Kernel's `abi.cc` adapter into the target's `OUT_DIR`.
 Published generation changes are recorded in a stable receipt inside the shared
@@ -305,7 +309,7 @@ cargo test --workspace --all-targets --no-default-features
 ```
 
 `searchkerneld` enables the Vespa native feature by default. Its Rust bindings
-resolve a read-only shared Vespa base, build the Search Kernel adapter locally,
+ensure a compatible shared Vespa base, build the Search Kernel adapter locally,
 and run a real compile/link probe against the combined adapter + base before Rust
 links. Search Kernel source changes never rebuild or repackage the Vespa base.
 
