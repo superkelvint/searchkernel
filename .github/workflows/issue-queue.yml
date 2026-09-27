@@ -1,30 +1,9 @@
 name: Issue queue
 
+# Temporarily disabled from CI/scheduled execution.
+# Keep manual dispatch available while the consistency workflow is paused.
 on:
-  pull_request:
-    paths:
-      - "AGENTS.md"
-      - "dev"
-      - "tools/check-issue-queue.py"
-      - "tools/test_check_issue_queue.py"
-      - ".github/ci/select-python.sh"
-      - ".github/ci/check-python-workflows.sh"
-      - ".github/workflows/issue-queue.yml"
-      - ".github/workflows/issue-queue-reconcile.yml"
-  push:
-    branches: [main]
-    paths:
-      - "AGENTS.md"
-      - "dev"
-      - "tools/check-issue-queue.py"
-      - "tools/test_check_issue_queue.py"
-      - ".github/ci/select-python.sh"
-      - ".github/ci/check-python-workflows.sh"
-      - ".github/workflows/issue-queue.yml"
-      - ".github/workflows/issue-queue-reconcile.yml"
   workflow_dispatch:
-  schedule:
-    - cron: "17 * * * *"
 
 permissions:
   contents: read

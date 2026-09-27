@@ -235,19 +235,34 @@ impl Dispatcher {
         &self,
         callback: impl FnOnce(&IndexContext, &dyn Backend) -> searchkernel_ir::Result<T>,
     ) -> Result<searchkernel_ir::Result<T>, DispatchError> {
-        self.session
-            .execute(|backend| callback(&self.context, backend))
-            .map_err(|SessionError::Closed| DispatchError::Closed)
+        Ok(
+            match self
+                .session
+                .execute(|backend| callback(&self.context, backend))
+            {
+                Ok(result) => result,
+                Err(SessionError::Closed) => Err(closed_target_error()),
+            },
+        )
     }
 
     fn execute_context<T>(
         &self,
         callback: impl FnOnce(&IndexContext) -> searchkernel_ir::Result<T>,
     ) -> Result<searchkernel_ir::Result<T>, DispatchError> {
-        self.session
-            .execute(|_| callback(&self.context))
-            .map_err(|SessionError::Closed| DispatchError::Closed)
+        Ok(match self.session.execute(|_| callback(&self.context)) {
+            Ok(result) => result,
+            Err(SessionError::Closed) => Err(closed_target_error()),
+        })
     }
+}
+
+fn closed_target_error() -> searchkernel_ir::PortableError {
+    searchkernel_ir::PortableError::failed_precondition(
+        "target_closed",
+        None::<String>,
+        "Search Kernel target is closed",
+    )
 }
 
 fn parse_request(bytes: &[u8]) -> Result<wire::RequestEnvelope<'_>, DispatchError> {
