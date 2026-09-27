@@ -12,8 +12,8 @@ prepare_hardening_sdk
 build_m11_driver
 
 cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m11
-LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  cargo test --quiet -p searchkernel-vespa-engine --all-targets --all-features
+run_native_executable_with_sdk "$M11_SDK" "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" \
+  test --quiet -p searchkernel-vespa-engine --all-targets --all-features
 
 TARGET="$ROOT/target/vespa-verifier/m11/core"
 rm -rf "$TARGET"
