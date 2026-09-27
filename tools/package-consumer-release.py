@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the supported Linux x86-64 consumer artifact set plus provenance/checksums."""
-import argparse, hashlib, json, os, shutil, subprocess, tarfile
+import argparse, hashlib, json, os, shutil, subprocess, sys, tarfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 VERSION='0.1.0'
@@ -31,7 +31,7 @@ def main():
  # Supported managed-local packages carry the exact same versioned daemon.
  for package_dir in (ROOT/'clients/python/searchkernel', ROOT/'clients/typescript'):
   bindir=package_dir/'bin'; bindir.mkdir(exist_ok=True); shutil.copy2(daemon,bindir/'searchkerneld')
- run('python3','-m','build','--outdir',str(out),str(ROOT/'clients/python'))
+ run(sys.executable,'-m','pip','wheel','--no-deps','--no-build-isolation','--wheel-dir',str(out),str(ROOT/'clients/python'))
  run('npm','pack','--pack-destination',str(out),cwd=ROOT/'clients/typescript')
  for bundled in (ROOT/'clients/python/searchkernel/bin/searchkerneld', ROOT/'clients/typescript/bin/searchkerneld'):
   bundled.unlink(missing_ok=True)
