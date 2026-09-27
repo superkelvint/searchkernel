@@ -49,7 +49,11 @@ std::vector<std::string> copy_string_array(const uint8_t *bytes,
         if (offset > bytes_length || length > bytes_length - offset) {
             throw std::invalid_argument(std::string(what) + " lengths exceed packed data");
         }
-        result.emplace_back(reinterpret_cast<const char *>(bytes + offset), length);
+        if (length == 0) {
+            result.emplace_back();
+        } else {
+            result.emplace_back(reinterpret_cast<const char *>(bytes + offset), length);
+        }
         offset += length;
     }
     if (offset != bytes_length) {
@@ -88,9 +92,15 @@ std::vector<std::pair<std::string, std::string>> copy_predicate_features(
             value_length > value_bytes_length - value_offset) {
             throw std::invalid_argument("predicate feature lengths exceed packed data");
         }
-        result.emplace_back(
-            std::string(reinterpret_cast<const char *>(key_bytes + key_offset), key_length),
-            std::string(reinterpret_cast<const char *>(value_bytes + value_offset), value_length));
+        std::string key;
+        if (key_length != 0) {
+            key.assign(reinterpret_cast<const char *>(key_bytes + key_offset), key_length);
+        }
+        std::string value;
+        if (value_length != 0) {
+            value.assign(reinterpret_cast<const char *>(value_bytes + value_offset), value_length);
+        }
+        result.emplace_back(std::move(key), std::move(value));
         key_offset += key_length;
         value_offset += value_length;
     }
