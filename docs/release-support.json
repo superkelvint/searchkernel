@@ -11,31 +11,36 @@
       "surface": "rust-embedded",
       "runtime": "native",
       "evidence": "native-full",
-      "verification": "./dev verify persistence"
+      "verification": "./dev verify persistence",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
       "surface": "searchkerneld",
       "runtime": "native",
       "evidence": "client-e2e",
-      "verification": "tools/check-client-contracts.py --run-e2e"
+      "verification": "tools/check-client-contracts.py --run-e2e",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
       "surface": "python",
       "runtime": "managed-local",
       "evidence": "native-full",
-      "verification": "tools/run-python-native-e2e.sh --prevalidated-native-sdk"
+      "verification": "tools/run-python-native-e2e.sh --prevalidated-native-sdk",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
       "surface": "python",
       "runtime": "connect",
       "evidence": "client-e2e",
-      "verification": "tools/check-client-contracts.py --run-e2e"
+      "verification": "tools/check-client-contracts.py --run-e2e",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
       "surface": "typescript-node",
       "runtime": "connect",
       "evidence": "client-e2e",
-      "verification": "tools/check-client-contracts.py --run-e2e"
+      "verification": "tools/check-client-contracts.py --run-e2e",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     }
   ],
   "deferred": [

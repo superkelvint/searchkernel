@@ -19,7 +19,7 @@ def main():
  # Rust embedded distribution is a versioned source bundle: internal path crates are
  # included so a consumer never depends on unpublished workspace crates or this checkout.
  rust_bundle=out/f'searchkernel-rust-{VERSION}.tar.gz'
- rust_paths=['Cargo.toml','Cargo.lock','LICENSE','core/crates/searchkernel','core/crates/searchkernel-ir','core/crates/searchkernel-filter','core/crates/searchkernel-protocol','core/crates/searchkernel-ir-adapter','core/crates/searchkernel-vespa-engine','core/crates/searchkernel-vespa-bindings','api','tools/resolve-native-sdk.sh','tools/install-native-base-artifact.sh','tools/native-base-release-selection.py','native-sdk.lock.json','upstream/vespa.commit']
+ rust_paths=['Cargo.toml','Cargo.lock','LICENSE','core/crates','searchkerneld','api','tools/resolve-native-sdk.sh','tools/install-native-base-artifact.sh','tools/native-base-release-selection.py','native-sdk.lock.json','upstream/vespa.commit']
  with tarfile.open(rust_bundle,'w:gz') as tf:
   for rel in rust_paths:
    path=ROOT/rel

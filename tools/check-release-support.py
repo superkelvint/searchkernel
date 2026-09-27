@@ -25,6 +25,8 @@ required_verification = {
 }
 for row in authority["supported"]:
     key=(row["surface"],row["runtime"])
+    if row.get("qualification") != "tools/qualify-consumer-release.py dist/release":
+        raise SystemExit(f"{key} is missing packaged clean-machine qualification ownership")
     command=row.get("verification")
     if command != required_verification[key]: raise SystemExit(f"{key} has no authoritative executable verification command")
     lane=row["evidence"]
@@ -38,4 +40,6 @@ clients=(ROOT/"clients/README.md").read_text()
 for text,name in [(readme,"README.md"),(clients,"clients/README.md")]:
     if "docs/release-support.md" not in text and "../docs/release-support.md" not in text:
         raise SystemExit(f"{name} does not link the authoritative release support matrix")
+if "tools/qualify-consumer-release.py /tmp/searchkernel-consumer-release" not in runner:
+    raise SystemExit("client-e2e lane does not execute packaged clean-machine qualification")
 print("Release support matrix PASS: Linux x86_64 glibc Rust/daemon/Python/Node scope is explicit and qualified")
