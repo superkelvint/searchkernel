@@ -18,16 +18,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rustfmt:
-    name: Apply cargo fmt
+  format_untrusted:
+    name: Produce rustfmt patch
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-      HEAD_REF: ${{ github.event.pull_request.head.ref }}
-      AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
 
     steps:
       - name: Check out exact PR head
@@ -51,6 +49,11 @@ jobs:
             "$CI_IMAGE" /bin/bash -lc '
               set -euo pipefail
               chmod o+x /root
+              cargo_fmt=$(/root/.cargo/bin/rustup which cargo-fmt)
+              [[ -x "$cargo_fmt" ]] || {
+                echo "cargo-fmt is unavailable in the pinned toolchain" >&2
+                exit 1
+              }
               exec setpriv \
                 --reuid="$HOST_UID" \
                 --regid="$HOST_GID" \
@@ -59,30 +62,117 @@ jobs:
                   HOME=/tmp \
                   RUSTUP_HOME=/root/.rustup \
                   CARGO_HOME=/root/.cargo \
-                  /root/.cargo/bin/cargo fmt --all
+                  "$cargo_fmt" --all
             '
 
-      - name: Commit formatting changes
+      - name: Package untrusted formatter patch
         shell: bash
         run: |
           set -euo pipefail
 
-          if git diff --quiet; then
-            echo "cargo fmt produced no changes"
-            exit 0
-          fi
-
-          unexpected=$(
-            git diff --name-only |
-              grep -Ev '\.rs$' || true
-          )
-          if [[ -n "$unexpected" ]]; then
-            echo "::error::cargo fmt unexpectedly changed non-Rust files:" >&2
-            printf '%s\n' "$unexpected" >&2
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
             exit 1
           fi
 
-          git diff --check
+          artifact_dir="$RUNNER_TEMP/rustfmt-artifact"
+          mkdir -p "$artifact_dir"
+          git diff --binary --full-index --no-ext-diff > "$artifact_dir/rustfmt.patch"
+
+      - name: Upload formatter patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfmt-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rustfmt-artifact/rustfmt.patch
+          if-no-files-found: error
+          retention-days: 1
+
+  write_autofix:
+    name: Validate and push rustfmt patch
+    needs: format_untrusted
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download formatter patch
+        uses: actions/download-artifact@v4
+        with:
+          name: rustfmt-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rustfmt-artifact
+
+      - name: Validate and apply formatter patch
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
+            exit 1
+          fi
+
+          patch="$RUNNER_TEMP/rustfmt-artifact/rustfmt.patch"
+          [[ -f "$patch" ]] || {
+            echo "::error::formatter artifact is missing rustfmt.patch" >&2
+            exit 1
+          }
+
+          if [[ ! -s "$patch" ]]; then
+            echo "cargo fmt produced no changes"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git apply --check --whitespace=error-all "$patch"
+          git apply --index --whitespace=error-all "$patch"
+          git diff --cached --check
+
+          found=0
+          while IFS= read -r -d '' status && IFS= read -r -d '' path; do
+            found=1
+            [[ "$status" == "M" ]] || {
+              echo "::error::rustfmt patch contains non-modification status '$status' for '$path'" >&2
+              exit 1
+            }
+            [[ "$path" == *.rs ]] || {
+              echo "::error::rustfmt patch changes non-Rust path '$path'" >&2
+              exit 1
+            }
+          done < <(git diff --cached --name-status -z)
+
+          [[ "$found" == 1 ]] || {
+            echo "::error::non-empty rustfmt patch produced no staged changes" >&2
+            exit 1
+          }
+
+          if [[ -n "$(git diff --cached --summary)" ]]; then
+            echo "::error::rustfmt patch changes file modes or object types" >&2
+            git diff --cached --summary >&2
+            exit 1
+          fi
+
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push formatting changes
+        if: steps.validate.outputs.has_changes == 'true'
+        shell: bash
+        env:
+          AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
+        run: |
+          set -euo pipefail
 
           [[ -n "${AUTOFIX_TOKEN:-}" ]] || {
             echo "::error::RUSTFMT_AUTOFIX_TOKEN is not configured." >&2
@@ -97,13 +187,11 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -u
-          git diff --cached --check
           git -c core.hooksPath=/dev/null -c commit.gpgsign=false \
             commit -m "style: apply cargo fmt"
 
           # Never force-push. If the PR advanced while rustfmt was running,
           # this push fails instead of overwriting the newer head.
-          git push \
+          git -c core.hooksPath=/dev/null -c credential.helper= push \
             "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "HEAD:refs/heads/${HEAD_REF}"
