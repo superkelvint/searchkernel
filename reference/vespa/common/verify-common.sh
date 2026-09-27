@@ -47,6 +47,33 @@ fi
 export VESPA_ROOT
 export CARGO_TARGET_DIR
 
+verifier_sdk_cache_valid() {
+  [[ -f "$SDK/manifest.json" ]] || return 1
+  [[ -f "$SDK/include/searchkernel_vespa.h" ]] || return 1
+  [[ -f "$SDK/lib/libsearchkernel_vespa.so" ]] || return 1
+  [[ -f "$SDK/native-build-fingerprint-v2.txt" ]] || return 1
+
+  local native_target expected
+  native_target="${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+  [[ -n "$native_target" ]] || return 1
+  expected="$(mktemp "${TMPDIR:-/tmp}/searchkernel-verifier-fingerprint.XXXXXX")"
+  if ! python3 "$REPO_ROOT/tools/native-build-fingerprint.py" \
+      --root "$REPO_ROOT" \
+      --vespa-root "$VESPA_ROOT" \
+      --target "$native_target" \
+      --scope full \
+      --output "$expected"; then
+    rm -f "$expected"
+    return 1
+  fi
+  if cmp -s "$expected" "$SDK/native-build-fingerprint-v2.txt"; then
+    rm -f "$expected"
+    return 0
+  fi
+  rm -f "$expected"
+  return 1
+}
+
 prepare_verifier_sdk() {
   if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
     return 0
@@ -64,15 +91,19 @@ prepare_verifier_sdk() {
     return 0
   fi
 
-  echo "preparing Search Kernel verifier adapter SDK: $SDK" >&2
-  SK_NATIVE_SDK="$SDK" \
-  SK_NATIVE_BUILD_DIR="$SDK_BUILD" \
-  SK_NATIVE_BASE_SDK="$BASE_SDK" \
-  SK_NATIVE_ADAPTER_ONLY=1 \
-  SK_NATIVE_REGENERATE_BINDINGS=0 \
-  SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
-  VESPA_ROOT="$VESPA_ROOT" \
-    bash "$REPO_ROOT/core/native/vespa/build-sdk.sh" >/dev/null
+  if verifier_sdk_cache_valid; then
+    echo "reusing Search Kernel verifier adapter SDK: $SDK" >&2
+  else
+    echo "preparing Search Kernel verifier adapter SDK: $SDK" >&2
+    SK_NATIVE_SDK="$SDK" \
+    SK_NATIVE_BUILD_DIR="$SDK_BUILD" \
+    SK_NATIVE_BASE_SDK="$BASE_SDK" \
+    SK_NATIVE_ADAPTER_ONLY=1 \
+    SK_NATIVE_REGENERATE_BINDINGS=0 \
+    SK_NATIVE_SKIP_BINDINGS_CHECK=1 \
+    VESPA_ROOT="$VESPA_ROOT" \
+      bash "$REPO_ROOT/core/native/vespa/build-sdk.sh" >/dev/null
+  fi
 
   SEARCHKERNEL_VERIFIER_SDK="$SDK"
   SEARCHKERNEL_VERIFIER_SDK_BUILD="$SDK_BUILD"
