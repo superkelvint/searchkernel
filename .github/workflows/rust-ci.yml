@@ -1,0 +1,66 @@
+name: Rust CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: fmt + compile + clippy
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run minimal Rust gate
+        shell: bash
+        env:
+          CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
+        run: |
+          set -euo pipefail
+
+          docker pull "$CI_IMAGE"
+
+          target_volume="searchkernel-minimal-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker volume rm -f "$target_volume" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker volume create "$target_volume" >/dev/null
+
+          docker run --rm --pids-limit=-1 \
+            -v "$GITHUB_WORKSPACE:/work:ro" \
+            -v "$target_volume:/cargo-target" \
+            -w /work \
+            -e CARGO_TARGET_DIR=/cargo-target \
+            -e FLATBUFFERS_CPP_ROOT=/usr/local \
+            -e FLATC_PATH=/usr/local/bin/flatc \
+            -e CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc \
+            -e CXX=/opt/rh/gcc-toolset-15/root/usr/bin/g++ \
+            -e AR=/opt/rh/gcc-toolset-15/root/usr/bin/ar \
+            -e RANLIB=/opt/rh/gcc-toolset-15/root/usr/bin/ranlib \
+            -e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib \
+            "$CI_IMAGE" /bin/bash -lc '
+              set -euo pipefail
+
+              echo "== cargo fmt =="
+              cargo fmt --all -- --check
+
+              echo "== cargo check =="
+              cargo check --workspace --all-targets --no-default-features --locked
+
+              echo "== cargo clippy =="
+              cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+            '
