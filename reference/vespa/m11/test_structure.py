@@ -58,6 +58,22 @@ class M11StructureTests(unittest.TestCase):
         result = self._check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_safety_comments_at_start_of_file_are_permitted(self):
+        # Regression: line - 4 must not produce an invalid sed address when an
+        # unsafe impl and its SAFETY justification are near the start of lib.rs.
+        result = self._check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_missing_safety_comment_is_rejected(self):
+        self._write(
+            "core/crates/searchkernel-vespa-engine/src/lib.rs",
+            "unsafe impl Send for Engine {}\n"
+            "unsafe impl Sync for Engine {}\n",
+        )
+        result = self._check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("has no adjacent SAFETY justification", result.stderr)
+
     def test_driver_json_oracle_is_rejected(self):
         self._write(
             "reference/vespa/m11/rust-driver/src/main.rs",

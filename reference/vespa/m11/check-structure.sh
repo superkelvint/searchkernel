@@ -58,7 +58,7 @@ fi
 for impl in 'unsafe impl Send for Engine' 'unsafe impl Sync for Engine'; do
   line="$(rg -n "$impl" "$ROOT/core/crates/searchkernel-vespa-engine/src/lib.rs" | cut -d: -f1)"
   [[ -n "$line" ]] || { fail "missing $impl"; continue; }
-  previous=$((line - 4))
+  previous=$((line > 4 ? line - 4 : 1))
   sed -n "${previous},${line}p" "$ROOT/core/crates/searchkernel-vespa-engine/src/lib.rs" | grep -q 'SAFETY:' ||
     fail "$impl has no adjacent SAFETY justification"
 done
