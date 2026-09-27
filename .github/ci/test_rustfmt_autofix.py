@@ -31,7 +31,7 @@ class RustfmtAutofixWorkflowTests(unittest.TestCase):
         formatter = job_block(self.source, "format_untrusted")
         writer = job_block(self.source, "write_autofix")
 
-        self.assertIn("runs-on: ubuntu-24.04", formatter)
+        self.assertIn("runs-on: [self-hosted, linux, x64]", formatter)
         self.assertNotIn("secrets.", formatter)
         self.assertNotIn("AUTOFIX_TOKEN", formatter)
         self.assertIn("actions/upload-artifact@v4", formatter)
@@ -39,7 +39,7 @@ class RustfmtAutofixWorkflowTests(unittest.TestCase):
         self.assertNotIn("cargo fmt --all", formatter)
 
         self.assertIn("needs: format_untrusted", writer)
-        self.assertIn("runs-on: ubuntu-24.04", writer)
+        self.assertIn("runs-on: [self-hosted, linux, x64]", writer)
         self.assertIn("actions/download-artifact@v4", writer)
         self.assertEqual(writer.count("secrets.RUSTFMT_AUTOFIX_TOKEN"), 1)
         for forbidden in ("/root/.cargo/bin/cargo", "cargo fmt --all", "cargo-fmt", "docker run", "GITHUB_PATH", "GITHUB_ENV"):
