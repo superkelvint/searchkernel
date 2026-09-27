@@ -2406,7 +2406,7 @@ trap - EXIT
 echo "built SDK at $SDK_PACKAGE"
 "########),
     ("core/native/vespa/manifest.json", br########"{
-  "native_abi_version": 13,
+  "native_abi_version": 14,
   "vespa_commit": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
 }
 "########),
@@ -2755,12 +2755,13 @@ extern "C" SK_API int32_t sk_document_add_tensor_dense(
 
 extern "C" SK_API int32_t sk_document_add_string_array(
     sk_document *document, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_STRING_ARRAY;
-        result.strings = copy_string_array(value_bytes, value_lengths, value_count, "string array");
+        result.strings = copy_string_array(value_bytes, value_lengths, value_count, value_bytes_length, "string array");
         return result;
     });
 }
@@ -2907,15 +2908,16 @@ extern "C" SK_API int32_t sk_document_add_position(
 
 extern "C" SK_API int32_t sk_document_add_predicate(
     sk_document *document, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count, uint8_t *error,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_PREDICATE;
         result.predicate_features = copy_predicate_features(
-            feature_key_bytes, feature_key_lengths, feature_value_bytes,
-            feature_value_lengths, feature_count);
+            feature_key_bytes, feature_key_lengths, feature_key_bytes_length,
+            feature_value_bytes, feature_value_lengths, feature_value_bytes_length, feature_count);
         return result;
     });
 }
@@ -3095,12 +3097,13 @@ extern "C" SK_API int32_t sk_document_update_assign_tensor_dense(
 
 extern "C" SK_API int32_t sk_document_update_assign_string_array(
     sk_document_update *update, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_STRING_ARRAY;
-        result.strings = copy_string_array(value_bytes, value_lengths, value_count, "string array");
+        result.strings = copy_string_array(value_bytes, value_lengths, value_count, value_bytes_length, "string array");
         return std::optional<OwnedValue>(std::move(result));
     });
 }
@@ -3119,15 +3122,16 @@ extern "C" SK_API int32_t sk_document_update_assign_position(
 
 extern "C" SK_API int32_t sk_document_update_assign_predicate(
     sk_document_update *update, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count, uint8_t *error,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_PREDICATE;
         result.predicate_features = copy_predicate_features(
-            feature_key_bytes, feature_key_lengths, feature_value_bytes,
-            feature_value_lengths, feature_count);
+            feature_key_bytes, feature_key_lengths, feature_key_bytes_length,
+            feature_value_bytes, feature_value_lengths, feature_value_bytes_length, feature_count);
         return std::optional<OwnedValue>(std::move(result));
     });
 }
@@ -6854,8 +6858,17 @@ int32_t add_document_value(sk_document *document, const char *field,
 
 std::vector<std::string> copy_string_array(const uint8_t *bytes,
                                            const uint32_t *lengths,
-                                           uint32_t count,
+                                           uint32_t count, uint32_t bytes_length,
                                            const char *what) {
+    if (count > MAX_PACKED_DOCUMENT_ITEMS) {
+        throw std::invalid_argument(std::string(what) + " has too many items");
+    }
+    if (count == 0 && bytes_length != 0) {
+        throw std::invalid_argument(std::string(what) + " arrays are invalid");
+    }
+    if (bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES) {
+        throw std::invalid_argument(std::string(what) + " data is too large");
+    }
     if (count != 0 && (!bytes || !lengths)) {
         throw std::invalid_argument(std::string(what) + " arrays are invalid");
     }
@@ -6864,20 +6877,33 @@ std::vector<std::string> copy_string_array(const uint8_t *bytes,
     size_t offset = 0;
     for (uint32_t index = 0; index < count; ++index) {
         const size_t length = lengths[index];
-        if (offset > std::numeric_limits<size_t>::max() - length) {
-            throw std::invalid_argument(std::string(what) + " data is too large");
+        if (length > MAX_PACKED_DOCUMENT_ELEMENT_BYTES) {
+            throw std::invalid_argument(std::string(what) + " item is too large");
+        }
+        if (offset > bytes_length || length > bytes_length - offset) {
+            throw std::invalid_argument(std::string(what) + " lengths exceed packed data");
         }
         result.emplace_back(reinterpret_cast<const char *>(bytes + offset), length);
         offset += length;
+    }
+    if (offset != bytes_length) {
+        throw std::invalid_argument(std::string(what) + " lengths do not match packed data");
     }
     return result;
 }
 
 std::vector<std::pair<std::string, std::string>> copy_predicate_features(
-    const uint8_t *key_bytes, const uint32_t *key_lengths,
-    const uint8_t *value_bytes, const uint32_t *value_lengths,
+    const uint8_t *key_bytes, const uint32_t *key_lengths, uint32_t key_bytes_length,
+    const uint8_t *value_bytes, const uint32_t *value_lengths, uint32_t value_bytes_length,
     uint32_t count) {
-    if (count == 0 || !key_bytes || !key_lengths || !value_bytes || !value_lengths) {
+    if (count == 0 || count > MAX_PACKED_DOCUMENT_ITEMS) {
+        throw std::invalid_argument("predicate feature count is invalid");
+    }
+    if (key_bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES ||
+        value_bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES) {
+        throw std::invalid_argument("predicate feature data is too large");
+    }
+    if (!key_bytes || !key_lengths || !value_bytes || !value_lengths) {
         throw std::invalid_argument("predicate feature arrays are invalid");
     }
     std::vector<std::pair<std::string, std::string>> result;
@@ -6887,15 +6913,23 @@ std::vector<std::pair<std::string, std::string>> copy_predicate_features(
     for (uint32_t index = 0; index < count; ++index) {
         const size_t key_length = key_lengths[index];
         const size_t value_length = value_lengths[index];
-        if (key_offset > std::numeric_limits<size_t>::max() - key_length ||
-            value_offset > std::numeric_limits<size_t>::max() - value_length) {
-            throw std::invalid_argument("predicate feature data is too large");
+        if (key_length > MAX_PACKED_DOCUMENT_ELEMENT_BYTES ||
+            value_length > MAX_PACKED_DOCUMENT_ELEMENT_BYTES) {
+            throw std::invalid_argument("predicate feature item is too large");
+        }
+        if (key_offset > key_bytes_length || key_length > key_bytes_length - key_offset ||
+            value_offset > value_bytes_length ||
+            value_length > value_bytes_length - value_offset) {
+            throw std::invalid_argument("predicate feature lengths exceed packed data");
         }
         result.emplace_back(
             std::string(reinterpret_cast<const char *>(key_bytes + key_offset), key_length),
             std::string(reinterpret_cast<const char *>(value_bytes + value_offset), value_length));
         key_offset += key_length;
         value_offset += value_length;
+    }
+    if (key_offset != key_bytes_length || value_offset != value_bytes_length) {
+        throw std::invalid_argument("predicate feature lengths do not match packed data");
     }
     return result;
 }
@@ -7157,6 +7191,9 @@ constexpr size_t MAX_TEXT_TERM_BYTES = 1024 * 1024;
 constexpr size_t MAX_TOTAL_TEXT_TERM_BYTES = 64 * 1024 * 1024;
 constexpr size_t MAX_TEXT_TERMS = 65536;
 constexpr size_t MAX_TEXT_OCCURRENCES = 65536;
+constexpr size_t MAX_PACKED_DOCUMENT_ITEMS = MAX_TEXT_TERMS;
+constexpr size_t MAX_PACKED_DOCUMENT_ELEMENT_BYTES = MAX_TEXT_TERM_BYTES;
+constexpr size_t MAX_PACKED_DOCUMENT_TOTAL_BYTES = MAX_TEXT_BYTES;
 constexpr uint32_t MAX_SEARCH_LIMIT = 1'000'000;
 constexpr std::string_view HIGHLIGHT_SUMMARY_PREFIX = "__searchkernel_highlight_";
 constexpr std::array<std::string_view, 18> RESERVED_FIELD_NAMES = {
@@ -13179,7 +13216,7 @@ typedef struct sk_grouping_filter sk_grouping_filter;
 
 /* ABI revision 13 adds structured grouping-plan input and structured grouping
    tree output to the generic search surface. */
-#define SK_NATIVE_ABI_VERSION 13U
+#define SK_NATIVE_ABI_VERSION 14U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -13220,15 +13257,17 @@ SK_API int32_t sk_document_add_tensor_dense(
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_string_array(
     sk_document *document, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *out_error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_position(
     sk_document *document, const char *field, double latitude, double longitude,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_predicate(
     sk_document *document, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_predicate_json(
     sk_document *document, const char *field, const char *expression_json,
@@ -13304,15 +13343,17 @@ SK_API int32_t sk_document_update_assign_tensor_dense(
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_string_array(
     sk_document_update *update, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *out_error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_position(
     sk_document_update *update, const char *field, double latitude, double longitude,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_predicate(
     sk_document_update *update, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_predicate_json(
     sk_document_update *update, const char *field, const char *expression_json,

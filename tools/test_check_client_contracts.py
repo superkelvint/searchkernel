@@ -293,7 +293,7 @@ class ClientContractTests(unittest.TestCase):
         resolve_python.chmod(0o755)
         resolve_rust = tools_dir / "resolve-rust.sh"
         resolve_rust.write_text(
-            "#!/usr/bin/env bash\ncommand -v \"$1\"\n",
+            "#!/usr/bin/env bash\ncommand -v \"${1:-cargo}\"\n",
             encoding="utf-8",
         )
         resolve_rust.chmod(0o755)
