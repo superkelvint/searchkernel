@@ -77,6 +77,7 @@ begin
     "title" => "Jumped Running Shoes for Daily Training",
     "brand" => "Acme",
     "price" => 89.0,
+    "sale_price" => 79.0,
     "inventory" => 10,
     "active" => true, "category" => "shoes", "rating" => 5,
     "embedding" => embedding(*SHOE_1_VECTOR)
@@ -199,6 +200,27 @@ begin
     SearchKernel::Query.nearest_neighbor("embedding", "query_embedding")
   )).ranking("hybrid").input("query_embedding", embedding(*BAG_1_VECTOR)).limit(10).execute
   check(ids(hybrid).include?("bag-1") && ids(hybrid).include?("shoe-1"), "hybrid lexical + vector candidate union")
+
+  vector_only = hybrid.hits.find { |hit| hit.id == "bag-1" }
+  lexical_hit = hybrid.hits.find { |hit| hit.id == "shoe-1" }
+  check(!vector_only.nil? && !lexical_hit.nil?, "hybrid ranking exposes both vector-only and lexical hits")
+
+  vector_bm25 = vector_only.features.fetch("bm25(title)")
+  vector_closeness = vector_only.features.fetch("closeness(embedding)")
+  check(vector_bm25.abs < 1e-6, "vector-only candidate has no lexical score")
+  check(vector_closeness > 0.99, "vector-only candidate retains nearest-neighbor closeness")
+  check(
+    (vector_only.score - (vector_bm25 + 10 * vector_closeness)).abs < 1e-5,
+    "hybrid score combines lexical and vector features for vector-only hit"
+  )
+
+  lexical_bm25 = lexical_hit.features.fetch("bm25(title)")
+  lexical_closeness = lexical_hit.features.fetch("closeness(embedding)")
+  check(lexical_bm25 > 0, "lexical hybrid candidate retains BM25 contribution")
+  check(
+    (lexical_hit.score - (lexical_bm25 + 10 * lexical_closeness)).abs < 1e-5,
+    "hybrid score combines lexical and vector features for lexical hit"
+  )
 
   normal_coverage = index.search("shoes").limit(10).execute.coverage
   check(!normal_coverage.nil? && normal_coverage.full == true, "normal coverage is full")
@@ -339,11 +361,12 @@ begin
   same(%w[shoe-1 shoe-2], grouped_hit_ids, "summary aggregation preserves grouped Hit children")
   check(grouping_buckets(summarized).all? { |group| group.hits && !group.hits.empty? }, "summary groups retain hit children")
 
+  same(79.0, index.get("shoe-1").fetch("sale_price"), "fixture stores sale_price before patch unset")
   index.patch("shoe-1").set("price", 79.0).set("inventory", 11).unset("sale_price").execute
   same(11, index.get("shoe-1").fetch("inventory"), "patch second set")
   patched = index.get("shoe-1")
   same(79.0, patched.fetch("price"), "patch set")
-  check(!patched.key?("sale_price"), "patch unset")
+  check(!patched.key?("sale_price"), "patch unset removes an existing field")
 
   index.update("shoe-1").increment("inventory", 5).execute
   same(16, index.get("shoe-1").fetch("inventory"), "advanced arithmetic increment")
@@ -355,8 +378,13 @@ begin
   same(6, index.get("shoe-1").fetch("inventory"), "advanced arithmetic divide")
   index.update("created-by-update").set("inventory", 7).create.execute
   same(7, index.get("created-by-update").fetch("inventory"), "create-if-nonexistent update")
+
+  index.patch("shoe-1").set("sale_price", 75.0).execute
+  same(75.0, index.get("shoe-1").fetch("sale_price"), "fixture restores sale_price before update unset")
   index.update("shoe-1").set("title", "Fast Marathon Shoes").unset("sale_price").execute
-  same("Fast Marathon Shoes", index.get("shoe-1").fetch("title"), "advanced set update")
+  updated_shoe1 = index.get("shoe-1")
+  same("Fast Marathon Shoes", updated_shoe1.fetch("title"), "advanced set update")
+  check(!updated_shoe1.key?("sale_price"), "advanced unset removes an existing field")
   check(ids(index.search("marathon").execute).include?("shoe-1"), "updated text is searchable")
   check(!ids(index.search("jumped").execute).include?("shoe-1"), "old text is removed from search")
 
@@ -386,6 +414,7 @@ begin
   same(119.0, reopened.get("shoe-2").fetch("price"), "reopen preserves upsert replacement")
   reopened_shoe1 = reopened.get("shoe-1")
   same("Fast Marathon Shoes", reopened_shoe1.fetch("title"), "reopen preserves text update")
+  check(!reopened_shoe1.key?("sale_price"), "reopen preserves unset sale_price")
   reopened_tensor = reopened_shoe1.fetch("embedding").fetch("$searchkernel_tensor")
   same("tensor<float>(x[8])", reopened_tensor.fetch("type_spec"), "reopen preserves tensor type")
   check(
