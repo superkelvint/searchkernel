@@ -413,6 +413,45 @@ negative_generic = facet_projection_result(
   generic: true
 ).project_facet("brands", "brands", "brand")
 same({}, negative_generic.facets, "generic facet rejects negative signed count")
+
+
+metadata_result = SearchKernel::Results::SearchResults.new(
+  "root" => {
+    "node_type" => "ResultGroup",
+    "node" => {
+      "continuations" => [{ "key" => "next", "value" => "opaque-token" }],
+      "children" => [{
+        "node_type" => "Hit",
+        "node" => {
+          "id" => "doc-1",
+          "fields" => [{ "key" => "title", "value" => SearchKernel::Value.encode("Running Shoes") }],
+          "match_features" => [{ "key" => "match", "value" => SearchKernel::Value.encode(1.5) }],
+          "summary_features" => [{ "key" => "summary", "value" => SearchKernel::Value.encode(2.5) }],
+          "rank_features" => [{ "key" => "rank", "value" => SearchKernel::Value.encode(3.5) }],
+          "sort_values" => [SearchKernel::Value.encode(99.0)]
+        }
+      }]
+    }
+  },
+  "timing" => {
+    "query_time_seconds" => { "value" => 0.01 },
+    "search_time_seconds" => { "value" => 0.02 },
+    "summary_fetch_time_seconds" => { "value" => 0.03 }
+  },
+  "trace" => SearchKernel::Value.encode("trace-token"),
+  "metadata" => [{ "key" => "origin", "value" => SearchKernel::Value.encode("fixture") }],
+  "errors" => [{ "code" => "7", "summary" => "warning", "message" => "fixture issue" }]
+)
+metadata_hit = metadata_result.hits.first
+same({ "match" => 1.5 }, metadata_hit.match_features, "match features decode")
+same({ "summary" => 2.5 }, metadata_hit.summary_features, "summary features decode")
+same({ "rank" => 3.5 }, metadata_hit.rank_features, "rank features decode")
+same([99.0], metadata_hit.sort_values, "sort values decode")
+same(0.01, metadata_result.timing.query_time_seconds, "query timing decodes")
+same("trace-token", metadata_result.trace, "trace value decodes")
+same({ "origin" => "fixture" }, metadata_result.metadata, "result metadata decodes")
+same("opaque-token", metadata_result.continuations.first.value, "continuation remains opaque")
+same("fixture issue", metadata_result.issues.first.message, "result issues decode")
 same("SearchKernel_V2_SearchRequest", recording.last_request["payload_type"], "client uses centralized operation mapping")
 raw = { "protocol_version" => 2, "payload_type" => "Custom", "payload" => {} }
 same(recording.execute(raw), client.execute_raw(raw), "raw envelope escape hatch delegates unchanged")
@@ -552,5 +591,7 @@ with_http_server(status: 503, body: "bad\r\ninjected\x00\xff".b, content_type: "
 end
 
 puts "Ruby protocol/transport tests PASS"
+
+# SKC: result.summary_features/basic kinds=conformance runtime=http
 
 require_relative "facade"
