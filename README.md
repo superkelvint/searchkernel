@@ -109,7 +109,6 @@ sudo ./dev install flatbuffers
 ./dev regen protocol
 ./dev verify milestone.m14
 ./dev verify product.integration
-./dev hooks install
 ./dev worktree create my-task
 ./dev doctor
 ```
@@ -130,10 +129,6 @@ vendored copy and does not consume this installation. The default install
 prefix is `/usr/local`. For a non-root installation, set
 `FLATBUFFERS_INSTALL_PREFIX`; the command prints the `FLATBUFFERS_CPP_ROOT`
 and `FLATC_PATH` exports needed by those standalone tools.
-
-Run `./dev hooks install` once per checkout to enable the repository-managed
-pre-commit hook. When `docs/capabilities.json` is staged, it regenerates and
-stages `docs/CAPABILITIES.md` and `LIMITATIONS.md` in the same commit.
 
 `./dev doctor` is the first command to run when setup is uncertain. It reports
 the Cargo, FlatBuffers, generated protocol, native SDK/ABI, pinned Vespa,

@@ -9,7 +9,7 @@ suite, including real-Vespa/native verification, while keeping pull-request CI
 change-aware and reasonably fast.
 
 The end state should make CI authoritative for required verification. Local
-pre-commit checks and coding-agent reports are useful evidence, but CI must not
+checks and coding-agent reports are useful evidence, but CI must not
 depend on them having run.
 
 ## Trust model
@@ -155,7 +155,7 @@ The intended user-facing interface is approximately:
 `test-all` runs the complete verification DAG without change-based omission.
 
 Names may change during implementation, but there should be one repository-owned
-profile model behind pre-commit, developer tooling, agent guidance, and CI.
+profile model behind developer tooling, agent guidance, and CI.
 
 Coding agents should run the plan and report exact commands/results. CI
 independently recomputes the authoritative plan from the trusted base policy and
@@ -335,19 +335,19 @@ not wall-clock measurements. Actual timing belongs in Phase 7.
 | Profile ID | Canonical/current entry point | Current trigger/semantic scope | Dependencies and subsumption | Prerequisites / runner | Mutable state / parallelization | Current CI | Trust boundary | Runtime class |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `rust-non-native` | `cargo test --workspace --all-targets --no-default-features` | Current `rust` lane: root Cargo metadata, `.cargo/**`, `api/**`, `core/**`, `searchkerneld/**`, `dev` | Independent baseline; does not prove native/all-features behavior | Rust + pinned FlatBuffers; any Linux runner | Cargo target/cache only; separate target roots per job | PR behavioral, unit, nightly | Candidate code; lane selection must come from trusted base | medium |
-| `rust-quality` | `cargo fmt --all --check`; `./dev lint --profile rust-clippy-non-native` | Broad Rust/build changes | Independent baseline; repeated inside several native milestone verifiers via `run_workspace_quality` with all features | Rust; native all-feature variant needs native SDK | Cargo target only | Nightly; pre-commit | Candidate code | medium |
+| `rust-quality` | `cargo fmt --all --check`; `./dev lint --profile rust-clippy-non-native` | Broad Rust/build changes | Independent baseline; repeated inside several native milestone verifiers via `run_workspace_quality` with all features | Rust; native all-feature variant needs native SDK | Cargo target only | Nightly; local checks | Candidate code | medium |
 | `python-client` | `./dev test python` | Current `python` lane: `api/**`, `clients/python/**`, client contracts and Python generation/check tooling | Includes Python generated checks plus unittest discovery; ordinary discovery skips real native gRPC E2E unless opt-in | Python runtime + package deps + FlatBuffers tools | Temp/package state; isolate venv where possible | PR behavioral, nightly | Candidate code; base-owned selection | fast-medium |
 | `typescript-client` | `./dev test typescript` | Current `typescript` lane: `api/**`, TS client, client contracts and TS generators | Includes generation regression, generated check, typecheck, Vitest, package verification | Node 22, Rust/FlatBuffers for semantic generation, npm deps | `dist`, generated/temp files; safe with per-job checkout | PR behavioral | Candidate code; base-owned selection | medium |
 | `php-client` | `./dev test php` | PHP client plus canonical schema/BFBS bridge changes that can affect the HTTP-first wire contract | PHP semantic/wire suite + PHP-emitted standard FlatBuffers JSON round-trip through the official BFBS bridge + Composer package-consumer verification | PHP runtime, Rust toolchain, pinned FlatBuffers/BFBS bridge, Composer | Cargo/package temp state only | Client-capabilities exact-head verify job; selected by verification DAG for `clients/php/**`, portable schema, and protocol bridge changes | Candidate code; base-owned selection | fast-medium |
-| `protocol-generated` | `./dev check-protocol` | Current `protocol` lane: schemas, BFBS/generated Rust/Python/TS/RPC artifacts and generators | Runs BFBS, protocol, RPC, Python FlatBuffers/gRPC, TS generated checks | pinned flatc/FlatBuffers C++; Python codegen deps; Node for TS generated checks | Regeneration checks should not mutate committed tree | Nightly partially; pre-commit; not a dedicated exact-head job | Candidate artifacts; selection from base; policy/generator changes elevated | fast-medium |
+| `protocol-generated` | `./dev check-protocol` | Current `protocol` lane: schemas, BFBS/generated Rust/Python/TS/RPC artifacts and generators | Runs BFBS, protocol, RPC, Python FlatBuffers/gRPC, TS generated checks | pinned flatc/FlatBuffers C++; Python codegen deps; Node for TS generated checks | Regeneration checks should not mutate committed tree | Nightly partially; local checks; not a dedicated exact-head job | Candidate artifacts; selection from base; policy/generator changes elevated | fast-medium |
 | `api-conformance` | `./dev verify api-conformance` / `reference/api-conformance/verify.sh` | Current `api_conformance` lane only maps `reference/api-conformance/**` | `verify.sh -> verify-fixtures.sh -> validate_suite.py`, backend-free guard, then `searchkernel-conformance`; parameterized `verify-adapter.sh` is separate | Rust + Python; no Vespa | Temporary Cargo output | Unit workflow | Candidate verifier normally; verifier/expected changes require elevated review | medium |
 | `client-contracts` | `./dev verify contracts` | Current `contracts` lane: clients, public Rust API, Vespa-engine capability docs/ledgers, contract tooling | Capabilities check/tests + client-contract check/tests + Python dependency contract | Python; executable E2E additionally needs Rust/Node/client deps | E2E starts processes/uses temp state through checker; job-local | Client-capabilities, nightly | Candidate code; contract/checker changes need elevated review | fast-medium |
 | `abi` | `./dev verify abi` | Current `abi` lane: native headers/adapter/bindings and ABI tooling | Authority tests/check, ABI surface regression, checked-in bindings, layout, SDK-cache regression, header/linker-map surface comparison | Rust/rustfmt, system Python with clang bindings/libclang, C/C++ toolchain | Native cache regression uses shared cache semantics; must isolate temp paths | Dedicated ABI workflow, nightly subset | Candidate code; baseline header comes from trusted base for change comparison | medium |
 | `persistence-static` | `tools/check-persistence-fixtures.sh`; `tools/check-persistence-fixture-immutability.sh <base>` | Current persistence path set and frozen fixture changes | Static/provenance part of `./dev verify persistence` | Shell/Python/Git | Reads frozen corpus; no shared mutable index | Dedicated persistence workflow | Immutability comparison must use trusted base | fast |
 | `persistence-native` | `./dev verify persistence` | Persistence/storage semantics: schema snapshots, index facade, IR adapter, Vespa engine/bindings/native, persisted fixtures | Static checks + native `persistence_compatibility` + `persistence_fault_matrix_` + sensitivity checker | Full native prerequisite set | Creates/reopens indexes; job-private data dirs required | Explicitly local-only today; CI emits notice | Candidate code; frozen fixture changes elevated | heavy |
-| `native-python-e2e` | `tools/run-python-native-e2e.sh` | Current pre-commit maps every `native` change to this E2E | Calls `./dev native-sdk ensure`, then opt-in `test_grpc_e2e.py` | Native SDK/base + searchkerneld build path + Python/gRPC | Daemon/socket/temp index state must be job-private | Not in Actions today | Candidate code; base-selected native requirement | heavy |
+| `native-python-e2e` | `tools/run-python-native-e2e.sh` | Native changes may select this E2E | Calls `./dev native-sdk ensure`, then opt-in `test_grpc_e2e.py` | Native SDK/base + searchkerneld build path + Python/gRPC | Daemon/socket/temp index state must be job-private | Not in Actions today | Candidate code; base-selected native requirement | heavy |
 | `vespa-m14` | `./dev verify m14` / `reference/vespa/m14/verify-m14.sh` | Latest explicit M-series milestone | Cumulative: `M14 -> M13 -> M12 -> M11 -> M10 -> M9 -> M8 -> M7 -> M6 -> M5 -> M4 -> M3 -> M2 -> M1 -> M0`; includes M10 SearchReply + feature-values, M9 recursive grouping, M11 core/stress/sanitizers | Clean pinned Vespa Git checkout, native base/SDK, C/C++/Rust/Python, prebuilt direct C++ oracles for M12-M14 and other milestone-specific oracle assets, sanitizer runtimes | Very large mutable verifier target tree; stress/sanitizers must be isolated and are poor candidates for concurrent reuse of mutable dirs | Not in Actions | Frozen verifier/oracle changes require independent review; selection must be base-owned | very heavy |
-| `vespa-integration` | `./dev verify integration` / `reference/vespa/i/verify-i.sh` | Integrated public product path | Runs `M13` (not M14) + `phase10`, then its own integration driver. Therefore it does **not** subsume M14 | Same native/Vespa prerequisites as M13 plus Phase 10 | Job-private index/config/data dirs | Not in Actions; current native pre-commit gate | Candidate implementation; verifier changes elevated | very heavy |
+| `vespa-integration` | `./dev verify integration` / `reference/vespa/i/verify-i.sh` | Integrated public product path | Runs `M13` (not M14) + `phase10`, then its own integration driver. Therefore it does **not** subsume M14 | Same native/Vespa prerequisites as M13 plus Phase 10 | Job-private index/config/data dirs | Not in Actions; local native verification | Candidate implementation; verifier changes elevated | very heavy |
 | `phase10-rust-e2e` | `./dev verify phase10` | Public Rust real-engine E2E | Independent of M14; integration invokes it after M13 | Full native SDK + pinned Vespa | Real index/runtime state; job-private target/data | Not in Actions | Candidate code; acceptance script changes elevated | heavy |
 | `searchreply` | `./dev verify searchreply` | Search-result total-hits/coverage/degradation/issues semantics | Includes `total-hit-accuracy`; also included transitively by M10 and therefore M14 | Full native prerequisites; builds direct C++ oracle and a failpoint-enabled hardening SDK | Builds SDK/probes and native data; isolate target dirs | Not in Actions | Candidate code; oracle/expected changes elevated | heavy |
 | `recovery` | `reference/vespa/recovery/verify-recovery.sh` | Product recovery matrix/repeat/missing-state behavior | Standalone; **not** invoked by `./dev verify`, M14, or integration | Full native prerequisites | Destructive/reopen-style state under `target/vespa-verifier/recovery`; must be job-private | Not in Actions | Candidate code; frozen expected/driver changes elevated | heavy |
@@ -356,7 +356,7 @@ not wall-clock measurements. Actual timing belongs in Phase 7.
 | `c2-historical` | `reference/clients/c2/verify-c2.sh` | Historical C2 API/IR contract and no-Vespa dependency firewall | Standalone; not invoked by current `./dev verify contracts` or Actions | Rust only | Cargo output | Not in Actions | Candidate verifier; historical status must be explicit before omission | medium |
 | `web-dashboard` | `npm --prefix searchkernel-web test`; `npm --prefix searchkernel-web run build` | Dashboard TypeScript/React code | Independent; not represented in current `exact_head.py` lanes or Actions workflows | Node/npm deps | Vite/Vitest build outputs; per-job checkout | Not in current CI | Candidate code; future frontend policy should be base-owned | medium |
 | `frontend-harness` | `tools/frontend-harness/frontend-ci`, `frontend-verify`, `frontend-verifier-integrity`, `frontend-harness-selftest` | Future F0-F12 dashboard milestone acceptance | F0-F12 `verify.sh` entry points are intentionally NOT_IMPLEMENTED today; acceptance cannot pass and should not be placed in the current green full-suite root until activated | Python + frontend repo state; milestone-specific deps later | Writes review/result state under target; acceptance requires clean worktree | Not in Actions | Freeze commit/integrity boundary is authoritative when activated | currently non-runnable as acceptance |
-| `verification-policy` | `python3 .github/ci/test_exact_head.py` | Current `verification` lane: pre-commit, selector/tests, `dev` | Tests selector/hook behavior; Actions classification intentionally runs trusted base helper | Python/Git; some self-tests fake Cargo/dev | Temporary Git repos | Behavioral classification job | **Base revision must remain authoritative for selection**; candidate self-tests are additive | fast |
+| `verification-policy` | `python3 .github/ci/test_exact_head.py` | Current `verification` lane: selector/tests, `dev` | Tests selector behavior; Actions classification intentionally runs trusted base helper | Python/Git | Temporary Git repos | Behavioral classification job | **Base revision must remain authoritative for selection**; candidate self-tests are additive | fast |
 | `issue-queue` | `./dev verify issue-queue` | Current `issue_queue` lane: queue checker/tests/workflow and related Python selection tooling | Unit tests; live checker needs GitHub access/token | Python; live check needs GitHub | No product state | Dedicated issue-queue workflow | Candidate checker; live repository state external | fast |
 
 ### Vespa/native closure graph
@@ -657,7 +657,7 @@ The policy uses these rules:
 - persistence/storage changes select Rust, native, and persistence;
 - root Cargo/toolchain metadata selects every current lane because it can alter
   workspace membership, features, native linkage, or code generation;
-- verification/task-control changes under `.githooks/**`, `.github/ci/**`,
+- verification/task-control changes under `.github/ci/**`,
   `.github/workflows/**`, `.moon/**`, root moon configuration, or `dev`
   select every current lane;
 - any path not recognized by a lane and not explicitly exempted selects every
@@ -667,8 +667,8 @@ The explicit non-behavioral exemptions are deliberately narrow: repository and
 nested README/AGENTS documentation, Markdown/text files under `docs/**`,
 Markdown under `implementation-plan/**` and `audits/**`, license/notice and
 ignore files. Common local scratch suffixes such as `.tmp`, `.log`, and
-`.swp` are exempted only by pre-commit's **untracked-file** check; once tracked,
-they fail closed like any other unknown file. Behavioral ledgers/configuration
+`.swp` are ignored when untracked; once tracked, they fail closed like any other
+unknown file. Behavioral ledgers/configuration
 already mapped by a known lane (for example `docs/capabilities.json`) still
 select that lane. Unknown non-document files under documentation directories
 fail closed.
@@ -681,8 +681,8 @@ git diff --name-only --no-renames -z <base> <head>
 ```
 
 so a rename/move is represented as deletion of the old path plus addition of
-the new path. This preserves both semantic areas during classification. Local
-pre-commit already uses `--no-renames` for the staged diff.
+the new path. This preserves both semantic areas during classification. The
+trusted selector uses `--no-renames` for the authoritative diff.
 
 The trusted selector also exposes a deterministic `plan` command whose output
 contains stable task IDs plus selection reasons. These IDs are the authority
@@ -769,7 +769,7 @@ SearchKernel-specific scheduler/cache/test-distribution system.
 - [ ] Mirror SearchKernel DAG dependencies into moon only for execution scheduling; moon is not the semantic authority.
 - [ ] Keep repository verifier scripts as task commands where they remain the authoritative acceptance entry point.
 - [ ] Add a mechanical equivalence check that moon task IDs, commands, runner classes, and dependency edges match the SearchKernel DAG.
-- [ ] Make pre-commit and developer tooling invoke the same canonical SearchKernel task IDs rather than duplicating commands.
+- [ ] Make developer tooling invoke the same canonical SearchKernel task IDs rather than duplicating commands.
 - [ ] Make the developer/agent `test-plan` interface print trusted SearchKernel task IDs and reasons.
 - [ ] Make the developer/agent `test-affected` interface execute the trusted task set through moon.
 - [ ] Ensure arbitrary issue/PR shell text can add evidence but never becomes executable CI authority.

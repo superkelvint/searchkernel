@@ -149,6 +149,13 @@ end
 raises(ArgumentError, "reject signed overflow") { portable.encode(2**63) }
 raises(ArgumentError, "reject unsigned overflow") { portable.uint64(2**64) }
 raises(ArgumentError, "reject non-finite request") { portable.encode(Float::INFINITY) }
+empty_dense = portable.encode(portable.tensor("tensor<float>(x[8])", :dense, []))
+same({}, empty_dense.fetch("kind").fetch("payload"), "empty dense tensor omits zero-length vector for BFBS JSON alignment")
+same(
+  [],
+  portable.decode(empty_dense).fetch("$searchkernel_tensor").fetch("dense"),
+  "empty dense tensor round-trips through public Value API"
+)
 raises(ArgumentError, "reject non-finite tensor") { portable.encode(portable.tensor("tensor(x[1])", :dense, [Float::NAN])) }
 raises(ArgumentError, "reject overflowing tensor conversion") { portable.encode(portable.tensor("tensor(x[1])", :dense, [10**400])) }
 raises(SearchKernel::ProtocolError, "reject missing discriminator") { portable.decode({"kind" => {"value" => 1}}) }
@@ -345,6 +352,111 @@ integer_result = SearchKernel::Results::SearchResults.new(
 same(2**64 - 1, integer_result.total_hits, "total hits decode canonical uint64 text")
 same(2**64 - 1, integer_result.coverage.documents, "coverage decodes canonical uint64 text")
 same(-(2**63), integer_result.errors.first.code, "result errors decode canonical int64 text")
+
+def facet_projection_result(count_value, generic: false)
+  bucket = {
+    "value" => SearchKernel::Value.encode("Acme"),
+    "fields" => [{ "key" => "count", "value" => count_value }]
+  }
+  if generic
+    bucket["id"] = "grouping-0"
+    bucket["label"] = "brands"
+  end
+
+  SearchKernel::Results::SearchResults.new(
+    "root" => {
+      "node_type" => "ResultGroup",
+      "node" => {
+        "children" => [{
+          "node_type" => "ResultGroup",
+          "node" => {
+            "id" => "brand",
+            "label" => "brands",
+            "children" => [{ "node_type" => "ResultGroup", "node" => bucket }]
+          }
+        }]
+      }
+    }
+  )
+end
+
+unsigned_facet = facet_projection_result(
+  SearchKernel::Value.encode(SearchKernel::Value.uint64(2))
+).project_facet("brands", "brands", "brand")
+same(
+  { "brands" => [{ "value" => "Acme", "count" => 2 }] },
+  unsigned_facet.facets,
+  "optimized facet accepts canonical uint64 count"
+)
+assert(unsigned_facet.frozen?, "projected SearchResults remains read-only")
+assert(unsigned_facet.facets.frozen?, "facet projection map is frozen")
+assert(unsigned_facet.facets.fetch("brands").frozen?, "facet bucket list is frozen")
+assert(unsigned_facet.facets.fetch("brands").first.frozen?, "facet bucket entries are frozen")
+
+signed_optimized = facet_projection_result(
+  SearchKernel::Value.encode(2)
+).project_facet("brands", "brands", "brand")
+same({}, signed_optimized.facets, "optimized facet rejects signed Int64 count")
+
+negative_optimized = facet_projection_result(
+  SearchKernel::Value.encode(-1)
+).project_facet("brands", "brands", "brand")
+same({}, negative_optimized.facets, "optimized facet rejects negative signed count")
+
+generic_facet = facet_projection_result(
+  SearchKernel::Value.encode(2),
+  generic: true
+).project_facet("brands", "brands", "brand")
+same(
+  { "brands" => [{ "value" => "Acme", "count" => 2 }] },
+  generic_facet.facets,
+  "generic facet accepts non-negative signed Int64 count"
+)
+
+negative_generic = facet_projection_result(
+  SearchKernel::Value.encode(-1),
+  generic: true
+).project_facet("brands", "brands", "brand")
+same({}, negative_generic.facets, "generic facet rejects negative signed count")
+
+
+metadata_result = SearchKernel::Results::SearchResults.new(
+  "root" => {
+    "node_type" => "ResultGroup",
+    "node" => {
+      "continuations" => [{ "key" => "next", "value" => "opaque-token" }],
+      "children" => [{
+        "node_type" => "Hit",
+        "node" => {
+          "id" => "doc-1",
+          "fields" => [{ "key" => "title", "value" => SearchKernel::Value.encode("Running Shoes") }],
+          "match_features" => [{ "key" => "match", "value" => SearchKernel::Value.encode(1.5) }],
+          "summary_features" => [{ "key" => "summary", "value" => SearchKernel::Value.encode(2.5) }],
+          "rank_features" => [{ "key" => "rank", "value" => SearchKernel::Value.encode(3.5) }],
+          "sort_values" => [SearchKernel::Value.encode(99.0)]
+        }
+      }]
+    }
+  },
+  "timing" => {
+    "query_time_seconds" => { "value" => 0.01 },
+    "search_time_seconds" => { "value" => 0.02 },
+    "summary_fetch_time_seconds" => { "value" => 0.03 }
+  },
+  "trace" => SearchKernel::Value.encode("trace-token"),
+  "metadata" => [{ "key" => "origin", "value" => SearchKernel::Value.encode("fixture") }],
+  "errors" => [{ "code" => "7", "summary" => "warning", "message" => "fixture issue" }]
+)
+metadata_hit = metadata_result.hits.first
+same({ "match" => 1.5 }, metadata_hit.match_features, "match features decode")
+same({ "summary" => 2.5 }, metadata_hit.summary_features, "summary features decode")
+same({ "rank" => 3.5 }, metadata_hit.rank_features, "rank features decode")
+same([99.0], metadata_hit.sort_values, "sort values decode")
+same(0.01, metadata_result.timing.query_time_seconds, "query timing decodes")
+same("trace-token", metadata_result.trace, "trace value decodes")
+same({ "origin" => "fixture" }, metadata_result.metadata, "result metadata decodes")
+same("opaque-token", metadata_result.continuations.first.value, "continuation remains opaque")
+same("fixture issue", metadata_result.issues.first.message, "result issues decode")
 same("SearchKernel_V2_SearchRequest", recording.last_request["payload_type"], "client uses centralized operation mapping")
 raw = { "protocol_version" => 2, "payload_type" => "Custom", "payload" => {} }
 same(recording.execute(raw), client.execute_raw(raw), "raw envelope escape hatch delegates unchanged")
@@ -484,5 +596,7 @@ with_http_server(status: 503, body: "bad\r\ninjected\x00\xff".b, content_type: "
 end
 
 puts "Ruby protocol/transport tests PASS"
+
+# SKC: result.summary_features/basic kinds=conformance runtime=http
 
 require_relative "facade"

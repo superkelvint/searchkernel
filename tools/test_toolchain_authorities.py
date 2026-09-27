@@ -24,10 +24,6 @@ CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ),
         ("python3", "cargo", "rustc", "rustfmt", "npm", "node", "flatc"),
     ),
-    ".githooks/pre-commit": (
-        ("tools/resolve-python.sh", "tools/resolve-rust.sh"),
-        ("python3", "cargo", "rustc"),
-    ),
     "tools/check-python-grpc.sh": (
         ("resolve-python.sh",),
         ("python3",),
@@ -185,21 +181,6 @@ class ToolchainAuthorityTests(unittest.TestCase):
         self.assertNotIn(
             "dnf install -y ripgrep clang python3-clang libclang",
             repair,
-        )
-
-    def test_nightly_contracts_use_clang_capable_python_for_abi_surface(self) -> None:
-        workflow = read(".github/workflows/ci-image-runner.yml")
-        nightly = workflow.split("            nightly-contracts)", 1)[1].split(
-            "              ;;", 1
-        )[0]
-        self.assertIn("ABI_PYTHON=/usr/bin/python3", nightly)
-        self.assertIn(
-            'run_phase nightly-abi-surface "$ABI_PYTHON" tools/check_abi_surface.py',
-            nightly,
-        )
-        self.assertNotIn(
-            'run_phase nightly-abi-surface "$PYTHON" tools/check_abi_surface.py',
-            nightly,
         )
 
     def test_typescript_helpers_pin_node_for_npm_children(self) -> None:

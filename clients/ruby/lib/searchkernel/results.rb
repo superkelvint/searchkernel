@@ -39,13 +39,14 @@ module SearchKernel
 
     class ResultGroup
       attr_reader :id, :label, :value, :fields, :children, :groups, :hits,
-                  :continuations, :source, :types, :relevance, :limits, :metadata
+                  :continuations, :source, :types, :relevance, :limits, :metadata, :_field_entries
 
       def initialize(raw)
         Value.object!(raw, "ResultGroup")
         @id = raw["id"]
         @label = raw["label"]
         @value = Value.decode(raw["value"]) if raw.key?("value")
+        @_field_entries = Results.value_entries_with_kinds(raw["fields"])
         @fields = Value.optional_entries(raw["fields"])
         @children = Results.vector(raw, "children") { |node| Results.node(node) }
         @groups = @children&.grep(ResultGroup)&.freeze
@@ -62,7 +63,7 @@ module SearchKernel
 
     class SearchResults
       attr_reader :root, :hits, :groups, :total_hits, :total_hits_relation, :coverage,
-                  :timing, :errors, :issues, :trace, :metadata, :continuations, :aggregations
+                  :timing, :errors, :issues, :trace, :metadata, :continuations, :aggregations, :facets
 
       def initialize(raw)
         Value.object!(raw, "SearchResult")
@@ -83,11 +84,77 @@ module SearchKernel
         @metadata = Value.optional_entries(raw["metadata"])
         @continuations = @root.is_a?(ResultGroup) ? @root.continuations : nil
         @aggregations = @root.is_a?(ResultGroup) ? @root.fields : nil
+        @facets = {}.freeze
         freeze
+      end
+
+      # Facets are a strict, request-derived projection over the canonical
+      # recursive grouping tree. Generic response groups are never inferred as
+      # facets without the builder supplying the requested field/name context.
+      #
+      # SearchResults remains immutable: projecting a requested facet returns a
+      # new frozen wrapper that shares the already-frozen canonical tree.
+      def project_facet(expected_label, result_name, expected_field = nil)
+        expected_field ||= expected_label
+        candidates = @groups.select do |group|
+          (group.id == expected_field || group.id.nil?) && group.label == expected_label &&
+            group.value.nil? && (!group.fields || group.fields.empty?) &&
+            (!group.continuations || group.continuations.empty?) && group.source.nil? &&
+            (!group.types || group.types.empty?) && group.relevance.nil? && group.limits.nil? &&
+            (!group.metadata || group.metadata.empty?) &&
+            (group.groups || []).length == (group.children || []).length
+        end
+        return self unless candidates.length == 1
+
+        buckets = []
+        (candidates.first.groups || []).each do |child|
+          optimized = child.id.nil? && child.label.nil?
+          generic = child.id == "grouping-0" && child.label == expected_label
+          return self unless optimized || generic
+          return self unless child.children.nil? || child.children.empty?
+          return self unless child.continuations.nil? || child.continuations.empty?
+          return self unless child.source.nil? && (child.types.nil? || child.types.empty?) && child.relevance.nil?
+          return self unless child.limits.nil? && (child.metadata.nil? || child.metadata.empty?)
+
+          entries = child._field_entries || []
+          return self unless entries.length == 1
+          key, kind, count = entries.first
+          return self unless key == "count"
+          accepted_kinds = generic ? %w[Int64Value UInt64Value] : %w[UInt64Value]
+          return self unless accepted_kinds.include?(kind)
+          return self unless count.is_a?(Integer)
+          return self if generic && count.negative?
+
+          buckets << { "value" => child.value, "count" => count }.freeze
+        end
+
+        projected = dup
+        projected.instance_variable_set(
+          :@facets,
+          @facets.merge(result_name => buckets.freeze).freeze
+        )
+        projected.freeze
       end
     end
 
     module_function
+
+    def value_entries_with_kinds(items)
+      return nil if items.nil?
+
+      seen = {}
+      Value.vector!(items, "ValueEntry").map do |entry|
+        Value.object!(entry, "ValueEntry")
+        key = Value.string!(entry["key"], "ValueEntry key")
+        raise ProtocolError, "duplicate ValueEntry key #{key.inspect}" if seen.key?(key)
+
+        raw_value = Value.object!(entry["value"], "ValueEntry value")
+        kind = Value.discriminator!(raw_value, "kind", Value::KINDS)
+        decoded = Value.decode(raw_value)
+        seen[key] = true
+        [key.freeze, kind.freeze, decoded].freeze
+      end.freeze
+    end
 
     def vector(raw, key)
       return nil unless raw.key?(key)

@@ -19,7 +19,7 @@ REPORT_JSON = ROOT / "docs" / "client-capabilities.json"
 REPORT_MD = ROOT / "docs" / "CLIENT_CAPABILITIES.md"
 VALID_KINDS = {"ergonomic", "conformance", "e2e"}
 SOURCE_SUFFIXES = {
-    ".rs", ".py", ".php", ".ts", ".tsx", ".js", ".mjs", ".c", ".cc", ".cpp", ".h", ".sh"
+    ".rs", ".py", ".php", ".rb", ".ts", ".tsx", ".js", ".mjs", ".c", ".cc", ".cpp", ".h", ".sh"
 }
 ANNOTATION_RE = re.compile(
     r"SKC:\s*(?P<capability>[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+)/"

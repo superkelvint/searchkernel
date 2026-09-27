@@ -5,6 +5,28 @@ require "json"
 require "tempfile"
 require "tmpdir"
 
+class CloseCountingOwner
+  attr_reader :close_count
+
+  def initialize
+    @close_count = 0
+  end
+
+  def close
+    @close_count += 1
+  end
+end
+
+class FailingCloseTransport
+  def execute(_request)
+    raise "unexpected execute"
+  end
+
+  def close
+    raise "client close boom"
+  end
+end
+
 class FacadeRecordingTransport
   attr_reader :requests
 
@@ -93,10 +115,44 @@ same(3, request.dig("limit", "value"), "page sets limit")
 raises(ArgumentError, "page zero rejects") { index.search("shoes").page(0, 3) }
 raises(ArgumentError, "page offset overflow rejects") { index.search("shoes").page(0xffff_ffff, 2) }
 raises(ArgumentError, "page size outside uint32 rejects") { index.search("shoes").page(1, 0x1_0000_0000) }
+raises(ArgumentError, "page then offset rejects") { index.search("shoes").page(1, 3).offset(1) }
+raises(ArgumentError, "offset then page rejects") { index.search("shoes").offset(1).page(1, 3) }
+raises(ArgumentError, "page then limit rejects") { index.search("shoes").page(1, 3).limit(3) }
+raises(ArgumentError, "limit then page rejects") { index.search("shoes").limit(3).page(1, 3) }
+raises(ArgumentError, "page range overflow rejects") { index.search("shoes").page(0x8000_0000, 2) }
 same("Asc", request.dig("sort", 0, "direction"), "sort direction")
 same(%w[title price], request.dig("presentation", "fields", "fields"), "projection fields retain caller order")
 same(["title"], request.dig("presentation", "highlighting", "fields"), "highlight fields retained")
 assert(search.execute.is_a?(SearchKernel::Results::SearchResults), "search executes into canonical SearchResults")
+closed_transport = FacadeRecordingTransport.new
+closed_index = SearchKernel::Index.new(SearchKernel::Client.new(closed_transport))
+closed_index.close
+closed_index.close
+raises(SearchKernel::TransportError, "operation after close rejects") { closed_index.get("doc-1") }
+
+owned_owner = CloseCountingOwner.new
+owned_index = SearchKernel::Index.new(
+  SearchKernel::Client.new(FacadeRecordingTransport.new),
+  owner: owned_owner
+)
+owned_index.close
+owned_index.close
+same(1, owned_owner.close_count, "managed owner closes exactly once")
+
+failing_owner = CloseCountingOwner.new
+failing_index = SearchKernel::Index.new(
+  SearchKernel::Client.new(FailingCloseTransport.new),
+  owner: failing_owner
+)
+raises(RuntimeError, "owner still closes when client close fails") { failing_index.close }
+same(1, failing_owner.close_count, "owner cleanup runs despite client close failure")
+assert(failing_index.closed?, "index remains closed after cleanup failure")
+
+connected_index = SearchKernel::Index.connect("http://127.0.0.1:1")
+connected_index.close
+raises(SearchKernel::TransportError, "connect-to-daemon index rejects operations after close") do
+  connected_index.get("doc-1")
+end
 
 nearest = SearchKernel::Query.nearest_neighbor(
   "embedding",
@@ -118,6 +174,49 @@ combined = SearchKernel::Query.any_of(
   SearchKernel::Query.gte("price", 50)
 )
 same("QueryOr", combined.dig("source", "query", "expr_type"), "boolean typed query")
+
+same("QueryPhrase", SearchKernel::Query.phrase("running", "shoes").dig("source", "query", "expr_type"),
+     "phrase query helper")
+same("QueryNear", SearchKernel::Query.near("running", "shoes").dig("source", "query", "expr_type"),
+     "near query helper")
+same("QueryONear", SearchKernel::Query.onear("running", "shoes").dig("source", "query", "expr_type"),
+     "ordered-near query helper")
+same(
+  "QuerySameElement",
+  SearchKernel::Query.same_element(
+    SearchKernel::Query.contains("title", "running"),
+    SearchKernel::Query.contains("title", "shoes")
+  ).dig("source", "query", "expr_type"),
+  "sameElement query helper"
+)
+same("QueryFuzzy", SearchKernel::Query.fuzzy("shoes").dig("source", "query", "expr_type"),
+     "fuzzy query helper")
+same(
+  "QueryGeoLocation",
+  SearchKernel::Query.geo_location("position", lat: 37.3, lon: -121.9, radius: "10km")
+    .dig("source", "query", "expr_type"),
+  "geo-location query helper"
+)
+same(
+  "QueryGeoBoundingBox",
+  SearchKernel::Query.geo_box("position", south: 37.0, west: -122.0, north: 38.0, east: -121.0)
+    .dig("source", "query", "expr_type"),
+  "geo bounding-box query helper"
+)
+same(
+  "QueryWeakAnd",
+  SearchKernel::Query.weak_and(
+    SearchKernel::Query.contains("title", "running"),
+    SearchKernel::Query.contains("title", "shoes")
+  ).dig("source", "query", "expr_type"),
+  "WeakAnd query helper"
+)
+same(
+  "QueryWand",
+  SearchKernel::Query.wand("title", "running" => 10, "shoes" => 5)
+    .dig("source", "query", "expr_type"),
+  "WAND query helper"
+)
 
 group = SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count.as("products"))
 grouping_request = group.to_request
@@ -261,3 +360,12 @@ Dir.mktmpdir("searchkernel-ruby-startup-race-") do |root|
 end
 
 puts "Ruby facade/lifecycle tests PASS"
+
+# Executable ergonomic evidence for typed-query families that share Ruby's
+# standard FlatBuffers-JSON/HTTP facade path.
+# SKC: query.phrase/basic kinds=ergonomic runtime=http
+# SKC: query.proximity/basic kinds=ergonomic runtime=http
+# SKC: query.same_element/basic kinds=ergonomic runtime=http
+# SKC: query.fuzzy/basic kinds=ergonomic runtime=http
+# SKC: query.geo/basic kinds=ergonomic runtime=http
+# SKC: query.weighted_and_wand/basic kinds=ergonomic runtime=http
