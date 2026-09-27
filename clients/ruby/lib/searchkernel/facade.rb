@@ -347,7 +347,11 @@ module SearchKernel
     def execute
       results = @index.execute_search_request(request)
       @facets.each do |facet|
-        results.project_facet(facet.fetch(:name), facet.fetch(:name), facet.fetch(:field))
+        results = results.project_facet(
+          facet.fetch(:name),
+          facet.fetch(:name),
+          facet.fetch(:field)
+        )
       end
       results
     end
@@ -627,10 +631,25 @@ module SearchKernel
 
     def close
       return if @closed
+
       @closed = true
-      @client.close
-      @owner&.close
-      @owner = nil
+      first_error = nil
+      begin
+        @client.close
+      rescue StandardError => error
+        first_error = error
+      ensure
+        begin
+          @owner&.close
+        rescue StandardError => error
+          first_error ||= error
+        ensure
+          @owner = nil
+        end
+      end
+
+      raise first_error if first_error
+
       nil
     end
 
