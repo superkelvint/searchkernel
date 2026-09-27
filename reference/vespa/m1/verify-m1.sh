@@ -22,8 +22,7 @@ fi
 require_native_driver "$BIN"
 
 rm -rf "$TARGET/data"
-LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$BIN" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
+run_native_executable "$BIN" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
 
 python3 "$ROOT/common/compare_json.py" \
     "$ROOT/m1/expected/01-rust-open-close.json" \
