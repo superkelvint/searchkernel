@@ -71,8 +71,7 @@ done
 for mode in typed convenience; do
   DATA="$TMP/data-$mode"
   mkdir -p "$DATA"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$TMP/probe" "$DATA" "$ROOT/reference/vespa/m9/fixture" "$mode" \
+  run_native_executable "$TMP/probe" "$DATA" "$ROOT/reference/vespa/m9/fixture" "$mode" \
     | "$DIR/canonicalize.py" > "$TMP/native-$mode.json"
   python3 "$ROOT/reference/vespa/common/compare_json.py" \
     "$EXPECTED" "$TMP/native-$mode.json"
