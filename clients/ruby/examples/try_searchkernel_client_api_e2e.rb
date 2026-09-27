@@ -136,7 +136,9 @@ begin
     .ranking("semantic").input("query_embedding", embedding(*SHOE_1_VECTOR)).limit(3).execute
   same("shoe-1", nearest.hits.first.id, "nearest-neighbor top hit")
   check(nearest.hits.first.features.key?("query(query_embedding)"), "tensor query input match feature")
-  same(embedding(*SHOE_1_VECTOR), index.get("shoe-1").fetch("embedding"), "dense tensor readback")
+  tensor_readback = index.get("shoe-1").fetch("embedding").fetch("$searchkernel_tensor")
+  same("tensor<float>(x[8])", tensor_readback.fetch("type_spec"), "dense tensor type readback")
+  check(tensor_readback.fetch("dense").zip(SHOE_1_VECTOR).all? { |actual, expected| (actual - expected).abs < 1e-5 }, "dense tensor values readback")
 
   hybrid = index.query(SearchKernel::Query.any_of(
     SearchKernel::Query.contains("title", "shoes"),
