@@ -215,6 +215,11 @@ SEARCHKERNEL_RUNTIME_BASE_SDK="$TMP/sdk" \
 LD_LIBRARY_PATH="$TMP/broken/lib" \
     "$LAUNCHER" native "$TMP/native-probe"
 
+NATIVE_ADAPTER_LIB="$TMP/sdk/lib" \
+SEARCHKERNEL_RUNTIME_BASE_SDK="$TMP/sdk" \
+LD_LIBRARY_PATH="$TMP/broken/lib" \
+    "$LAUNCHER" native "$TMP/native-probe"
+
 SEARCHKERNEL_VERIFIER_SDK="$TMP/sdk" \
 SEARCHKERNEL_VERIFIER_BASE_SDK="$TMP/sdk" \
 LD_LIBRARY_PATH="$TMP/broken/lib" \
