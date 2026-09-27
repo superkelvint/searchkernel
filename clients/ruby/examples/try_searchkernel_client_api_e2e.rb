@@ -20,9 +20,16 @@ def ids(results)
 end
 
 def grouping_buckets(results)
-  groups = results.groups
-  groups = groups.first.groups if groups.length == 1 && groups.first.value.nil? && !groups.first.groups.empty?
-  groups.reject { |group| group.value.nil? || group.value == "" }
+  candidates = results.groups.select do |group|
+    group.id.nil? &&
+      group.label.nil? &&
+      group.value.nil? &&
+      (!group.fields || group.fields.empty?) &&
+      (!group.hits || group.hits.empty?)
+  end
+  raise "expected exactly one canonical native grouping wrapper, got #{candidates.length}" unless candidates.length == 1
+
+  candidates.first.groups || []
 end
 
 def embedding(*values)
@@ -261,14 +268,21 @@ puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 # Executable capability evidence from the public Ruby facade.
 # SKC: query.term/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.boolean/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: filter.textual/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: search.sorting/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: search.pagination/basic kinds=ergonomic,e2e runtime=managed-local
-# SKC: grouping.aggregation/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: result.tensor_document_readback/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: result.match_features/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: result.grouping_tree/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: grouping.aggregations/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: update.document_crud/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: update.arithmetic/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: update.create_if_nonexistent/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: tensor.dense_document_crud/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: ranking.profile_selection/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: ranking.numeric_query_inputs/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: ranking.tensor_query_inputs/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.yql/basic kinds=ergonomic,e2e runtime=managed-local
-# SKC: result.grouping_tree/basic kinds=ergonomic,e2e runtime=managed-local
-# SKC: grouping.facets/basic kinds=ergonomic,e2e runtime=managed-local
