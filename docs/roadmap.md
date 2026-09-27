@@ -247,7 +247,8 @@ Priority gaps include:
 - missing high-level helpers for already-supported query nodes;
 - non-default search-field weighting;
 - Rust/Python/TypeScript ergonomic parity where generated low-level support
-  already exists.
+  already exists, while keeping implemented PHP/Ruby facades aligned with the
+  same portable semantics.
 
 Facades add syntax only. They do not define semantics.
 
@@ -260,6 +261,8 @@ Rust direct embedded API
 Python -> gRPC -> searchkerneld
 TypeScript/Node -> gRPC -> searchkerneld
 TypeScript/browser -> gRPC-Web -> searchkerneld
+PHP -> standard FlatBuffers JSON/HTTP -> searchkerneld
+Ruby -> standard FlatBuffers JSON/HTTP -> searchkerneld
 ```
 
 Require equivalent portable meaning and equivalent real-engine outcomes for the
@@ -281,14 +284,15 @@ Once the semantic/result gaps and shared conformance gate are solid:
 
 ## Additional language SDKs only on demand
 
-Go, PHP, Java, and other SDKs are not prerequisites for stabilizing the core
-product.
+PHP and Ruby implementations are already present but remain outside the next
+beta release-support promise. Go, Java, and other additional SDKs are not
+prerequisites for stabilizing the core product.
 
-A new first-party SDK must use:
+A new first-party SDK must select one architecture-sanctioned representation path:
 
 ```text
-flatc-generated models
-+ standard gRPC stub
+binary: flatc-generated models + standard gRPC/gRPC-Web stub
+HTTP-first: standard FlatBuffers JSON + the BFBS-backed HTTP execute edge
 + thin idiomatic facade
 + shared conformance corpus
 ```
@@ -313,11 +317,11 @@ Acceptance authority remains the checked-in contracts and verifiers. Important
 top-level commands include:
 
 ```bash
-./reference/vespa/verify-through.sh m14
-./reference/vespa/phase9/verify-phase9.sh
-./reference/vespa/verify-through.sh i
-./reference/vespa/verify-through.sh searchreply
-./reference/vespa/recovery/verify-recovery.sh
+./dev verify milestone.m14
+./dev verify vespa.grouping.yql
+./dev verify product.integration
+./dev verify vespa.search-reply
+./dev verify vespa.recovery
 ```
 
 Do not infer a passing milestone from implementation presence alone.
