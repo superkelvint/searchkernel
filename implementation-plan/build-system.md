@@ -36,7 +36,7 @@ We will preserve the proven implementation pieces and progressively put them beh
 The target mental model is:
 
 ```text
-Developer / CI
+Developer / local-capable agent
       |
       v
     ./dev
@@ -51,6 +51,17 @@ Developer / CI
       +---- verifier orchestration
               +---- scenarios
               +---- frozen expected behavior
+
+Remote-only coding agent
+      |
+      v
+GitHub on-demand workflow
+      |
+      v
+exact pushed SHA
+      |
+      v
+canonical environment -> ./dev test/verify ...
 
 Consumers
       |
@@ -82,14 +93,15 @@ If a piece of machinery cannot answer that clearly, it is a candidate for deleti
 | User | Core question | Primary interface |
 |---|---|---|
 | Bootstrapper: developer or coding agent | "How do I get this repository working?" | `./dev doctor`, `./dev build` |
-| Implementer: developer or coding agent | "How do I know my change works?" | `./dev test`, `./dev verify`, remote variants |
+| Implementer: developer or coding agent with a development environment | "How do I know my change works?" | `./dev test`, `./dev verify`, optional remote variants |
+| Remote-only coding agent | "How do I verify work when I cannot run Search Kernel locally at all?" | bounded GitHub on-demand workflow against an exact SHA |
 | Reviewer: developer or coding agent | "How do I know this exact proposed change is correct?" | exact-SHA local/remote test and verify |
 | End user / downstream application developer | "How do I use Search Kernel without knowing its build internals?" | supported Search Kernel package/dependency |
 | Release / distribution maintainer | "Can this exact revision be shipped?" | `./dev release-check`, packaging/publish operations |
 | CI / automation | "How do I execute canonical checks deterministically?" | `./dev ci`, exact-SHA dispatched `./dev` operations |
 | Reference / oracle maintainer | "How do I deliberately regenerate behavioral truth?" | explicit oracle/golden-authoring workflow |
 
-These personas define the product requirements for the build system.
+These eight personas define the product requirements for the build system.
 
 ---
 
@@ -143,7 +155,7 @@ A new supported machine can reach a successful ordinary build through the public
 
 ---
 
-### 2.3 Implementer — developer or coding agent
+### 2.3 Implementer — developer or coding agent with a development environment
 
 #### Goal
 
@@ -159,13 +171,15 @@ This user optimizes for the **edit -> build -> focused test -> focused verifier*
 ./dev verify <lane>
 ```
 
-When the local environment cannot execute the relevant check:
+When the local environment exists but cannot execute a particular relevant check:
 
 ```bash
 git push
 ./dev test --remote <scope>
 ./dev verify --remote <lane>
 ```
+
+These `--remote` forms are convenience wrappers for local-capable users. They are **not** the only remote interface.
 
 #### Requirements
 
@@ -195,7 +209,92 @@ A developer or agent can identify and run the smallest relevant correctness chec
 
 ---
 
-### 2.4 Reviewer — developer or coding agent
+### 2.4 Remote-only coding agent
+
+#### Goal
+
+Implement, inspect, or review repository changes using GitHub access while having **no usable Search Kernel development environment**.
+
+This persona may have:
+
+- GitHub repository/API access;
+- the ability to create commits/branches/PRs;
+- the ability to dispatch or observe GitHub Actions;
+
+but may **not** have:
+
+- a persistent checkout;
+- a shell capable of running Search Kernel;
+- Docker;
+- the canonical development image locally;
+- native/Vespa tooling;
+- the ability to invoke `./dev` at all.
+
+This is a first-class supported workflow, not a degraded fallback.
+
+#### Primary workflow
+
+Conceptually:
+
+```text
+agent creates/pushes commit
+        |
+        v
+exact SHA: 7bc93a0...
+        |
+        v
+dispatch "Search Kernel on-demand verification"
+    operation = verify
+    target    = vespa.ranking
+    revision  = 7bc93a0...
+        |
+        v
+GitHub runner checks out exact SHA
+        |
+        v
+./dev verify vespa.ranking
+        |
+        v
+PASS/FAIL + logs + run identity
+```
+
+The agent may dispatch through whatever GitHub control surface it has available: GitHub Actions UI, GitHub API, CLI, or an authorized GitHub connector/tool. A local Search Kernel checkout is not required.
+
+#### Requirements
+
+The remote-only workflow must:
+
+- expose the on-demand verification workflow as a **public supported interface**, not merely as an implementation detail behind `./dev --remote`;
+- accept an exact committed SHA, bounded operation, and bounded target;
+- support at least `test <scope>` and `verify <lane>`;
+- execute the same canonical `./dev test <scope>` or `./dev verify <lane>` command inside the remote canonical environment;
+- never require the agent to reproduce the development environment locally;
+- never require the heavy verifier matrix to become automatic PR CI;
+- expose run identity, exact revision, canonical command, result, and failure logs through GitHub;
+- allow repeated targeted runs after each pushed fix;
+- make the finite test/verifier vocabulary discoverable **without running `./dev` locally**;
+- validate targets against the same canonical registry used by local `./dev test --list` / `./dev verify --list`;
+- preserve the same exact-SHA and trust/security guarantees as other remote execution;
+- make it obvious that a result for SHA A is not evidence for SHA B.
+
+The canonical target registry must therefore exist in repository-owned data/code that is readable through GitHub. Local `--list` output and remote workflow validation must consume the same authority; neither surface may maintain a divergent hard-coded list.
+
+#### Success criterion
+
+An authorized coding agent with repository/Actions access but **no Search Kernel development environment** can:
+
+1. create or identify an exact pushed commit;
+2. discover valid targeted tests/verifiers through repository/GitHub-visible metadata;
+3. dispatch a bounded test or verifier through GitHub;
+4. observe the exact run and failure logs;
+5. fix/push and rerun;
+6. produce exact-SHA verification evidence;
+
+without ever running Search Kernel locally.
+
+---
+
+### 2.5 Reviewer — developer or coding agent
 
 #### Goal
 
@@ -245,7 +344,7 @@ Given a PR SHA, a reviewer or reviewing agent can independently run or dispatch 
 
 ---
 
-### 2.5 End user — downstream application developer
+### 2.6 End user — downstream application developer
 
 #### Goal
 
@@ -308,7 +407,7 @@ For every row marked supported in `docs/release-support.json`, the actual distri
 
 ---
 
-### 2.6 Release / distribution maintainer
+### 2.7 Release / distribution maintainer
 
 #### Goal
 
@@ -379,7 +478,7 @@ Release contract checks must validate these public authorities and artifacts. Th
 
 ---
 
-### 2.7 CI / automation
+### 2.8 CI / automation
 
 CI is a build-system user even though it is not human.
 
@@ -420,7 +519,7 @@ GitHub Actions is an execution substrate for Search Kernel commands, not a secon
 
 ---
 
-### 2.8 Reference / oracle maintainer
+### 2.9 Reference / oracle maintainer
 
 #### Goal
 
@@ -469,12 +568,12 @@ A maintainer can intentionally opt into live-oracle execution and regenerate ref
 
 ---
 
-### 2.9 Cross-persona product requirements
+### 2.10 Cross-persona product requirements
 
-Several requirements follow directly from serving all seven users:
+Several requirements follow directly from serving all eight users:
 
-1. **One public vocabulary.** Local developers, agents, reviewers, CI, and release tooling should refer to the same test/verifier names.
-2. **One semantic implementation.** Remote execution and CI must call the same `./dev` operations as local execution.
+1. **One public vocabulary.** Local developers, remote-only agents, reviewers, CI, and release tooling should refer to the same test/verifier names from one repository-owned canonical registry.
+2. **Two invocation surfaces, one semantic implementation.** Local-capable users invoke `./dev`; remote-only agents may invoke the bounded GitHub workflow directly. Both ultimately execute the same canonical `./dev test/verify` operations inside the canonical environment.
 3. **Exact revision evidence.** Review and release claims are always tied to an exact commit.
 4. **Cheap path versus strong path.** The normal edit/PR path stays fast; strong specialist and release verification remains available explicitly.
 5. **Repository environment is not consumer runtime.** Development convenience must never become a downstream requirement.
@@ -512,7 +611,8 @@ Target ownership:
 | Local mutable build state | per-worktree + compatible-environment target/cache authority |
 | PR gate | `./dev ci` |
 | GitHub Actions | thin invocation of `./dev` |
-| Explicit remote verification | one generic exact-SHA workflow-dispatch adapter that calls `./dev` |
+| Remote-only verification surface | one generic bounded exact-SHA GitHub workflow that calls `./dev` |
+| Local convenience for remote verification | `./dev {test,verify} --remote` dispatch adapter to that same workflow |
 
 The plan is successful only if it **reduces the number of independent authorities**.
 
@@ -983,7 +1083,14 @@ Simplifying mandatory PR CI must **not** remove agents' access to those checks.
 
 The design requirement is:
 
-> **Give agents a remote form of the existing canonical commands.**
+> **Give agents a first-class GitHub-hosted form of the existing canonical commands.**
+
+There are two supported callers:
+
+1. a local-capable developer/agent using `./dev test/verify --remote ...` as a convenience wrapper;
+2. a remote-only coding agent dispatching the GitHub workflow directly through an authorized GitHub interface.
+
+The workflow is therefore a **public build-system interface** for the second persona, even though it remains semantically thin.
 
 Local execution:
 
@@ -992,14 +1099,23 @@ Local execution:
 ./dev test rust
 ```
 
-Remote execution after pushing:
+Remote execution after pushing, for users with a checkout:
 
 ```bash
 ./dev verify --remote vespa.ranking
 ./dev test --remote rust
 ```
 
-The remote form is not a new verifier implementation. It is only an execution-location switch.
+Equivalent direct GitHub dispatch for a remote-only agent:
+
+```text
+workflow:  on-demand verification
+revision:  <exact pushed SHA>
+operation: verify
+target:    vespa.ranking
+```
+
+The GitHub workflow is not a new verifier implementation. It is a first-class invocation surface whose execution body remains the canonical `./dev` operation.
 
 ### 13.1 Semantic equivalence
 
@@ -1026,6 +1142,7 @@ Likewise:
 ```text
 ./dev test rust
 ./dev test --remote rust
+direct GitHub dispatch: operation=test target=rust revision=<sha>
 ```
 
 must share the same underlying `./dev test rust` semantics.
@@ -1070,6 +1187,8 @@ The workflow must **not** know how `vespa.ranking`, persistence, Rust tests, or 
 
 It must not contain verifier-specific build logic.
 
+Because remote-only agents cannot run `./dev --list`, the finite operation/target registry must also be discoverable from GitHub-visible repository state. The workflow and local `./dev --list` commands validate against the same authority. Do not duplicate target lists independently in YAML and shell.
+
 ### 13.3 Exact pushed SHA is mandatory
 
 Remote verification is evidence about a specific commit, not about a branch name.
@@ -1103,7 +1222,11 @@ result:   PASS | FAIL
 
 A verification run against an earlier commit must never be presented as verification of a newer PR head.
 
-Remote verification also verifies a **committed state**, not an arbitrary local working-tree snapshot. By default, `--remote` must fail if relevant tracked/index/untracked source changes mean the current working tree differs from the commit being dispatched. The user must first commit and push the state they intend to verify. Any future override must be explicit and must never allow the resulting run to be described as verification of uncommitted local changes.
+Remote verification always verifies a **committed Git revision**, not an arbitrary local working-tree snapshot.
+
+For the local `./dev --remote` convenience wrapper, the command must fail by default if relevant tracked/index/untracked source changes mean the working tree differs from the commit being dispatched. The user must first commit and push the state they intend to verify.
+
+A remote-only agent has no local-worktree requirement; it supplies the exact pushed SHA directly. In both cases, the evidence names only that committed SHA. Any future local override must be explicit and must never allow a run to be described as verification of uncommitted local changes.
 
 ### 13.4 Remote-execution trust boundary
 
@@ -1121,9 +1244,9 @@ The first version must:
 
 The goal is not to build a general sandboxing platform. It is to ensure that a convenient remote test button does not become a privileged arbitrary-code execution path.
 
-### 13.5 `./dev` owns the remote UX
+### 13.5 Local wrapper and direct GitHub UX
 
-Agents should not normally need to invoke `gh workflow run` or manually locate Actions runs.
+For users who have a working checkout, `./dev` owns the convenience UX; they should not need to manually invoke `gh workflow run` or locate Actions runs.
 
 `./dev verify --remote <lane>` and `./dev test --remote <scope>` should:
 
@@ -1145,7 +1268,7 @@ REPRO:
 ./dev verify vespa.grouping.yql
 ```
 
-This gives humans and coding agents the same interface.
+For remote-only agents, the GitHub workflow itself is the interface. GitHub must expose the same essential evidence: requested SHA, operation/target, run identity, result, and failed logs. The two caller experiences differ, but they converge on the same execution semantics.
 
 ### 13.6 Bounded operations only
 
@@ -1184,16 +1307,23 @@ The canonical interface is explicit workflow dispatch hidden behind `./dev`.
 
 ### 13.8 Agent protocol
 
-The repository's agent guidance should eventually state:
+The repository's agent guidance should eventually distinguish two cases:
 
 ```text
-After pushing changes, run the relevant verification remotely when
-the local environment cannot execute it:
+If you have a Search Kernel checkout but cannot run the relevant check locally:
 
     ./dev verify --remote <lane>
     ./dev test --remote <scope>
 
-Remote verification always tests the current pushed HEAD exactly.
+If you do not have a usable Search Kernel development environment at all:
+
+    dispatch the repository's bounded on-demand verification workflow
+    with:
+        revision  = exact pushed SHA
+        operation = verify | test
+        target    = known lane/scope
+
+Remote verification always tests the exact requested pushed SHA.
 
 Do not claim verification from a run against an earlier commit.
 
@@ -1215,8 +1345,9 @@ The intended division is:
 |---|---|---|
 | `./dev ci` | automatic on every PR | cheap mandatory gate |
 | `./dev verify <lane>` | explicit local | specialist verification |
-| `./dev verify --remote <lane>` | explicit remote | specialist verification on CI infrastructure |
-| `./dev test --remote <scope>` | explicit remote | tests unavailable locally |
+| `./dev verify --remote <lane>` | explicit remote from a checkout | convenience wrapper for specialist verification on remote infrastructure |
+| `./dev test --remote <scope>` | explicit remote from a checkout | convenience wrapper for tests unavailable locally |
+| GitHub on-demand workflow | explicit remote-only agent dispatch | targeted test/verify when no development environment exists |
 | `./dev universe` | explicit | full repository/source qualification |
 | `./dev release-check` | explicit release workflow | build and qualify actual distributable artifacts |
 
@@ -1224,7 +1355,7 @@ This is deliberately different from rebuilding the old automatic heavy CI matrix
 
 The architectural requirement is:
 
-> **Strong verifiers remain available locally and through explicit remote execution, even though they are not mandatory PR CI.**
+> **Strong verifiers remain available locally and through explicit on-demand GitHub execution, including to agents with no development environment, even though they are not mandatory PR CI.**
 
 Do not turn remote-run reporting into a second infrastructure project. Exact SHA, canonical command, run identity, result, and failure logs are sufficient for the first version.
 
@@ -1495,15 +1626,17 @@ Implement the remote execution contract from section 13 as a first-class migrati
 Required deliverables:
 
 1. one bounded on-demand workflow accepting exact revision, operation (`test|verify`), and known target;
-2. `./dev test --remote <scope>` and `./dev verify --remote <lane>`;
-3. validation that the requested commit is remotely available;
-4. default refusal when the local working tree/index does not match the committed state being dispatched;
-5. deterministic capture of the dispatched run identity;
-6. wait/watch behavior, failed-step log surfacing, and result propagation;
-7. an explicit self-hosted-runner trust policy with authorized actors, read-only permissions, no release/write secrets, and a stated policy for untrusted/fork revisions;
-8. agent documentation requiring exact-head reruns after every fix.
+2. the workflow is a documented supported entry point for remote-only agents using GitHub UI/API/CLI/connectors;
+3. `./dev test --remote <scope>` and `./dev verify --remote <lane>` as local convenience wrappers around that same workflow;
+4. one repository-owned canonical target registry that is readable through GitHub and consumed by local `--list` output and remote validation;
+5. validation that the requested commit is remotely available;
+6. default dirty-worktree refusal for the local wrapper; direct remote-only dispatch instead requires only an exact pushed SHA;
+7. deterministic capture/exposure of the dispatched run identity;
+8. wait/watch behavior, failed-step log surfacing, and result propagation for the local wrapper, with equivalent run/result/log evidence available directly through GitHub;
+9. an explicit self-hosted-runner trust policy with authorized actors, read-only permissions, no release/write secrets, and a stated policy for untrusted/fork revisions;
+10. agent documentation for both local-capable and remote-only agents, requiring exact-head reruns after every fix.
 
-Completion criterion: an agent without local native capacity can push an exact commit, run one canonical remote command, and receive trustworthy evidence for that exact commit without learning GitHub Actions internals.
+Completion criterion: both (a) an agent with a checkout but insufficient local native capacity and (b) an authorized agent with **no usable Search Kernel development environment at all** can request targeted verification of an exact pushed commit and obtain trustworthy exact-SHA evidence.
 
 ---
 
@@ -1693,7 +1826,9 @@ Can two concurrent unrelated worktrees run without sharing a writable Cargo targ
 
 ### Remote verification
 
-Can an agent that cannot run a specialist check locally execute the same canonical check remotely against the exact pushed SHA?
+Can an agent with **no usable development environment** discover valid targets and dispatch a targeted test/verifier directly through GitHub against an exact pushed SHA?
+
+Can a local-capable agent use `./dev --remote` as a convenience path to the same workflow?
 
 Does GitHub Actions merely invoke the canonical `./dev` operation rather than reimplementing it?
 
@@ -1750,6 +1885,19 @@ git push
 ```
 
 Remote output identifies the exact pushed SHA and GitHub Actions run, waits for completion, and returns the remote operation's status.
+
+### Remote-only coding agent
+
+No local Search Kernel environment is required:
+
+```text
+GitHub on-demand verification
+  revision  = <exact pushed SHA>
+  operation = verify
+  target    = vespa.ranking
+```
+
+The workflow checks out that exact SHA and executes `./dev verify vespa.ranking` in the canonical remote environment.
 
 ### Full repository/source qualification
 
@@ -1812,27 +1960,29 @@ The convergence project is complete when:
 21. The P0 mostly-static-vs-shared native-distribution investigation is documented with evidence.
 22. Existing native SDK provenance guarantees remain intact.
 23. Strong verifiers remain available outside mandatory PR CI.
-24. `./dev test --list` and `./dev verify --list` expose the finite canonical test/verifier vocabulary, with lightweight documentation mapping major change areas to relevant checks.
-25. `./dev verify --remote <lane>` and `./dev test --remote <scope>` provide explicit remote execution for agents/developers who cannot run a relevant check locally.
-26. Remote execution checks out and verifies the exact pushed commit SHA, never merely a mutable branch reference.
-27. Remote execution refuses dirty/ambiguous local handoff by default when the working tree/index differs from the commit being dispatched.
-28. Remote execution ultimately invokes the same canonical `./dev verify <lane>` or `./dev test <scope>` command as local execution.
-29. One generic bounded on-demand workflow handles remote `verify` and `test`; GitHub Actions contains no verifier-specific semantics.
-30. Remote commands wait for the exact dispatched run, surface its run identity and failure logs, and propagate its result.
-31. Remote verification has an explicit authorized-actor/self-hosted-runner trust policy, uses read-only permissions by default, exposes no release/write secrets, and defines handling for untrusted/fork revisions.
-32. Arbitrary remote shell execution is not exposed.
-33. Repository agent guidance documents the exact-SHA remote verification protocol and prohibits claiming verification from older commits.
+24. One repository-owned canonical target registry exposes the finite test/verifier vocabulary through GitHub-visible state; local `./dev test --list` / `./dev verify --list` and remote workflow validation consume that same authority.
+25. Lightweight documentation maps major change areas to relevant focused checks.
+26. One generic bounded GitHub on-demand workflow provides direct `test`/`verify` execution for authorized coding agents with **no usable development environment**.
+27. `./dev verify --remote <lane>` and `./dev test --remote <scope>` provide convenience wrappers for local-capable agents/developers who cannot run a relevant check locally.
+28. Both direct GitHub dispatch and local wrappers verify an exact pushed commit SHA, never merely a mutable branch reference.
+29. The local wrapper refuses dirty/ambiguous local handoff by default when the working tree/index differs from the commit being dispatched; direct remote-only dispatch requires an exact pushed SHA and has no local-working-tree dependency.
+30. Remote execution ultimately invokes the same canonical `./dev verify <lane>` or `./dev test <scope>` command as local execution.
+31. GitHub Actions contains no verifier-specific semantics beyond bounded dispatch/validation/orchestration.
+32. The local wrapper waits for the exact dispatched run, surfaces its run identity and failure logs, and propagates its result; direct GitHub callers can retrieve equivalent evidence from the workflow run.
+33. Remote verification has an explicit authorized-actor/self-hosted-runner trust policy, uses read-only permissions by default, exposes no release/write secrets, and defines handling for untrusted/fork revisions.
+36. Arbitrary remote shell execution is not exposed.
+37. Repository agent guidance documents both local-wrapper and remote-only exact-SHA verification protocols and prohibits claiming verification from older commits.
 34. Local canonical-container development preserves compatible writable Cargo/native incremental state across invocations in a worktree-scoped/environment-scoped namespace; unrelated worktrees do not share writable target state.
 35. `./dev doctor` validates the minimal supported host boundary, while ordinary language/compiler toolchains remain owned by the canonical image.
-36. `./dev build` has one explicit meaning: canonical supported product build in the canonical development environment.
-37. Normal verification and Universe never automatically enter live-oracle mode; live oracle execution/golden generation require explicit maintainer opt-in.
-38. `docs/release-support.json` is the machine-readable authority for supported downstream surfaces.
-39. `./dev release-check` builds the actual release artifact set and provides artifact-level executable evidence for every supported release row.
-40. Rust embedded release qualification builds and executes a clean external consumer from the actual distributable Rust artifact, not merely from a repository path.
-41. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
-42. Old compatibility/build paths are removed only after their replacements are proven.
-43. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
-44. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
+38. `./dev build` has one explicit meaning: canonical supported product build in the canonical development environment.
+39. Normal verification and Universe never automatically enter live-oracle mode; live oracle execution/golden generation require explicit maintainer opt-in.
+40. `docs/release-support.json` is the machine-readable authority for supported downstream surfaces.
+41. `./dev release-check` builds the actual release artifact set and provides artifact-level executable evidence for every supported release row.
+42. Rust embedded release qualification builds and executes a clean external consumer from the actual distributable Rust artifact, not merely from a repository path.
+43. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
+44. Old compatibility/build paths are removed only after their replacements are proven.
+45. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
+46. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
 
 The final architecture should be boring:
 
@@ -1847,7 +1997,8 @@ The final architecture should be boring:
 > Per-worktree mutable build state keeps local iteration warm without cross-agent contamination.  
 > Universe orchestrates repository/source qualification.  
 > Release-check builds and qualifies the actual supported artifact set.  
-> Explicit remote verification dispatches authorized exact-SHA `./dev` operations.  
+> Remote-only agents can dispatch bounded exact-SHA GitHub workflows without a development environment.  
+> Local `--remote` wrappers and direct GitHub dispatch converge on the same `./dev` semantics.  
 > CI calls `./dev`.
 
 That is the project.
