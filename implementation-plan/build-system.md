@@ -1121,7 +1121,7 @@ The first version must:
 
 The goal is not to build a general sandboxing platform. It is to ensure that a convenient remote test button does not become a privileged arbitrary-code execution path.
 
-### 13.6 `./dev` owns the remote UX
+### 13.5 `./dev` owns the remote UX
 
 Agents should not normally need to invoke `gh workflow run` or manually locate Actions runs.
 
@@ -1147,7 +1147,7 @@ REPRO:
 
 This gives humans and coding agents the same interface.
 
-### 13.5 Bounded operations only
+### 13.6 Bounded operations only
 
 Remote execution is **not** a generic remote shell.
 
