@@ -31,12 +31,20 @@ def pr(
     state: str,
     *closing_issues: int,
     base_ref_name: str = "main",
+    merged_at: str | None = None,
+    reopened_at: str | None = None,
 ) -> dict[str, object]:
+    if state == "MERGED" and merged_at is None:
+        merged_at = "2026-09-26T20:00:00Z"
     return {
         "number": number,
         "state": state,
         "base_ref_name": base_ref_name,
+        "merged_at": merged_at,
         "closing_issue_numbers": list(closing_issues),
+        "closing_issue_reopened_at": {
+            str(issue_number): reopened_at for issue_number in closing_issues
+        },
     }
 
 
@@ -124,6 +132,37 @@ class CleanupPlannerTests(unittest.TestCase):
         )
         self.assertEqual([action.kind for action in actions], ["close-issue"])
 
+    def test_reopened_after_merge_is_not_auto_closed(self) -> None:
+        actions = MODULE.plan_cleanup(
+            [issue(12, "open", "status:in-progress")],
+            [
+                {
+                    "number": 34,
+                    "state": "MERGED",
+                    "base_ref_name": "main",
+                    "merged_at": "2026-09-26T20:00:00Z",
+                    "closing_issue_numbers": [12],
+                    "closing_issue_reopened_at": {"12": "2026-09-26T21:00:00Z"},
+                }
+            ],
+        )
+        self.assertEqual(actions, [])
+
+    def test_merge_after_reopen_can_close_issue_again(self) -> None:
+        actions = MODULE.plan_cleanup(
+            [issue(12, "open", "status:in-progress")],
+            [
+                pr(
+                    34,
+                    "MERGED",
+                    12,
+                    merged_at="2026-09-26T22:00:00Z",
+                    reopened_at="2026-09-26T21:00:00Z",
+                )
+            ],
+        )
+        self.assertEqual([action.kind for action in actions], ["close-issue"])
+
     def test_non_default_branch_merge_does_not_resolve_issue(self) -> None:
         actions = MODULE.plan_cleanup(
             [issue(12, "open", "status:in-progress")],
@@ -157,8 +196,18 @@ class GhReadTests(unittest.TestCase):
                                 "number": 34,
                                 "state": "MERGED",
                                 "baseRefName": "release",
+                                "mergedAt": "2026-09-26T20:00:00Z",
                                 "closingIssuesReferences": {
-                                    "nodes": [{"number": 12}],
+                                    "nodes": [
+                                        {
+                                            "number": 12,
+                                            "timelineItems": {
+                                                "nodes": [
+                                                    {"createdAt": "2026-09-26T21:00:00Z"}
+                                                ]
+                                            },
+                                        }
+                                    ],
                                     "pageInfo": {"hasNextPage": False},
                                 },
                             }
@@ -199,7 +248,11 @@ class GhReadTests(unittest.TestCase):
                     "number": 34,
                     "state": "MERGED",
                     "base_ref_name": "release",
+                    "merged_at": "2026-09-26T20:00:00Z",
                     "closing_issue_numbers": [12],
+                    "closing_issue_reopened_at": {
+                        "12": "2026-09-26T21:00:00Z"
+                    },
                 }
             ],
         )
