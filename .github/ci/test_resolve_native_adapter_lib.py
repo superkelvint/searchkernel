@@ -12,7 +12,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / ".github" / "ci" / "resolve-native-adapter-lib.py"
+SCRIPT = ROOT / "tools" / "resolve-cargo-native-adapter-lib.py"
 
 
 class ResolveNativeAdapterLibTests(unittest.TestCase):

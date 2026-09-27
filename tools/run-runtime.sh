@@ -54,7 +54,7 @@ case "$runtime" in
             echo "native executable is missing or not executable: ${executable:-<empty>}" >&2
             exit 1
         }
-        runtime_libs=$(bash "$ROOT/tools/resolve-native-runtime-libs.sh")
+        runtime_libs=$(bash "$ROOT/tools/resolve-native-runtime-libs.sh" "$executable")
         export SEARCHKERNEL_RUNTIME_LIB_DIRS="$runtime_libs"
         export LD_LIBRARY_PATH="$runtime_libs"
         unset LD_PRELOAD || true

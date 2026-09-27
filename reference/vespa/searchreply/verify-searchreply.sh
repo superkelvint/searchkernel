@@ -27,8 +27,13 @@ grep -q 'SK_DEGRADATION_TIMEOUT' "$ROOT/core/native/vespa/search.cc"
 grep -q 'was_degraded_by_ann_timeout' "$ROOT/core/native/vespa/search.cc"
 grep -q 'SK_DEGRADATION_ANN_TIMEOUT' "$ROOT/core/native/vespa/search.cc"
 
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
 cargo fmt --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" -- --check
-cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml"
+cargo build --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" \
+  --message-format=json-render-diagnostics \
+  | tee "$TMP/cargo-messages.jsonl"
 CONFIG_BIN="$CARGO_TARGET_DIR/debug/searchkernel-searchreply-config"
 [[ -x "$CONFIG_BIN" ]] || fail_verification "SearchReply config compiler was not built: $CONFIG_BIN"
 
@@ -36,9 +41,13 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
   "$SCRIPT_DIR/oracle/build-cpp-oracle.sh"
 fi
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-"$CONFIG_BIN" "$TMP/config"
+if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
+  "$ROOT/tools/run-runtime.sh" native "$CONFIG_BIN" "$TMP/config"
+else
+  SEARCHKERNEL_CARGO_MESSAGES="$TMP/cargo-messages.jsonl" \
+  SEARCHKERNEL_RUNTIME_BASE_SDK="$(resolved_native_base_sdk)" \
+    "$ROOT/tools/run-runtime.sh" native "$CONFIG_BIN" "$TMP/config"
+fi
 
 PROBE="$TMP/searchreply_probe"
 "${CXX:-c++}" -std=gnu++23 -O0 -g -Wall -Wextra -Werror -pthread \

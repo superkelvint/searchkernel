@@ -37,7 +37,7 @@ wait_port() {
   "$RUNTIME" python - "$port" <<'PY'
 import socket, sys, time
 port = int(sys.argv[1])
-deadline = time.monotonic() + 15
+deadline = time.monotonic() + 60
 while time.monotonic() < deadline:
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=0.2):
