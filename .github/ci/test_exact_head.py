@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
@@ -23,6 +24,7 @@ PERSISTENCE_IMMUTABILITY = SCRIPT.parents[2] / "tools" / "check-persistence-fixt
 DEV = SCRIPT.parents[2] / "dev"
 VERIFICATION_DAG_MODULE = SCRIPT.parents[2] / "verification" / "dag.py"
 VERIFICATION_DAG_FILE = SCRIPT.parents[2] / "verification" / "dag.toml"
+CONSUMER_RELEASE_PACKAGER = SCRIPT.parents[2] / "tools" / "package-consumer-release.py"
 
 
 def run(*args: str, cwd: Path | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -58,6 +60,20 @@ def write_fake_dev(repo: Path) -> None:
         encoding="utf-8",
     )
     dev.chmod(0o755)
+
+
+def rust_bundle_paths() -> list[str]:
+    tree = ast.parse(CONSUMER_RELEASE_PACKAGER.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == "RUST_BUNDLE_PATHS" for target in node.targets):
+            continue
+        value = ast.literal_eval(node.value)
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise AssertionError("RUST_BUNDLE_PATHS must be a literal list of strings")
+        return value
+    raise AssertionError("RUST_BUNDLE_PATHS assignment not found")
 
 
 def classify_lines(*paths: str) -> set[str]:
@@ -282,15 +298,21 @@ class ExactHeadTests(unittest.TestCase):
 
     def test_client_capabilities_watches_release_gate_inputs(self) -> None:
         workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
-        for relative in (
-            "README.md",
-            "docs/release-support.json",
-            "docs/release-support.md",
-            "tools/check-release-support.py",
-            "tools/package-consumer-release.py",
-            "tools/check-consumer-release.py",
-            "tools/test_package_consumer_release.py",
-        ):
+        root = SCRIPT.parents[2]
+        expected = []
+        for relative in rust_bundle_paths():
+            expected.append(f"{relative}/**" if (root / relative).is_dir() else relative)
+        expected.extend(
+            (
+                "docs/release-support.json",
+                "docs/release-support.md",
+                "tools/check-release-support.py",
+                "tools/package-consumer-release.py",
+                "tools/check-consumer-release.py",
+                "tools/test_package_consumer_release.py",
+            )
+        )
+        for relative in expected:
             with self.subTest(relative=relative):
                 self.assertEqual(
                     workflow.count(f'      - "{relative}"'),
