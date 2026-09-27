@@ -20,9 +20,15 @@ if rg -n --glob '*.rs' --glob '*.toml' \
   fail "M11 driver uses a testkit or alternate backend"
 fi
 
-if rg -n --glob '*.rs' --glob '*.toml' \
-    'Command::new|std::process::Command|ProcessBuilder|JNI_CreateJavaVM|libjvm|serde_json' \
-    "$M11/rust-driver" "$ROOT/core/crates/searchkernel-vespa-engine" "$ROOT/core/crates/searchkernel-vespa-bindings"; then
+if rg -n --glob '*.rs' \
+    'Command::new|std::process::Command|ProcessBuilder|JNI_CreateJavaVM|libjvm' \
+    "$M11/rust-driver" "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src"; then
+  fail "test driver or production wrapper has an alternate runtime/oracle path"
+fi
+
+# The driver must derive expectations from native behavior, not a JSON oracle.
+# The production engine may decode JSON field values before passing them to Vespa.
+if rg -n --glob '*.rs' --glob '*.toml' 'serde_json' "$M11/rust-driver"; then
   fail "test driver or production wrapper has an alternate runtime/oracle path"
 fi
 
