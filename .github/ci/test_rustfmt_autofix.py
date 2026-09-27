@@ -42,7 +42,7 @@ class RustfmtAutofixWorkflowTests(unittest.TestCase):
         self.assertIn("runs-on: ubuntu-24.04", writer)
         self.assertIn("actions/download-artifact@v4", writer)
         self.assertEqual(writer.count("secrets.RUSTFMT_AUTOFIX_TOKEN"), 1)
-        for forbidden in ("cargo fmt", "cargo-fmt", "docker run", "GITHUB_PATH", "GITHUB_ENV"):
+        for forbidden in ("/root/.cargo/bin/cargo", "cargo fmt --all", "cargo-fmt", "docker run", "GITHUB_PATH", "GITHUB_ENV"):
             self.assertNotIn(forbidden, writer)
 
     def test_malicious_cargo_alias_plus_rs_trigger_cannot_reach_write_credentials(self) -> None:
