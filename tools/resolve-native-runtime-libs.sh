@@ -75,8 +75,10 @@ runtime_dirs_from_executable() {
         [[ -n "$encoded" ]] || continue
         IFS=: read -r -a entries <<<"$encoded"
         for entry in "${entries[@]}"; do
-            entry=${entry//\$ORIGIN/$origin}
-            entry=${entry//\${ORIGIN}/$origin}
+            case "$entry" in
+                '$ORIGIN'*) entry="$origin${entry:7}" ;;
+                '${ORIGIN}'*) entry="$origin${entry:9}" ;;
+            esac
             [[ -n "$entry" ]] || continue
             if [[ -z "$raw" ]]; then
                 raw=$entry
