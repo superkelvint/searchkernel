@@ -28,12 +28,19 @@ fail_verification() {
 }
 SH
 
-cat > "$fixture/core/native/vespa/build-m11-sanitizer-sdk.sh" <<'SH'
+cp "$root/core/native/vespa/build-m11-sanitizer-sdk.sh" \
+    "$fixture/core/native/vespa/build-m11-sanitizer-sdk.sh"
+cat > "$fixture/core/native/vespa/build-sdk.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-lane=$1
-sdk=$2
-build=$3
+lane=${SK_NATIVE_SANITIZER:?}
+sdk=${SK_NATIVE_SDK:?}
+build=${SK_NATIVE_BUILD_DIR:?}
+if [[ "$lane" == asan-ubsan ]]; then
+    [[ "${SK_NATIVE_EXTRA_CXX_FLAGS:-}" == *-fsanitize=address,undefined* ]]
+    [[ "${SK_NATIVE_EXTRA_CXX_FLAGS:-}" == *-fno-sanitize=vptr* ]]
+    [[ "${SK_NATIVE_EXTRA_LINK_FLAGS:-}" == *-fsanitize=address,undefined* ]]
+fi
 mkdir -p "$sdk/lib" "$sdk/include" "$build"
 printf '{"hardening_failpoints":true,"sanitizer":"%s"}\n' "$lane" > "$sdk/manifest.json"
 : > "$sdk/lib/libsearchkernel_vespa.so.2"
@@ -41,6 +48,7 @@ printf '{"hardening_failpoints":true,"sanitizer":"%s"}\n' "$lane" > "$sdk/manife
 printf '%s\n' "$lane" >> "${M11_TEST_BUILD_LOG:?}"
 SH
 chmod +x "$fixture/core/native/vespa/build-m11-sanitizer-sdk.sh"
+chmod +x "$fixture/core/native/vespa/build-sdk.sh"
 
 cat > "$fixture/tools/bin/python3" <<'SH'
 #!/usr/bin/env bash
@@ -50,9 +58,17 @@ SH
 cat > "$fixture/tools/bin/cargo" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
+    echo "Cargo must use the normal native SDK resolver for the sanitizer driver build" >&2
+    exit 1
+fi
 mkdir -p "${CARGO_TARGET_DIR:?}/debug"
 cat > "$CARGO_TARGET_DIR/debug/searchkernel-m11-driver" <<'DRIVER'
 #!/usr/bin/env bash
+case "${LD_LIBRARY_PATH:-}" in
+    */sanitizer/asan-ubsan/sdk/lib*) ;;
+    *) echo "sanitizer adapter is not first in runtime library lookup" >&2; exit 1 ;;
+esac
 exit 0
 DRIVER
 chmod +x "$CARGO_TARGET_DIR/debug/searchkernel-m11-driver"
@@ -69,7 +85,7 @@ export M11_TEST_PRELOAD="$test_root/libpreload.so"
 cat > "$fixture/tools/bin/cc" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}" in
-    -print-file-name=libasan.so|-print-file-name=libtsan.so.2)
+    -print-file-name=libasan.so.8|-print-file-name=libtsan.so.2)
         printf '%s\n' "${M11_TEST_PRELOAD:?}"
         ;;
     *)
@@ -78,7 +94,35 @@ case "${1:-}" in
 esac
 SH
 
-chmod +x "$fixture/tools/bin/python3" "$fixture/tools/bin/cargo" "$fixture/tools/bin/cc"
+cat > "$fixture/tools/bin/ldd" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+library_dir=${LD_LIBRARY_PATH%%:*}
+printf 'libsearchkernel_vespa.so.2 => %s/libsearchkernel_vespa.so.2 (0x0)\n' "$library_dir"
+SH
+
+cat > "$fixture/tools/bin/c++" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+output=
+while (($#)); do
+    if [[ "$1" == -o ]]; then
+        output=$2
+        shift 2
+    else
+        shift
+    fi
+done
+[[ -n "$output" ]]
+cat > "$output" <<'BIN'
+#!/usr/bin/env bash
+exit 0
+BIN
+chmod +x "$output"
+SH
+
+chmod +x "$fixture/tools/bin/python3" "$fixture/tools/bin/cargo" \
+    "$fixture/tools/bin/cc" "$fixture/tools/bin/ldd" "$fixture/tools/bin/c++"
 
 printf 'halt_on_error=1\n' > "$fixture/reference/vespa/m11/sanitizer/asan.options"
 printf 'halt_on_error=1\n' > "$fixture/reference/vespa/m11/sanitizer/ubsan.options"
@@ -89,7 +133,9 @@ build_log="$test_root/build.log"
 : > "$build_log"
 export M11_TEST_BUILD_LOG="$build_log"
 export PATH="$fixture/tools/bin:$PATH"
+export CXX="$fixture/tools/bin/c++"
 export M11_SANITIZER_LANES=asan-ubsan
+export SK_NATIVE_SDK="$test_root/invalid-explicit-sdk"
 
 plan_one="$test_root/plan-one"
 plan_two="$test_root/plan-two"

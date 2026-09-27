@@ -41,6 +41,29 @@ race:proton::ForceCommitContext::ForceCommitContext
 # visible without masking adapter concurrency.
 race:proton::StoreOnlyFeedView::internalForceCommit
 race:proton::ForceCommitContext
+# Pinned Vespa's SingleExecutor moves each queued Task's unique owner to its
+# consumer before running and releasing it. During concurrent engine startup,
+# a different StoreOnlyFeedView may allocate a distinct removeSummary task at
+# the just-freed address; TSan reports allocator address reuse as a race.
+# Limit this suppression to the Executor::Task owner release frame.
+race:std::default_delete<vespalib::Executor::Task>::operator()
+# Pinned StoreOnlyFeedView destroys an OperationDoneContext shared owner in
+# the queued removeSummary task while another startup worker creates a
+# SummaryPutDoneContext at the same allocator address. This is distinct control
+# block reuse; limit the suppression to the exact released owner type.
+race:std::__shared_ptr<proton::OperationDoneContext, (__gnu_cxx::_Lock_policy)2>::~__shared_ptr()
+# Pinned ReplayTransactionLogState::receive captures PacketWrapper::SP in the
+# queued task, retaining it until the executor finishes the handler. The
+# uninstrumented executor publication is not visible to TSan, which can pair
+# this release with a wait on a distinct object reusing the same heap address.
+# Constrain the suppression to this exact shared owner type.
+race:std::shared_ptr<proton::PacketWrapper>::~shared_ptr()
+# Search Kernel constructs an owning Vespa Document and copies its literal
+# field bytes before handing its shared owner to PersistenceProvider. The
+# serializer reads those immutable bytes on Vespa's uninstrumented feed worker,
+# whose publication synchronization is invisible to TSan; constrain this
+# handoff suppression to the exact serializer read boundary.
+race:document::VespaDocumentSerializer::writeSerializedData
 # The pinned Vespa string attribute read guard still reports its raw lookup
 # against an asynchronous datastore resize after the adapter mutation call
 # returns. Mutation calls are serialized and ID copies hold that lock; these

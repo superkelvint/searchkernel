@@ -8,7 +8,11 @@ BUILD=${3:-}
 
 case "$LANE" in
     asan-ubsan)
-        FLAGS="-fno-omit-frame-pointer -fsanitize=address,undefined"
+        # Vespa's immutable DSOs contain polymorphic base subobjects but are
+        # not built with this adapter's vptr metadata. GCC vptr UBSan reports
+        # those valid cross-DSO dispatches as type mismatches. Keep ASan and
+        # the other undefined-behavior checks enabled for the adapter.
+        FLAGS="-fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize=vptr"
         ;;
     tsan)
         FLAGS="-fno-omit-frame-pointer -fsanitize=thread"

@@ -100,7 +100,7 @@ run_lane() {
 
   if [[ "$lane" == asan-ubsan ]]; then
     local buffer_contract_test="$lane_root/packed-document-buffer-contract-test"
-    local asan_runtime="$(cc -print-file-name=libasan.so)"
+    local asan_runtime="$(cc -print-file-name=libasan.so.8)"
     local asan_options="$(tr '\n' ':' < "$M11/sanitizer/asan.options")"
     local ubsan_options="$(tr '\n' ':' < "$M11/sanitizer/ubsan.options")"
     [[ -f "$asan_runtime" ]] || fail_verification "libasan runtime was not found"
@@ -118,7 +118,11 @@ run_lane() {
   # Keep Cargo products lane-local. ASan/UBSan and TSan use different linker
   # flags, so sharing one target directory makes Cargo invalidate the other
   # lane on every pass even when the native SDK itself is reusable.
-  export SK_NATIVE_SDK="$sdk"
+  # The sanitizer SDK is an adapter-only runtime override, not the full SDK
+  # package that Cargo's explicit-SDK provenance contract accepts. Build the
+  # Rust driver through the normal base resolver; at execution time the
+  # sanitizer adapter wins via LD_LIBRARY_PATH (which precedes RUNPATH).
+  unset SK_NATIVE_SDK SK_NATIVE_BASE_SDK
   export CARGO_TARGET_DIR="$cargo_target"
   export RUSTFLAGS="$M11_BASE_RUSTFLAGS -C link-arg=-Wl,-rpath,$sdk/lib"
   cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
@@ -132,13 +136,22 @@ run_lane() {
   fi
   local binary="$CARGO_TARGET_DIR/debug/searchkernel-m11-driver"
   require_native_driver "$binary" sk_test_failpoint_set sk_test_failpoint_is_blocked
+  local runtime_sdk_path="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  local resolved_adapter
+  resolved_adapter=$(LD_LIBRARY_PATH="$runtime_sdk_path" ldd "$binary" |
+    awk '$1 ~ /^libsearchkernel_vespa\.so([.]|$)/ { print $3; exit }')
+  if [[ -z "$resolved_adapter" ||
+        "$(readlink -f "$resolved_adapter")" != "$(readlink -f "$sdk/lib/libsearchkernel_vespa.so.2")" ]]; then
+    fail_verification "M11 $lane driver does not resolve the sanitizer adapter from $sdk/lib"
+  fi
 
   # Scenario state is disposable even when build products are reusable.
   rm -rf "$runtime"
   mkdir -p "$runtime"
 
   local base_preload="${LD_PRELOAD:-}"
-  local asan_runtime="$(cc -print-file-name=libasan.so)"
+  # GCC's libasan.so may be a linker script. LD_PRELOAD needs the runtime ELF.
+  local asan_runtime="$(cc -print-file-name=libasan.so.8)"
   local tsan_runtime="$(cc -print-file-name=libtsan.so.2)"
   [[ -f "$asan_runtime" ]] || fail_verification "libasan runtime was not found"
   [[ -f "$tsan_runtime" ]] || fail_verification "libtsan runtime was not found"
