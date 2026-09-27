@@ -55,11 +55,35 @@ if ! rg -n 'std::shared_mutex|std::shared_lock|std::unique_lock' \
   fail "native lifecycle gate is missing"
 fi
 
+engine_source="$ROOT/core/crates/searchkernel-vespa-engine/src/engine.rs"
 for impl in 'unsafe impl Send for Engine' 'unsafe impl Sync for Engine'; do
-  line="$(rg -n "$impl" "$ROOT/core/crates/searchkernel-vespa-engine/src/lib.rs" | cut -d: -f1)"
-  [[ -n "$line" ]] || { fail "missing $impl"; continue; }
-  previous=$((line - 4))
-  sed -n "${previous},${line}p" "$ROOT/core/crates/searchkernel-vespa-engine/src/lib.rs" | grep -q 'SAFETY:' ||
+  matches="$(rg -n -F "$impl" "$engine_source" || true)"
+  match_count="$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
+  if [[ "$match_count" != "1" ]]; then
+    if [[ "$match_count" == "0" ]]; then
+      fail "missing $impl"
+    else
+      fail "$impl must appear exactly once"
+    fi
+    continue
+  fi
+
+  line="${matches%%:*}"
+  cursor=$((line - 1))
+  found_safety=0
+  while ((cursor >= 1)); do
+    context="$(sed -n "${cursor}p" "$engine_source")"
+    if [[ "$context" =~ ^[[:space:]]*// ]]; then
+      if [[ "$context" == *SAFETY:* ]]; then
+        found_safety=1
+      fi
+      cursor=$((cursor - 1))
+      continue
+    fi
+    break
+  done
+
+  ((found_safety == 1)) ||
     fail "$impl has no adjacent SAFETY justification"
 done
 
