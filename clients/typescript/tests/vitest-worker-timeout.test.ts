@@ -1,12 +1,10 @@
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-
-const require = createRequire(import.meta.url);
 
 describe("Vitest worker RPC regression", () => {
   it("uses a Vitest major with the slow onTaskUpdate worker fix", () => {
-    const packageJsonPath = require.resolve("vitest/package.json");
+    const packageJsonPath = resolve(process.cwd(), "node_modules", "vitest", "package.json");
     const version = JSON.parse(
       readFileSync(packageJsonPath, "utf8"),
     ).version as string;
