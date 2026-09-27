@@ -77,8 +77,18 @@ jobs:
           persist-credentials: false
       - name: Run M11 structural regression
         shell: bash
+        env:
+          CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
-          bash -n reference/vespa/m11/check-structure.sh
-          python3 reference/vespa/m11/test_structure.py
+          docker pull "$CI_IMAGE"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work:ro" \
+            -w /work \
+            "$CI_IMAGE" /bin/bash -lc '
+              set -euo pipefail
+              bash -n reference/vespa/m11/check-structure.sh
+              PYTHON=$(bash tools/resolve-python.sh)
+              "$PYTHON" reference/vespa/m11/test_structure.py
+            '
