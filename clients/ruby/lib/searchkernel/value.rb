@@ -149,7 +149,12 @@ module SearchKernel
       type_spec = tensor.type_spec
       raise ArgumentError, "tensor type_spec must be a string" unless type_spec.is_a?(String) && !type_spec.empty?
       kind, payload = case tensor.encoding
-      when :dense then ["DenseTensorValues", { "values" => tensor_cells(tensor.payload) }]
+      when :dense
+        values = tensor_cells(tensor.payload)
+        # FlatBuffers standard JSON may omit an empty vector. Doing so preserves
+        # the declaration-only empty-tensor sentinel while avoiding a malformed
+        # zero-length f64 vector from the schema-text JSON parser.
+        ["DenseTensorValues", values.empty? ? {} : { "values" => values }]
       when :sparse then ["SparseTensorCells", { "cells" => tensor_records(tensor.payload, :cell) }]
       when :mixed then ["MixedTensorBlocks", { "blocks" => tensor_records(tensor.payload, :block) }]
       else raise ArgumentError, "unknown tensor encoding"

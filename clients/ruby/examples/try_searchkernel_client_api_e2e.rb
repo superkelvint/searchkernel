@@ -19,6 +19,15 @@ def ids(results)
   results.hits.map(&:id)
 end
 
+def embedding(*values)
+  raise ArgumentError, "expected 8 embedding values" unless values.length == 8
+  SearchKernel::Tensor.dense("tensor<float>(x[8])", values)
+end
+
+SHOE_1_VECTOR = [0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78].freeze
+SHOE_2_VECTOR = [0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64].freeze
+BAG_1_VECTOR = [0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55].freeze
+
 index_path = ENV.fetch("SEARCHKERNEL_RUBY_E2E_INDEX")
 FileUtils.rm_rf(index_path)
 
@@ -27,10 +36,25 @@ fields = {
   "brand" => SearchKernel::Keyword.new(stored: true, filterable: true, sortable: true, facetable: true),
   "price" => SearchKernel::FloatField.new(stored: true, filterable: true, sortable: true),
   "inventory" => SearchKernel::IntegerField.new(stored: true, filterable: true, sortable: true),
-  "active" => SearchKernel::BooleanField.new(stored: true, filterable: true)
+  "active" => SearchKernel::BooleanField.new(stored: true, filterable: true),
+  "category" => SearchKernel::Keyword.new(stored: true, filterable: true, facetable: true),
+  "rating" => SearchKernel::IntegerField.new(stored: true, filterable: true, sortable: true),
+  "embedding" => SearchKernel::TensorField.new("tensor<float>(x[8])", stored: true)
 }
 
-index = SearchKernel::Index.create(index_path, fields: fields)
+rank_profiles = [
+  SearchKernel::RankProfile.new("boosted").first_phase("query(boost)").match_feature("query(boost)"),
+  SearchKernel::RankProfile.new("semantic").first_phase("closeness(embedding)")
+    .query_input("query_embedding", "tensor<float>(x[8])").match_feature("query(query_embedding)"),
+  SearchKernel::RankProfile.new("hybrid").first_phase("bm25(title) + 10 * closeness(embedding)")
+    .query_input("query_embedding", "tensor<float>(x[8])").match_feature("bm25(title)")
+    .match_feature("closeness(embedding)").match_feature("query(query_embedding)"),
+  SearchKernel::RankProfile.new("two_phase").first_phase("attribute(rating)")
+    .second_phase("attribute(inventory)").rerank_count(3),
+  SearchKernel::RankProfile.new("first_phase_only").first_phase("attribute(rating)")
+]
+
+index = SearchKernel::Index.create(index_path, fields: fields, rank_profiles: rank_profiles)
 begin
   same("shoe-1", index.insert(
     "_id" => "shoe-1",
@@ -38,7 +62,8 @@ begin
     "brand" => "Acme",
     "price" => 89.0,
     "inventory" => 10,
-    "active" => true
+    "active" => true, "category" => "shoes", "rating" => 5,
+    "embedding" => embedding(*SHOE_1_VECTOR)
   ), "insert id")
   index.insert(
     "_id" => "shoe-2",
@@ -46,7 +71,8 @@ begin
     "brand" => "TrailCo",
     "price" => 129.0,
     "inventory" => 4,
-    "active" => true
+    "active" => true, "category" => "shoes", "rating" => 5,
+    "embedding" => embedding(*SHOE_2_VECTOR)
   )
   index.insert(
     "_id" => "bag-1",
@@ -54,8 +80,13 @@ begin
     "brand" => "Acme",
     "price" => 49.0,
     "inventory" => 7,
-    "active" => true
+    "active" => true, "category" => "bags", "rating" => 4,
+    "embedding" => embedding(*BAG_1_VECTOR)
   )
+  index.insert("_id" => "rerank-a", "title" => "Rerank Candidate A", "category" => "two-phase", "rating" => 100, "inventory" => 1)
+  index.insert("_id" => "rerank-b", "title" => "Rerank Candidate B", "category" => "two-phase", "rating" => 90, "inventory" => 100)
+  index.insert("_id" => "rerank-c", "title" => "Rerank Candidate C", "category" => "two-phase", "rating" => 80, "inventory" => 90)
+  index.insert("_id" => "rerank-d", "title" => "Rerank Candidate D", "category" => "two-phase", "rating" => 70, "inventory" => 1000)
 
   results = index.search("shoes")
     .filter("price <= :max", "max" => 100.0)
@@ -66,6 +97,18 @@ begin
   same(["shoe-1"], ids(results), "text/filter/sort result")
   same("Fast Running Shoes", results.hits.first.fields.fetch("title"), "stored field projection")
   check(results.total_hits >= 1, "total hits retained")
+
+  repeated = index.search("shoes")
+    .filter("price <= :value", "value" => 130.0)
+    .filter("rating >= :value", "value" => 5)
+    .filter("active = true").sort("price", "asc").limit(10).execute
+  same(%w[shoe-1 shoe-2], ids(repeated), "repeated filters AND with clause-local bindings")
+
+  boolean_filter = index.search("shoes")
+    .filter("(brand IN (:brands) OR rating = :rating) AND NOT (active = false)",
+      "brands" => ["Acme", "TrailCo"], "rating" => 3)
+    .sort("price", "asc").limit(10).execute
+  same(%w[shoe-1 shoe-2], ids(boolean_filter), "OR / NOT / IN / parentheses filter grammar")
 
   page_one = index.search("shoes").sort("price", "asc").page(1, 1).execute
   page_two = index.search("shoes").sort("price", "asc").page(2, 1).execute
@@ -80,6 +123,27 @@ begin
 
   typed = index.query(SearchKernel::Query.contains("title", "shoes")).limit(10).execute
   check(ids(typed).include?("shoe-1"), "typed contains query")
+
+  boosted = index.search("shoes").ranking("boosted").input("boost", 3.0).limit(10).execute
+  check(boosted.hits.all? { |hit| hit.score && hit.features.fetch("query(boost)") == 3.0 }, "scalar query input + match feature")
+
+  first_phase = index.search("candidate").ranking("first_phase_only").limit(4).execute
+  same(%w[rerank-a rerank-b rerank-c rerank-d], ids(first_phase), "first-phase ordering")
+  two_phase = index.search("candidate").ranking("two_phase").limit(4).execute
+  same(%w[rerank-b rerank-c rerank-a rerank-d], ids(two_phase), "finite-window second-phase reranking")
+
+  nearest = index.query(SearchKernel::Query.nearest_neighbor("embedding", "query_embedding"))
+    .ranking("semantic").input("query_embedding", embedding(*SHOE_1_VECTOR)).limit(3).execute
+  same("shoe-1", nearest.hits.first.id, "nearest-neighbor top hit")
+  check(nearest.hits.first.features.key?("query(query_embedding)"), "tensor query input match feature")
+  same(embedding(*SHOE_1_VECTOR), index.get("shoe-1").fetch("embedding"), "dense tensor readback")
+
+  hybrid = index.query(SearchKernel::Query.any_of(
+    SearchKernel::Query.contains("title", "shoes"),
+    SearchKernel::Query.nearest_neighbor("embedding", "query_embedding")
+  )).ranking("hybrid").input("query_embedding", embedding(*BAG_1_VECTOR)).limit(10).execute
+  check(ids(hybrid).include?("bag-1") && ids(hybrid).include?("shoe-1"), "hybrid lexical + vector candidate union")
+  same("bag-1", hybrid.hits.first.id, "hybrid vector-only candidate can rank first")
 
   inspected = index.search("shoes").filter("price <= :max", "max" => 100.0).inspect
   check(inspected.is_a?(Hash), "inspect-query returns canonical resolved request")
@@ -113,6 +177,32 @@ begin
   same(2, grouped_counts.groups.length, "structured group count")
   same(["Acme", "TrailCo"], grouped_counts.groups.map(&:value), "group ordering by count")
   same([2, 1], grouped_counts.groups.map { |group| group.fields.fetch("products") }, "group count outputs")
+
+  nested = index.browse.filter("category IN (:categories)", "categories" => %w[shoes bags]).group(
+    SearchKernel::Group.by("category").limit(10)
+      .output(SearchKernel::Agg.count.as("products"))
+      .subgroup(SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count.as("products")))
+  ).limit(0).execute
+  by_category = nested.groups.to_h { |group| [group.value, group] }
+  same(%w[bags shoes], by_category.keys.sort, "nested category groups")
+  same(2, by_category.fetch("shoes").fields.fetch("products"), "nested shoes count")
+  same(1, by_category.fetch("bags").fields.fetch("products"), "nested bags count")
+  same(%w[Acme TrailCo], by_category.fetch("shoes").groups.map(&:value).sort, "recursive subgroup decoding")
+
+  aliased = index.search("shoes").group(
+    SearchKernel::Group.by("brand").limit(10)
+      .alias("revenue", SearchKernel::Agg.sum("price"))
+      .order_by(SearchKernel::Grouping.desc(SearchKernel::Grouping.alias_ref("revenue")))
+      .output(SearchKernel::Agg.count.as("products"), SearchKernel::Grouping.alias_ref("revenue").as("revenue"))
+  ).limit(0).execute
+  check(aliased.groups.all? { |group| group.fields.key?("revenue") }, "group alias/output")
+
+  kept = index.search("shoes").group(
+    SearchKernel::Group.by("brand").limit(10)
+      .keep(SearchKernel::GroupingFilter.regex(SearchKernel::Grouping.field("brand"), "^A.*"))
+      .output(SearchKernel::Agg.count.as("products"))
+  ).limit(0).execute
+  same(["Acme"], kept.groups.map(&:value), "group keep filter")
 
   index.patch("shoe-1").set("price", 79.0).set("inventory", 11).unset("missing_field").execute
   same(11, index.get("shoe-1").fetch("inventory"), "patch second set")

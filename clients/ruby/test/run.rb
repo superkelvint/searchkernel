@@ -149,6 +149,8 @@ end
 raises(ArgumentError, "reject signed overflow") { portable.encode(2**63) }
 raises(ArgumentError, "reject unsigned overflow") { portable.uint64(2**64) }
 raises(ArgumentError, "reject non-finite request") { portable.encode(Float::INFINITY) }
+empty_dense = portable.encode(portable.tensor("tensor<float>(x[8])", :dense, []))
+same({}, empty_dense.fetch("kind").fetch("payload"), "empty dense tensor omits zero-length vector for BFBS JSON alignment")
 raises(ArgumentError, "reject non-finite tensor") { portable.encode(portable.tensor("tensor(x[1])", :dense, [Float::NAN])) }
 raises(ArgumentError, "reject overflowing tensor conversion") { portable.encode(portable.tensor("tensor(x[1])", :dense, [10**400])) }
 raises(SearchKernel::ProtocolError, "reject missing discriminator") { portable.decode({"kind" => {"value" => 1}}) }
