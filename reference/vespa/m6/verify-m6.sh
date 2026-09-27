@@ -33,6 +33,8 @@ run_workspace_quality
 cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m6
 
 "$SCRIPT_DIR/check-structure.sh"
+cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml"
+M6_DRIVER="$CARGO_TARGET_DIR/debug/searchkernel-m6-driver"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -44,10 +46,10 @@ for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   data="$TMP/$id-data"
   mkdir -p "$cfg" "$data"
 
-  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" -- compile "$scenario" "$cfg"
+  run_native_executable "$M6_DRIVER" compile "$scenario" "$cfg"
 
   # Compiler must refuse stale/non-empty output rather than merging configs.
-  if cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" -- compile "$scenario" "$cfg" >/dev/null 2>&1; then
+  if run_native_executable "$M6_DRIVER" compile "$scenario" "$cfg" >/dev/null 2>&1; then
     echo "M6 compiler incorrectly accepted non-empty output dir for $id" >&2
     exit 1
   fi
@@ -73,9 +75,9 @@ for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
     exit 1
   fi
 
-  # This is a separate cargo-run process from compilation. Engine::open must
+  # This is a separate native process from compilation. Engine::open must
   # bootstrap from the generated directory alone.
-  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" -- smoke "$scenario" "$cfg" "$data"
+  run_native_executable "$M6_DRIVER" smoke "$scenario" "$cfg" "$data"
 done
 
 # The two fixtures intentionally have identical fields but different document

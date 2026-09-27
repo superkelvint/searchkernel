@@ -42,6 +42,9 @@ require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m10-driver" \
   sk_generic_search_request_add_rank_property \
   sk_generic_search_result_match_feature_value
 
+M10_DRIVER="$CARGO_TARGET_DIR/debug/searchkernel-m10-driver"
+M10_ERROR="$CARGO_TARGET_DIR/debug/searchkernel-m10-error"
+M10_CONFIG_REGRESSIONS="$CARGO_TARGET_DIR/debug/searchkernel-m10-config-regressions"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
@@ -51,7 +54,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   fi
 
   cfg="$TMP/$id-cfg"; data="$TMP/$id-data"; mkdir -p "$data"
-  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m10-driver -- \
+  run_native_executable "$M10_DRIVER" \
     "$s" "$cfg" "$data" | "$SCRIPT_DIR/canonicalize.py" > "$TMP/rust-$id.json"
   "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/rust-$id.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -67,14 +70,13 @@ for c in json.load(open(sys.argv[1],encoding='utf-8'))['cases']:
 PY
 while read -r id expected; do
   cfg="$TMP/error-$id-cfg"; data="$TMP/error-$id-data"; mkdir -p "$data"
-  actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m10-error -- "$ERRORS" "$id" "$cfg" "$data")"
+  actual="$(run_native_executable "$M10_ERROR" "$ERRORS" "$id" "$cfg" "$data")"
   [[ "$actual" == "$expected" ]] || { echo "M10 error category mismatch $id: expected=$expected actual=$actual" >&2; exit 1; }
 done < "$TMP/error-jobs"
 
 REGRESSIONS="$SCRIPT_DIR/config-regressions.json"
 mkdir -p "$TMP/config-regressions-data"
-cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" \
-  --bin searchkernel-m10-config-regressions -- \
+run_native_executable "$M10_CONFIG_REGRESSIONS" \
   "$REGRESSIONS" "$TMP/config-regressions" "$TMP/config-regressions-data"
 
 echo 'M10 verification passed'

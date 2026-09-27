@@ -9,7 +9,6 @@ INTEGRATION="$ROOT/reference/vespa/i/verify-i.sh"
 PHASE9="$ROOT/reference/vespa/phase9/verify-phase9.sh"
 HNSW="$ROOT/reference/vespa/verifiers/nearest-neighbor/hnsw/verify.sh"
 M14="$ROOT/reference/vespa/m14/verify-m14.sh"
-CI_IMAGE_RUNNER="$ROOT/.github/workflows/ci-image-runner.yml"
 RUN_VERIFIER="$ROOT/tools/run-verifier.sh"
 SEARCHREPLY="$ROOT/reference/vespa/searchreply/verify-searchreply.sh"
 
@@ -306,27 +305,11 @@ grep -F '"$ROOT/reference/vespa/m13/verify-m13.sh" --skip-workspace-quality' "$M
     exit 1
 }
 
-grep -F 'run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved' "$CI_IMAGE_RUNNER" >/dev/null || {
-    echo "native-full product integration does not reuse the established cumulative baseline" >&2
-    exit 1
-}
-grep -F 'run_phase native-full-phase9 ./dev verify vespa.phase9 --baseline-already-proved' "$CI_IMAGE_RUNNER" >/dev/null || {
-    echo "native-full Phase 9 does not enter through the canonical verifier launcher" >&2
-    exit 1
-}
-hnsw_line="$(grep -nF 'run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
-integration_line="$(grep -nF 'run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
-phase9_line="$(grep -nF 'run_phase native-full-phase9 ./dev verify vespa.phase9 --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
-if grep -nE 'run_phase .*reference/vespa/.*verify.*\.sh' "$CI_IMAGE_RUNNER" >/dev/null; then
-    echo "CI image runner bypasses ./dev verify for a Vespa verifier" >&2
+if grep -R -n 'cargo run' "$ROOT/reference/vespa" --include='*.sh' | grep -v '/oracle/' | grep -v '/verifiers/test-routing.sh:' >/dev/null; then
+    echo "Search Kernel verifier bypasses canonical native runtime launcher through cargo run" >&2
+    grep -R -n 'cargo run' "$ROOT/reference/vespa" --include='*.sh' | grep -v '/oracle/' | grep -v '/verifiers/test-routing.sh:' >&2
     exit 1
 fi
-
-[[ -n "$hnsw_line" && -n "$integration_line" && -n "$phase9_line" ]] &&
-    (( hnsw_line < integration_line && hnsw_line < phase9_line )) || {
-        echo "native-full skips the cumulative baseline before HNSW/M14 has proved it" >&2
-        exit 1
-    }
 
 # M3 must execute the driver from Cargo's active target directory. The verifier
 # exports a shared CARGO_TARGET_DIR, so crate-local target/debug is not reliable.

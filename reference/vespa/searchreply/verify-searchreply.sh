@@ -42,11 +42,11 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
 fi
 
 if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
-  "$ROOT/tools/run-runtime.sh" native "$CONFIG_BIN" "$TMP/config"
+  run_native_executable "$CONFIG_BIN" "$TMP/config"
 else
   SEARCHKERNEL_CARGO_MESSAGES="$TMP/cargo-messages.jsonl" \
   SEARCHKERNEL_RUNTIME_BASE_SDK="$(resolved_native_base_sdk)" \
-    "$ROOT/tools/run-runtime.sh" native "$CONFIG_BIN" "$TMP/config"
+    run_native_executable "$CONFIG_BIN" "$TMP/config"
 fi
 
 PROBE="$TMP/searchreply_probe"
