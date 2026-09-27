@@ -80,6 +80,47 @@ def remap(token: str, vespa: Path, configured: Path | None, deps: Path | None) -
     return value
 
 
+def strip_to_compiler_args(tokens: list[str]) -> tuple[list[str], str]:
+    """Drop CMake/shell wrapper tokens and return arguments after the real C++ driver."""
+    compiler_names = {"c++", "g++", "clang++"}
+    for i, token in enumerate(tokens):
+        if Path(token).name in compiler_names:
+            return tokens[i + 1 :], token
+    raise SystemExit(
+        "configured link command did not contain a recognizable C++ driver: "
+        + shlex.join(tokens)
+    )
+
+
+def absolutize_link_input(token: str, cwd: Path) -> str:
+    """Resolve file/search-path arguments exactly as CMake's original link cwd would."""
+    if token.startswith("-L") and len(token) > 2:
+        path = Path(token[2:])
+        if not path.is_absolute():
+            path = (cwd / path).resolve()
+        return "-L" + str(path)
+
+    if token.startswith("-"):
+        return token
+
+    # Linker file inputs in Vespa's generated command are often relative to the
+    # target build directory. Preserve non-path words, but canonicalize anything
+    # that looks like an object/archive/shared-library/path.
+    looks_like_path = (
+        "/" in token
+        or token.endswith(".o")
+        or token.endswith(".a")
+        or ".so" in Path(token).name
+    )
+    if not looks_like_path:
+        return token
+
+    path = Path(token)
+    if not path.is_absolute():
+        path = (cwd / path).resolve()
+    return str(path)
+
+
 def build_archive_index(roots: list[Path]) -> dict[str, list[Path]]:
     index: dict[str, list[Path]] = {}
     seen: set[Path] = set()
@@ -229,9 +270,15 @@ def main() -> int:
     tokens = shlex.split(raw)
     if not tokens:
         raise SystemExit("empty configured link command")
-    # Drop the configured C++ driver. The spike invokes its own CXX explicitly.
-    tokens = tokens[1:]
+
+    # CMake may prefix the compiler with shell/env wrapper tokens. Locate the
+    # actual C++ driver instead of assuming tokens[0]. The generated relative
+    # object/archive paths are interpreted from the target's CMake directory,
+    # exactly as core/native/vespa/build-sdk.sh does before eval'ing the link.
+    tokens, configured_cxx = strip_to_compiler_args(tokens)
+    link_cwd = link_file.parent.parent.parent
     tokens = [remap(x, vespa, configured, deps) for x in tokens]
+    tokens = [absolutize_link_input(x, link_cwd) for x in tokens]
     tokens = strip_output_and_test_inputs(tokens, obj)
     tokens = remove_link_mode_flags(tokens)
 
@@ -270,6 +317,8 @@ def main() -> int:
         json.dumps(
             {
                 "configured_link_file": str(link_file),
+                "configured_link_cwd": str(link_cwd),
+                "configured_cxx": configured_cxx,
                 "configured_deps": str(configured) if configured else None,
                 "deps_root": str(deps) if deps else None,
                 "shared_args": shared_args,
