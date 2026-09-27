@@ -40,6 +40,27 @@ clients=(ROOT/"clients/README.md").read_text()
 for text,name in [(readme,"README.md"),(clients,"clients/README.md")]:
     if "docs/release-support.md" not in text and "../docs/release-support.md" not in text:
         raise SystemExit(f"{name} does not link the authoritative release support matrix")
-if "tools/qualify-consumer-release.py /tmp/searchkernel-consumer-release" not in runner:
-    raise SystemExit("client-e2e lane does not execute packaged clean-machine qualification")
+consumer_marker = "- name: Qualify packaged release in clean consumer"
+if consumer_marker not in runner:
+    raise SystemExit("client-e2e lane has no isolated packaged consumer qualification")
+consumer_step = runner.split(consumer_marker, 1)[1].split("\n      - name:", 1)[0]
+for required in (
+    '-v "$ARTIFACT_DIR/consumer-release:/release:ro"',
+    '-v "$ARTIFACT_DIR/consumer-release-tools:/qualification:ro"',
+    '"$PYTHON" /qualification/qualify-consumer-release.py /release',
+):
+    if required not in consumer_step:
+        raise SystemExit(f"clean consumer qualification is missing: {required}")
+for forbidden in (
+    "$SOURCE_VOLUME",
+    "$TARGET_VOLUME",
+    "$NATIVE_VOLUME",
+    "/work",
+    "/cargo-target",
+    "/opt/searchkernel/native-sdk-cache",
+):
+    if forbidden in consumer_step:
+        raise SystemExit(
+            f"clean consumer qualification leaks producer state: {forbidden}"
+        )
 print("Release support matrix PASS: Linux x86_64 glibc Rust/daemon/Python/Node scope is explicit and qualified")
