@@ -579,10 +579,11 @@ Several requirements follow directly from serving all eight users:
 5. **Repository environment is not consumer runtime.** Development convenience must never become a downstream requirement.
 6. **Oracle authoring is not verification.** Generating truth and checking against truth remain separate operations.
 7. **Warm performance matters.** Hermetic development cannot imply rebuilding everything on every command; mutable warm build state is scoped per worktree and compatible environment, while immutable/content-addressed caches may be shared.
-8. **Release promises are machine-readable.** `docs/release-support.json` defines the supported downstream surfaces, and release qualification must execute the actual artifacts for every supported row.
-9. **Failures are actionable.** Human or agent users should receive a canonical reproduction command whenever one exists.
-10. **No hidden second build system.** GitHub Actions, Universe, verifier directories, release checks, and packaging scripts consume canonical authorities instead of redefining them.
-11. **Every mechanism needs a persona.** New build-system machinery should identify which user and requirement justify its existence.
+8. **Build-environment distribution and product distribution are separate.** Developers/agents/CI receive tooling and Vespa through independently versioned Docker images; end users receive supported product artifacts and never depend on those build images.
+9. **Release promises are machine-readable.** `docs/release-support.json` defines the supported downstream surfaces, and release qualification must execute the actual artifacts for every supported row.
+10. **Failures are actionable.** Human or agent users should receive a canonical reproduction command whenever one exists.
+11. **No hidden second build system.** GitHub Actions, Universe, verifier directories, release checks, and packaging scripts consume canonical authorities instead of redefining them.
+12. **Every mechanism needs a persona.** New build-system machinery should identify which user and requirement justify its existence.
 
 ---
 
@@ -595,7 +596,10 @@ Target ownership:
 | Concern | Authority |
 |---|---|
 | Public development interface | `./dev` |
-| Normal development toolchain | canonical Search Kernel image |
+| Normal development toolchain | `searchkernel-ci-toolchain:<toolchain-id>` |
+| Immutable Vespa/native build input | `searchkernel-ci-vespa:<vespa-commit>-<bundle-id>` |
+| Source-revision build/verification leaf | thin `searchkernel-ci:<searchkernel-revision>` |
+| Image dependency/provenance binding | exact image digests recorded by the leaf |
 | Entering that environment | one container launcher |
 | Rust compilation | root Cargo build graph |
 | Native Search Kernel compilation | canonical native build machinery |
@@ -766,6 +770,8 @@ Do **not** remove the current consumer-safe #745 path until a replacement passes
 
 The permanent invariant is consumer runtime correctness, not the current loader implementation.
 
+This decision changes the **end-user native package layout** only. It does not replace the independently published `searchkernel-ci-vespa` development/CI image, which remains the canonical expensive immutable input used to build and verify whichever runtime format is selected.
+
 ---
 
 ## 6. Why not replace everything with Nix, Bazel, Buck2, xtask, or just?
@@ -796,7 +802,362 @@ The choice is deliberate:
 
 ---
 
-## 7. Canonical development environment
+## 7. Distribution architecture — preserve the existing split
+
+The word "distribution" covers **two different systems** in Search Kernel and they must remain separate:
+
+1. **development/CI environment distribution** — how developers, coding agents, GitHub Actions, and self-hosted runners receive the exact compilers, language runtimes, FlatBuffers tooling, and pinned Vespa/native base needed to build and verify Search Kernel;
+2. **end-user product distribution** — how downstream users receive Search Kernel itself and, where applicable, the embedded Vespa/native runtime needed to run it.
+
+The convergence project must make both systems explicit. It must **not** collapse them into one giant image, rebuild the large Vespa payload on every source change, or make end users consume the development image.
+
+### 7.1 Existing development/CI image architecture is a preserved baseline
+
+The current Docker architecture is a strong part of the system and should be retained unless a measured problem justifies changing it.
+
+It has three independently versioned identities:
+
+#### A. Toolchain image
+
+```text
+docker.io/superkelvint/searchkernel-ci-toolchain:<toolchain-id>
+```
+
+Owns the reusable build environment:
+
+- base OS;
+- Rust/Cargo;
+- GCC/C++;
+- Python;
+- Node/npm;
+- PHP;
+- Ruby;
+- FlatBuffers;
+- reusable client/build tooling;
+- pinned compiler-cache tooling.
+
+Its identity changes when the **toolchain axis** changes, not when ordinary Search Kernel source changes.
+
+The toolchain identity is derived from the toolchain-image inputs and locked client/tool dependencies rather than from the Search Kernel source revision.
+
+Published through:
+
+```bash
+./dev image toolchain publish
+```
+
+#### B. Vespa/native image
+
+```text
+docker.io/superkelvint/searchkernel-ci-vespa:<vespa-commit>-<bundle-id>
+```
+
+Owns the expensive, immutable native input:
+
+- pinned Vespa revision;
+- configured Vespa headers/build metadata;
+- Vespa/native runtime closure;
+- static-link metadata required by the Search Kernel adapter;
+- native provenance describing the target/build environment.
+
+This is the **only development/CI image that carries the large Vespa/native payload**.
+
+It changes when the pinned Vespa/native bundle changes, not when ordinary Search Kernel Rust/C++ adapter source changes.
+
+Published through:
+
+```bash
+./dev image vespa publish
+```
+
+#### C. Thin Search Kernel CI leaf
+
+```text
+docker.io/superkelvint/searchkernel-ci:<searchkernel-revision>
+docker.io/superkelvint/searchkernel-ci:latest
+```
+
+Owns the source-revision-specific validation identity.
+
+It is deliberately thin:
+
+- based on the canonical toolchain identity;
+- records the exact toolchain and Vespa image digests/identities in labels/metadata;
+- validates compatibility against the exact Vespa image during build;
+- does **not** copy the large Vespa filesystem into the committed leaf layer.
+
+Published through:
+
+```bash
+./dev image publish
+```
+
+Ordinary Search Kernel source changes therefore do not republish the Vespa payload.
+
+### 7.2 Publish only the axis that changed
+
+This behavior is intentional and should remain visible in the architecture:
+
+```text
+toolchain changed
+    -> publish searchkernel-ci-toolchain
+
+pinned Vespa/native bundle changed
+    -> publish searchkernel-ci-vespa
+
+ordinary Search Kernel source changed
+    -> publish thin searchkernel-ci leaf
+```
+
+The large native payload should not be uploaded again because an unrelated Rust, client, verifier, documentation, or Search Kernel adapter change landed.
+
+This separation is both a performance property and a provenance property.
+
+### 7.3 Runtime assembly for local development and CI
+
+The leaf image identifies the exact Vespa image by digest.
+
+At execution time:
+
+```text
+searchkernel-ci leaf
+        |
+        +-- exact toolchain identity
+        |
+        +-- exact Vespa image digest
+                 |
+                 v
+         materialize once on host
+                 |
+                 v
+ content-addressed Docker volume
+                 |
+                 v
+/opt/searchkernel/native-sdk-cache (read-only)
+```
+
+Developers and CI therefore use the same immutable native input without baking the entire native payload into every leaf.
+
+The large Vespa volume is reusable across jobs and worktrees because it is immutable/content-addressed.
+
+Writable source/build state remains separately scoped according to the execution-mode isolation rules.
+
+Rust compiler-output caching may also be shared through the pinned non-authoritative sccache layer because cache misses simply rebuild; it must never become an authority for artifact identity.
+
+### 7.4 This image architecture serves three personas
+
+It directly serves:
+
+- the **bootstrapper**, who needs one reproducible canonical environment rather than host-installed language stacks;
+- the **implementer/reviewer**, who needs local verification to match CI;
+- the **remote-only coding agent / CI system**, which needs ready-to-run infrastructure containing the exact expensive native prerequisites.
+
+This is why the Docker image architecture is not merely CI plumbing. It is part of the build product.
+
+### 7.5 Image architecture invariants
+
+The convergence work must preserve these invariants unless there is a separate explicit architectural decision to change them:
+
+1. **Toolchain and Vespa are independently versioned.**
+2. **The Vespa/native image is the only image carrying the large Vespa/native payload.**
+3. **Ordinary Search Kernel source changes do not rebuild or republish Vespa.**
+4. **The Search Kernel leaf records exact toolchain/Vespa provenance.**
+5. **The leaf does not silently float to a different Vespa payload at execution time.**
+6. **The Vespa payload is materialized read-only from an immutable digest-addressed source.**
+7. **CI and local canonical verification use the same image identities.**
+8. **No automatic fallback silently changes the toolchain/environment used to produce a green result.**
+9. **Image publication is explicit and axis-specific.**
+10. **End-user packages do not depend on these development/CI images.**
+
+The build-system simplification project may simplify launchers, target/cache topology, and verifier compilation without weakening these invariants.
+
+---
+
+### 7.6 End-user product distribution is separate from Docker development distribution
+
+Search Kernel end users should not need `searchkernel-ci`, `searchkernel-ci-toolchain`, or `searchkernel-ci-vespa`.
+
+Those images are build/development infrastructure.
+
+The release pipeline instead produces supported product artifacts from the same pinned/provenanced inputs.
+
+The current beta distribution authority is:
+
+```text
+docs/release-support.json
+```
+
+and currently targets Linux x86-64 glibc.
+
+The intended release flow is:
+
+```text
+exact Search Kernel revision
+        |
+        +-- canonical toolchain identity
+        +-- exact pinned Vespa/native identity
+        |
+        v
+./dev release-check
+        |
+        +-- source/repository qualification
+        +-- build actual distributable artifacts
+        +-- assemble required native runtime closure
+        +-- validate checksums/provenance
+        +-- install/extract artifacts externally
+        +-- execute supported surfaces
+        |
+        v
+qualified release artifacts
+```
+
+### 7.7 Current product artifact forms
+
+The current release tooling already models these artifact families and the convergence plan should preserve or deliberately evolve them rather than inventing an unrelated packaging path.
+
+#### Rust embedded distribution
+
+Current artifact shape:
+
+```text
+searchkernel-rust-<version>.tar.gz
+```
+
+Contains the Rust consumer workspace/subset required to consume the embedded API.
+
+The release contract must evolve from merely proving that this bundle can be inspected/`cargo check`ed to proving that an **external downstream application built from this exact artifact executes the native engine successfully**.
+
+The native-distribution investigation in section 5 determines what the embedded Rust artifact ultimately carries or acquires:
+
+- a mostly-static Search Kernel native runtime;
+- a relocatable shared native closure;
+- or another proven consumer-safe package layout.
+
+The user must not need the development Docker images.
+
+#### Standalone daemon distribution
+
+Current artifact shape:
+
+```text
+searchkerneld-<version>-linux-x86_64-glibc.tar.gz
+    bin/
+        searchkerneld
+        searchkerneld.real
+    lib/
+        libsearchkernel_vespa.so.2
+        <required native runtime closure>
+```
+
+The launcher resolves the package-relative runtime closure.
+
+Release qualification must unpack this tree into a clean external location, clear repository/native loader overrides, and prove that the packaged daemon reaches normal argument/runtime execution.
+
+If the mostly-static native-runtime investigation succeeds, the `lib/` closure may shrink substantially, but the package-level contract remains the same: **unpack and run without installing Vespa separately**.
+
+#### Managed-local Python distribution
+
+Current artifact shape:
+
+```text
+searchkernel-<version>-<platform>.whl
+    searchkernel/
+        bin/
+        lib/
+        Python package code
+```
+
+For the managed-local supported mode, the wheel carries the Search Kernel daemon/native runtime required to run locally.
+
+Release qualification must install the wheel into a clean target/environment and execute the packaged runtime with repository/native overrides removed.
+
+#### TypeScript / Node and other connect-only clients
+
+A connect-only client does not need to carry Vespa or the native engine merely because Search Kernel itself embeds Vespa elsewhere.
+
+Its release contract is:
+
+```text
+client artifact
+    |
+    v
+connect to supported searchkerneld contract
+```
+
+The support matrix decides whether a language/runtime is managed-local, native embedded, connect-only, or deferred.
+
+Packaging code may currently carry more files than the supported contract strictly requires; release qualification should follow `docs/release-support.json`, not infer support from files present in a package.
+
+#### Deferred surfaces
+
+PHP, Ruby, browser TypeScript/gRPC-Web, additional architectures, and other rows currently marked deferred are not release promises merely because development/test code exists.
+
+### 7.8 Shared provenance between build infrastructure and product artifacts
+
+The development image system and product packages are separate outputs but must meet at a common provenance boundary.
+
+A release artifact should be attributable to:
+
+```text
+Search Kernel commit
+toolchain identity
+pinned Vespa commit
+Vespa bundle identity/digest
+native target/platform
+artifact checksum
+native-distribution model/version
+```
+
+The release manifest should make those relationships inspectable.
+
+This prevents a situation where CI proves one Vespa/toolchain combination but release packaging silently ships another.
+
+### 7.9 Native static-link investigation does not replace the image split
+
+The mostly-static native-runtime investigation in section 5 addresses **end-user runtime packaging**.
+
+It does **not** imply that the Vespa development image should disappear.
+
+Even if the final consumer artifact becomes:
+
+```text
+libsearchkernel_vespa.so.2
+    + statically absorbed Vespa/private implementation
+```
+
+the build still needs the pinned Vespa headers/libraries/tooling used to construct that artifact.
+
+The existing `searchkernel-ci-vespa` image remains an efficient way to distribute that expensive immutable build input to developers, agents, and CI.
+
+Therefore these decisions are independent:
+
+```text
+How do builders receive Vespa?
+    -> searchkernel-ci-vespa immutable image
+
+How do end users receive the Vespa implementation?
+    -> release packaging model selected by the native-distribution decision
+```
+
+Do not conflate them.
+
+### 7.10 Distribution definition of success
+
+The build-system convergence is distribution-complete when:
+
+- a toolchain-only change does not republish Vespa;
+- a normal Search Kernel source change does not republish Vespa;
+- a pinned Vespa update produces a new immutable Vespa/native image identity;
+- the thin Search Kernel leaf records the exact immutable dependencies it was validated against;
+- local and remote verification consume those exact identities;
+- release artifacts record compatible provenance;
+- every supported row in `docs/release-support.json` is exercised from the actual distributable artifact;
+- no end-user supported surface requires the development/CI Docker images;
+- changing the final native packaging model does not force a redesign of the development-image layering.
+
+---
+
+## 8. Canonical development environment
 
 Normal build/test/verification should run in the canonical Search Kernel image.
 
@@ -829,7 +1190,7 @@ The canonical container is an **environment boundary**, not a clean-build bounda
 
 ---
 
-## 8. Build/cache performance constraint
+## 9. Build/cache performance constraint
 
 The guiding principle is:
 
@@ -867,7 +1228,7 @@ If the canonical-container boundary causes a material regression, fix the cache/
 
 ---
 
-## 9. Audit: `reference/vespa`
+## 10. Audit: `reference/vespa`
 
 On the audited baseline, `reference/vespa` contains 70 compiled-language source files:
 
@@ -882,7 +1243,7 @@ On the audited baseline, `reference/vespa` contains 70 compiled-language source 
 
 Those files do **not** all have the same role.
 
-### 9.1 Active normal-verification sources: 55
+### 10.1 Active normal-verification sources: 55
 
 These are compiled to verify the current Search Kernel implementation:
 
@@ -906,7 +1267,7 @@ It consists of:
 
 These should eventually be owned by normal Cargo/native build targets.
 
-### 9.2 Oracle/golden-authoring sources: 14
+### 10.2 Oracle/golden-authoring sources: 14
 
 These are independent reference implementations:
 
@@ -939,7 +1300,7 @@ Java oracle sources:
 
 These are used to generate or independently validate frozen behavioral truth and should remain conceptually separate from the normal Search Kernel build.
 
-### 9.3 One Rust source requires investigation
+### 10.3 One Rust source requires investigation
 
 `reference/vespa/api-contract/src/bin/m-api.rs` is described as a compile-only stable API fixture, but it was not found in the current normal milestone/product verifier entrypoints inspected during the audit.
 
@@ -952,7 +1313,7 @@ prove obsolete -> delete
 
 Do not preserve dead build machinery merely for symmetry.
 
-### 9.4 Important wording
+### 10.4 Important wording
 
 `reference/vespa` is inside the repository, so the issue is not that it is "outside the source tree".
 
@@ -962,7 +1323,7 @@ The precise problem is:
 
 ---
 
-## 10. Verifier versus oracle
+## 11. Verifier versus oracle
 
 The architecture should use a simple distinction:
 
@@ -1013,7 +1374,7 @@ Compiled code required for this path belongs to the normal build graph.
 
 ---
 
-## 11. Target role of `reference/vespa`
+## 12. Target role of `reference/vespa`
 
 The eventual role should be:
 
@@ -1044,7 +1405,7 @@ Historical M0-M14 directories may remain. We are not erasing useful specificatio
 
 ---
 
-## 12. Public command surface
+## 13. Public command surface
 
 The normal developer interface should converge toward:
 
@@ -1075,7 +1436,7 @@ A developer should not need advanced maintainer commands to understand an ordina
 
 ---
 
-## 13. Explicit remote execution for agents
+## 14. Explicit remote execution for agents
 
 A major reason the heavy verifier suite existed in CI was practical: coding agents often cannot execute native, sanitizer, Vespa, or other specialist checks in their own local environment.
 
@@ -1117,7 +1478,7 @@ target:    vespa.ranking
 
 The GitHub workflow is not a new verifier implementation. It is a first-class invocation surface whose execution body remains the canonical `./dev` operation.
 
-### 13.1 Semantic equivalence
+### 14.1 Semantic equivalence
 
 This invariant is mandatory:
 
@@ -1162,7 +1523,7 @@ Agent ---- ./dev verify foo                  canonical environment
 
 GitHub Actions does not own verifier semantics.
 
-### 13.2 One generic on-demand workflow
+### 14.2 One generic on-demand workflow
 
 Provide one bounded `workflow_dispatch` workflow for explicit remote verification.
 
@@ -1189,7 +1550,7 @@ It must not contain verifier-specific build logic.
 
 Because remote-only agents cannot run `./dev --list`, the finite operation/target registry must also be discoverable from GitHub-visible repository state. The workflow and local `./dev --list` commands validate against the same authority. Do not duplicate target lists independently in YAML and shell.
 
-### 13.3 Exact pushed SHA is mandatory
+### 14.3 Exact pushed SHA is mandatory
 
 Remote verification is evidence about a specific commit, not about a branch name.
 
@@ -1228,7 +1589,7 @@ For the local `./dev --remote` convenience wrapper, the command must fail by def
 
 A remote-only agent has no local-worktree requirement; it supplies the exact pushed SHA directly. In both cases, the evidence names only that committed SHA. Any future local override must be explicit and must never allow a run to be described as verification of uncommitted local changes.
 
-### 13.4 Remote-execution trust boundary
+### 14.4 Remote-execution trust boundary
 
 The on-demand workflow executes repository code, potentially on self-hosted infrastructure with Docker access. Exact-SHA provenance is necessary but not sufficient; the workflow needs an explicit trust model.
 
@@ -1244,7 +1605,7 @@ The first version must:
 
 The goal is not to build a general sandboxing platform. It is to ensure that a convenient remote test button does not become a privileged arbitrary-code execution path.
 
-### 13.5 Local wrapper and direct GitHub UX
+### 14.5 Local wrapper and direct GitHub UX
 
 For users who have a working checkout, `./dev` owns the convenience UX; they should not need to manually invoke `gh workflow run` or locate Actions runs.
 
@@ -1270,7 +1631,7 @@ REPRO:
 
 For remote-only agents, the GitHub workflow itself is the interface. GitHub must expose the same essential evidence: requested SHA, operation/target, run identity, result, and failed logs. The two caller experiences differ, but they converge on the same execution semantics.
 
-### 13.6 Bounded operations only
+### 14.6 Bounded operations only
 
 Remote execution is **not** a generic remote shell.
 
@@ -1297,7 +1658,7 @@ Do not add an interface such as:
 
 This preserves a reviewable and safe remote execution surface.
 
-### 13.7 PR labels are not the primary interface
+### 14.7 PR labels are not the primary interface
 
 Labels may be added later as a convenience if some automation can manipulate labels but cannot dispatch Actions directly.
 
@@ -1305,7 +1666,7 @@ They should not be the primary model because label state is poor verification st
 
 The canonical interface is explicit workflow dispatch hidden behind `./dev`.
 
-### 13.8 Agent protocol
+### 14.8 Agent protocol
 
 The repository's agent guidance should eventually distinguish two cases:
 
@@ -1337,7 +1698,7 @@ If a remote verifier fails:
 
 Agents should choose relevant specialist checks rather than reflexively running Universe.
 
-### 13.9 CI separation
+### 14.9 CI separation
 
 The intended division is:
 
@@ -1361,7 +1722,7 @@ Do not turn remote-run reporting into a second infrastructure project. Exact SHA
 
 ---
 
-## 14. Migration plan
+## 15. Migration plan
 
 ### Phase 0 — Freeze and inventory
 
@@ -1380,7 +1741,11 @@ Inventory every current path that:
 - creates verifier-specific caches;
 - runs historical verifiers;
 - performs CI-only setup;
-- performs Universe-only setup.
+- performs Universe-only setup;
+- builds, publishes, resolves, or materializes the toolchain image;
+- builds, publishes, resolves, or materializes the Vespa/native image;
+- builds/publishes the thin Search Kernel leaf;
+- assembles end-user release artifacts.
 
 Classify each as:
 
@@ -1617,11 +1982,13 @@ Rust, C/C++, Python, Node, PHP, Ruby, FlatBuffers, and ordinary build dependenci
 
 Simplify only after the canonical image path can build, test, verify, and perform remote dispatch without relying on host language toolchains.
 
+Do not simplify bootstrap by flattening the current image hierarchy. Bootstrap should resolve/pull the thin leaf and its exact immutable toolchain/Vespa dependencies through their existing provenance model.
+
 ---
 
 ### Phase 10 — Implement exact-SHA remote test/verify execution
 
-Implement the remote execution contract from section 13 as a first-class migration phase rather than leaving it implicit in the Definition of Done.
+Implement the remote execution contract from section 14 as a first-class migration phase rather than leaving it implicit in the Definition of Done.
 
 Required deliverables:
 
@@ -1654,8 +2021,8 @@ It must:
 
 1. establish the exact revision being qualified;
 2. run or consume the required exact-revision repository/source qualification according to release policy;
-3. build the exact artifact set described by the release tooling;
-4. validate the release manifest/checksums/provenance;
+3. build the exact artifact set described by the release tooling from the qualified toolchain/Vespa identities;
+4. validate the release manifest/checksums/provenance, including Search Kernel revision, platform/native target, pinned Vespa identity, and the relevant immutable build-input identities;
 5. enumerate supported rows from `docs/release-support.json`;
 6. execute artifact-level qualification for every supported row;
 7. include ABI, persistence/backward-compatibility, native-runtime/relocatability, generated-artifact, and provenance checks required by the release contract;
@@ -1691,7 +2058,7 @@ If the answer is unclear, the old path is not ready to be removed.
 
 ---
 
-## 15. Migration rules
+## 16. Migration rules
 
 ### Rule 1 — Delegate before rewriting
 
@@ -1751,9 +2118,15 @@ Normal test/verify/Universe execution consumes frozen reference behavior. Live o
 
 Architectural/contract tests should assert public commands, artifact contracts, provenance, and safety invariants. They should not freeze obsolete workflow filenames or YAML implementation details once those are no longer authorities.
 
+### Rule 10 — Preserve the independent image axes
+
+Do not simplify the build by collapsing the toolchain image, Vespa/native image, and thin Search Kernel leaf into one repeatedly rebuilt/published image.
+
+Toolchain, Vespa/native payload, and Search Kernel source revision have different change frequencies and provenance identities. The current independent publication model is an architectural optimization to retain, not accidental complexity to delete.
+
 ---
 
-## 16. Explicit non-goals
+## 17. Explicit non-goals
 
 This project does **not**:
 
@@ -1770,11 +2143,13 @@ This project does **not**:
 - eliminate independent Vespa behavioral oracles;
 - invent a verifier DSL or YAML build language;
 - erase M0-M14 historical reference material;
-- restore the old large PR CI matrix.
+- restore the old large PR CI matrix;
+- collapse the independently versioned toolchain, Vespa/native, and thin Search Kernel leaf images into one monolithic image;
+- make end users depend on Search Kernel's development/CI images.
 
 ---
 
-## 17. Reviewer guide
+## 18. Reviewer guide
 
 An engineer unfamiliar with Search Kernel should be able to review the migration with these questions.
 
@@ -1808,6 +2183,20 @@ Does it primarily contain behavioral reference material, oracle provenance, and 
 
 Does the direct Vespa path remain independent from Search Kernel implementation code?
 
+### Development/CI image distribution
+
+Are toolchain, Vespa/native payload, and Search Kernel source leaf still independently versioned/published?
+
+Can an ordinary Search Kernel source change avoid rebuilding or republishing the large Vespa payload?
+
+Does the thin leaf record the exact immutable toolchain/Vespa identities used for verification?
+
+### Product distribution
+
+Can every supported release surface be installed/extracted and exercised without depending on the development/CI images?
+
+Do release artifacts record enough Search Kernel/toolchain/Vespa/native provenance to show what was actually shipped?
+
 ### CI
 
 Does CI call the same canonical operations developers use?
@@ -1840,7 +2229,7 @@ Did the change remove an authority, or create another one?
 
 ---
 
-## 18. End-state developer experience
+## 19. End-state developer experience
 
 A developer should need approximately this model:
 
@@ -1933,7 +2322,7 @@ A downstream user should need even less: the supported Search Kernel dependency/
 
 ---
 
-## 19. Definition of done
+## 20. Definition of done
 
 The convergence project is complete when:
 
@@ -1980,14 +2369,22 @@ The convergence project is complete when:
 41. `./dev release-check` builds the actual release artifact set and provides artifact-level executable evidence for every supported release row.
 42. Rust embedded release qualification builds and executes a clean external consumer from the actual distributable Rust artifact, not merely from a repository path.
 43. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
-44. Old compatibility/build paths are removed only after their replacements are proven.
-45. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
-46. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
+44. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
+45. Ordinary Search Kernel source/image publication does not copy or republish the large Vespa/native payload.
+46. The thin Search Kernel leaf records exact immutable toolchain and Vespa/native provenance.
+47. Canonical local and remote verification resolve the Vespa/native payload by immutable identity and mount/materialize it read-only.
+48. Release artifacts record Search Kernel revision, platform/native target, pinned Vespa/native identity, and artifact checksums/provenance sufficient to relate shipped output to qualified inputs.
+49. End-user supported artifacts do not require `searchkernel-ci`, `searchkernel-ci-toolchain`, or `searchkernel-ci-vespa` at runtime.
+50. Old compatibility/build paths are removed only after their replacements are proven.
+51. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
+52. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
 
 The final architecture should be boring:
 
 > `./dev` owns developer workflow.  
-> The canonical image owns the development toolchain.  
+> The toolchain image owns reusable compilers/language runtimes.  
+> The Vespa image owns the expensive immutable native build input.  
+> The thin Search Kernel leaf binds an exact source revision to exact immutable build inputs.  
 > Cargo owns Rust compilation.  
 > Native build tooling owns native compilation.  
 > The build/package layer makes consumer artifacts runnable.  
