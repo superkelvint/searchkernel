@@ -5,6 +5,28 @@ require "json"
 require "tempfile"
 require "tmpdir"
 
+class CloseCountingOwner
+  attr_reader :close_count
+
+  def initialize
+    @close_count = 0
+  end
+
+  def close
+    @close_count += 1
+  end
+end
+
+class FailingCloseTransport
+  def execute(_request)
+    raise "unexpected execute"
+  end
+
+  def close
+    raise "client close boom"
+  end
+end
+
 class FacadeRecordingTransport
   attr_reader :requests
 
@@ -107,6 +129,30 @@ closed_index = SearchKernel::Index.new(SearchKernel::Client.new(closed_transport
 closed_index.close
 closed_index.close
 raises(SearchKernel::TransportError, "operation after close rejects") { closed_index.get("doc-1") }
+
+owned_owner = CloseCountingOwner.new
+owned_index = SearchKernel::Index.new(
+  SearchKernel::Client.new(FacadeRecordingTransport.new),
+  owner: owned_owner
+)
+owned_index.close
+owned_index.close
+same(1, owned_owner.close_count, "managed owner closes exactly once")
+
+failing_owner = CloseCountingOwner.new
+failing_index = SearchKernel::Index.new(
+  SearchKernel::Client.new(FailingCloseTransport.new),
+  owner: failing_owner
+)
+raises(RuntimeError, "owner still closes when client close fails") { failing_index.close }
+same(1, failing_owner.close_count, "owner cleanup runs despite client close failure")
+assert(failing_index.closed?, "index remains closed after cleanup failure")
+
+connected_index = SearchKernel::Index.connect("http://127.0.0.1:1")
+connected_index.close
+raises(SearchKernel::TransportError, "connect-to-daemon index rejects operations after close") do
+  connected_index.get("doc-1")
+end
 
 nearest = SearchKernel::Query.nearest_neighbor(
   "embedding",
