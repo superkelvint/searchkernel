@@ -66,7 +66,7 @@ case "$runtime" in
         if command -v readelf >/dev/null 2>&1 &&
            command -v ldd >/dev/null 2>&1 &&
            readelf -h "$executable" >/dev/null 2>&1; then
-            missing=$(ldd "$executable" 2>&1 | sed -n '/=> not found/p')
+            missing=$(env -u LD_PRELOAD ldd "$executable" 2>&1 | sed -n '/=> not found/p')
             if [[ -n "$missing" ]]; then
                 echo "native runtime dependency closure is incomplete for $executable:" >&2
                 printf '%s\n' "$missing" >&2
