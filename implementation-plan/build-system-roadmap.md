@@ -6,26 +6,23 @@ Scope: implementation sequencing only; this document does not redefine the archi
 
 ## 1. Purpose
 
-`build-system.md` defines the desired build-system architecture, personas, distribution model, and Definition of Done.
+`build-system.md` is the design contract. This roadmap exists only to sequence implementation of that contract.
 
-This roadmap answers:
-
-> **In what order do we change the repository so the desired architecture becomes true without breaking existing developer, agent, verifier, or consumer workflows?**
-
-This roadmap deliberately has only **six milestones**. The detailed work inside each milestone should be decomposed into small issues/PRs; those sub-items are not separate milestones.
+The roadmap deliberately has **six milestones**. Detailed work is decomposed into small issues/PRs within those milestones.
 
 The migration rules are:
 
 1. preserve working behavior before cleanup;
 2. create the canonical authority before deleting duplicate implementations;
-3. keep automatic PR CI small;
-4. keep heavy verification explicitly available, including to remote-only coding agents;
-5. preserve the existing three-axis Docker image architecture;
-6. never rebuild or republish Vespa for ordinary Search Kernel source changes;
-7. make Cargo/npm/pip/RubyGems the end-user installation surfaces;
-8. tie review/release evidence to exact commits and actual distributable artifacts;
-9. keep oracle authoring separate from normal verification;
-10. delete compatibility paths only after replacement proof.
+3. resolve the P0 native-runtime model before converging other runtime consumers onto it;
+4. keep automatic PR CI intentionally small;
+5. keep strong verification explicitly available, including to agents with no development environment;
+6. preserve the three-axis Docker image architecture;
+7. never rebuild or republish Vespa for ordinary Search Kernel source changes;
+8. make Cargo/npm/pip/RubyGems the end-user installation surfaces;
+9. tie review/release evidence to exact commits and actual distributable artifacts;
+10. keep oracle authoring separate from normal verification;
+11. delete compatibility paths only after replacement proof.
 
 ---
 
@@ -73,18 +70,13 @@ searchkernel-ci-vespa:<vespa>-<bundle>  |
 
                          PRODUCT DISTRIBUTION
 
-qualified common managed-local runtime payload
+chosen native runtime model
               |
-              +--> standalone searchkerneld archive
-              +--> Python package
-              +--> TypeScript/Node package
-              +--> Ruby package
-
-Rust
-              |
-              v
-normal Cargo package mechanics transparently
-provide/link/provision the chosen native runtime
+              +--> standalone searchkerneld artifact
+              +--> Python managed-local package
+              +--> TypeScript/Node managed-local package
+              +--> Ruby managed-local package
+              +--> Rust Cargo distribution mechanics
 
 User installation surfaces:
 
@@ -99,49 +91,49 @@ User installation surfaces:
 ## 3. Milestone overview
 
 ```text
-M1  Canonical build foundation
+M1  Canonical build foundation + P0 native-runtime decision
     commands + target registry + image authorities + cache/isolation
+    + measured static/shared decision
                       |
                       v
 M2  Verification access
     thin PR CI + exact-SHA remote-only GitHub verification
                       |
                       v
-M3  Verifier convergence
-    normal build graph + shared runtime + explicit oracle + simple Universe
+M3  Verifier/oracle convergence
+    normal build graph + chosen canonical runtime + explicit oracle + simple Universe
                       |
                       v
-M4  Product distribution
-    native runtime decision + Cargo/npm/pip/RubyGems managed-local packaging
+M4  Ecosystem-native product distribution
+    Cargo/npm/pip/RubyGems packaging on the chosen runtime model
                       |
                       v
-M5  Release and developer UX
-    release-check + support matrix + bootstrap/docs
+M5  Release qualification + bootstrap/developer UX
+    release-check + support matrix + doctor/docs
                       |
                       v
-M6  Cleanup and final qualification
-    remove duplicate authorities + persona/adversarial acceptance
+M6  Cleanup + adversarial final qualification
+    delete duplicate authorities only after proof
 ```
 
-M1 is the foundation. Parts of M2 and M3 can proceed in parallel after their M1 prerequisites exist. M4 must not finalize until the native runtime distribution decision is proven. M5 consumes the outputs of M2–M4. M6 is deliberately last.
+M1 is the foundation. M2 and verifier source-migration preparation may proceed in parallel after the relevant M1 authorities exist. M3 must converge verifier runtime ownership onto the **M1-decided** native runtime model. M4 packages that model for end users. M5 consumes all prior outputs. M6 is deliberately last.
 
 ---
 
 # Milestones
 
-## M1 — Canonical build foundation
+## M1 — Canonical build foundation and P0 native-runtime decision
 
 ### Goal
 
-Make the build system's authorities explicit before migrating behavior.
-
-This milestone establishes the foundation used by every later milestone:
+Establish every foundational authority that later milestones depend on:
 
 - one public command vocabulary;
-- one target registry;
+- one test/verifier target registry;
 - one canonical development environment;
 - the preserved three-axis Docker image model;
-- clear mutable/immutable cache ownership.
+- explicit cache/worktree ownership;
+- a **decided and proven native-runtime distribution model**.
 
 ### 1. Inventory before refactoring
 
@@ -156,7 +148,7 @@ covering:
 - public `./dev` commands;
 - direct Cargo/compiler/interpreter invocations;
 - Docker launchers;
-- image publishers and consumers;
+- image publishers/consumers;
 - native SDK builders/resolvers;
 - runtime staging and loader behavior;
 - standalone verifier workspaces;
@@ -165,6 +157,7 @@ covering:
 - GitHub Actions workflows;
 - release/package builders;
 - support-matrix rows;
+- package-manager artifacts;
 - external-consumer/package tests.
 
 Classify each item as:
@@ -177,7 +170,7 @@ ORACLE AUTHORING
 DEAD / SUSPECTED DEAD
 ```
 
-Explicitly record the existing image architecture:
+Record explicitly:
 
 ```text
 searchkernel-ci-toolchain:<toolchain-id>
@@ -185,7 +178,7 @@ searchkernel-ci-vespa:<vespa-commit>-<bundle-id>
 searchkernel-ci:<searchkernel-revision>
 ```
 
-and the verifier baseline:
+and:
 
 ```text
 55 active current-implementation compiled sources
@@ -193,11 +186,11 @@ and the verifier baseline:
 1 uncertain compile fixture
 ```
 
-### 2. Canonical command/target registry
+### 2. Canonical public command/target authority
 
-Introduce one repository-owned authority for public test/verifier targets.
+Introduce one repository-owned target registry consumed by local and future remote callers.
 
-It must drive:
+It drives:
 
 ```bash
 ./dev test --list
@@ -206,28 +199,40 @@ It must drive:
 ./dev verify <lane>
 ```
 
-and later remote-workflow target validation.
-
-Add/normalize:
+Preserve/normalize the complete public command surface required by the design:
 
 ```bash
+./dev doctor
 ./dev build
 ./dev ci
+
 ./dev test --list
+./dev test [scope]
+./dev test --remote <scope>
+./dev lint [scope]
 ./dev verify --list
+./dev verify <lane>
+./dev verify --remote <lane>
+
+./dev universe
+./dev release-check
 ```
 
-Definitions:
+M1 only needs to establish the canonical ownership/shape for commands implemented in later milestones; it must not accidentally drop `lint`, `universe`, or `release-check` from the public vocabulary.
+
+Definitions established here:
 
 - `build` = canonical supported product build in the canonical environment;
 - `ci` = intentionally cheap mandatory PR gate;
 - `test --list` / `verify --list` = finite supported vocabulary.
 
-The registry must be GitHub-readable so remote-only agents can discover targets without running `./dev`.
+The target registry must be readable through GitHub so remote-only agents can discover valid operations without running `./dev`.
 
-### 3. Preserve the three-axis Docker model
+Add lightweight change-area guidance mapping common repository areas to focused checks.
 
-Make these explicit authorities, not cleanup candidates:
+### 3. Preserve and test the three-axis Docker architecture
+
+Explicit authorities:
 
 #### Toolchain image
 
@@ -235,23 +240,17 @@ Make these explicit authorities, not cleanup candidates:
 searchkernel-ci-toolchain:<toolchain-id>
 ```
 
-Owns compilers, language runtimes, FlatBuffers, reusable client/build tooling, and pinned sccache tooling.
-
 #### Vespa/native image
 
 ```text
 searchkernel-ci-vespa:<vespa-commit>-<bundle-id>
 ```
 
-Owns the large immutable Vespa/native build input, headers, metadata, and provenance.
-
 #### Thin Search Kernel leaf
 
 ```text
 searchkernel-ci:<searchkernel-revision>
 ```
-
-Records exact toolchain and Vespa identities, validates compatibility, and does **not** copy Vespa into each source-specific leaf.
 
 Preserve:
 
@@ -261,32 +260,136 @@ Preserve:
 ./dev image publish
 ```
 
-Invariant:
+Hard invariants:
 
-> Ordinary Search Kernel source changes must never rebuild or republish the large Vespa payload.
+- ordinary Search Kernel source changes do not rebuild/re-upload Vespa;
+- the leaf records exact immutable toolchain/Vespa identities;
+- execution resolves the exact recorded Vespa identity;
+- Vespa is materialized read-only from immutable digest-addressed storage;
+- local and CI canonical verification consume the same immutable identities;
+- no automatic fallback silently switches to a host toolchain/environment.
 
-### 4. Cache and worktree ownership
+Add explicit fail-closed tests:
+
+```text
+leaf requires Vespa digest X
+host/cache contains X and Y
+=> use X
+
+leaf requires X
+only Y is available
+=> FAIL, never silently use Y
+
+canonical Docker environment unavailable
+=> FAIL
+never silently run host Cargo and report green
+```
+
+### 4. Cache/worktree ownership and performance baseline
 
 Implement/confirm:
 
 - immutable toolchain/Vespa inputs shared by immutable identity;
-- Vespa materialized read-only from digest-addressed storage;
-- sccache shared only as a non-authoritative content cache;
-- writable Cargo/native incremental state isolated per worktree + compatible environment identity;
-- no writable target tree shared across unrelated worktrees/agents;
-- CI writable state job-private.
+- sccache shared only as non-authoritative content cache;
+- writable Cargo/native incremental outputs persistent per worktree + compatible environment identity;
+- unrelated worktrees/agents never share a writable target tree;
+- CI writable build state remains job-private.
 
-If measurement shows private target dirs + sccache outperform or equal persistent per-worktree targets, document the evidence before changing the PRD expectation.
+Before changing cache topology, record baseline timings. Re-run the same benchmark set after convergence:
+
+- unchanged warm `cargo check`;
+- small Rust edit + rebuild;
+- focused unit test;
+- focused native verifier;
+- second invocation of the same verifier;
+- two verifier lanes sharing dependencies;
+- complete `./dev ci`.
+
+Exit criterion:
+
+> No material regression in the design-defined warm edit/build/test benchmark set.
+
+If there is a regression, fix cache/mount ownership rather than creating a second correctness path.
+
+### 5. Decide and prove the P0 native-runtime model
+
+This decision moves **before** verifier runtime convergence.
+
+Preserve `searchkernel-ci-vespa`: it remains the development/build input regardless of consumer package layout.
+
+Compare at minimum:
+
+#### A. Fully static per consumer
+
+Native closure linked into each final consumer executable.
+
+#### B. Mostly-static Search Kernel runtime
+
+```text
+Search Kernel native runtime artifact
+    + adapter
+    + Vespa implementation absorbed statically
+    + private dependencies static where practical
+    + ordinary platform runtime libraries dynamic
+```
+
+#### C. Relocatable shared closure
+
+```text
+Search Kernel native runtime artifact
++ required Vespa/private shared libraries
+```
+
+Measure/document:
+
+- static archive availability;
+- constructor/registry/dead-strip behavior;
+- `--whole-archive` needs;
+- dynamic-only dependencies;
+- artifact size;
+- link time/memory;
+- relocatability;
+- licensing/distribution implications;
+- Cargo test-binary duplication;
+- runtime identity/loader behavior.
+
+The chosen model must pass an external-consumer proof with:
+
+- no ambient `LD_LIBRARY_PATH`;
+- no manual Vespa install;
+- no repository Cargo config;
+- no developer SDK path;
+- no cross-worktree/runtime-generation leakage;
+- preserved native SDK/Vespa provenance.
+
+Create a short ADR recording:
+
+```text
+chosen model
+rejected models
+measured evidence
+canonical runtime layout/contract
+provenance rules
+platform assumptions
+```
+
+The permanent invariant is **consumer correctness**, not today’s `libsearchkernel_vespa.so.2` layout.
+
+Do not remove current #745 consumer-safe behavior until the chosen replacement is proven.
 
 ### M1 acceptance
 
-- a reviewer can identify every build/runtime authority without archaeology;
-- `./dev build`, `./dev ci`, `./dev test --list`, and `./dev verify --list` exist;
-- local and future remote callers consume one target registry;
+- inventory identifies current authorities/callers;
+- canonical target registry exists and is GitHub-readable;
+- public command surface including `lint` is preserved;
 - image axes remain independently versioned/published;
-- an ordinary source publish does not copy/re-upload Vespa;
-- local worktrees cannot mutate the same writable Cargo target state;
-- no existing working path has been deleted merely because it looks redundant.
+- image identity resolution is fail-closed;
+- no host fallback can silently produce a green canonical result;
+- cache/worktree ownership is explicit and benchmarked;
+- warm performance shows no material regression;
+- P0 native runtime ADR exists with measured evidence;
+- chosen native runtime passes external-consumer identity/relocatability proof;
+- no working compatibility path has been deleted prematurely.
 
 ---
 
@@ -294,11 +397,11 @@ If measurement shows private target dirs + sccache outperform or equal persisten
 
 ### Goal
 
-Give both local-capable and remote-only agents reliable verification without restoring the old heavy mandatory PR matrix.
+Give local-capable and remote-only agents reliable verification without restoring the historical heavy mandatory PR matrix.
 
 ### 1. Automatic PR CI delegates to `./dev ci`
 
-The PR gate remains intentionally small:
+The mandatory PR gate stays intentionally small:
 
 ```text
 cargo fmt --check
@@ -308,27 +411,27 @@ cargo clippy -D warnings
 
 with exact semantics owned by `./dev ci`.
 
-GitHub Actions should conceptually become:
+GitHub Actions becomes conceptually:
 
 ```text
 checkout exact PR revision
 ./dev ci
 ```
 
-Workflow YAML must not independently own Cargo flags, compiler selection, verifier semantics, or native SDK setup.
+Workflow YAML must not independently own Cargo flags, compiler selection, verifier semantics, or SDK/runtime setup.
 
-Clean up contract tests that assert obsolete workflow filenames/internal YAML structure; test the public `./dev ci` contract instead.
+Contract tests validate public `./dev ci` behavior and minimal workflow delegation, not obsolete workflow names/YAML structure.
 
-### 2. Add one generic on-demand verification workflow
+### 2. One generic bounded on-demand workflow
 
-This is a **first-class public interface** for coding agents that have GitHub access but no usable Search Kernel development environment.
+This is a first-class interface for agents with GitHub access but no usable development environment.
 
 Inputs:
 
 ```text
-revision   exact pushed commit SHA
+revision   exact pushed SHA
 operation  ci | test | verify
-target     known scope/lane where applicable
+target     known scope/lane when applicable
 ```
 
 The workflow:
@@ -337,23 +440,28 @@ The workflow:
 2. validates operation/target against the M1 registry;
 3. checks out the exact requested SHA;
 4. proves `git rev-parse HEAD == requested SHA`;
-5. runs:
-   - `./dev ci`, or
-   - `./dev test <scope>`, or
+5. executes exactly one canonical command:
+   - `./dev ci`;
+   - `./dev test <scope>`;
    - `./dev verify <lane>`;
-6. publishes structured result evidence.
+6. publishes structured evidence.
 
-### 3. Keep the control plane trusted
+### 3. Trusted control plane
 
-The workflow definition/control plane must come from trusted/default-branch infrastructure.
+The workflow definition/control plane is loaded from trusted/default-branch infrastructure.
 
-The code under test is supplied separately as the requested exact SHA.
+The requested revision is checked out separately as the code under test.
 
-A PR/revision under test must not be able to silently redefine the privileged workflow that executes it.
+The requested PR/commit must not be able to redefine:
+
+- workflow permissions;
+- runner selection/policy;
+- secret exposure;
+- privileged orchestration used to execute itself.
 
 ### 4. Structured evidence
 
-Every on-demand run exposes:
+Every run exposes:
 
 ```text
 revision
@@ -367,8 +475,6 @@ run_url
 
 plus useful failure logs.
 
-A small JSON artifact plus GitHub job summary is sufficient.
-
 ### 5. Local convenience wrappers
 
 Implement:
@@ -378,62 +484,55 @@ Implement:
 ./dev verify --remote <lane>
 ```
 
-For users with a checkout, these wrappers:
+The wrappers:
 
 - resolve exact HEAD;
 - reject relevant dirty state by default;
 - prove HEAD is pushed;
-- dispatch the generic workflow;
-- capture the exact run identity;
-- wait for it;
+- dispatch the same workflow;
+- capture/wait for the exact run;
 - surface failure logs;
-- return its result.
+- propagate status.
 
-Remote-only agents may instead dispatch via GitHub UI/API/CLI/connector without any local `./dev`.
+Remote-only agents may dispatch via GitHub UI/API/CLI/connector without local `./dev`.
 
 ### 6. Security/concurrency
 
-Remote verification must:
+Remote verification:
 
-- use read-only repository permissions by default;
-- expose no release/deploy/write secrets;
-- define authorized actors;
-- define fork/untrusted-revision behavior;
-- use job-private writable state;
-- expose no arbitrary-shell input.
+- uses read-only repository permissions by default;
+- receives no release/deploy/write secrets;
+- defines authorized actors;
+- defines fork/untrusted-revision behavior;
+- uses job-private writable state;
+- exposes no arbitrary-shell input.
 
-Do not cancel evidence for SHA A merely because SHA B is pushed. Verification identity is:
+Do not cancel evidence for SHA A because SHA B is pushed. Verification identity is:
 
 ```text
 revision + operation + target
 ```
 
-not a mutable PR branch.
-
 ### M2 acceptance
 
-A remote-only agent can:
-
-1. discover a target through GitHub-visible repository state;
-2. identify exact SHA A;
-3. dispatch a focused test/verifier;
-4. retrieve PASS/FAIL, logs, and run identity;
-5. push SHA B and rerun;
-6. never confuse SHA A evidence with SHA B.
-
-And automatic PR CI remains only the cheap `./dev ci` gate.
+- every automatic PR-gate failure reproduces with `./dev ci`;
+- strong verifiers remain available outside mandatory PR CI;
+- remote-only agents can discover and execute bounded exact-SHA checks;
+- local wrappers and direct workflow calls produce equivalent semantic commands/evidence;
+- stale/dirty/mutable-branch ambiguity fails closed;
+- requested code cannot redefine the remote control plane.
 
 ---
 
-## M3 — Converge verifier/oracle build ownership
+## M3 — Converge verifier/oracle build ownership onto the chosen runtime
 
 ### Goal
 
-Eliminate the secondary normal build system under `reference/vespa` while preserving semantic behavior and independent oracle provenance.
+Eliminate the secondary normal build architecture under `reference/vespa` while preserving semantic behavior, reference history, and oracle independence.
 
-### 1. Migrate active verifier compilation
+All normal verifier runtime convergence in this milestone targets the **M1-decided canonical native runtime model**. Do not converge onto a temporary runtime architecture that M4 will immediately replace.
 
-Move the 55 active current-implementation sources into normal build authorities in small batches.
+### 1. Migrate the 55 active current-implementation sources
 
 #### Rust — 49 sources
 
@@ -441,9 +540,9 @@ For each verifier family:
 
 1. identify what it proves;
 2. identify owning production crate(s);
-3. move compiled source into an appropriate normal Cargo target;
-4. preserve inputs/output;
-5. point the semantic runner at the new target;
+3. move compiled code into an appropriate normal Cargo target;
+4. preserve input/output semantics;
+5. point the semantic runner to the new target;
 6. compare against the same frozen expectation;
 7. delete the standalone workspace only after parity.
 
@@ -452,9 +551,9 @@ Possible homes:
 - owning crate integration tests;
 - normal test binaries;
 - `searchkernel-testkit`;
-- a small shared verifier-support crate only where real shared responsibility exists.
+- a small shared verifier-support crate only where real shared ownership exists.
 
-Do **not** create one giant verifier crate.
+Do not create one giant verifier crate.
 
 #### C — 4 sources
 
@@ -473,25 +572,46 @@ prove active -> migrate
 prove obsolete -> delete
 ```
 
-### 2. Remove verifier-specific normal runtime setup
+### 2. Converge verifier runtime setup
 
-Once verifier binaries are normal targets, remove their ownership of:
+Once verifier binaries are normal targets, move them onto the M1 canonical runtime authority and remove ownership of:
 
-- private normal native SDK construction;
+- private normal SDK construction;
 - private adapter construction;
 - verifier-specific compiler selection;
 - verifier-specific Cargo target universes;
 - ordinary `LD_LIBRARY_PATH` setup;
 - duplicate normal runtime-closure assembly.
 
-Allowed exceptions remain for:
+Allowed exceptions:
 
 - sanitizers;
 - loader-negative tests;
-- independent oracle execution;
-- fixtures where environment isolation itself is the subject under test.
+- intentionally independent oracle execution;
+- fixtures where environment isolation itself is under test.
 
-### 3. Make oracle authoring explicit only
+### 3. Preserve the reference corpus
+
+Moving compiled verifier code must **not** erase or normalize away the intended role of `reference/vespa`.
+
+Preserve, where they belong:
+
+- behavioral specification;
+- contracts;
+- scenarios;
+- fixtures;
+- expected outputs;
+- goldens;
+- source traces;
+- pinned provenance;
+- independent oracle sources;
+- oracle-authoring tooling;
+- historical M0–M14 reference structure;
+- lightweight semantic orchestration where useful.
+
+Do not move entire historical milestone trees merely because one compiled driver moved into the normal build graph.
+
+### 4. Make oracle authoring explicit only
 
 Normal:
 
@@ -500,7 +620,7 @@ Normal:
 ./dev universe
 ```
 
-must consume committed frozen behavior.
+consumes committed frozen behavior.
 
 Remove automatic/environment-detected live-oracle behavior.
 
@@ -512,36 +632,31 @@ Live oracle/golden generation becomes an explicit maintainer operation recording
 - expected-output diff;
 - provenance.
 
-The 14 oracle sources remain independent and do not move merely for symmetry.
+The 14 oracle sources remain independent.
 
-### 4. Reduce Universe to orchestration
+### 5. Universe becomes orchestration only
 
-`./dev universe` should only:
+`./dev universe`:
 
-- enumerate canonical commands;
-- invoke them;
-- time/record them;
-- continue after failures;
-- summarize;
-- print exact repro commands.
+- enumerates canonical checks;
+- invokes them;
+- records duration/result;
+- continues after failures;
+- summarizes;
+- prints exact repro commands.
 
-Example:
-
-```text
-FAIL: vespa.ranking
-REPRO: ./dev verify vespa.ranking
-```
-
-Universe must not own compilers, SDK selection, adapter selection, or another runtime model.
+It does not choose another compiler, SDK, adapter, runtime, or verifier build graph.
 
 ### M3 acceptance
 
-- all active current-implementation verifier binaries compile through normal Cargo/native authorities;
-- semantic behavior/goldens are unchanged;
-- normal verifier runners no longer construct private normal SDK/runtime universes;
-- live oracle execution requires explicit maintainer intent;
+- all active current-implementation verifier programs compile through normal Rust/native authorities;
+- every active verifier has `./dev verify <lane>`;
+- semantic behavior/goldens remain unchanged;
+- verifier runners use the M1-decided canonical runtime rather than private normal SDK/runtime worlds;
+- `reference/vespa` retains its specification/reference/provenance role;
+- normal verification never automatically enters live-oracle mode;
 - Universe invokes canonical commands only;
-- every Universe failure has a focused repro command.
+- every Universe failure has an exact focused repro.
 
 ---
 
@@ -549,7 +664,7 @@ Universe must not own compilers, SDK selection, adapter selection, or another ru
 
 ### Goal
 
-Make the end-user installation contract true:
+Make these end-user contracts true on qualified platforms:
 
 ```bash
 cargo add searchkernel
@@ -558,79 +673,32 @@ npm install @searchkernel/client
 gem install searchkernel
 ```
 
-No supported managed-local user separately installs Vespa, `searchkerneld`, Search Kernel's dev images, or repository-specific SDK/runtime configuration.
+No supported managed-local user separately installs Vespa, `searchkerneld`, dev images, or repository-specific SDK/runtime setup.
 
-### 1. Decide the native runtime packaging model
+M4 **implements product packaging around the native-runtime model already decided in M1**. It does not reopen that decision unless implementation evidence falsifies the M1 ADR, in which case the ADR/design must be amended explicitly.
 
-Preserve `searchkernel-ci-vespa` regardless; it is the development/build input.
+### 1. Build one qualified managed-local runtime payload
 
-Spike and compare:
-
-#### A. Fully/static-per-consumer
-
-Native closure linked into each consumer executable.
-
-#### B. Mostly-static Search Kernel runtime
-
-```text
-libsearchkernel_vespa.so.2
-    + adapter
-    + Vespa absorbed statically
-    + private dependencies static where practical
-    + ordinary platform runtime libraries dynamic
-```
-
-#### C. Relocatable shared closure
-
-```text
-libsearchkernel_vespa.so.2
-+ required Vespa/private shared libraries
-```
-
-Document:
-
-- static archive availability;
-- constructor/registry/dead-strip behavior;
-- `--whole-archive` requirements;
-- dynamic-only third-party dependencies;
-- artifact size;
-- link time/memory;
-- relocatability;
-- licensing/distribution implications;
-- Cargo binary duplication;
-- runtime identity and loader behavior.
-
-Whatever model wins must pass an external-consumer proof with:
-
-- no `LD_LIBRARY_PATH`;
-- no manual Vespa install;
-- no repository Cargo config;
-- no developer SDK path;
-- no cross-worktree/runtime-generation leakage.
-
-Do not remove current #745 consumer-safe behavior until the replacement is proven.
-
-### 2. Build one common managed-local runtime payload
-
-For each supported platform/release, build one qualified payload:
+For each supported platform/release, build one payload whose shape follows the M1 runtime decision:
 
 ```text
 searchkerneld
-libsearchkernel_vespa.so.2
-required native runtime closure
-runtime manifest/provenance
++ native runtime assets required by the chosen M1 distribution model
++ runtime manifest/provenance
 ```
 
-Reuse it for:
+The current `libsearchkernel_vespa.so.2 + shared closure` layout may be an implementation input or transitional form; it is **not** a roadmap invariant.
 
-- standalone daemon archive;
+Reuse the qualified payload for:
+
+- standalone daemon artifact;
 - Python package;
 - TypeScript/Node package;
 - Ruby package.
 
-The language packages must not independently rediscover/assemble native closures.
+Language packages must not independently rediscover/assemble native closures.
 
-### 3. Python / pip
+### 2. Python / pip
 
 Target:
 
@@ -640,14 +708,14 @@ pip install searchkernel
 
 Implement/qualify:
 
-- platform wheel;
-- common managed-local runtime payload;
-- package-relative launcher discovery;
+- supported platform wheel;
+- common runtime payload;
+- package-relative launcher/runtime discovery;
 - managed-local default;
 - optional connect mode;
 - clean venv install/execution.
 
-### 4. TypeScript/Node / npm
+### 3. TypeScript/Node / npm
 
 Target:
 
@@ -666,11 +734,11 @@ Use an idiomatic platform-runtime strategy. A likely shape:
           ...
 ```
 
-The user still installs only `@searchkernel/client`.
+The exact split is implementation detail; the user installs only the client package.
 
 Qualify from a clean npm consumer project.
 
-### 5. Ruby / RubyGems
+### 4. Ruby / RubyGems
 
 Target:
 
@@ -680,16 +748,16 @@ gem install searchkernel
 
 Implement/qualify:
 
-- platform gem;
-- common managed-local runtime assets;
+- supported platform gem;
+- common runtime assets;
 - gemspec inclusion;
 - managed-local lifecycle;
 - optional connect mode;
 - clean external `GEM_HOME`.
 
-Ruby is not architecturally deferred merely because current packaging lags.
+Ruby is not architecturally deferred merely because packaging currently lags.
 
-### 6. Rust / Cargo
+### 5. Rust / Cargo
 
 Target:
 
@@ -698,7 +766,7 @@ cargo add searchkernel
 cargo build
 ```
 
-Cargo must transparently obtain/link/provision the chosen native runtime model.
+Cargo transparently obtains/links/provisions the chosen M1 runtime model.
 
 The user must not:
 
@@ -710,9 +778,9 @@ The user must not:
 
 Qualification uses a fresh external Cargo project against the actual publishable/distributable package.
 
-### 7. Reconcile the support matrix
+### 6. Reconcile `docs/release-support.json`
 
-Update `docs/release-support.json` only after each artifact path is executable.
+Update the machine-readable support matrix only after each artifact path is executable.
 
 Intended first-party architecture:
 
@@ -727,16 +795,12 @@ Unsupported platforms/surfaces remain explicit.
 
 ### M4 acceptance
 
-On qualified platforms, all four commands are sufficient:
-
-```bash
-cargo add searchkernel
-pip install searchkernel
-npm install @searchkernel/client
-gem install searchkernel
-```
-
-and the resulting installed packages execute Search Kernel locally without a separate Vespa/searchkerneld install or dev-repository environment.
+- all four ecosystem-native installation commands work on qualified platforms;
+- managed-local packages execute without separate Vespa/searchkerneld installation;
+- Python/TypeScript/Ruby consume the same qualified platform runtime payload;
+- Rust uses the actual publishable/distributable Cargo package;
+- end-user packages do not depend on development/CI Docker images;
+- package/runtime identity and provenance remain tied to the M1-decided model and immutable build inputs.
 
 ---
 
@@ -744,7 +808,7 @@ and the resulting installed packages execute Search Kernel locally without a sep
 
 ### Goal
 
-Turn the converged build/distribution machinery into a coherent release and contributor experience.
+Turn the converged build/distribution system into one coherent release and contributor experience.
 
 ### 1. Implement `./dev release-check`
 
@@ -763,7 +827,7 @@ For one exact revision, `release-check`:
 1. asserts exact revision identity;
 2. runs or consumes required exact-SHA source qualification;
 3. resolves exact toolchain and Vespa/native image identities;
-4. builds the qualified common runtime payload;
+4. builds the qualified runtime payload;
 5. builds every supported product artifact;
 6. writes release manifest/checksums/provenance;
 7. installs/extracts every artifact into clean external environments;
@@ -827,7 +891,7 @@ Manifest identifies at minimum:
 - native packaging model/version;
 - artifact checksums.
 
-No release contract may depend on a historical workflow YAML filename/internal structure.
+Release contract tests validate public commands/artifacts/provenance, not historical workflow YAML filenames.
 
 ### 4. Simplify bootstrap
 
@@ -842,7 +906,13 @@ The canonical image owns Rust/C++/Python/Node/PHP/Ruby/FlatBuffers and normal bu
 
 Converge `./dev doctor` toward validating/repairing the host boundary and ability to enter the canonical environment.
 
-Host-native toolchain setup becomes advanced/optional, not the normal correctness definition.
+Host-native toolchain setup becomes advanced/optional.
+
+Bootstrap acceptance must explicitly prove:
+
+- repeated `./dev doctor` is idempotent enough not to destroy/rebuild compatible healthy state;
+- environment/bootstrap failures are distinguished from source/build/test failures;
+- no hidden language/native host tooling is required for ordinary correctness.
 
 ### 5. Documentation and agent guidance
 
@@ -854,6 +924,7 @@ Rewrite `BUILDING.md` normal path to approximately:
 ./dev ci
 ./dev test --list
 ./dev test <scope>
+./dev lint <scope>
 ./dev verify --list
 ./dev verify <lane>
 ./dev verify --remote <lane>
@@ -880,10 +951,13 @@ Update `AGENTS.md` with:
 
 ### M5 acceptance
 
-- `./dev release-check` is sufficient evidence that one exact revision's advertised artifacts are qualified;
+- `./dev release-check` is sufficient evidence for one exact revision's advertised artifacts;
 - every supported support-matrix row has executable artifact evidence;
-- a new contributor can understand the normal build workflow from roughly one screen of documentation;
-- normal bootstrap does not require host language/native toolchains.
+- release provenance ties shipped artifacts to exact qualified inputs;
+- normal bootstrap requires only the supported host boundary;
+- repeated doctor/bootstrap is safe/idempotent;
+- bootstrap/environment failures are distinct from code failures;
+- normal contributor workflow fits in roughly one screen of documentation.
 
 ---
 
@@ -891,7 +965,7 @@ Update `AGENTS.md` with:
 
 ### Goal
 
-Remove compatibility machinery only after the converged system is proven, then test the resulting system against every persona.
+Remove compatibility machinery only after the converged system is proven, then test every persona and every design requirement.
 
 ### 1. Delete obsolete paths
 
@@ -899,14 +973,13 @@ Candidates include:
 
 - standalone active verifier Cargo workspaces;
 - duplicate verifier lockfiles;
-- verifier-specific normal SDK assembly;
-- verifier-specific normal runtime setup;
-- ad-hoc current-implementation C/C++ compiler invocations;
+- verifier-specific normal SDK/runtime setup;
+- ad-hoc current-implementation C/C++ compilation;
 - duplicated target registries;
 - obsolete resolver paths;
 - stale workflow-internal contract tests;
 - stale release-lane YAML coupling;
-- compatibility launchers made unnecessary by the chosen runtime packaging;
+- compatibility launchers superseded by the chosen runtime model;
 - old normal host-toolchain bootstrap behavior.
 
 For every deletion answer:
@@ -917,11 +990,13 @@ If the answer is unclear, do not delete it.
 
 ### 2. Explicitly protect
 
-Do not delete or accidentally flatten:
+Do not delete or flatten:
 
 - direct oracle sources;
-- committed goldens/source traces/reference fixtures;
-- the toolchain/Vespa/thin-leaf image split;
+- behavioral specifications/contracts/scenarios;
+- committed goldens/source traces/provenance;
+- historical M0–M14 reference structure;
+- toolchain/Vespa/thin-leaf image split;
 - strong specialist verifier availability;
 - package-manager-native product distribution;
 - remote-only verification.
@@ -944,22 +1019,21 @@ No undocumented language/native setup.
 
 - warm focused edit/test loop;
 - target discovery works;
-- worktree isolation proven.
+- worktree isolation proven;
+- design-defined performance benchmarks remain acceptable.
 
 #### Remote-only coding agent
 
-No local Search Kernel environment:
-
-- discover target;
-- dispatch exact-SHA test/verifier;
-- retrieve structured result/logs;
+- discover target from GitHub-visible state;
+- dispatch exact-SHA ci/test/verifier;
+- retrieve structured evidence/logs;
 - rerun after a new commit.
 
 #### Reviewer
 
-- independently run/dispatch adversarial verification against exact PR head;
+- independently run/dispatch exact-head adversarial verification;
 - prove run SHA;
-- distinguish cheap PR gate from specialist verification and release qualification.
+- distinguish PR gate, specialist verification, and release qualification.
 
 #### End user
 
@@ -972,7 +1046,7 @@ npm install @searchkernel/client
 gem install searchkernel
 ```
 
-with managed-local execution and no separate Vespa/searchkerneld installation.
+with managed-local execution and no separate Vespa/searchkerneld install.
 
 #### Release maintainer
 
@@ -980,64 +1054,66 @@ with managed-local execution and no separate Vespa/searchkerneld installation.
 ./dev release-check
 ```
 
-builds and qualifies every advertised release surface from actual artifacts.
+builds and qualifies every advertised surface from actual artifacts.
 
 #### CI / automation
 
-- PR CI is thin;
-- remote workflow bounded;
+- automatic PR CI is thin;
+- remote workflow is bounded;
+- trusted control plane enforced;
 - runner trust policy enforced;
 - no hidden shared mutable state.
 
 #### Oracle maintainer
 
 - normal verification never authors truth;
-- explicit oracle generation remains available and provenance-preserving.
+- explicit oracle generation remains independently available and provenance-preserving.
 
 ### 4. Adversarial checks
 
 Try to falsify:
 
 - cross-worktree native artifact contamination;
-- stale Cargo target reuse;
+- stale target/cache reuse;
+- warm-performance claims;
 - stale remote evidence after a new push;
 - mutable-branch ambiguity;
-- untrusted revision changing the remote control plane;
-- Vespa image drift from thin-leaf provenance;
-- release packages shipping a different runtime than was qualified;
+- requested revision redefining the remote control plane;
+- Vespa identity drift from thin-leaf provenance;
+- fallback from canonical Docker execution to host tooling;
+- release packages shipping a different runtime than qualification;
 - package-manager installs missing runtime assets;
-- `LD_LIBRARY_PATH` making a broken package appear healthy;
-- verifier dependence on private SDK setup;
+- `LD_LIBRARY_PATH` masking a broken package;
+- verifier dependence on private normal SDK/runtime setup;
+- loss of historical reference/specification material during verifier migration;
 - automatic oracle execution;
 - support-matrix claims without executable artifact evidence.
 
 ### M6 acceptance
 
-Every Definition-of-Done item in `implementation-plan/build-system.md` is true on the same accepted revision.
-
-Only after that is the convergence complete.
+Every Definition-of-Done item in `implementation-plan/build-system.md` is true on the **same exact accepted revision**.
 
 ---
 
 ## 4. Issue / PR decomposition
 
-The six milestones are roadmap units, **not** PR units.
-
-Each should be implemented through small issues/PRs.
+The six milestones are roadmap units, not PR units.
 
 ### M1 issue families
 
 - build-system inventory;
-- target registry;
-- `build` / `ci` / listing commands;
-- image-provenance authority tests;
-- worktree/cache ownership.
+- target registry and public command authority, including `lint`;
+- image-provenance/fail-closed tests;
+- cache/worktree ownership;
+- performance baseline + post-change benchmark;
+- native static/shared runtime spike;
+- runtime ADR + external-consumer proof.
 
 ### M2 issue families
 
 - CI delegates to `./dev ci`;
 - generic on-demand workflow;
-- trusted-main control-plane rule;
+- trusted-default-branch control-plane implementation;
 - structured result artifact;
 - `./dev --remote` wrappers;
 - security/trust regression tests;
@@ -1047,15 +1123,15 @@ Each should be implemented through small issues/PRs.
 
 - Rust verifier migrations by family;
 - C/C++ current-implementation probe migration;
-- shared normal runtime path;
+- convergence onto M1 runtime authority;
 - removal of verifier SDK duplication;
+- reference-corpus preservation checks;
 - explicit oracle authoring;
 - Universe orchestration/repro.
 
 ### M4 issue families
 
-- native static/shared runtime spike + ADR;
-- common managed-local runtime payload;
+- common managed-local runtime payload using M1 model;
 - Python pip distribution;
 - TypeScript npm distribution/runtime packages;
 - Ruby platform gem distribution;
@@ -1068,35 +1144,38 @@ Each should be implemented through small issues/PRs.
 - package build orchestration;
 - clean-install E2E per ecosystem;
 - `release-check`;
-- doctor simplification;
+- doctor simplification/idempotence/error-domain tests;
 - BUILDING.md / AGENTS.md convergence.
 
 ### M6 issue families
 
 - deletion PRs grouped by removed authority;
-- final persona acceptance audit;
+- final persona/DoD acceptance audit;
 - separate remediation PRs for defects found by that audit.
 
 ---
 
 ## 5. Hard merge gates
 
-### Gate A — before deleting a verifier build path
+### Gate A — before verifier runtime convergence/deletion
 
 Must have:
 
+- M1 native-runtime ADR;
+- chosen runtime model proven externally;
 - canonical replacement target;
 - semantic runner using it;
 - unchanged frozen behavior;
 - exact verifier passing.
 
-### Gate B — before deleting native runtime compatibility behavior
+### Gate B — before deleting native-runtime compatibility behavior
 
 Must have:
 
-- chosen/proven M4 native model;
-- external consumer passing without repository/native environment;
-- fail-closed runtime identity.
+- M1 chosen runtime model implemented/proven sufficiently for consumers;
+- external consumer passes without repository/native environment;
+- fail-closed runtime identity;
+- no regression in required package/runtime provenance.
 
 ### Gate C — before declaring an ecosystem supported
 
@@ -1117,6 +1196,7 @@ Docker-backed canonical flow must already support:
 
 - build;
 - ci;
+- lint;
 - test;
 - verify;
 - remote dispatch;
@@ -1124,7 +1204,74 @@ Docker-backed canonical flow must already support:
 
 ---
 
-## 6. Explicit non-goals
+## 6. Design → milestone traceability
+
+This table assigns every Definition-of-Done requirement from `build-system.md` to an implementation owner. M6 re-verifies them all; it is not the first owner.
+
+| Design DoD | Owning milestone | Planned proof |
+|---:|---|---|
+| 1 | M2 | `./dev ci` reproduces PR gate |
+| 2 | M2 | GHA PR workflow delegates to `./dev ci` |
+| 3 | M1 | canonical Docker environment authority |
+| 4 | M1 | compatible output persistence tests |
+| 5 | M1 | required warm-performance benchmark set |
+| 6 | M3 | 55 active compiled sources migrated |
+| 7 | M3 | 14 oracle sources excluded from normal build |
+| 8 | M3 | `m-api.rs` migrated or deleted with proof |
+| 9 | M3 | standalone verifier workspace removal after parity |
+| 10 | M3 | C/C++ probes become normal native targets |
+| 11 | M3 | no private normal verifier runtime worlds |
+| 12 | M3 | reference-corpus preservation acceptance |
+| 13 | M3 | every active lane exposed via `./dev verify` |
+| 14 | M3 | Universe calls canonical commands only |
+| 15 | M3 | Universe exact repro output |
+| 16 | M3 | explicit-only oracle authoring |
+| 17 | M1 + M4 | native model proof + Cargo package proof |
+| 18 | M1 + M4 | external consumer has no repo/`./dev` dependency |
+| 19 | M1 | fail-closed runtime identity tests |
+| 20 | M1 | relocatability proof in runtime ADR |
+| 21 | M1 | static/shared investigation recorded |
+| 22 | M1 | native SDK/Vespa provenance preserved |
+| 23 | M2 | strong verifiers available on demand |
+| 24 | M1 + M2 | one GitHub-readable target registry used remotely |
+| 25 | M1 | change-area → focused-check documentation |
+| 26 | M2 | bounded remote `ci/test/verify` workflow |
+| 27 | M2 | local `--remote` wrappers |
+| 28 | M2 | exact pushed-SHA enforcement |
+| 29 | M2 | dirty local handoff fails closed |
+| 30 | M2 | remote invokes canonical `./dev` semantics |
+| 31 | M2 | no verifier-specific workflow semantics |
+| 32 | M2 | exact-run wait/log/result propagation |
+| 33 | M2 | authorized-actor/runner/permission policy |
+| 34 | M2 | trusted control plane + separate tested SHA |
+| 35 | M2 | no arbitrary remote shell |
+| 36 | M2 + M5 | AGENTS.md exact-SHA protocol |
+| 37 | M1 | worktree-scoped mutable target state |
+| 38 | M5 | minimal host boundary via `doctor` |
+| 39 | M1 | canonical `./dev build` meaning |
+| 40 | M3 | no automatic live-oracle mode |
+| 41 | M4 + M5 | support matrix reconciled and authoritative |
+| 42 | M5 | `release-check` builds/qualifies actual artifacts |
+| 43 | M4 + M5 | clean external Cargo package execution |
+| 44 | M5 | release checks public artifacts/commands, not YAML internals |
+| 45 | M4 | Python/TS/Ruby managed-local architecture |
+| 46 | M4 | npm/pip/gem/cargo install commands sufficient |
+| 47 | M4 + M5 | clean managed-local language-package E2E |
+| 48 | M4 + M5 | clean external Cargo build/native execution |
+| 49 | M4 | one qualified managed-local runtime payload |
+| 50 | M1 | independent toolchain/Vespa/leaf identities |
+| 51 | M1 | normal source publish does not republish Vespa |
+| 52 | M1 | leaf records exact immutable identities |
+| 53 | M1 + M2 | local/remote verification resolves immutable Vespa identity |
+| 54 | M5 | release provenance manifest/checksums |
+| 55 | M4 + M5 | end-user artifacts independent of dev images |
+| 56 | M6 | delete only after replacement proof |
+| 57 | M5 | one-screen normal BUILDING.md flow |
+| 58 | M1–M6 | final architecture ownership is discoverable |
+
+---
+
+## 7. Explicit non-goals
 
 Do not turn this roadmap into:
 
@@ -1138,28 +1285,29 @@ Do not turn this roadmap into:
 - an expansion to uncommitted release platforms;
 - a reason to rebuild Vespa on every Search Kernel commit.
 
-The objective is a boring system with obvious ownership, reusable immutable heavy inputs, local and remote verification, and native package-manager installation for end users.
-
 ---
 
-## 7. Final completion checklist
+## 8. Final completion checklist
 
 The roadmap is complete only when all are true:
 
 - `./dev` is the local semantic authority;
-- GitHub on-demand verification is a first-class bounded interface for remote-only agents;
+- the public command surface, including `lint`, is intact;
+- GitHub on-demand verification is first-class for remote-only agents;
 - automatic PR CI delegates to `./dev ci`;
 - toolchain image, Vespa/native image, and thin leaf remain independent;
-- ordinary Search Kernel source changes never republish Vespa;
+- ordinary source changes never republish Vespa;
+- image identity resolution is fail-closed with no silent host fallback;
 - worktrees retain useful warm state without shared mutable-target contamination;
+- required warm-performance benchmarks show no material regression;
+- the P0 native-runtime model is deliberately chosen and documented before verifier runtime convergence;
 - active verifier code compiles through normal build authorities;
-- normal verifier runners do not create private normal SDK/runtime universes;
+- verifier runners use the chosen canonical runtime rather than private normal SDK/runtime universes;
+- `reference/vespa` retains specification/history/provenance material;
 - live oracle execution is explicit only;
 - Universe is orchestration only;
-- native consumer packaging has one deliberately chosen model;
-- the common managed-local runtime payload is built once per platform/release;
-- Python, TypeScript/Node, and Ruby consume that same qualified payload;
-- Rust obtains the chosen native model transparently through Cargo;
+- Python, TypeScript/Node, and Ruby consume one qualified managed-local runtime payload;
+- Rust obtains the chosen runtime transparently through Cargo;
 - `cargo add searchkernel` works;
 - `pip install searchkernel` works;
 - `npm install @searchkernel/client` works;
@@ -1167,5 +1315,6 @@ The roadmap is complete only when all are true:
 - supported managed-local users do not separately install Vespa or `searchkerneld`;
 - `./dev release-check` qualifies actual artifacts;
 - release provenance ties artifacts to exact Search Kernel/toolchain/Vespa identities;
+- bootstrap is minimal, idempotent, and distinguishes environment failures from code failures;
 - duplicate authorities are deleted only after replacement proof;
-- every persona acceptance scenario passes on one exact final revision.
+- every design DoD row passes on one exact final revision.
