@@ -199,7 +199,7 @@ module SearchKernel
       kind = discriminator!(payload, "payload", %w[DenseTensorValues SparseTensorCells MixedTensorBlocks])
       data = payload["payload"]
       key, value = case kind
-      when "DenseTensorValues" then ["dense", decoded_cells(data["values"])]
+      when "DenseTensorValues" then ["dense", decoded_cells(data.fetch("values", []))]
       when "SparseTensorCells" then ["sparse", decoded_records(data["cells"], :cell)]
       when "MixedTensorBlocks" then ["mixed", decoded_records(data["blocks"], :block)]
       end
