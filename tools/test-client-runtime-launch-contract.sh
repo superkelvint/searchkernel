@@ -9,6 +9,7 @@ PYTHON_E2E="$ROOT/tools/run-python-native-e2e.sh"
 TS_E2E="$ROOT/clients/typescript/scripts/run-real-e2e.sh"
 PHP_E2E="$ROOT/clients/php/examples/run_searchkernel_client_api_e2e.sh"
 RUBY_E2E="$ROOT/clients/ruby/examples/run_searchkernel_client_api_e2e.sh"
+PHP_PACKAGE="$ROOT/clients/php/tests/verify_package.sh"
 TS_INSTALLED_E2E="$ROOT/clients/typescript/scripts/verify-installed-managed-local-e2e.cjs"
 PYTHON_GRPC_E2E="$ROOT/clients/python/tests/test_grpc_e2e.py"
 DEV="$ROOT/dev"
@@ -64,6 +65,19 @@ grep -F '"$RUNTIME" python' "$PHP_E2E" >/dev/null || {
     echo "PHP E2E helper Python bypasses the canonical Python launcher" >&2
     exit 1
 }
+grep -F 'RUNTIME="$ROOT/tools/run-runtime.sh"' "$PHP_PACKAGE" >/dev/null || {
+    echo "PHP package check does not select the canonical runtime launcher" >&2
+    exit 1
+}
+grep -F '"$RUNTIME" php' "$PHP_PACKAGE" >/dev/null || {
+    echo "PHP package check bypasses the canonical PHP launcher" >&2
+    exit 1
+}
+if grep -E '^[[:space:]]*composer[[:space:]]' "$PHP_PACKAGE" >/dev/null; then
+    echo "PHP package check launches Composer outside the canonical PHP runtime" >&2
+    exit 1
+fi
+
 grep -F '"$RUNTIME" ruby' "$RUBY_E2E" >/dev/null || {
     echo "Ruby E2E bypasses the canonical Ruby launcher" >&2
     exit 1
