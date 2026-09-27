@@ -65,6 +65,8 @@ class ToolingInvariantRequiredTests(unittest.TestCase):
             'run_phase tooling-python-syntax "$PYTHON" -m compileall -q tools .github/ci',
             tooling,
         )
+        self.assertIn("run_phase verification-cache-policy", tooling)
+        self.assertIn("test_verification_cache_policy.py", tooling)
         self.assertIn("run_phase ci-image-identity", tooling)
         self.assertIn("tools/test_ci_image_identity.py", tooling)
 

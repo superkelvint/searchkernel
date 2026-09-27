@@ -459,6 +459,8 @@ pub(crate) fn add_document_field(
                     lengths.as_ptr(),
                     u32::try_from(values.len())
                         .map_err(|_| Error::message("string array exceeds native capacity"))?,
+                    u32::try_from(bytes.len())
+                        .map_err(|_| Error::message("string array bytes exceed native capacity"))?,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -510,8 +512,12 @@ pub(crate) fn add_document_field(
                     field.as_ptr(),
                     key_bytes.as_ptr(),
                     key_lengths.as_ptr(),
+                    u32::try_from(key_bytes.len())
+                        .map_err(|_| Error::message("predicate keys exceed native capacity"))?,
                     value_bytes.as_ptr(),
                     value_lengths.as_ptr(),
+                    u32::try_from(value_bytes.len())
+                        .map_err(|_| Error::message("predicate values exceed native capacity"))?,
                     u32::try_from(value.features.len())
                         .map_err(|_| Error::message("predicate features exceed native capacity"))?,
                     error.as_mut_ptr(),
@@ -632,6 +638,8 @@ pub(crate) fn add_update_field(
                     lengths.as_ptr(),
                     u32::try_from(values.len())
                         .map_err(|_| Error::message("string array exceeds native capacity"))?,
+                    u32::try_from(bytes.len())
+                        .map_err(|_| Error::message("string array bytes exceed native capacity"))?,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -679,8 +687,12 @@ pub(crate) fn add_update_field(
                     field.as_ptr(),
                     key_bytes.as_ptr(),
                     key_lengths.as_ptr(),
+                    u32::try_from(key_bytes.len())
+                        .map_err(|_| Error::message("predicate keys exceed native capacity"))?,
                     value_bytes.as_ptr(),
                     value_lengths.as_ptr(),
+                    u32::try_from(value_bytes.len())
+                        .map_err(|_| Error::message("predicate values exceed native capacity"))?,
                     u32::try_from(value.features.len())
                         .map_err(|_| Error::message("predicate features exceed native capacity"))?,
                     error.as_mut_ptr(),
@@ -2595,8 +2607,8 @@ fn read_search_facet(
 #[cfg(test)]
 mod native_slice_tests {
     use super::{
-        native_predicate_expression, packed_predicate, validate_native_slice_pointer,
-        validate_position_precision,
+        native_predicate_expression, packed_predicate, packed_strings,
+        validate_native_slice_pointer, validate_position_precision,
     };
     use crate::document::PredicateValue;
     use std::collections::BTreeMap;
@@ -2641,6 +2653,38 @@ mod native_slice_tests {
                 .expect_err("lossy predicate feature map must fail before FFI");
             assert!(error.to_string().contains("exactly one feature key"));
         }
+    }
+
+    #[test]
+    fn packed_document_buffers_report_exact_utf8_byte_totals() {
+        let (bytes, lengths) = packed_strings(&["a".into(), String::new(), "é".into()])
+            .expect("string array should pack");
+        assert_eq!(bytes, [b'a', 0xc3, 0xa9]);
+        assert_eq!(lengths, [1, 0, 2]);
+        assert_eq!(
+            lengths.iter().map(|length| *length as usize).sum::<usize>(),
+            bytes.len()
+        );
+
+        let predicate = PredicateValue::new(BTreeMap::from([("k-é".to_owned(), "值".to_owned())]));
+        let (key_bytes, key_lengths, value_bytes, value_lengths) =
+            packed_predicate(&predicate).expect("predicate feature should pack");
+        assert_eq!(
+            key_lengths
+                .iter()
+                .map(|length| *length as usize)
+                .sum::<usize>(),
+            key_bytes.len()
+        );
+        assert_eq!(
+            value_lengths
+                .iter()
+                .map(|length| *length as usize)
+                .sum::<usize>(),
+            value_bytes.len()
+        );
+        assert_eq!(key_bytes, "k-é".as_bytes());
+        assert_eq!(value_bytes, "值".as_bytes());
     }
 
     #[test]
