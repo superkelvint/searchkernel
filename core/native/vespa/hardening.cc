@@ -58,7 +58,7 @@ class FailpointController {
     std::map<std::string, Entry> _entries;
 
     static bool known(std::string_view name) noexcept {
-        static constexpr std::array<std::string_view, 18> names = {
+        static constexpr std::array<std::string_view, 19> names = {
             "open_before_native_create", "open_after_native_create",
             "open_constructor", "open_initialize",
             "mutation_before_native_call", "mutation_after_native_call",
@@ -66,7 +66,8 @@ class FailpointController {
             "result_after_allocation", "destroy_before_native_release",
             "attribute_mutation_before_native_call",
             "attribute_mutation_after_native_call", "group_before_match",
-            "group_after_match", "search_after_id_resolution", "search_after_docsums"};
+            "group_after_match", "search_after_id_resolution", "search_after_docsums",
+            "mutation_before_visibility_wait"};
         return std::find(names.begin(), names.end(), name) != names.end();
     }
 

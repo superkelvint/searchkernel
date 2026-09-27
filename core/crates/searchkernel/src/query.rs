@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorCode, Result};
 use crate::Tensor;
 use searchkernel_ir::{
     QueryAlternativeIr, QueryExprIr, QueryExprKindIr, QueryFieldRefIr, QueryRangeBoundIr,
@@ -632,13 +632,9 @@ impl Query {
         K: Into<String>,
         V: Into<QueryValue>,
     {
-        Self::Annotated {
-            query: Box::new(query),
-            annotations: annotations
-                .into_iter()
-                .map(|(key, value)| (key.into(), value.into()))
-                .collect(),
-        }
+        annotations.into_iter().fold(query, |query, (key, value)| {
+            query.with_annotation(key.into(), value.into())
+        })
     }
 
     pub(crate) fn into_ir(self) -> Result<QueryExprIr> {
@@ -770,7 +766,11 @@ impl Query {
                 annotations: extra,
             } => {
                 let mut resolved = query.into_ir()?;
-                for (key, value) in extra {
+                let annotation_offset = resolved.annotations.len();
+                for (index, (key, value)) in extra.into_iter().enumerate() {
+                    if resolved.annotations.contains_key(&key) {
+                        return Err(duplicate_annotation_error(&key, annotation_offset + index));
+                    }
                     resolved.annotations.insert(key, value.into_ir()?);
                 }
                 return Ok(resolved);
@@ -1037,6 +1037,18 @@ fn field_ref(field: &str) -> Result<QueryFieldRefIr> {
         path,
         element_index: None,
     })
+}
+
+fn duplicate_annotation_error(key: &str, index: usize) -> Error {
+    Error::search(
+        ErrorCode::InvalidArgument,
+        format!("property `{key}` occurs more than once"),
+    )
+    .with_detail(
+        "duplicate_property",
+        Some(format!("query.annotations[{index}].key")),
+        format!("property `{key}` occurs more than once"),
+    )
 }
 
 fn contains(field: &str, item: QueryExprKindIr) -> Result<QueryExprKindIr> {
@@ -1475,5 +1487,56 @@ mod tests {
             annotated.annotations.get("custom"),
             Some(&RequestValueIr::Bool(true))
         );
+    }
+
+    fn assert_duplicate_annotation(error: Error, path: &str) {
+        assert_eq!(error.code(), ErrorCode::InvalidArgument);
+        let detail = error.details().first().expect("duplicate detail");
+        assert_eq!(detail.code, "duplicate_property");
+        assert_eq!(detail.path.as_deref(), Some(path));
+    }
+
+    #[test]
+    fn annotated_rejects_duplicate_pairs_without_collapsing_them() {
+        let error = Query::annotated(
+            Query::text("free form"),
+            [
+                ("custom", QueryValue::Bool(true)),
+                ("custom", QueryValue::Bool(false)),
+            ],
+        )
+        .into_ir()
+        .expect_err("duplicate annotations must be rejected");
+        assert_duplicate_annotation(error, "query.annotations[1].key");
+    }
+
+    #[test]
+    fn annotation_cannot_override_nearest_neighbor_control() {
+        let query = Query::nearest_neighbor_with_options(
+            "embedding",
+            "query_tensor",
+            NearestNeighborOptions {
+                distance_threshold: Some(0.25),
+                ..NearestNeighborOptions::default()
+            },
+        )
+        .with_annotation("distanceThreshold", 0.5);
+        let error = query.into_ir().expect_err("conflicting control must fail");
+        assert_duplicate_annotation(error, "query.annotations[1].key");
+    }
+
+    #[test]
+    fn annotation_cannot_override_wand_control() {
+        let query = Query::Wand {
+            field: "tags".to_owned(),
+            items: vec![WeightedQueryItem::new("kernel", 10)],
+            options: WandOptions {
+                target_hits: 7,
+                ..WandOptions::default()
+            },
+        }
+        .with_annotation("targetNumHits", 3_u64);
+        let error = query.into_ir().expect_err("conflicting control must fail");
+        assert_duplicate_annotation(error, "query.annotations[1].key");
     }
 }

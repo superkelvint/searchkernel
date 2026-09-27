@@ -1,11 +1,185 @@
 # Building Search Kernel
 
+> **Consumer note:** the native SDK/cache controls below are contributor tooling. Supported consumer builds automatically provision the pinned native runtime; consumers should not set `SK_NATIVE_SDK` or pre-populate the native cache.
+
+
 Search Kernel builds Rust code against pinned native prerequisites. FlatBuffers
 C++ 25.12.19 is installed once as a clone-wide toolchain and is never rebuilt by
 ordinary Cargo commands. The default native feature links a small Search Kernel-owned Vespa adapter
 against an immutable pinned Vespa/runtime base. Cargo build outputs, including
 the adapter, remain environment-local; the Vespa base is installed once in a
 machine-global cache and reused by independent clones and worktrees.
+
+
+## Fresh developer machine
+
+For a new Linux developer machine, the supported path is intentionally small:
+install the host bootstrap tools, authenticate GitHub, clone the repository, and
+let `./dev doctor` repair and verify the rest. Normal repository verification
+runs in the canonical `searchkernel-ci` Docker image, so developers do not need
+to manually reproduce CI's Ruby, PHP, Node, GCC, FlatBuffers, or Vespa
+toolchains on the host.
+
+### 1. Install host bootstrap prerequisites
+
+The host needs:
+
+- Git and `curl`;
+- Docker Engine, usable by the developer without `sudo`;
+- GitHub CLI (`gh`);
+- Python 3.10 or newer with `venv`;
+- `rustup`;
+- a basic C/C++ build environment and CMake.
+
+On Ubuntu/Debian, a suitable baseline is:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  git curl ca-certificates \
+  build-essential cmake \
+  python3 python3-venv python3-pip \
+  clang libclang-dev python3-clang \
+  ripgrep
+```
+
+Install Docker Engine and GitHub CLI through their supported distribution
+packages, then install Rust through `rustup`. Do not install the language/runtime
+matrix used by CI manually; the canonical Docker image owns those versions.
+
+Verify the bootstrap tools before cloning:
+
+```bash
+docker version
+docker run --rm hello-world
+
+gh auth login
+gh auth status
+
+python3 --version
+rustup --version
+```
+
+The authenticated GitHub account must have access to the private
+`superkelvint/searchkernel` repository. A normal developer shell does not need
+to export `GH_TOKEN` or `GITHUB_TOKEN`; native-base discovery and private
+release downloads reuse the authenticated `gh` session when explicit token
+variables are absent.
+
+### 2. Clone and bootstrap the repository
+
+```bash
+gh repo clone superkelvint/searchkernel
+cd searchkernel
+
+./dev doctor
+```
+
+`./dev doctor` is the authoritative first-run bootstrap and recovery command.
+It repairs or verifies the host Rust/Node/Python/system tooling, installs the
+pinned FlatBuffers prerequisite when needed, installs repository Python and
+TypeScript dependencies, provisions the host native prerequisite, configures the
+repository hooks, verifies generated protocol artifacts, and performs a real
+native `searchkerneld` build.
+
+A successful doctor means the host compile/link path is usable, not merely that
+similarly named executables exist on `PATH`.
+
+### 3. Validate the canonical Docker-backed native environment
+
+Normal build/test verification uses the same immutable environment as CI.
+Validate that environment explicitly once after bootstrap:
+
+```bash
+./dev native-sdk ensure
+```
+
+This command runs through the normal CI-image path and validates the exact
+digest-addressed Vespa/native bundle referenced by
+`docker.io/superkelvint/searchkernel-ci:latest`. It does not create a second
+host-native cache.
+
+### 4. Build
+
+For an explicit host build:
+
+```bash
+cargo build -p searchkerneld
+```
+
+The normal host target root is `target/host`; the daemon is therefore normally
+written to:
+
+```text
+target/host/debug/searchkerneld
+```
+
+The host build is useful for direct daemon development. Repository acceptance
+checks should still use `./dev`, because those checks intentionally execute in
+the canonical Docker environment.
+
+### 5. Run the test gates
+
+Run these in increasing order of scope:
+
+```bash
+# Fast development gate.
+./dev check-fast
+
+# Full normal repository quality/test gate.
+./dev check
+
+# Complete qualification: clients, E2E lanes, native/semantic verifiers,
+# ignored tests, and cumulative milestone closure.
+./dev universe
+```
+
+Focused test commands are available when iterating on one surface:
+
+```bash
+./dev test ir
+./dev test rust-api
+./dev test python
+./dev test typescript
+./dev test php
+./dev test ruby
+
+./dev lint --profile rust-clippy-all-features
+
+./dev verify product.integration
+./dev verify persistence
+./dev verify milestone.m14
+```
+
+A new developer machine should be considered fully qualified only after
+`./dev universe` passes.
+
+### Copy/paste happy path
+
+After the operating-system packages, Docker, GitHub CLI, and `rustup` are
+installed:
+
+```bash
+gh auth status
+docker version
+
+gh repo clone superkelvint/searchkernel
+cd searchkernel
+
+./dev doctor
+./dev native-sdk ensure
+
+cargo build -p searchkerneld
+
+./dev check-fast
+./dev check
+./dev universe
+```
+
+If any compiler, linker, FlatBuffers, SDK, dependency, cache, or provenance
+failure appears during this sequence, run `./dev doctor` first. Do not use
+`cargo clean`, delete `target/`, copy SDK directories between machines, or
+manually rebuild Vespa as an ad-hoc repair.
 
 ## Authority and failure handling
 
@@ -194,7 +368,8 @@ GitHub CI and local `./dev` resolve the Vespa digest from the leaf, materialize
 that digest once into a content-addressed Docker volume on the machine, and
 mount the volume read-only at `/opt/searchkernel/native-sdk-cache`. Multiple
 jobs reuse the same immutable volume; source and Cargo-target volumes remain
-job-private.
+job-private. Rust compiler outputs are separately reused through the pinned
+runner-local sccache service described below; no target directory is shared.
 
 This means the large Vespa payload is uploaded to Docker Hub only by
 `./dev image vespa publish`. An ordinary `./dev image publish` pushes the
@@ -239,9 +414,26 @@ the commit being created.
 
 Each invocation receives a private source volume and a private
 `/cargo-target` volume. Those volumes are removed after the command. No
-writable Cargo registry, rustup, native SDK, node_modules, or target cache is
-shared between concurrent developer/CI workers. Docker image layers are the
-only intentionally shared execution state.
+writable Cargo registry, rustup, native SDK, node_modules, or target directory is
+shared between concurrent developer/CI workers.
+
+Rust compilation is the deliberate exception to otherwise disposable build
+state: the repository pins sccache 0.17.0 with its release checksum. The current
+toolchain Dockerfile installs that same binary, while the runner also materializes
+it into a versioned read-only Docker volume so rollout does not depend on image
+publication order. Once the canonical image contains the pin, runners seed that
+volume from the immutable image; older images use the checksum-verified release
+artifact only for the bootstrap transition. Docker-backed builds set
+`RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache`. One runner-local sccache
+server per pinned sccache version and immutable CI toolchain identity owns a
+bounded 20 GiB local compiler cache. A toolchain identity change therefore starts
+a new compiler-cache namespace instead of reusing the previous environment.
+Build containers connect to it over a read-only mounted Unix socket and use
+sccache client-side mode, so rustc still executes inside the job's exact-head
+container with its private source and `/cargo-target` volumes. The shared cache
+is non-authoritative and content-addressed; compiler/cache misses simply compile
+normally. CI prints sccache statistics at lane exit. Do not replace this with a
+shared Cargo target directory.
 
 The pre-commit hook keeps Git-index responsibilities on the host: lane
 selection, staged-vs-unstaged validation, generated capability staging, and
@@ -292,7 +484,7 @@ Supported build/test execution now has two deliberate modes:
 
 | Environment | Cargo target root | Vespa SDK source |
 | --- | --- | --- |
-| Canonical Docker-backed dev/CI | private `/cargo-target` volume | read-only digest-addressed Vespa Docker volume mounted at `/opt/searchkernel/native-sdk-cache` |
+| Canonical Docker-backed dev/CI | private `/cargo-target` volume; shared compiler outputs only through sccache | read-only digest-addressed Vespa Docker volume mounted at `/opt/searchkernel/native-sdk-cache` |
 | Explicit host override | `target/host` (or caller override) | host resolver/cache or explicit `SK_NATIVE_SDK` |
 
 The Docker-backed path is the default. The host mode exists for toolchain

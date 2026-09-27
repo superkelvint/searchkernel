@@ -11,6 +11,10 @@ mod semantics;
 #[path = "../tests/property.rs"]
 mod property;
 
+#[cfg(test)]
+#[path = "../tests/filter_parameter_expansion.rs"]
+mod filter_parameter_expansion;
+
 pub mod api_to_ir;
 pub mod backend;
 pub mod error;

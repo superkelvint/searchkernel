@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "index": "reference/api-conformance/fixtures/indexes/product-v2.json",
+  "scenarios": [
+    {
+      "id": "pagination-explicit-zero",
+      "intent": {
+        "kind": "browse",
+        "limit": 0,
+        "offset": 0
+      }
+    },
+    {
+      "id": "pagination-nonzero",
+      "intent": {
+        "kind": "browse",
+        "limit": 20,
+        "offset": 20
+      }
+    },
+    {
+      "id": "text-filter-int64-max",
+      "intent": {
+        "kind": "search",
+        "query": "running shoes",
+        "filter": {
+          "source": "price <= :max",
+          "bindings": {
+            "max": {
+              "float64": 120.0
+            }
+          }
+        },
+        "limit": 20,
+        "offset": 0
+      }
+    },
+    {
+      "id": "rank-property",
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "foo": "bar"
+        }
+      }
+    },
+    {
+      "id": "text-filter-int64-max-exact",
+      "intent": {
+        "kind": "search",
+        "query": "running shoes",
+        "filter": {
+          "source": "price <= :max",
+          "bindings": {
+            "max": {
+              "int64": "9223372036854775807"
+            }
+          }
+        },
+        "limit": 20,
+        "offset": 0
+      }
+    },
+    {
+      "id": "text-filter-uint64-max-exact",
+      "intent": {
+        "kind": "search",
+        "query": "running shoes",
+        "filter": {
+          "source": "price <= :max",
+          "bindings": {
+            "max": {
+              "uint64": "18446744073709551615"
+            }
+          }
+        },
+        "limit": 20,
+        "offset": 0
+      }
+    }
+  ],
+  "capability_gaps": [
+    {
+      "id": "tensor-query-input",
+      "rust": "supported",
+      "python": "supported",
+      "typescript": "supported",
+      "status": "follow-up-corpus"
+    },
+    {
+      "id": "grouping-facet-sugar",
+      "rust": "different-public-sugar",
+      "python": "supported",
+      "typescript": "supported",
+      "status": "classified-gap"
+    }
+  ]
+}

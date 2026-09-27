@@ -123,6 +123,16 @@ cache_result = false
 notes = "Focused verifier for the searchkerneld public Search Endpoint binding/serving ingress. InstantSearch compatibility is a required dependency, not optional follow-up coverage."
 
 [[task]]
+id = "client-semantic-parity"
+legacy_lanes = ["rust", "python", "typescript", "ruby"]
+kind = "command"
+runner = "linux"
+command = "python3 tools/check-client-semantic-parity.py"
+depends_on = ["protocol-generated"]
+cache_result = false
+notes = "SK-23-016 frozen same-intent Rust/Python/TypeScript canonical-IR differential gate."
+
+[[task]]
 id = "python-client"
 legacy_lanes = ["python"]
 kind = "command"
@@ -795,6 +805,7 @@ depends_on = [
   "ruby-client",
   "client-contracts",
   "portable-ir-boundary",
+  "client-semantic-parity",
 ]
 cache_result = false
 
@@ -824,6 +835,7 @@ depends_on = [
   "issue-queue",
   "search-endpoints",
   "verification-policy",
+  "runner-bootstrap",
 ]
 cache_result = false
 
@@ -867,7 +879,7 @@ requires = ["rust-non-native", "rust-quality"]
 [[subsystem]]
 id = "searchkernel-ir"
 paths = ["core/crates/searchkernel-ir/**"]
-requires = ["rust-non-native", "rust-quality"]
+requires = ["rust-non-native", "rust-quality", "client-semantic-parity"]
 
 [[subsystem]]
 id = "generated-protocol-artifacts"
@@ -896,7 +908,7 @@ requires = ["rust-non-native", "protocol-generated", "api-conformance", "php-cli
 [[subsystem]]
 id = "searchkernel-testkit"
 paths = ["core/crates/searchkernel-testkit/**"]
-requires = ["rust-non-native", "rust-quality"]
+requires = ["rust-non-native", "rust-quality", "client-semantic-parity"]
 
 [[subsystem]]
 id = "searchkernel-dispatch"
@@ -974,17 +986,17 @@ requires = ["search-endpoints", "rust-non-native", "rust-quality", "client-contr
 [[subsystem]]
 id = "client-python"
 paths = ["clients/python/**"]
-requires = ["python-client", "client-contracts"]
+requires = ["python-client", "client-contracts", "client-semantic-parity"]
 
 [[subsystem]]
 id = "client-typescript"
 paths = ["clients/typescript/**"]
-requires = ["typescript-client", "client-contracts", "web-portable-client"]
+requires = ["typescript-client", "client-contracts", "client-semantic-parity", "web-portable-client"]
 
 [[subsystem]]
 id = "client-php"
 paths = ["clients/php/**"]
-requires = ["php-client", "client-contracts"]
+requires = ["php-client", "client-contracts", "client-semantic-parity"]
 
 [[subsystem]]
 id = "client-ruby"
@@ -992,7 +1004,7 @@ paths = [
   "clients/ruby/**",
   "core/crates/searchkernel-protocol/tests/ruby_json_contract.rs",
 ]
-requires = ["ruby-client", "client-contracts"]
+requires = ["ruby-client", "client-contracts", "client-semantic-parity"]
 
 [[subsystem]]
 id = "persistence"

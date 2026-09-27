@@ -11,7 +11,7 @@ categories.workspace = true
 
 [features]
 default = []
-native = ["dep:libc", "searchkernel-ir-adapter/native"]
+native = ["dep:libc", "dep:searchkernel-vespa-bindings", "searchkernel-ir-adapter/native"]
 remote = [
     "dep:searchkernel-protocol",
     "dep:searchkernel-rpc",
@@ -28,6 +28,7 @@ searchkernel-protocol = { path = "../searchkernel-protocol", optional = true }
 searchkernel-rpc = { path = "../searchkernel-rpc", optional = true }
 searchkernel-ir-adapter = { path = "../searchkernel-ir-adapter", default-features = false, optional = true }
 libc = { version = "0.2", optional = true }
+searchkernel-vespa-bindings = { path = "../searchkernel-vespa-bindings", default-features = false, optional = true }
 hyper-util = { version = "0.1", features = ["tokio"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

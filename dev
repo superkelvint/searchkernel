@@ -151,10 +151,10 @@ Search Kernel development commands
   ./dev lint --profile <id>   Run a canonical Clippy verification profile
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
-  ./dev test python           Test the Python client
-  ./dev test typescript       Test the TypeScript client and generated contract
-  ./dev test php              Test the PHP client
-  ./dev test ruby             Test the Ruby client and packaged gem
+  ./dev test python           Test the Python client, including real E2E
+  ./dev test typescript       Test the TypeScript client, package, and real E2E
+  ./dev test php              Test the PHP client, package, and real E2E
+  ./dev test ruby             Test the Ruby client, packaged gem, and real E2E
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify vespa.grouping.yql  Run one semantic verifier target
@@ -216,8 +216,14 @@ native_sdk_path() {
     bash "$ROOT/tools/resolve-native-sdk.sh" path
 }
 
+run_client_e2e() {
+    local surface=$1
+    "$PYTHON" "$ROOT/tools/check-client-contracts.py" --run-e2e-surface "$surface"
+}
+
 run_python_tests() {
     "$PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
+    run_client_e2e python
 }
 
 find_clang_python() {
@@ -306,12 +312,14 @@ run_typescript_tests() {
     "$NPM" run typecheck --prefix "$ROOT/clients/typescript"
     "$NPM" test --prefix "$ROOT/clients/typescript"
     "$NPM" run test:package --prefix "$ROOT/clients/typescript"
+    run_client_e2e typescript
 }
 
 run_php_tests() {
     php "$ROOT/clients/php/tests/run.php"
     "$CARGO" test -p searchkernel-protocol --test php_json_contract -- --ignored
     bash "$ROOT/clients/php/tests/verify_package.sh"
+    run_client_e2e php
 }
 
 run_ruby_tests() {
@@ -337,7 +345,8 @@ run_ruby_tests() {
               abort unless results.hits.map(&:id) == ["from-installed-gem"]'
     ) || status=$?
     rm -rf -- "$package_dir" "$gem_home"
-    return "$status"
+    [[ "$status" -eq 0 ]] || return "$status"
+    run_client_e2e ruby
 }
 
 check_fast() {
@@ -452,11 +461,6 @@ universe() {
     universe_dev_step 'persistence compatibility verifier' verify persistence
     universe_dev_step 'issue queue verifier' verify issue-queue
 
-    universe_step 'executable client E2E lanes'         "$PYTHON" "$ROOT/tools/check-client-contracts.py" --run-e2e
-    if [[ -x "$ROOT/tools/run-python-native-e2e.sh" ]]; then
-        universe_step 'Python native gRPC E2E' bash "$ROOT/tools/run-python-native-e2e.sh"
-    fi
-
     mapfile -t targets < <(
         "$ROOT/reference/vespa/verify-through.sh" --list |
             awk '
@@ -565,8 +569,8 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_check_native_abi_authorities.py"
             "$PYTHON" "$ROOT/tools/check-native-abi-authorities.py"
             run_abi_python "$ROOT/tools/test_check_abi_surface.py"
-            SK_NATIVE_ABI_HEADER="$ROOT/core/native/vespa/searchkernel_vespa.h" \
-                bash "$ROOT/tools/check-native-bindings.sh"
+            bash "$ROOT/tools/test-check-native-bindings.sh"
+            bash "$ROOT/tools/check-native-bindings.sh"
             bash "$ROOT/tools/check-layout.sh"
             bash "$ROOT/tools/test-native-sdk-cache.sh"
             run_abi_python "$ROOT/tools/check_abi_surface.py" \
@@ -1173,7 +1177,14 @@ case "${1:-help}" in
         check_all
         ;;
     universe)
-        universe
+        UNIVERSE_LOG=${SEARCHKERNEL_UNIVERSE_LOG:-/tmp/searchkernel-universe-$(date +%Y%m%d-%H%M%S).log}
+        : > "$UNIVERSE_LOG"
+        echo "Search Kernel universe log: $UNIVERSE_LOG"
+        set +e
+        universe 2>&1 | tee -a "$UNIVERSE_LOG"
+        status=${PIPESTATUS[0]}
+        set -e
+        exit "$status"
         ;;
     check-fast)
         check_fast

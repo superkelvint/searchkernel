@@ -2317,7 +2317,7 @@ fn document_type_drives_native_schema_identity() {
 
 #[test]
 fn portable_dense_tensor_definition_compiles_and_opens_through_adapter() {
-    let definition = IndexDefinitionIr::new(
+    let mut definition = IndexDefinitionIr::new(
         None,
         vec![FieldIr::new(
             field("embedding"),
@@ -2330,6 +2330,7 @@ fn portable_dense_tensor_definition_compiles_and_opens_through_adapter() {
         Vec::new(),
     )
     .unwrap();
+    definition.set_document_type("portable_tensor_test");
     let root = std::env::temp_dir().join(format!(
         "searchkernel-adapter-portable-tensor-{}-{}",
         std::process::id(),
@@ -2373,7 +2374,8 @@ fn portable_hnsw_tensor_definition_lowers_to_native_attribute_config() {
         distance_metric: DistanceMetricIr::Euclidean,
         options: std::collections::BTreeMap::new(),
     }));
-    let definition = IndexDefinitionIr::new(None, vec![embedding], Vec::new()).unwrap();
+    let mut definition = IndexDefinitionIr::new(None, vec![embedding], Vec::new()).unwrap();
+    definition.set_document_type("portable_hnsw_test");
     let root = std::env::temp_dir().join(format!(
         "searchkernel-adapter-hnsw-{}-{}",
         std::process::id(),
@@ -2404,7 +2406,8 @@ fn typed_attribute_settings_are_lowered_and_contradictions_fail_closed() {
         distance_metric: searchkernel_ir::DistanceMetricIr::Unspecified,
         options: std::collections::BTreeMap::new(),
     }));
-    let definition = IndexDefinitionIr::new(None, vec![value_field], Vec::new()).unwrap();
+    let mut definition = IndexDefinitionIr::new(None, vec![value_field], Vec::new()).unwrap();
+    definition.set_document_type("typed_attribute_test");
     validate_index_definition(&definition).expect("typed attribute settings are supported");
     let root = std::env::temp_dir().join(format!(
         "searchkernel-adapter-attribute-settings-{}",
@@ -2466,6 +2469,33 @@ fn typed_index_and_summary_settings_cannot_disagree_with_resolved_capabilities()
     let definition = IndexDefinitionIr::new(None, vec![summary_field], Vec::new()).unwrap();
     let error = validate_index_definition(&definition).expect_err("summary contradiction");
     assert_eq!(error.details[0].code, "invalid_capability");
+}
+
+#[test]
+fn adapter_consumes_canonical_resolved_document_identity() {
+    let title = FieldIr::new(
+        field("title"),
+        DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+        None,
+        FieldCapabilities::new(true, true, false, false, false),
+    );
+    let definition = IndexDefinitionIr::new(None, vec![title], Vec::new()).unwrap();
+    assert_eq!(definition.document_type(), None);
+    assert_eq!(definition.resolved_document_type(), "searchkernel");
+
+    let config_dir = std::env::temp_dir().join(format!(
+        "searchkernel-resolved-document-type-{}",
+        std::process::id()
+    ));
+    compile_index_definition(&definition, &config_dir)
+        .expect("adapter accepts identity resolved by canonical IR");
+    let manifest = std::fs::read_to_string(config_dir.join("searchkernel-schema.json"))
+        .expect("compiled schema manifest");
+    assert!(manifest.contains(&format!(
+        "\"document_type\":\"{}\"",
+        definition.resolved_document_type()
+    )));
+    std::fs::remove_dir_all(config_dir).expect("remove generated config");
 }
 
 #[test]
@@ -4391,6 +4421,7 @@ fn supported_rank_profile_definitions_lower_to_native_config() {
         Vec::new(),
     )
     .unwrap();
+    definition.set_document_type("rank_profile_test");
     definition.set_rank_profiles(vec![RankProfileDefinitionIr {
         name: "product_search".to_owned(),
         inherits: Vec::new(),
@@ -4457,6 +4488,7 @@ fn second_phase_and_rerank_count_lower_to_native_config_independently() {
         Vec::new(),
     )
     .unwrap();
+    definition.set_document_type("two_phase_rank_profile_test");
     definition.set_rank_profiles(vec![RankProfileDefinitionIr {
         name: "two_phase".to_owned(),
         inherits: Vec::new(),

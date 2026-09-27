@@ -4,26 +4,21 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CORE="$ROOT/core/crates/searchkernel-ir/src"
 MODEL="$CORE/model"
 
-command -v rg >/dev/null 2>&1 || {
-  echo "ripgrep (rg) is required for the IR boundary check" >&2
-  exit 1
-}
-
 # `api_to_ir/resolve.rs` is the intentional semantic composition boundary.
 # `resolve_*` functions there convert validated public inputs into owned IR;
 # they are not legacy IR names.  Keep this check limited to names that indicate
 # the removed pre-refactor model.
-if rg -n 'Resolved[A-Z][A-Za-z0-9_]*Ir|IndexSemantics' "$CORE"; then
+if grep -rEn 'Resolved[A-Z][A-Za-z0-9_]*Ir|IndexSemantics' "$CORE"; then
   echo "legacy IR names remain" >&2; exit 1
 fi
 
 # Owned model, backend, and error types must not carry generated wire values or
 # FlatBuffer handles.  The conversion modules are checked separately below.
-if rg -n 'searchkernel_protocol|flatbuffers::|api::' \
+if grep -rEn 'searchkernel_protocol|flatbuffers::|api::' \
     "$MODEL" "$CORE/backend.rs" "$CORE/error.rs"; then
   echo "wire types leaked into owned core modules" >&2; exit 1
 fi
-if rg -n 'searchkernel_protocol::.*(Insert|Upsert|Patch|Delete|Get|Search|Analyze)Result' "$CORE/backend.rs"; then
+if grep -nE 'searchkernel_protocol::.*(Insert|Upsert|Patch|Delete|Get|Search|Analyze)Result' "$CORE/backend.rs"; then
   echo "generated result type in backend trait" >&2; exit 1
 fi
 # Generated protocol types may appear only at the two conversion boundaries.
@@ -31,9 +26,8 @@ fi
 # entry points, not semantic-layer dependencies.  Directory exclusions are
 # deliberate: the IR refactor split both conversion modules into submodules.
 WIRE='searchkernel_protocol|flatbuffers::|api::'
-if rg -n "$WIRE" "$CORE" -g '*.rs' \
-    -g '!**/api_to_ir/**' -g '!**/ir_to_api/**' -g '!**/*_tests.rs' \
-    -g '!**/lib.rs'; then
+if grep -rEn --include='*.rs' --exclude='*_tests.rs' --exclude='lib.rs' \
+    --exclude-dir=api_to_ir --exclude-dir=ir_to_api "$WIRE" "$CORE"; then
   echo "generated protocol type interpreted past conversion boundary" >&2; exit 1
 fi
 
@@ -63,12 +57,13 @@ fi
 # this guard structural so a future production ingress cannot silently restore
 # that split; focused tests may still use the backend model directly.
 if [ -f "$MODEL/query.rs" ] && sed -n '/^pub enum QueryIr {/,/^}/p' "$MODEL/query.rs" \
-  | rg -n '^[[:space:]]*(Term|And|Or|Not)\b'; then
+  | grep -nE '^[[:space:]]*(Term|And|Or|Not)([^[:alnum:]_]|$)'; then
   echo "legacy structured QueryIr variants remain" >&2
   exit 1
 fi
-if rg -n 'QueryIr::(Term|And|Or|Not)\b' "$ROOT/core/crates" -g '*.rs' \
-  -g '!**/tests/**' -g '!**/tests.rs' -g '!**/*_tests.rs'; then
+if grep -rEn --include='*.rs' --exclude='tests.rs' --exclude='*_tests.rs' \
+  --exclude-dir=tests 'QueryIr::(Term|And|Or|Not)([^[:alnum:]_]|$)' \
+  "$ROOT/core/crates"; then
   echo "legacy structured QueryIr construction remains in production" >&2
   exit 1
 fi
