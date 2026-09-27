@@ -258,9 +258,14 @@ begin
     check(error.details.any? { |detail| detail["code"] == "syntax_error" }, "textual syntax error detail")
   end
 
-  grouped = index.search("shoes").facet("brand", name: "brands", limit: 10).limit(10).execute
+  grouped = index.search("shoes")
+    .facet("brand", name: "brands", limit: 10)
+    .facet("category", limit: 10)
+    .limit(10)
+    .execute
   check(!grouped.groups.empty?, "structured facet/grouping tree retained")
   same({"Acme" => 1, "TrailCo" => 1}, grouped.facets.fetch("brands").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "named facet exact counts")
+  same({"shoes" => 2}, grouped.facets.fetch("category").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "multiple facet projections accumulate")
   filtered_facet = index.browse.filter("active = true").facet("brand").limit(10).execute
   same({"Acme" => 2, "TrailCo" => 1}, filtered_facet.facets.fetch("brand").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "filtered facet exact counts")
 
