@@ -41,6 +41,11 @@ CATALOG = {
             "runtimes": ["grpc"],
             "evidence_roots": ["python-tests"],
         },
+        "ruby": {
+            "title": "Ruby",
+            "runtimes": ["managed-local"],
+            "evidence_roots": ["ruby-tests"],
+        },
     },
     "scenarios": [
         {
@@ -65,6 +70,7 @@ class ClientContractTests(unittest.TestCase):
         (self.root / "reference" / "client-contracts").mkdir(parents=True)
         (self.root / "rust-tests").mkdir()
         (self.root / "python-tests").mkdir()
+        (self.root / "ruby-tests").mkdir()
         (self.root / "rust-tests" / "e2e.rs").write_text("", encoding="utf-8")
         (self.root / "docs" / "capabilities.json").write_text(
             json.dumps(
@@ -128,6 +134,29 @@ class ClientContractTests(unittest.TestCase):
         self.assertIn("ergonomic · E2E 1/2 (native)", markdown)
         self.assertIn("rust-tests/e2e.rs", markdown)
 
+
+    def test_ruby_evidence_files_are_discovered(self) -> None:
+        (self.root / "ruby-tests" / "evidence.rb").write_text(
+            "# SKC: search.pagination/basic kinds=ergonomic runtime=managed-local\n",
+            encoding="utf-8",
+        )
+        _, surfaces, scenarios, _ = self.load()
+        evidence = MODULE.collect_evidence(surfaces, scenarios, self.root)
+        ruby = [item for item in evidence if item["surface"] == "ruby"]
+        self.assertEqual(
+            ruby,
+            [
+                {
+                    "capability": "search.pagination",
+                    "scenario": "basic",
+                    "surface": "ruby",
+                    "runtime": "managed-local",
+                    "kind": "ergonomic",
+                    "path": "ruby-tests/evidence.rb",
+                    "line": 1,
+                }
+            ],
+        )
 
     def test_run_e2e_lanes_can_select_one_surface(self) -> None:
         _, surfaces, _, _ = self.load()
