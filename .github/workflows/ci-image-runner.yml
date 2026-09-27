@@ -392,7 +392,7 @@ jobs:
               return 1
             fi
 
-            if ! NATIVE_ADAPTER_LIB=$(python3 .github/ci/resolve-native-adapter-lib.py               "$cargo_messages" "$CARGO_TARGET_DIR"); then
+            if ! NATIVE_ADAPTER_LIB=$("$PYTHON" tools/resolve-cargo-native-adapter-lib.py               "$cargo_messages" "$CARGO_TARGET_DIR"); then
               rm -f "$cargo_messages"
               return 1
             fi
@@ -477,6 +477,7 @@ jobs:
               run_phase native-environment-fingerprint bash tools/test-native-environment-fingerprint.sh
               run_phase native-sdk-cache bash tools/test-native-sdk-cache.sh
               run_phase runtime-launcher bash tools/test-runtime-launcher.sh
+              run_phase cargo-native-adapter-resolver "$PYTHON" .github/ci/test_resolve_native_adapter_lib.py
               run_phase clippy-runner "$PYTHON" tools/test_run_clippy.py
               run_phase python-dependency-contract "$PYTHON" tools/test_python_dependency_contract.py
               run_phase toolchain-authorities "$PYTHON" tools/test_toolchain_authorities.py
