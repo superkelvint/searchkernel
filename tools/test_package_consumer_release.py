@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+CLIENT_CAPABILITIES_WORKFLOW = ROOT / ".github" / "workflows" / "client-capabilities.yml"
+RELEASE_VERIFIER = ROOT / "tools" / "check-consumer-release.py"
 SPEC = importlib.util.spec_from_file_location(
     "package_consumer_release", ROOT / "tools" / "package-consumer-release.py"
 )
@@ -40,6 +42,7 @@ class ConsumerReleaseTests(unittest.TestCase):
 
             with tarfile.open(bundle) as archive:
                 names = set(archive.getnames())
+                self.assertIn("LICENSE", names)
                 self.assertIn("core/crates/searchkernel/Cargo.toml", names)
                 self.assertIn("core/crates/searchkernel-rpc/Cargo.toml", names)
                 self.assertIn("searchkerneld/Cargo.toml", names)
@@ -63,6 +66,27 @@ class ConsumerReleaseTests(unittest.TestCase):
                 check=True,
                 stdout=subprocess.DEVNULL,
             )
+
+
+    def test_client_capability_workflow_watches_every_rust_bundle_input(self) -> None:
+        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
+        for relative in MODULE.RUST_BUNDLE_PATHS:
+            path = ROOT / relative
+            watch = f"{relative}/**" if path.is_dir() else relative
+            with self.subTest(watch=watch):
+                self.assertEqual(
+                    workflow.count(f'      - "{watch}"'),
+                    2,
+                    f"{watch} must trigger both pull_request and main push release qualification",
+                )
+
+    def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
+        verifier = RELEASE_VERIFIER.read_text(encoding="utf-8")
+        self.assertIn('"check", "-p", "searchkernel", "--features", "native"', verifier)
+        self.assertIn('"CARGO_TARGET_DIR"', verifier)
+        self.assertIn('environment.pop("SK_NATIVE_SDK", None)', verifier)
+        self.assertIn('environment.pop("SK_NATIVE_ABI_HEADER", None)', verifier)
+
 
 
 if __name__ == "__main__":
