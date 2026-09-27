@@ -72,7 +72,7 @@ index = SearchKernel::Index.create(index_path, fields: fields, rank_profiles: ra
 begin
   same("shoe-1", index.insert(
     "_id" => "shoe-1",
-    "title" => "Fast Running Shoes",
+    "title" => "Jumped Running Shoes for Daily Training",
     "brand" => "Acme",
     "price" => 89.0,
     "inventory" => 10,
@@ -102,6 +102,18 @@ begin
   index.insert("_id" => "rerank-c", "title" => "Rerank Candidate C", "category" => "two-phase", "rating" => 80, "inventory" => 90)
   index.insert("_id" => "rerank-d", "title" => "Rerank Candidate D", "category" => "two-phase", "rating" => 70, "inventory" => 1000)
 
+  200.times do |probe|
+    index.insert(
+      "_id" => "degraded-#{probe}",
+      "title" => "Coverage Degradation Probe",
+      "category" => "degradation",
+      "price" => 18.0,
+      "rating" => 1,
+      "inventory" => 18,
+      "embedding" => embedding(*SHOE_2_VECTOR)
+    )
+  end
+
   results = index.search("shoes")
     .filter("price <= :max", "max" => 100.0)
     .sort("price", "asc")
@@ -109,8 +121,25 @@ begin
     .limit(10)
     .execute
   same(["shoe-1"], ids(results), "text/filter/sort result")
-  same("Fast Running Shoes", results.hits.first.fields.fetch("title"), "stored field projection")
+  same("Jumped Running Shoes for Daily Training", results.hits.first.fields.fetch("title"), "stored field projection")
   check(results.total_hits >= 1, "total hits retained")
+  check(!results.hits.first.sort_values.nil?, "explicit sort values are retained")
+
+  highlighted = index.search("jump")
+    .summary("default")
+    .fields("category")
+    .highlight("title")
+    .execute
+  highlighted_hit = highlighted.hits.find { |hit| hit.id == "shoe-1" }
+  check(!highlighted_hit.nil?, "stemmed highlight returns shoe-1")
+  same({ "category" => "shoes" }, highlighted_hit.fields, "named summary + field projection")
+  title_highlight = highlighted_hit.highlights.find { |item| item.fetch("field") == "title" }
+  check(!title_highlight.nil?, "structured title highlight present")
+  fragment = title_highlight.fetch("fragments").first
+  same("Jumped Running Shoes for Daily Training", fragment.fetch("text"), "highlight source text")
+  start_byte, end_byte = fragment.fetch("matches").first
+  same("Jumped", fragment.fetch("text").byteslice(start_byte...end_byte), "highlight follows stemming span")
+  check(ids(index.search("jump").limit(10).execute).include?("shoe-1"), "stemming matches jump -> Jumped")
 
   repeated = index.search("shoes")
     .filter("price <= :value", "value" => 130.0)
@@ -141,6 +170,16 @@ begin
   boosted = index.search("shoes").ranking("boosted").input("boost", 3.0).limit(10).execute
   check(boosted.hits.all? { |hit| hit.score && hit.features.fetch("query(boost)") == 3.0 }, "scalar query input + match feature")
 
+  rank_property_results = index.search("shoes")
+    .ranking("boosted")
+    .rank_property("boost", "4.0")
+    .limit(10)
+    .execute
+  check(
+    rank_property_results.hits.all? { |hit| hit.score && hit.features.fetch("query(boost)") == 4.0 },
+    "rank property namespace reaches real ranking"
+  )
+
   first_phase = index.search("candidate").ranking("first_phase_only").limit(4).execute
   same(%w[rerank-a rerank-b rerank-c rerank-d], ids(first_phase), "first-phase ordering")
   two_phase = index.search("candidate").ranking("two_phase").limit(4).execute
@@ -161,6 +200,25 @@ begin
   check(ids(hybrid).include?("bag-1") && ids(hybrid).include?("shoe-1"), "hybrid lexical + vector candidate union")
   same("bag-1", hybrid.hits.first.id, "hybrid vector-only candidate can rank first")
 
+  normal_coverage = index.search("shoes").limit(10).execute.coverage
+  check(!normal_coverage.nil? && normal_coverage.full == true, "normal coverage is full")
+
+  degraded = index.browse
+    .filter("inventory = :value", "value" => 18)
+    .sort("inventory", "asc")
+    .rank_property("vespa.matchphase.degradation.maxfiltercoverage", "0.9")
+    .rank_property("vespa.matchphase.degradation.attribute", "inventory")
+    .rank_property("vespa.matchphase.degradation.maxhits", "10")
+    .limit(10)
+    .execute
+  check(!degraded.hits.empty?, "degradation query returns hits")
+  check(!degraded.coverage.nil? && degraded.coverage.full == false, "degraded coverage is not full")
+  check(!degraded.coverage.degraded.nil?, "degradation metadata present")
+  check(
+    degraded.coverage.degraded.timeout || degraded.coverage.degraded.match_phase,
+    "degradation reason is preserved"
+  )
+
   inspected = index.search("shoes").filter("price <= :max", "max" => 100.0).inspect
   check(inspected.is_a?(Hash), "inspect-query returns canonical resolved request")
 
@@ -169,6 +227,34 @@ begin
     .limit(10)
     .execute
   same(%w[shoe-1 shoe-2], ids(yql), "YQL property and ordering")
+
+  yql_page = index.yql("select * from sources * where title contains text(@q) order by price asc")
+    .property("q", "shoes")
+    .page(2, 1)
+    .execute
+  same(["shoe-2"], ids(yql_page), "YQL pagination")
+  same(2, yql_page.total_hits, "YQL pagination retains total hits")
+
+  yql_grouped = index.yql("select * from sources * where title contains text(@q)")
+    .property("q", "shoes")
+    .group(SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count.as("products")))
+    .execute
+  yql_brand_counts = grouping_buckets(yql_grouped).to_h { |group| [group.value, group.fields.fetch("products")] }
+  same({ "Acme" => 1, "TrailCo" => 1 }, yql_brand_counts, "YQL + programmatic grouping")
+
+  begin
+    index.search("shoes").filter("prcie <= :max", "max" => 100).execute
+    raise "unknown field filter should fail"
+  rescue SearchKernel::SearchKernelError => error
+    check(error.details.any? { |detail| detail["code"] == "unknown_field" }, "structured unknown-field detail")
+  end
+
+  begin
+    index.search("shoes").filter("price <= :max AND (").execute
+    raise "malformed textual filter should fail"
+  rescue SearchKernel::SearchKernelError => error
+    check(error.details.any? { |detail| detail["code"] == "syntax_error" }, "textual syntax error detail")
+  end
 
   grouped = index.search("shoes").facet("brand", name: "brands", limit: 10).limit(10).execute
   check(!grouped.groups.empty?, "structured facet/grouping tree retained")
@@ -180,20 +266,36 @@ begin
     .aggregate(SearchKernel::Agg.count.as("products"))
     .aggregate(SearchKernel::Agg.sum("price").as("sum_price"))
     .aggregate(SearchKernel::Agg.avg("price").as("avg_price"))
+    .aggregate(SearchKernel::Agg.min("price").as("min_price"))
+    .aggregate(SearchKernel::Agg.max("price").as("max_price"))
+    .aggregate(SearchKernel::Agg.stddev("price").as("stddev_price"))
     .limit(0).execute
   same(2, aggregate.aggregations.fetch("products"), "root count aggregation")
   same(218.0, aggregate.aggregations.fetch("sum_price"), "root sum aggregation")
   same(109.0, aggregate.aggregations.fetch("avg_price"), "root avg aggregation")
+  same(89.0, aggregate.aggregations.fetch("min_price"), "root min aggregation")
+  same(129.0, aggregate.aggregations.fetch("max_price"), "root max aggregation")
+  check(aggregate.aggregations.fetch("stddev_price") > 0, "root stddev aggregation")
 
-  grouped_counts = index.browse.group(
-    SearchKernel::Group.by("brand").limit(10)
-      .order_by(SearchKernel::Grouping.desc(SearchKernel::Agg.count))
-      .output(SearchKernel::Agg.count.as("products"))
-  ).limit(0).execute
+  grouped_counts = index.browse
+    .filter("category IN (:categories)", "categories" => %w[shoes bags])
+    .group(
+      SearchKernel::Group.by("brand").limit(10).precision(100)
+        .order_by(
+          SearchKernel::Grouping.desc(SearchKernel::Agg.count),
+          SearchKernel::Grouping.asc(SearchKernel::Grouping.field("brand"))
+        )
+        .output(
+          SearchKernel::Agg.count.as("products"),
+          SearchKernel::Agg.avg("price").as("avg_price")
+        )
+    ).limit(0).execute
   brand_groups = grouping_buckets(grouped_counts)
   same(2, brand_groups.length, "structured group count")
   same(["Acme", "TrailCo"], brand_groups.map(&:value), "group ordering by count")
   same([2, 1], brand_groups.map { |group| group.fields.fetch("products") }, "group count outputs")
+  same(69.0, brand_groups[0].fields.fetch("avg_price"), "group avg output")
+  same(129.0, brand_groups[1].fields.fetch("avg_price"), "group avg output")
 
   nested = index.browse.filter("category IN (:categories)", "categories" => %w[shoes bags]).group(
     SearchKernel::Group.by("category").limit(10)
@@ -221,6 +323,17 @@ begin
   ).limit(0).execute
   same(["Acme"], grouping_buckets(kept).map(&:value), "group keep filter")
 
+  summarized = index.search("shoes").group(
+    SearchKernel::Group.by("brand")
+      .output(
+        SearchKernel::Agg.count.as("products"),
+        SearchKernel::Agg.summary.as("hits")
+      )
+  ).execute
+  grouped_hit_ids = grouping_buckets(summarized).flat_map { |group| (group.hits || []).map(&:id) }.sort
+  same(%w[shoe-1 shoe-2], grouped_hit_ids, "summary aggregation preserves grouped Hit children")
+  check(grouping_buckets(summarized).all? { |group| group.hits && !group.hits.empty? }, "summary groups retain hit children")
+
   index.patch("shoe-1").set("price", 79.0).set("inventory", 11).unset("sale_price").execute
   same(11, index.get("shoe-1").fetch("inventory"), "patch second set")
   patched = index.get("shoe-1")
@@ -237,6 +350,17 @@ begin
   same(6, index.get("shoe-1").fetch("inventory"), "advanced arithmetic divide")
   index.update("created-by-update").set("inventory", 7).create.execute
   same(7, index.get("created-by-update").fetch("inventory"), "create-if-nonexistent update")
+  index.update("shoe-1").set("title", "Fast Marathon Shoes").unset("sale_price").execute
+  same("Fast Marathon Shoes", index.get("shoe-1").fetch("title"), "advanced set update")
+  check(ids(index.search("marathon").execute).include?("shoe-1"), "updated text is searchable")
+  check(!ids(index.search("jumped").execute).include?("shoe-1"), "old text is removed from search")
+
+  begin
+    index.update("shoe-1").set("inventory", 16).condition("inventory == 15").execute
+    raise "conditional mutation should be unsupported"
+  rescue SearchKernel::SearchKernelError => error
+    same("Unsupported", error.code, "conditional mutation returns typed Unsupported")
+  end
   index.upsert("shoe-2", {"title" => "Trail Running Shoes Updated", "brand" => "TrailCo", "price" => 119.0, "inventory" => 4, "active" => true})
   same(119.0, index.get("shoe-2").fetch("price"), "upsert replacement")
 
@@ -255,6 +379,21 @@ begin
   same(6, reopened.get("shoe-1").fetch("inventory"), "reopen preserves arithmetic update")
   same(7, reopened.get("created-by-update").fetch("inventory"), "reopen preserves create update")
   same(119.0, reopened.get("shoe-2").fetch("price"), "reopen preserves upsert replacement")
+  reopened_shoe1 = reopened.get("shoe-1")
+  same("Fast Marathon Shoes", reopened_shoe1.fetch("title"), "reopen preserves text update")
+  reopened_tensor = reopened_shoe1.fetch("embedding").fetch("$searchkernel_tensor")
+  same("tensor<float>(x[8])", reopened_tensor.fetch("type_spec"), "reopen preserves tensor type")
+  check(
+    reopened_tensor.fetch("dense").zip(SHOE_1_VECTOR).all? { |actual, expected| (actual - expected).abs < 1e-5 },
+    "reopen preserves tensor values"
+  )
+
+  reopened_ranked = reopened.search("shoes").ranking("boosted").input("boost", 3.0).limit(10).execute
+  check(reopened_ranked.hits.all? { |hit| hit.features.fetch("query(boost)") == 3.0 }, "ranking survives reopen")
+  reopened_nearest = reopened.query(SearchKernel::Query.nearest_neighbor("embedding", "query_embedding"))
+    .ranking("semantic").input("query_embedding", embedding(*SHOE_1_VECTOR)).limit(3).execute
+  same("shoe-1", reopened_nearest.hits.first.id, "nearest-neighbor survives reopen")
+
   same(%w[shoe-1 shoe-2], ids(reopened.search("shoes").sort("price", "asc").limit(10).execute), "reopen search")
   check(reopened.delete("shoe-2"), "delete after reopen")
   same(false, reopened.delete("shoe-2"), "duplicate delete is false")
@@ -273,6 +412,9 @@ puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 # SKC: search.sorting/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: search.pagination/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: result.named_summary_class/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: result.highlighting/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: result.degradation_metadata/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: result.tensor_document_readback/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: result.match_features/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: result.grouping_tree/basic kinds=ergonomic,e2e runtime=managed-local
@@ -284,5 +426,6 @@ puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 # SKC: tensor.dense_document_crud/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: ranking.profile_selection/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: ranking.numeric_query_inputs/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: ranking.rank_properties/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: ranking.tensor_query_inputs/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.yql/basic kinds=ergonomic,e2e runtime=managed-local
