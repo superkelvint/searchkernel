@@ -169,6 +169,35 @@ begin
   typed = index.query(SearchKernel::Query.contains("title", "shoes")).limit(10).execute
   check(ids(typed).include?("shoe-1"), "typed contains query")
 
+  # Exercise the public typed-query DSL against the real managed-local Vespa
+  # backend. These assertions intentionally distinguish operator semantics, not
+  # merely successful request construction.
+  phrase = index.query(SearchKernel::Query.contains("title", SearchKernel::Query.phrase("running", "shoes"))).limit(20).execute
+  same(%w[shoe-1 shoe-2], ids(phrase).sort, "typed phrase query")
+
+  near = index.query(SearchKernel::Query.contains("title", SearchKernel::Query.near("running", "shoes"))).limit(20).execute
+  same(%w[shoe-1 shoe-2], ids(near).sort, "typed near query")
+  ordered_near = index.query(SearchKernel::Query.contains("title", SearchKernel::Query.onear("running", "shoes"))).limit(20).execute
+  same(%w[shoe-1 shoe-2], ids(ordered_near).sort, "typed ordered-near query")
+
+  fuzzy = index.query(SearchKernel::Query.contains("brand", SearchKernel::Query.fuzzy("Acmf"))).limit(20).execute
+  check(ids(fuzzy).include?("shoe-1") && ids(fuzzy).include?("bag-1"), "typed fuzzy query")
+
+  weak = index.query(SearchKernel::Query.weak_and(
+    SearchKernel::Query.contains("title", "running"),
+    SearchKernel::Query.contains("title", "shoes")
+  )).limit(20).execute
+  check(ids(weak).include?("shoe-1") && ids(weak).include?("shoe-2"), "typed weak-and query")
+
+  wand = index.query(SearchKernel::Query.wand("title", {"running" => 10, "shoes" => 1})).limit(20).execute
+  check(ids(wand).include?("shoe-1") && ids(wand).include?("shoe-2"), "typed WAND query")
+
+  ranked_query = index.query(SearchKernel::Query.rank(
+    SearchKernel::Query.contains("title", "shoes"),
+    SearchKernel::Query.contains("title", "running")
+  )).limit(20).execute
+  same(%w[shoe-1 shoe-2], ids(ranked_query).sort, "typed rank-query composition")
+
   boosted = index.search("shoes").ranking("boosted").input("boost", 3.0).limit(10).execute
   check(boosted.hits.all? { |hit| hit.score && hit.features.fetch("query(boost)") == 3.0 }, "scalar query input + match feature")
 
@@ -440,6 +469,10 @@ puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 
 # Executable capability evidence from the public Ruby facade.
 # SKC: query.term/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.phrase/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.proximity/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.fuzzy/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.weighted_and_wand/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.boolean/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: filter.textual/basic kinds=ergonomic,e2e runtime=managed-local
