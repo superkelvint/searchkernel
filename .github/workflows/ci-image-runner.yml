@@ -631,6 +631,8 @@ jobs:
 
             client-e2e)
               run_phase client-e2e-release-support "$PYTHON" tools/check-release-support.py
+              run_phase client-release-package-tests "$PYTHON" tools/test_package_consumer_release.py
+              run_phase client-release-qualification-tests "$PYTHON" tools/test_qualify_consumer_release.py
               "$PYTHON" tools/check-python-dependencies.py
               run_phase client-release-build "$PYTHON" tools/package-consumer-release.py --output /artifacts/consumer-release
               run_phase client-release-verify "$PYTHON" tools/check-consumer-release.py /artifacts/consumer-release
