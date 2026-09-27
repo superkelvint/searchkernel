@@ -15,8 +15,8 @@ def daemon_binary():
  if not target.is_absolute(): target=ROOT/target
  return target/'release'/'searchkerneld'
 RUST_BUNDLE_PATHS = [
- 'Cargo.toml', 'Cargo.lock', 'README.md', 'core/README.md', 'core/crates',
- 'searchkerneld', 'api',
+ 'Cargo.toml', 'Cargo.lock', 'LICENSE', 'README.md', 'core/README.md',
+ 'core/crates', 'searchkerneld', 'api',
 ]
 def build_rust_bundle(rust_bundle):
  missing=[rel for rel in RUST_BUNDLE_PATHS if not (ROOT/rel).exists()]
