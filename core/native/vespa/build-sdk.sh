@@ -353,6 +353,21 @@ with open(path, "w", encoding="utf-8") as stream:
     stream.write("\n")
 PY
 
+    PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
+    RUSTC_BIN=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
+    NATIVE_TARGET=${SK_NATIVE_TARGET:-$("$RUSTC_BIN" -vV | sed -n 's/^host: //p')}
+    if [ -z "$NATIVE_TARGET" ]; then
+        echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
+        exit 1
+    fi
+    RUSTC="$RUSTC_BIN" "$PYTHON_BIN" "$ROOT/tools/native-build-fingerprint.py" \
+        --root "$ROOT" \
+        --vespa-root "$VESPA_ROOT" \
+        --base-sdk "$BASE_SDK" \
+        --target "$NATIVE_TARGET" \
+        --scope full \
+        --output "$SDK/native-build-fingerprint-v2.txt"
+
     SDK_BACKUP="${SDK_PACKAGE}.old.$"
     if [ -e "$SDK_BACKUP" ]; then
         echo "adapter backup path already exists: $SDK_BACKUP" >&2

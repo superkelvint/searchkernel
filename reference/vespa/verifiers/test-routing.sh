@@ -50,54 +50,90 @@ grep -F 'prepare_verifier_sdk' "$VERIFY" >/dev/null || {
 }
 
 
-# A verifier SDK whose native fingerprint still matches the checkout must be
-# reused across independent top-level verifier invocations. A stale fingerprint
-# must rebuild instead. Mock only fingerprint generation and the expensive SDK
-# builder; prepare_verifier_sdk itself is exercised unchanged.
+# Verifier SDK caching must prove the real lifecycle: a clean first invocation
+# builds and publishes cache metadata, a second independent process reuses it,
+# moving the immutable base invalidates the adapter because its absolute RPATH
+# changes, and a stale fingerprint rebuilds again.
 CACHE_TEST="$SOURCE_TEST/cache"
-mkdir -p "$CACHE_TEST/bin" "$CACHE_TEST/sdk/include" "$CACHE_TEST/sdk/lib" "$CACHE_TEST/base/lib" "$CACHE_TEST/vespa"
-printf '{}\n' > "$CACHE_TEST/sdk/manifest.json"
-printf '#define SK_NATIVE_ABI_VERSION 14U\n' > "$CACHE_TEST/sdk/include/searchkernel_vespa.h"
-: > "$CACHE_TEST/sdk/lib/libsearchkernel_vespa.so"
-printf 'fingerprint-version=3\nsha256=cached\n' > "$CACHE_TEST/sdk/native-build-fingerprint-v2.txt"
-cat > "$CACHE_TEST/bin/python3" <<'SH'
-#!/bin/bash
-output=
-while (($#)); do
-    if [[ "$1" == --output ]]; then output=$2; shift 2; else shift; fi
-done
-printf 'fingerprint-version=3\nsha256=cached\n' > "$output"
-SH
+mkdir -p "$CACHE_TEST/bin" "$CACHE_TEST/base/lib" "$CACHE_TEST/base-moved/lib" "$CACHE_TEST/vespa"
+printf '{"kind":"vespa-base","vespa_commit":"fixture"}\n' > "$CACHE_TEST/base/manifest.json"
+cp "$CACHE_TEST/base/manifest.json" "$CACHE_TEST/base-moved/manifest.json"
 cat > "$CACHE_TEST/bin/bash" <<'SH'
 #!/bin/bash
+set -euo pipefail
 if [[ "${1:-}" == */core/native/vespa/build-sdk.sh ]]; then
-    : > "$SEARCHKERNEL_BUILD_SDK_MARKER"
+    printf 'build\n' >> "$SEARCHKERNEL_BUILD_SDK_MARKER"
+    mkdir -p "$SK_NATIVE_SDK/include" "$SK_NATIVE_SDK/lib"
+    printf '{}\n' > "$SK_NATIVE_SDK/manifest.json"
+    printf '#define SK_NATIVE_ABI_VERSION 14U\n' > "$SK_NATIVE_SDK/include/searchkernel_vespa.h"
+    : > "$SK_NATIVE_SDK/lib/libsearchkernel_vespa.so"
+
+    python_bin=$(/bin/bash "$SEARCHKERNEL_TEST_REPO_ROOT/tools/resolve-python.sh")
+    rustc_bin=$(/bin/bash "$SEARCHKERNEL_TEST_REPO_ROOT/tools/resolve-rust.sh" rustc)
+    native_target="${SK_NATIVE_TARGET:-$("$rustc_bin" -vV | sed -n 's/^host: //p')}"
+    RUSTC="$rustc_bin" "$python_bin" "$SEARCHKERNEL_TEST_REPO_ROOT/tools/native-build-fingerprint.py" \
+        --root "$SEARCHKERNEL_TEST_REPO_ROOT" \
+        --vespa-root "$VESPA_ROOT" \
+        --base-sdk "$SK_NATIVE_BASE_SDK" \
+        --target "$native_target" \
+        --scope full \
+        --output "$SK_NATIVE_SDK/native-build-fingerprint-v2.txt"
     exit 0
 fi
 exec /bin/bash "$@"
 SH
-chmod +x "$CACHE_TEST/bin/python3" "$CACHE_TEST/bin/bash"
-SEARCHKERNEL_BUILD_SDK_MARKER="$CACHE_TEST/build-sdk-called" \
-SEARCHKERNEL_VERIFIER_BASE_SDK="$CACHE_TEST/base" \
-SEARCHKERNEL_VERIFIER_VESPA_ROOT="$CACHE_TEST/vespa" \
-SEARCHKERNEL_VERIFIER_SDK="$CACHE_TEST/sdk" \
-SEARCHKERNEL_VERIFIER_SDK_BUILD="$CACHE_TEST/build" \
-PATH="$CACHE_TEST/bin:$PATH" \
-    /bin/bash -euo pipefail -c 'unset SK_NATIVE_SDK; source "$1"; prepare_verifier_sdk' _ "$COMMON"
-[[ ! -e "$CACHE_TEST/build-sdk-called" ]] || {
-    echo "matching verifier SDK fingerprint unexpectedly rebuilt the adapter" >&2
+chmod +x "$CACHE_TEST/bin/bash"
+
+run_cache_prepare() {
+    local base=$1
+    SEARCHKERNEL_BUILD_SDK_MARKER="$CACHE_TEST/build-sdk-called" \
+    SEARCHKERNEL_TEST_REPO_ROOT="$ROOT" \
+    SEARCHKERNEL_VERIFIER_BASE_SDK="$base" \
+    SEARCHKERNEL_VERIFIER_VESPA_ROOT="$CACHE_TEST/vespa" \
+    SEARCHKERNEL_VERIFIER_SDK="$CACHE_TEST/sdk" \
+    SEARCHKERNEL_VERIFIER_SDK_BUILD="$CACHE_TEST/build" \
+    PATH="$CACHE_TEST/bin:$PATH" \
+        /bin/bash -euo pipefail -c 'unset SK_NATIVE_SDK SEARCHKERNEL_VERIFIER_SDK_PREPARED; source "$1"; prepare_verifier_sdk' _ "$COMMON"
+}
+build_count() {
+    if [[ -f "$CACHE_TEST/build-sdk-called" ]]; then
+        wc -l < "$CACHE_TEST/build-sdk-called" | tr -d '[:space:]'
+    else
+        printf '0\n'
+    fi
+}
+
+run_cache_prepare "$CACHE_TEST/base"
+[[ "$(build_count)" == 1 ]] || {
+    echo "clean verifier SDK did not build exactly once" >&2
     exit 1
 }
+[[ -f "$CACHE_TEST/sdk/native-build-fingerprint-v2.txt" ]] || {
+    echo "verifier adapter build did not publish its fingerprint" >&2
+    exit 1
+}
+
+run_cache_prepare "$CACHE_TEST/base"
+[[ "$(build_count)" == 1 ]] || {
+    echo "matching verifier SDK fingerprint did not reuse the built adapter" >&2
+    exit 1
+}
+
+run_cache_prepare "$CACHE_TEST/base-moved"
+[[ "$(build_count)" == 2 ]] || {
+    echo "changed verifier base SDK location did not rebuild the adapter" >&2
+    exit 1
+}
+
 printf 'fingerprint-version=3\nsha256=stale\n' > "$CACHE_TEST/sdk/native-build-fingerprint-v2.txt"
-SEARCHKERNEL_BUILD_SDK_MARKER="$CACHE_TEST/build-sdk-called" \
-SEARCHKERNEL_VERIFIER_BASE_SDK="$CACHE_TEST/base" \
-SEARCHKERNEL_VERIFIER_VESPA_ROOT="$CACHE_TEST/vespa" \
-SEARCHKERNEL_VERIFIER_SDK="$CACHE_TEST/sdk" \
-SEARCHKERNEL_VERIFIER_SDK_BUILD="$CACHE_TEST/build" \
-PATH="$CACHE_TEST/bin:$PATH" \
-    /bin/bash -euo pipefail -c 'unset SK_NATIVE_SDK; source "$1"; prepare_verifier_sdk' _ "$COMMON"
-[[ -e "$CACHE_TEST/build-sdk-called" ]] || {
+run_cache_prepare "$CACHE_TEST/base-moved"
+[[ "$(build_count)" == 3 ]] || {
     echo "stale verifier SDK fingerprint did not rebuild the adapter" >&2
+    exit 1
+}
+
+grep -F -- '--base-sdk "$BASE_SDK"' "$ROOT/core/native/vespa/build-sdk.sh" >/dev/null || {
+    echo "adapter-only SDK build does not bind its fingerprint to BASE_SDK" >&2
     exit 1
 }
 

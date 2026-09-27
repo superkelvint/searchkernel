@@ -53,13 +53,16 @@ verifier_sdk_cache_valid() {
   [[ -f "$SDK/lib/libsearchkernel_vespa.so" ]] || return 1
   [[ -f "$SDK/native-build-fingerprint-v2.txt" ]] || return 1
 
-  local native_target expected
-  native_target="${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+  local native_target expected python_bin rustc_bin
+  python_bin="$(bash "$REPO_ROOT/tools/resolve-python.sh")" || return 1
+  rustc_bin="$(bash "$REPO_ROOT/tools/resolve-rust.sh" rustc)" || return 1
+  native_target="${SK_NATIVE_TARGET:-$("$rustc_bin" -vV | sed -n 's/^host: //p')}"
   [[ -n "$native_target" ]] || return 1
   expected="$(mktemp "${TMPDIR:-/tmp}/searchkernel-verifier-fingerprint.XXXXXX")"
-  if ! python3 "$REPO_ROOT/tools/native-build-fingerprint.py" \
+  if ! RUSTC="$rustc_bin" "$python_bin" "$REPO_ROOT/tools/native-build-fingerprint.py" \
       --root "$REPO_ROOT" \
       --vespa-root "$VESPA_ROOT" \
+      --base-sdk "$BASE_SDK" \
       --target "$native_target" \
       --scope full \
       --output "$expected"; then
