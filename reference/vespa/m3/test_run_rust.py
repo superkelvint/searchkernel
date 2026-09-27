@@ -94,8 +94,12 @@ def main() -> int:
             (f"--target-dir {target_dir}" in cargo_args, cargo_args),
             (f"--manifest-path {expected_manifest}" in cargo_args, cargo_args),
             (
-                runtime_path == f"{expected_adapter}:{existing_runtime}",
+                runtime_path.split(":", 1)[0] == str(expected_adapter),
                 runtime_path,
+            ),
+            (
+                str(existing_runtime) not in runtime_path.split(":"),
+                f"ambient loader path leaked into canonical runtime: {runtime_path}",
             ),
             (bool(output.read_text(encoding="utf-8").strip()), "empty run-rust output"),
         )

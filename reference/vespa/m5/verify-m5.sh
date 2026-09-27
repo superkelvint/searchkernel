@@ -57,8 +57,7 @@ run_driver_config() {
     data=$2
     config=$3
     shift 3
-    LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$BIN" "$mode" "$data" "$config" "$@"
+    run_native_executable "$BIN" "$mode" "$data" "$config" "$@"
 }
 
 compare() {

@@ -19,9 +19,9 @@ python3 "$SCRIPT_DIR/validate.py"
 # baseline remains green. M13 is the current baseline; it transitively
 # preserves M0-M12 before the public Phase 10 product-path check runs.
 if [[ "$BASELINE_ALREADY_PROVED" != 1 ]]; then
-  "$ROOT/reference/vespa/verify-through.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"
+  "$ROOT/tools/run-verifier.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"
 fi
-"$ROOT/reference/vespa/verify-through.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"
+"$ROOT/tools/run-verifier.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"
 
 "$SCRIPT_DIR/verify-entry-parity.sh"
 
@@ -47,8 +47,7 @@ for scenario in "$SCRIPT_DIR"/scenarios/*.json; do
   id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
   data="$TARGET/$id-data"
   mkdir -p "$data"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$DRIVER" "$scenario" "$data" \
+  run_native_executable "$DRIVER" "$scenario" "$data" \
     > "$TARGET/$id.actual.json" 2> "$TARGET/$id.native.log"
   python3 "$SCRIPT_DIR/compare.py" \
     "$SCRIPT_DIR/expected/$id.json" "$TARGET/$id.actual.json"

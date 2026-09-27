@@ -89,8 +89,7 @@ for scenario in "$M13"/scenarios/[0-9][0-9]-*.json; do
 
   low_config="$TMP/$id-low-config"
   low_data="$TMP/$id-low-data"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$LOW" "$scenario" "$low_config" "$low_data" >"$TMP/$id-low.json"
+  run_native_executable "$LOW" "$scenario" "$low_config" "$low_data" >"$TMP/$id-low.json"
   "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-low.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$M13/compare.py" "$TMP/$id-oracle.json" <"$TMP/$id-low.json"
@@ -98,8 +97,7 @@ for scenario in "$M13"/scenarios/[0-9][0-9]-*.json; do
 
   adapter_config="$TMP/$id-adapter-config"
   adapter_data="$TMP/$id-adapter-data"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$ADAPTER" "$scenario" "$DEFINITION_BIN" "$adapter_config" "$adapter_data" \
+  run_native_executable "$ADAPTER" "$scenario" "$DEFINITION_BIN" "$adapter_config" "$adapter_data" \
     >"$TMP/$id-adapter.json"
   "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-adapter.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -111,8 +109,7 @@ ERRORS="$M13/scenarios/errors.json"
 while read -r id expected path; do
   config="$TMP/error-$id-config"
   data="$TMP/error-$id-data"
-  actual="$(LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$ERROR" "$ERRORS" "$id" "$DEFINITION_BIN" "$config" "$data" 2>/dev/null || true)"
+  actual="$(run_native_executable "$ERROR" "$ERRORS" "$id" "$DEFINITION_BIN" "$config" "$data" 2>/dev/null || true)"
   [[ "$actual" == "$expected" ]] || {
     echo "M13 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1

@@ -42,11 +42,11 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
 fi
 
 if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
-  "$ROOT/tools/run-runtime.sh" native "$CONFIG_BIN" "$TMP/config"
+  run_native_executable "$CONFIG_BIN" "$TMP/config"
 else
   SEARCHKERNEL_CARGO_MESSAGES="$TMP/cargo-messages.jsonl" \
   SEARCHKERNEL_RUNTIME_BASE_SDK="$(resolved_native_base_sdk)" \
-    "$ROOT/tools/run-runtime.sh" native "$CONFIG_BIN" "$TMP/config"
+    run_native_executable "$CONFIG_BIN" "$TMP/config"
 fi
 
 PROBE="$TMP/searchreply_probe"
@@ -67,8 +67,7 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
   python3 "$ROOT/reference/vespa/common/compare_json.py" \
     "$SCRIPT_DIR/expected/searchreply.json" "$TMP/oracle.json"
 fi
-LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  "$PROBE" "$TMP/data" "$TMP/config" > "$TMP/native.json"
+run_native_executable "$PROBE" "$TMP/data" "$TMP/config" > "$TMP/native.json"
 python3 "$ROOT/reference/vespa/common/compare_json.py" \
   "$SCRIPT_DIR/expected/searchreply.json" "$TMP/native.json"
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -77,8 +76,10 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
 fi
 
 HARDENING_SDK="${SK_NATIVE_HARDENING_SDK:-$ROOT/target/vespa-verifier/searchreply/sdk/hardening}"
+HARDENING_RUNTIME_LIB_DIRS=
 if using_published_vespa_toolchain; then
   SEARCHREPLY_BASE_SDK="$(resolved_native_base_sdk)"
+  HARDENING_RUNTIME_LIB_DIRS="$HARDENING_SDK/lib:$SEARCHREPLY_BASE_SDK/lib"
   SK_NATIVE_SDK="$HARDENING_SDK" \
   SK_NATIVE_BUILD_DIR="$ROOT/target/vespa-verifier/searchreply/native-build/hardening" \
   SK_NATIVE_BASE_SDK="$SEARCHREPLY_BASE_SDK" \
@@ -87,6 +88,7 @@ if using_published_vespa_toolchain; then
   SK_NATIVE_REGENERATE_BINDINGS=0 \
     "$ROOT/core/native/vespa/build-sdk.sh"
 else
+  HARDENING_RUNTIME_LIB_DIRS="$HARDENING_SDK/lib"
   SK_NATIVE_SDK="$HARDENING_SDK" \
   SK_NATIVE_BUILD_DIR="$ROOT/target/vespa-verifier/searchreply/native-build/hardening" \
   SK_NATIVE_ENABLE_FAILPOINTS=1 \
@@ -99,6 +101,8 @@ HARDENING_PROBE="$TMP/searchreply_metadata_hardening_probe"
   -L"$HARDENING_SDK/lib" -Wl,-rpath,"$HARDENING_SDK/lib" \
   -lsearchkernel_vespa -o "$HARDENING_PROBE"
 require_native_driver "$HARDENING_PROBE" sk_test_search_reply_metadata
-LD_LIBRARY_PATH="$HARDENING_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  "$HARDENING_PROBE"
+(
+  export SEARCHKERNEL_RUNTIME_LIB_DIRS="$HARDENING_RUNTIME_LIB_DIRS"
+  run_native_executable "$HARDENING_PROBE"
+)
 echo 'SearchReply semantics verification passed'

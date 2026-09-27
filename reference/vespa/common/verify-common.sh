@@ -161,6 +161,20 @@ fail_verification() {
   exit 1
 }
 
+run_native_executable() {
+  "$REPO_ROOT/tools/run-runtime.sh" native "$@"
+}
+
+run_native_executable_with_sdk() {
+  local adapter_sdk="$1"
+  shift
+  local base_sdk
+  base_sdk="$(resolved_native_base_sdk)"
+  SEARCHKERNEL_RUNTIME_LIB_DIRS="$adapter_sdk/lib:$base_sdk/lib" \
+  SEARCHKERNEL_RUNTIME_LD_PRELOAD="${SEARCHKERNEL_RUNTIME_LD_PRELOAD:-}" \
+    "$REPO_ROOT/tools/run-runtime.sh" native "$@"
+}
+
 parse_verifier_args() {
   SKIP_WORKSPACE_QUALITY=0
   while (($#)); do

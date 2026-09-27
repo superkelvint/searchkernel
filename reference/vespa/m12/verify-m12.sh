@@ -44,11 +44,12 @@ prepare_fixture() {
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$M12/oracle/prepare-fixture.sh" "$scenario" "$config" "$data"
   else
-    "$PREPARE" "$scenario" "$config" "$data"
+    run_native_executable "$PREPARE" "$scenario" "$config" "$data"
   fi
 }
 
 DEFINITION_DIR="$(mktemp -d)"
+M12_ERROR="$CARGO_TARGET_DIR/debug/searchkernel-m12-error"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" "$DEFINITION_DIR"' EXIT
 DEFINITION_BIN="$($M12/prepare-portable-definition.sh "$DEFINITION_DIR")"
@@ -63,7 +64,7 @@ for s in "$M12"/scenarios/[0-9][0-9]-*.json; do
 
   cfg="$TMP/$id-cfg"; data="$TMP/$id-data"
   prepare_fixture "$s" "$cfg" "$data"
-  cargo run --quiet --manifest-path "$M12/rust-driver/Cargo.toml" --bin searchkernel-m12-driver -- \
+  run_native_executable "$LOW" \
     "$s" "$cfg" "$data" | "$M12/canonicalize.py" > "$TMP/low-$id.json"
   "$M12/compare.py" "$M12/expected/$id.json" "$TMP/low-$id.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -73,7 +74,7 @@ for s in "$M12"/scenarios/[0-9][0-9]-*.json; do
   # Re-prepare because opening/matching/close may mutate persistent engine state.
   rm -rf "$cfg" "$data"
   prepare_fixture "$s" "$cfg" "$data"
-  cargo run --quiet --manifest-path "$M12/rust-driver/Cargo.toml" --bin searchkernel-m12-adapter-driver -- \
+  run_native_executable "$ADAPTER" \
     "$s" "$DEFINITION_BIN" "$cfg" "$data" | "$M12/canonicalize.py" > "$TMP/adapter-$id.json"
   "$M12/compare.py" "$M12/expected/$id.json" "$TMP/adapter-$id.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -86,7 +87,7 @@ ERRORS="$M12/scenarios/errors.json"
 while read -r id expected path; do
   cfg="$TMP/error-$id-cfg"; data="$TMP/error-$id-data"
   prepare_fixture "$M12/scenarios/01-exact-near-far.json" "$cfg" "$data"
-  actual="$(cargo run --quiet --manifest-path "$M12/rust-driver/Cargo.toml" --bin searchkernel-m12-error -- "$ERRORS" "$id" "$cfg" "$data" "$DEFINITION_BIN" 2>/dev/null || true)"
+  actual="$(run_native_executable "$M12_ERROR" "$ERRORS" "$id" "$cfg" "$data" "$DEFINITION_BIN" 2>/dev/null || true)"
   [[ "$actual" == "$expected" ]] || {
     echo "M12 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1

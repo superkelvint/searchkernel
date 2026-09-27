@@ -26,8 +26,7 @@ fi
 require_native_driver "$BIN" sk_engine_put sk_engine_update sk_engine_remove sk_engine_search
 
 rm -rf "$TARGET/data"
-LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$BIN" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
+run_native_executable "$BIN" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
 
 python3 "$ROOT/common/compare_json.py" \
     "$ROOT/m2/expected/01-crud-attribute-search.json" \

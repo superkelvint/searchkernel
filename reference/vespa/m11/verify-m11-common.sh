@@ -61,14 +61,12 @@ build_m11_driver() {
     sk_test_failpoint_set sk_test_failpoint_is_blocked
   rm -rf "$M11_CONFIG"
   mkdir -p "$(dirname "$M11_CONFIG")"
-  LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$M11_DRIVER" compile "$M11_CONFIG"
+  run_native_executable_with_sdk "$M11_SDK" "$M11_DRIVER" compile "$M11_CONFIG"
 }
 
 run_m11_driver() {
   local mode="$1"
   local data="$2"
   mkdir -p "$data"
-  LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$M11_DRIVER" "$mode" "$M11_CONFIG" "$data"
+  run_native_executable_with_sdk "$M11_SDK" "$M11_DRIVER" "$mode" "$M11_CONFIG" "$data"
 }

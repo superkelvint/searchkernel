@@ -37,8 +37,9 @@ cargo clippy --quiet -p searchkernel --example try_searchkernel_client_api_e2e \
 
 LOG="$CARGO_TARGET_DIR/phase10-e2e.log"
 mkdir -p "$CARGO_TARGET_DIR"
-cargo run --quiet -p searchkernel --features native \
-  --example try_searchkernel_client_api_e2e | tee "$LOG"
+cargo build --quiet -p searchkernel --features native \
+  --example try_searchkernel_client_api_e2e
+run_native_executable "$CARGO_TARGET_DIR/debug/examples/try_searchkernel_client_api_e2e" | tee "$LOG"
 
 for marker in \
   'CREATE INDEX' \

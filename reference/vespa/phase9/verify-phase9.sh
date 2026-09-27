@@ -43,18 +43,12 @@ fi
   "$SDK/lib/libsearchkernel_vespa.so" \
   "$TMP/searchkernel-vespa-engine.abi.xml"
 
-# Keep the cumulative gates in the phase9 acceptance path. The extra library
-# directories are needed when a pinned-Vespa oracle was built outside its
-# original container image.
-VESPA_LIBS=""
-if live_oracle_enabled; then
-  VESPA_LIBS="$(find "$VESPA_ROOT" -type d \( -path '*/src/vespa/*' -o -path '*/testlib' -o -path '*/test' -o -path '*/features' -o -path '*/memoryindex' \) -print | paste -sd: -)"
-fi
-VESPA_DEPS_LIB="${VESPA_DEPS_LIB_DIR:-${VESPA_DEPS:+$VESPA_DEPS/lib64}}"
-export LD_LIBRARY_PATH="$SDK/lib${VESPA_DEPS_LIB:+:$VESPA_DEPS_LIB}${VESPA_LIBS:+:$VESPA_LIBS}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# Keep cumulative gates in the phase9 acceptance path without exporting a
+# process-wide loader path. Search Kernel binaries use the canonical native
+# launcher; live oracle scripts own their pinned-Vespa runtime separately.
 
 if [[ "$BASELINE_ALREADY_PROVED" != 1 ]]; then
-  "$ROOT/reference/vespa/verify-through.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"
+  "$ROOT/tools/run-verifier.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"
 fi
 "$ROOT/reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh"
 "$PHASE9/check-structure.sh"
@@ -62,7 +56,7 @@ fi
 cc -std=c11 -Wall -Wextra -Werror -I"$SDK/include" \
   "$PHASE9/native-probe/probe.c" -L"$SDK/lib" -lsearchkernel_vespa \
   -Wl,-rpath,"$SDK/lib" -o "$TMP/probe"
-actual="$("$TMP/probe")"
+actual="$(run_native_executable "$TMP/probe")"
 expected="$(cat "$PHASE9/expected/01-additive-handles.json")"
 python3 - "$actual" "$expected" <<'PY'
 import json
@@ -80,27 +74,27 @@ PY
 # execution. The broader adapter `typed_query` test filter currently contains
 # thirteen tests; this cumulative verifier intentionally selects the five
 # real-engine slices required by the Phase 9 contract.
-cargo test -p searchkernel-vespa-engine --test native_crud \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-vespa-engine --test native_crud \
   native_arithmetic_updates_survive_read_and_reopen
-cargo test -p searchkernel-vespa-engine --test native_crud \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-vespa-engine --test native_crud \
   native_nearest_neighbor_options_accept_zero_explore_additional_hits
-cargo test -p searchkernel-vespa-engine --test native_crud \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-vespa-engine --test native_crud \
   native_grouping_decodes_quantiles_and_summary_hits
-cargo test -p searchkernel-vespa-engine --test native_crud \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-vespa-engine --test native_crud \
   native_grouping_filter_survives_serialization_and_filters_groups
-cargo test -p searchkernel-vespa-engine --test native_crud \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-vespa-engine --test native_crud \
   native_raw_sort_spec_is_available_through_the_safe_request_wrapper
-cargo test -p searchkernel-vespa-engine --test native_crud \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-vespa-engine --test native_crud \
   native_in_supports_string_and_integer_values_without_approximating_invalid_input
-cargo test -p searchkernel-ir-adapter --lib \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-ir-adapter --lib \
   typed_query_a_reaches_real_vespa_through_the_adapter
-cargo test -p searchkernel-ir-adapter --lib \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-ir-adapter --lib \
   typed_query_c_special_fields_reach_real_vespa_through_the_adapter
-cargo test -p searchkernel-ir-adapter --lib \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-ir-adapter --lib \
   typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members
-cargo test -p searchkernel-ir-adapter --lib \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-ir-adapter --lib \
   typed_query_c_geo_reaches_real_vespa_for_location_and_bounding_box
-cargo test -p searchkernel-ir-adapter --lib \
+run_native_executable "$(bash "$ROOT/tools/resolve-rust.sh" cargo)" test -p searchkernel-ir-adapter --lib \
   typed_query_c_nearest_neighbor_reaches_real_vespa_through_the_adapter
 
 echo 'phase9 additive native ABI verification passed'

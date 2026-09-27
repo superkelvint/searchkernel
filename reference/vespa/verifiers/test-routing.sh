@@ -9,7 +9,8 @@ INTEGRATION="$ROOT/reference/vespa/i/verify-i.sh"
 PHASE9="$ROOT/reference/vespa/phase9/verify-phase9.sh"
 HNSW="$ROOT/reference/vespa/verifiers/nearest-neighbor/hnsw/verify.sh"
 M14="$ROOT/reference/vespa/m14/verify-m14.sh"
-CI_IMAGE_RUNNER="$ROOT/.github/workflows/ci-image-runner.yml"
+RUN_VERIFIER="$ROOT/tools/run-verifier.sh"
+SEARCHREPLY="$ROOT/reference/vespa/searchreply/verify-searchreply.sh"
 
 bash -n "$VERIFY"
 bash -n "$DEV"
@@ -17,6 +18,11 @@ bash -n "$INTEGRATION"
 bash -n "$PHASE9"
 bash -n "$HNSW"
 bash -n "$M14"
+[[ -x "$RUN_VERIFIER" ]] || {
+    echo "canonical verifier launcher is missing or not executable: $RUN_VERIFIER" >&2
+    exit 1
+}
+bash -n "$RUN_VERIFIER"
 
 # Sourcing verify-common must be read-only. Supply every resolved path so this
 # check needs no native installation, then shadow bash to detect any accidental
@@ -142,7 +148,7 @@ while IFS= read -r wrapper; do
 done < <(find "$DIR" -type f -name verify.sh -print | sort)
 
 list="$("$VERIFY" --list)"
-for target in     vespa.grouping.yql     vespa.hardening.core     vespa.hardening.sanitizers     vespa.persistence.reopen     milestone.m14     product.integration; do
+for target in     vespa.grouping.yql     vespa.hardening.core     vespa.hardening.sanitizers     vespa.persistence.reopen     vespa.phase9     milestone.m14     product.integration; do
     grep -Fx "  $target" <<<"$list" >/dev/null || {
         echo "missing canonical verifier target from --list: $target" >&2
         exit 1
@@ -173,6 +179,74 @@ grep -F "unknown verifier target: vespa.this-target-does-not-exist" <<<"$unknown
 
 grep -F 'verify_target "$@"' "$DEV" >/dev/null || {
     echo "./dev verify does not forward verifier arguments" >&2
+    exit 1
+}
+grep -F 'tools/run-verifier.sh' "$DEV" >/dev/null || {
+    echo "./dev verify does not use the canonical verifier launcher" >&2
+    exit 1
+}
+grep -F 'SEARCHKERNEL_RUNTIME_LIB_DIRS' "$VERIFY" >/dev/null || {
+    echo "verify-through does not establish the canonical native runtime closure" >&2
+    exit 1
+}
+grep -F 'run_native_executable "$CONFIG_BIN"' "$SEARCHREPLY" >/dev/null || {
+    echo "SearchReply executes its Cargo-built config binary outside the canonical native launcher" >&2
+    exit 1
+}
+grep -F '"$REPO_ROOT/tools/run-runtime.sh" native "$@"' "$COMMON" >/dev/null || {
+    echo "verify-common native helper does not delegate to the canonical runtime launcher" >&2
+    exit 1
+}
+
+python3 - "$ROOT/reference/vespa" "$SEARCHREPLY" "$0" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1]).resolve()
+allowed = {Path(sys.argv[2]).resolve(), Path(sys.argv[3]).resolve()}
+violations = []
+tokens = ("$SDK", "$sdk", "$M11_SDK", "$ADAPTER_LIB")
+for path in root.rglob("*.sh"):
+    resolved = path.resolve()
+    if resolved in allowed or "oracle" in path.parts:
+        continue
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if "LD_LIBRARY_PATH=" in line and any(token in line for token in tokens):
+            violations.append(f"{path.relative_to(root)}:{lineno}:{line.strip()}")
+if violations:
+    raise SystemExit(
+        "Search Kernel verifier bypasses canonical native runtime launcher:\n  "
+        + "\n  ".join(violations)
+    )
+PY
+
+for migrated in \
+    "$ROOT/reference/vespa/i/verify-i.sh" \
+    "$ROOT/reference/vespa/m0/verify-m0.sh" \
+    "$ROOT/reference/vespa/m1/verify-m1.sh" \
+    "$ROOT/reference/vespa/m2/verify-m2.sh" \
+    "$ROOT/reference/vespa/m5/verify-m5.sh" \
+    "$ROOT/reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh" \
+    "$ROOT/reference/vespa/m10/feature-values/verify-feature-values.sh" \
+    "$ROOT/reference/vespa/m13/verify-m13.sh" \
+    "$ROOT/reference/vespa/m14/verify-m14.sh" \
+    "$ROOT/reference/vespa/recovery/verify-recovery.sh"; do
+    grep -F 'run_native_executable' "$migrated" >/dev/null || {
+        echo "native verifier does not use the canonical runtime launcher: $migrated" >&2
+        exit 1
+    }
+done
+for migrated in \
+    "$ROOT/reference/vespa/m11/verify-m11-common.sh" \
+    "$ROOT/reference/vespa/m11/verify-m11-core.sh" \
+    "$ROOT/reference/vespa/m11/verify-m11-sanitizers.sh"; do
+    grep -F 'run_native_executable_with_sdk' "$migrated" >/dev/null || {
+        echo "M11 verifier does not use the explicit-SDK canonical runtime launcher: $migrated" >&2
+        exit 1
+    }
+done
+grep -F '"$ROOT/tools/run-runtime.sh" native "$BIN" "$MODE"' "$ROOT/reference/vespa/m3/run-rust.sh" >/dev/null || {
+    echo "M3 driver does not delegate through the canonical native launcher" >&2
     exit 1
 }
 grep -F '"${@:2}"' "$VERIFY" >/dev/null || {
@@ -208,12 +282,12 @@ for script in "$INTEGRATION" "$PHASE9"; do
         echo "cumulative verifier does not guard its M13 baseline: $script" >&2
         exit 1
     }
-    grep -F '"$ROOT/reference/vespa/verify-through.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"' "$script" >/dev/null || {
+    grep -F '"$ROOT/tools/run-verifier.sh" m13 "${CHILD_VERIFIER_ARGS[@]}"' "$script" >/dev/null || {
         echo "cumulative verifier no longer proves M13 by default: $script" >&2
         exit 1
     }
 done
-grep -F '"$ROOT/reference/vespa/verify-through.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"' "$INTEGRATION" >/dev/null || {
+grep -F '"$ROOT/tools/run-verifier.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"' "$INTEGRATION" >/dev/null || {
     echo "integration no longer forwards verifier args to Phase 10" >&2
     exit 1
 }
@@ -231,22 +305,11 @@ grep -F '"$ROOT/reference/vespa/m13/verify-m13.sh" --skip-workspace-quality' "$M
     exit 1
 }
 
-grep -F 'run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved' "$CI_IMAGE_RUNNER" >/dev/null || {
-    echo "native-full product integration does not reuse the established cumulative baseline" >&2
+if grep -R -n 'cargo run' "$ROOT/reference/vespa" --include='*.sh' | grep -v '/oracle/' | grep -v '/verifiers/test-routing.sh:' >/dev/null; then
+    echo "Search Kernel verifier bypasses canonical native runtime launcher through cargo run" >&2
+    grep -R -n 'cargo run' "$ROOT/reference/vespa" --include='*.sh' | grep -v '/oracle/' | grep -v '/verifiers/test-routing.sh:' >&2
     exit 1
-}
-grep -F 'run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved' "$CI_IMAGE_RUNNER" >/dev/null || {
-    echo "native-full Phase 9 does not reuse the established cumulative baseline" >&2
-    exit 1
-}
-hnsw_line="$(grep -nF 'run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
-integration_line="$(grep -nF 'run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
-phase9_line="$(grep -nF 'run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
-[[ -n "$hnsw_line" && -n "$integration_line" && -n "$phase9_line" ]] &&
-    (( hnsw_line < integration_line && hnsw_line < phase9_line )) || {
-        echo "native-full skips the cumulative baseline before HNSW/M14 has proved it" >&2
-        exit 1
-    }
+fi
 
 # M3 must execute the driver from Cargo's active target directory. The verifier
 # exports a shared CARGO_TARGET_DIR, so crate-local target/debug is not reliable.

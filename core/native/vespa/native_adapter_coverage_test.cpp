@@ -105,18 +105,26 @@ void packed_document_buffer_contract() {
               "packed buffer update setup");
 
     const uint8_t bytes[] = {'x', 'y'};
+    const auto zero_byte_sentinel = reinterpret_cast<const uint8_t *>(uintptr_t{1});
     const uint32_t one_length[] = {1};
     const uint32_t empty_length[] = {0};
     const uint32_t multiple_lengths[] = {1, 0, 1};
     expect_ok(sk_document_add_string_array(document, "empty-list", bytes, one_length, 0, 0,
                                            error.data(), ERROR_CAPACITY),
               "empty packed string array");
-    expect_ok(sk_document_add_string_array(document, "empty-item", bytes, empty_length, 1, 0,
+    expect_ok(sk_document_add_string_array(document, "empty-item", zero_byte_sentinel,
+                                           empty_length, 1, 0,
                                            error.data(), ERROR_CAPACITY),
               "zero-length packed string item");
     expect_ok(sk_document_add_string_array(document, "multiple-items", bytes, multiple_lengths,
                                            3, 2, error.data(), ERROR_CAPACITY),
               "multi-item packed string array");
+    const uint8_t boundary_bytes[] = {'a', 'b'};
+    const uint32_t offset_boundary_lengths[] = {1, 2};
+    expect_invalid(sk_document_add_string_array(document, "offset-boundary", boundary_bytes,
+                                                 offset_boundary_lengths, 2, 2, error.data(),
+                                                 ERROR_CAPACITY),
+                   "string array remaining bytes after offset advance");
 
     expect_invalid(sk_document_add_string_array(document, "short-total", bytes, one_length, 1, 0,
                                                  error.data(), ERROR_CAPACITY),
@@ -138,16 +146,11 @@ void packed_document_buffer_contract() {
                                                  1, oversized_total[0], error.data(),
                                                  ERROR_CAPACITY),
                    "string array total size limit");
-    const uint32_t overflow_boundary[] = {std::numeric_limits<uint32_t>::max()};
-    expect_invalid(sk_document_add_string_array(document, "overflow-boundary", bytes,
-                                                 overflow_boundary, 1, overflow_boundary[0],
-                                                 error.data(), ERROR_CAPACITY),
-                   "string array uint32 length boundary");
-
     expect_ok(sk_document_update_assign_string_array(update, "empty-list", bytes, one_length, 0,
                                                      0, error.data(), ERROR_CAPACITY),
               "empty packed update string array");
-    expect_ok(sk_document_update_assign_string_array(update, "empty-item", bytes, empty_length,
+    expect_ok(sk_document_update_assign_string_array(update, "empty-item", zero_byte_sentinel,
+                                                     empty_length,
                                                      1, 0, error.data(), ERROR_CAPACITY),
               "zero-length packed update string item");
     expect_ok(sk_document_update_assign_string_array(update, "multiple-items", bytes,
@@ -170,6 +173,10 @@ void packed_document_buffer_contract() {
                                                            one_length, 65537, 0, error.data(),
                                                            ERROR_CAPACITY),
                    "update string array count limit");
+    expect_invalid(sk_document_update_assign_string_array(
+                       update, "offset-boundary", boundary_bytes, offset_boundary_lengths, 2, 2,
+                       error.data(), ERROR_CAPACITY),
+                   "update string array remaining bytes after offset advance");
 
     const uint32_t max_element_length[] = {1024 * 1024 + 1};
     expect_invalid(sk_document_add_string_array(document, "oversized-element", bytes,
@@ -225,6 +232,40 @@ void packed_document_buffer_contract() {
                                              bytes, value_length, 0, 65537, error.data(),
                                              ERROR_CAPACITY),
                    "predicate feature count limit");
+    const uint32_t predicate_offset_lengths[] = {1, 2};
+    const uint32_t predicate_valid_lengths[] = {1, 0};
+    expect_invalid(sk_document_add_predicate(
+                       document, "predicate-key-offset", boundary_bytes,
+                       predicate_offset_lengths, 2, boundary_bytes, predicate_valid_lengths, 1, 2,
+                       error.data(), ERROR_CAPACITY),
+                   "predicate key remaining bytes after offset advance");
+    expect_invalid(sk_document_add_predicate(
+                       document, "predicate-value-offset", boundary_bytes,
+                       predicate_valid_lengths, 1, boundary_bytes, predicate_offset_lengths, 2,
+                       2, error.data(), ERROR_CAPACITY),
+                   "predicate value remaining bytes after offset advance");
+    expect_ok(sk_document_add_predicate(
+                  document, "predicate-empty-key", zero_byte_sentinel, empty_length, 0, bytes,
+                  one_length, 1, 1, error.data(), ERROR_CAPACITY),
+              "zero-length predicate key avoids packed pointer use");
+    expect_ok(sk_document_add_predicate(
+                  document, "predicate-empty-value", bytes, one_length, 1, zero_byte_sentinel,
+                  empty_length, 0, 1, error.data(), ERROR_CAPACITY),
+              "zero-length predicate value avoids packed pointer use");
+    expect_ok(sk_document_add_predicate(
+                  document, "predicate-empty-key-value", zero_byte_sentinel, empty_length, 0,
+                  zero_byte_sentinel, empty_length, 0, 1, error.data(), ERROR_CAPACITY),
+              "zero-length predicate key and value avoid packed pointer use");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "predicate-key-offset", boundary_bytes, predicate_offset_lengths, 2,
+                       boundary_bytes, predicate_valid_lengths, 1, 2, error.data(),
+                       ERROR_CAPACITY),
+                   "update predicate key remaining bytes after offset advance");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "predicate-value-offset", boundary_bytes, predicate_valid_lengths,
+                       1, boundary_bytes, predicate_offset_lengths, 2, 2, error.data(),
+                       ERROR_CAPACITY),
+                   "update predicate value remaining bytes after offset advance");
     const uint32_t empty_lengths[] = {0};
     expect_invalid(sk_document_add_predicate(document, "null-empty-key", nullptr, empty_lengths, 0,
                                              bytes, value_length, 1, 1, error.data(),
@@ -264,10 +305,10 @@ void packed_document_buffer_contract() {
                                              oversized_length[0], bytes, value_length, 1, 1,
                                              error.data(), ERROR_CAPACITY),
                    "oversized predicate key");
-    expect_invalid(sk_document_add_predicate(document, "overflow-boundary", bytes,
-                                             overflow_boundary, overflow_boundary[0], bytes,
+    expect_invalid(sk_document_add_predicate(document, "oversized-element", bytes,
+                                             oversized_length, oversized_length[0], bytes,
                                              value_length, 1, 1, error.data(), ERROR_CAPACITY),
-                   "predicate uint32 length boundary");
+                   "predicate per-element size boundary");
     expect_invalid(sk_document_update_assign_predicate(
                        update, "oversized-value", bytes, key_length, 1, bytes, oversized_length,
                        oversized_length[0], 1, error.data(), ERROR_CAPACITY),
