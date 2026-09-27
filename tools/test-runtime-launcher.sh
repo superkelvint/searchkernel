@@ -22,13 +22,18 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$TMP/sdk/lib"
 "$CC_BIN" -shared -fPIC \
+    -Wl,-soname,libsearchkernel_runtime_dep.so \
+    "$ROOT/tools/fixtures/runtime-launcher/dependency.c" \
+    -o "$TMP/sdk/lib/libsearchkernel_runtime_dep.so"
+"$CC_BIN" -shared -fPIC \
     -Wl,-soname,libsearchkernel_vespa.so.2 \
     "$ROOT/tools/fixtures/runtime-launcher/adapter.c" \
+    -L"$TMP/sdk/lib" -lsearchkernel_runtime_dep \
     -o "$TMP/sdk/lib/libsearchkernel_vespa.so.2"
 ln -s libsearchkernel_vespa.so.2 "$TMP/sdk/lib/libsearchkernel_vespa.so"
 
 "$CC_BIN" "$ROOT/tools/fixtures/runtime-launcher/main.c" \
-    -L"$TMP/sdk/lib" -lsearchkernel_vespa \
+    -L"$TMP/sdk/lib" -Wl,-rpath-link,"$TMP/sdk/lib" -lsearchkernel_vespa \
     -o "$TMP/native-probe"
 
 if env -u LD_LIBRARY_PATH -u LD_PRELOAD "$TMP/native-probe" >/dev/null 2>&1; then
@@ -69,5 +74,22 @@ if SEARCHKERNEL_RUNTIME_LIB_DIRS="$TMP/missing" "$LAUNCHER" native "$TMP/native-
     echo "native launcher accepted a missing runtime directory" >&2
     exit 1
 fi
+
+mkdir -p "$TMP/broken/lib"
+cp "$TMP/sdk/lib/libsearchkernel_vespa.so.2" "$TMP/broken/lib/"
+ln -s libsearchkernel_vespa.so.2 "$TMP/broken/lib/libsearchkernel_vespa.so"
+set +e
+broken_output=$(SEARCHKERNEL_RUNTIME_LIB_DIRS="$TMP/broken/lib" "$LAUNCHER" native "$TMP/native-probe" 2>&1)
+broken_status=$?
+set -e
+[[ "$broken_status" -eq 127 ]] || {
+    echo "native launcher returned $broken_status instead of 127 for an incomplete transitive closure" >&2
+    exit 1
+}
+grep -F 'libsearchkernel_runtime_dep.so => not found' <<<"$broken_output" >/dev/null || {
+    echo "native launcher did not diagnose the missing transitive DSO" >&2
+    printf '%s\n' "$broken_output" >&2
+    exit 1
+}
 
 echo "canonical runtime launcher regression PASS"
