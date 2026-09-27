@@ -10,8 +10,10 @@ BUILD=$SPIKE/build
 SMOKE=$SPIKE/smoke
 PYTHON=$(bash "$ROOT/tools/resolve-python.sh")
 CARGO=$(bash "$ROOT/tools/resolve-rust.sh" cargo)
+RUSTC=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
 SDK=$(bash "$ROOT/tools/resolve-native-sdk.sh" path)
 VESPA=$(bash "$ROOT/tools/resolve-native-sdk.sh" vespa-root)
+STATIC_PLAN=$BUILD/static-plan
 
 usage() {
     echo "usage: $0 {candidate-a|candidate-b|candidate-c|all|clean}" >&2
@@ -35,7 +37,7 @@ record_environment() {
     {
         echo "searchkernel_sha=$(git -C "$ROOT" rev-parse HEAD)"
         echo "vespa_sha=$(git -C "$VESPA" rev-parse HEAD)"
-        echo "target=$(bash "$ROOT/tools/resolve-rust.sh" rustc -vV | sed -n 's/^host: //p')"
+        echo "target=$("$RUSTC" -vV | sed -n 's/^host: //p')"
         uname -a
         "$CARGO" --version
         c++ --version | head -1
@@ -49,18 +51,24 @@ capture() {
     mkdir -p "$BUILD/results/$name"
     stat -c '%n %s' "$artifact" >"$BUILD/results/$name/size.txt"
     readelf -d "$artifact" >"$BUILD/results/$name/readelf-d.txt" || true
+    readelf -Ws "$artifact" >"$BUILD/results/$name/readelf-ws.txt" || true
     ldd "$artifact" >"$BUILD/results/$name/ldd.txt" || true
 }
 
+record_payload() {
+    local name=$1 runtime=$2
+    mkdir -p "$BUILD/results/$name"
+    du -sb "$runtime" >"$BUILD/results/$name/payload-bytes.txt"
+    find "$runtime" -type f | wc -l >"$BUILD/results/$name/file-count.txt"
+    find "$runtime" -type f \( -name '*.so' -o -name '*.so.*' \) | wc -l \
+        >"$BUILD/results/$name/dso-file-count.txt"
+}
+
 build_smoke() {
-    local name=$1 rustflags=${2:-}
+    local name=$1
     local target="$BUILD/$name/target"
     mkdir -p "$target"
-    if [[ -n "$rustflags" ]]; then
-        CARGO_TARGET_DIR="$target" RUSTFLAGS="$rustflags" "$CARGO" build --release --manifest-path "$SMOKE/Cargo.toml" || return
-    else
-        CARGO_TARGET_DIR="$target" "$CARGO" build --release --manifest-path "$SMOKE/Cargo.toml" || return
-    fi
+    CARGO_TARGET_DIR="$target" "$CARGO" build --release --manifest-path "$SMOKE/Cargo.toml"
     printf '%s\n' "$target/release/static-searchkernel-smoke"
 }
 
@@ -71,22 +79,40 @@ stage_runtime() {
     mkdir -p "$runtime/.searchkernel-native"
     cp "$binary" "$runtime/static-searchkernel-smoke"
     cp "$adapter" "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2"
-    ln "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2" "$runtime/.searchkernel-native/libsearchkernel_vespa.so"
+    ln "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2" \
+        "$runtime/.searchkernel-native/libsearchkernel_vespa.so"
     if command -v patchelf >/dev/null 2>&1; then
-        patchelf --force-rpath --set-rpath '$ORIGIN' "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2"
+        patchelf --force-rpath --set-rpath '$ORIGIN' \
+            "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2"
     fi
     if [[ "$with_closure" == 1 ]]; then
         "$PYTHON" "$ROOT/tools/bundle-native-runtime-closure.py" \
-            "$runtime/.searchkernel-native" --search-dir "$SDK/lib"
+            "$runtime/.searchkernel-native" --search-dir "$SDK/lib" \
+            --extra-elf "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2"
+    fi
+    printf '%s\n' "$runtime"
+}
+
+stage_executable_runtime() {
+    local name=$1 binary=$2 with_closure=$3
+    local runtime="$BUILD/$name/runtime"
+    rm -rf "$runtime"
+    mkdir -p "$runtime/.searchkernel-native"
+    cp "$binary" "$runtime/static-searchkernel-smoke"
+    if [[ "$with_closure" == 1 ]]; then
+        "$PYTHON" "$ROOT/tools/bundle-native-runtime-closure.py" \
+            "$runtime/.searchkernel-native" --search-dir "$SDK/lib" \
+            --extra-elf "$runtime/static-searchkernel-smoke"
     fi
     printf '%s\n' "$runtime"
 }
 
 run_clean() {
-    local name=$1 runtime=$2 expected=$3
+    local name=$1 runtime=$2 expected=$3 elf=$4
     local out="$BUILD/results/$name/clean-runtime.txt"
-    if readelf -d "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2" | grep -Eq '(RPATH|RUNPATH).*(/home/|native-sdk-cache|searchkern2)'; then
-        echo "INVALID: adapter retains a development-machine runtime path" >"$out"
+    mkdir -p "$(dirname "$out")"
+    if readelf -d "$elf" | grep -Eq '(RPATH|RUNPATH).*(/home/|native-sdk-cache|searchkern2|/work/)'; then
+        echo "INVALID: artifact retains a development-machine runtime path" >"$out"
         return 2
     fi
     set +e
@@ -94,12 +120,58 @@ run_clean() {
     local status=$?
     set -e
     if [[ "$expected" == pass && $status -ne 0 ]]; then
-        echo "FAIL (exit=$status)" >>"$out"; return 1
+        echo "FAIL (exit=$status)" >>"$out"
+        return 1
     fi
     if [[ "$expected" == fail && $status -eq 0 ]]; then
-        echo "unexpected PASS" >>"$out"; return 1
+        echo "unexpected PASS" >>"$out"
+        return 1
+    fi
+    if [[ "$expected" == observe ]]; then
+        if [[ $status -eq 0 ]]; then
+            echo "PASS" >>"$out"
+        else
+            echo "FAIL (exit=$status)" >>"$out"
+        fi
+        return 0
     fi
     echo "exit=$status" >>"$out"
+}
+
+prepare_static_plan() {
+    if [[ -f "$STATIC_PLAN/results/plan.json" ]]; then
+        return
+    fi
+
+    record_environment
+    rm -rf "$STATIC_PLAN"
+    mkdir -p "$STATIC_PLAN/results" "$STATIC_PLAN/candidate-b"
+
+    local native="$STATIC_PLAN/baseline-native"
+    local builddir="$STATIC_PLAN/baseline-build"
+    timed "$STATIC_PLAN/results/baseline-build-time.txt" env \
+        VESPA_ROOT="$VESPA" SK_NATIVE_SDK="$native" SK_NATIVE_BUILD_DIR="$builddir" \
+        SK_NATIVE_REGENERATE_BINDINGS=0 \
+        SK_NATIVE_SKIP_BINDINGS_CHECK=1 SK_NATIVE_SKIP_ABI_AUTHORITIES=1 \
+        bash "$ROOT/core/native/vespa/build-sdk.sh"
+
+    local object="$builddir/searchkernel_vespa.o"
+    if [[ ! -f "$object" ]]; then
+        echo "baseline native build did not leave adapter object: $object" >&2
+        return 1
+    fi
+
+    set +e
+    "$PYTHON" "$SPIKE/scripts/staticize-link.py" \
+        --vespa-root "$VESPA" \
+        --sdk "$SDK" \
+        --object "$object" \
+        --shared-output "$STATIC_PLAN/candidate-b/libsearchkernel_vespa.so.2" \
+        --version-script "$ROOT/core/native/vespa/searchkernel_vespa.map" \
+        --results "$STATIC_PLAN/results"
+    local status=$?
+    set -e
+    printf '%s\n' "$status" >"$STATIC_PLAN/results/candidate-b-link-status.txt"
 }
 
 candidate_c() {
@@ -107,68 +179,149 @@ candidate_c() {
     local binary adapter runtime
     binary=$(build_smoke candidate-c)
     adapter="$BUILD/candidate-c/target/release/.searchkernel-native/libsearchkernel_vespa.so.2"
-    [[ -f "$adapter" ]] || { echo "normal Cargo build did not stage adapter" >&2; exit 1; }
+    [[ -f "$adapter" ]] || {
+        echo "normal Cargo build did not stage adapter" >&2
+        return 1
+    }
     runtime=$(stage_runtime candidate-c "$binary" "$adapter" 1)
     capture candidate-c "$runtime/static-searchkernel-smoke"
     capture candidate-c-runtime "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2"
+    record_payload candidate-c "$runtime"
     timed "$BUILD/results/candidate-c/smoke-time.txt" \
         env -u LD_LIBRARY_PATH -u SK_NATIVE_SDK -u SK_NATIVE_ABI_HEADER \
         -u SK_NATIVE_CACHE_DIR -u SEARCHKERNEL_PACKAGED_SUPPORT_ROOT \
         -u SEARCHKERNEL_SDK_LIB "$runtime/static-searchkernel-smoke"
-    run_clean candidate-c "$runtime" pass || true
+    run_clean candidate-c "$runtime" observe \
+        "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2" || true
 }
 
 candidate_b() {
-    record_environment
-    local native="$BUILD/candidate-b/native" builddir="$BUILD/candidate-b/native-build"
-    mkdir -p "$BUILD/candidate-b" "$BUILD/results/candidate-b"
-    timed "$BUILD/results/candidate-b/link-time.txt" env \
-        VESPA_ROOT="$VESPA" SK_NATIVE_SDK="$native" SK_NATIVE_BUILD_DIR="$builddir" \
-        SK_NATIVE_REGENERATE_BINDINGS=0 \
-        SK_NATIVE_SKIP_BINDINGS_CHECK=1 SK_NATIVE_SKIP_ABI_AUTHORITIES=1 \
-        bash "$ROOT/core/native/vespa/build-sdk.sh"
-    local binary="$BUILD/candidate-c/target/release/static-searchkernel-smoke"
-    [[ -x "$binary" ]] || binary=$(build_smoke candidate-b)
-    local adapter="$native/lib/libsearchkernel_vespa.so.2" runtime
-    runtime=$(stage_runtime candidate-b "$binary" "$adapter" 0)
+    prepare_static_plan || return 0
+    local adapter="$STATIC_PLAN/candidate-b/libsearchkernel_vespa.so.2"
+    mkdir -p "$BUILD/results/candidate-b"
+    cp "$STATIC_PLAN/results/"* "$BUILD/results/candidate-b/" 2>/dev/null || true
+
+    if [[ ! -f "$adapter" ]]; then
+        echo "Candidate B did not link; inspect build/results/candidate-b/candidate-b-link.log"
+        return 0
+    fi
+
+    local binary
+    binary=$(build_smoke candidate-b-consumer)
+
+    local runtime
+    runtime=$(stage_runtime candidate-b-minimal "$binary" "$adapter" 0)
     capture candidate-b "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2"
-    # A one-library distribution is the actual Candidate B proposition. It is
-    # expected to fail if the candidate still needs Vespa/private DSOs.
-    run_clean candidate-b "$runtime" fail || true
+    record_payload candidate-b-minimal "$runtime"
+    run_clean candidate-b-minimal "$runtime" observe \
+        "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2" || true
+
     runtime=$(stage_runtime candidate-b-closure "$binary" "$adapter" 1)
-    capture candidate-b-closure "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2"
-    run_clean candidate-b-closure "$runtime" pass
+    record_payload candidate-b-closure "$runtime"
+    run_clean candidate-b-closure "$runtime" pass \
+        "$runtime/.searchkernel-native/libsearchkernel_vespa.so.2" || true
+}
+
+make_candidate_a_workspace() {
+    local workspace="$BUILD/candidate-a/workspace"
+    rm -rf "$workspace"
+    mkdir -p "$workspace"
+    git -C "$ROOT" archive HEAD | tar -x -C "$workspace"
+
+    printf '%s\n' 'fn main() {}' \
+        >"$workspace/core/crates/searchkernel-vespa-bindings/build.rs"
+    printf '%s\n' "$workspace"
+}
+
+make_linker_shim() {
+    local shim="$BUILD/candidate-a/linker.sh"
+    mkdir -p "$(dirname "$shim")"
+    {
+        echo '#!/bin/sh'
+        printf 'exec %q %q "$@"\n' "$PYTHON" "$SPIKE/scripts/linker-wrapper.py"
+    } >"$shim"
+    chmod +x "$shim"
+    printf '%s\n' "$shim"
 }
 
 candidate_a() {
-    record_environment
-    # Current public bindings explicitly request dylib=searchkernel_vespa.
-    # This command is an executable-level static-link attempt against the
-    # supported consumer path, not a production binding rewrite.
-    local binary
+    prepare_static_plan || return 0
+    local plan="$STATIC_PLAN/results/executable-extra-args.json"
+    [[ -f "$plan" ]] || {
+        echo "Candidate A link plan was not produced" >&2
+        return 0
+    }
+
+    local workspace shim target host target_key linker_var
+    workspace=$(make_candidate_a_workspace)
+    shim=$(make_linker_shim)
+    target="$BUILD/candidate-a/target"
+    host=$("$RUSTC" -vV | sed -n 's/^host: //p')
+    target_key=$(printf '%s' "$host" | tr '[:lower:]-' '[:upper:]_')
+    linker_var="CARGO_TARGET_${target_key${_LINKER"
+
+    mkdir -p "$BUILD/results/candidate-a" "$target"
     set +e
-    binary=$(build_smoke candidate-a '-C target-feature=+crt-static')
+    env \
+        "$linker_var=$shim" \
+        STATIC_SK_BASE_LINKER="${CC:-cc}" \
+        STATIC_SK_LINK_ARGS_JSON="$plan" \
+        STATIC_SK_FINAL_LINK_COMMAND="$BUILD/results/candidate-a/final-link-command.txt" \
+        CARGO_TARGET_DIR="$target" \
+        "$CARGO" build --release \
+        --manifest-path "$workspace/spikes/static-searchkernel/smoke/Cargo.toml" \
+        >"$BUILD/results/candidate-a/build.log" 2>&1
     local status=$?
     set -e
-    mkdir -p "$BUILD/results/candidate-a"
-    if [[ $status -ne 0 || ! -x "${binary:-}" ]]; then
-        echo "static Rust executable link failed before smoke; see Cargo output above" >"$BUILD/results/candidate-a/result.txt"
+    printf '%s\n' "$status" >"$BUILD/results/candidate-a/build-status.txt"
+    if [[ $status -ne 0 ]]; then
+        echo "Candidate A final executable link failed; inspect build/results/candidate-a/build.log"
         return 0
     fi
+
+    local binary="$target/release/static-searchkernel-smoke"
+    [[ -x "$binary" ]] || {
+        echo "Candidate A build succeeded but smoke executable is missing" >&2
+        return 0
+    }
     capture candidate-a "$binary"
-    readelf -d "$binary" | grep -F 'libsearchkernel_vespa' >"$BUILD/results/candidate-a/adapter-needed.txt" || true
-    # A second independently linked target quantifies whether the native
-    # closure is duplicated once executable-level absorption becomes possible.
-    CARGO_TARGET_DIR="$BUILD/candidate-a/target-2" RUSTFLAGS='-C target-feature=+crt-static' \
-        "$CARGO" test --release --manifest-path "$SMOKE/Cargo.toml" --no-run \
-        >"$BUILD/results/candidate-a/second-target.txt" 2>&1 || true
+
+    local runtime
+    runtime=$(stage_executable_runtime candidate-a-minimal "$binary" 0)
+    record_payload candidate-a-minimal "$runtime"
+    run_clean candidate-a-minimal "$runtime" observe "$runtime/static-searchkernel-smoke" || true
+
+    runtime=$(stage_executable_runtime candidate-a-closure "$binary" 1)
+    record_payload candidate-a-closure "$runtime"
+    run_clean candidate-a-closure "$runtime" pass "$runtime/static-searchkernel-smoke" || true
+
+    set +e
+    env \
+        "$linker_var=$shim" \
+        STATIC_SK_BASE_LINKER="${CC:-cc}" \
+        STATIC_SK_LINK_ARGS_JSON="$plan" \
+        CARGO_TARGET_DIR="$BUILD/candidate-a/target-tests" \
+        "$CARGO" test --release --no-run \
+        --manifest-path "$workspace/spikes/static-searchkernel/smoke/Cargo.toml" \
+        >"$BUILD/results/candidate-a/second-target.log" 2>&1
+    status=$?
+    set -e
+    printf '%s\n' "$status" >"$BUILD/results/candidate-a/second-target-status.txt"
+    find "$BUILD/candidate-a/target-tests/release" -maxdepth 2 -type f -executable \
+        -name 'static_searchkernel_smoke-*' -printf '%p %s\n' 2>/dev/null \
+        >"$BUILD/results/candidate-a/second-target-sizes.txt" || true
 }
 
 case "${1:-}" in
     candidate-a) candidate_a ;;
     candidate-b) candidate_b ;;
     candidate-c) candidate_c ;;
-    all) candidate_c; candidate_a; candidate_b ;;
+    all)
+        rm -rf "$BUILD"
+        candidate_c || true
+        candidate_b || true
+        candidate_a || true
+        ;;
     clean) rm -rf "$BUILD" ;;
     *) usage ;;
 esac
