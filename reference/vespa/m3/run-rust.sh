@@ -23,9 +23,10 @@ cargo build --quiet \
 # exact directory from Cargo's build event so runtime loading matches link-time.
 ADAPTER_LIB="$(python3 "$ROOT/.github/ci/resolve-native-adapter-lib.py" "$CARGO_MESSAGES" "$TARGET_DIR")"
 BIN="$TARGET_DIR/debug/searchkernel-m3-conformance-driver"
-SEARCHKERNEL_RUNTIME_ADAPTER_LIB="$ADAPTER_LIB" \
-SEARCHKERNEL_RUNTIME_BASE_SDK="${SEARCHKERNEL_VERIFIER_BASE_SDK:-}" \
-python3 "$M3/run_cases.py" \
+env -u SEARCHKERNEL_RUNTIME_LIB_DIRS \
+  SEARCHKERNEL_RUNTIME_ADAPTER_LIB="$ADAPTER_LIB" \
+  SEARCHKERNEL_RUNTIME_BASE_SDK="${SEARCHKERNEL_VERIFIER_BASE_SDK:-}" \
+  python3 "$M3/run_cases.py" \
   --cases "$M3/scenarios/cases.jsonl" \
   --output "$OUTPUT" \
   "$ROOT/tools/run-runtime.sh" native "$BIN" "$MODE"
