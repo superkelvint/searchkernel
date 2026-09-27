@@ -23,6 +23,8 @@ if [[ "$BASELINE_ALREADY_PROVED" != 1 ]]; then
 fi
 "$ROOT/tools/run-verifier.sh" phase10 "${CHILD_VERIFIER_ARGS[@]}"
 
+"$SCRIPT_DIR/verify-entry-parity.sh"
+
 if rg -n 'searchkernel-(ir-adapter|vespa-engine|vespa-bindings)|searchkernel_ir|searchkernel_vespa|RecordingBackend|ScriptedBackend' \
     "$SCRIPT_DIR/rust-driver/Cargo.toml" "$SCRIPT_DIR/rust-driver/src"; then
   echo "I-series driver imports a forbidden lower-level crate or test backend" >&2

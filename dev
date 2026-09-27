@@ -420,9 +420,37 @@ run_tool_regression_tests() {
     done < <(find "$ROOT/tools" -maxdepth 1 -type f -name 'test-*.sh' -print | sort)
 }
 
+universe_format_command() {
+    local arg formatted= quoted
+    local index=0
+
+    for arg in "$@"; do
+        if ((index == 0)) && [[ "$arg" == "$CARGO" ]]; then
+            quoted='$(./tools/resolve-rust.sh cargo)'
+        elif ((index == 0)) && [[ "$arg" == "$PYTHON" ]]; then
+            quoted='$(./tools/resolve-python.sh)'
+        else
+            if [[ "$arg" == "$ROOT"/* ]]; then
+                arg=".${arg#$ROOT}"
+            fi
+            printf -v quoted '%q' "$arg"
+        fi
+
+        if [[ -n "$formatted" ]]; then
+            formatted+=" "
+        fi
+        formatted+="$quoted"
+        ((index += 1))
+    done
+
+    printf '%s\n' "$formatted"
+}
+
 universe_step() {
     local label=$1
     shift
+    local repro
+    repro=$(universe_format_command "$@")
 
     echo
     echo "==> universe: $label"
@@ -431,6 +459,7 @@ universe_step() {
     else
         local status=$?
         UNIVERSE_FAILED+=("$label (exit $status)")
+        UNIVERSE_FAILED_REPRO+=("$repro")
     fi
 }
 
@@ -440,11 +469,38 @@ universe_dev_step() {
     universe_step "$label" "$ROOT/dev" "$@"
 }
 
+universe_print_summary() {
+    local passed_count=$1
+    local failed_name=$2
+    local repro_name=$3
+    local -n failed_ref=$failed_name
+    local -n repro_ref=$repro_name
+    local index
+
+    echo
+    echo '========== Search Kernel universe summary =========='
+    printf 'PASS: %d lane(s)\n' "$passed_count"
+    if (("${#failed_ref[@]}" == 0)); then
+        echo 'FAIL: 0 lane(s)'
+        echo 'Search Kernel universe: PASS'
+        return 0
+    fi
+
+    printf 'FAIL: %d lane(s)\n' "${#failed_ref[@]}"
+    for index in "${!failed_ref[@]}"; do
+        printf '  - %s\n' "${failed_ref[$index]}"
+        printf '    repro: %s\n' "${repro_ref[$index]}"
+    done
+    echo 'Search Kernel universe: FAIL' >&2
+    return 1
+}
+
 universe() {
     local target
     local -a targets=()
     local -a UNIVERSE_PASSED=()
     local -a UNIVERSE_FAILED=()
+    local -a UNIVERSE_FAILED_REPRO=()
 
     # Universe is deliberately non-fail-fast. Each child ./dev invocation keeps
     # the normal set -e behavior, while this parent records its exit status and
@@ -484,6 +540,7 @@ universe() {
     )
     if (("${#targets[@]}" == 0)); then
         UNIVERSE_FAILED+=('semantic verifier discovery (no targets)')
+        UNIVERSE_FAILED_REPRO+=('./dev verify --list')
     else
         for target in "${targets[@]}"; do
             universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
@@ -492,19 +549,7 @@ universe() {
 
     universe_dev_step 'cumulative milestone.m14 closure' verify milestone.m14 --skip-workspace-quality
 
-    echo
-    echo '========== Search Kernel universe summary =========='
-    printf 'PASS: %d lane(s)\n' "${#UNIVERSE_PASSED[@]}"
-    if (("${#UNIVERSE_FAILED[@]}" == 0)); then
-        echo 'FAIL: 0 lane(s)'
-        echo 'Search Kernel universe: PASS'
-        return 0
-    fi
-
-    printf 'FAIL: %d lane(s)\n' "${#UNIVERSE_FAILED[@]}"
-    printf '  - %s\n' "${UNIVERSE_FAILED[@]}"
-    echo 'Search Kernel universe: FAIL' >&2
-    return 1
+    universe_print_summary "${#UNIVERSE_PASSED[@]}" UNIVERSE_FAILED UNIVERSE_FAILED_REPRO
 }
 
 regen_protocol() {
