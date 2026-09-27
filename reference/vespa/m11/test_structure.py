@@ -67,6 +67,15 @@ class M11StructureTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("alternate runtime/oracle path", result.stderr)
 
+    def test_bindings_json_oracle_is_rejected(self):
+        self._write(
+            "core/crates/searchkernel-vespa-bindings/src/lib.rs",
+            'let _ = serde_json::from_str::<serde_json::Value>("{}");\\n',
+        )
+        result = self._check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("alternate runtime/oracle path", result.stderr)
+
     def test_production_runtime_launch_is_rejected(self):
         for path, code in (
             ("core/crates/searchkernel-vespa-engine/src/engine.rs", 'std::process::Command::new("java");\n'),
