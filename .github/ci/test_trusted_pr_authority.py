@@ -18,6 +18,8 @@ class TrustedAuthorityTests(unittest.TestCase):
             ".github/workflows/behavioral-verification.yml",
             ".github/workflows/ci-image-runner.yml",
             ".github/ci/exact_head.py",
+            ".cargo/config.toml",
+            "Cargo.toml",
             "verification/dag.toml",
             "dev",
             "reference/vespa/m14/verify-m14.sh",
@@ -56,6 +58,8 @@ class TrustedAuthorityTests(unittest.TestCase):
             ".github/workflows/behavioral-verification.yml": "jobs:\n  gate:\n    steps:\n      - run: ./dev verify integration\n",
             ".moon/tasks.yml": "tasks:\n  vespa-m14:\n    command: ./dev verify m14\n",
             "dev": "#!/usr/bin/env bash\nexec true\n",
+            ".cargo/config.toml": '[target.x86_64-unknown-linux-gnu]\nrunner = "true"\n',
+            "Cargo.toml": '[workspace]\nmembers = ["core/crates/searchkernel"]\n',
             "reference/vespa/m14/verify-m14.sh": "#!/usr/bin/env bash\nexit 1\n",
         }
         for path, content in fixtures.items():
