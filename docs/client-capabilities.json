@@ -226,7 +226,7 @@
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 370
+              "line": 360
             },
             {
               "capability": "query.phrase",
@@ -267,7 +267,7 @@
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 371
+              "line": 361
             },
             {
               "capability": "query.proximity",
@@ -308,7 +308,7 @@
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 400
+              "line": 390
             }
           ],
           "overrides": []
@@ -340,7 +340,7 @@
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 372
+              "line": 362
             },
             {
               "capability": "query.fuzzy",
@@ -475,7 +475,7 @@
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 466
+              "line": 456
             }
           ],
           "overrides": []
@@ -530,7 +530,7 @@
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 373
+              "line": 363
             },
             {
               "capability": "query.weighted_and_wand",
@@ -961,7 +961,7 @@
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 507
+              "line": 497
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1114,7 +1114,7 @@
               "runtime": "grpc",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 508
+              "line": 498
             },
             {
               "capability": "result.highlighting",
@@ -1476,7 +1476,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 257
+              "line": 247
             },
             {
               "capability": "update.document_crud",
