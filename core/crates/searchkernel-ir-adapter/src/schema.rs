@@ -20,12 +20,7 @@ pub fn compile_index_definition(
     config_dir: impl AsRef<std::path::Path>,
 ) -> Result<()> {
     validate_index_definition(definition)?;
-    let mut schema = Schema::new(
-        definition
-            .document_type()
-            .or_else(|| definition.name().map(searchkernel_ir::IndexName::as_str))
-            .unwrap_or("searchkernel"),
-    );
+    let mut schema = Schema::new(definition.resolved_document_type());
     for profile in definition.rank_profiles().iter().map(lower_rank_profile) {
         schema = schema.rank_profile(profile?);
     }
@@ -757,7 +752,8 @@ mod tests {
 
     #[test]
     fn declaration_only_rank_profile_input_remains_supported() {
-        let definition = definition_with_rank_input_default("tensor<float>(x[2])", Vec::new());
+        let mut definition = definition_with_rank_input_default("tensor<float>(x[2])", Vec::new());
+        definition.set_document_type("rank_profile_test");
         let root = std::env::temp_dir().join(format!(
             "searchkernel-adapter-rank-profile-declaration-{}",
             std::process::id()
@@ -780,7 +776,7 @@ mod predicate_schema_tests {
 
     #[test]
     fn predicate_schema_compiles_with_the_portable_native_arity_default() {
-        let definition = IndexDefinitionIr::new(
+        let mut definition = IndexDefinitionIr::new(
             None,
             vec![FieldIr::new(
                 FieldName::parse("access").unwrap(),
@@ -791,6 +787,7 @@ mod predicate_schema_tests {
             Vec::new(),
         )
         .unwrap();
+        definition.set_document_type("predicate_test");
         let root = std::env::temp_dir().join(format!(
             "searchkernel-adapter-predicate-schema-{}",
             std::process::id()
@@ -829,6 +826,7 @@ mod struct_reference_schema_tests {
             Vec::new(),
         )
         .unwrap();
+        definition.set_document_type("struct_reference_test");
         definition.set_structs(vec![NamedStructDefinitionIr {
             name: "person".to_owned(),
             fields: vec![

@@ -74,6 +74,23 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
         self.assertNotIn(':/root/.cargo/git', source)
 
 
+    def test_verifier_lanes_suppress_vespa_info_noise_without_hiding_warnings(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        dev = (ROOT / "dev").read_text(encoding="utf-8")
+        quiet_default = "all -info -event -config -debug -spam"
+
+        self.assertIn(
+            f'export VESPA_LOG_LEVEL="${{VESPA_LOG_LEVEL:-{quiet_default}}}"',
+            source,
+        )
+        self.assertIn(
+            f'SEARCHKERNEL_VERIFY_VESPA_LOG_LEVEL:-${{VESPA_LOG_LEVEL:-{quiet_default}}}',
+            dev,
+        )
+        for preserved_level in ("warning", "error", "fatal"):
+            self.assertNotIn(f"-{preserved_level}", quiet_default)
+
+
     def test_native_full_bootstraps_split_sdk_and_runs_product_integration(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         helper = source.split("prepare_native_full_verifier_sdk() {", 1)[1].split("\n          }", 1)[0]

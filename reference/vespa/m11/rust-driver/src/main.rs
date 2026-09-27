@@ -559,22 +559,54 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         panic!("after-call failure incorrectly rolled back native mutation");
     }
 
+    // Prove independent native mutations actually overlap. Hold mutation A
+    // after it has entered/completed the Vespa feed call, then require B to
+    // complete while A is still blocked. A wrapper-wide mutation mutex makes
+    // this deterministic regression fail because B can never enter its feed.
+    hardening::set(&engine, "mutation_after_native_call", 1, Action::Block)?;
+    let first_engine = Arc::clone(&engine);
+    let first = thread::spawn(move || put(&first_engine, "overlap-a", 21));
+    for _ in 0..100 {
+        if hardening::is_blocked(&engine, "mutation_after_native_call")? { break; }
+        thread::sleep(Duration::from_millis(1));
+    }
+    if !hardening::is_blocked(&engine, "mutation_after_native_call")? {
+        panic!("first mutation did not reach blocking native feed boundary");
+    }
+    let second_engine = Arc::clone(&engine);
+    let (second_done_tx, second_done_rx) = std::sync::mpsc::channel();
+    let second = thread::spawn(move || {
+        let result = put(&second_engine, "overlap-b", 22);
+        let _ = second_done_tx.send(());
+        result
+    });
+    if second_done_rx.recv_timeout(Duration::from_secs(5)).is_err() {
+        hardening::release(&engine, "mutation_after_native_call")?;
+        first.join().map_err(|_| "overlap mutation A panicked")??;
+        let _ = second.join();
+        panic!("independent mutation was globally serialized behind blocked mutation");
+    }
+    if !hardening::is_blocked(&engine, "mutation_after_native_call")? {
+        panic!("first mutation unexpectedly left blocking feed boundary");
+    }
+    second.join().map_err(|_| "overlap mutation B panicked")??;
+    hardening::release(&engine, "mutation_after_native_call")?;
+    first.join().map_err(|_| "overlap mutation A panicked")??;
+    if !search_ids(&engine, 21, 10)?.iter().any(|id| id == "overlap-a")
+        || !search_ids(&engine, 22, 10)?.iter().any(|id| id == "overlap-b")
+    {
+        panic!("overlapping mutations did not preserve final native state");
+    }
+
     // Hold a completed feed immediately before its publication barrier. The
     // put must remain blocked here; releasing the failpoint lets the native
     // visibility wait establish the same postcondition used by immediate GET
     // and search, including tensor puts exercised by M13.
-    hardening::set(
-        &engine,
-        "mutation_before_visibility_wait",
-        1,
-        Action::Block,
-    )?;
+    hardening::set(&engine, "mutation_before_visibility_wait", 1, Action::Block)?;
     let visibility_engine = Arc::clone(&engine);
     let visibility_put = thread::spawn(move || put(&visibility_engine, "visibility", 9));
     for _ in 0..100 {
-        if hardening::is_blocked(&engine, "mutation_before_visibility_wait")? {
-            break;
-        }
+        if hardening::is_blocked(&engine, "mutation_before_visibility_wait")? { break; }
         thread::sleep(Duration::from_millis(1));
     }
     if !hardening::is_blocked(&engine, "mutation_before_visibility_wait")? {

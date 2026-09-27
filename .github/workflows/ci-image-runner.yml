@@ -367,6 +367,11 @@ jobs:
 
           assert_current_pr_head preflight
 
+          # Keep real-Vespa verifier output signal-dense. This intentionally
+          # suppresses routine info/event/config chatter while preserving
+          # warning, error, and fatal diagnostics.
+          export VESPA_LOG_LEVEL="${VESPA_LOG_LEVEL:-all -info -event -config -debug -spam}"
+
           run_phase() {
             local phase=$1
             shift
@@ -461,6 +466,7 @@ jobs:
             tooling)
               run_phase tooling-python-syntax "$PYTHON" -m compileall -q tools .github/ci
               run_phase ci-runner-isolation "$PYTHON" .github/ci/test_ci_image_runner_isolation.py
+              run_phase verification-cache-policy "$PYTHON" .github/ci/test_verification_cache_policy.py
               run_phase dev-syntax bash -n dev
               run_phase dev-help bash dev help
               run_phase dev-ci-image-contract bash tools/test-dev-ci-image.sh

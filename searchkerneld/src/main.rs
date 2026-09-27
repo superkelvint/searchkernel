@@ -215,6 +215,22 @@ mod native_main {
         value.parse().map_err(ServerError::InvalidListenAddress)
     }
 
+    #[cfg(unix)]
+    async fn graceful_shutdown_signal() -> std::io::Result<()> {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        let mut terminate = signal(SignalKind::terminate())?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result,
+            _ = terminate.recv() => Ok(()),
+        }
+    }
+
+    #[cfg(not(unix))]
+    async fn graceful_shutdown_signal() -> std::io::Result<()> {
+        tokio::signal::ctrl_c().await
+    }
+
     #[tokio::main]
     pub async fn run() -> Result<(), Box<dyn Error>> {
         let config = config()?;
@@ -229,12 +245,14 @@ mod native_main {
             }
         };
 
+        let signal = graceful_shutdown_signal();
+        tokio::pin!(signal);
         let result = tokio::select! {
             result = server.wait() => match result {
                 Ok(()) => Err(ServerError::UnexpectedExit),
                 Err(error) => Err(error),
             },
-            signal = tokio::signal::ctrl_c() => {
+            signal = &mut signal => {
                 let signal = signal.map_err(ServerError::Signal);
                 let shutdown = server.shutdown().await;
                 signal?;

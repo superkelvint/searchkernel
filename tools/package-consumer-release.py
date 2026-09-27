@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the supported Linux x86-64 consumer artifact set plus provenance/checksums."""
-import argparse, hashlib, json, os, shutil, subprocess, tarfile
+import argparse, hashlib, json, os, shutil, subprocess, sys, tarfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 VERSION='0.1.0'
@@ -10,6 +10,10 @@ def sha(p):
  with p.open('rb') as f:
   for b in iter(lambda:f.read(1024*1024),b''): h.update(b)
  return h.hexdigest()
+def daemon_binary():
+ target=Path(os.environ.get('CARGO_TARGET_DIR',ROOT/'target'))
+ if not target.is_absolute(): target=ROOT/target
+ return target/'release'/'searchkerneld'
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--output',default='dist/release'); a=ap.parse_args(); out=(ROOT/a.output).resolve(); shutil.rmtree(out,ignore_errors=True); out.mkdir(parents=True)
  # Rust embedded distribution is a versioned source bundle: internal path crates are
@@ -22,12 +26,12 @@ def main():
    if path.exists(): tf.add(path,arcname=rel)
  # Daemon executable distribution.
  run('cargo','build','-p','searchkerneld','--release','--features','native')
- daemon=ROOT/'target/release/searchkerneld'; bundle=out/f'searchkerneld-{VERSION}-linux-x86_64-glibc.tar.gz'
+ daemon=daemon_binary(); bundle=out/f'searchkerneld-{VERSION}-linux-x86_64-glibc.tar.gz'
  with tarfile.open(bundle,'w:gz') as tf: tf.add(daemon,arcname='bin/searchkerneld')
  # Supported managed-local packages carry the exact same versioned daemon.
  for package_dir in (ROOT/'clients/python/searchkernel', ROOT/'clients/typescript'):
   bindir=package_dir/'bin'; bindir.mkdir(exist_ok=True); shutil.copy2(daemon,bindir/'searchkerneld')
- run('python3','-m','build','--outdir',str(out),str(ROOT/'clients/python'))
+ run(sys.executable,'-m','pip','wheel','--no-deps','--no-build-isolation','--wheel-dir',str(out),str(ROOT/'clients/python'))
  run('npm','pack','--pack-destination',str(out),cwd=ROOT/'clients/typescript')
  for bundled in (ROOT/'clients/python/searchkernel/bin/searchkerneld', ROOT/'clients/typescript/bin/searchkerneld'):
   bundled.unlink(missing_ok=True)
