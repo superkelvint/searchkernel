@@ -65,7 +65,384 @@ That consumer boundary is a **P0 architectural requirement**.
 
 ---
 
-## 2. Core architectural invariant
+## 2. Users and requirements
+
+This build system serves several distinct users. They share infrastructure, but they do **not** have the same goals.
+
+Treating all of them as a generic "developer" is one reason build systems accumulate accidental complexity: bootstrap concerns leak into CI, reviewer concerns turn into mandatory PR matrices, release qualification leaks into the edit/test loop, and repository-only runtime assumptions leak into downstream packages.
+
+Every major build-system mechanism should therefore answer:
+
+> **Which user is this serving, and which requirement does it satisfy?**
+
+If a piece of machinery cannot answer that clearly, it is a candidate for deletion or consolidation.
+
+### 2.1 User summary
+
+| User | Core question | Primary interface |
+|---|---|---|
+| Bootstrapper: developer or coding agent | "How do I get this repository working?" | `./dev doctor`, `./dev build` |
+| Implementer: developer or coding agent | "How do I know my change works?" | `./dev test`, `./dev verify`, remote variants |
+| Reviewer: developer or coding agent | "How do I know this exact proposed change is correct?" | exact-SHA local/remote test and verify |
+| End user / downstream application developer | "How do I use Search Kernel without knowing its build internals?" | supported Search Kernel package/dependency |
+| Release / distribution maintainer | "Can this exact revision be shipped?" | `./dev release-check`, packaging/publish operations |
+| CI / automation | "How do I execute canonical checks deterministically?" | `./dev ci`, exact-SHA dispatched `./dev` operations |
+| Reference / oracle maintainer | "How do I deliberately regenerate behavioral truth?" | explicit oracle/golden-authoring workflow |
+
+These personas define the product requirements for the build system.
+
+---
+
+### 2.2 Bootstrapper — developer or coding agent
+
+#### Goal
+
+Go from a fresh clone or fresh development machine to a known-good Search Kernel development environment without repository archaeology.
+
+#### Primary workflow
+
+```bash
+git clone ...
+cd searchkernel
+
+./dev doctor
+./dev build
+```
+
+#### Requirements
+
+The bootstrap path must:
+
+- have minimal host prerequisites;
+- detect missing prerequisites clearly;
+- establish the canonical development environment deterministically;
+- provision or locate the pinned native/Vespa inputs through one authority;
+- avoid requiring developers to know internal SDK/cache paths;
+- avoid manual `LD_LIBRARY_PATH`, compiler, Python, Node, PHP, Ruby, or FlatBuffers setup;
+- distinguish repairable bootstrap failures from source/test failures;
+- be usable by a coding agent with terminal access;
+- be idempotent enough that rerunning it does not destroy useful compatible caches;
+- document the normal path in approximately one screenful.
+
+The bootstrapper should not need to understand:
+
+- historical verifier structure;
+- native link topology;
+- oracle generation;
+- GitHub Actions implementation;
+- release packaging internals.
+
+#### Success criterion
+
+A new supported machine can reach a successful ordinary build through the public `./dev` interface without undocumented shell incantations.
+
+---
+
+### 2.3 Implementer — developer or coding agent
+
+#### Goal
+
+Change code and determine quickly whether the change is correct.
+
+This user optimizes for the **edit -> build -> focused test -> focused verifier** loop, not for exhaustive release qualification.
+
+#### Primary workflow
+
+```bash
+./dev build
+./dev test <scope>
+./dev verify <lane>
+```
+
+When the local environment cannot execute the relevant check:
+
+```bash
+git push
+./dev test --remote <scope>
+./dev verify --remote <lane>
+```
+
+#### Requirements
+
+The implementation loop must:
+
+- reuse warm Cargo/native build state;
+- make focused checks cheap relative to full qualification;
+- expose semantic test/verifier names rather than implementation directories;
+- produce deterministic exit status;
+- print useful failure output;
+- print exact local reproduction commands;
+- make the relevant specialist verifiers available even when they are not mandatory PR CI;
+- provide remote execution for checks an agent cannot run locally;
+- run remote checks against the exact pushed commit SHA;
+- avoid requiring the implementer to understand GitHub Actions YAML;
+- avoid reflexively running Universe for every change.
+
+The implementer must be able to choose verification proportional to the change.
+
+#### Success criterion
+
+A developer or agent can identify and run the smallest relevant correctness checks, locally where possible and remotely where necessary, without inventing environment setup.
+
+---
+
+### 2.4 Reviewer — developer or coding agent
+
+#### Goal
+
+Evaluate someone else's proposed change and answer:
+
+> **What was actually verified for this exact revision, and can I independently challenge it?**
+
+Review is distinct from implementation. A reviewer may not have the author's local environment, may deliberately choose different/adversarial checks, and must not accidentally accept evidence from an earlier commit.
+
+#### Primary workflow
+
+Conceptually:
+
+```bash
+checkout exact PR/head revision
+
+./dev test <scope>
+./dev verify <lane>
+
+# or, when local execution is unavailable:
+./dev test --remote <scope>
+./dev verify --remote <lane>
+```
+
+#### Requirements
+
+Review tooling must:
+
+- make the exact tested SHA explicit;
+- never treat a run against an older commit as evidence for the current PR head;
+- support targeted independent/adversarial verification;
+- let reviewers rerun the same canonical checks authors run;
+- let reviewers use remote infrastructure without learning CI implementation details;
+- surface run IDs/URLs and failed logs for remote checks;
+- make local reproduction commands obvious;
+- avoid mutable branch names as verification identity;
+- keep verifier semantics in `./dev`, not in reviewer-specific CI workflows;
+- allow a reviewer to distinguish:
+  - mandatory PR gate status;
+  - explicitly requested specialist verification;
+  - full release qualification.
+
+#### Success criterion
+
+Given a PR SHA, a reviewer or reviewing agent can independently run or dispatch relevant checks and can tell unambiguously which exact commit each result covers.
+
+---
+
+### 2.5 End user — downstream application developer
+
+#### Goal
+
+Use Search Kernel in an application without learning the Search Kernel repository's build system.
+
+For this user, the best build-system UX is largely **invisible**.
+
+Conceptually:
+
+```text
+add Search Kernel dependency/package
+        |
+        v
+build application
+        |
+        v
+run application
+```
+
+#### Requirements
+
+The supported downstream experience must not require:
+
+- `./dev`;
+- the Search Kernel repository;
+- the Search Kernel CI image;
+- a separately installed matching Vespa runtime as the normal product model;
+- repository-local Cargo configuration;
+- ambient `LD_LIBRARY_PATH`;
+- knowledge of Search Kernel worktree or SDK paths.
+
+The package/build layer must provide:
+
+- the correct Search Kernel native implementation;
+- the required Vespa/private native closure in the chosen distribution form;
+- deterministic runtime identity;
+- relocatability according to the supported platform contract;
+- clear failure when required native artifacts are unavailable or incompatible;
+- a documented platform/support matrix;
+- a clean external-consumer qualification path.
+
+This persona is why consumer-native runtime correctness is P0.
+
+#### Success criterion
+
+A clean downstream project outside the Search Kernel workspace can build and run a supported Search Kernel application with no repository-only runtime workaround.
+
+---
+
+### 2.6 Release / distribution maintainer
+
+#### Goal
+
+Answer:
+
+> **Can this exact revision be shipped, and are its distributable artifacts trustworthy?**
+
+This is deliberately stronger than "does the PR gate pass?"
+
+#### Primary workflow
+
+```bash
+./dev release-check
+```
+
+plus explicit packaging/publishing operations where appropriate.
+
+#### Requirements
+
+Release qualification must be able to include:
+
+- the complete intended release test/verifier set;
+- external consumer/package qualification;
+- native ABI verification;
+- persistence/backward-compatibility checks;
+- native SDK and Vespa provenance checks;
+- packaging/relocatability checks;
+- generated-artifact consistency;
+- exact revision identity;
+- reproducible failure commands;
+- release-artifact provenance.
+
+The release maintainer must be able to distinguish:
+
+```text
+PR gate passed
+```
+
+from:
+
+```text
+release qualified
+```
+
+They are not equivalent claims.
+
+Release-only cost must not be imposed on every implementer's edit/test cycle.
+
+#### Success criterion
+
+The maintainer can qualify one exact revision using canonical repository commands and produce evidence that the artifacts being shipped correspond to that revision and its pinned native dependencies.
+
+---
+
+### 2.7 CI / automation
+
+CI is a build-system user even though it is not human.
+
+#### Goal
+
+Execute canonical repository checks deterministically and report their results.
+
+#### Responsibilities
+
+CI has two primary modes:
+
+1. automatic cheap PR gating through `./dev ci`;
+2. explicit exact-SHA remote execution requested by a developer or agent.
+
+#### Requirements
+
+CI must:
+
+- be non-interactive;
+- operate on an explicit revision;
+- use deterministic exit codes;
+- invoke canonical `./dev` operations rather than reimplementing them;
+- avoid hidden mutable state between jobs;
+- isolate writable job state where required;
+- reuse immutable/cacheable inputs appropriately;
+- produce logs useful to both humans and coding agents;
+- expose run identity;
+- avoid embedding verifier-specific semantic knowledge in workflow YAML;
+- avoid becoming a generic remote shell.
+
+#### Success criterion
+
+GitHub Actions is an execution substrate for Search Kernel commands, not a second implementation of the build/test system.
+
+---
+
+### 2.8 Reference / oracle maintainer
+
+#### Goal
+
+Deliberately create or update the behavioral truth against which Search Kernel is verified.
+
+This is a rare, specialized workflow and should remain visibly different from ordinary development verification.
+
+#### Primary workflow
+
+Conceptually:
+
+```text
+select exact pinned Vespa revision
+        |
+        v
+build/run independent oracle
+        |
+        v
+inspect/canonicalize result
+        |
+        v
+freeze/update golden
+        |
+        v
+review and commit provenance
+```
+
+#### Requirements
+
+Oracle authoring must:
+
+- remain independent from the Search Kernel implementation path;
+- require an explicit maintainer action;
+- never regenerate goldens as a side effect of ordinary build/test/CI;
+- record the exact Vespa/source provenance;
+- make changes to expected behavior reviewable;
+- permit specialized one-off compilation where necessary;
+- prioritize reference integrity over ordinary developer convenience.
+
+The oracle maintainer does **not** need oracle tooling to be part of the normal Cargo build graph.
+
+#### Success criterion
+
+A maintainer can intentionally regenerate reference behavior from the pinned upstream implementation, while ordinary developers and CI consume only reviewed frozen results.
+
+---
+
+### 2.9 Cross-persona product requirements
+
+Several requirements follow directly from serving all seven users:
+
+1. **One public vocabulary.** Local developers, agents, reviewers, CI, and release tooling should refer to the same test/verifier names.
+2. **One semantic implementation.** Remote execution and CI must call the same `./dev` operations as local execution.
+3. **Exact revision evidence.** Review and release claims are always tied to an exact commit.
+4. **Cheap path versus strong path.** The normal edit/PR path stays fast; strong specialist and release verification remains available explicitly.
+5. **Repository environment is not consumer runtime.** Development convenience must never become a downstream requirement.
+6. **Oracle authoring is not verification.** Generating truth and checking against truth remain separate operations.
+7. **Warm performance matters.** Hermetic development cannot imply rebuilding everything on every command.
+8. **Failures are actionable.** Human or agent users should receive a canonical reproduction command whenever one exists.
+9. **No hidden second build system.** GitHub Actions, Universe, verifier directories, and packaging scripts consume canonical authorities instead of redefining them.
+10. **Every mechanism needs a persona.** New build-system machinery should identify which user and requirement justify its existence.
+
+---
+
+## 3. Core architectural invariant
 
 For every build-system concept, exactly one component should be allowed to make the architectural decision. Everyone else consumes that decision.
 
@@ -93,7 +470,7 @@ The plan is successful only if it **reduces the number of independent authoritie
 
 ---
 
-## 3. P0 consumer-runtime design constraints
+## 4. P0 consumer-runtime design constraints
 
 The development environment is not the product runtime.
 
@@ -169,7 +546,7 @@ Current `main` already has consumer-safe runtime work from PR #745, including an
 
 ---
 
-## 4. P0 native-distribution decision
+## 5. P0 native-distribution decision
 
 Before investing further in increasingly elaborate shared-runtime machinery, Search Kernel should explicitly determine the smallest native distribution model that satisfies the consumer contract.
 
@@ -243,7 +620,7 @@ The permanent invariant is consumer runtime correctness, not the current loader 
 
 ---
 
-## 5. Why not replace everything with Nix, Bazel, Buck2, xtask, or just?
+## 6. Why not replace everything with Nix, Bazel, Buck2, xtask, or just?
 
 These alternatives are worth acknowledging explicitly.
 
@@ -271,7 +648,7 @@ The choice is deliberate:
 
 ---
 
-## 6. Canonical development environment
+## 7. Canonical development environment
 
 Normal build/test/verification should run in the canonical Search Kernel image.
 
@@ -302,7 +679,7 @@ The canonical container is an **environment boundary**, not a clean-build bounda
 
 ---
 
-## 7. Build/cache performance constraint
+## 8. Build/cache performance constraint
 
 The guiding principle is:
 
@@ -338,7 +715,7 @@ If the canonical-container boundary causes a material regression, fix the cache/
 
 ---
 
-## 8. Audit: `reference/vespa`
+## 9. Audit: `reference/vespa`
 
 On the audited baseline, `reference/vespa` contains 70 compiled-language source files:
 
@@ -353,7 +730,7 @@ On the audited baseline, `reference/vespa` contains 70 compiled-language source 
 
 Those files do **not** all have the same role.
 
-### 8.1 Active normal-verification sources: 55
+### 9.1 Active normal-verification sources: 55
 
 These are compiled to verify the current Search Kernel implementation:
 
@@ -377,7 +754,7 @@ It consists of:
 
 These should eventually be owned by normal Cargo/native build targets.
 
-### 8.2 Oracle/golden-authoring sources: 14
+### 9.2 Oracle/golden-authoring sources: 14
 
 These are independent reference implementations:
 
@@ -410,7 +787,7 @@ Java oracle sources:
 
 These are used to generate or independently validate frozen behavioral truth and should remain conceptually separate from the normal Search Kernel build.
 
-### 8.3 One Rust source requires investigation
+### 9.3 One Rust source requires investigation
 
 `reference/vespa/api-contract/src/bin/m-api.rs` is described as a compile-only stable API fixture, but it was not found in the current normal milestone/product verifier entrypoints inspected during the audit.
 
@@ -423,7 +800,7 @@ prove obsolete -> delete
 
 Do not preserve dead build machinery merely for symmetry.
 
-### 8.4 Important wording
+### 9.4 Important wording
 
 `reference/vespa` is inside the repository, so the issue is not that it is "outside the source tree".
 
@@ -433,7 +810,7 @@ The precise problem is:
 
 ---
 
-## 9. Verifier versus oracle
+## 10. Verifier versus oracle
 
 The architecture should use a simple distinction:
 
@@ -484,7 +861,7 @@ Compiled code required for this path belongs to the normal build graph.
 
 ---
 
-## 10. Target role of `reference/vespa`
+## 11. Target role of `reference/vespa`
 
 The eventual role should be:
 
@@ -515,7 +892,7 @@ Historical M0-M14 directories may remain. We are not erasing useful specificatio
 
 ---
 
-## 11. Public command surface
+## 12. Public command surface
 
 The normal developer interface should converge toward:
 
@@ -540,7 +917,7 @@ A developer should not need those commands to understand an ordinary build.
 
 ---
 
-## 12. Explicit remote execution for agents
+## 13. Explicit remote execution for agents
 
 A major reason the heavy verifier suite existed in CI was practical: coding agents often cannot execute native, sanitizer, Vespa, or other specialist checks in their own local environment.
 
@@ -566,7 +943,7 @@ Remote execution after pushing:
 
 The remote form is not a new verifier implementation. It is only an execution-location switch.
 
-### 12.1 Semantic equivalence
+### 13.1 Semantic equivalence
 
 This invariant is mandatory:
 
@@ -610,7 +987,7 @@ Agent ---- ./dev verify foo                  canonical environment
 
 GitHub Actions does not own verifier semantics.
 
-### 12.2 One generic on-demand workflow
+### 13.2 One generic on-demand workflow
 
 Provide one bounded `workflow_dispatch` workflow for explicit remote verification.
 
@@ -635,7 +1012,7 @@ The workflow must **not** know how `vespa.ranking`, persistence, Rust tests, or 
 
 It must not contain verifier-specific build logic.
 
-### 12.3 Exact pushed SHA is mandatory
+### 13.3 Exact pushed SHA is mandatory
 
 Remote verification is evidence about a specific commit, not about a branch name.
 
@@ -668,7 +1045,7 @@ result:   PASS | FAIL
 
 A verification run against an earlier commit must never be presented as verification of a newer PR head.
 
-### 12.4 `./dev` owns the remote UX
+### 13.4 `./dev` owns the remote UX
 
 Agents should not normally need to invoke `gh workflow run` or manually locate Actions runs.
 
@@ -694,7 +1071,7 @@ REPRO:
 
 This gives humans and coding agents the same interface.
 
-### 12.5 Bounded operations only
+### 13.5 Bounded operations only
 
 Remote execution is **not** a generic remote shell.
 
@@ -721,7 +1098,7 @@ Do not add an interface such as:
 
 This preserves a reviewable and safe remote execution surface.
 
-### 12.6 PR labels are not the primary interface
+### 13.6 PR labels are not the primary interface
 
 Labels may be added later as a convenience if some automation can manipulate labels but cannot dispatch Actions directly.
 
@@ -729,7 +1106,7 @@ They should not be the primary model because label state is poor verification st
 
 The canonical interface is explicit workflow dispatch hidden behind `./dev`.
 
-### 12.7 Agent protocol
+### 13.7 Agent protocol
 
 The repository's agent guidance should eventually state:
 
@@ -754,7 +1131,7 @@ If a remote verifier fails:
 
 Agents should choose relevant specialist checks rather than reflexively running Universe.
 
-### 12.8 CI separation
+### 13.8 CI separation
 
 The intended division is:
 
@@ -776,7 +1153,7 @@ Do not turn remote-run reporting into a second infrastructure project. Exact SHA
 
 ---
 
-## 13. Migration plan
+## 14. Migration plan
 
 ### Phase 0 — Freeze and inventory
 
@@ -815,7 +1192,7 @@ Completion criterion: a reviewer can answer which component currently owns every
 
 ### Phase 1 — Resolve the P0 native-distribution model
 
-Run the mostly-static closure investigation described in section 4.
+Run the mostly-static closure investigation described in section 5.
 
 Preserve the current #745 consumer-safe runtime mechanism while investigating alternatives.
 
@@ -1050,7 +1427,7 @@ If the answer is unclear, the old path is not ready to be removed.
 
 ---
 
-## 14. Migration rules
+## 15. Migration rules
 
 ### Rule 1 — Delegate before rewriting
 
@@ -1104,7 +1481,7 @@ The development system is allowed to simplify only if external consumers remain 
 
 ---
 
-## 15. Explicit non-goals
+## 16. Explicit non-goals
 
 This project does **not**:
 
@@ -1125,7 +1502,7 @@ This project does **not**:
 
 ---
 
-## 16. Reviewer guide
+## 17. Reviewer guide
 
 An engineer unfamiliar with Search Kernel should be able to review the migration with these questions.
 
@@ -1181,7 +1558,7 @@ Did the change remove an authority, or create another one?
 
 ---
 
-## 17. End-state developer experience
+## 18. End-state developer experience
 
 A developer should need approximately this model:
 
@@ -1252,7 +1629,7 @@ A downstream user should need even less: the supported Search Kernel dependency/
 
 ---
 
-## 18. Definition of done
+## 19. Definition of done
 
 The convergence project is complete when:
 
