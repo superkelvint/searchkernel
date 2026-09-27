@@ -126,6 +126,11 @@ grep -F 'cannot determine exact native runtime adapter' <<<"$unresolved_output" 
     exit 1
 }
 
+SEARCHKERNEL_RUNTIME_ADAPTER_LIB="$TMP/sdk/lib/libsearchkernel_vespa.so.2" \
+SEARCHKERNEL_RUNTIME_BASE_SDK="$TMP/sdk" \
+LD_LIBRARY_PATH="$TMP/broken/lib" \
+    "$LAUNCHER" native "$TMP/native-probe"
+
 SEARCHKERNEL_VERIFIER_SDK="$TMP/sdk" \
 SEARCHKERNEL_VERIFIER_BASE_SDK="$TMP/sdk" \
 LD_LIBRARY_PATH="$TMP/broken/lib" \
