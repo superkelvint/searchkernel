@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import json, sys
+ROOT = Path(__file__).resolve().parents[1]
+authority = json.loads((ROOT / "docs/release-support.json").read_text())
+if authority.get("platform") != {"os":"linux","arch":"x86_64","libc":"glibc"}:
+    raise SystemExit("release platform must remain explicit Linux x86_64 glibc")
+expected = {
+ ("rust-embedded","native","native-full"), ("searchkerneld","native","client-e2e"),
+ ("python","managed-local","native-full"), ("python","connect","client-e2e"),
+ ("typescript-node","connect","client-e2e"),
+}
+actual={(x["surface"],x["runtime"],x["evidence"]) for x in authority.get("supported",[])}
+if actual != expected: raise SystemExit(f"supported release matrix drifted: {sorted(actual)}")
+deferred=set(authority.get("deferred",[]))
+required_deferred={"typescript-browser-grpc-web","php","ruby","go","macos","windows","linux-aarch64"}
+if not required_deferred <= deferred: raise SystemExit("unsupported/deferred release surfaces are incomplete")
+runner=(ROOT/".github/workflows/ci-image-runner.yml").read_text()
+required_verification = {
+ ("rust-embedded","native"): "./dev verify persistence",
+ ("searchkerneld","native"): "tools/check-client-contracts.py --run-e2e",
+ ("python","managed-local"): "tools/run-python-native-e2e.sh --prevalidated-native-sdk",
+ ("python","connect"): "tools/check-client-contracts.py --run-e2e",
+ ("typescript-node","connect"): "tools/check-client-contracts.py --run-e2e",
+}
+for row in authority["supported"]:
+    key=(row["surface"],row["runtime"])
+    command=row.get("verification")
+    if command != required_verification[key]: raise SystemExit(f"{key} has no authoritative executable verification command")
+    lane=row["evidence"]
+    marker=f"            {lane})"
+    start=runner.find(marker)
+    if start < 0: raise SystemExit(f"missing executable release lane: {lane}")
+    end=runner.find("              ;;", start)
+    if command not in runner[start:end]: raise SystemExit(f"release lane {lane} does not execute {key}: {command}")
+readme=(ROOT/"README.md").read_text()
+clients=(ROOT/"clients/README.md").read_text()
+for text,name in [(readme,"README.md"),(clients,"clients/README.md")]:
+    if "docs/release-support.md" not in text and "../docs/release-support.md" not in text:
+        raise SystemExit(f"{name} does not link the authoritative release support matrix")
+print("Release support matrix PASS: Linux x86_64 glibc Rust/daemon/Python/Node scope is explicit and qualified")

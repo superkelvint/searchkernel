@@ -30,6 +30,23 @@
       "evidence_roots": [
         "clients/python/tests",
         "clients/python/examples"
+      ],
+      "required_e2e_runtimes": [
+        "grpc",
+        "managed-local"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "grpc",
+            "managed-local"
+          ],
+          "path": "clients/python/tests/test_grpc_e2e.py",
+          "command": [
+            "bash",
+            "tools/run-python-native-e2e.sh"
+          ]
+        }
       ]
     },
     "typescript": {

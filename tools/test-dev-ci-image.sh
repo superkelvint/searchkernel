@@ -13,6 +13,7 @@ bash -n "$RUNNER"
 bash -n "$HOOK"
 bash -n "$COVERAGE"
 python3 -m py_compile "$ROOT/.github/ci/test_exact_head.py"
+python3 "$ROOT/tools/test_dev_client_e2e.py"
 
 python3 - "$DEV" "$RUNNER" "$HOOK" "$ROOT/.github/ci/test_exact_head.py" "$CI_WORKFLOW" <<'PY'
 from pathlib import Path
@@ -94,6 +95,13 @@ required_runner = (
     '-v "$source_volume:/work"',
     '-v "$target_volume:/cargo-target"',
     "-e CARGO_TARGET_DIR=/cargo-target",
+    'ensure-ci-sccache.sh',
+    '-v "$sccache_binary_volume:/opt/searchkernel/sccache:ro"',
+    '-v "$sccache_socket_volume:/sccache:ro"',
+    "-e RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache",
+    "-e SCCACHE_SERVER_UDS=/sccache/sccache.sock",
+    "-e SCCACHE_CLIENT_SIDE=1",
+    "-e SCCACHE_IGNORE_SERVER_IO_ERROR=1",
     "-e FLATBUFFERS_CPP_ROOT=/usr/local",
     "-e FLATC_PATH=/usr/local/bin/flatc",
     "-e CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc",
