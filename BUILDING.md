@@ -227,7 +227,11 @@ verification, generation, and acceptance lanes:
 ```
 
 Use `./dev --help` for the supported command list. Direct underlying scripts
-are for focused debugging or when a contract explicitly names one.
+are for focused debugging or when a contract explicitly names one. Repository
+language execution through `./dev run python|node|npm|php|ruby` enters the
+canonical CI image by default; arbitrary `./dev run native <binary>` remains
+host-local because a host-built executable is not present in the disposable
+container snapshot.
 
 ## Canonical toolchain authorities
 
