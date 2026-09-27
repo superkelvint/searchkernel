@@ -343,12 +343,13 @@ extern "C" SK_API int32_t sk_document_add_tensor_dense(
 
 extern "C" SK_API int32_t sk_document_add_string_array(
     sk_document *document, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_STRING_ARRAY;
-        result.strings = copy_string_array(value_bytes, value_lengths, value_count, "string array");
+        result.strings = copy_string_array(value_bytes, value_lengths, value_count, value_bytes_length, "string array");
         return result;
     });
 }
@@ -495,15 +496,16 @@ extern "C" SK_API int32_t sk_document_add_position(
 
 extern "C" SK_API int32_t sk_document_add_predicate(
     sk_document *document, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count, uint8_t *error,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_PREDICATE;
         result.predicate_features = copy_predicate_features(
-            feature_key_bytes, feature_key_lengths, feature_value_bytes,
-            feature_value_lengths, feature_count);
+            feature_key_bytes, feature_key_lengths, feature_key_bytes_length,
+            feature_value_bytes, feature_value_lengths, feature_value_bytes_length, feature_count);
         return result;
     });
 }
@@ -683,12 +685,13 @@ extern "C" SK_API int32_t sk_document_update_assign_tensor_dense(
 
 extern "C" SK_API int32_t sk_document_update_assign_string_array(
     sk_document_update *update, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_STRING_ARRAY;
-        result.strings = copy_string_array(value_bytes, value_lengths, value_count, "string array");
+        result.strings = copy_string_array(value_bytes, value_lengths, value_count, value_bytes_length, "string array");
         return std::optional<OwnedValue>(std::move(result));
     });
 }
@@ -707,15 +710,16 @@ extern "C" SK_API int32_t sk_document_update_assign_position(
 
 extern "C" SK_API int32_t sk_document_update_assign_predicate(
     sk_document_update *update, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count, uint8_t *error,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_PREDICATE;
         result.predicate_features = copy_predicate_features(
-            feature_key_bytes, feature_key_lengths, feature_value_bytes,
-            feature_value_lengths, feature_count);
+            feature_key_bytes, feature_key_lengths, feature_key_bytes_length,
+            feature_value_bytes, feature_value_lengths, feature_value_bytes_length, feature_count);
         return std::optional<OwnedValue>(std::move(result));
     });
 }

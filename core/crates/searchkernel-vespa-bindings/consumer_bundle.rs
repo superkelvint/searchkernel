@@ -551,8 +551,13 @@ valid_install() {
 }
 
 canonical_mounted_install() {
-    [[ "$CACHE_ROOT" == "/opt/searchkernel/native-sdk-cache/ci/$TARGET" ]] || return 1
-    [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" == 1 || -f /opt/searchkernel/native-validation-pass ]]
+    [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" == 1 || -f /opt/searchkernel/native-validation-pass ]] || return 1
+
+    # Being inside searchkernel-ci is not sufficient: tests and deliberate
+    # custom runs may point the resolver at an unrelated XDG/SK cache. Only
+    # the immutable CI bundle mounted at its canonical path is exempt from
+    # published-generation discovery/refresh.
+    [[ "$OBJECT" == "/opt/searchkernel/native-sdk-cache/ci/$TARGET/objects/$PINNED_VESPA_COMMIT" ]]
 }
 
 install_published_base() {
@@ -2401,7 +2406,7 @@ trap - EXIT
 echo "built SDK at $SDK_PACKAGE"
 "########),
     ("core/native/vespa/manifest.json", br########"{
-  "native_abi_version": 13,
+  "native_abi_version": 14,
   "vespa_commit": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
 }
 "########),
@@ -2750,12 +2755,13 @@ extern "C" SK_API int32_t sk_document_add_tensor_dense(
 
 extern "C" SK_API int32_t sk_document_add_string_array(
     sk_document *document, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_STRING_ARRAY;
-        result.strings = copy_string_array(value_bytes, value_lengths, value_count, "string array");
+        result.strings = copy_string_array(value_bytes, value_lengths, value_count, value_bytes_length, "string array");
         return result;
     });
 }
@@ -2902,15 +2908,16 @@ extern "C" SK_API int32_t sk_document_add_position(
 
 extern "C" SK_API int32_t sk_document_add_predicate(
     sk_document *document, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count, uint8_t *error,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_PREDICATE;
         result.predicate_features = copy_predicate_features(
-            feature_key_bytes, feature_key_lengths, feature_value_bytes,
-            feature_value_lengths, feature_count);
+            feature_key_bytes, feature_key_lengths, feature_key_bytes_length,
+            feature_value_bytes, feature_value_lengths, feature_value_bytes_length, feature_count);
         return result;
     });
 }
@@ -3090,12 +3097,13 @@ extern "C" SK_API int32_t sk_document_update_assign_tensor_dense(
 
 extern "C" SK_API int32_t sk_document_update_assign_string_array(
     sk_document_update *update, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_STRING_ARRAY;
-        result.strings = copy_string_array(value_bytes, value_lengths, value_count, "string array");
+        result.strings = copy_string_array(value_bytes, value_lengths, value_count, value_bytes_length, "string array");
         return std::optional<OwnedValue>(std::move(result));
     });
 }
@@ -3114,15 +3122,16 @@ extern "C" SK_API int32_t sk_document_update_assign_position(
 
 extern "C" SK_API int32_t sk_document_update_assign_predicate(
     sk_document_update *update, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count, uint8_t *error,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
         OwnedValue result;
         result.kind = SK_VALUE_PREDICATE;
         result.predicate_features = copy_predicate_features(
-            feature_key_bytes, feature_key_lengths, feature_value_bytes,
-            feature_value_lengths, feature_count);
+            feature_key_bytes, feature_key_lengths, feature_key_bytes_length,
+            feature_value_bytes, feature_value_lengths, feature_value_bytes_length, feature_count);
         return std::optional<OwnedValue>(std::move(result));
     });
 }
@@ -6849,8 +6858,17 @@ int32_t add_document_value(sk_document *document, const char *field,
 
 std::vector<std::string> copy_string_array(const uint8_t *bytes,
                                            const uint32_t *lengths,
-                                           uint32_t count,
+                                           uint32_t count, uint32_t bytes_length,
                                            const char *what) {
+    if (count > MAX_PACKED_DOCUMENT_ITEMS) {
+        throw std::invalid_argument(std::string(what) + " has too many items");
+    }
+    if (count == 0 && bytes_length != 0) {
+        throw std::invalid_argument(std::string(what) + " arrays are invalid");
+    }
+    if (bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES) {
+        throw std::invalid_argument(std::string(what) + " data is too large");
+    }
     if (count != 0 && (!bytes || !lengths)) {
         throw std::invalid_argument(std::string(what) + " arrays are invalid");
     }
@@ -6859,20 +6877,33 @@ std::vector<std::string> copy_string_array(const uint8_t *bytes,
     size_t offset = 0;
     for (uint32_t index = 0; index < count; ++index) {
         const size_t length = lengths[index];
-        if (offset > std::numeric_limits<size_t>::max() - length) {
-            throw std::invalid_argument(std::string(what) + " data is too large");
+        if (length > MAX_PACKED_DOCUMENT_ELEMENT_BYTES) {
+            throw std::invalid_argument(std::string(what) + " item is too large");
+        }
+        if (offset > bytes_length || length > bytes_length - offset) {
+            throw std::invalid_argument(std::string(what) + " lengths exceed packed data");
         }
         result.emplace_back(reinterpret_cast<const char *>(bytes + offset), length);
         offset += length;
+    }
+    if (offset != bytes_length) {
+        throw std::invalid_argument(std::string(what) + " lengths do not match packed data");
     }
     return result;
 }
 
 std::vector<std::pair<std::string, std::string>> copy_predicate_features(
-    const uint8_t *key_bytes, const uint32_t *key_lengths,
-    const uint8_t *value_bytes, const uint32_t *value_lengths,
+    const uint8_t *key_bytes, const uint32_t *key_lengths, uint32_t key_bytes_length,
+    const uint8_t *value_bytes, const uint32_t *value_lengths, uint32_t value_bytes_length,
     uint32_t count) {
-    if (count == 0 || !key_bytes || !key_lengths || !value_bytes || !value_lengths) {
+    if (count == 0 || count > MAX_PACKED_DOCUMENT_ITEMS) {
+        throw std::invalid_argument("predicate feature count is invalid");
+    }
+    if (key_bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES ||
+        value_bytes_length > MAX_PACKED_DOCUMENT_TOTAL_BYTES) {
+        throw std::invalid_argument("predicate feature data is too large");
+    }
+    if (!key_bytes || !key_lengths || !value_bytes || !value_lengths) {
         throw std::invalid_argument("predicate feature arrays are invalid");
     }
     std::vector<std::pair<std::string, std::string>> result;
@@ -6882,15 +6913,23 @@ std::vector<std::pair<std::string, std::string>> copy_predicate_features(
     for (uint32_t index = 0; index < count; ++index) {
         const size_t key_length = key_lengths[index];
         const size_t value_length = value_lengths[index];
-        if (key_offset > std::numeric_limits<size_t>::max() - key_length ||
-            value_offset > std::numeric_limits<size_t>::max() - value_length) {
-            throw std::invalid_argument("predicate feature data is too large");
+        if (key_length > MAX_PACKED_DOCUMENT_ELEMENT_BYTES ||
+            value_length > MAX_PACKED_DOCUMENT_ELEMENT_BYTES) {
+            throw std::invalid_argument("predicate feature item is too large");
+        }
+        if (key_offset > key_bytes_length || key_length > key_bytes_length - key_offset ||
+            value_offset > value_bytes_length ||
+            value_length > value_bytes_length - value_offset) {
+            throw std::invalid_argument("predicate feature lengths exceed packed data");
         }
         result.emplace_back(
             std::string(reinterpret_cast<const char *>(key_bytes + key_offset), key_length),
             std::string(reinterpret_cast<const char *>(value_bytes + value_offset), value_length));
         key_offset += key_length;
         value_offset += value_length;
+    }
+    if (key_offset != key_bytes_length || value_offset != value_bytes_length) {
+        throw std::invalid_argument("predicate feature lengths do not match packed data");
     }
     return result;
 }
@@ -7152,6 +7191,9 @@ constexpr size_t MAX_TEXT_TERM_BYTES = 1024 * 1024;
 constexpr size_t MAX_TOTAL_TEXT_TERM_BYTES = 64 * 1024 * 1024;
 constexpr size_t MAX_TEXT_TERMS = 65536;
 constexpr size_t MAX_TEXT_OCCURRENCES = 65536;
+constexpr size_t MAX_PACKED_DOCUMENT_ITEMS = MAX_TEXT_TERMS;
+constexpr size_t MAX_PACKED_DOCUMENT_ELEMENT_BYTES = MAX_TEXT_TERM_BYTES;
+constexpr size_t MAX_PACKED_DOCUMENT_TOTAL_BYTES = MAX_TEXT_BYTES;
 constexpr uint32_t MAX_SEARCH_LIMIT = 1'000'000;
 constexpr std::string_view HIGHLIGHT_SUMMARY_PREFIX = "__searchkernel_highlight_";
 constexpr std::array<std::string_view, 18> RESERVED_FIELD_NAMES = {
@@ -7770,7 +7812,6 @@ class EmbeddedEngine {
     // owns operation-level concurrency. Close and cleanup take the exclusive
     // holder and therefore cannot race an active operation.
     mutable std::shared_mutex _lifecycle_mutex;
-    mutable std::mutex _mutation_mutex;
     // This container is owned by this adapter rather than Vespa. Hold this
     // narrow lock only while preparing a previously unseen bucket; native feed
     // calls themselves remain concurrent and are serialized by Vespa as needed.
@@ -9039,7 +9080,6 @@ class EmbeddedEngine {
 
     ValueDocument get_value_document(const std::string &external_id) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         validate_document_id(external_id.c_str());
         const DocumentId id(internal_document_id(external_id, _document_type));
@@ -10375,7 +10415,6 @@ public:
 
     void put(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         Bucket bucket = bucket_for(document_id);
@@ -10395,7 +10434,6 @@ public:
 
     void update(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         const bool was_present = source_document_present(document_id);
@@ -10412,7 +10450,6 @@ public:
 
     bool remove(const std::string &id) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         failpoint("mutation_before_native_call");
@@ -10532,7 +10569,6 @@ public:
 
     void put_text(const TextDocument &text) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -10552,7 +10588,6 @@ public:
 
     void update_text(const TextUpdate &text) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         const bool was_present = source_document_present(id);
@@ -10626,7 +10661,6 @@ public:
     std::optional<std::string> id_for_gid(const document::GlobalId &gid) const {
         // Keep the mutation lock through the copy because the provider returns
         // a string_view into mutable document metadata.
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         return id_for_gid_unlocked(gid);
     }
 
@@ -11321,7 +11355,6 @@ public:
     sk_grouping_tree_result group_tree(const NativeQueryState &query,
                                        const sk_grouping_plan &plan) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
 
         SearchRequest request;
@@ -11378,7 +11411,6 @@ public:
                                        const sk_grouping_plan &plan,
                                        const LocalSearchRequestState &options) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
 
         SearchRequest request;
@@ -11455,7 +11487,6 @@ public:
 
     void put_attributes(const AttributeDocumentState &document) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(document.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -11472,7 +11503,6 @@ public:
 
     void update_attributes(const AttributeUpdateState &update) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(update.id, _document_type));
         const bool was_present = source_document_present(id);
@@ -11485,7 +11515,6 @@ public:
 
     void put_document(const ValueDocument &document) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(document.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -11498,25 +11527,29 @@ public:
                                        make_value_document(document));
         failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
-        const bool has_tensor = std::any_of(
-            document.fields.begin(), document.fields.end(),
-            [](const auto &field) { return field.value.kind == SK_VALUE_TENSOR; });
+        // Hardening can hold the completed feed at the exact boundary the
+        // visibility barrier is required to close. This makes the regression
+        // deterministic instead of relying on Vespa publication timing.
+        failpoint("mutation_before_visibility_wait");
         const bool has_struct_array = std::any_of(
             document.fields.begin(), document.fields.end(),
             [](const auto &field) { return field.value.kind == SK_VALUE_STRUCT_ARRAY; });
         const bool has_position = std::any_of(
             document.fields.begin(), document.fields.end(),
             [](const auto &field) { return field.value.kind == SK_VALUE_POSITION; });
-        if (!has_tensor && !has_struct_array && !has_position) {
-            wait_for_source_state(id, true, expected_fields(document), true);
-        } else if (has_struct_array || has_position) {
+        // A successful put is the synchronization point for immediate GET and
+        // search. TensorFieldValue presence is intentionally a valid match in
+        // value_matches(), so tensors must not bypass this publication barrier.
+        // Struct-array/position values retain their presence-only contract.
+        if (has_struct_array || has_position) {
             wait_for_source_state(id, true, {}, true);
+        } else {
+            wait_for_source_state(id, true, expected_fields(document), true);
         }
     }
 
     void update_document(const ValueUpdate &update) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(update.id, _document_type));
         const bool was_present = source_document_present(id);
@@ -11560,7 +11593,6 @@ public:
     LocalSearchResultState search_local_result(const NativeQueryState &query,
                                                 const LocalSearchRequestState &request) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         return search_local(query, request);
     }
@@ -11568,7 +11600,6 @@ public:
     LocalGroupingResultState group_local_result(const NativeQueryState &query,
                                                  const LocalGroupingRequestState &request) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         return group_local(query, request);
     }
@@ -12051,7 +12082,7 @@ class FailpointController {
     std::map<std::string, Entry> _entries;
 
     static bool known(std::string_view name) noexcept {
-        static constexpr std::array<std::string_view, 18> names = {
+        static constexpr std::array<std::string_view, 19> names = {
             "open_before_native_create", "open_after_native_create",
             "open_constructor", "open_initialize",
             "mutation_before_native_call", "mutation_after_native_call",
@@ -12059,7 +12090,8 @@ class FailpointController {
             "result_after_allocation", "destroy_before_native_release",
             "attribute_mutation_before_native_call",
             "attribute_mutation_after_native_call", "group_before_match",
-            "group_after_match", "search_after_id_resolution", "search_after_docsums"};
+            "group_after_match", "search_after_id_resolution", "search_after_docsums",
+            "mutation_before_visibility_wait"};
         return std::find(names.begin(), names.end(), name) != names.end();
     }
 
@@ -13184,7 +13216,7 @@ typedef struct sk_grouping_filter sk_grouping_filter;
 
 /* ABI revision 13 adds structured grouping-plan input and structured grouping
    tree output to the generic search surface. */
-#define SK_NATIVE_ABI_VERSION 13U
+#define SK_NATIVE_ABI_VERSION 14U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -13225,15 +13257,17 @@ SK_API int32_t sk_document_add_tensor_dense(
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_string_array(
     sk_document *document, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *out_error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_position(
     sk_document *document, const char *field, double latitude, double longitude,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_predicate(
     sk_document *document, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_predicate_json(
     sk_document *document, const char *field, const char *expression_json,
@@ -13309,15 +13343,17 @@ SK_API int32_t sk_document_update_assign_tensor_dense(
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_string_array(
     sk_document_update *update, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *out_error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_position(
     sk_document_update *update, const char *field, double latitude, double longitude,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_predicate(
     sk_document_update *update, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_predicate_json(
     sk_document_update *update, const char *field, const char *expression_json,
