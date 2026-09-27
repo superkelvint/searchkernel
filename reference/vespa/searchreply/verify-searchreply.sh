@@ -33,7 +33,7 @@ trap 'rm -rf "$TMP"' EXIT
 cargo fmt --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" -- --check
 cargo build --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" \
   --message-format=json-render-diagnostics \
-  | tee "$TMP/cargo-messages.jsonl" >/dev/null
+  | tee "$TMP/cargo-messages.jsonl"
 CONFIG_BIN="$CARGO_TARGET_DIR/debug/searchkernel-searchreply-config"
 [[ -x "$CONFIG_BIN" ]] || fail_verification "SearchReply config compiler was not built: $CONFIG_BIN"
 
