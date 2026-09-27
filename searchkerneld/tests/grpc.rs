@@ -920,13 +920,28 @@ async fn framing_and_lifecycle_failures_are_transport_statuses() {
     assert_eq!(error.code(), Code::FailedPrecondition);
 
     dispatcher.close().expect("close target");
-    let error = client
-        .execute(Request::new(rpc::FlatBufferFrame {
-            payload: describe_request(PROTOCOL_VERSION),
-        }))
+    let request = describe_request(PROTOCOL_VERSION);
+    let direct = dispatcher
+        .dispatch(&request)
+        .expect("closed target direct dispatch must return canonical error");
+    let response = client
+        .execute(Request::new(rpc::FlatBufferFrame { payload: request }))
         .await
-        .expect_err("closed target");
-    assert_eq!(error.code(), Code::FailedPrecondition);
+        .expect("closed target gRPC must return canonical error payload")
+        .into_inner()
+        .payload;
+    assert_eq!(response, direct);
+    let envelope = flatbuffers::root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
+    );
+    let error = envelope.payload_as_search_kernel_v2_error().unwrap();
+    assert_eq!(error.code(), wire::ErrorCode::FailedPrecondition);
+    assert_eq!(
+        error.details().unwrap().get(0).code(),
+        Some("target_closed")
+    );
     server.shutdown().await.expect("shutdown dispatcher server");
     index.close().expect("close test index");
 }
