@@ -2,7 +2,7 @@
 
 Search Kernel is a Rust interface to Vespa's native search engine, packaged so it can be embedded directly in an application instead of run as a separate service.
 
-Vespa's C++ engine does the actual work: storage, indexing, ranking, query execution. Search Kernel does not reimplement any of it. It gives that engine a normal Rust API and a Python gRPC client today; additional language facades are added when there is a concrete product need.
+Vespa's C++ engine does the actual work: storage, indexing, ranking, query execution. Search Kernel does not reimplement any of it. It gives that engine a normal Rust API plus first-party Python, TypeScript, PHP, and Ruby clients through `searchkerneld`. Release qualification is deliberately narrower than implementation presence; see the release support matrix.
 
 ```python
 from searchkernel import Index
@@ -47,7 +47,7 @@ For cross-layer feature availability, use the [capability ledger](docs/CAPABILIT
 - **Embedded.** The engine runs in your process. An index is a directory, not a service.
 - **Mutable.** Put, update, and delete are normal operations, not workarounds.
 - **Durable.** Indexes survive restarts and recover on reopen.
-- **Rust-first.** The Rust API is the primary interface. JavaScript, PHP, Go, and Python are built on top of it, not alongside it — a capability shows up in a binding because it exists in the Rust API first, not the other way around.
+- **Rust-first, one semantic core.** The Rust API is the primary in-process interface. Python, TypeScript, PHP, and Ruby are daemon clients that converge on the same canonical FlatBuffers → IR → Vespa semantics; client ergonomics do not define independent behavior.
 - **A thin wrapper.** Whatever Vespa can do, Search Kernel can expose. Whatever Vespa doesn't do, Search Kernel doesn't invent. See [architecture.md](docs/architecture.md) for the reasoning behind that rule and where the boundary sits.
 
 ## What it is not
@@ -107,8 +107,8 @@ sudo ./dev install flatbuffers
 ./dev test rust-api
 ./dev test python
 ./dev regen protocol
-./dev verify m13
-./dev verify integration
+./dev verify milestone.m14
+./dev verify product.integration
 ./dev hooks install
 ./dev worktree create my-task
 ./dev doctor
