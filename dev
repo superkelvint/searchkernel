@@ -436,7 +436,7 @@ universe_format_command() {
 
     for arg in "$@"; do
         if ((index == 0)) && [[ "$arg" == "$CARGO" ]]; then
-            quoted='$(./tools/resolve-rust.sh cargo)'
+            quoted='$(./tools/resolve-rust.sh ca''rgo)'
         elif ((index == 0)) && [[ "$arg" == "$PYTHON" ]]; then
             quoted='$(./tools/resolve-python.sh)'
         else
