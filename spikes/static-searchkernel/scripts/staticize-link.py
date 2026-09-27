@@ -258,6 +258,10 @@ def main() -> int:
     ]
     executable_extra = [
         *common,
+        # Candidate A is about absorbing Search Kernel/Vespa native code, not
+        # preserving PIE. Some usable static archives may not be PIC even though
+        # they are valid for a normal executable.
+        "-no-pie",
         "-Wl,--disable-new-dtags,-rpath,$ORIGIN/.searchkernel-native",
     ]
 
