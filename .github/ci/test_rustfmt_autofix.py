@@ -68,15 +68,23 @@ class RustfmtAutofixWorkflowTests(unittest.TestCase):
         writer = job_block(self.source, "write_autofix")
 
         for required in (
-            "git apply --index --whitespace=error-all",
-            "git diff --cached --name-status -z",
+            "/usr/bin/git apply --index --whitespace=error-all",
+            "/usr/bin/git diff --cached --name-status -z",
             '[[ "$status" == "M" ]]',
             '[[ "$path" == *.rs ]]',
-            "git diff --cached --check",
+            "/usr/bin/git ls-files -s",
+            '[[ "$mode" == "100644" || "$mode" == "100755" ]]',
+            "/usr/bin/git diff --cached --check",
             "-c core.hooksPath=/dev/null",
+            "-c credential.helper=",
             "persist-credentials: false",
         ):
             self.assertIn(required, writer)
+
+        for line in writer.splitlines():
+            command = line.strip()
+            self.assertFalse(command.startswith("git "), command)
+            self.assertNotIn("$(git ", command)
 
         validate_at = writer.index("Validate and apply formatter patch")
         push_at = writer.index("Commit and push formatting changes")
