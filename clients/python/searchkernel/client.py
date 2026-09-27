@@ -311,6 +311,7 @@ class ClientError(RuntimeError):
 SearchKernelError = ClientError
 
 _MANAGED_HOST_OUTPUT_TAIL_BYTES = 16 * 1024
+_MANAGED_HOST_STARTUP_TIMEOUT_SECONDS = 60.0
 
 
 def _host_binary() -> Path:
@@ -490,7 +491,7 @@ class _ManagedLocalHost:
 
     def _wait_until_ready(self) -> None:
         assert self.process is not None
-        deadline = time.monotonic() + 15
+        deadline = time.monotonic() + _MANAGED_HOST_STARTUP_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
                 output = (

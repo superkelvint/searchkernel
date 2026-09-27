@@ -10,7 +10,7 @@ The purpose of this document is to control what is allowed to move next.
 
 - Keep one portable semantic path: FlatBuffers -> `searchkernel-ir` -> backend.
 - Rust stays direct/in-process; non-Rust clients use the shared dispatcher over
-  gRPC/gRPC-Web.
+  gRPC/gRPC-Web or the explicitly sanctioned standard-FlatBuffers-JSON HTTP edge.
 - Protobuf is transport framing only.
 - Keep the only required native FFI at Rust <-> Vespa C++.
 - Freeze expected behavior before implementing a new semantic capability.
@@ -38,6 +38,8 @@ milestones:
 | Transport | `searchkerneld` UDS/TCP + gRPC-Web |
 | Python | generated models + gRPC + managed local facade + E2E |
 | TypeScript | generated models + browser gRPC-Web + managed Node facade + E2E |
+| PHP | standard FlatBuffers JSON HTTP facade + package + real E2E |
+| Ruby | standard FlatBuffers JSON HTTP facade + managed local lifecycle + packaged gem + real E2E |
 | Search features | filters, typed queries, grouping/facets, YQL subset, ranking/two-phase, tensors, nearest-neighbor |
 | Vector search | exact dense NN plus the M14 HNSW implementation slice |
 | Results | scalar projected docsums plus first real highlighting path |

@@ -116,6 +116,38 @@ class ManagedLocalHostTest(unittest.TestCase):
             client_module._MANAGED_HOST_OUTPUT_TAIL_BYTES + 128,
         )
 
+    def test_startup_wait_allows_listener_after_old_fifteen_second_deadline(self):
+        host = object.__new__(client_module._ManagedLocalHost)
+        host.process = _Process()
+        host.socket_path = Path("/tmp/searchkernel-managed-host-late.sock")
+        host._output_capture = None
+
+        class _Socket:
+            attempts = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def settimeout(self, _timeout):
+                return None
+
+            def connect(self, _path):
+                type(self).attempts += 1
+                if type(self).attempts == 1:
+                    raise OSError("listener not ready yet")
+
+        with (
+            patch.object(client_module.socket, "socket", side_effect=lambda *_args: _Socket()),
+            patch.object(client_module.time, "monotonic", side_effect=[0.0, 0.0, 16.0]),
+            patch.object(client_module.time, "sleep"),
+        ):
+            host._wait_until_ready()
+
+        self.assertEqual(_Socket.attempts, 2)
+
     def test_startup_exit_reports_exit_code_and_bounded_daemon_output(self):
         temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-host-failure-")
         self.addCleanup(temporary.cleanup)
