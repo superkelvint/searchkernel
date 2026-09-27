@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "clients/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "api/**"
       - "core/crates/searchkernel-protocol/**"
       - "core/crates/searchkernel/**"
@@ -47,6 +49,8 @@ on:
     branches: [main]
     paths:
       - "clients/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "api/**"
       - "core/crates/searchkernel-protocol/**"
       - "core/crates/searchkernel/**"
