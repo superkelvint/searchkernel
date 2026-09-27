@@ -24,7 +24,6 @@ module SearchKernel
         @id = raw["id"]
         @relevance = Results.relevance(raw["relevance"])
         @score = @relevance
-        @_field_entries = Results.value_entries_with_kinds(raw["fields"])
         @fields = Value.optional_entries(raw["fields"])
         @highlights = Results.vector(raw, "highlights") { |highlight| Results.highlight(highlight) }
         @source = raw["source"]
@@ -47,6 +46,7 @@ module SearchKernel
         @id = raw["id"]
         @label = raw["label"]
         @value = Value.decode(raw["value"]) if raw.key?("value")
+        @_field_entries = Results.value_entries_with_kinds(raw["fields"])
         @fields = Value.optional_entries(raw["fields"])
         @children = Results.vector(raw, "children") { |node| Results.node(node) }
         @groups = @children&.grep(ResultGroup)&.freeze
