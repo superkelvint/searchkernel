@@ -26,7 +26,8 @@ returns Ruby values; tensors use the `$searchkernel_tensor` tagged map.
 `SearchKernel::Results::SearchResults`. Its `root` retains the recursive tree;
 `hits` and `groups` are direct projections of that root. Raw `client.search`
 still returns the canonical response payload. The high-level `Index` facade
-and managed local lifecycle remain separate future slices.
+and managed-local lifecycle are implemented as a separate ergonomic layer over
+that canonical transport.
 
 Run the focused tests from the repository root:
 
