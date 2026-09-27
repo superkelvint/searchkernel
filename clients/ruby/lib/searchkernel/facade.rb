@@ -168,8 +168,8 @@ module SearchKernel
     end
 
     def aggregate(expression)
-      expression = Grouping.expression(expression)
-      @aggregates << expression.as("")
+      output = expression.is_a?(GroupingOutput) ? expression : Grouping.expression(expression).as("")
+      @aggregates << output
       self
     end
 
