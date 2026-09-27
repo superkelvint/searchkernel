@@ -100,9 +100,17 @@ stage_executable_runtime() {
     mkdir -p "$runtime/.searchkernel-native"
     cp "$binary" "$runtime/static-searchkernel-smoke"
     if [[ "$with_closure" == 1 ]]; then
+        # The production closure bundler expects at least one ELF payload in
+        # libdir before it processes --extra-elf inputs. Seed it with a temporary
+        # copy of the Candidate A executable, bundle its non-baseline DT_NEEDED
+        # closure, then remove the seed. This keeps the production bundler
+        # unchanged while letting an executable-only candidate use it correctly.
+        cp "$runtime/static-searchkernel-smoke" \
+            "$runtime/.searchkernel-native/.candidate-a-seed"
         "$PYTHON" "$ROOT/tools/bundle-native-runtime-closure.py" \
             "$runtime/.searchkernel-native" --search-dir "$SDK/lib" \
             --extra-elf "$runtime/static-searchkernel-smoke"
+        rm -f "$runtime/.searchkernel-native/.candidate-a-seed"
     fi
     printf '%s\n' "$runtime"
 }
