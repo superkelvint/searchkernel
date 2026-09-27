@@ -465,6 +465,19 @@ ensure
   reopened.close
 end
 
+geo_path = "#{index_path}-geo"
+FileUtils.rm_rf(geo_path)
+geo = SearchKernel::Index.create(geo_path, fields: { "location" => SearchKernel::PositionField.new })
+begin
+  geo.upsert("inside", "location" => {"latitude" => 37.3, "longitude" => -121.9})
+  geo.upsert("outside", "location" => {"latitude" => 40.7, "longitude" => -74.0})
+  same(["inside"], ids(geo.query(SearchKernel::Query.geo_location("location", lat: 37.3, lon: -121.9, radius: "10km")).limit(10).execute), "typed geo-location query")
+  same(["inside"], ids(geo.query(SearchKernel::Query.geo_box("location", south: 37.0, west: -122.2, north: 37.6, east: -121.5)).limit(10).execute), "typed geo bounding-box query")
+ensure
+  geo.close
+  FileUtils.rm_rf(geo_path)
+end
+
 puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 
 # Executable capability evidence from the public Ruby facade.
@@ -472,6 +485,7 @@ puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 # SKC: query.phrase/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.proximity/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.fuzzy/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.geo/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.weighted_and_wand/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.boolean/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=managed-local

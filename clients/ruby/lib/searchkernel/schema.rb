@@ -77,6 +77,19 @@ module SearchKernel
     end
   end
 
+  class PositionField < FieldSpec
+    def initialize(**kwargs)
+      super(kind: :string, **kwargs)
+    end
+
+    def definition(name)
+      result = super
+      result["data_type"] = { "kind_type" => "PositionDataType", "kind" => {} }
+      result.delete("matching")
+      result
+    end
+  end
+
   HnswIndexConfig = Struct.new(
     :max_links_per_node,
     :neighbors_to_explore_at_insert,
