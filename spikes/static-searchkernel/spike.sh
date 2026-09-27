@@ -202,8 +202,8 @@ candidate_b() {
     cp "$STATIC_PLAN/results/"* "$BUILD/results/candidate-b/" 2>/dev/null || true
 
     if [[ ! -f "$adapter" ]]; then
-        echo "Candidate B did not link; inspect build/results/candidate-b/candidate-b-link.log"
-        return 0
+        echo "Candidate B did not link; inspect build/results/candidate-b/candidate-b-link.log" >&2
+        return 1
     fi
 
     local binary
@@ -249,7 +249,7 @@ candidate_a() {
     local plan="$STATIC_PLAN/results/executable-extra-args.json"
     [[ -f "$plan" ]] || {
         echo "Candidate A link plan was not produced" >&2
-        return 0
+        return 1
     }
 
     local workspace shim target host target_key linker_var
@@ -275,14 +275,14 @@ candidate_a() {
     set -e
     printf '%s\n' "$status" >"$BUILD/results/candidate-a/build-status.txt"
     if [[ $status -ne 0 ]]; then
-        echo "Candidate A final executable link failed; inspect build/results/candidate-a/build.log"
-        return 0
+        echo "Candidate A final executable link failed; inspect build/results/candidate-a/build.log" >&2
+        return 1
     fi
 
     local binary="$target/release/static-searchkernel-smoke"
     [[ -x "$binary" ]] || {
         echo "Candidate A build succeeded but smoke executable is missing" >&2
-        return 0
+        return 1
     }
     capture candidate-a "$binary"
 
