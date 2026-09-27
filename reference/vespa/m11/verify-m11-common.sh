@@ -48,7 +48,11 @@ PY
 }
 
 build_m11_driver() {
-  export SK_NATIVE_SDK="$M11_SDK"
+  # M11_SDK is an adapter-only hardening runtime override, not a full SDK
+  # package accepted by Cargo's explicit-SDK provenance contract. Build the
+  # Rust driver through the normal pinned-base resolver; at execution time the
+  # hardening adapter wins via LD_LIBRARY_PATH/RUNPATH.
+  unset SK_NATIVE_SDK SK_NATIVE_BASE_SDK
   export CARGO_TARGET_DIR="$M11_CARGO_TARGET"
   export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,$M11_SDK/lib"
   cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
