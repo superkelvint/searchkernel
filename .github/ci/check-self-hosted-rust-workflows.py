@@ -172,10 +172,7 @@ def main() -> int:
         if not delegated_root.exists():
             continue
         for path in sorted(p for p in delegated_root.rglob("*") if p.is_file() and p.suffix in delegated_suffixes):
-            candidate_checker = (
-                ROOT / ".github" / "ci" / "check-self-hosted-rust-workflows.py"
-            )
-            if path.resolve() == candidate_checker.resolve() or path.name.startswith("test_"):
+            if path.name.startswith("test_"):
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
             for pattern, description in FORBIDDEN_IN_WORKFLOWS[3:5]:
