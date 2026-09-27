@@ -56,6 +56,9 @@ for fragment in (
 
 for command in (
     "check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify",
+    "run)",
+    'python|node|npm|php|ruby) return 0',
+    'native) return 1',
     "native-sdk)",
     '[[ "${2:-ensure}" == "ensure" ]]',
     "SEARCHKERNEL_DEV_USE_CI_IMAGE",
@@ -64,6 +67,14 @@ for command in (
 ):
     if command not in dev:
         raise SystemExit(f"dev image-dispatch contract is missing {command!r}")
+
+run_dispatch = dev.index("run)")
+run_case_end = dev.index(";;", run_dispatch)
+run_case = dev[run_dispatch:run_case_end]
+if "python|node|npm|php|ruby" not in run_case:
+    raise SystemExit("dev must dispatch repository language runtimes through the CI image")
+if "native) return 1" not in dev[run_dispatch:dev.index("native-sdk)", run_dispatch)]:
+    raise SystemExit("dev must keep arbitrary native binary execution host-local")
 
 native_dispatch = dev.index("native-sdk)")
 native_case_end = dev.index(";;", native_dispatch)
