@@ -65,6 +65,10 @@ grep -F '"$RUNTIME" python' "$PHP_E2E" >/dev/null || {
     echo "PHP E2E helper Python bypasses the canonical Python launcher" >&2
     exit 1
 }
+grep -F 'PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}"' "$PHP_E2E" >/dev/null || {
+    echo "PHP E2E helper does not expose the checkout Python client to canonical Python" >&2
+    exit 1
+}
 grep -F 'RUNTIME="$ROOT/tools/run-runtime.sh"' "$PHP_PACKAGE" >/dev/null || {
     echo "PHP package check does not select the canonical runtime launcher" >&2
     exit 1
