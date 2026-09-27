@@ -325,7 +325,9 @@ fi
 # prerequisite. Rebuild only Search Kernel's adapter into Cargo OUT_DIR and
 # point its RPATH at that shared base. Do not copy or mutate the Vespa base.
 if [ "$ADAPTER_ONLY" = 1 ]; then
-    python3 "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
+    if [ "${SK_NATIVE_SKIP_ABI_AUTHORITIES:-0}" != 1 ]; then
+        python3 "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
+    fi
     if command -v patchelf >/dev/null 2>&1; then
         patchelf --force-rpath --set-rpath "$BASE_SDK/lib" "$SDK/lib/libsearchkernel_vespa.so.2"
         rm -f "$SDK/lib/libsearchkernel_vespa.so"

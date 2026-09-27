@@ -2,12 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-PYTHON="${CI_PYTHON:-python3}"
-TARGET_DIR="${CARGO_TARGET_DIR:-target/host}"
-if [[ "$TARGET_DIR" != /* ]]; then
-  TARGET_DIR="$ROOT/$TARGET_DIR"
-fi
-HOST="${SEARCHKERNEL_LOCAL_HOST:-$TARGET_DIR/debug/searchkerneld}"
+cd "$ROOT"
+PYTHON="$(bash "$ROOT/tools/resolve-python.sh")"
+
+source "$ROOT/tools/client-e2e-runtime.sh"
+prepare_client_e2e_runtime
+
+HOST="$SEARCHKERNEL_LOCAL_HOST"
 WORK="$(mktemp -d)"
 INDEX="$WORK/showcase-index"
 PID=""
@@ -51,12 +52,7 @@ start_host() {
   local grpc_port web_port
   grpc_port="$(free_port)"
   web_port="$(free_port)"
-  local host_ld_library_path="${LD_LIBRARY_PATH:-}"
-  if [[ -n "${SEARCHKERNEL_SDK_LIB:-}" ]]; then
-    host_ld_library_path="${SEARCHKERNEL_SDK_LIB}${host_ld_library_path:+:$host_ld_library_path}"
-  fi
-
-  LD_LIBRARY_PATH="$host_ld_library_path" "$HOST" \
+  "$HOST" \
     --index "$INDEX" \
     --listen "127.0.0.1:$grpc_port" \
     --web-listen "127.0.0.1:$web_port" \

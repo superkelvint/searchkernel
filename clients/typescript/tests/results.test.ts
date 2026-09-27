@@ -360,6 +360,23 @@ describe("shared canonical result corpus", () => {
     expect(stateOnly.root.metadata).toEqual({ state: "present" });
   });
 
+  it("preserves sparse and mixed tensors from the shared response fixture", () => {
+    const result = loadFixture("sparse-mixed-tensors");
+    if (!(result.root instanceof ResultGroup)) throw new Error("tensor fixture root is not a group");
+    expect(result.hits[0]?.get("sparse")).toEqual({
+      $searchkernel_tensor: {
+        typeSpec: "tensor<float>(label{})",
+        sparse: [{ address: [{ dimension: "label", label: "a" }], value: 0.5 }],
+      },
+    });
+    expect(result.root.value).toEqual({
+      $searchkernel_tensor: {
+        typeSpec: "tensor<float>(label{},x[2])",
+        mixed: [{ address: [{ dimension: "label", label: "b" }], values: [0.25, 0.75] }],
+      },
+    });
+  });
+
   it("uses the exact Rust facet shape for every shared fixture", () => {
     const valid = loadFixture("facet-valid");
     valid.projectFacet("brand", "brand");
