@@ -280,6 +280,24 @@ class ExactHeadTests(unittest.TestCase):
         self.assertNotIn("Install newest immutable native Vespa base", workflow)
         self.assertNotIn("sudo apt-get", e2e)
 
+    def test_client_capabilities_watches_release_gate_inputs(self) -> None:
+        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
+        for relative in (
+            "README.md",
+            "docs/release-support.json",
+            "docs/release-support.md",
+            "tools/check-release-support.py",
+            "tools/package-consumer-release.py",
+            "tools/check-consumer-release.py",
+            "tools/test_package_consumer_release.py",
+        ):
+            with self.subTest(relative=relative):
+                self.assertEqual(
+                    workflow.count(f'      - "{relative}"'),
+                    2,
+                    f"{relative} must trigger both pull_request and main push release qualification",
+                )
+
     def test_workflow_keeps_native_signal_without_running_native_ci(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("\n  native:\n", workflow)

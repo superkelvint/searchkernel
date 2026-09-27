@@ -4,6 +4,13 @@ on:
   pull_request:
     paths:
       - "clients/**"
+      - "README.md"
+      - "docs/release-support.json"
+      - "docs/release-support.md"
+      - "tools/check-release-support.py"
+      - "tools/package-consumer-release.py"
+      - "tools/check-consumer-release.py"
+      - "tools/test_package_consumer_release.py"
       - "api/**"
       - "core/crates/searchkernel-protocol/**"
       - "core/crates/searchkernel/**"
@@ -33,6 +40,13 @@ on:
     branches: [main]
     paths:
       - "clients/**"
+      - "README.md"
+      - "docs/release-support.json"
+      - "docs/release-support.md"
+      - "tools/check-release-support.py"
+      - "tools/package-consumer-release.py"
+      - "tools/check-consumer-release.py"
+      - "tools/test_package_consumer_release.py"
       - "api/**"
       - "core/crates/searchkernel-protocol/**"
       - "core/crates/searchkernel/**"
