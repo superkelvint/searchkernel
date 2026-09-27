@@ -1970,10 +1970,10 @@ The convergence project is complete when:
 31. GitHub Actions contains no verifier-specific semantics beyond bounded dispatch/validation/orchestration.
 32. The local wrapper waits for the exact dispatched run, surfaces its run identity and failure logs, and propagates its result; direct GitHub callers can retrieve equivalent evidence from the workflow run.
 33. Remote verification has an explicit authorized-actor/self-hosted-runner trust policy, uses read-only permissions by default, exposes no release/write secrets, and defines handling for untrusted/fork revisions.
-36. Arbitrary remote shell execution is not exposed.
-37. Repository agent guidance documents both local-wrapper and remote-only exact-SHA verification protocols and prohibits claiming verification from older commits.
-34. Local canonical-container development preserves compatible writable Cargo/native incremental state across invocations in a worktree-scoped/environment-scoped namespace; unrelated worktrees do not share writable target state.
-35. `./dev doctor` validates the minimal supported host boundary, while ordinary language/compiler toolchains remain owned by the canonical image.
+34. Arbitrary remote shell execution is not exposed.
+35. Repository agent guidance documents both local-wrapper and remote-only exact-SHA verification protocols and prohibits claiming verification from older commits.
+36. Local canonical-container development preserves compatible writable Cargo/native incremental state across invocations in a worktree-scoped/environment-scoped namespace; unrelated worktrees do not share writable target state.
+37. `./dev doctor` validates the minimal supported host boundary, while ordinary language/compiler toolchains remain owned by the canonical image.
 38. `./dev build` has one explicit meaning: canonical supported product build in the canonical development environment.
 39. Normal verification and Universe never automatically enter live-oracle mode; live oracle execution/golden generation require explicit maintainer opt-in.
 40. `docs/release-support.json` is the machine-readable authority for supported downstream surfaces.
