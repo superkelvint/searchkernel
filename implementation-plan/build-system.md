@@ -87,6 +87,7 @@ Target ownership:
 | Full qualification | `./dev universe` |
 | PR gate | `./dev ci` |
 | GitHub Actions | thin invocation of `./dev` |
+| Explicit remote verification | one generic exact-SHA workflow-dispatch adapter that calls `./dev` |
 
 The plan is successful only if it **reduces the number of independent authorities**.
 
@@ -524,8 +525,10 @@ The normal developer interface should converge toward:
 ./dev ci
 
 ./dev test [scope]
+./dev test --remote <scope>
 ./dev lint [scope]
 ./dev verify <lane>
+./dev verify --remote <lane>
 
 ./dev universe
 ./dev release-check
@@ -537,7 +540,243 @@ A developer should not need those commands to understand an ordinary build.
 
 ---
 
-## 12. Migration plan
+## 12. Explicit remote execution for agents
+
+A major reason the heavy verifier suite existed in CI was practical: coding agents often cannot execute native, sanitizer, Vespa, or other specialist checks in their own local environment.
+
+Simplifying mandatory PR CI must **not** remove agents' access to those checks.
+
+The design requirement is:
+
+> **Give agents a remote form of the existing canonical commands.**
+
+Local execution:
+
+```bash
+./dev verify vespa.ranking
+./dev test rust
+```
+
+Remote execution after pushing:
+
+```bash
+./dev verify --remote vespa.ranking
+./dev test --remote rust
+```
+
+The remote form is not a new verifier implementation. It is only an execution-location switch.
+
+### 12.1 Semantic equivalence
+
+This invariant is mandatory:
+
+```text
+./dev verify foo
+```
+
+and:
+
+```text
+./dev verify --remote foo
+```
+
+must ultimately execute the same canonical operation:
+
+```text
+./dev verify foo
+```
+
+Likewise:
+
+```text
+./dev test rust
+./dev test --remote rust
+```
+
+must share the same underlying `./dev test rust` semantics.
+
+The architecture is:
+
+```text
+                         +-- local ------------------+
+                         |                           v
+Agent ---- ./dev verify foo                  canonical environment
+                         |                           ^
+                         +-- --remote --> GitHub ----+
+                                      |
+                                      v
+                              ./dev verify foo
+```
+
+GitHub Actions does not own verifier semantics.
+
+### 12.2 One generic on-demand workflow
+
+Provide one bounded `workflow_dispatch` workflow for explicit remote verification.
+
+Its conceptual inputs are:
+
+```text
+revision   exact pushed commit SHA
+operation  verify | test
+target     known verifier lane or test scope
+```
+
+The workflow:
+
+1. checks out the exact requested SHA;
+2. verifies that `git rev-parse HEAD` equals that SHA;
+3. executes exactly one canonical command:
+   - `./dev verify <target>`, or
+   - `./dev test <target>`;
+4. returns the resulting exit status and logs.
+
+The workflow must **not** know how `vespa.ranking`, persistence, Rust tests, or any other lane works internally.
+
+It must not contain verifier-specific build logic.
+
+### 12.3 Exact pushed SHA is mandatory
+
+Remote verification is evidence about a specific commit, not about a branch name.
+
+If the agent pushed:
+
+```text
+7bc93a0...
+```
+
+then the dispatched request must identify:
+
+```text
+revision = 7bc93a0...
+operation = verify
+target = vespa.ranking
+```
+
+Do not dispatch against a mutable PR branch and infer which revision was tested.
+
+Before dispatch, `./dev` should establish that the requested HEAD is available on the remote. If the current commit has not been pushed, remote verification should fail with a clear instruction rather than silently test an older commit.
+
+The result should identify at minimum:
+
+```text
+revision: 7bc93a0...
+command:  ./dev verify vespa.ranking
+run:      <GitHub Actions run URL/ID>
+result:   PASS | FAIL
+```
+
+A verification run against an earlier commit must never be presented as verification of a newer PR head.
+
+### 12.4 `./dev` owns the remote UX
+
+Agents should not normally need to invoke `gh workflow run` or manually locate Actions runs.
+
+`./dev verify --remote <lane>` and `./dev test --remote <scope>` should:
+
+1. resolve the current exact commit SHA;
+2. require that SHA to exist remotely;
+3. dispatch the generic on-demand workflow;
+4. capture the returned run identity deterministically;
+5. wait for that specific run;
+6. print the run URL/ID;
+7. surface failed-step logs when the run fails;
+8. exit success/failure consistently with the remote operation.
+
+A failure should end with a canonical local reproduction command where applicable:
+
+```text
+FAIL: vespa.grouping.yql
+
+REPRO:
+./dev verify vespa.grouping.yql
+```
+
+This gives humans and coding agents the same interface.
+
+### 12.5 Bounded operations only
+
+Remote execution is **not** a generic remote shell.
+
+Supported forms are bounded to canonical repository operations such as:
+
+```bash
+./dev verify --remote <known-lane>
+./dev test --remote <known-scope>
+```
+
+Verifier targets must be validated against the same canonical registry used by:
+
+```bash
+./dev verify --list
+```
+
+Test scopes should similarly be a finite supported set.
+
+Do not add an interface such as:
+
+```text
+./dev remote "<arbitrary shell command>"
+```
+
+This preserves a reviewable and safe remote execution surface.
+
+### 12.6 PR labels are not the primary interface
+
+Labels may be added later as a convenience if some automation can manipulate labels but cannot dispatch Actions directly.
+
+They should not be the primary model because label state is poor verification state and makes reruns awkward.
+
+The canonical interface is explicit workflow dispatch hidden behind `./dev`.
+
+### 12.7 Agent protocol
+
+The repository's agent guidance should eventually state:
+
+```text
+After pushing changes, run the relevant verification remotely when
+the local environment cannot execute it:
+
+    ./dev verify --remote <lane>
+    ./dev test --remote <scope>
+
+Remote verification always tests the current pushed HEAD exactly.
+
+Do not claim verification from a run against an earlier commit.
+
+If a remote verifier fails:
+1. inspect the returned failure log;
+2. reproduce locally when possible using the printed command;
+3. fix the issue;
+4. push the fix;
+5. rerun the remote verifier against the new HEAD.
+```
+
+Agents should choose relevant specialist checks rather than reflexively running Universe.
+
+### 12.8 CI separation
+
+The intended division is:
+
+| Mechanism | Trigger | Purpose |
+|---|---|---|
+| `./dev ci` | automatic on every PR | cheap mandatory gate |
+| `./dev verify <lane>` | explicit local | specialist verification |
+| `./dev verify --remote <lane>` | explicit remote | specialist verification on CI infrastructure |
+| `./dev test --remote <scope>` | explicit remote | tests unavailable locally |
+| `./dev universe` | explicit | full qualification |
+
+This is deliberately different from rebuilding the old automatic heavy CI matrix.
+
+The architectural requirement is:
+
+> **Strong verifiers remain available locally and through explicit remote execution, even though they are not mandatory PR CI.**
+
+Do not turn remote-run reporting into a second infrastructure project. Exact SHA, canonical command, run identity, result, and failure logs are sufficient for the first version.
+
+---
+
+## 13. Migration plan
 
 ### Phase 0 — Freeze and inventory
 
@@ -811,7 +1050,7 @@ If the answer is unclear, the old path is not ready to be removed.
 
 ---
 
-## 13. Migration rules
+## 14. Migration rules
 
 ### Rule 1 — Delegate before rewriting
 
@@ -865,7 +1104,7 @@ The development system is allowed to simplify only if external consumers remain 
 
 ---
 
-## 14. Explicit non-goals
+## 15. Explicit non-goals
 
 This project does **not**:
 
@@ -886,7 +1125,7 @@ This project does **not**:
 
 ---
 
-## 15. Reviewer guide
+## 16. Reviewer guide
 
 An engineer unfamiliar with Search Kernel should be able to review the migration with these questions.
 
@@ -930,13 +1169,19 @@ Does Universe merely orchestrate canonical commands and print exact repros?
 
 Do repeated compatible builds reuse output?
 
+### Remote verification
+
+Can an agent that cannot run a specialist check locally execute the same canonical check remotely against the exact pushed SHA?
+
+Does GitHub Actions merely invoke the canonical `./dev` operation rather than reimplementing it?
+
 ### Complexity
 
 Did the change remove an authority, or create another one?
 
 ---
 
-## 16. End-state developer experience
+## 17. End-state developer experience
 
 A developer should need approximately this model:
 
@@ -971,6 +1216,16 @@ A developer should need approximately this model:
 ./dev verify vespa.ranking
 ```
 
+### Specialist verification on remote infrastructure
+
+```bash
+git push
+./dev verify --remote vespa.ranking
+./dev test --remote rust
+```
+
+Remote output identifies the exact pushed SHA and GitHub Actions run, waits for completion, and returns the remote operation's status.
+
 ### Full qualification
 
 ```bash
@@ -997,7 +1252,7 @@ A downstream user should need even less: the supported Search Kernel dependency/
 
 ---
 
-## 17. Definition of done
+## 18. Definition of done
 
 The convergence project is complete when:
 
@@ -1024,9 +1279,16 @@ The convergence project is complete when:
 21. The P0 mostly-static-vs-shared native-distribution investigation is documented with evidence.
 22. Existing native SDK provenance guarantees remain intact.
 23. Strong verifiers remain available outside mandatory PR CI.
-24. Old compatibility/build paths are removed only after their replacements are proven.
-25. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
-26. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, and behavioral references live without discovering another hidden build system.
+24. `./dev verify --remote <lane>` and `./dev test --remote <scope>` provide explicit remote execution for agents/developers who cannot run a relevant check locally.
+25. Remote execution checks out and verifies the exact pushed commit SHA, never merely a mutable branch reference.
+26. Remote execution ultimately invokes the same canonical `./dev verify <lane>` or `./dev test <scope>` command as local execution.
+27. One generic bounded on-demand workflow handles remote `verify` and `test`; GitHub Actions contains no verifier-specific semantics.
+28. Remote commands wait for the exact dispatched run, surface its run identity and failure logs, and propagate its result.
+29. Arbitrary remote shell execution is not exposed.
+30. Repository agent guidance documents the exact-SHA remote verification protocol and prohibits claiming verification from older commits.
+31. Old compatibility/build paths are removed only after their replacements are proven.
+32. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
+33. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, and behavioral references live without discovering another hidden build system.
 
 The final architecture should be boring:
 
@@ -1039,6 +1301,7 @@ The final architecture should be boring:
 > Active verifier programs use the normal build graph.  
 > `reference/vespa` owns behavioral evidence and oracle provenance.  
 > Universe orchestrates.  
+> Explicit remote verification dispatches exact-SHA `./dev` operations.  
 > CI calls `./dev`.
 
 That is the project.
