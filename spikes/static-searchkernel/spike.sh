@@ -258,7 +258,7 @@ candidate_a() {
     target="$BUILD/candidate-a/target"
     host=$("$RUSTC" -vV | sed -n 's/^host: //p')
     target_key=$(printf '%s' "$host" | tr '[:lower:]-' '[:upper:]_')
-    linker_var="CARGO_TARGET_${target_key${_LINKER"
+    linker_var="CARGO_TARGET_${target_key}_LINKER"
 
     mkdir -p "$BUILD/results/candidate-a" "$target"
     set +e
