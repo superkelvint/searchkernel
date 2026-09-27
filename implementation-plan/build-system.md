@@ -352,16 +352,35 @@ Use Search Kernel in an application without learning the Search Kernel repositor
 
 For this user, the best build-system UX is largely **invisible**.
 
+The supported installation contract is ecosystem-native:
+
+```bash
+# TypeScript / Node
+npm install @searchkernel/client
+
+# Python
+pip install searchkernel
+
+# Ruby
+gem install searchkernel
+
+# Rust
+cargo add searchkernel
+```
+
+After that installation, managed-local Search Kernel must work without a separate Vespa install, a separate `searchkerneld` install, Search Kernel's development Docker images, or repository-specific setup.
+
 Conceptually:
 
 ```text
-add Search Kernel dependency/package
+native package-manager install
         |
         v
-build application
+package transparently provides/provisions
+the correct platform Search Kernel runtime
         |
         v
-run application
+application uses Search Kernel locally
 ```
 
 #### Requirements
@@ -371,10 +390,13 @@ The supported downstream experience must not require:
 - `./dev`;
 - the Search Kernel repository;
 - the Search Kernel CI image;
-- a separately installed matching Vespa runtime as the normal product model;
+- a separately installed matching Vespa runtime;
+- a separately installed `searchkerneld` for managed-local use;
 - repository-local Cargo configuration;
 - ambient `LD_LIBRARY_PATH`;
 - knowledge of Search Kernel worktree or SDK paths.
+
+The package-manager-native install command is the product boundary. Any platform-specific runtime selection, download, bundling, staging, or native linking required behind that boundary must be transparent to the user and owned by the package/build system.
 
 The downstream contract is defined **per supported release surface**, not by one generic consumer model.
 
@@ -580,11 +602,12 @@ Several requirements follow directly from serving all eight users:
 5. **Repository environment is not consumer runtime.** Development convenience must never become a downstream requirement.
 6. **Oracle authoring is not verification.** Generating truth and checking against truth remain separate operations.
 7. **Warm performance matters.** Hermetic development cannot imply rebuilding everything on every command; mutable warm build state is scoped per worktree and compatible environment, while immutable/content-addressed caches may be shared.
-8. **Build-environment distribution and product distribution are separate.** Developers/agents/CI receive tooling and Vespa through independently versioned Docker images; end users receive supported product artifacts and never depend on those build images.
+8. **Build-environment distribution and product distribution are separate.** Developers/agents/CI receive tooling and Vespa through independently versioned Docker images; end users install through their ecosystem package manager and never depend on those build images.
+10. **Installation is ecosystem-native.** `npm install`, `pip install`, `gem install`, and `cargo add` are the supported first-party installation surfaces; they transparently provide/provision the managed-local runtime.
 9. **Release promises are machine-readable.** `docs/release-support.json` defines the supported downstream surfaces, and release qualification must execute the actual artifacts for every supported row.
-10. **Failures are actionable.** Human or agent users should receive a canonical reproduction command whenever one exists.
-11. **No hidden second build system.** GitHub Actions, Universe, verifier directories, release checks, and packaging scripts consume canonical authorities instead of redefining them.
-12. **Every mechanism needs a persona.** New build-system machinery should identify which user and requirement justify its existence.
+11. **Failures are actionable.** Human or agent users should receive a canonical reproduction command whenever one exists.
+12. **No hidden second build system.** GitHub Actions, Universe, verifier directories, release checks, and packaging scripts consume canonical authorities instead of redefining them.
+13. **Every mechanism needs a persona.** New build-system machinery should identify which user and requirement justify its existence.
 
 ---
 
@@ -982,6 +1005,19 @@ Those images are build/development infrastructure.
 
 The release pipeline instead produces supported product artifacts from the same pinned/provenanced inputs.
 
+The intended end-user installation UX is:
+
+```bash
+npm install @searchkernel/client
+pip install searchkernel
+gem install searchkernel
+cargo add searchkernel
+```
+
+Those are not shorthand for a later manual runtime-install step. They are the complete supported installation entry points for their ecosystems.
+
+The package manager may satisfy that contract using the idiomatic mechanism for the ecosystem—for example, a platform wheel, platform-specific gem, npm platform-runtime dependency, or Cargo build/package mechanism—but the user-facing contract remains one normal package-manager install.
+
 The machine-readable release-promise authority is:
 
 ```text
@@ -1030,23 +1066,32 @@ The current release tooling already models these artifact families and the conve
 
 #### Rust embedded distribution
 
-Current artifact shape:
+The end-user contract is:
+
+```bash
+cargo add searchkernel
+cargo build
+```
+
+or the equivalent Cargo.toml dependency declaration.
+
+A normal Cargo consumer must transparently obtain/link/provision the correct Search Kernel native runtime through supported Cargo/package mechanics. The user must not separately download an SDK, install Vespa, install `searchkerneld`, set `SK_NATIVE_SDK`, or set `LD_LIBRARY_PATH`.
+
+The current repository release artifact is:
 
 ```text
 searchkernel-rust-<version>.tar.gz
 ```
 
-Contains the Rust consumer workspace/subset required to consume the embedded API.
+but the convergence/release architecture should move toward the normal Cargo ecosystem as the public distribution surface rather than treating a manually downloaded source tarball as the final user experience.
 
-The release contract must evolve from merely proving that this bundle can be inspected/`cargo check`ed to proving that an **external downstream application built from this exact artifact executes the native engine successfully**.
-
-The native-distribution investigation in section 5 determines what the embedded Rust artifact ultimately carries or acquires:
+The native-distribution investigation in section 5 determines how the Cargo package satisfies that contract:
 
 - a mostly-static Search Kernel native runtime;
-- a relocatable shared native closure;
-- or another proven consumer-safe package layout.
+- a relocatable shared native closure transparently provisioned by the package/build;
+- or another proven consumer-safe Cargo-native package layout.
 
-The user must not need the development Docker images.
+Release qualification must create a clean external Cargo project, depend on the **actual publishable/distributable Search Kernel Cargo artifact**, build it, and execute the native engine with repository/native overrides removed.
 
 #### Standalone daemon distribution
 
@@ -1072,7 +1117,17 @@ If the mostly-static native-runtime investigation succeeds, the `lib/` closure m
 
 Python, TypeScript/Node, and Ruby share the same product-distribution principle:
 
-> Installing the language package is sufficient to run Search Kernel locally. The user does not separately install Vespa or manually provision `searchkerneld`.
+> Installing the package through the ecosystem's normal package manager is sufficient to run Search Kernel locally. The user does not separately install Vespa or manually provision `searchkerneld`.
+
+The public installation commands are:
+
+```bash
+pip install searchkernel
+npm install @searchkernel/client
+gem install searchkernel
+```
+
+Platform-specific package variants or transitive runtime packages are implementation details behind those commands.
 
 Conceptually each package contains:
 
@@ -1104,7 +1159,9 @@ searchkernel-<version>-<platform>.whl
 
 The current release packager already stages the managed-local runtime into the wheel.
 
-Release qualification must install the wheel into a clean target/environment and prove the installed Python package can launch/use the local Search Kernel runtime with repository/native overrides removed.
+The public contract is `pip install searchkernel`. For supported platforms, pip must resolve/install the correct platform artifact automatically.
+
+Release qualification must install the package using normal pip resolution into a clean environment and prove the installed Python package can launch/use the local Search Kernel runtime with repository/native overrides removed.
 
 ##### TypeScript / Node
 
@@ -1122,7 +1179,28 @@ The current package manifest already allows `bin/` and `lib/`, and the current r
 
 Therefore TypeScript/Node is **managed-local**, not merely connect-only.
 
-Release qualification must install the packed npm artifact into a clean consumer project and prove the Node package can launch/use its packaged local Search Kernel runtime with repository/native overrides removed.
+The public contract is:
+
+```bash
+npm install @searchkernel/client
+```
+
+The package may contain the runtime directly or depend on platform-specific runtime packages selected automatically by npm. A likely scalable layout is:
+
+```text
+@searchkernel/client
+    |
+    +-- JS/TS API
+    |
+    +-- platform runtime package
+          @searchkernel/runtime-linux-x64
+          @searchkernel/runtime-linux-arm64
+          ...
+```
+
+The exact internal package split is an implementation decision; the user still installs only `@searchkernel/client`.
+
+Release qualification must install the package through normal npm resolution in a clean consumer project and prove the Node package can launch/use its packaged local Search Kernel runtime with repository/native overrides removed.
 
 A connect-to-existing-daemon API may remain available as an additional mode.
 
@@ -1139,6 +1217,14 @@ searchkernel-<version>.gem
 
 Ruby is also a **managed-local** first-party client.
 
+The public contract is:
+
+```bash
+gem install searchkernel
+```
+
+On supported platforms, RubyGems must resolve/install the correct platform gem transparently. Platform-specific gems are acceptable and expected where native runtime payloads differ.
+
 The current repository has an implementation gap: the gemspec currently packages Ruby source only, and the release packager does not yet stage the managed-local runtime into the gem.
 
 The convergence/release work must close that gap by:
@@ -1147,7 +1233,8 @@ The convergence/release work must close that gap by:
 2. staging the same qualified Search Kernel daemon/native closure used by the other managed-local clients;
 3. including those assets in the gem;
 4. providing the Ruby API/launcher path that starts or connects to that packaged local daemon;
-5. installing the built gem into a clean external GEM_HOME and executing the managed-local path with repository/native overrides removed.
+5. publishing/building the appropriate platform gem so normal `gem install searchkernel` resolves the correct artifact;
+6. installing through normal RubyGems resolution into a clean external GEM_HOME and executing the managed-local path with repository/native overrides removed.
 
 A connect-to-existing-daemon API may remain available as an additional mode.
 
@@ -1166,9 +1253,17 @@ qualified searchkerneld + native runtime closure
                 +--> Ruby gem
 ```
 
-Language-specific packaging owns only how that common payload is embedded and launched from the installed package.
+Language-specific packaging owns only how that common payload is embedded, selected, and launched from the installed package.
 
-This gives the three clients the same native bits, provenance, and runtime behavior for a given release.
+The package-manager-native UX remains:
+
+```text
+pip install searchkernel
+npm install @searchkernel/client
+gem install searchkernel
+```
+
+This gives the three clients the same native bits, provenance, and runtime behavior for a given release while still using idiomatic ecosystem packaging.
 
 #### Connect mode
 
@@ -1248,7 +1343,9 @@ The build-system convergence is distribution-complete when:
 - local and remote verification consume those exact identities;
 - release artifacts record compatible provenance;
 - `docs/release-support.json` is reconciled with the intended managed-local architecture before release qualification is treated as authoritative;
-- Python, TypeScript/Node, and Ruby managed-local artifacts are each exercised after installation from the actual distributable package;
+- `pip install searchkernel`, `npm install @searchkernel/client`, `gem install searchkernel`, and `cargo add searchkernel` are sufficient supported installation paths on qualified platforms;
+- Python, TypeScript/Node, and Ruby managed-local artifacts are each exercised after installation through their normal package manager from the actual distributable package;
+- Rust is exercised through a clean external Cargo consumer using the actual publishable/distributable package rather than repository paths;
 - all three managed-local language packages consume the same qualified platform daemon/native runtime payload rather than independently assembling native closures;
 - every supported row in `docs/release-support.json` is exercised from the actual distributable artifact;
 - no end-user supported surface requires the development/CI Docker images;
@@ -2131,10 +2228,10 @@ It must:
 
 At minimum:
 
-- Rust embedded qualification must build and **execute** a downstream project from the actual distributable Rust bundle in a clean external location, not merely `cargo check` the bundle or consume the repository by path.
-- Python qualification must install the wheel and execute its managed-local runtime path.
-- TypeScript/Node qualification must install the packed npm artifact and execute its managed-local runtime path.
-- Ruby qualification must install the built gem and execute its managed-local runtime path.
+- Rust embedded qualification must create a clean external Cargo consumer using the actual publishable/distributable Search Kernel package and prove the equivalent of `cargo add searchkernel && cargo build && run` works without repository/native setup.
+- Python qualification must perform the equivalent of `pip install searchkernel` in a clean environment and execute its managed-local runtime path.
+- TypeScript/Node qualification must perform the equivalent of `npm install @searchkernel/client` in a clean consumer project and execute its managed-local runtime path.
+- Ruby qualification must perform the equivalent of `gem install searchkernel` in a clean GEM_HOME and execute its managed-local runtime path.
 - Those three managed-local packages must be assembled from the same qualified platform daemon/native runtime payload for the release.
 
 Completion criterion: `./dev release-check` is sufficient evidence for the statement "this exact revision's supported artifacts are qualified for release", while `./dev universe` remains the exhaustive repository/source qualification command.
@@ -2298,6 +2395,8 @@ Can an ordinary Search Kernel source change avoid rebuilding or republishing the
 Does the thin leaf record the exact immutable toolchain/Vespa identities used for verification?
 
 ### Product distribution
+
+Can a supported user install with exactly the ecosystem-native command—`npm install @searchkernel/client`, `pip install searchkernel`, `gem install searchkernel`, or `cargo add searchkernel`—and obtain a runnable managed-local Search Kernel without separately installing Vespa or `searchkerneld`?
 
 Are Python, TypeScript/Node, and Ruby all treated as managed-local first-party distributions, with connect mode only as an additional mode?
 
@@ -2480,17 +2579,19 @@ The convergence project is complete when:
 42. Rust embedded release qualification builds and executes a clean external consumer from the actual distributable Rust artifact, not merely from a repository path.
 43. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
 44. The intended release architecture treats Python, TypeScript/Node, and Ruby as managed-local first-party clients; `docs/release-support.json` is reconciled accordingly before release qualification becomes authoritative.
-45. Python, TypeScript/Node, and Ruby release artifacts each carry/launch the qualified local Search Kernel runtime and pass clean external-install managed-local E2E tests.
-46. The managed-local Python, TypeScript/Node, and Ruby packages are assembled from one qualified platform daemon/native runtime payload rather than independently assembled native closures.
+45. On qualified platforms, `pip install searchkernel`, `npm install @searchkernel/client`, `gem install searchkernel`, and `cargo add searchkernel` are sufficient installation paths without a separate Vespa or `searchkerneld` install.
+46. Python, TypeScript/Node, and Ruby release artifacts each carry/launch the qualified local Search Kernel runtime and pass clean external-install managed-local E2E tests using normal package-manager installation.
+49. Rust release qualification uses a clean external Cargo consumer against the actual publishable/distributable Search Kernel package and proves build + native execution without repository-specific setup.
+50. The managed-local Python, TypeScript/Node, and Ruby packages are assembled from one qualified platform daemon/native runtime payload rather than independently assembled native closures.
 47. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
 48. Ordinary Search Kernel source/image publication does not copy or republish the large Vespa/native payload.
-49. The thin Search Kernel leaf records exact immutable toolchain and Vespa/native provenance.
-50. Canonical local and remote verification resolve the Vespa/native payload by immutable identity and mount/materialize it read-only.
-51. Release artifacts record Search Kernel revision, platform/native target, pinned Vespa/native identity, and artifact checksums/provenance sufficient to relate shipped output to qualified inputs.
-52. End-user supported artifacts do not require `searchkernel-ci`, `searchkernel-ci-toolchain`, or `searchkernel-ci-vespa` at runtime.
-53. Old compatibility/build paths are removed only after their replacements are proven.
-54. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
-55. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
+51. The thin Search Kernel leaf records exact immutable toolchain and Vespa/native provenance.
+52. Canonical local and remote verification resolve the Vespa/native payload by immutable identity and mount/materialize it read-only.
+53. Release artifacts record Search Kernel revision, platform/native target, pinned Vespa/native identity, and artifact checksums/provenance sufficient to relate shipped output to qualified inputs.
+54. End-user supported artifacts do not require `searchkernel-ci`, `searchkernel-ci-toolchain`, or `searchkernel-ci-vespa` at runtime.
+55. Old compatibility/build paths are removed only after their replacements are proven.
+56. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
+57. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
 
 The final architecture should be boring:
 
@@ -2500,8 +2601,9 @@ The final architecture should be boring:
 > The thin Search Kernel leaf binds an exact source revision to exact immutable build inputs.  
 > Cargo owns Rust compilation.  
 > Native build tooling owns native compilation.  
-> The build/package layer makes consumer artifacts runnable.  
-> Consumers do not depend on `./dev`.  
+> Ecosystem package managers are the end-user installation surface: Cargo, npm, pip, and RubyGems.  
+> The build/package layer transparently provides the correct managed-local runtime.  
+> Consumers do not depend on `./dev`, development Docker images, or a separate Vespa/searchkerneld installation.  
 > Active verifier programs use the normal build graph.  
 > `reference/vespa` owns behavioral evidence and oracle provenance.  
 > Per-worktree mutable build state keeps local iteration warm without cross-agent contamination.  
