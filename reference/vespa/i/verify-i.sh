@@ -45,8 +45,7 @@ for scenario in "$SCRIPT_DIR"/scenarios/*.json; do
   id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
   data="$TARGET/$id-data"
   mkdir -p "$data"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$DRIVER" "$scenario" "$data" \
+  run_native_executable "$DRIVER" "$scenario" "$data" \
     > "$TARGET/$id.actual.json" 2> "$TARGET/$id.native.log"
   python3 "$SCRIPT_DIR/compare.py" \
     "$SCRIPT_DIR/expected/$id.json" "$TARGET/$id.actual.json"
