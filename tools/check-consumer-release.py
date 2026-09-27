@@ -6,12 +6,19 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 out = Path(sys.argv[1])
 manifest = json.loads((out / "manifest.json").read_text())
 assert manifest["platform"] == "linux-x86_64-glibc"
+release_support = json.loads((ROOT / "docs" / "release-support.json").read_text())
+wheel_platform_tag = release_support.get("python_wheel_platform_tag")
+assert isinstance(wheel_platform_tag, str), (
+    "docs/release-support.json must declare python_wheel_platform_tag"
+)
+expected_wheel_tag = f"py3-none-{wheel_platform_tag}"
 for artifact in manifest["artifacts"]:
     path = out / artifact["file"]
     assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
@@ -86,6 +93,27 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
     verify_daemon_tree(daemon_root)
 
     wheel = next(out.glob("searchkernel-*.whl"))
+    assert wheel.name.endswith(f"-{expected_wheel_tag}.whl"), (
+        "Python consumer wheel platform tag does not match release support policy: "
+        f"expected *-{expected_wheel_tag}.whl, found {wheel.name}"
+    )
+    with zipfile.ZipFile(wheel) as archive:
+        wheel_metadata_paths = [
+            name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")
+        ]
+        assert len(wheel_metadata_paths) == 1, (
+            "Python consumer wheel must contain exactly one WHEEL metadata file"
+        )
+        wheel_metadata = archive.read(wheel_metadata_paths[0]).decode("utf-8")
+    wheel_metadata_lines = set(wheel_metadata.splitlines())
+    assert "Root-Is-Purelib: false" in wheel_metadata_lines, (
+        "Python consumer wheel ships native runtime assets but is marked pure"
+    )
+    assert f"Tag: {expected_wheel_tag}" in wheel_metadata_lines, (
+        "Python consumer wheel WHEEL metadata does not match release support policy: "
+        f"expected Tag: {expected_wheel_tag}"
+    )
+
     wheel_root = temp / "wheel"
     subprocess.run(
         [
