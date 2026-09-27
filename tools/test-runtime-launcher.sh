@@ -62,7 +62,7 @@ chmod +x "$TMP/fake-ruby"
 RUBY="$TMP/fake-ruby" "$LAUNCHER" ruby runtime-launcher-smoke
 
 "$LAUNCHER" python -c 'raise SystemExit(0)'
-"$LAUNCHER" node -e 'process.exit(0)'
+"$LAUNCHER" node -e 'if (!process.env.NPM) process.exit(2); require("node:child_process").execFileSync(process.env.NPM, ["--version"])'
 "$LAUNCHER" npm --version >/dev/null
 
 if SEARCHKERNEL_RUNTIME_LIB_DIRS="$TMP/missing" "$LAUNCHER" native "$TMP/native-probe" >/dev/null 2>&1; then

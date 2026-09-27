@@ -16,12 +16,29 @@ fi
 case "$runtime" in
     python)
         executable=$(bash "$ROOT/tools/resolve-python.sh")
+        PYTHON="$executable"
+        export PYTHON
         ;;
     node|npm)
-        executable=$(bash "$ROOT/tools/resolve-node.sh" "$runtime")
+        NODE=$(bash "$ROOT/tools/resolve-node.sh" node)
+        NPM=$(bash "$ROOT/tools/resolve-node.sh" npm)
+        PATH="$(dirname -- "$NODE"):$PATH"
+        export NODE NPM PATH
+        if [[ "$runtime" == node ]]; then
+            executable=$NODE
+        else
+            executable=$NPM
+        fi
         ;;
-    php|ruby)
-        executable=$(bash "$ROOT/tools/resolve-runtime.sh" "$runtime")
+    php)
+        executable=$(bash "$ROOT/tools/resolve-runtime.sh" php)
+        PHP="$executable"
+        export PHP
+        ;;
+    ruby)
+        executable=$(bash "$ROOT/tools/resolve-runtime.sh" ruby)
+        RUBY="$executable"
+        export RUBY
         ;;
     native)
         [[ "$#" -ge 1 ]] || {
