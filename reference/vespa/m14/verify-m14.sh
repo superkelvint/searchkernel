@@ -67,10 +67,9 @@ for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
 
   low_cfg="$TMP/$id-low-config"; low_data="$TMP/$id-low-data"
   low_trace="$TMP/$id-low-trace.jsonl"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
+  SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
     SEARCHKERNEL_NATIVE_TRACE_FILE="$low_trace" \
-    "$LOW" "$scenario" "$low_cfg" "$low_data" > "$TMP/$id-low-raw.json"
+    run_native_executable "$LOW" "$scenario" "$low_cfg" "$low_data" > "$TMP/$id-low-raw.json"
   python3 "$M14/validate_execution_evidence.py" "$scenario" "$TMP/$id-low-raw.json"
   "$M14/canonicalize_behavior.py" < "$TMP/$id-low-raw.json" > "$TMP/$id-low.json"
   "$M14/compare.py" "$M14/expected/$id.json" "$TMP/$id-low.json"
@@ -82,10 +81,9 @@ for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
 
   adapter_cfg="$TMP/$id-adapter-config"; adapter_data="$TMP/$id-adapter-data"
   adapter_trace="$TMP/$id-adapter-trace.jsonl"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
+  SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
     SEARCHKERNEL_NATIVE_TRACE_FILE="$adapter_trace" \
-    "$ADAPTER" "$scenario" "$DEFINITION_BIN" "$adapter_cfg" "$adapter_data" > "$TMP/$id-adapter-raw.json"
+    run_native_executable "$ADAPTER" "$scenario" "$DEFINITION_BIN" "$adapter_cfg" "$adapter_data" > "$TMP/$id-adapter-raw.json"
   python3 "$M14/validate_execution_evidence.py" "$scenario" "$TMP/$id-adapter-raw.json"
   "$M14/canonicalize_behavior.py" < "$TMP/$id-adapter-raw.json" > "$TMP/$id-adapter.json"
   "$M14/compare.py" "$M14/expected/$id.json" "$TMP/$id-adapter.json"
@@ -106,7 +104,7 @@ while read -r id path expected; do
     "$M14/make-error-definition.py" "$M14/fixture/index-definition.json" "$ERRORS" "$id" > "$json"
     definition="$("$M14/prepare-portable-definition.sh" "$case_dir/fb" "$json")"
   fi
-  actual="$("$ERROR" "$ERRORS" "$id" "$definition" "$case_dir/config" 2>/dev/null || true)"
+  actual="$(run_native_executable "$ERROR" "$ERRORS" "$id" "$definition" "$case_dir/config" 2>/dev/null || true)"
   [[ "$actual" == "$expected" ]] || {
     echo "M14 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1
