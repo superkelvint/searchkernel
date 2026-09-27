@@ -267,6 +267,15 @@
             {
               "capability": "query.phrase",
               "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "ergonomic",
+              "path": "clients/ruby/test/facade.rb",
+              "line": 366
+            },
+            {
+              "capability": "query.phrase",
+              "scenario": "basic",
               "surface": "rust",
               "runtime": "native",
               "kind": "ergonomic",
@@ -308,6 +317,15 @@
             {
               "capability": "query.proximity",
               "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "ergonomic",
+              "path": "clients/ruby/test/facade.rb",
+              "line": 367
+            },
+            {
+              "capability": "query.proximity",
+              "scenario": "basic",
               "surface": "rust",
               "runtime": "native",
               "kind": "ergonomic",
@@ -345,6 +363,15 @@
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 400
+            },
+            {
+              "capability": "query.same_element",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "ergonomic",
+              "path": "clients/ruby/test/facade.rb",
+              "line": 368
             }
           ],
           "overrides": []
@@ -377,6 +404,15 @@
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 372
+            },
+            {
+              "capability": "query.fuzzy",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "ergonomic",
+              "path": "clients/ruby/test/facade.rb",
+              "line": 369
             },
             {
               "capability": "query.fuzzy",
@@ -530,6 +566,15 @@
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 466
+            },
+            {
+              "capability": "query.geo",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "ergonomic",
+              "path": "clients/ruby/test/facade.rb",
+              "line": 370
             }
           ],
           "overrides": []
@@ -585,6 +630,15 @@
               "kind": "ergonomic",
               "path": "clients/python/tests/test_grpc_e2e.py",
               "line": 373
+            },
+            {
+              "capability": "query.weighted_and_wand",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "ergonomic",
+              "path": "clients/ruby/test/facade.rb",
+              "line": 371
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1201,7 +1255,17 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "result.summary_features",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "conformance",
+              "path": "clients/ruby/test/run.rb",
+              "line": 595
+            }
+          ],
           "overrides": []
         }
       ]
