@@ -21,8 +21,10 @@ workflow = (ROOT / ".github/workflows/persistence-compatibility.yml").read_text(
 runner = (ROOT / ".github/workflows/ci-image-runner.yml").read_text()
 if "python3 tools/check-release-persistence-contract.py" not in workflow:
     raise SystemExit("persistence workflow does not check the release persistence contract")
-if "run_phase native-full-persistence ./dev verify persistence" not in runner:
-    raise SystemExit("native-full lane does not execute the persistence verifier")
+if "uses: ./.github/workflows/ci-image-runner.yml" not in workflow or "target: persistence" not in workflow:
+    raise SystemExit("persistence workflow does not execute the exact-head native persistence lane")
+if "persistence)" not in runner or "run_phase persistence-executable ./dev verify persistence" not in runner:
+    raise SystemExit("CI image runner does not expose the executable persistence lane")
 if "run_phase client-e2e-run" not in runner or "tools/check-client-contracts.py --run-e2e" not in runner:
     raise SystemExit("client-e2e lane does not execute public daemon/client evidence")
 print(f"Release persistence contract PASS: storage generation {generation} has executable historical reopen coverage")
