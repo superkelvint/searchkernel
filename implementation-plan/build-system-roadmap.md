@@ -362,6 +362,17 @@ The chosen model must pass an external-consumer proof with:
 - no cross-worktree/runtime-generation leakage;
 - preserved native SDK/Vespa provenance.
 
+It must also pass **minimal package-manager feasibility prototypes before the ADR is final**:
+
+```text
+Cargo       publishable/package candidate  -> clean external consumer builds/runs
+pip         platform wheel candidate        -> clean pip install runs managed-local
+npm         client + platform-runtime shape -> npm install resolves/runs managed-local
+RubyGems    platform gem candidate          -> gem install resolves/runs managed-local
+```
+
+These prototypes need not be production release packaging, but they must use the intended runtime-delivery mechanism closely enough to expose registry, package-size, platform-selection, install-time provisioning, and integrity constraints. If any promised ecosystem cannot support the model cleanly, the runtime decision remains open and M3 runtime convergence is blocked.
+
 Create a short ADR recording:
 
 ```text
@@ -389,6 +400,7 @@ Do not remove current #745 consumer-safe behavior until the chosen replacement i
 - warm performance shows no material regression;
 - P0 native runtime ADR exists with measured evidence;
 - chosen native runtime passes external-consumer identity/relocatability proof;
+- minimal Cargo/pip/npm/RubyGems feasibility prototypes prove that same runtime model can actually sit behind every promised package-manager UX;
 - no working compatibility path has been deleted prematurely.
 
 ---
@@ -698,7 +710,30 @@ Reuse the qualified payload for:
 
 Language packages must not independently rediscover/assemble native closures.
 
-### 2. Python / pip
+### 2. Package/runtime identity contract
+
+Before ecosystem-specific packaging is considered complete, define one exact runtime identity per release/platform containing at minimum:
+
+```text
+Search Kernel version
+runtime/package generation
+platform/native target
+native ABI version
+native runtime artifact digest
+pinned Vespa/native identity
+```
+
+Each ecosystem package must either embed that exact payload or resolve it by immutable identity and checksum.
+
+Implementation requirements:
+
+- npm platform-runtime dependencies are pinned to an exact runtime release identity, not a floating semver range;
+- Cargo-provisioned native assets, if used, are identified by immutable artifact ID/checksum embedded in the publishable crate;
+- Python wheels and Ruby platform gems carry the runtime identity alongside the packaged payload;
+- build/launch-time validation fails closed on ABI/runtime-identity mismatch;
+- no package may silently fall back to a different cached/system/worktree runtime generation.
+
+### 3. Python / pip
 
 Target:
 
@@ -715,7 +750,7 @@ Implement/qualify:
 - optional connect mode;
 - clean venv install/execution.
 
-### 3. TypeScript/Node / npm
+### 4. TypeScript/Node / npm
 
 Target:
 
@@ -738,7 +773,7 @@ The exact split is implementation detail; the user installs only the client pack
 
 Qualify from a clean npm consumer project.
 
-### 4. Ruby / RubyGems
+### 5. Ruby / RubyGems
 
 Target:
 
@@ -757,7 +792,7 @@ Implement/qualify:
 
 Ruby is not architecturally deferred merely because packaging currently lags.
 
-### 5. Rust / Cargo
+### 6. Rust / Cargo
 
 Target:
 
@@ -765,6 +800,8 @@ Target:
 cargo add searchkernel
 cargo build
 ```
+
+This contract means the publishable `searchkernel` crate enables the native/embedded product by default. M4 must deliberately change the crate feature contract so plain `cargo add searchkernel` is sufficient for local Search Kernel. Remote/connect-only Rust remains an explicit non-default mode/feature for callers that opt out of the native default.
 
 Cargo transparently obtains/links/provisions the chosen M1 runtime model.
 
@@ -778,7 +815,7 @@ The user must not:
 
 Qualification uses a fresh external Cargo project against the actual publishable/distributable package.
 
-### 6. Reconcile `docs/release-support.json`
+### 7. Reconcile `docs/release-support.json`
 
 Update the machine-readable support matrix only after each artifact path is executable.
 
@@ -798,7 +835,8 @@ Unsupported platforms/surfaces remain explicit.
 - all four ecosystem-native installation commands work on qualified platforms;
 - managed-local packages execute without separate Vespa/searchkerneld installation;
 - Python/TypeScript/Ruby consume the same qualified platform runtime payload;
-- Rust uses the actual publishable/distributable Cargo package;
+- every ecosystem package is coupled to an exact runtime identity/digest/ABI and fails closed on mismatch;
+- Rust uses the actual publishable/distributable Cargo package and plain `cargo add searchkernel` selects native/embedded behavior by default;
 - end-user packages do not depend on development/CI Docker images;
 - package/runtime identity and provenance remain tied to the M1-decided model and immutable build inputs.
 
@@ -833,7 +871,9 @@ For one exact revision, `release-check`:
 7. installs/extracts every artifact into clean external environments;
 8. executes every supported row in `docs/release-support.json`;
 9. runs required ABI/persistence/generated-artifact/provenance checks;
-10. fails closed if a supported row lacks executable evidence.
+10. fails closed if a supported row lacks executable evidence;
+11. freezes the qualified artifact set by immutable content identity/checksum so publication consumes those exact candidates;
+12. verifies the published artifacts are byte-identical to the qualified candidates, or verifies canonical package-content identity where an ecosystem necessarily rewrites only an archive/transport envelope.
 
 ### 2. Artifact-level qualification
 
@@ -893,7 +933,29 @@ Manifest identifies at minimum:
 
 Release contract tests validate public commands/artifacts/provenance, not historical workflow YAML filenames.
 
-### 4. Simplify bootstrap
+### 4. Publication promotes qualified artifacts; it does not rebuild
+
+The release flow is:
+
+```text
+build once
+    -> checksum/content identity
+    -> clean-install/extract qualification
+    -> publish/promote that same candidate
+```
+
+Publishing must not rerun the product/native build and substitute a new artifact after qualification.
+
+For registries/tooling that can upload the prepared package directly, publish that exact file. If an ecosystem necessarily regenerates only an outer archive/envelope, retrieve or inspect the published artifact and prove canonical package contents plus runtime identity match the qualified manifest before the release is considered complete.
+
+The release manifest must therefore identify both:
+
+- the qualified candidate artifact/content identity;
+- the published registry artifact/content identity.
+
+Any mismatch fails the release.
+
+### 5. Simplify bootstrap
 
 Normal supported host contract:
 
@@ -914,7 +976,7 @@ Bootstrap acceptance must explicitly prove:
 - environment/bootstrap failures are distinguished from source/build/test failures;
 - no hidden language/native host tooling is required for ordinary correctness.
 
-### 5. Documentation and agent guidance
+### 6. Documentation and agent guidance
 
 Rewrite `BUILDING.md` normal path to approximately:
 
@@ -954,6 +1016,7 @@ Update `AGENTS.md` with:
 - `./dev release-check` is sufficient evidence for one exact revision's advertised artifacts;
 - every supported support-matrix row has executable artifact evidence;
 - release provenance ties shipped artifacts to exact qualified inputs;
+- publication promotes the exact qualified artifact set and cannot silently rebuild/substitute product/runtime bytes after qualification;
 - normal bootstrap requires only the supported host boundary;
 - repeated doctor/bootstrap is safe/idempotent;
 - bootstrap/environment failures are distinct from code failures;
@@ -1107,6 +1170,7 @@ The six milestones are roadmap units, not PR units.
 - cache/worktree ownership;
 - performance baseline + post-change benchmark;
 - native static/shared runtime spike;
+- Cargo/pip/npm/RubyGems runtime-delivery feasibility prototypes;
 - runtime ADR + external-consumer proof.
 
 ### M2 issue families
@@ -1132,6 +1196,7 @@ The six milestones are roadmap units, not PR units.
 ### M4 issue families
 
 - common managed-local runtime payload using M1 model;
+- exact package/runtime identity manifest and fail-closed validation;
 - Python pip distribution;
 - TypeScript npm distribution/runtime packages;
 - Ruby platform gem distribution;
@@ -1143,6 +1208,8 @@ The six milestones are roadmap units, not PR units.
 - release manifest/provenance;
 - package build orchestration;
 - clean-install E2E per ecosystem;
+- qualify-once/publish-same-artifact promotion path;
+- published-artifact identity verification;
 - `release-check`;
 - doctor simplification/idempotence/error-domain tests;
 - BUILDING.md / AGENTS.md convergence.
@@ -1163,6 +1230,7 @@ Must have:
 
 - M1 native-runtime ADR;
 - chosen runtime model proven externally;
+- minimal Cargo/pip/npm/RubyGems feasibility prototypes for that exact runtime model;
 - canonical replacement target;
 - semantic runner using it;
 - unchanged frozen behavior;
@@ -1179,7 +1247,12 @@ Must have:
 
 ### Gate C — before declaring an ecosystem supported
 
-Must have normal package-manager install + managed-local execution from the actual distributable artifact.
+Must have:
+
+- normal package-manager install + managed-local execution from the actual distributable artifact;
+- exact package↔runtime identity/digest/ABI coupling;
+- fail-closed behavior for runtime mismatch;
+- for Rust, plain `cargo add searchkernel` selecting native/embedded behavior by default.
 
 ### Gate D — before making `release-check` authoritative
 
@@ -1188,6 +1261,8 @@ Must have:
 - reconciled `docs/release-support.json`;
 - executable evidence for every supported row;
 - release manifest/provenance;
+- publication path that promotes the exact qualified artifact set without rebuilding it;
+- published-artifact/content identity verification;
 - no stale CI-YAML authority.
 
 ### Gate E — before removing normal host-toolchain bootstrap
@@ -1268,6 +1343,10 @@ This table assigns every Definition-of-Done requirement from `build-system.md` t
 | 56 | M6 | delete only after replacement proof |
 | 57 | M5 | one-screen normal BUILDING.md flow |
 | 58 | M1–M6 | final architecture ownership is discoverable |
+| 59 | M1 | Cargo/pip/npm/RubyGems feasibility prototypes gate the runtime ADR |
+| 60 | M4 | exact package/runtime identity, digest, ABI, and fail-closed validation |
+| 61 | M4 | plain Cargo dependency selects native/embedded default product |
+| 62 | M5 | publish/promote exact qualified artifact set; verify published identity |
 
 ---
 
@@ -1301,19 +1380,23 @@ The roadmap is complete only when all are true:
 - worktrees retain useful warm state without shared mutable-target contamination;
 - required warm-performance benchmarks show no material regression;
 - the P0 native-runtime model is deliberately chosen and documented before verifier runtime convergence;
+- that model has successful minimal Cargo/pip/npm/RubyGems delivery prototypes before M3 treats it as final;
 - active verifier code compiles through normal build authorities;
 - verifier runners use the chosen canonical runtime rather than private normal SDK/runtime universes;
 - `reference/vespa` retains specification/history/provenance material;
 - live oracle execution is explicit only;
 - Universe is orchestration only;
 - Python, TypeScript/Node, and Ruby consume one qualified managed-local runtime payload;
-- Rust obtains the chosen runtime transparently through Cargo;
+- every ecosystem package is pinned to an exact fail-closed runtime identity/digest/ABI;
+- Rust obtains the chosen runtime transparently through Cargo and native/embedded behavior is the default Cargo product;
 - `cargo add searchkernel` works;
 - `pip install searchkernel` works;
 - `npm install @searchkernel/client` works;
 - `gem install searchkernel` works;
 - supported managed-local users do not separately install Vespa or `searchkerneld`;
 - `./dev release-check` qualifies actual artifacts;
+- publication promotes the exact qualified artifact set rather than rebuilding it;
+- published artifact/content identity is verified against the qualification manifest;
 - release provenance ties artifacts to exact Search Kernel/toolchain/Vespa identities;
 - bootstrap is minimal, idempotent, and distinguishes environment failures from code failures;
 - duplicate authorities are deleted only after replacement proof;
