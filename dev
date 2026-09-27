@@ -548,6 +548,11 @@ test_target() {
 }
 
 verify_target() {
+    # Vespa standalone programs default to info logging. Verifier lanes only need
+    # warning/error/fatal output unless a developer explicitly asks for more.
+    # SEARCHKERNEL_VERIFY_VESPA_LOG_LEVEL is forwarded into the canonical CI image.
+    export VESPA_LOG_LEVEL="${SEARCHKERNEL_VERIFY_VESPA_LOG_LEVEL:-${VESPA_LOG_LEVEL:-all -info -event -config -debug -spam}}"
+
     case "${1:-}" in
         integration|i|product.integration)
             "$ROOT/reference/vespa/verify-through.sh" "$@"

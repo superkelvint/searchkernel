@@ -367,6 +367,11 @@ jobs:
 
           assert_current_pr_head preflight
 
+          # Keep real-Vespa verifier output signal-dense. This intentionally
+          # suppresses routine info/event/config chatter while preserving
+          # warning, error, and fatal diagnostics.
+          export VESPA_LOG_LEVEL="${VESPA_LOG_LEVEL:-all -info -event -config -debug -spam}"
+
           run_phase() {
             local phase=$1
             shift
