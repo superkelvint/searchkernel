@@ -470,7 +470,19 @@ Release qualification must include:
 - generated-artifact consistency;
 - exact revision identity;
 - reproducible failure commands;
-- release-artifact provenance.
+- release-artifact provenance;
+- **promotion of the exact qualified artifact set without rebuilding it for publication**.
+
+Release qualification and publication therefore follow:
+
+```text
+build artifact once
+    -> record immutable content identity/checksum
+    -> install/extract and qualify that candidate
+    -> publish/promote that exact candidate
+```
+
+Publishing must not rebuild product/runtime artifacts after qualification. Where ecosystem tooling necessarily regenerates only an outer archive/envelope, the release is not complete until canonical package contents and runtime payload identity are proven equivalent to the qualified candidate, preferably by retrieving the published artifact and validating it against the qualification manifest.
 
 The release maintainer must be able to distinguish:
 
@@ -495,7 +507,8 @@ The maintainer can run one canonical command for an exact revision and obtain ev
 1. required source qualification passed for that revision;
 2. the exact artifacts intended for publication were built;
 3. every supported release surface passed its artifact-level qualification;
-4. artifact manifests/checksums/provenance identify that revision and its pinned native dependencies.
+4. artifact manifests/checksums/provenance identify that revision and its pinned native dependencies;
+5. the artifacts published/promoted are the exact qualified artifacts, or have a verified canonical-content identity where an ecosystem necessarily rewrites only its transport envelope.
 
 Release contract checks must validate these public authorities and artifacts. They must not depend on the internal structure or continued existence of a particular GitHub Actions YAML file.
 
@@ -796,6 +809,24 @@ The permanent invariant is consumer runtime correctness, not the current loader 
 
 This decision changes the **end-user native package layout** only. It does not replace the independently published `searchkernel-ci-vespa` development/CI image, which remains the canonical expensive immutable input used to build and verify whichever runtime format is selected.
 
+### Package-manager feasibility is part of the P0 decision
+
+The native-runtime model is **not final merely because it links, relocates, and passes one external-consumer test**.
+
+Before M3 or any other subsystem converges onto that runtime as an architectural authority, M1 must also prove that the model can live behind every promised package-manager surface with a minimal feasibility prototype:
+
+```text
+Cargo       publishable/package candidate  -> clean external consumer builds/runs
+pip         platform wheel candidate        -> clean pip install runs managed-local
+npm         client + platform-runtime shape -> npm install resolves/runs managed-local
+RubyGems    platform gem candidate          -> gem install resolves/runs managed-local
+```
+
+These are feasibility prototypes, not production release packaging. They may be rough, but they must exercise the intended runtime-delivery mechanism closely enough to expose real registry, package-size, platform-selection, install-time provisioning, and integrity constraints.
+
+If the chosen native model cannot fit cleanly behind any promised ecosystem, the P0 runtime decision is incomplete and verifier/runtime convergence must not proceed.
+
+
 ---
 
 ## 6. Why not replace everything with Nix, Bazel, Buck2, xtask, or just?
@@ -1075,6 +1106,8 @@ cargo build
 
 or the equivalent Cargo.toml dependency declaration.
 
+This means **native/embedded Search Kernel is the default Cargo product contract**. The publishable `searchkernel` crate must make a plain dependency select the native managed-local path by default. Remote/connect-only Rust remains an explicit non-default mode; callers that deliberately want remote-only behavior may opt out of the native default.
+
 A normal Cargo consumer must transparently obtain/link/provision the correct Search Kernel native runtime through supported Cargo/package mechanics. The user must not separately download an SDK, install Vespa, install `searchkerneld`, set `SK_NATIVE_SDK`, or set `LD_LIBRARY_PATH`.
 
 The current repository release artifact is:
@@ -1265,6 +1298,8 @@ gem install searchkernel
 
 This gives the three clients the same native bits, provenance, and runtime behavior for a given release while still using idiomatic ecosystem packaging.
 
+Each package must also carry or resolve the **exact runtime identity** for that release. Platform/runtime dependencies must not float independently from the client package version. ABI/runtime identity is validated before use, and mismatches fail closed.
+
 #### Connect mode
 
 Connect mode is orthogonal to managed-local packaging:
@@ -1283,7 +1318,33 @@ Supporting connect mode does not remove the managed-local requirement for Python
 
 PHP, browser TypeScript/gRPC-Web, additional architectures, and other rows explicitly marked deferred are not release promises merely because development/test code exists. Ruby must not remain deferred merely because its packaging implementation currently lags the intended managed-local architecture.
 
-### 7.8 Shared provenance between build infrastructure and product artifacts
+### 7.8 Package/runtime identity is exact and fail-closed
+
+Every ecosystem package must be coupled to an **exact native runtime identity**, not merely to a compatible-looking version range.
+
+For every release/platform, define a runtime identity containing at minimum:
+
+```text
+Search Kernel version
+runtime/package generation
+platform/native target
+native ABI version
+native runtime artifact digest
+pinned Vespa/native identity
+```
+
+The package must either contain that exact runtime payload or resolve it by immutable identity and checksum.
+
+Examples:
+
+- npm platform-runtime dependencies use an exact release identity, not a floating caret/tilde range that can silently select another runtime generation;
+- if Cargo provisions native assets rather than embedding them, the publishable crate contains the immutable artifact identity/checksum it expects;
+- Python wheels and Ruby platform gems embed the runtime identity alongside their packaged payload;
+- build/launch-time validation fails closed on ABI/runtime-identity mismatch rather than falling back to another cached, system, or worktree runtime.
+
+A package release must never silently pick up a different native generation after the package itself has been published.
+
+### 7.9 Shared provenance between build infrastructure and product artifacts
 
 The development image system and product packages are separate outputs but must meet at a common provenance boundary.
 
@@ -1303,7 +1364,7 @@ The release manifest should make those relationships inspectable.
 
 This prevents a situation where CI proves one Vespa/toolchain combination but release packaging silently ships another.
 
-### 7.9 Native static-link investigation does not replace the image split
+### 7.10 Native static-link investigation does not replace the image split
 
 The mostly-static native-runtime investigation in section 5 addresses **end-user runtime packaging**.
 
@@ -1332,7 +1393,7 @@ How do end users receive the Vespa implementation?
 
 Do not conflate them.
 
-### 7.10 Distribution definition of success
+### 7.11 Distribution definition of success
 
 The build-system convergence is distribution-complete when:
 
@@ -1347,6 +1408,8 @@ The build-system convergence is distribution-complete when:
 - Python, TypeScript/Node, and Ruby managed-local artifacts are each exercised after installation through their normal package manager from the actual distributable package;
 - Rust is exercised through a clean external Cargo consumer using the actual publishable/distributable package rather than repository paths;
 - all three managed-local language packages consume the same qualified platform daemon/native runtime payload rather than independently assembling native closures;
+- every ecosystem package is tied to an exact runtime identity/digest/ABI and fails closed on mismatch;
+- the plain Rust dependency contract enables native/embedded Search Kernel by default, with remote-only Rust as an explicit opt-out/mode;
 - every supported row in `docs/release-support.json` is exercised from the actual distributable artifact;
 - no end-user supported surface requires the development/CI Docker images;
 - changing the final native packaging model does not force a redesign of the development-image layering.
@@ -1976,7 +2039,8 @@ Whatever model wins must prove:
 4. runtime identity cannot silently cross worktrees/build generations;
 5. required native payload is relocatable according to its supported distribution contract;
 6. every supported native-carrying row in `docs/release-support.json` has artifact-level executable evidence;
-7. native SDK/provenance guarantees remain intact.
+7. native SDK/provenance guarantees remain intact;
+8. minimal Cargo, pip, npm, and RubyGems package candidates prove that the chosen model can actually be delivered behind each promised package-manager UX.
 
 This phase is allowed to conclude that the current relocatable shared-runtime approach is the correct model. It must not assume that conclusion before testing the mostly-static alternative.
 
@@ -2227,7 +2291,9 @@ It must:
 7. execute artifact-level qualification for every supported row;
 8. include ABI, persistence/backward-compatibility, native-runtime/relocatability, generated-artifact, and provenance checks required by the release contract;
 9. fail if a supported row lacks executable evidence;
-10. avoid depending on the name/content of a particular CI workflow YAML file.
+10. avoid depending on the name/content of a particular CI workflow YAML file;
+11. produce an immutable qualified artifact set that publication consumes directly rather than rebuilding;
+12. verify exact published-artifact identity, or canonical-content identity when an ecosystem necessarily rewrites only an archive envelope, before considering publication complete.
 
 At minimum:
 
@@ -2381,6 +2447,8 @@ Can a binary accidentally use another worktree's/build generation's Search Kerne
 
 Have we deliberately chosen between mostly-static and relocatable-shared native closure models rather than inheriting the current layout accidentally?
 
+Before treating that model as final, have minimal Cargo, pip, npm, and RubyGems candidates proven it can actually be delivered behind every promised package-manager surface?
+
 ### `reference/vespa`
 
 Does it primarily contain behavioral reference material, oracle provenance, and lightweight orchestration rather than a parallel normal build system?
@@ -2408,6 +2476,10 @@ Do all three language packages embed/launch the same qualified platform Search K
 Can every supported release surface be installed/extracted and exercised without depending on the development/CI images?
 
 Do release artifacts record enough Search Kernel/toolchain/Vespa/native provenance to show what was actually shipped?
+
+Is each ecosystem package pinned to an exact runtime identity rather than a floating compatible range?
+
+Does publication upload/promote the exact qualified artifact set rather than rebuilding it after qualification?
 
 ### CI
 
@@ -2596,6 +2668,10 @@ The convergence project is complete when:
 56. Old compatibility/build paths are removed only after their replacements are proven.
 57. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
 58. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
+59. The chosen P0 native-runtime model has minimal successful Cargo, pip, npm, and RubyGems feasibility prototypes before verifier/runtime convergence treats that model as final.
+60. Every published ecosystem package is coupled to an exact native runtime identity/digest/ABI and cannot silently float to another runtime generation.
+61. Plain `cargo add searchkernel` selects the supported native/embedded product by default; remote-only Rust usage is an explicit opt-out/mode.
+62. Release publication promotes the exact artifact set qualified by `./dev release-check`; no post-qualification rebuild may substitute different product/runtime bytes without a verified canonical-content identity.
 
 The final architecture should be boring:
 
