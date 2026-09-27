@@ -11,13 +11,15 @@ function fail(message) {
 async function main() {
   const hostBinary = process.env.SEARCHKERNEL_LOCAL_HOST;
   if (!hostBinary) fail("SEARCHKERNEL_LOCAL_HOST is required for installed-package E2E");
+  const npm = process.env.NPM;
+  if (!npm) fail("NPM is required from the canonical runtime launcher");
 
   const packageRoot = resolve(__dirname, "..");
   const temporaryRoot = mkdtempSync(join(tmpdir(), "searchkernel-typescript-installed-e2e-"));
 
   try {
     const packed = JSON.parse(execFileSync(
-      "npm",
+      npm,
       ["pack", "--json", "--ignore-scripts", "--pack-destination", temporaryRoot],
       { cwd: packageRoot, encoding: "utf8" },
     ));
@@ -32,7 +34,7 @@ async function main() {
       JSON.stringify({ name: "searchkernel-installed-e2e", private: true, version: "0.0.0" }),
     );
     execFileSync(
-      "npm",
+      npm,
       [
         "install",
         "--ignore-scripts",

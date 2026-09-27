@@ -51,9 +51,6 @@ from SearchKernel.V2.ValueEntry import ValueEntryT  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DAEMON = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target" / "host"))) / "debug" / "searchkerneld"
-SDK_LIB = ROOT / "core" / "native" / "sdk" / "linux-x86_64" / "lib"
-VESPA_DEPS_LIB = ROOT / "vespa-deps" / "lib64"
 
 
 def _field(name: str, primitive: int, *, matching: int = MatchingMode.Unspecified) -> FieldDefinitionT:
@@ -73,10 +70,6 @@ def _field(name: str, primitive: int, *, matching: int = MatchingMode.Unspecifie
 
 
 class RealGrpcPythonE2ETest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        subprocess.run(["cargo", "build", "-p", "searchkerneld"], cwd=ROOT, check=True)
-
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory(prefix="searchkernel-python-e2e-")
         root = Path(self.tempdir.name)
@@ -102,15 +95,12 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
 
     def _start_server(self, *, definition: bool):
         socket_path = Path(self.tempdir.name) / "searchkerneld.sock"
+        host = os.environ.get("SEARCHKERNEL_LOCAL_HOST")
+        if not host:
+            self.fail("native E2E requires SEARCHKERNEL_LOCAL_HOST from tools/client-e2e-runtime.sh")
         environment = os.environ.copy()
-        environment.update({
-            "LD_LIBRARY_PATH": os.pathsep.join(
-                path for path in (str(SDK_LIB), str(VESPA_DEPS_LIB), environment.get("LD_LIBRARY_PATH"))
-                if path
-            ),
-        })
         command = [
-            str(DAEMON),
+            host,
             "--index",
             str(self.index_path),
             "--listen",

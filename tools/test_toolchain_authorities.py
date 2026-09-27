@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BARE_TOOL_RE = re.compile(
     r"(?m)(?:^|[|;&]\s*)\s*(?:env\s+)?"
     r"(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*"
-    r"(python3|cargo|rustc|rustfmt|npm|node|flatc)\b(?!=)"
+    r"(python3|cargo|rustc|rustfmt|npm|node|php|ruby|flatc)\b(?!=)"
 )
 
 CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
@@ -19,10 +19,12 @@ CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "tools/resolve-python.sh",
             "tools/resolve-rust.sh",
             "tools/resolve-node.sh",
+            "tools/resolve-runtime.sh",
+            "tools/run-runtime.sh",
             "tools/resolve-flatbuffers.sh",
             "tools/resolve-native-sdk.sh",
         ),
-        ("python3", "cargo", "rustc", "rustfmt", "npm", "node", "flatc"),
+        ("python3", "cargo", "rustc", "rustfmt", "npm", "node", "php", "ruby", "flatc"),
     ),
     ".githooks/pre-commit": (
         ("tools/resolve-python.sh", "tools/resolve-rust.sh"),
@@ -41,8 +43,24 @@ CRITICAL_SCRIPTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ("python3", "flatc"),
     ),
     "tools/run-python-native-e2e.sh": (
-        ("resolve-python.sh",),
+        ("run-runtime.sh",),
         ("python3",),
+    ),
+    "clients/typescript/scripts/run-real-e2e.sh": (
+        ("tools/run-runtime.sh",),
+        ("npm", "node"),
+    ),
+    "clients/php/examples/run_searchkernel_client_api_e2e.sh": (
+        ("tools/run-runtime.sh",),
+        ("python3", "php"),
+    ),
+    "clients/ruby/examples/run_searchkernel_client_api_e2e.sh": (
+        ("tools/run-runtime.sh",),
+        ("ruby",),
+    ),
+    "tools/client-e2e-host.sh": (
+        ("tools/run-runtime.sh",),
+        (),
     ),
     "tools/check-searchkernel-rpc.sh": (
         ("resolve-rust.sh",),
@@ -120,6 +138,8 @@ class ToolchainAuthorityTests(unittest.TestCase):
             "tools/resolve-python.sh",
             "tools/resolve-rust.sh",
             "tools/resolve-node.sh",
+            "tools/resolve-runtime.sh",
+            "tools/run-runtime.sh",
             "tools/resolve-flatbuffers.sh",
             "tools/resolve-native-sdk.sh",
         ):

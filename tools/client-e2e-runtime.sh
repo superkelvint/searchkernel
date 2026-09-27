@@ -9,7 +9,7 @@ CLIENT_E2E_RUNTIME_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 prepare_client_e2e_runtime() {
     local prevalidated_native_sdk=${1:-0}
-    local root cargo python target_root host adapter_lib cargo_messages
+    local root cargo python target_root host adapter_lib base_sdk runtime_libs cargo_messages
 
     root=$CLIENT_E2E_RUNTIME_ROOT
 
@@ -58,7 +58,14 @@ prepare_client_e2e_runtime() {
         return 1
     }
 
-    export SEARCHKERNEL_LOCAL_HOST="$host"
-    export SEARCHKERNEL_SDK_LIB="$adapter_lib"
-    export LD_LIBRARY_PATH="$adapter_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    base_sdk=$(bash "$root/tools/resolve-native-sdk.sh" path)
+    runtime_libs=$(
+        SEARCHKERNEL_RUNTIME_LIB_DIRS="$adapter_lib:$base_sdk/lib" \
+            bash "$root/tools/resolve-native-runtime-libs.sh"
+    )
+
+    export SEARCHKERNEL_LOCAL_HOST_BINARY="$host"
+    export SEARCHKERNEL_LOCAL_HOST="$root/tools/client-e2e-host.sh"
+    export SEARCHKERNEL_RUNTIME_LIB_DIRS="$runtime_libs"
+    unset SEARCHKERNEL_SDK_LIB || true
 }
