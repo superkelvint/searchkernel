@@ -204,6 +204,25 @@ fn main() {
         "cargo:rerun-if-changed={}",
         manifest_dir.join("../../native/vespa/abi.cc").display()
     );
+    for source in [
+        "hardening.cc",
+        "engine.cc",
+        "tensor.cc",
+        "errors.cc",
+        "query.cc",
+        "grouping.cc",
+        "search.cc",
+        "document.cc",
+        "update.cc",
+    ] {
+        println!(
+            "cargo:rerun-if-changed={}",
+            manifest_dir
+                .join("../../native/vespa")
+                .join(source)
+                .display()
+        );
+    }
     println!(
         "cargo:rerun-if-changed={}",
         manifest_dir

@@ -16,6 +16,51 @@ pub struct ResultFixture {
     pub result: searchkernel_ir::SearchResult,
 }
 
+/// Canonical response fixture with sparse and mixed tensor values in the
+/// positions consumed by public result decoders.
+pub fn sparse_mixed_tensor_result() -> searchkernel_ir::SearchResult {
+    use searchkernel_ir::{
+        RequestTensorBlockIr, RequestTensorCellIr, RequestTensorIr, RequestTensorPayloadIr,
+        ResultGroup, ResultNode, Value,
+    };
+
+    let sparse = Value::Tensor(RequestTensorIr {
+        type_spec: "tensor<float>(label{})".to_owned(),
+        payload: RequestTensorPayloadIr::Sparse(vec![RequestTensorCellIr {
+            address: BTreeMap::from([("label".to_owned(), "a".to_owned())]),
+            value: 0.5,
+        }]),
+    });
+    let mixed = Value::Tensor(RequestTensorIr {
+        type_spec: "tensor<float>(label{},x[2])".to_owned(),
+        payload: RequestTensorPayloadIr::Mixed(vec![RequestTensorBlockIr {
+            address: BTreeMap::from([("label".to_owned(), "b".to_owned())]),
+            values: vec![0.25, 0.75],
+        }]),
+    });
+
+    searchkernel_ir::SearchResult {
+        root: ResultNode::Group(ResultGroup {
+            value: Some(mixed),
+            children: vec![ResultNode::Hit(searchkernel_ir::Hit {
+                id: "tensor-hit".to_owned(),
+                fields: BTreeMap::from([("sparse".to_owned(), sparse)]),
+                ..Default::default()
+            })],
+            ..ResultGroup::root(vec![])
+        }),
+        total_hits: searchkernel_ir::TotalHits {
+            value: 1,
+            relation: searchkernel_ir::TotalHitsRelation::Exact,
+        },
+        coverage: None,
+        timing: None,
+        errors: Vec::new(),
+        trace: None,
+        metadata: BTreeMap::new(),
+    }
+}
+
 /// Representative canonical result tree used by response-path conformance.
 ///
 /// This intentionally exercises fields that are easy for SDK projections to
@@ -402,6 +447,10 @@ pub fn result_fixtures() -> Vec<ResultFixture> {
         ResultFixture {
             name: "root-hit",
             result: shared_root_hit_result(),
+        },
+        ResultFixture {
+            name: "sparse-mixed-tensors",
+            result: sparse_mixed_tensor_result(),
         },
         ResultFixture {
             name: "root-state-only",
@@ -903,6 +952,7 @@ mod expanded_canonical_corpus {
     /// Fresh named values for the canonical result corpus.
     pub fn canonical_result_fixtures() -> Vec<(&'static str, ir::SearchResult)> {
         vec![
+            ("sparse_mixed_tensors", super::sparse_mixed_tensor_result()),
             ("root_hit", root_hit_result()),
             (
                 "one_group_containing_hits",
@@ -1172,7 +1222,73 @@ mod expanded_canonical_corpus {
             ir::Value::Object(expected) => {
                 assert_value_map_matches(actual.kind_as_value_object().unwrap().fields(), expected)
             }
-            ir::Value::Tensor(_) => panic!("fixture assertion does not cover tensor values"),
+            ir::Value::Tensor(expected) => {
+                let actual = actual.kind_as_tensor_value().unwrap();
+                assert_eq!(actual.type_spec(), Some(expected.type_spec.as_str()));
+                match &expected.payload {
+                    ir::RequestTensorPayloadIr::Dense(expected) => {
+                        assert_eq!(
+                            actual.payload_type(),
+                            api::TensorPayloadKind::DenseTensorValues
+                        );
+                        let values = actual
+                            .payload_as_dense_tensor_values()
+                            .unwrap()
+                            .values()
+                            .unwrap();
+                        assert_eq!(values.iter().collect::<Vec<_>>(), expected.as_slice());
+                    }
+                    ir::RequestTensorPayloadIr::Sparse(expected) => {
+                        assert_eq!(
+                            actual.payload_type(),
+                            api::TensorPayloadKind::SparseTensorCells
+                        );
+                        let cells = actual
+                            .payload_as_sparse_tensor_cells()
+                            .unwrap()
+                            .cells()
+                            .unwrap();
+                        assert_eq!(cells.len(), expected.len());
+                        for (actual, expected) in cells.iter().zip(expected) {
+                            assert_tensor_address_matches(actual.address(), &expected.address);
+                            assert_eq!(actual.value(), expected.value);
+                        }
+                    }
+                    ir::RequestTensorPayloadIr::Mixed(expected) => {
+                        assert_eq!(
+                            actual.payload_type(),
+                            api::TensorPayloadKind::MixedTensorBlocks
+                        );
+                        let blocks = actual
+                            .payload_as_mixed_tensor_blocks()
+                            .unwrap()
+                            .blocks()
+                            .unwrap();
+                        assert_eq!(blocks.len(), expected.len());
+                        for (actual, expected) in blocks.iter().zip(expected) {
+                            assert_tensor_address_matches(actual.address(), &expected.address);
+                            assert_eq!(
+                                actual.values().unwrap().iter().collect::<Vec<_>>(),
+                                expected.values
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn assert_tensor_address_matches(
+        actual: Option<
+            flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::TensorAddressEntry<'_>>>,
+        >,
+        expected: &BTreeMap<String, String>,
+    ) {
+        let actual = actual.unwrap();
+        assert_eq!(actual.len(), expected.len());
+        for (actual, (dimension, label)) in actual.iter().zip(expected) {
+            assert_eq!(actual.dimension(), dimension.as_str());
+            assert_eq!(actual.label(), Some(label.as_str()));
         }
     }
 

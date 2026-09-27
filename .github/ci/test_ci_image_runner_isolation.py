@@ -34,7 +34,7 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
             "Resolve exact revision",
             "Pull immutable CI image",
             "Create job-private Docker state",
-            "Execute lane with zero shared mutable worker state",
+            "Execute lane with isolated source and target state",
         ):
             section = source.split(f"- name: {step_name}", 1)[1].split("\n      - name:", 1)[0]
             self.assertIn(
@@ -50,6 +50,40 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
 
         self.assertNotIn(".git/refs", source)
         self.assertNotIn("*.lock", source)
+
+    def test_shared_sccache_does_not_share_source_or_target_state(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+
+        self.assertIn("ensure-ci-sccache.sh", source)
+        self.assertIn('RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache', source)
+        self.assertIn('-v "$SCCACHE_BINARY_VOLUME:/opt/searchkernel/sccache:ro"', source)
+        self.assertIn('SCCACHE_SERVER_UDS=/sccache/sccache.sock', source)
+        self.assertIn('SCCACHE_CLIENT_SIDE=1', source)
+        self.assertIn('-v "$SCCACHE_SOCKET_VOLUME:/sccache:ro"', source)
+
+        self.assertIn('TARGET_VOLUME="searchkernel-ci-target-', source)
+        self.assertIn('-v "$TARGET_VOLUME:/cargo-target"', source)
+        self.assertIn('docker volume rm -f "$SOURCE_VOLUME" "$TARGET_VOLUME"', source)
+        self.assertNotIn('searchkernel-ci-target-cache', source)
+        self.assertNotIn(':/root/.cargo/registry', source)
+        self.assertNotIn(':/root/.cargo/git', source)
+
+
+    def test_verifier_lanes_suppress_vespa_info_noise_without_hiding_warnings(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        dev = (ROOT / "dev").read_text(encoding="utf-8")
+        quiet_default = "all -info -event -config -debug -spam"
+
+        self.assertIn(
+            f'export VESPA_LOG_LEVEL="${{VESPA_LOG_LEVEL:-{quiet_default}}}"',
+            source,
+        )
+        self.assertIn(
+            f'SEARCHKERNEL_VERIFY_VESPA_LOG_LEVEL:-${{VESPA_LOG_LEVEL:-{quiet_default}}}',
+            dev,
+        )
+        for preserved_level in ("warning", "error", "fatal"):
+            self.assertNotIn(f"-{preserved_level}", quiet_default)
 
 
     def test_native_full_bootstraps_split_sdk_and_runs_product_integration(self) -> None:
@@ -95,7 +129,7 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
             "Verify exact pull-request head",
             "Verify frozen fixture structure and provenance",
             "Enforce append-only historical fixtures",
-            "Native verification policy",
+            "Verify release persistence contract",
         ):
             section = source.split(f"- name: {step_name}", 1)[1].split("\n      - name:", 1)[0]
             self.assertIn(

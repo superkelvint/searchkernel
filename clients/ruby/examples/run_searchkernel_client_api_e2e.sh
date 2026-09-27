@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-TARGET_DIR="${CARGO_TARGET_DIR:-target/host}"
-if [[ "$TARGET_DIR" != /* ]]; then
-  TARGET_DIR="$ROOT/$TARGET_DIR"
-fi
-HOST="${SEARCHKERNEL_LOCAL_HOST:-$TARGET_DIR/debug/searchkerneld}"
+cd "$ROOT"
+source "$ROOT/tools/client-e2e-runtime.sh"
+prepare_client_e2e_runtime
+
+HOST="$SEARCHKERNEL_LOCAL_HOST"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
