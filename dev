@@ -155,6 +155,12 @@ Search Kernel development commands
   ./dev test typescript       Test the TypeScript client, package, and real E2E
   ./dev test php              Test the PHP client, package, and real E2E
   ./dev test ruby             Test the Ruby client, packaged gem, and real E2E
+  ./dev run python <args...>  Run Python through the canonical repository launcher
+  ./dev run node <args...>    Run Node.js through the canonical repository launcher
+  ./dev run npm <args...>     Run npm paired with the selected Node.js
+  ./dev run php <args...>     Run PHP through the canonical repository launcher
+  ./dev run ruby <args...>    Run Ruby through the canonical repository launcher
+  ./dev run native <bin> ...  Run a native executable with the canonical runtime closure
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify vespa.grouping.yql  Run one semantic verifier target
@@ -505,6 +511,14 @@ regen_protocol() {
 
 regen_result_fixtures() {
     "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures
+}
+
+run_target() {
+    [[ "$#" -ge 1 ]] || {
+        echo "usage: ./dev run python|node|npm|php|ruby|native <args...>" >&2
+        return 2
+    }
+    bash "$ROOT/tools/run-runtime.sh" "$@"
 }
 
 coverage_target() {
@@ -1208,6 +1222,10 @@ case "${1:-help}" in
     test)
         shift
         test_target "${1:-}"
+        ;;
+    run)
+        shift
+        run_target "$@"
         ;;
     regen)
         case "${2:-}" in

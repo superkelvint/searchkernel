@@ -215,6 +215,9 @@ verification, generation, and acceptance lanes:
 ./dev test ir
 ./dev test rust-api
 ./dev test python
+./dev run python --version
+./dev run node --version
+./dev run native ./path/to/native-binary
 ./dev regen protocol
 ./dev verify m14
 ./dev verify integration
@@ -236,6 +239,9 @@ multi-install toolchain has exactly one path authority:
 | Python | `tools/resolve-python.sh` | `PYTHON`, then CI's `CI_PYTHON` |
 | Rust | `tools/resolve-rust.sh` | `CARGO`, `RUSTC`, `RUSTFMT` |
 | Node.js | `tools/resolve-node.sh` | `NODE`, `NPM` |
+| PHP | `tools/resolve-runtime.sh php` | `PHP` |
+| Ruby | `tools/resolve-runtime.sh ruby` | `RUBY` |
+| Runtime execution | `tools/run-runtime.sh` / `./dev run` | prepared native runtime context via `SEARCHKERNEL_RUNTIME_LIB_DIRS` |
 | FlatBuffers | `tools/resolve-flatbuffers.sh` | `FLATC_PATH`, `FLATBUFFERS_CPP_ROOT` |
 | Native SDK | `tools/resolve-native-sdk.sh` | `SK_NATIVE_SDK`, `SK_NATIVE_TARGET` |
 
@@ -243,7 +249,12 @@ The compatibility wrapper `tools/resolve-flatc.sh` delegates to the canonical
 FlatBuffers resolver and must contain no selection logic of its own.
 
 Critical repository scripts must call these authorities instead of invoking bare
-`python3`, `cargo`, `rustc`, `rustfmt`, `node`, `npm`, or `flatc`.
+`python3`, `cargo`, `rustc`, `rustfmt`, `node`, `npm`, `php`, `ruby`, or `flatc`.
+Repository-owned process launch sites should use `tools/run-runtime.sh` (or the
+public `./dev run` entry point) rather than executing the selected runtime or a
+native binary directly. Native execution resets the loader path to the resolved
+Search Kernel adapter plus pinned Vespa runtime closure, so successful linking
+cannot depend on ambient `LD_LIBRARY_PATH` state.
 For paired tools, the authority also owns pairing: npm is resolved alongside the
 selected Node.js installation, and Cargo/Rustc/Rustfmt are exported as one Rust
 toolchain view.
