@@ -131,7 +131,7 @@ jobs:
           }
 
           if [[ ! -s "$patch" ]]; then
-            echo "cargo fmt produced no changes"
+            echo "rustfmt produced no changes"
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
