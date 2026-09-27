@@ -53,11 +53,16 @@ runtime_dirs_from_adapter_lib() {
     local base_sdk=$2
     local adapter_dir
 
+    if [[ -d "$adapter_lib" ]]; then
+        adapter_dir=$(cd -- "$adapter_lib" && pwd -P)
+        adapter_lib="$adapter_dir/libsearchkernel_vespa.so.2"
+    else
+        adapter_dir=$(cd -- "$(dirname -- "$adapter_lib")" && pwd -P)
+    fi
     [[ -e "$adapter_lib" || -L "$adapter_lib" ]] || {
         echo "native runtime adapter does not exist: $adapter_lib" >&2
         return 1
     }
-    adapter_dir=$(cd -- "$(dirname -- "$adapter_lib")" && pwd -P)
     normalize_runtime_dirs "$adapter_dir:$base_sdk/lib"
 }
 
