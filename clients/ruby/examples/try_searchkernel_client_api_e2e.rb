@@ -213,9 +213,11 @@ begin
   ).limit(0).execute
   same(["Acme"], grouping_buckets(kept).map(&:value), "group keep filter")
 
-  index.patch("shoe-1").set("price", 79.0).set("inventory", 11).unset("missing_field").execute
+  index.patch("shoe-1").set("price", 79.0).set("inventory", 11).unset("active").execute
   same(11, index.get("shoe-1").fetch("inventory"), "patch second set")
-  same(79.0, index.get("shoe-1").fetch("price"), "patch set")
+  patched = index.get("shoe-1")
+  same(79.0, patched.fetch("price"), "patch set")
+  check(!patched.key?("active"), "patch unset")
 
   index.update("shoe-1").increment("inventory", 5).execute
   same(16, index.get("shoe-1").fetch("inventory"), "advanced arithmetic increment")
