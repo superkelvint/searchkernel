@@ -47,13 +47,19 @@ def verify_daemon_tree(root: Path) -> None:
         check=True,
         env=clean_runtime_env(),
     )
-    subprocess.run(
-        [str(daemon), "--help"],
-        check=True,
+    probe_argument = "--searchkernel-runtime-probe"
+    result = subprocess.run(
+        [str(daemon), probe_argument],
+        check=False,
         env=clean_runtime_env(),
-        stdout=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+    )
+    assert result.returncode != 0
+    assert f"unknown argument {probe_argument}" in result.stderr, (
+        "packaged daemon did not reach its argument parser with clean runtime env: "
+        f"exit={result.returncode} stderr={result.stderr!r}"
     )
 
 with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
