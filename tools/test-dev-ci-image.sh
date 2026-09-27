@@ -28,6 +28,9 @@ ci_workflow = Path(sys.argv[5]).read_text(encoding="utf-8")
 if exact_head.count('if __name__ == "__main__":') != 1:
     raise SystemExit("exact-head regression module must contain exactly one module terminator")
 
+if "run_phase runtime-launcher bash tools/test-runtime-launcher.sh" not in ci_workflow:
+    raise SystemExit("CI tooling lane must execute the canonical runtime launcher regression")
+
 dispatch = 'exec bash "$ROOT/tools/run-in-ci-image.sh" "$@"'
 resolve_python = 'PYTHON=$(bash "$ROOT/tools/resolve-python.sh")'
 if dispatch not in dev:
