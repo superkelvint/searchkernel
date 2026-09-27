@@ -93,7 +93,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 413
+              "line": 442
             },
             {
               "capability": "query.term",
@@ -102,7 +102,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 413
+              "line": 442
             }
           ],
           "overrides": []
@@ -221,7 +221,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 414
+              "line": 443
             },
             {
               "capability": "query.boolean",
@@ -230,7 +230,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 414
+              "line": 443
             }
           ],
           "overrides": []
@@ -497,7 +497,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 415
+              "line": 444
             },
             {
               "capability": "query.nearest_neighbor",
@@ -506,7 +506,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 415
+              "line": 444
             },
             {
               "capability": "query.nearest_neighbor",
@@ -802,7 +802,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 416
+              "line": 445
             },
             {
               "capability": "filter.textual",
@@ -811,7 +811,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 416
+              "line": 445
             },
             {
               "capability": "filter.textual",
@@ -888,7 +888,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 417
+              "line": 446
             },
             {
               "capability": "search.sorting",
@@ -897,7 +897,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 417
+              "line": 446
             },
             {
               "capability": "search.sorting",
@@ -996,7 +996,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 418
+              "line": 447
             },
             {
               "capability": "search.pagination",
@@ -1005,7 +1005,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 418
+              "line": 447
             },
             {
               "capability": "search.pagination",
@@ -1132,7 +1132,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 419
+              "line": 448
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1141,7 +1141,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 419
+              "line": 448
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1218,7 +1218,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 420
+              "line": 449
             },
             {
               "capability": "result.named_summary_class",
@@ -1227,7 +1227,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 420
+              "line": 449
             }
           ],
           "overrides": []
@@ -1263,7 +1263,7 @@
               "runtime": "http",
               "kind": "conformance",
               "path": "clients/ruby/test/run.rb",
-              "line": 595
+              "line": 600
             }
           ],
           "overrides": []
@@ -1331,7 +1331,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 421
+              "line": 450
             },
             {
               "capability": "result.highlighting",
@@ -1340,7 +1340,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 421
+              "line": 450
             },
             {
               "capability": "result.highlighting",
@@ -1411,7 +1411,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 423
+              "line": 452
             },
             {
               "capability": "result.tensor_document_readback",
@@ -1420,7 +1420,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 423
+              "line": 452
             }
           ],
           "overrides": []
@@ -1483,7 +1483,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 426
+              "line": 455
             },
             {
               "capability": "grouping.structured",
@@ -1492,7 +1492,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 426
+              "line": 455
             },
             {
               "capability": "grouping.structured",
@@ -1592,7 +1592,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 427
+              "line": 456
             },
             {
               "capability": "grouping.aggregations",
@@ -1601,7 +1601,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 427
+              "line": 456
             },
             {
               "capability": "grouping.aggregations",
@@ -1765,7 +1765,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 428
+              "line": 457
             },
             {
               "capability": "update.document_crud",
@@ -1774,7 +1774,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 428
+              "line": 457
             },
             {
               "capability": "update.document_crud",
@@ -1851,7 +1851,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 429
+              "line": 458
             },
             {
               "capability": "update.arithmetic",
@@ -1860,7 +1860,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 429
+              "line": 458
             }
           ],
           "overrides": []
@@ -1910,7 +1910,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 430
+              "line": 459
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -1919,7 +1919,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 430
+              "line": 459
             }
           ],
           "overrides": []
@@ -2032,7 +2032,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 431
+              "line": 460
             },
             {
               "capability": "tensor.dense_document_crud",
@@ -2041,7 +2041,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 431
+              "line": 460
             }
           ],
           "overrides": []
@@ -2091,7 +2091,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 436
+              "line": 465
             },
             {
               "capability": "query.yql",
@@ -2100,7 +2100,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 436
+              "line": 465
             }
           ],
           "overrides": []
@@ -2313,7 +2313,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 432
+              "line": 461
             },
             {
               "capability": "ranking.profile_selection",
@@ -2322,7 +2322,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 432
+              "line": 461
             }
           ],
           "overrides": []
@@ -2363,7 +2363,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 433
+              "line": 462
             },
             {
               "capability": "ranking.numeric_query_inputs",
@@ -2372,7 +2372,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 433
+              "line": 462
             }
           ],
           "overrides": []
@@ -2422,7 +2422,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 435
+              "line": 464
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -2431,7 +2431,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 435
+              "line": 464
             }
           ],
           "overrides": []
@@ -2481,7 +2481,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 434
+              "line": 463
             },
             {
               "capability": "ranking.rank_properties",
@@ -2490,7 +2490,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 434
+              "line": 463
             }
           ],
           "overrides": []
@@ -2531,7 +2531,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 424
+              "line": 453
             },
             {
               "capability": "result.match_features",
@@ -2540,7 +2540,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 424
+              "line": 453
             }
           ],
           "overrides": []
@@ -2590,7 +2590,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 425
+              "line": 454
             },
             {
               "capability": "result.grouping_tree",
@@ -2599,7 +2599,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 425
+              "line": 454
             }
           ],
           "overrides": []
@@ -2649,7 +2649,7 @@
               "runtime": "managed-local",
               "kind": "e2e",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 422
+              "line": 451
             },
             {
               "capability": "result.degradation_metadata",
@@ -2658,7 +2658,7 @@
               "runtime": "managed-local",
               "kind": "ergonomic",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 422
+              "line": 451
             }
           ],
           "overrides": []
