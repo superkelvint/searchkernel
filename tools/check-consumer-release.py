@@ -31,8 +31,10 @@ def clean_runtime_env() -> dict[str, str]:
 
 def verify_daemon_tree(root: Path) -> None:
     daemon = root / "bin" / "searchkerneld"
+    real_daemon = root / "bin" / "searchkerneld.real"
     libdir = root / "lib"
-    assert daemon.is_file(), f"packaged daemon missing: {daemon}"
+    assert daemon.is_file(), f"packaged daemon launcher missing: {daemon}"
+    assert real_daemon.is_file(), f"packaged daemon ELF missing: {real_daemon}"
     assert (libdir / "libsearchkernel_vespa.so.2").is_file(), (
         f"packaged native adapter missing: {libdir / 'libsearchkernel_vespa.so.2'}"
     )
@@ -41,11 +43,16 @@ def verify_daemon_tree(root: Path) -> None:
             sys.executable,
             str(ROOT / "tools" / "check-native-runtime-closure.py"),
             str(libdir),
-            str(daemon),
+            str(real_daemon),
         ],
         check=True,
         env=clean_runtime_env(),
     )
+    # zipfile does not restore Unix executable bits when extracting wheels.
+    # Package metadata is checked separately; restore the bits here so the
+    # runtime probe exercises the packaged bytes/relative library layout.
+    daemon.chmod(daemon.stat().st_mode | 0o111)
+    real_daemon.chmod(real_daemon.stat().st_mode | 0o111)
     subprocess.run(
         [str(daemon), "--help"],
         check=True,
