@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import ast
 import importlib.util
 import os
 import subprocess
@@ -82,7 +83,31 @@ class ConsumerReleaseTests(unittest.TestCase):
 
     def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
         verifier = RELEASE_VERIFIER.read_text(encoding="utf-8")
-        self.assertIn('"check", "-p", "searchkernel", "--features", "native"', verifier)
+        tree = ast.parse(verifier)
+        commands = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            if not (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "subprocess"
+                and func.attr == "run"
+                and isinstance(node.args[0], ast.List)
+            ):
+                continue
+            commands.append(
+                [element.value for element in node.args[0].elts if isinstance(element, ast.Constant)]
+            )
+
+        self.assertTrue(
+            any(
+                command[:5] == ["check", "-p", "searchkernel", "--features", "native"]
+                for command in commands
+            ),
+            "release verifier must cargo-check the extracted native searchkernel package",
+        )
         self.assertIn('"CARGO_TARGET_DIR"', verifier)
         self.assertIn('environment.pop("SK_NATIVE_SDK", None)', verifier)
         self.assertIn('environment.pop("SK_NATIVE_ABI_HEADER", None)', verifier)
