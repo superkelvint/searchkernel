@@ -10,6 +10,8 @@ PHASE9="$ROOT/reference/vespa/phase9/verify-phase9.sh"
 HNSW="$ROOT/reference/vespa/verifiers/nearest-neighbor/hnsw/verify.sh"
 M14="$ROOT/reference/vespa/m14/verify-m14.sh"
 CI_IMAGE_RUNNER="$ROOT/.github/workflows/ci-image-runner.yml"
+RUN_VERIFIER="$ROOT/tools/run-verifier.sh"
+SEARCHREPLY="$ROOT/reference/vespa/searchreply/verify-searchreply.sh"
 
 bash -n "$VERIFY"
 bash -n "$DEV"
@@ -17,6 +19,11 @@ bash -n "$INTEGRATION"
 bash -n "$PHASE9"
 bash -n "$HNSW"
 bash -n "$M14"
+[[ -x "$RUN_VERIFIER" ]] || {
+    echo "canonical verifier launcher is missing or not executable: $RUN_VERIFIER" >&2
+    exit 1
+}
+bash -n "$RUN_VERIFIER"
 
 # Sourcing verify-common must be read-only. Supply every resolved path so this
 # check needs no native installation, then shadow bash to detect any accidental
@@ -54,7 +61,7 @@ while IFS= read -r wrapper; do
 done < <(find "$DIR" -type f -name verify.sh -print | sort)
 
 list="$("$VERIFY" --list)"
-for target in     vespa.grouping.yql     vespa.hardening.core     vespa.hardening.sanitizers     vespa.persistence.reopen     milestone.m14     product.integration; do
+for target in     vespa.grouping.yql     vespa.hardening.core     vespa.hardening.sanitizers     vespa.persistence.reopen     vespa.phase9     milestone.m14     product.integration; do
     grep -Fx "  $target" <<<"$list" >/dev/null || {
         echo "missing canonical verifier target from --list: $target" >&2
         exit 1
@@ -85,6 +92,18 @@ grep -F "unknown verifier target: vespa.this-target-does-not-exist" <<<"$unknown
 
 grep -F 'verify_target "$@"' "$DEV" >/dev/null || {
     echo "./dev verify does not forward verifier arguments" >&2
+    exit 1
+}
+grep -F 'tools/run-verifier.sh' "$DEV" >/dev/null || {
+    echo "./dev verify does not use the canonical verifier launcher" >&2
+    exit 1
+}
+grep -F 'SEARCHKERNEL_RUNTIME_LIB_DIRS' "$VERIFY" >/dev/null || {
+    echo "verify-through does not establish the canonical native runtime closure" >&2
+    exit 1
+}
+grep -F '"$ROOT/tools/run-runtime.sh" native "$CONFIG_BIN"' "$SEARCHREPLY" >/dev/null || {
+    echo "SearchReply executes its Cargo-built config binary outside the canonical native launcher" >&2
     exit 1
 }
 grep -F '"${@:2}"' "$VERIFY" >/dev/null || {
@@ -143,13 +162,13 @@ grep -F 'run_phase native-full-product-integration ./dev verify product.integrat
     echo "native-full product integration does not reuse the established cumulative baseline" >&2
     exit 1
 }
-grep -F 'run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved' "$CI_IMAGE_RUNNER" >/dev/null || {
-    echo "native-full Phase 9 does not reuse the established cumulative baseline" >&2
+grep -F 'run_phase native-full-phase9 ./dev verify vespa.phase9 --baseline-already-proved' "$CI_IMAGE_RUNNER" >/dev/null || {
+    echo "native-full Phase 9 does not enter through the canonical verifier launcher" >&2
     exit 1
 }
 hnsw_line="$(grep -nF 'run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
 integration_line="$(grep -nF 'run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
-phase9_line="$(grep -nF 'run_phase native-full-phase9 reference/vespa/phase9/verify-phase9.sh --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
+phase9_line="$(grep -nF 'run_phase native-full-phase9 ./dev verify vespa.phase9 --baseline-already-proved' "$CI_IMAGE_RUNNER" | cut -d: -f1)"
 [[ -n "$hnsw_line" && -n "$integration_line" && -n "$phase9_line" ]] &&
     (( hnsw_line < integration_line && hnsw_line < phase9_line )) || {
         echo "native-full skips the cumulative baseline before HNSW/M14 has proved it" >&2
