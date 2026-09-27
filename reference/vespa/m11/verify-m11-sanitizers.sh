@@ -41,8 +41,8 @@ run_tsan() {
   # Retry that startup-only failure, while preserving every real TSan report.
   for ((attempt = 1; attempt <= 100; attempt++)); do
     if TSAN_OPTIONS="suppressions=$suppression halt_on_error=1" \
-      LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-      "$@" >"$output" 2>&1; then
+      SEARCHKERNEL_RUNTIME_LD_PRELOAD="${LD_PRELOAD:-}" \
+      run_native_executable_with_sdk "$sdk" "$@" >"$output" 2>&1; then
       status=0
       preload="${LD_PRELOAD:-}"
       unset LD_PRELOAD
@@ -110,8 +110,8 @@ run_lane() {
       -L"$sdk/lib" -Wl,-rpath,"$sdk/lib" -lsearchkernel_vespa \
       -o "$buffer_contract_test"
     ASAN_OPTIONS="$asan_options" UBSAN_OPTIONS="$ubsan_options" \
-      LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-      SK_NATIVE_HIGHLIGHTING_UNIT_ONLY=1 "$buffer_contract_test"
+      SK_NATIVE_HIGHLIGHTING_UNIT_ONLY=1 \
+      run_native_executable_with_sdk "$sdk" "$buffer_contract_test"
     echo "packed document buffer ABI contract passed ($lane)"
   fi
 
@@ -156,29 +156,29 @@ run_lane() {
   esac
   case "$lane" in
     asan-ubsan)
-        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" compile "$config"
+        SEARCHKERNEL_RUNTIME_LD_PRELOAD="${LD_PRELOAD:-}" \
+        run_native_executable_with_sdk "$sdk" "$binary" compile "$config"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
-        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" malformed "$config" "$runtime/data"
+        SEARCHKERNEL_RUNTIME_LD_PRELOAD="${LD_PRELOAD:-}" \
+        run_native_executable_with_sdk "$sdk" "$binary" malformed "$config" "$runtime/data"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
-        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" failures "$config" "$runtime/failures"
+        SEARCHKERNEL_RUNTIME_LD_PRELOAD="${LD_PRELOAD:-}" \
+        run_native_executable_with_sdk "$sdk" "$binary" failures "$config" "$runtime/failures"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
-        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" lifecycle "$config" "$runtime/lifecycle"
+        SEARCHKERNEL_RUNTIME_LD_PRELOAD="${LD_PRELOAD:-}" \
+        run_native_executable_with_sdk "$sdk" "$binary" lifecycle "$config" "$runtime/lifecycle"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
-        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" reopen "$config" "$runtime/reopen"
+        SEARCHKERNEL_RUNTIME_LD_PRELOAD="${LD_PRELOAD:-}" \
+        run_native_executable_with_sdk "$sdk" "$binary" reopen "$config" "$runtime/reopen"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
-        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" advanced "$config" "$runtime/advanced"
+        SEARCHKERNEL_RUNTIME_LD_PRELOAD="${LD_PRELOAD:-}" \
+        run_native_executable_with_sdk "$sdk" "$binary" advanced "$config" "$runtime/advanced"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
-        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" adapter "$config" "$runtime/adapter"
+        SEARCHKERNEL_RUNTIME_LD_PRELOAD="${LD_PRELOAD:-}" \
+        run_native_executable_with_sdk "$sdk" "$binary" adapter "$config" "$runtime/adapter"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
-        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" concurrency "$config" "$runtime/concurrency"
+        SEARCHKERNEL_RUNTIME_LD_PRELOAD="${LD_PRELOAD:-}" \
+        run_native_executable_with_sdk "$sdk" "$binary" concurrency "$config" "$runtime/concurrency"
       ;;
     tsan)
       run_tsan "$sdk" "$tsan" "$binary" compile "$config"
