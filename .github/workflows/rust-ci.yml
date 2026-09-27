@@ -64,3 +64,26 @@ jobs:
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
             '
+
+
+  issue420_native_followup:
+    name: issue #420 post-merge M14 verification
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify ABI authorities and cumulative M14
+        shell: bash
+        env:
+          SEARCHKERNEL_VERIFY_LIVE_ORACLE: skip
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
+          python3 tools/check-native-abi-authorities.py
+          python3 -m unittest tools.test_check_native_abi_authorities
+          ./dev verify milestone.m14 --skip-workspace-quality
