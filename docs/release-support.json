@@ -46,5 +46,6 @@
     "macos",
     "windows",
     "linux-aarch64"
-  ]
+  ],
+  "python_wheel_platform_tag": "manylinux_2_28_x86_64"
 }
