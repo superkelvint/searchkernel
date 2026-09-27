@@ -53,6 +53,23 @@ class QualificationPolicyTests(unittest.TestCase):
         )[0]
         self.assertNotIn("client-release-qualify", producer)
 
+    def test_release_changes_trigger_client_e2e_owner(self):
+        workflow = (ROOT / ".github/workflows/client-capabilities.yml").read_text()
+        for required in (
+            "tools/package-consumer-release.py",
+            "tools/check-consumer-release.py",
+            "tools/check-release-support.py",
+            "tools/qualify-consumer-release.py",
+            "docs/release-support.json",
+            ".github/workflows/ci-image-runner.yml",
+        ):
+            self.assertGreaterEqual(
+                workflow.count(f'- "{required}"'),
+                2,
+                f"{required} must trigger client-e2e on PRs and main pushes",
+            )
+        self.assertIn("target: client-e2e", workflow)
+
     def test_gate_scrubs_repository_and_native_runtime_overrides(self):
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
         self.assertIn('key.startswith(("SEARCHKERNEL_", "SK_NATIVE_", "VESPA_"))', gate)
