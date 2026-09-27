@@ -43,3 +43,8 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 searchkernel = { path = "../core/crates/searchkernel", default-features = false, features = ["internal-api", "remote"] }
 searchkernel-ir = { path = "../core/crates/searchkernel-ir" }
 searchkernel-testkit = { path = "../core/crates/searchkernel-testkit" }
+
+[[test]]
+name = "process_shutdown"
+path = "tests/process_shutdown.rs"
+required-features = ["native"]

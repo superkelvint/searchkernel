@@ -9,6 +9,7 @@ use flatbuffers::root;
 use searchkernel_ir::{api, snapshot, IndexContext};
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn usage() -> ! {
     eprintln!("usage: searchkernel-semantic-snapshot --index-json PATH --request PATH");
@@ -29,15 +30,50 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mut index_json = None;
     let mut request = None;
+    let mut request_json = None;
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--index-json" => index_json = Some(argument_value(&mut args, "--index-json")),
             "--request" => request = Some(argument_value(&mut args, "--request")),
+            "--request-json" => request_json = Some(argument_value(&mut args, "--request-json")),
             _ => usage(),
         }
     }
-    let (Some(index_json), Some(request)) = (index_json, request) else {
+    let Some(index_json) = index_json else {
         usage();
+    };
+    let request = match (request, request_json) {
+        (Some(path), None) => path,
+        (None, Some(json)) => {
+            let dir = std::env::temp_dir().join(format!(
+                "searchkernel-semantic-snapshot-{}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&dir).unwrap();
+            let schema = dir.join("request.fbs");
+            let canonical = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../api/searchkernel.fbs")
+                .canonicalize()
+                .unwrap();
+            let mut schema_text = fs::read_to_string(canonical).unwrap();
+            schema_text.push_str("\nroot_type SearchRequest;\n");
+            fs::write(&schema, schema_text).unwrap();
+            let status = Command::new("flatc")
+                .args(["--binary", "--strict-json", "-o"])
+                .arg(&dir)
+                .arg(&schema)
+                .arg(&json)
+                .status()
+                .unwrap();
+            if !status.success() {
+                panic!("flatc request JSON conversion failed");
+            }
+            dir.join(format!(
+                "{}.bin",
+                json.file_stem().unwrap().to_string_lossy()
+            ))
+        }
+        _ => usage(),
     };
 
     let index_input: serde_json::Value = serde_json::from_slice(

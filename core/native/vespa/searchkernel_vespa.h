@@ -176,7 +176,7 @@ typedef struct sk_grouping_filter sk_grouping_filter;
 
 /* ABI revision 13 adds structured grouping-plan input and structured grouping
    tree output to the generic search surface. */
-#define SK_NATIVE_ABI_VERSION 13U
+#define SK_NATIVE_ABI_VERSION 14U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -217,15 +217,17 @@ SK_API int32_t sk_document_add_tensor_dense(
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_string_array(
     sk_document *document, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *out_error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_position(
     sk_document *document, const char *field, double latitude, double longitude,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_predicate(
     sk_document *document, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_add_predicate_json(
     sk_document *document, const char *field, const char *expression_json,
@@ -301,15 +303,17 @@ SK_API int32_t sk_document_update_assign_tensor_dense(
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_string_array(
     sk_document_update *update, const char *field, const uint8_t *value_bytes,
-    const uint32_t *value_lengths, uint32_t value_count, uint8_t *out_error,
+    const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
+    uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_position(
     sk_document_update *update, const char *field, double latitude, double longitude,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_predicate(
     sk_document_update *update, const char *field, const uint8_t *feature_key_bytes,
-    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
-    const uint32_t *feature_value_lengths, uint32_t feature_count,
+    const uint32_t *feature_key_lengths, uint32_t feature_key_bytes_length,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    uint32_t feature_value_bytes_length, uint32_t feature_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_predicate_json(
     sk_document_update *update, const char *field, const char *expression_json,

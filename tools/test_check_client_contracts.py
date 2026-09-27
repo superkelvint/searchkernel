@@ -9,6 +9,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -126,6 +127,22 @@ class ClientContractTests(unittest.TestCase):
         markdown = MODULE.render_markdown(report)
         self.assertIn("ergonomic · E2E 1/2 (native)", markdown)
         self.assertIn("rust-tests/e2e.rs", markdown)
+
+
+    def test_run_e2e_lanes_can_select_one_surface(self) -> None:
+        _, surfaces, _, _ = self.load()
+        with mock.patch.object(MODULE.subprocess, "run") as run:
+            MODULE.run_e2e_lanes(surfaces, self.root, surface="rust")
+        run.assert_called_once_with(
+            ("python3", "-c", "pass"),
+            cwd=self.root,
+            check=True,
+        )
+
+    def test_run_e2e_lanes_rejects_unknown_surface(self) -> None:
+        _, surfaces, _, _ = self.load()
+        with self.assertRaisesRegex(MODULE.RegistryError, "unknown E2E client surface"):
+            MODULE.run_e2e_lanes(surfaces, self.root, surface="missing")
 
 
     def test_required_e2e_runtime_requires_lane(self) -> None:
@@ -247,10 +264,55 @@ class ClientContractTests(unittest.TestCase):
         script = repo / "clients" / "typescript" / "scripts" / "run-real-e2e.sh"
         script.parent.mkdir(parents=True)
         script.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        runtime_helper = repo / "tools" / "client-e2e-runtime.sh"
+        runtime_helper.parent.mkdir(parents=True)
+        runtime_helper.write_text(
+            (ROOT / "tools" / "client-e2e-runtime.sh").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        host = repo / "target" / "host" / "debug" / "searchkerneld"
+        host.parent.mkdir(parents=True)
+        host.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        host.chmod(0o755)
+        adapter_lib = repo / "target" / "host" / "native-adapter"
+        adapter_lib.mkdir(parents=True)
+        (adapter_lib / "libsearchkernel_vespa.so.2").write_bytes(b"fixture")
 
         dev = repo / "dev"
         dev.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
         dev.chmod(0o755)
+
+        tools_dir = repo / "tools"
+        tools_dir.mkdir(parents=True, exist_ok=True)
+        resolve_python = tools_dir / "resolve-python.sh"
+        resolve_python.write_text(
+            "#!/usr/bin/env bash\ncommand -v python3\n",
+            encoding="utf-8",
+        )
+        resolve_python.chmod(0o755)
+        resolve_rust = tools_dir / "resolve-rust.sh"
+        resolve_rust.write_text(
+            "#!/usr/bin/env bash\ncommand -v \"${1:-cargo}\"\n",
+            encoding="utf-8",
+        )
+        resolve_rust.chmod(0o755)
+
+        adapter_resolver = repo / ".github" / "ci" / "resolve-native-adapter-lib.py"
+        adapter_resolver.parent.mkdir(parents=True)
+        adapter_resolver.write_text(
+            """#!/usr/bin/env python3
+from pathlib import Path
+import sys
+
+target = Path(sys.argv[2]).resolve() / "fake-adapter"
+target.mkdir(parents=True, exist_ok=True)
+(target / "libsearchkernel_vespa.so.2").touch()
+print(target)
+""",
+            encoding="utf-8",
+        )
+        adapter_resolver.chmod(0o755)
 
         fakebin = fixture / "bin"
         fakebin.mkdir(parents=True)
@@ -283,6 +345,7 @@ if [[ "${1:-}" == "run" && "${2:-}" == "example:e2e" ]]; then
         echo "TypeScript E2E dependencies were not installed" >&2
         exit 42
     fi
+    [[ -n "${SEARCHKERNEL_SDK_LIB:-}" ]] || { echo "native adapter runtime path was not passed to example E2E" >&2; exit 45; }
     exit 0
 fi
 exit 0
@@ -297,6 +360,7 @@ exit 0
 set -euo pipefail
 [[ -f "$NPM_READY" ]] || { echo "TypeScript E2E dependencies were not installed" >&2; exit 42; }
 [[ -n "${SEARCHKERNEL_LOCAL_HOST:-}" ]] || { echo "managed-local host was not passed to installed-package E2E" >&2; exit 43; }
+[[ -n "${SEARCHKERNEL_SDK_LIB:-}" ]] || { echo "native adapter runtime path was not passed to installed-package E2E" >&2; exit 45; }
 [[ "$1" == "clients/typescript/scripts/verify-installed-managed-local-e2e.cjs" ]] || exit 44
 printf '%s\\n' "installed-package-e2e" >>"$NPM_LOG"
 """,
@@ -312,6 +376,8 @@ printf '%s\\n' "installed-package-e2e" >>"$NPM_LOG"
                 "REPO_ROOT": str(repo),
                 "NPM_LOG": str(fixture / "npm.log"),
                 "NPM_READY": str(fixture / "npm-ready"),
+                "SEARCHKERNEL_LOCAL_HOST": str(host),
+                "SEARCHKERNEL_SDK_LIB": str(adapter_lib),
             }
         )
         completed = subprocess.run(

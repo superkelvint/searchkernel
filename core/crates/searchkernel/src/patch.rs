@@ -118,6 +118,20 @@ mod tests {
     }
 
     #[test]
+    fn patch_set_rejects_non_finite_values_without_coercing_to_null() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let patch = Patch::new().set("ratio", value);
+            let error = to_resolver_operations(&patch).expect_err("non-finite patch value");
+            assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
+        }
+        let patch = Patch::new().set("ratio", Option::<f64>::None);
+        assert!(
+            to_resolver_operations(&patch).is_ok(),
+            "explicit null remains distinct"
+        );
+    }
+
+    #[test]
     fn patch_set_retains_value_serialization_errors_until_encoding() {
         let patch = Patch::new().set("ratio", FailingSerialize);
         assert!(matches!(

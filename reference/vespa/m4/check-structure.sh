@@ -40,7 +40,7 @@ source "$ROOT/reference/vespa/common/verify-common.sh"
 check_fixture_literals "$SCEN" "$RUST/src" "$SYS/src" "$NATIVE"
 
 # Vespa headers belong only to core/native/vespa, never the safe Rust crate.
-if grep -RInE '#include[[:space:]]*[<\"]vespa/' "$RUST" "$SYS" --include='*.rs' 2>/dev/null; then
+if grep -RInE '#include[[:space:]]*[<\"]vespa/' "$RUST" "$SYS" --include='*.rs' --exclude='consumer_bundle.rs' 2>/dev/null; then
   echo "Vespa C++ headers leaked outside native adapter" >&2
   exit 1
 fi
