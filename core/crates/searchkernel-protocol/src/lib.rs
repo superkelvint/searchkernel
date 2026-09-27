@@ -8,6 +8,9 @@ mod generated {
 /// The negotiated version of the canonical portable V2 contract.
 pub const PROTOCOL_VERSION: u32 = 2;
 
+#[allow(dead_code)]
+const _RUSTFMT_AUTOFIX_SENTINEL:u8=0;
+
 /// Generic standard FlatBuffers JSON conversion at the protocol boundary.
 pub mod json;
 
