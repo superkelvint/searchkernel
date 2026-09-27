@@ -9,6 +9,8 @@ PYTHON_E2E="$ROOT/tools/run-python-native-e2e.sh"
 TS_E2E="$ROOT/clients/typescript/scripts/run-real-e2e.sh"
 PHP_E2E="$ROOT/clients/php/examples/run_searchkernel_client_api_e2e.sh"
 RUBY_E2E="$ROOT/clients/ruby/examples/run_searchkernel_client_api_e2e.sh"
+TS_INSTALLED_E2E="$ROOT/clients/typescript/scripts/verify-installed-managed-local-e2e.cjs"
+PYTHON_GRPC_E2E="$ROOT/clients/python/tests/test_grpc_e2e.py"
 DEV="$ROOT/dev"
 
 [[ -x "$CLIENT_HOST" ]] || {
@@ -62,6 +64,18 @@ grep -F '"$RUNTIME" ruby' "$RUBY_E2E" >/dev/null || {
     echo "Ruby E2E bypasses the canonical Ruby launcher" >&2
     exit 1
 }
+grep -F 'const npm = process.env.NPM;' "$TS_INSTALLED_E2E" >/dev/null || {
+    echo "installed TypeScript E2E does not inherit the npm selected by the canonical Node launcher" >&2
+    exit 1
+}
+grep -F 'SEARCHKERNEL_LOCAL_HOST' "$PYTHON_GRPC_E2E" >/dev/null || {
+    echo "Python gRPC E2E does not launch the prepared canonical host wrapper" >&2
+    exit 1
+}
+if grep -F 'LD_LIBRARY_PATH' "$PYTHON_GRPC_E2E" >/dev/null; then
+    echo "Python gRPC E2E still constructs its own loader path" >&2
+    exit 1
+fi
 
 for fn in run_python_tests run_typescript_tests run_php_tests run_ruby_tests; do
     body=$(sed -n "/^$fn() {/,/^}/p" "$DEV")
