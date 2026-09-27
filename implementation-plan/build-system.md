@@ -394,8 +394,9 @@ Different release surfaces may legitimately have different native-delivery requi
 
 - **Rust embedded/native** must prove a clean downstream project built from the **actual distributable Rust artifact** can execute the embedded engine outside the repository with a cleaned runtime environment;
 - **searchkerneld** must prove the packaged daemon/runtime tree executes after relocation with repository/native environment variables removed;
-- **managed-local language packages** must prove their installed package can launch/use the packaged runtime from its installed location;
-- **connect-only clients** do not need to embed Vespa, but must prove that the shipped client artifact can connect to the supported daemon contract.
+- **Python, TypeScript/Node, and Ruby are managed-local first-party client distributions**: each installed package must be able to carry/launch the local Search Kernel daemon + native runtime from its installed location;
+- **connect mode is an additional client mode where supported**, not a substitute for the managed-local packaging contract for Python, TypeScript/Node, or Ruby;
+- genuinely connect-only surfaces, if any are introduced later, need only prove interoperability with the supported daemon contract.
 
 Source-tree smoke tests are useful but do not substitute for testing the exact artifact that will be shipped.
 
@@ -981,13 +982,25 @@ Those images are build/development infrastructure.
 
 The release pipeline instead produces supported product artifacts from the same pinned/provenanced inputs.
 
-The current beta distribution authority is:
+The machine-readable release-promise authority is:
 
 ```text
 docs/release-support.json
 ```
 
 and currently targets Linux x86-64 glibc.
+
+However, the build-system plan also defines the **intended product distribution architecture**. The current file is not allowed to freeze an accidental implementation gap into that architecture. Before `./dev release-check` becomes authoritative, `docs/release-support.json` and its executable evidence must be reconciled with the intended managed-local client model described below.
+
+In particular, the intended first-party client architecture is:
+
+```text
+Python          -> managed-local + optional connect mode
+TypeScript/Node -> managed-local + optional connect mode
+Ruby            -> managed-local + optional connect mode
+```
+
+The current repository is not fully aligned with that target yet: the release packager already stages the managed-local runtime into Python and TypeScript packages, while the current support matrix still describes TypeScript as connect-only and Ruby as deferred. Ruby packaging must also be upgraded to carry/launch the local runtime before it can satisfy the intended managed-local contract.
 
 The intended release flow is:
 
@@ -1055,9 +1068,31 @@ Release qualification must unpack this tree into a clean external location, clea
 
 If the mostly-static native-runtime investigation succeeds, the `lib/` closure may shrink substantially, but the package-level contract remains the same: **unpack and run without installing Vespa separately**.
 
-#### Managed-local Python distribution
+#### Managed-local first-party language clients
 
-Current artifact shape:
+Python, TypeScript/Node, and Ruby share the same product-distribution principle:
+
+> Installing the language package is sufficient to run Search Kernel locally. The user does not separately install Vespa or manually provision `searchkerneld`.
+
+Conceptually each package contains:
+
+```text
+language package
+    + client/domain API
+    + package-relative Search Kernel launcher/runtime
+        bin/
+            searchkerneld
+            searchkerneld.real
+        lib/
+            libsearchkernel_vespa.so.2
+            <required native runtime closure>
+```
+
+The exact filesystem shape is language-package-specific, but the runtime contract is the same.
+
+##### Python
+
+Current artifact family:
 
 ```text
 searchkernel-<version>-<platform>.whl
@@ -1067,30 +1102,91 @@ searchkernel-<version>-<platform>.whl
         Python package code
 ```
 
-For the managed-local supported mode, the wheel carries the Search Kernel daemon/native runtime required to run locally.
+The current release packager already stages the managed-local runtime into the wheel.
 
-Release qualification must install the wheel into a clean target/environment and execute the packaged runtime with repository/native overrides removed.
+Release qualification must install the wheel into a clean target/environment and prove the installed Python package can launch/use the local Search Kernel runtime with repository/native overrides removed.
 
-#### TypeScript / Node and other connect-only clients
+##### TypeScript / Node
 
-A connect-only client does not need to carry Vespa or the native engine merely because Search Kernel itself embeds Vespa elsewhere.
-
-Its release contract is:
+Current artifact family:
 
 ```text
-client artifact
-    |
-    v
-connect to supported searchkerneld contract
+@searchkernel/client package
+    dist/
+    bin/
+    lib/
+    ...
 ```
 
-The support matrix decides whether a language/runtime is managed-local, native embedded, connect-only, or deferred.
+The current package manifest already allows `bin/` and `lib/`, and the current release packager stages the same managed-local daemon/native runtime closure into the TypeScript package.
 
-Packaging code may currently carry more files than the supported contract strictly requires; release qualification should follow `docs/release-support.json`, not infer support from files present in a package.
+Therefore TypeScript/Node is **managed-local**, not merely connect-only.
+
+Release qualification must install the packed npm artifact into a clean consumer project and prove the Node package can launch/use its packaged local Search Kernel runtime with repository/native overrides removed.
+
+A connect-to-existing-daemon API may remain available as an additional mode.
+
+##### Ruby
+
+Target artifact family:
+
+```text
+searchkernel-<version>.gem
+    lib/
+    bin/
+    <package-relative native runtime assets>
+```
+
+Ruby is also a **managed-local** first-party client.
+
+The current repository has an implementation gap: the gemspec currently packages Ruby source only, and the release packager does not yet stage the managed-local runtime into the gem.
+
+The convergence/release work must close that gap by:
+
+1. defining the package-relative Ruby runtime layout;
+2. staging the same qualified Search Kernel daemon/native closure used by the other managed-local clients;
+3. including those assets in the gem;
+4. providing the Ruby API/launcher path that starts or connects to that packaged local daemon;
+5. installing the built gem into a clean external GEM_HOME and executing the managed-local path with repository/native overrides removed.
+
+A connect-to-existing-daemon API may remain available as an additional mode.
+
+#### Managed-local runtime consistency
+
+Python, TypeScript/Node, and Ruby should not invent three separate native runtime assemblers.
+
+Release packaging should build/stage one qualified platform runtime payload:
+
+```text
+qualified searchkerneld + native runtime closure
+                |
+                +--> standalone daemon archive
+                +--> Python wheel
+                +--> TypeScript/Node package
+                +--> Ruby gem
+```
+
+Language-specific packaging owns only how that common payload is embedded and launched from the installed package.
+
+This gives the three clients the same native bits, provenance, and runtime behavior for a given release.
+
+#### Connect mode
+
+Connect mode is orthogonal to managed-local packaging:
+
+```text
+managed-local:
+language package -> packaged local searchkerneld -> Search Kernel
+
+connect:
+language package -> caller-specified/existing searchkerneld -> Search Kernel
+```
+
+Supporting connect mode does not remove the managed-local requirement for Python, TypeScript/Node, or Ruby.
 
 #### Deferred surfaces
 
-PHP, Ruby, browser TypeScript/gRPC-Web, additional architectures, and other rows currently marked deferred are not release promises merely because development/test code exists.
+PHP, browser TypeScript/gRPC-Web, additional architectures, and other rows explicitly marked deferred are not release promises merely because development/test code exists. Ruby must not remain deferred merely because its packaging implementation currently lags the intended managed-local architecture.
 
 ### 7.8 Shared provenance between build infrastructure and product artifacts
 
@@ -1151,6 +1247,9 @@ The build-system convergence is distribution-complete when:
 - the thin Search Kernel leaf records the exact immutable dependencies it was validated against;
 - local and remote verification consume those exact identities;
 - release artifacts record compatible provenance;
+- `docs/release-support.json` is reconciled with the intended managed-local architecture before release qualification is treated as authoritative;
+- Python, TypeScript/Node, and Ruby managed-local artifacts are each exercised after installation from the actual distributable package;
+- all three managed-local language packages consume the same qualified platform daemon/native runtime payload rather than independently assembling native closures;
 - every supported row in `docs/release-support.json` is exercised from the actual distributable artifact;
 - no end-user supported surface requires the development/CI Docker images;
 - changing the final native packaging model does not force a redesign of the development-image layering.
@@ -2023,13 +2122,20 @@ It must:
 2. run or consume the required exact-revision repository/source qualification according to release policy;
 3. build the exact artifact set described by the release tooling from the qualified toolchain/Vespa identities;
 4. validate the release manifest/checksums/provenance, including Search Kernel revision, platform/native target, pinned Vespa identity, and the relevant immutable build-input identities;
-5. enumerate supported rows from `docs/release-support.json`;
-6. execute artifact-level qualification for every supported row;
-7. include ABI, persistence/backward-compatibility, native-runtime/relocatability, generated-artifact, and provenance checks required by the release contract;
-8. fail if a supported row lacks executable evidence;
-9. avoid depending on the name/content of a particular CI workflow YAML file.
+5. reconcile `docs/release-support.json` with the intended managed-local client architecture before relying on it as the release promise;
+6. enumerate supported rows from `docs/release-support.json`;
+7. execute artifact-level qualification for every supported row;
+8. include ABI, persistence/backward-compatibility, native-runtime/relocatability, generated-artifact, and provenance checks required by the release contract;
+9. fail if a supported row lacks executable evidence;
+10. avoid depending on the name/content of a particular CI workflow YAML file.
 
-At minimum, Rust embedded qualification must build and **execute** a downstream project from the actual distributable Rust bundle in a clean external location, not merely `cargo check` the bundle or consume the repository by path.
+At minimum:
+
+- Rust embedded qualification must build and **execute** a downstream project from the actual distributable Rust bundle in a clean external location, not merely `cargo check` the bundle or consume the repository by path.
+- Python qualification must install the wheel and execute its managed-local runtime path.
+- TypeScript/Node qualification must install the packed npm artifact and execute its managed-local runtime path.
+- Ruby qualification must install the built gem and execute its managed-local runtime path.
+- Those three managed-local packages must be assembled from the same qualified platform daemon/native runtime payload for the release.
 
 Completion criterion: `./dev release-check` is sufficient evidence for the statement "this exact revision's supported artifacts are qualified for release", while `./dev universe` remains the exhaustive repository/source qualification command.
 
@@ -2192,6 +2298,10 @@ Can an ordinary Search Kernel source change avoid rebuilding or republishing the
 Does the thin leaf record the exact immutable toolchain/Vespa identities used for verification?
 
 ### Product distribution
+
+Are Python, TypeScript/Node, and Ruby all treated as managed-local first-party distributions, with connect mode only as an additional mode?
+
+Do all three language packages embed/launch the same qualified platform Search Kernel daemon/native runtime payload rather than maintaining separate native closures?
 
 Can every supported release surface be installed/extracted and exercised without depending on the development/CI images?
 
@@ -2369,15 +2479,18 @@ The convergence project is complete when:
 41. `./dev release-check` builds the actual release artifact set and provides artifact-level executable evidence for every supported release row.
 42. Rust embedded release qualification builds and executes a clean external consumer from the actual distributable Rust artifact, not merely from a repository path.
 43. Release qualification checks public commands/artifacts/provenance rather than depending on obsolete CI workflow filenames or YAML implementation details.
-44. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
+44. The intended release architecture treats Python, TypeScript/Node, and Ruby as managed-local first-party clients; `docs/release-support.json` is reconciled accordingly before release qualification becomes authoritative.
+48. Python, TypeScript/Node, and Ruby release artifacts each carry/launch the qualified local Search Kernel runtime and pass clean external-install managed-local E2E tests.
+49. The managed-local Python, TypeScript/Node, and Ruby packages are assembled from one qualified platform daemon/native runtime payload rather than independently assembled native closures.
+50. The toolchain image, Vespa/native image, and thin Search Kernel leaf remain independently versioned and publishable.
 45. Ordinary Search Kernel source/image publication does not copy or republish the large Vespa/native payload.
 46. The thin Search Kernel leaf records exact immutable toolchain and Vespa/native provenance.
 47. Canonical local and remote verification resolve the Vespa/native payload by immutable identity and mount/materialize it read-only.
-48. Release artifacts record Search Kernel revision, platform/native target, pinned Vespa/native identity, and artifact checksums/provenance sufficient to relate shipped output to qualified inputs.
-49. End-user supported artifacts do not require `searchkernel-ci`, `searchkernel-ci-toolchain`, or `searchkernel-ci-vespa` at runtime.
-50. Old compatibility/build paths are removed only after their replacements are proven.
-51. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
-52. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
+51. Release artifacts record Search Kernel revision, platform/native target, pinned Vespa/native identity, and artifact checksums/provenance sufficient to relate shipped output to qualified inputs.
+52. End-user supported artifacts do not require `searchkernel-ci`, `searchkernel-ci-toolchain`, or `searchkernel-ci-vespa` at runtime.
+53. Old compatibility/build paths are removed only after their replacements are proven.
+54. `BUILDING.md` can explain the normal developer workflow in roughly one screenful.
+55. An engineer unfamiliar with Search Kernel can identify where Rust compilation, native compilation, runtime packaging, release qualification, and behavioral references live without discovering another hidden build system.
 
 The final architecture should be boring:
 
