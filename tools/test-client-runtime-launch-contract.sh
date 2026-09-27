@@ -40,8 +40,12 @@ if grep -F 'export LD_LIBRARY_PATH=' "$CLIENT_RUNTIME" >/dev/null; then
     exit 1
 fi
 
-grep -F 'tools/run-runtime.sh" python' "$PYTHON_E2E" >/dev/null || {
-    echo "Python native E2E bypasses the canonical runtime launcher" >&2
+grep -F 'RUNTIME="$ROOT/tools/run-runtime.sh"' "$PYTHON_E2E" >/dev/null || {
+    echo "Python native E2E does not select the canonical runtime launcher" >&2
+    exit 1
+}
+grep -F '"$RUNTIME" python' "$PYTHON_E2E" >/dev/null || {
+    echo "Python native E2E bypasses the canonical Python launcher" >&2
     exit 1
 }
 grep -F '"$RUNTIME" npm' "$TS_E2E" >/dev/null || {
