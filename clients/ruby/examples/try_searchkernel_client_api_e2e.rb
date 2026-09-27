@@ -3,7 +3,9 @@
 require "fileutils"
 require "tmpdir"
 
-$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+unless ENV["SEARCHKERNEL_RUBY_USE_INSTALLED_GEM"] == "1"
+  $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+end
 require "searchkernel"
 
 def check(condition, message)
