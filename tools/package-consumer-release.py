@@ -140,6 +140,27 @@ def clean_runtime_env() -> dict[str, str]:
     return environment
 
 
+RUNTIME_PROBE_ARGUMENT = "--searchkernel-runtime-probe"
+
+
+def probe_runtime_launcher(launcher: Path) -> None:
+    result = subprocess.run(
+        [str(launcher), RUNTIME_PROBE_ARGUMENT],
+        check=False,
+        env=clean_runtime_env(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    expected = f"unknown argument {RUNTIME_PROBE_ARGUMENT}"
+    if result.returncode == 0 or expected not in result.stderr:
+        diagnostic = (result.stderr or result.stdout).strip()
+        raise RuntimeError(
+            "packaged runtime probe did not reach the packaged daemon argument parser"
+            f" (exit={result.returncode}): {diagnostic}"
+        )
+
+
 def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path) -> None:
     bindir = stage / "bin"
     libdir = stage / "lib"
@@ -195,14 +216,7 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path) -> None:
     )
     launcher.chmod(0o755)
 
-    subprocess.run(
-        [str(launcher), "--help"],
-        check=True,
-        env=clean_runtime_env(),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    probe_runtime_launcher(launcher)
 
 
 def copy_runtime_into(package_root: Path, stage: Path) -> list[Path]:
