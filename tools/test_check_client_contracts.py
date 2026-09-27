@@ -298,6 +298,28 @@ class ClientContractTests(unittest.TestCase):
         )
         resolve_rust.chmod(0o755)
 
+        resolve_native_sdk = tools_dir / "resolve-native-sdk.sh"
+        resolve_native_sdk.write_text(
+            "#!/usr/bin/env bash\nprintf '%s\\n' \"$REPO_ROOT/fake-native-sdk\"\n",
+            encoding="utf-8",
+        )
+        resolve_native_sdk.chmod(0o755)
+        resolve_native_runtime = tools_dir / "resolve-native-runtime-libs.sh"
+        resolve_native_runtime.write_text(
+            "#!/usr/bin/env bash\nprintf '%s\\n' \"${SEARCHKERNEL_RUNTIME_LIB_DIRS:-}\"\n",
+            encoding="utf-8",
+        )
+        resolve_native_runtime.chmod(0o755)
+        run_runtime = tools_dir / "run-runtime.sh"
+        run_runtime.write_text(
+            "#!/usr/bin/env bash\nset -euo pipefail\nruntime=$1\nshift\nexec \"$runtime\" \"$@\"\n",
+            encoding="utf-8",
+        )
+        run_runtime.chmod(0o755)
+        client_host = tools_dir / "client-e2e-host.sh"
+        client_host.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        client_host.chmod(0o755)
+
         adapter_resolver = repo / ".github" / "ci" / "resolve-native-adapter-lib.py"
         adapter_resolver.parent.mkdir(parents=True)
         adapter_resolver.write_text(
@@ -345,7 +367,7 @@ if [[ "${1:-}" == "run" && "${2:-}" == "example:e2e" ]]; then
         echo "TypeScript E2E dependencies were not installed" >&2
         exit 42
     fi
-    [[ -n "${SEARCHKERNEL_SDK_LIB:-}" ]] || { echo "native adapter runtime path was not passed to example E2E" >&2; exit 45; }
+    [[ -n "${SEARCHKERNEL_RUNTIME_LIB_DIRS:-}" ]] || { echo "native runtime closure was not passed to example E2E" >&2; exit 45; }
     exit 0
 fi
 exit 0
@@ -360,7 +382,7 @@ exit 0
 set -euo pipefail
 [[ -f "$NPM_READY" ]] || { echo "TypeScript E2E dependencies were not installed" >&2; exit 42; }
 [[ -n "${SEARCHKERNEL_LOCAL_HOST:-}" ]] || { echo "managed-local host was not passed to installed-package E2E" >&2; exit 43; }
-[[ -n "${SEARCHKERNEL_SDK_LIB:-}" ]] || { echo "native adapter runtime path was not passed to installed-package E2E" >&2; exit 45; }
+[[ -n "${SEARCHKERNEL_RUNTIME_LIB_DIRS:-}" ]] || { echo "native runtime closure was not passed to installed-package E2E" >&2; exit 45; }
 [[ "$1" == "clients/typescript/scripts/verify-installed-managed-local-e2e.cjs" ]] || exit 44
 printf '%s\\n' "installed-package-e2e" >>"$NPM_LOG"
 """,

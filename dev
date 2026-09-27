@@ -241,11 +241,11 @@ native_sdk_path() {
 
 run_client_e2e() {
     local surface=$1
-    "$PYTHON" "$ROOT/tools/check-client-contracts.py" --run-e2e-surface "$surface"
+    "$ROOT/tools/run-runtime.sh" python "$ROOT/tools/check-client-contracts.py" --run-e2e-surface "$surface"
 }
 
 run_python_tests() {
-    "$PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
+    "$ROOT/tools/run-runtime.sh" python -m unittest discover -s clients/python/tests -p 'test_*.py'
     run_client_e2e python
 }
 
@@ -330,23 +330,24 @@ run_typescript_generation_check() {
 }
 
 run_typescript_tests() {
+    "$ROOT/tools/run-runtime.sh" npm ci --prefix "$ROOT/clients/typescript"
     bash "$ROOT/tools/test-typescript-generation.sh"
     run_typescript_generation_check
-    "$NPM" run typecheck --prefix "$ROOT/clients/typescript"
-    "$NPM" test --prefix "$ROOT/clients/typescript"
-    "$NPM" run test:package --prefix "$ROOT/clients/typescript"
+    "$ROOT/tools/run-runtime.sh" npm run typecheck --prefix "$ROOT/clients/typescript"
+    "$ROOT/tools/run-runtime.sh" npm test --prefix "$ROOT/clients/typescript"
+    "$ROOT/tools/run-runtime.sh" npm run test:package --prefix "$ROOT/clients/typescript"
     run_client_e2e typescript
 }
 
 run_php_tests() {
-    php "$ROOT/clients/php/tests/run.php"
+    "$ROOT/tools/run-runtime.sh" php "$ROOT/clients/php/tests/run.php"
     "$CARGO" test -p searchkernel-protocol --test php_json_contract -- --ignored
     bash "$ROOT/clients/php/tests/verify_package.sh"
     run_client_e2e php
 }
 
 run_ruby_tests() {
-    ruby -I"$ROOT/clients/ruby/lib" "$ROOT/clients/ruby/test/run.rb"
+    "$ROOT/tools/run-runtime.sh" ruby -I"$ROOT/clients/ruby/lib" "$ROOT/clients/ruby/test/run.rb"
     "$CARGO" test -p searchkernel-protocol --test ruby_json_contract -- --ignored
 
     local package_dir gem_home status
@@ -355,12 +356,12 @@ run_ruby_tests() {
     status=0
     (
         cd "$ROOT/clients/ruby"
-        ruby -S gem build searchkernel.gemspec --output "$package_dir/searchkernel.gem" >/dev/null
+        "$ROOT/tools/run-runtime.sh" ruby -S gem build searchkernel.gemspec --output "$package_dir/searchkernel.gem" >/dev/null
         GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
-            ruby -S gem install --local --install-dir "$gem_home" \
+            "$ROOT/tools/run-runtime.sh" ruby -S gem install --local --install-dir "$gem_home" \
                 "$package_dir/searchkernel.gem" --no-document >/dev/null
         GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
-            ruby -e 'require "rubygems"; Gem.use_paths(ENV.fetch("GEM_HOME"), [ENV.fetch("GEM_HOME")]); Gem::Specification.reset; gem "searchkernel"; require "searchkernel"; abort unless SearchKernel::Protocol::VERSION == 2;
+            "$ROOT/tools/run-runtime.sh" ruby -e 'require "rubygems"; Gem.use_paths(ENV.fetch("GEM_HOME"), [ENV.fetch("GEM_HOME")]); Gem::Specification.reset; gem "searchkernel"; require "searchkernel"; abort unless SearchKernel::Protocol::VERSION == 2;
               v = SearchKernel::Value; abort unless v.decode(v.encode(v.uint64(2**64 - 1))) == 2**64 - 1;
               root = {"node_type" => "ResultGroup", "node" => {"children" => [
                 {"node_type" => "Hit", "node" => {"id" => "from-installed-gem"}}]}};

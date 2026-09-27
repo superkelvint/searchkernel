@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-PYTHON="$(bash "$ROOT/tools/resolve-python.sh")"
+RUNTIME="$ROOT/tools/run-runtime.sh"
 
 source "$ROOT/tools/client-e2e-runtime.sh"
 prepare_client_e2e_runtime
@@ -23,7 +23,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 free_port() {
-  "$PYTHON" - <<'PY'
+  "$RUNTIME" python - <<'PY'
 import socket
 s = socket.socket()
 s.bind(("127.0.0.1", 0))
@@ -34,7 +34,7 @@ PY
 
 wait_port() {
   local port="$1"
-  "$PYTHON" - "$port" <<'PY'
+  "$RUNTIME" python - "$port" <<'PY'
 import socket, sys, time
 port = int(sys.argv[1])
 deadline = time.monotonic() + 60
@@ -78,14 +78,15 @@ stop_host() {
 }
 
 export SEARCHKERNEL_LOCAL_HOST="$HOST"
-"$PYTHON" "$ROOT/clients/php/examples/prepare_searchkernel_client_api_e2e.py" "$INDEX"
+PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
+  "$RUNTIME" python "$ROOT/clients/php/examples/prepare_searchkernel_client_api_e2e.py" "$INDEX"
 
 start_host
-php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" initial
+"$RUNTIME" php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" initial
 stop_host
 
 start_host
-php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" reopen
+"$RUNTIME" php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" reopen
 stop_host
 
 echo "PHP real-engine E2E + reopen PASS"
