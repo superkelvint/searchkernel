@@ -1544,7 +1544,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/ruby/test/run.rb",
-              "line": 600
+              "line": 604
             }
           ],
           "overrides": []
@@ -2101,11 +2101,31 @@
               "capability": "update.document_crud",
               "scenario": "basic",
               "surface": "ruby",
+              "runtime": "http",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
+              "line": 232
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "ruby",
               "runtime": "managed-local",
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
               "line": 577
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
+              "line": 232
             },
             {
               "capability": "update.document_crud",
@@ -2500,6 +2520,26 @@
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 797
+            },
+            {
+              "capability": "query.text_weak_and",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
+              "line": 231
+            },
+            {
+              "capability": "query.text_weak_and",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "http",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
+              "line": 231
             }
           ],
           "overrides": []
