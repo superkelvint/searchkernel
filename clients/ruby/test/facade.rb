@@ -251,8 +251,10 @@ nested_definition = SearchKernel::Schema.index_definition(
   {
     "people" => SearchKernel::ArrayField.new(
       SearchKernel::StructField.new(
-        "first" => SearchKernel::Keyword.new,
-        "last" => SearchKernel::Keyword.new
+        {
+          "first" => SearchKernel::Keyword.new,
+          "last" => SearchKernel::Keyword.new
+        }
       ),
       stored: false,
       searchable: false
