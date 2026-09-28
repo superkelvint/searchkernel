@@ -43,8 +43,10 @@ through these schemas merely to reach the local engine.
 - Multi-index routing uses stable portable lifecycle details. Direct top-level
   operation ingress is `InvalidArgument` / `targeted_request_required` at
   `payload_type`; a malformed/empty targeted wrapper is `InvalidArgument` /
-  `invalid_targeted_request` at `payload`; missing target is
-  `InvalidArgument` / `missing_index_target` at `target`; malformed target
+  `invalid_targeted_request` at `payload`; CreateIndex without a schema is
+  `InvalidArgument` / `missing_index_definition` at
+  `payload.payload.definition`; missing target is `InvalidArgument` /
+  `missing_index_target` at `target`; malformed target
   is `InvalidArgument` / `invalid_index_target` at `target.name`; strict
   create collision is `AlreadyExists` / `index_already_exists`; strict open
   miss is `NotFound` / `index_not_found`. The corresponding detail/path
