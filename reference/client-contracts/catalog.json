@@ -109,6 +109,7 @@
         "clients/ruby/examples"
       ],
       "required_e2e_runtimes": [
+        "http",
         "managed-local"
       ],
       "e2e_lanes": [
@@ -120,6 +121,16 @@
           "command": [
             "bash",
             "clients/ruby/examples/run_searchkernel_client_api_e2e.sh"
+          ]
+        },
+        {
+          "runtimes": [
+            "http"
+          ],
+          "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
+          "command": [
+            "bash",
+            "clients/ruby/examples/run_searchkernel_package_daemon_e2e.sh"
           ]
         }
       ]
