@@ -5,8 +5,8 @@
 //
 // This is a deliberate V2 semantic contract boundary. V2 is NOT sent through a
 // V1 request envelope and MUST NOT rely on an older FlatBuffers reader ignoring
-// unknown fields: several V2 fields are authoritative query semantics. Native/HTTP
-// envelopes must negotiate/require protocol_version >= 2 before dispatching a
+// unknown fields: several V2 fields are authoritative query semantics. Protocol
+// envelopes must require protocol_version >= 2 before dispatching a
 // SearchKernel.V2 request. A V1 runtime must reject V2 rather than execute a
 // partially understood request.
 //
@@ -18,9 +18,12 @@
 //   * binary FlatBuffers are the interchange format; JSON is not the durable
 //     compatibility contract.
 //
-// No root_type is declared intentionally. Requests are scoped to an already-open
-// Index handle; transport framing/version negotiation lives in the FFI/HTTP
-// envelope.
+// No root_type is declared intentionally. Payload tables are framed by the
+// versioned request/response envelopes in searchkernel_request.fbs and
+// searchkernel_response.fbs. Embedded/per-index data operations execute against
+// an already-bound Index handle. Multi-index daemon routing and CreateIndex /
+// OpenIndex lifecycle operations are control-plane semantics handled above the
+// per-index dispatcher.
 
 namespace SearchKernel.V2;
 
