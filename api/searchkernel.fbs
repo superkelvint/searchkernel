@@ -555,6 +555,31 @@ table RankProfileDefinition {
   properties:[ValueEntry];
 }
 
+// Logical daemon index identity. This is deliberately not a filesystem path.
+// Multi-index daemon callers use the same target for lifecycle and ordinary
+// operations. The protocol validator accepts only lowercase ASCII slugs.
+table IndexTarget {
+  name:string;
+}
+
+// Strict lifecycle semantics: create fails with AlreadyExists when the target
+// already exists; open fails with NotFound when it does not exist. Client-handle
+// close is local and does not implicitly unload a shared daemon index.
+table CreateIndexRequest {
+  definition:IndexDefinition;
+}
+
+table CreateIndexResult {
+  index:IndexDefinition;
+}
+
+table OpenIndexRequest {
+}
+
+table OpenIndexResult {
+  index:IndexDefinition;
+}
+
 table IndexDefinition {
   name:string;
   fields:[FieldDefinition];
