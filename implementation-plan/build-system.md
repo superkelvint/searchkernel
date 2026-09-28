@@ -68,8 +68,17 @@ Consumers
       v
 Search Kernel artifact/package
       |
-      +---- must contain enough runtime information/artifacts
-            to work WITHOUT the Search Kernel development environment
+      +---- contains exact runtime identity + resolver contract
+      |
+      +---- first managed-local use/build as appropriate
+              |
+              +---- cache hit -> reuse exact immutable runtime
+              |
+              +---- cache miss -> download qualified runtime artifact
+                                  -> verify digest/provenance
+                                  -> atomically install into shared cache
+      |
+      +---- works WITHOUT the Search Kernel development environment
 ```
 
 That consumer boundary is a **P0 architectural requirement**.
@@ -370,18 +379,33 @@ cargo add searchkernel
 
 After that installation, managed-local Search Kernel must work without a separate Vespa install, a separate `searchkerneld` install, Search Kernel's development Docker images, or repository-specific setup.
 
-Conceptually:
+Conceptually, the supported consumer model is **small ecosystem package + lazy immutable runtime cache**, similar to model-weight delivery systems:
 
 ```text
 native package-manager install
         |
         v
-package transparently provides/provisions
-the correct platform Search Kernel runtime
+small package containing exact runtime identity
         |
         v
+first managed-local use
+        |
+        +---- cache hit --------------------+
+        |                                   |
+        +---- cache miss                    |
+                |                           |
+                v                           |
+        download exact platform runtime     |
+                |                           |
+        verify checksum/provenance          |
+                |                           |
+        atomic install into shared cache ---+
+                |
+                v
 application uses Search Kernel locally
 ```
+
+The first managed-local use may therefore perform a one-time runtime download. Subsequent uses reuse the verified cached runtime until the package requests a different immutable runtime identity. For Rust embedded/native, the equivalent acquisition point may be first build/link rather than first process invocation if the toolchain requires native assets before execution; M1/M4 feasibility must prove the exact Cargo behavior.
 
 #### Requirements
 
@@ -396,7 +420,24 @@ The supported downstream experience must not require:
 - ambient `LD_LIBRARY_PATH`;
 - knowledge of Search Kernel worktree or SDK paths.
 
-The package-manager-native install command is the product boundary. Any platform-specific runtime selection, download, bundling, staging, or native linking required behind that boundary must be transparent to the user and owned by the package/build system.
+The package-manager-native install command is the product boundary. Any platform-specific runtime selection, download, bundling, staging, caching, or native linking required behind that boundary must be transparent to the user and owned by the package/build system.
+
+The canonical v1 delivery model is **not** to duplicate the full Vespa/native payload inside every wheel, npm package, gem, and crate. Ecosystem packages should remain comparatively small and carry an exact runtime manifest/resolver contract. The heavy consumer runtime is published once per supported platform/runtime identity as an immutable release artifact and shared through a machine-local content-addressed cache.
+
+The existing published native-base machinery is a useful implementation precedent but is not itself the end-user artifact contract. Keep the concepts separate:
+
+```text
+developer/build native base
+    = headers + configured metadata + static archives + runtime inputs
+
+consumer runtime
+    = searchkerneld and/or embedded native runtime assets
+      + required Vespa/private closure
+      + manifest/provenance
+      + no developer-only build surface
+```
+
+Initial consumer-runtime hosting may use GitHub Release assets because the repository already has immutable generation selection, checksum verification, and machine-cache mechanisms for native-base artifacts. Product runtime publication must nevertheless have its own manifest/identity and qualification path.
 
 The downstream contract is defined **per supported release surface**, not by one generic consumer model.
 
@@ -407,6 +448,12 @@ The package/build layer must provide, as appropriate to each supported surface:
 - the correct Search Kernel native implementation;
 - the required Vespa/private native closure in the chosen distribution form;
 - deterministic runtime identity;
+- a trusted download origin and immutable artifact checksum;
+- one shared cache layout keyed by immutable runtime identity/digest;
+- concurrency-safe download/install with temporary staging + atomic publication;
+- cache-hit reuse with no network access;
+- explicit prefetch/prewarm support for CI, Docker images, and offline deployment preparation;
+- an override for preprovisioned runtime locations without weakening identity validation;
 - relocatability according to the supported platform contract;
 - clear failure when required native artifacts are unavailable or incompatible;
 - a documented platform/support matrix;
@@ -416,7 +463,7 @@ Different release surfaces may legitimately have different native-delivery requi
 
 - **Rust embedded/native** must prove a clean downstream project built from the **actual distributable Rust artifact** can execute the embedded engine outside the repository with a cleaned runtime environment;
 - **searchkerneld** must prove the packaged daemon/runtime tree executes after relocation with repository/native environment variables removed;
-- **Python, TypeScript/Node, and Ruby are managed-local first-party client distributions**: each installed package must be able to carry/launch the local Search Kernel daemon + native runtime from its installed location;
+- **Python, TypeScript/Node, and Ruby are managed-local first-party client distributions**: each installed package must resolve and launch the exact local Search Kernel daemon + native runtime through the shared lazy runtime cache; embedding the full payload in each language package is not required and is not the preferred v1 model;
 - **connect mode is an additional client mode where supported**, not a substitute for the managed-local packaging contract for Python, TypeScript/Node, or Ruby;
 - genuinely connect-only surfaces, if any are introduced later, need only prove interoperability with the supported daemon contract.
 
@@ -427,6 +474,11 @@ This persona is why consumer-native runtime correctness is P0.
 #### Success criterion
 
 For every row marked supported in `docs/release-support.json`, the actual distributable artifact is built, installed/extracted into a clean external location where applicable, and exercised according to that row's runtime contract with no repository-only workaround.
+
+For managed-local lazy-runtime surfaces, qualification must exercise both:
+
+1. **cold cache** — install the small ecosystem package, perform first managed-local use, download the exact qualified runtime, verify it, atomically cache it, and execute successfully;
+2. **warm cache** — repeat managed-local use with network access unavailable and prove the exact cached runtime is reused successfully.
 
 ---
 
@@ -1067,7 +1119,7 @@ TypeScript/Node -> managed-local + optional connect mode
 Ruby            -> managed-local + optional connect mode
 ```
 
-The current repository is not fully aligned with that target yet: the release packager already stages the managed-local runtime into Python and TypeScript packages, while the current support matrix still describes TypeScript as connect-only and Ruby as deferred. Ruby packaging must also be upgraded to carry/launch the local runtime before it can satisfy the intended managed-local contract.
+The current repository is not fully aligned with that target yet: the release packager currently embeds/stages the managed-local runtime into Python and TypeScript packages, while the current support matrix still describes TypeScript as connect-only and Ruby as deferred. That embedded-runtime behavior is useful transitional evidence, not the target package shape. Python, TypeScript/Node, and Ruby must converge on the common lazy consumer-runtime cache contract before the intended managed-local architecture is complete.
 
 The intended release flow is:
 
@@ -1091,9 +1143,9 @@ exact Search Kernel revision
 qualified release artifacts
 ```
 
-### 7.7 Current product artifact forms
+### 7.7 Current product artifact forms and target consumer delivery
 
-The current release tooling already models these artifact families and the convergence plan should preserve or deliberately evolve them rather than inventing an unrelated packaging path.
+The current release tooling already models the product artifact families, but its runtime embedding behavior is transitional. Preserve the proven packaging and runtime-closure logic while evolving the **delivery boundary** toward one separately published immutable consumer runtime.
 
 #### Rust embedded distribution
 
@@ -1106,9 +1158,9 @@ cargo build
 
 or the equivalent Cargo.toml dependency declaration.
 
-This means **native/embedded Search Kernel is the default Cargo product contract**. The publishable `searchkernel` crate must make a plain dependency select the native managed-local path by default. Remote/connect-only Rust remains an explicit non-default mode; callers that deliberately want remote-only behavior may opt out of the native default.
+This means **native/embedded Search Kernel is the default Cargo product contract**. The publishable `searchkernel` crate must make a plain dependency select the native/embedded path by default. Remote/connect-only Rust remains an explicit non-default mode.
 
-A normal Cargo consumer must transparently obtain/link/provision the correct Search Kernel native runtime through supported Cargo/package mechanics. The user must not separately download an SDK, install Vespa, install `searchkerneld`, set `SK_NATIVE_SDK`, or set `LD_LIBRARY_PATH`.
+A normal Cargo consumer must transparently obtain/link/provision the exact Search Kernel native runtime through supported Cargo/package mechanics. The user must not separately download an SDK, install Vespa, install `searchkerneld`, set `SK_NATIVE_SDK`, or set `LD_LIBRARY_PATH`.
 
 The current repository release artifact is:
 
@@ -1116,19 +1168,13 @@ The current repository release artifact is:
 searchkernel-rust-<version>.tar.gz
 ```
 
-but the convergence/release architecture should move toward the normal Cargo ecosystem as the public distribution surface rather than treating a manually downloaded source tarball as the final user experience.
-
-The native-distribution investigation in section 5 determines how the Cargo package satisfies that contract:
-
-- a mostly-static Search Kernel native runtime;
-- a relocatable shared native closure transparently provisioned by the package/build;
-- or another proven consumer-safe Cargo-native package layout.
+but the final public surface is normal Cargo distribution. The lazy-runtime design does not assume Rust can wait until process startup: if direct native linking requires assets during build, Cargo's first build is the acquisition event. The Cargo feasibility prototype must prove the exact point and how the immutable runtime/cache is made link- and run-safe.
 
 Release qualification must create a clean external Cargo project, depend on the **actual publishable/distributable Search Kernel Cargo artifact**, build it, and execute the native engine with repository/native overrides removed.
 
-#### Standalone daemon distribution
+#### Standalone daemon / consumer runtime distribution
 
-Current artifact shape:
+The current standalone artifact shape is:
 
 ```text
 searchkerneld-<version>-linux-x86_64-glibc.tar.gz
@@ -1140,19 +1186,27 @@ searchkerneld-<version>-linux-x86_64-glibc.tar.gz
         <required native runtime closure>
 ```
 
-The launcher resolves the package-relative runtime closure.
+This is close to the desired **consumer runtime** payload. The target is to qualify and publish that runtime independently by immutable identity/digest, with a runtime manifest and no developer-only native-base surface.
 
-Release qualification must unpack this tree into a clean external location, clear repository/native loader overrides, and prove that the packaged daemon reaches normal argument/runtime execution.
+Conceptually:
 
-If the mostly-static native-runtime investigation succeeds, the `lib/` closure may shrink substantially, but the package-level contract remains the same: **unpack and run without installing Vespa separately**.
+```text
+searchkernel-runtime-<runtime-id>-<platform>
+    manifest.json
+    bin/searchkerneld
+    lib/libsearchkernel_vespa.so.2
+    lib/<required Vespa/private closure>
+```
+
+If native topology is optimized later, the contents under `lib/` may shrink or become monolithic. The consumer cache/package contract must not care.
 
 #### Managed-local first-party language clients
 
-Python, TypeScript/Node, and Ruby share the same product-distribution principle:
+Python, TypeScript/Node, and Ruby share one product-distribution principle:
 
-> Installing the package through the ecosystem's normal package manager is sufficient to run Search Kernel locally. The user does not separately install Vespa or manually provision `searchkerneld`.
+> Installing the ecosystem package is sufficient setup. On first managed-local use, the package may transparently acquire the exact platform runtime once; later uses reuse the verified local cache.
 
-The public installation commands are:
+The public installation commands remain:
 
 ```bash
 pip install searchkernel
@@ -1160,133 +1214,94 @@ npm install @searchkernel/client
 gem install searchkernel
 ```
 
-Platform-specific package variants or transitive runtime packages are implementation details behind those commands.
+The user does **not** separately install Vespa or manually provision `searchkerneld`.
 
-Conceptually each package contains:
+Target package shape:
 
 ```text
 language package
     + client/domain API
-    + package-relative Search Kernel launcher/runtime
-        bin/
-            searchkerneld
-            searchkerneld.real
-        lib/
-            libsearchkernel_vespa.so.2
-            <required native runtime closure>
+    + runtime resolver/launcher
+    + exact runtime identity/digest
+              |
+              v
+    shared machine-local runtime cache
+              |
+              +-- searchkerneld
+              +-- libsearchkernel_vespa.so.2
+              +-- required Vespa/private closure
 ```
 
-The exact filesystem shape is language-package-specific, but the runtime contract is the same.
+The ecosystem packages should not each contain another full copy of that closure by default.
 
 ##### Python
 
-Current artifact family:
+The current wheel can embed `bin/` and `lib/`, and the current release packager already stages the managed-local runtime into it. Treat that as transitional proof that managed-local works.
 
-```text
-searchkernel-<version>-<platform>.whl
-    searchkernel/
-        bin/
-        lib/
-        Python package code
-```
+The target wheel is comparatively small and carries:
 
-The current release packager already stages the managed-local runtime into the wheel.
+- Python client/domain code;
+- exact runtime identity/digest;
+- resolver/launcher code.
 
-The public contract is `pip install searchkernel`. For supported platforms, pip must resolve/install the correct platform artifact automatically.
-
-Release qualification must install the package using normal pip resolution into a clean environment and prove the installed Python package can launch/use the local Search Kernel runtime with repository/native overrides removed.
+Release qualification must prove a clean `pip install searchkernel`, cold-cache first use, verified runtime acquisition, and subsequent offline warm-cache use.
 
 ##### TypeScript / Node
 
-Current artifact family:
+The current package can embed `bin/` and `lib/`, and the release packager currently stages the runtime into it. Again, that proves managed-local capability but is not the desired large-payload duplication model.
 
-```text
-@searchkernel/client package
-    dist/
-    bin/
-    lib/
-    ...
-```
+The target `@searchkernel/client` package carries:
 
-The current package manifest already allows `bin/` and `lib/`, and the current release packager stages the same managed-local daemon/native runtime closure into the TypeScript package.
+- JS/TS client/domain code;
+- exact runtime identity/digest;
+- resolver/launcher code.
 
-Therefore TypeScript/Node is **managed-local**, not merely connect-only.
+It resolves the same consumer runtime artifact/cache as Python and Ruby. A platform-specific npm runtime package remains an allowed fallback if registry constraints make direct consumer-runtime acquisition impractical, but it must correspond to the exact same qualified runtime identity and must not float independently.
 
-The public contract is:
-
-```bash
-npm install @searchkernel/client
-```
-
-The package may contain the runtime directly or depend on platform-specific runtime packages selected automatically by npm. A likely scalable layout is:
-
-```text
-@searchkernel/client
-    |
-    +-- JS/TS API
-    |
-    +-- platform runtime package
-          @searchkernel/runtime-linux-x64
-          @searchkernel/runtime-linux-arm64
-          ...
-```
-
-The exact internal package split is an implementation decision; the user still installs only `@searchkernel/client`.
-
-Release qualification must install the package through normal npm resolution in a clean consumer project and prove the Node package can launch/use its packaged local Search Kernel runtime with repository/native overrides removed.
-
-A connect-to-existing-daemon API may remain available as an additional mode.
+Release qualification must prove clean npm installation, cold-cache first use, and offline warm-cache reuse.
 
 ##### Ruby
 
-Target artifact family:
-
-```text
-searchkernel-<version>.gem
-    lib/
-    bin/
-    <package-relative native runtime assets>
-```
-
 Ruby is also a **managed-local** first-party client.
 
-The public contract is:
+The public contract remains:
 
 ```bash
 gem install searchkernel
 ```
 
-On supported platforms, RubyGems must resolve/install the correct platform gem transparently. Platform-specific gems are acceptable and expected where native runtime payloads differ.
-
-The current repository has an implementation gap: the gemspec currently packages Ruby source only, and the release packager does not yet stage the managed-local runtime into the gem.
+The current repository has an implementation gap because Ruby does not yet have the equivalent managed-local resolver/launcher path.
 
 The convergence/release work must close that gap by:
 
-1. defining the package-relative Ruby runtime layout;
-2. staging the same qualified Search Kernel daemon/native closure used by the other managed-local clients;
-3. including those assets in the gem;
-4. providing the Ruby API/launcher path that starts or connects to that packaged local daemon;
-5. publishing/building the appropriate platform gem so normal `gem install searchkernel` resolves the correct artifact;
-6. installing through normal RubyGems resolution into a clean external GEM_HOME and executing the managed-local path with repository/native overrides removed.
+1. adding the exact runtime identity/digest to the gem;
+2. implementing the shared cache/download/validation contract in the Ruby client surface;
+3. providing the Ruby API/launcher path that starts or connects to the cached local daemon;
+4. installing through normal RubyGems resolution into a clean external `GEM_HOME`;
+5. proving cold-cache first use and offline warm-cache reuse.
 
 A connect-to-existing-daemon API may remain available as an additional mode.
 
 #### Managed-local runtime consistency
 
-Python, TypeScript/Node, and Ruby should not invent three separate native runtime assemblers.
+Python, TypeScript/Node, and Ruby must not invent three different native runtime artifacts or cache semantics.
 
-Release packaging should build/stage one qualified platform runtime payload:
+Release packaging builds and qualifies one platform consumer runtime:
 
 ```text
 qualified searchkerneld + native runtime closure
                 |
-                +--> standalone daemon archive
-                +--> Python wheel
-                +--> TypeScript/Node package
-                +--> Ruby gem
+                v
+immutable consumer runtime release artifact
+                |
+                v
+shared machine-local cache
+        ^           ^           ^
+        |           |           |
+     Python        Node        Ruby
 ```
 
-Language-specific packaging owns only how that common payload is embedded, selected, and launched from the installed package.
+Language-specific code may implement the resolver in ecosystem-appropriate code, but must conform to the same runtime manifest, cache-key derivation, checksum, locking, atomic-install, and fail-closed rules.
 
 The package-manager-native UX remains:
 
@@ -1296,17 +1311,15 @@ npm install @searchkernel/client
 gem install searchkernel
 ```
 
-This gives the three clients the same native bits, provenance, and runtime behavior for a given release while still using idiomatic ecosystem packaging.
-
-Each package must also carry or resolve the **exact runtime identity** for that release. Platform/runtime dependencies must not float independently from the client package version. ABI/runtime identity is validated before use, and mismatches fail closed.
+The first managed-local operation may download the runtime. That is automatic product behavior, not a separate installation step the user must discover.
 
 #### Connect mode
 
-Connect mode is orthogonal to managed-local packaging:
+Connect mode remains orthogonal:
 
 ```text
 managed-local:
-language package -> packaged local searchkerneld -> Search Kernel
+language package -> exact cached local searchkerneld -> Search Kernel
 
 connect:
 language package -> caller-specified/existing searchkerneld -> Search Kernel
@@ -1316,7 +1329,7 @@ Supporting connect mode does not remove the managed-local requirement for Python
 
 #### Deferred surfaces
 
-PHP, browser TypeScript/gRPC-Web, additional architectures, and other rows explicitly marked deferred are not release promises merely because development/test code exists. Ruby must not remain deferred merely because its packaging implementation currently lags the intended managed-local architecture.
+PHP, browser TypeScript/gRPC-Web, additional architectures, and other rows explicitly marked deferred are not release promises merely because development/test code exists. Ruby must not remain deferred merely because its managed-local resolver implementation currently lags.
 
 ### 7.8 Package/runtime identity is exact and fail-closed
 
@@ -1333,14 +1346,27 @@ native runtime artifact digest
 pinned Vespa/native identity
 ```
 
-The package must either contain that exact runtime payload or resolve it by immutable identity and checksum.
+The package must either contain that exact runtime payload or resolve it by immutable identity and checksum. For the v1 managed-local client model, resolving a separately published consumer runtime into the shared local cache is preferred over embedding the full payload independently in every ecosystem package.
+
+The resolver must never request "latest". It starts from the exact identity embedded in the installed package/release manifest, maps that identity to one immutable platform artifact, verifies the expected digest before publication into the cache, and fails closed if the artifact is unavailable or does not match.
+
+The cache contract must include:
+
+- one deterministic user/machine cache root with an explicit override;
+- immutable per-runtime directories addressed by digest or an equivalently collision-resistant identity;
+- inter-process locking so concurrent first use does not download/install the same runtime multiple times;
+- temporary download/extraction followed by atomic rename/publication;
+- no mutation of an already-qualified immutable cache entry;
+- explicit prefetch/prewarm for containers, CI, and offline environments;
+- no network request on a valid warm-cache hit.
 
 Examples:
 
-- npm platform-runtime dependencies use an exact release identity, not a floating caret/tilde range that can silently select another runtime generation;
-- if Cargo provisions native assets rather than embedding them, the publishable crate contains the immutable artifact identity/checksum it expects;
-- Python wheels and Ruby platform gems embed the runtime identity alongside their packaged payload;
-- build/launch-time validation fails closed on ABI/runtime-identity mismatch rather than falling back to another cached, system, or worktree runtime.
+- npm/client metadata contains an exact runtime release identity/digest, not a floating caret/tilde range that can silently select another runtime generation;
+- if Cargo provisions native assets rather than embedding them, the publishable crate contains the immutable artifact identity/checksum it expects and obtains them at the earliest toolchain-safe point;
+- Python wheels and Ruby gems carry the runtime identity/resolver metadata rather than independently embedding duplicate copies of the complete native closure;
+- build/launch-time validation fails closed on ABI/runtime-identity mismatch rather than falling back to another cached, system, or worktree runtime;
+- a preprovisioned runtime/cache override must still match the exact expected identity and checksum.
 
 A package release must never silently pick up a different native generation after the package itself has been published.
 
@@ -1407,7 +1433,10 @@ The build-system convergence is distribution-complete when:
 - `pip install searchkernel`, `npm install @searchkernel/client`, `gem install searchkernel`, and `cargo add searchkernel` are sufficient supported installation paths on qualified platforms;
 - Python, TypeScript/Node, and Ruby managed-local artifacts are each exercised after installation through their normal package manager from the actual distributable package;
 - Rust is exercised through a clean external Cargo consumer using the actual publishable/distributable package rather than repository paths;
-- all three managed-local language packages consume the same qualified platform daemon/native runtime payload rather than independently assembling native closures;
+- all three managed-local language packages resolve the same qualified platform daemon/native runtime payload rather than independently assembling or embedding duplicate native closures;
+- cold-cache first use downloads, verifies, and atomically installs exactly one immutable consumer runtime artifact;
+- warm-cache use succeeds without network access and reuses that exact artifact;
+- CI/Docker/offline deployment can prefetch the same artifact explicitly;
 - every ecosystem package is tied to an exact runtime identity/digest/ABI and fails closed on mismatch;
 - the plain Rust dependency contract enables native/embedded Search Kernel by default, with remote-only Rust as an explicit opt-out/mode;
 - every supported row in `docs/release-support.json` is exercised from the actual distributable artifact;
@@ -2672,6 +2701,11 @@ The convergence project is complete when:
 60. Every published ecosystem package is coupled to an exact native runtime identity/digest/ABI and cannot silently float to another runtime generation.
 61. Plain `cargo add searchkernel` selects the supported native/embedded product by default; remote-only Rust usage is an explicit opt-out/mode.
 62. Release publication promotes the exact artifact set qualified by `./dev release-check`; no post-qualification rebuild may substitute different product/runtime bytes without a verified canonical-content identity.
+63. Managed-local ecosystem packages use the exact immutable consumer-runtime identity and shared lazy cache rather than independently embedding/rebuilding the full Vespa/native closure.
+64. Cold-cache qualification proves first-use runtime download, checksum/provenance validation, concurrency-safe atomic installation, and successful execution.
+65. Warm-cache qualification proves subsequent managed-local execution performs no runtime download and succeeds using the exact cached artifact with network access unavailable.
+66. Consumer runtime publication is distinct from the developer native-base artifact and contains no developer-only headers/configured build surface.
+67. CI/Docker/offline deployment can explicitly prefetch/preprovision the same qualified runtime artifact without weakening exact identity validation.
 
 The final architecture should be boring:
 
@@ -2682,7 +2716,8 @@ The final architecture should be boring:
 > Cargo owns Rust compilation.  
 > Native build tooling owns native compilation.  
 > Ecosystem package managers are the end-user installation surface: Cargo, npm, pip, and RubyGems.  
-> The build/package layer transparently provides the correct managed-local runtime.  
+> Small ecosystem packages pin an exact consumer-runtime identity; first managed-local use/build acquires it once into a shared immutable cache, then reuses it.  
+> The build/package layer transparently provides the correct managed-local runtime without duplicating the full Vespa closure into every package.  
 > Consumers do not depend on `./dev`, development Docker images, or a separate Vespa/searchkerneld installation.  
 > Active verifier programs use the normal build graph.  
 > `reference/vespa` owns behavioral evidence and oracle provenance.  
