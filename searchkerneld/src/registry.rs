@@ -3,7 +3,10 @@ use searchkernel::{Error as IndexError, ErrorCode as IndexErrorCode, Index};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
 use searchkernel_ir::{ErrorCode, PortableError};
 use searchkernel_protocol::{
-    protocol::v2 as wire, request_index_target, v2 as api, RequestTargetError, PROTOCOL_VERSION,
+    protocol::v2 as wire,
+    target::{request_index_target, RequestTargetError},
+    v2 as api,
+    PROTOCOL_VERSION,
 };
 use std::{
     collections::BTreeMap,
