@@ -445,8 +445,10 @@ typed_index = SearchKernel::Index.create(
     "category" => SearchKernel::Keyword.new(stored: true, filterable: true),
     "people" => SearchKernel::ArrayField.new(
       SearchKernel::StructField.new(
-        "first" => SearchKernel::Keyword.new,
-        "last" => SearchKernel::Keyword.new
+        {
+          "first" => SearchKernel::Keyword.new,
+          "last" => SearchKernel::Keyword.new
+        }
       ),
       stored: false,
       searchable: false
