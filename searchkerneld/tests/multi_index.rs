@@ -1,9 +1,7 @@
 #![cfg(feature = "native")]
 
 use flatbuffers::root;
-use searchkernel_protocol::{
-    protocol::v2 as wire, v2 as api, PROTOCOL_VERSION,
-};
+use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
 use searchkerneld::{IndexRegistry, RegistryDispatchError};
 use std::{
     fs,
@@ -297,7 +295,10 @@ fn routes_two_different_indexes_without_cross_index_leakage_and_reopens_them() {
     );
 
     registry.close_all().expect("close first registry");
-    assert!(registry.loaded_targets().expect("loaded targets").is_empty());
+    assert!(registry
+        .loaded_targets()
+        .expect("loaded targets")
+        .is_empty());
     registry.close_all().expect("second close is a no-op");
     drop(registry);
 
