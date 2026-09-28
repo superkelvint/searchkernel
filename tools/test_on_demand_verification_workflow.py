@@ -32,7 +32,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn("^[0-9a-fA-F]{40}$", text)
         self.assertIn("ref: ${{ inputs.revision }}", text)
         self.assertIn("persist-credentials: false", text)
-        self.assertIn("observed=\$(git rev-parse HEAD)", text)
+        self.assertIn("observed=$(git rev-parse HEAD)", text)
         self.assertIn('if [[ "${observed}" != "${requested}" ]]', text)
 
     def test_remote_surface_is_bounded_to_test_and_verify_for_now(self):
