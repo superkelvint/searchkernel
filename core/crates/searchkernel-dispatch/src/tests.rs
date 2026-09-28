@@ -1,5 +1,6 @@
 use super::*;
 use searchkernel_ir::{api, OperationIr};
+use searchkernel_protocol::target::{request_index_target, RequestTargetError};
 use searchkernel_testkit::{
     assert_api_search_result_matches, canonical_result_fixtures, representative_search_result,
     ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
@@ -179,6 +180,23 @@ fn expected_search_operation() -> OperationIr {
         .into_iter()
         .next()
         .expect("canonical search request must reach the backend")
+}
+
+#[test]
+fn frozen_pre_target_v2_request_preserves_original_envelope_slots() {
+    let request = canonical_search_request();
+    let envelope = root::<wire::RequestEnvelope<'_>>(&request).unwrap();
+
+    assert_eq!(envelope.protocol_version(), PROTOCOL_VERSION);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::RequestPayload::SearchKernel_V2_SearchRequest
+    );
+    assert!(envelope.target().is_none());
+    assert_eq!(
+        request_index_target(envelope),
+        Err(RequestTargetError::Missing)
+    );
 }
 
 #[test]
