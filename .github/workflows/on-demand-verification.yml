@@ -99,45 +99,59 @@ jobs:
           REQUESTED_TARGET: ${{ github.event.client_payload.target }}
         run: |
           set -euo pipefail
-          canonical=$(python3 - <<'PY'
-          import json
-          import os
-          import pathlib
+          # Never dereference a path from the untrusted checkout on the host.
+          # Read the registry directly from the proven Git tree and require the
+          # tree entry to be an ordinary file rather than a symlink.
+          tree_entry=$(git ls-tree HEAD -- build/targets.json)
+          read -r registry_mode registry_type registry_object registry_path <<< "${tree_entry}"
+          if [[ "${registry_mode}" != "100644" ||
+                "${registry_type}" != "blob" ||
+                "${registry_path}" != "build/targets.json" ]]; then
+            echo "error: build/targets.json must be an ordinary tracked file" >&2
+            exit 2
+          fi
+          registry_size=$(git cat-file -s "${registry_object}")
+          if (( registry_size > 1048576 )); then
+            echo "error: build/targets.json exceeds the 1 MiB dispatch-validation limit" >&2
+            exit 2
+          fi
 
-          operation = os.environ["OPERATION"]
-          requested = os.environ["REQUESTED_TARGET"]
-          if operation not in {"test", "verify"}:
-              raise SystemExit(f"unsupported operation: {operation}")
+          canonical=$(
+            git show HEAD:build/targets.json |
+              python3 -c '
+import json
+import os
+import sys
 
-          registry_path = pathlib.Path("build/targets.json")
+operation = os.environ["OPERATION"]
+requested = os.environ["REQUESTED_TARGET"]
+if operation not in {"test", "verify"}:
+    raise SystemExit(f"unsupported operation: {operation}")
 
-          def reject_duplicates(pairs):
-              result = {}
-              for key, value in pairs:
-                  if key in result:
-                      raise ValueError(f"duplicate key: {key}")
-                  result[key] = value
-              return result
+def reject_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate key: {key}")
+        result[key] = value
+    return result
 
-          registry = json.loads(
-              registry_path.read_text(encoding="utf-8"),
-              object_pairs_hook=reject_duplicates,
-          )
-          entries = registry.get(operation)
-          if not isinstance(entries, dict):
-              raise SystemExit(f"registry has no {operation!r} target map")
+registry = json.load(sys.stdin, object_pairs_hook=reject_duplicates)
+entries = registry.get(operation)
+if not isinstance(entries, dict):
+    raise SystemExit(f"registry has no {operation!r} target map")
 
-          for target, metadata in entries.items():
-              aliases = metadata.get("aliases", []) if isinstance(metadata, dict) else []
-              if requested == target or requested in aliases:
-                  print(target)
-                  break
-          else:
-              raise SystemExit(
-                  f"unknown {operation} target: {requested}; "
-                  f"inspect build/targets.json for supported targets"
-              )
-          PY
+for target, metadata in entries.items():
+    aliases = metadata.get("aliases", []) if isinstance(metadata, dict) else []
+    if requested == target or requested in aliases:
+        print(target)
+        break
+else:
+    raise SystemExit(
+        f"unknown {operation} target: {requested}; "
+        f"inspect build/targets.json for supported targets"
+    )
+'
           )
           if [[ ! "${canonical}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
             echo "error: resolved target is not a safe canonical identifier" >&2
