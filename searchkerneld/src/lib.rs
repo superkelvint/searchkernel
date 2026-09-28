@@ -5,6 +5,11 @@
 //! dispatcher.
 
 mod search_endpoints;
+#[cfg(feature = "native")]
+mod registry;
+
+#[cfg(feature = "native")]
+pub use registry::{IndexRegistry, RegistryDispatchError, RegistryInitError};
 
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
@@ -169,26 +174,46 @@ impl Default for ServerConfig {
     }
 }
 
-/// The gRPC service for one process-local execution target.
+#[derive(Clone)]
+enum DispatchTarget {
+    Single(Arc<Dispatcher>),
+    #[cfg(feature = "native")]
+    Registry(Arc<IndexRegistry>),
+}
+
+/// The gRPC service for one process-local execution target or daemon registry.
 #[derive(Clone)]
 pub struct SearchKernelTransport {
-    dispatcher: Arc<Dispatcher>,
+    target: DispatchTarget,
     execution_limit: Arc<Semaphore>,
 }
 
 impl SearchKernelTransport {
-    /// Creates a service with the supplied canonical dispatcher.
-    fn new(dispatcher: Arc<Dispatcher>, execution_limit: Arc<Semaphore>) -> Self {
+    fn single(dispatcher: Arc<Dispatcher>, execution_limit: Arc<Semaphore>) -> Self {
         Self {
-            dispatcher,
+            target: DispatchTarget::Single(dispatcher),
+            execution_limit,
+        }
+    }
+
+    #[cfg(feature = "native")]
+    fn registry(registry: Arc<IndexRegistry>, execution_limit: Arc<Semaphore>) -> Self {
+        Self {
+            target: DispatchTarget::Registry(registry),
             execution_limit,
         }
     }
 
     fn dispatch(&self, payload: &[u8]) -> Result<Vec<u8>, Box<Status>> {
-        self.dispatcher
-            .dispatch(payload)
-            .map_err(|error| Box::new(dispatch_error_status(error)))
+        match &self.target {
+            DispatchTarget::Single(dispatcher) => dispatcher
+                .dispatch(payload)
+                .map_err(|error| Box::new(dispatch_error_status(error))),
+            #[cfg(feature = "native")]
+            DispatchTarget::Registry(registry) => registry
+                .dispatch(payload)
+                .map_err(|error| Box::new(registry_error_status(error))),
+        }
     }
 
     fn dispatch_json(&self, json: &[u8]) -> Result<Vec<u8>, (StatusCode, String)> {
@@ -198,10 +223,15 @@ impl SearchKernelTransport {
                 format!("invalid Search Kernel FlatBuffers JSON request: {error}"),
             )
         })?;
-        let response = self
-            .dispatcher
-            .dispatch(&request)
-            .map_err(dispatch_error_http)?;
+        let response = match &self.target {
+            DispatchTarget::Single(dispatcher) => {
+                dispatcher.dispatch(&request).map_err(dispatch_error_http)?
+            }
+            #[cfg(feature = "native")]
+            DispatchTarget::Registry(registry) => {
+                registry.dispatch(&request).map_err(registry_error_http)?
+            }
+        };
         response_flatbuffer_to_json(&response).map_err(|error| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -283,6 +313,67 @@ fn dispatch_error_http(error: DispatchError) -> (StatusCode, String) {
         DispatchError::Closed => (
             StatusCode::CONFLICT,
             "Search Kernel target is closed".to_owned(),
+        ),
+    }
+}
+
+#[cfg(feature = "native")]
+fn registry_error_status(error: RegistryDispatchError) -> Status {
+    match error {
+        RegistryDispatchError::InvalidRequest => {
+            Status::invalid_argument("invalid Search Kernel request FlatBuffer")
+        }
+        RegistryDispatchError::UnsupportedProtocol(version) => Status::failed_precondition(
+            format!("unsupported Search Kernel protocol version {version}"),
+        ),
+        RegistryDispatchError::MissingTarget => {
+            Status::invalid_argument("Search Kernel request is missing an index target")
+        }
+        RegistryDispatchError::InvalidTarget(message) => {
+            Status::invalid_argument(format!("invalid Search Kernel index target: {message}"))
+        }
+        RegistryDispatchError::UnsupportedOperation(operation) => Status::unimplemented(format!(
+            "unsupported Search Kernel operation discriminator {operation}"
+        )),
+        RegistryDispatchError::Closed => {
+            Status::failed_precondition("Search Kernel target is closed")
+        }
+        RegistryDispatchError::Poisoned => {
+            Status::internal("Search Kernel index registry lock is poisoned")
+        }
+    }
+}
+
+#[cfg(feature = "native")]
+fn registry_error_http(error: RegistryDispatchError) -> (StatusCode, String) {
+    match error {
+        RegistryDispatchError::InvalidRequest => (
+            StatusCode::BAD_REQUEST,
+            "invalid Search Kernel request FlatBuffer".to_owned(),
+        ),
+        RegistryDispatchError::UnsupportedProtocol(version) => (
+            StatusCode::PRECONDITION_FAILED,
+            format!("unsupported Search Kernel protocol version {version}"),
+        ),
+        RegistryDispatchError::MissingTarget => (
+            StatusCode::BAD_REQUEST,
+            "Search Kernel request is missing an index target".to_owned(),
+        ),
+        RegistryDispatchError::InvalidTarget(message) => (
+            StatusCode::BAD_REQUEST,
+            format!("invalid Search Kernel index target: {message}"),
+        ),
+        RegistryDispatchError::UnsupportedOperation(operation) => (
+            StatusCode::NOT_IMPLEMENTED,
+            format!("unsupported Search Kernel operation discriminator {operation}"),
+        ),
+        RegistryDispatchError::Closed => (
+            StatusCode::CONFLICT,
+            "Search Kernel target is closed".to_owned(),
+        ),
+        RegistryDispatchError::Poisoned => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Search Kernel index registry lock is poisoned".to_owned(),
         ),
     }
 }
@@ -795,7 +886,7 @@ impl Drop for RunningServer {
     }
 }
 
-/// Binds and starts a gRPC server backed by one canonical dispatcher.
+/// Binds and starts a server backed by one canonical per-index dispatcher.
 pub async fn start(
     config: ServerConfig,
     dispatcher: Arc<Dispatcher>,
@@ -808,7 +899,27 @@ pub async fn start(
         .ok_or(ServerError::InvalidAdmissionLimit)?;
     start_with_service(
         config,
-        SearchKernelTransport::new(dispatcher, execution_limit),
+        SearchKernelTransport::single(dispatcher, execution_limit),
+        admission_limit,
+    )
+    .await
+}
+
+/// Binds and starts a daemon server backed by the shared multi-index registry.
+#[cfg(feature = "native")]
+pub async fn start_multi(
+    config: ServerConfig,
+    registry: Arc<IndexRegistry>,
+) -> Result<RunningServer, ServerError> {
+    let execution_limit = (config.execution_limit > 0)
+        .then(|| Arc::new(Semaphore::new(config.execution_limit)))
+        .ok_or(ServerError::InvalidExecutionLimit)?;
+    let admission_limit = (config.admission_limit > 0)
+        .then(|| Arc::new(Semaphore::new(config.admission_limit)))
+        .ok_or(ServerError::InvalidAdmissionLimit)?;
+    start_with_service(
+        config,
+        SearchKernelTransport::registry(registry, execution_limit),
         admission_limit,
     )
     .await
