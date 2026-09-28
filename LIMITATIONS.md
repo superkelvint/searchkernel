@@ -286,6 +286,12 @@ approximated.
 
 - Distributed routing, configuration services, schema deployment, federation, and other container-level Vespa facilities are outside this wrapper.
 
+## Daemon
+
+### Targeted multi-index daemon lifecycle protocol (`daemon.multi_index_lifecycle`)
+
+- The downgrade-safe targeted request and create/open wire contract is frozen, but daemon registry/data-root execution lands in #846; direct top-level V2 operations remain per-index/embedded only.
+
 ## Evidence and versioning
 
 The state and limitations are cross-layer summaries. Behavioral authority
