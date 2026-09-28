@@ -57,6 +57,72 @@ impl fmt::Display for IndexTargetError {
 
 impl std::error::Error for IndexTargetError {}
 
+/// Canonical daemon routing/lifecycle failure vocabulary.
+///
+/// These variants bind the portable error code, stable detail code, and stable
+/// path in one executable contract so daemon transports cannot invent
+/// transport-local semantics for control-plane failures.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IndexControlError {
+    MissingTarget,
+    InvalidTarget(IndexTargetError),
+    MissingIndexDefinition,
+    IndexAlreadyExists,
+    IndexNotFound,
+}
+
+impl IndexControlError {
+    /// Portable Search Kernel error code for this control-plane failure.
+    pub const fn error_code(&self) -> crate::v2::ErrorCode {
+        match self {
+            Self::MissingTarget | Self::InvalidTarget(_) | Self::MissingIndexDefinition => {
+                crate::v2::ErrorCode::InvalidArgument
+            }
+            Self::IndexAlreadyExists => crate::v2::ErrorCode::AlreadyExists,
+            Self::IndexNotFound => crate::v2::ErrorCode::NotFound,
+        }
+    }
+
+    /// Stable detail code for language clients.
+    pub const fn detail_code(&self) -> &'static str {
+        match self {
+            Self::MissingTarget => MISSING_INDEX_TARGET_DETAIL_CODE,
+            Self::InvalidTarget(_) => INVALID_INDEX_TARGET_DETAIL_CODE,
+            Self::MissingIndexDefinition => MISSING_INDEX_DEFINITION_DETAIL_CODE,
+            Self::IndexAlreadyExists => INDEX_ALREADY_EXISTS_DETAIL_CODE,
+            Self::IndexNotFound => INDEX_NOT_FOUND_DETAIL_CODE,
+        }
+    }
+
+    /// Canonical semantic path when the failure refers to a request field.
+    pub const fn path(&self) -> Option<&'static str> {
+        match self {
+            Self::MissingTarget => Some(TARGET_PATH),
+            Self::InvalidTarget(_) => Some(TARGET_NAME_PATH),
+            Self::MissingIndexDefinition => Some(CREATE_INDEX_DEFINITION_PATH),
+            Self::IndexAlreadyExists | Self::IndexNotFound => None,
+        }
+    }
+}
+
+impl fmt::Display for IndexControlError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingTarget => formatter.write_str("Search Kernel request is missing an index target"),
+            Self::InvalidTarget(error) => {
+                write!(formatter, "invalid Search Kernel index target: {error}")
+            }
+            Self::MissingIndexDefinition => {
+                formatter.write_str("CreateIndex request is missing an index definition")
+            }
+            Self::IndexAlreadyExists => formatter.write_str("Search Kernel index already exists"),
+            Self::IndexNotFound => formatter.write_str("Search Kernel index was not found"),
+        }
+    }
+}
+
+impl std::error::Error for IndexControlError {}
+
 /// Envelope-level target failure used by multi-index routing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestTargetError {
@@ -81,6 +147,15 @@ impl fmt::Display for RequestTargetError {
 }
 
 impl std::error::Error for RequestTargetError {}
+
+impl From<RequestTargetError> for IndexControlError {
+    fn from(error: RequestTargetError) -> Self {
+        match error {
+            RequestTargetError::Missing => Self::MissingTarget,
+            RequestTargetError::Invalid(error) => Self::InvalidTarget(error),
+        }
+    }
+}
 
 /// Extracts and validates the canonical target from one request envelope.
 ///
