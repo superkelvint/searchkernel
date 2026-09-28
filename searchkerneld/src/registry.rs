@@ -26,7 +26,11 @@ impl fmt::Display for RegistryInitError {
         match self {
             Self::Io(error) => write!(formatter, "prepare Search Kernel data root: {error}"),
             Self::NotDirectory(path) => {
-                write!(formatter, "Search Kernel data root is not a directory: {}", path.display())
+                write!(
+                    formatter,
+                    "Search Kernel data root is not a directory: {}",
+                    path.display()
+                )
             }
         }
     }
@@ -50,12 +54,23 @@ impl fmt::Display for RegistryDispatchError {
         match self {
             Self::InvalidRequest => write!(formatter, "invalid Search Kernel request FlatBuffer"),
             Self::UnsupportedProtocol(version) => {
-                write!(formatter, "unsupported Search Kernel protocol version {version}")
+                write!(
+                    formatter,
+                    "unsupported Search Kernel protocol version {version}"
+                )
             }
-            Self::MissingTarget => write!(formatter, "Search Kernel request is missing an index target"),
-            Self::InvalidTarget(message) => write!(formatter, "invalid Search Kernel index target: {message}"),
+            Self::MissingTarget => write!(
+                formatter,
+                "Search Kernel request is missing an index target"
+            ),
+            Self::InvalidTarget(message) => {
+                write!(formatter, "invalid Search Kernel index target: {message}")
+            }
             Self::UnsupportedOperation(value) => {
-                write!(formatter, "unsupported Search Kernel operation discriminator {value}")
+                write!(
+                    formatter,
+                    "unsupported Search Kernel operation discriminator {value}"
+                )
             }
             Self::Closed => write!(formatter, "Search Kernel target is closed"),
             Self::Poisoned => write!(formatter, "Search Kernel index registry lock is poisoned"),
@@ -130,7 +145,10 @@ impl IndexRegistry {
     pub fn close_all(&self) -> Result<(), IndexError> {
         let entries = {
             let mut entries = self.entries.lock().map_err(|_| {
-                IndexError::search(IndexErrorCode::Internal, "Search Kernel index registry lock is poisoned")
+                IndexError::search(
+                    IndexErrorCode::Internal,
+                    "Search Kernel index registry lock is poisoned",
+                )
             })?;
             std::mem::take(&mut *entries)
         };
@@ -150,7 +168,10 @@ impl IndexRegistry {
     }
 
     pub fn loaded_targets(&self) -> Result<Vec<String>, RegistryDispatchError> {
-        let entries = self.entries.lock().map_err(|_| RegistryDispatchError::Poisoned)?;
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
         Ok(entries.keys().cloned().collect())
     }
 
@@ -159,7 +180,10 @@ impl IndexRegistry {
         target: &str,
         definition: api::IndexDefinition<'_>,
     ) -> Result<Vec<u8>, RegistryDispatchError> {
-        let mut entries = self.entries.lock().map_err(|_| RegistryDispatchError::Poisoned)?;
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
         if entries.contains_key(target) {
             return Ok(encode_error(PortableError::new(
                 ErrorCode::AlreadyExists,
@@ -222,7 +246,10 @@ impl IndexRegistry {
         request: &[u8],
     ) -> Result<Vec<u8>, RegistryDispatchError> {
         let dispatcher = {
-            let entries = self.entries.lock().map_err(|_| RegistryDispatchError::Poisoned)?;
+            let entries = self
+                .entries
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
             entries.get(target).map(|entry| entry.dispatcher.clone())
         };
         let Some(dispatcher) = dispatcher else {
@@ -298,20 +325,16 @@ fn encode_lifecycle_result(
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
     let payload = match payload_type {
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult => {
-            api::CreateIndexResult::create(
-                &mut builder,
-                &api::CreateIndexResultArgs { index: Some(index) },
-            )
-            .as_union_value()
-        }
-        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult => {
-            api::OpenIndexResult::create(
-                &mut builder,
-                &api::OpenIndexResultArgs { index: Some(index) },
-            )
-            .as_union_value()
-        }
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult => api::CreateIndexResult::create(
+            &mut builder,
+            &api::CreateIndexResultArgs { index: Some(index) },
+        )
+        .as_union_value(),
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult => api::OpenIndexResult::create(
+            &mut builder,
+            &api::OpenIndexResultArgs { index: Some(index) },
+        )
+        .as_union_value(),
         _ => unreachable!("lifecycle result kind is fixed by caller"),
     };
     encode_response(&mut builder, payload_type, payload)
