@@ -291,7 +291,6 @@ impl SearchKernel for SearchKernelTransport {
     }
 }
 
-
 fn reject_targeted_single_request(payload: &[u8]) -> Result<(), &'static str> {
     const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
     if payload.len() < 8 || payload[4..8] != *REQUEST_IDENTIFIER {

@@ -56,7 +56,6 @@ fn wait_for_daemon(child: &mut Child, endpoint: &str) -> Index {
     panic!("searchkerneld did not accept requests at {endpoint}");
 }
 
-
 fn reserve_tcp_address() -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").expect("reserve daemon address");
     listener.local_addr().expect("reserved daemon address")
@@ -211,7 +210,6 @@ fn wait_for_exit(child: &mut Child) -> std::process::ExitStatus {
     let _ = child.kill();
     panic!("searchkerneld did not exit after graceful signal");
 }
-
 
 #[test]
 fn data_root_daemon_restarts_with_two_independent_indexes() {
