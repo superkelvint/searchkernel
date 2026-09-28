@@ -69,7 +69,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn("git show HEAD:build/targets.json", text)
         self.assertIn("json.load(sys.stdin, object_pairs_hook=reject_duplicates)", text)
         self.assertNotIn('pathlib.Path("build/targets.json")', text)
-        self.assertNotIn('read_text(encoding="utf-8")', text)
+        self.assertNotIn("registry_path.read_text", text)
         self.assertIn('metadata.get("aliases", [])', text)
         self.assertIn(
             "SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject",
