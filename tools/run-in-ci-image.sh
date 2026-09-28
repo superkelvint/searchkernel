@@ -91,11 +91,11 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-image.XXXXXX")
 source_volume="searchkernel-dev-src-$(id -u)-$$-${RANDOM}"
 ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}
 if [[ "$ephemeral_target" == "1" ]]; then
-    target_volume="searchkernel-ci-target-$(id -u)-$-${RANDOM}"
+    target_volume="searchkernel-ci-target-$(id -u)-$$-${RANDOM}"
     # Remote exact-SHA verification executes untrusted repository code. Keep
     # Cargo's writable registry/source state job-private alongside CARGO_TARGET_DIR
     # so one subject revision cannot poison a later verification job.
-    cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$-${RANDOM}"
+    cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$$-${RANDOM}"
 else
     target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")
     ci_runtime_prune_target_volumes "$ROOT" "$target_volume"
