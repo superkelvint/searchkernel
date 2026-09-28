@@ -41,9 +41,8 @@ if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-default_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
-if [[ -z "$repo" || -z "$default_branch" ]]; then
-    echo "error: could not resolve GitHub repository/default branch" >&2
+if [[ -z "$repo" ]]; then
+    echo "error: could not resolve GitHub repository" >&2
     exit 2
 fi
 
@@ -52,21 +51,19 @@ if ! gh api "repos/$repo/commits/$revision" --silent >/dev/null 2>&1; then
     exit 2
 fi
 
-request_id="remote-${revision:0:12}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
-run_title="$operation $target @ $revision [$request_id]"
+request_id="remote-${revision:0:12}-$(date -u +%Y%m%dT%H%M%SZ)-$"
 
 echo "Dispatching exact-SHA remote verification"
 echo "  revision: $revision"
 echo "  operation: $operation"
 echo "  target: $target"
 
-gh workflow run on-demand-verification.yml \
-    --repo "$repo" \
-    --ref "$default_branch" \
-    -f "revision=$revision" \
-    -f "operation=$operation" \
-    -f "target=$target" \
-    -f "request_id=$request_id"
+gh api --method POST "repos/$repo/dispatches" \
+    -f "event_type=searchkernel-verification" \
+    -f "client_payload[revision]=$revision" \
+    -f "client_payload[operation]=$operation" \
+    -f "client_payload[target]=$target" \
+    -f "client_payload[request_id]=$request_id" >/dev/null
 
 run_id=
 for ((attempt = 0; attempt < 30; attempt += 1)); do
@@ -79,7 +76,7 @@ for ((attempt = 0; attempt < 30; attempt += 1)); do
         gh run list \
             --repo "$repo" \
             --workflow on-demand-verification.yml \
-            --event workflow_dispatch \
+            --event repository_dispatch \
             --limit 100 \
             --json databaseId,displayTitle \
             --jq '.[] | [.databaseId, .displayTitle] | @tsv'
