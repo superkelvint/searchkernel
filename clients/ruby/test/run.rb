@@ -189,7 +189,9 @@ expected_operations = {
   search: %w[SearchRequest SearchResult],
   analyze: %w[AnalyzeRequest AnalyzeResult],
   describe: %w[DescribeRequest DescribeResult],
-  inspect_query: %w[InspectQueryRequest InspectQueryResult]
+  inspect_query: %w[InspectQueryRequest InspectQueryResult],
+  create_index: %w[CreateIndexRequest CreateIndexResult],
+  open_index: %w[OpenIndexRequest OpenIndexResult]
 }
 
 same(expected_operations.keys.sort, SearchKernel::Protocol::OPERATIONS.keys.sort, "all portable operations are mapped")
@@ -209,6 +211,12 @@ expected_operations.each do |operation, (request_type, response_type)|
     }
   )
   same({ "ok" => operation.to_s }, result, "#{operation} response discriminator")
+end
+
+targeted = SearchKernel::Protocol.request_envelope(:search, { "query" => {} }, target: "products")
+same({ "name" => "products" }, targeted["target"], "targeted request carries logical daemon target")
+raises(ArgumentError, "path-like target rejects locally") do
+  SearchKernel::Protocol.request_envelope(:search, {}, target: "../products")
 end
 
 raises(ArgumentError, "unknown operation rejects") do
