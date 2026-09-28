@@ -582,6 +582,26 @@ fn targeted_request_requires_target_and_concrete_inner_operation() {
 }
 
 #[test]
+fn targeted_create_requires_index_definition() {
+    let input = br#"{
+      "protocol_version": 2,
+      "target": {"name": "products"},
+      "payload_type": "TargetedRequest",
+      "payload": {
+        "payload_type": "SearchKernel_V2_CreateIndexRequest",
+        "payload": {}
+      }
+    }"#;
+    let bytes = request_json_to_flatbuffer(input).expect("structurally valid create request");
+    let envelope =
+        flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("request envelope");
+    assert_eq!(
+        daemon_request(envelope),
+        Err(DaemonRequestError::MissingIndexDefinition)
+    );
+}
+
+#[test]
 fn targeted_request_rejects_path_syntax_after_structural_decode() {
     let input = br#"{
       "protocol_version": 2,
