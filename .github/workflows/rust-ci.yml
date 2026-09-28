@@ -140,4 +140,10 @@ jobs:
 
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+
+              echo "== protocol tests =="
+              cargo test -p searchkernel-protocol --all-targets --no-default-features --locked
+
+              echo "== dispatcher tests =="
+              cargo test -p searchkernel-dispatch --all-targets --no-default-features --locked
             '
