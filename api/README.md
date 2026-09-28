@@ -33,6 +33,12 @@ through these schemas merely to reach the local engine.
   operations. Create is strict (existing target -> `AlreadyExists`); open is
   strict (missing target -> `NotFound`). Closing a client handle is not a
   server-side unload operation.
+- Multi-index routing uses stable portable lifecycle details: missing target is
+  `InvalidArgument` / `missing_index_target` at `target`; malformed target
+  is `InvalidArgument` / `invalid_index_target` at `target.name`; strict
+  create collision is `AlreadyExists` / `index_already_exists`; strict open
+  miss is `NotFound` / `index_not_found`. Transport layers must preserve
+  these domain errors rather than replacing them with HTTP/gRPC-only semantics.
 - The schemas describe the portable contract; they do not implement search.
 
 Generated Rust protocol code belongs under
