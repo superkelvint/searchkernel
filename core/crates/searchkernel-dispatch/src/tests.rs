@@ -149,6 +149,48 @@ fn describe_request(version: u32, kind: wire::RequestPayload) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+fn lifecycle_request(kind: wire::RequestPayload) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let target_name = builder.create_string("products");
+    let target = api::IndexTarget::create(
+        &mut builder,
+        &api::IndexTargetArgs {
+            name: Some(target_name),
+        },
+    );
+    let payload = match kind {
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+            let definition = api::IndexDefinition::create(
+                &mut builder,
+                &api::IndexDefinitionArgs::default(),
+            );
+            api::CreateIndexRequest::create(
+                &mut builder,
+                &api::CreateIndexRequestArgs {
+                    definition: Some(definition),
+                },
+            )
+            .as_union_value()
+        }
+        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+            api::OpenIndexRequest::create(&mut builder, &api::OpenIndexRequestArgs::default())
+                .as_union_value()
+        }
+        other => panic!("not a lifecycle request: {other:?}"),
+    };
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
+            payload_type: kind,
+            payload: Some(payload),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
 fn empty_search_request() -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let request = api::SearchRequest::create(&mut builder, &api::SearchRequestArgs::default());
@@ -243,6 +285,20 @@ fn accepts_v2_and_rejects_stale_or_future_protocols() {
         )),
         Err(DispatchError::UnsupportedProtocol(PROTOCOL_VERSION + 1))
     );
+}
+
+#[test]
+fn per_index_dispatcher_does_not_own_daemon_lifecycle() {
+    let dispatcher = Dispatcher::from_backend(context(), Arc::new(RecordingBackend::new()));
+    for kind in [
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+    ] {
+        assert_eq!(
+            dispatcher.dispatch(&lifecycle_request(kind)),
+            Err(DispatchError::UnsupportedOperation(kind.0))
+        );
+    }
 }
 
 #[test]
