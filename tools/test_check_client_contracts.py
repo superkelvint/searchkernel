@@ -166,6 +166,21 @@ class ClientContractTests(unittest.TestCase):
         }
         self.assertIn(expected, catalog.get("parity_requirements", []))
 
+    def test_committed_catalog_runs_python_public_facade_e2e(self) -> None:
+        catalog = MODULE.load_catalog()
+        self.assertIn(
+            {
+                "runtimes": ["managed-local"],
+                "path": "clients/python/examples/try_searchkernel_client_api_e2e.py",
+                "command": [
+                    "bash",
+                    "tools/run-python-native-e2e.sh",
+                    "--include-facade",
+                ],
+            },
+            catalog["surfaces"]["python"]["e2e_lanes"],
+        )
+
     def test_committed_registry_and_reports_are_valid(self) -> None:
         report = MODULE.build_current_report()
         self.assertEqual(
