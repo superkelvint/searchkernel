@@ -63,4 +63,13 @@ jobs:
 
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+
+              echo "== protocol generation freshness =="
+              SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev check-protocol
+
+              echo "== searchkernel-protocol tests =="
+              cargo test -p searchkernel-protocol --all-targets --no-default-features --locked
+
+              echo "== searchkernel-dispatch tests =="
+              cargo test -p searchkernel-dispatch --all-targets --no-default-features --locked
             '
