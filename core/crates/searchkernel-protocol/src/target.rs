@@ -209,10 +209,16 @@ mod tests {
 
     #[test]
     fn stable_daemon_error_contract_is_frozen() {
-        assert_eq!(TARGETED_REQUEST_REQUIRED_DETAIL_CODE, "targeted_request_required");
+        assert_eq!(
+            TARGETED_REQUEST_REQUIRED_DETAIL_CODE,
+            "targeted_request_required"
+        );
         assert_eq!(MISSING_INDEX_TARGET_DETAIL_CODE, "missing_index_target");
         assert_eq!(INVALID_INDEX_TARGET_DETAIL_CODE, "invalid_index_target");
-        assert_eq!(INVALID_TARGETED_REQUEST_DETAIL_CODE, "invalid_targeted_request");
+        assert_eq!(
+            INVALID_TARGETED_REQUEST_DETAIL_CODE,
+            "invalid_targeted_request"
+        );
         assert_eq!(INDEX_ALREADY_EXISTS_DETAIL_CODE, "index_already_exists");
         assert_eq!(INDEX_NOT_FOUND_DETAIL_CODE, "index_not_found");
         assert_eq!(PAYLOAD_TYPE_PATH, "payload_type");
