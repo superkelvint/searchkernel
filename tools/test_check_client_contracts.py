@@ -166,6 +166,21 @@ class ClientContractTests(unittest.TestCase):
         }
         self.assertIn(expected, catalog.get("parity_requirements", []))
 
+    def test_committed_catalog_runs_python_public_facade_e2e(self) -> None:
+        catalog = MODULE.load_catalog()
+        self.assertIn(
+            {
+                "runtimes": ["managed-local"],
+                "path": "clients/python/examples/try_searchkernel_client_api_e2e.py",
+                "command": [
+                    "bash",
+                    "tools/run-python-native-e2e.sh",
+                    "--include-facade",
+                ],
+            },
+            catalog["surfaces"]["python"]["e2e_lanes"],
+        )
+
     def test_committed_registry_and_reports_are_valid(self) -> None:
         report = MODULE.build_current_report()
         self.assertEqual(
@@ -481,6 +496,94 @@ class ClientContractTests(unittest.TestCase):
                 MODULE.load_catalog(path), global_caps, self.root
             )
 
+
+    def test_shared_python_e2e_command_runs_once(self) -> None:
+        surfaces = {
+            "python": {
+                "e2e_lanes": [
+                    {
+                        "command": ("bash", "tools/run-python-native-e2e.sh", "--include-facade"),
+                    },
+                    {
+                        "command": ("bash", "tools/run-python-native-e2e.sh", "--include-facade"),
+                    },
+                ]
+            }
+        }
+        with mock.patch.object(MODULE.subprocess, "run") as run:
+            MODULE.run_e2e_lanes(surfaces, self.root, surface="python")
+        run.assert_called_once_with(
+            ("bash", "tools/run-python-native-e2e.sh", "--include-facade"),
+            cwd=self.root,
+            check=True,
+        )
+
+    def test_python_native_e2e_include_facade_runs_both_paths(self) -> None:
+        fixture = self.root / "python-e2e-fixture"
+        repo = fixture / "repo"
+        tools_dir = repo / "tools"
+        tools_dir.mkdir(parents=True)
+
+        runner = tools_dir / "run-python-native-e2e.sh"
+        runner.write_text(
+            (ROOT / "tools" / "run-python-native-e2e.sh").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        runner.chmod(0o755)
+
+        (tools_dir / "client-e2e-runtime.sh").write_text(
+            """#!/usr/bin/env bash
+prepare_client_e2e_runtime() {
+    export SEARCHKERNEL_LOCAL_HOST=/tmp/fake-searchkerneld
+    export SEARCHKERNEL_SDK_LIB=/tmp/fake-adapter
+}
+""",
+            encoding="utf-8",
+        )
+        resolve_python = tools_dir / "resolve-python.sh"
+        resolve_python.write_text(
+            '#!/usr/bin/env bash\nprintf "%s\\n" "$FAKE_PYTHON"\n',
+            encoding="utf-8",
+        )
+        resolve_python.chmod(0o755)
+
+        fake_python = fixture / "python"
+        fake_python.write_text(
+            """#!/usr/bin/env bash
+set -euo pipefail
+[[ -n "${SEARCHKERNEL_LOCAL_HOST:-}" ]] || exit 41
+[[ "${PYTHONPATH:-}" == *"$REPO_ROOT/clients/python"* ]] || exit 42
+printf '%s\\n' "$*" >>"$PYTHON_LOG"
+""",
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        env = os.environ.copy()
+        env.update(
+            {
+                "FAKE_PYTHON": str(fake_python),
+                "PYTHON_LOG": str(fixture / "python.log"),
+                "REPO_ROOT": str(repo),
+            }
+        )
+        completed = subprocess.run(
+            ["bash", str(runner), "--include-facade"],
+            cwd=repo,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, msg=completed.stdout + completed.stderr)
+        self.assertEqual(
+            (fixture / "python.log").read_text(encoding="utf-8").splitlines(),
+            [
+                "-m unittest discover -s clients/python/tests -p test_grpc_e2e.py",
+                "clients/python/examples/try_searchkernel_client_api_e2e.py",
+            ],
+        )
 
     def test_typescript_real_e2e_installs_package_dependencies(self) -> None:
         source = (

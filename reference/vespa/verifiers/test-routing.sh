@@ -166,8 +166,8 @@ set -e
     echo "unknown semantic target returned $unknown_status instead of 2" >&2
     exit 1
 }
-grep -F "unknown verifier target: vespa.this-target-does-not-exist" <<<"$unknown_output" >/dev/null || {
-    echo "unknown semantic target did not fail with the expected diagnostic" >&2
+grep -F "unknown verify target: vespa.this-target-does-not-exist" <<<"$unknown_output" >/dev/null || {
+    echo "unknown semantic target did not fail through the canonical registry" >&2
     exit 1
 }
 
