@@ -46,6 +46,108 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn('case "${OPERATION}" in', text)
         self.assertIn("test|verify)", text)
         self.assertIn('operation not in {"test", "verify"}', text)
+        self.assertIn(
+            'REQUESTED_TARGET}" =~ ^[A-Za-z0-9._-]{1,128}
+    def test_target_validation_uses_shared_registry_authority(self):
+        text = self.text
+        validate = text.index("Validate target against repository authority")
+        execute = text.index("Run canonical verification")
+        self.assertLess(validate, execute)
+        self.assertIn('pathlib.Path("build/targets.json")', text)
+        self.assertIn('metadata.get("aliases", [])', text)
+        self.assertIn("SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject", text)
+        self.assertIn('SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"', text)
+        self.assertIn(
+            'bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"',
+            text,
+        )
+        self.assertNotIn(
+            '\n          ./dev "${OPERATION}" "${CANONICAL_TARGET}"',
+            text,
+        )
+
+    def test_structured_evidence_is_always_published(self):
+        text = self.text
+        for field in (
+            '"requested_revision"',
+            '"request_id"',
+            '"revision"',
+            '"operation"',
+            '"target"',
+            '"canonical_command"',
+            '"result"',
+            '"actor"',
+            '"run_id"',
+            '"run_attempt"',
+            '"run_url"',
+        ):
+            self.assertIn(field, text)
+        self.assertGreaterEqual(text.count("if: always()"), 2)
+        self.assertIn("actions/upload-artifact@v4", text)
+        self.assertIn("evidence.json", text)
+
+    def test_on_demand_runs_are_not_subject_to_concurrency_cancellation(self):
+        text = self.text
+        self.assertNotIn("cancel-in-progress:", text)
+        self.assertNotRegex(text, r"(?m)^concurrency:")
+
+
+if __name__ == "__main__":
+    unittest.main()
+,
+            text,
+        )
+        self.assertIn(
+            'canonical}" =~ ^[A-Za-z0-9._-]{1,128}
+    def test_target_validation_uses_shared_registry_authority(self):
+        text = self.text
+        validate = text.index("Validate target against repository authority")
+        execute = text.index("Run canonical verification")
+        self.assertLess(validate, execute)
+        self.assertIn('pathlib.Path("build/targets.json")', text)
+        self.assertIn('metadata.get("aliases", [])', text)
+        self.assertIn("SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject", text)
+        self.assertIn('SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"', text)
+        self.assertIn(
+            'bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"',
+            text,
+        )
+        self.assertNotIn(
+            '\n          ./dev "${OPERATION}" "${CANONICAL_TARGET}"',
+            text,
+        )
+
+    def test_structured_evidence_is_always_published(self):
+        text = self.text
+        for field in (
+            '"requested_revision"',
+            '"request_id"',
+            '"revision"',
+            '"operation"',
+            '"target"',
+            '"canonical_command"',
+            '"result"',
+            '"actor"',
+            '"run_id"',
+            '"run_attempt"',
+            '"run_url"',
+        ):
+            self.assertIn(field, text)
+        self.assertGreaterEqual(text.count("if: always()"), 2)
+        self.assertIn("actions/upload-artifact@v4", text)
+        self.assertIn("evidence.json", text)
+
+    def test_on_demand_runs_are_not_subject_to_concurrency_cancellation(self):
+        text = self.text
+        self.assertNotIn("cancel-in-progress:", text)
+        self.assertNotRegex(text, r"(?m)^concurrency:")
+
+
+if __name__ == "__main__":
+    unittest.main()
+,
+            text,
+        )
         self.assertNotIn("eval ", text)
 
     def test_target_validation_uses_shared_registry_authority(self):
