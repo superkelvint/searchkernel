@@ -10,14 +10,12 @@ use searchkernel_protocol::{
     target::{
         CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE,
         INDEX_NOT_FOUND_DETAIL_CODE, INVALID_INDEX_TARGET_DETAIL_CODE,
-        MISSING_INDEX_DEFINITION_DETAIL_CODE, MISSING_INDEX_TARGET_DETAIL_CODE,
-        TARGET_NAME_PATH, TARGET_PATH,
+        MISSING_INDEX_DEFINITION_DETAIL_CODE, MISSING_INDEX_TARGET_DETAIL_CODE, TARGET_NAME_PATH,
+        TARGET_PATH,
     },
     v2 as api, PROTOCOL_VERSION,
 };
-use searchkerneld::{
-    rpc, start_multi, IndexRegistry, ServerConfig, JSON_EXECUTE_PATH,
-};
+use searchkerneld::{rpc, start_multi, IndexRegistry, ServerConfig, JSON_EXECUTE_PATH};
 use std::{
     fs,
     path::PathBuf,
