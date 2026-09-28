@@ -119,39 +119,39 @@ jobs:
           canonical=$(
             git show HEAD:build/targets.json |
               python3 -c '
-import json
-import os
-import sys
+          import json
+          import os
+          import sys
 
-operation = os.environ["OPERATION"]
-requested = os.environ["REQUESTED_TARGET"]
-if operation not in {"test", "verify"}:
-    raise SystemExit(f"unsupported operation: {operation}")
+          operation = os.environ["OPERATION"]
+          requested = os.environ["REQUESTED_TARGET"]
+          if operation not in {"test", "verify"}:
+              raise SystemExit(f"unsupported operation: {operation}")
 
-def reject_duplicates(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate key: {key}")
-        result[key] = value
-    return result
+          def reject_duplicates(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError(f"duplicate key: {key}")
+                  result[key] = value
+              return result
 
-registry = json.load(sys.stdin, object_pairs_hook=reject_duplicates)
-entries = registry.get(operation)
-if not isinstance(entries, dict):
-    raise SystemExit(f"registry has no {operation!r} target map")
+          registry = json.load(sys.stdin, object_pairs_hook=reject_duplicates)
+          entries = registry.get(operation)
+          if not isinstance(entries, dict):
+              raise SystemExit(f"registry has no {operation!r} target map")
 
-for target, metadata in entries.items():
-    aliases = metadata.get("aliases", []) if isinstance(metadata, dict) else []
-    if requested == target or requested in aliases:
-        print(target)
-        break
-else:
-    raise SystemExit(
-        f"unknown {operation} target: {requested}; "
-        f"inspect build/targets.json for supported targets"
-    )
-'
+          for target, metadata in entries.items():
+              aliases = metadata.get("aliases", []) if isinstance(metadata, dict) else []
+              if requested == target or requested in aliases:
+                  print(target)
+                  break
+          else:
+              raise SystemExit(
+                  f"unknown {operation} target: {requested}; "
+                  f"inspect build/targets.json for supported targets"
+              )
+          '
           )
           if [[ ! "${canonical}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
             echo "error: resolved target is not a safe canonical identifier" >&2
