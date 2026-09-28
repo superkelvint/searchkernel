@@ -64,3 +64,58 @@ jobs:
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
             '
+
+
+  verify_810_ruby_fixed:
+    name: PR 810 fixed exact-head Ruby parity
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Run exact-head Ruby client lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
+          SEARCHKERNEL_CI_PULL=never ./dev test ruby
+
+  generate_810_reports:
+    name: PR 810 regenerate and verify client reports
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: verify/810-fixed
+          persist-credentials: true
+      - name: Regenerate reports and verify contracts
+        shell: bash
+        env:
+          CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "3e1f39b37aab524ed47500c968fb1cd05f218d23"
+          PYTHON=$(bash tools/resolve-python.sh)
+          "$PYTHON" tools/check-client-contracts.py --write
+          docker pull "$CI_IMAGE"
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            "$CI_IMAGE" /bin/bash -lc '
+              set -euo pipefail
+              export SEARCHKERNEL_DEV_USE_CI_IMAGE=0
+              ./dev verify contracts
+            '
+          git diff --check
+          git config user.name "searchkernel-verifier"
+          git config user.email "searchkernel-verifier@users.noreply.github.com"
+          git add docs/client-capabilities.json docs/CLIENT_CAPABILITIES.md
+          if ! git diff --cached --quiet; then
+            git commit -m "docs(clients): regenerate capability evidence"
+            git push origin HEAD:verify/810-fixed
+          fi
