@@ -64,3 +64,41 @@ jobs:
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
             '
+
+
+  verify_810_final3_ruby:
+    name: PR 810 final isolated Ruby
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: verify810final3-ruby
+          persist-credentials: false
+      - name: Run final exact-head Ruby verification
+        working-directory: verify810final3-ruby
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
+          SEARCHKERNEL_CI_PULL=never ./dev test ruby
+
+  verify_810_final3_contracts:
+    name: PR 810 final isolated contracts
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: verify810final3-contracts
+          persist-credentials: false
+      - name: Run final exact-head contract verification
+        working-directory: verify810final3-contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
+          SEARCHKERNEL_CI_PULL=never ./dev verify contracts
+          git diff --check
