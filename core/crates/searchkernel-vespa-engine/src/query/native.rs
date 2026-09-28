@@ -1290,18 +1290,28 @@ fn add_native_predicate(
         .collect::<Vec<_>>();
     let feature_count = length_u32(features.len(), "predicate feature")?;
     let range_count = length_u32(range_features.len(), "predicate range feature")?;
+    let feature_key_bytes_length =
+        length_u32(feature_key_bytes.len(), "predicate feature key bytes")?;
+    let feature_value_bytes_length =
+        length_u32(feature_value_bytes.len(), "predicate feature value bytes")?;
+    let range_key_bytes_length = length_u32(range_key_bytes.len(), "predicate range key bytes")?;
+    // All packed byte/length/value vectors stay owned by this stack frame until the
+    // native call returns, so every borrowed pointer remains live for the full FFI call.
     let mut error = NativeError::new();
     let status = unsafe {
         sys::sk_query_add_predicate(
             native.0.as_ptr(),
             field.as_ptr(),
             feature_key_bytes.as_ptr(),
+            feature_key_bytes_length,
             feature_key_lengths.as_ptr(),
             feature_value_bytes.as_ptr(),
+            feature_value_bytes_length,
             feature_value_lengths.as_ptr(),
             feature_masks.as_ptr(),
             feature_count,
             range_key_bytes.as_ptr(),
+            range_key_bytes_length,
             range_key_lengths.as_ptr(),
             range_values.as_ptr(),
             range_masks.as_ptr(),

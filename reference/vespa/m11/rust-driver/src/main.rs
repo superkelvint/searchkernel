@@ -41,6 +41,11 @@ fn schema() -> Schema {
         .field(Field::new("qty", FieldType::Integer).attribute().summary())
         .field(Field::new("price", FieldType::Float).attribute().summary())
         .field(
+            Field::new("access", FieldType::Predicate)
+                .attribute()
+                .predicate_arity(8),
+        )
+        .field(
             Field::new("active", FieldType::Boolean)
                 .attribute()
                 .summary(),

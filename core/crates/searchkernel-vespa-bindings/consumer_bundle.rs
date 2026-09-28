@@ -2442,7 +2442,7 @@ trap - EXIT
 echo "built SDK at $SDK_PACKAGE"
 "########),
     ("core/native/vespa/manifest.json", br########"{
-  "native_abi_version": 14,
+  "native_abi_version": 15,
   "vespa_commit": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
 }
 "########),
@@ -6509,11 +6509,13 @@ extern "C" int32_t sk_query_add_geo_bounding_box(
 
 extern "C" int32_t sk_query_add_predicate(
     sk_query *query, const char *field,
-    const uint8_t *feature_key_bytes, const uint32_t *feature_key_lengths,
-    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    const uint8_t *feature_key_bytes, uint32_t feature_key_bytes_length,
+    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
+    uint32_t feature_value_bytes_length, const uint32_t *feature_value_lengths,
     const uint64_t *feature_masks, uint32_t feature_count,
-    const uint8_t *range_key_bytes, const uint32_t *range_key_lengths,
-    const uint64_t *range_values, const uint64_t *range_masks,
+    const uint8_t *range_key_bytes, uint32_t range_key_bytes_length,
+    const uint32_t *range_key_lengths, const uint64_t *range_values,
+    const uint64_t *range_masks,
     uint32_t range_count, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (!query || !field) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
@@ -6524,9 +6526,18 @@ extern "C" int32_t sk_query_add_predicate(
         if (feature_count == 0 && range_count == 0) {
             throw std::invalid_argument("predicate query requires at least one feature");
         }
-        if ((feature_count && (!feature_key_bytes || !feature_key_lengths || !feature_value_bytes ||
-                               !feature_value_lengths || !feature_masks)) ||
-            (range_count && (!range_key_bytes || !range_key_lengths || !range_values || !range_masks))) {
+        // Totals are part of the trust boundary: reject impossible descriptors before
+        // any packed-buffer pointer arithmetic. Per-item checks below use the
+        // remaining advertised bytes, so offset addition cannot wrap.
+        if (feature_count > MAX_TEXT_TERMS || range_count > MAX_TEXT_TERMS ||
+            feature_key_bytes_length > MAX_TEXT_BYTES ||
+            feature_value_bytes_length > MAX_TEXT_BYTES ||
+            range_key_bytes_length > MAX_TEXT_BYTES ||
+            (feature_count && (!feature_key_lengths || !feature_value_lengths || !feature_masks)) ||
+            (range_count && (!range_key_lengths || !range_values || !range_masks)) ||
+            (!feature_key_bytes && feature_key_bytes_length != 0) ||
+            (!feature_value_bytes && feature_value_bytes_length != 0) ||
+            (!range_key_bytes && range_key_bytes_length != 0)) {
             throw std::invalid_argument("predicate feature arrays are invalid");
         }
         auto term = std::make_unique<search::query::PredicateQueryTerm>();
@@ -6535,8 +6546,11 @@ extern "C" int32_t sk_query_add_predicate(
         for (uint32_t index = 0; index < feature_count; ++index) {
             const auto key_length = feature_key_lengths[index];
             const auto value_length = feature_value_lengths[index];
-            if (key_length == 0 || value_length == 0 || key_offset > MAX_TEXT_BYTES - key_length ||
-                value_offset > MAX_TEXT_BYTES - value_length) {
+            if (key_length == 0 || value_length == 0 || key_length > MAX_TEXT_TERM_BYTES ||
+                value_length > MAX_TEXT_TERM_BYTES || key_offset > feature_key_bytes_length ||
+                key_length > feature_key_bytes_length - key_offset ||
+                value_offset > feature_value_bytes_length ||
+                value_length > feature_value_bytes_length - value_offset) {
                 throw std::invalid_argument("predicate feature key or value is invalid");
             }
             term->addFeature(
@@ -6546,19 +6560,25 @@ extern "C" int32_t sk_query_add_predicate(
             key_offset += key_length;
             value_offset += value_length;
         }
-        if (key_offset > MAX_TEXT_BYTES || value_offset > MAX_TEXT_BYTES) {
-            throw std::invalid_argument("predicate feature data is too large");
+        if (key_offset != feature_key_bytes_length || value_offset != feature_value_bytes_length ||
+            key_offset > MAX_TEXT_BYTES || value_offset > MAX_TEXT_BYTES) {
+            throw std::invalid_argument("predicate feature lengths do not match packed bytes");
         }
         key_offset = 0;
         for (uint32_t index = 0; index < range_count; ++index) {
             const auto key_length = range_key_lengths[index];
-            if (key_length == 0 || key_offset > MAX_TEXT_BYTES - key_length) {
+            if (key_length == 0 || key_length > MAX_TEXT_TERM_BYTES ||
+                key_offset > range_key_bytes_length ||
+                key_length > range_key_bytes_length - key_offset) {
                 throw std::invalid_argument("predicate range feature key is invalid");
             }
             term->addRangeFeature(
                 std::string(reinterpret_cast<const char *>(range_key_bytes + key_offset), key_length),
                 range_values[index], range_masks[index]);
             key_offset += key_length;
+        }
+        if (key_offset != range_key_bytes_length || key_offset > MAX_TEXT_BYTES) {
+            throw std::invalid_argument("predicate range key lengths do not match packed bytes");
         }
         query->builder.addPredicateQuery(std::move(term), field,
                                          query->allocate_term_id(), Weight(100));
@@ -6919,7 +6939,11 @@ std::vector<std::string> copy_string_array(const uint8_t *bytes,
         if (offset > bytes_length || length > bytes_length - offset) {
             throw std::invalid_argument(std::string(what) + " lengths exceed packed data");
         }
-        result.emplace_back(reinterpret_cast<const char *>(bytes + offset), length);
+        if (length == 0) {
+            result.emplace_back();
+        } else {
+            result.emplace_back(reinterpret_cast<const char *>(bytes + offset), length);
+        }
         offset += length;
     }
     if (offset != bytes_length) {
@@ -6958,9 +6982,15 @@ std::vector<std::pair<std::string, std::string>> copy_predicate_features(
             value_length > value_bytes_length - value_offset) {
             throw std::invalid_argument("predicate feature lengths exceed packed data");
         }
-        result.emplace_back(
-            std::string(reinterpret_cast<const char *>(key_bytes + key_offset), key_length),
-            std::string(reinterpret_cast<const char *>(value_bytes + value_offset), value_length));
+        std::string key;
+        if (key_length != 0) {
+            key.assign(reinterpret_cast<const char *>(key_bytes + key_offset), key_length);
+        }
+        std::string value;
+        if (value_length != 0) {
+            value.assign(reinterpret_cast<const char *>(value_bytes + value_offset), value_length);
+        }
+        result.emplace_back(std::move(key), std::move(value));
         key_offset += key_length;
         value_offset += value_length;
     }
@@ -13250,9 +13280,9 @@ typedef struct sk_grouping_filter sk_grouping_filter;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* ABI revision 13 adds structured grouping-plan input and structured grouping
-   tree output to the generic search surface. */
-#define SK_NATIVE_ABI_VERSION 14U
+/* ABI revision 15 makes predicate-query packed byte descriptors self-bounding
+   by carrying exact totals for feature keys, feature values, and range keys. */
+#define SK_NATIVE_ABI_VERSION 15U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -13693,11 +13723,13 @@ SK_API int32_t sk_query_add_geo_bounding_box(
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_predicate(
     sk_query *query, const char *field,
-    const uint8_t *feature_key_bytes, const uint32_t *feature_key_lengths,
-    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    const uint8_t *feature_key_bytes, uint32_t feature_key_bytes_length,
+    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
+    uint32_t feature_value_bytes_length, const uint32_t *feature_value_lengths,
     const uint64_t *feature_masks, uint32_t feature_count,
-    const uint8_t *range_key_bytes, const uint32_t *range_key_lengths,
-    const uint64_t *range_values, const uint64_t *range_masks,
+    const uint8_t *range_key_bytes, uint32_t range_key_bytes_length,
+    const uint32_t *range_key_lengths, const uint64_t *range_values,
+    const uint64_t *range_masks,
     uint32_t range_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_query_destroy(sk_query *query) SK_NOEXCEPT;

@@ -3,7 +3,7 @@ set -euo pipefail
 
 M11="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$M11/../../.." && pwd)"
-source "$ROOT/reference/vespa/common/verify-common.sh"
+source "$M11/verify-m11-common.sh"
 
 require_pinned_vespa
 python3 "$M11/validate.py"
@@ -120,8 +120,9 @@ run_lane() {
   # lane on every pass even when the native SDK itself is reusable.
   # The sanitizer SDK is an adapter-only runtime override, not the full SDK
   # package that Cargo's explicit-SDK provenance contract accepts. Build the
-  # Rust driver through the normal base resolver; at execution time the
-  # sanitizer adapter wins via LD_LIBRARY_PATH (which precedes RUNPATH).
+  # Rust driver through the normal base resolver. Cargo intentionally stages a
+  # self-resolving adapter beside the binary; repoint that exact path below to
+  # the sanitizer adapter before executing or inspecting the driver.
   unset SK_NATIVE_SDK SK_NATIVE_BASE_SDK
   export CARGO_TARGET_DIR="$cargo_target"
   export RUSTFLAGS="$M11_BASE_RUSTFLAGS -C link-arg=-Wl,-rpath,$sdk/lib"
@@ -136,10 +137,11 @@ run_lane() {
   fi
   local binary="$CARGO_TARGET_DIR/debug/searchkernel-m11-driver"
   require_native_driver "$binary" sk_test_failpoint_set sk_test_failpoint_is_blocked
+  stage_m11_driver_adapter "$binary" "$sdk"
   local runtime_sdk_path="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   local resolved_adapter
   resolved_adapter=$(LD_LIBRARY_PATH="$runtime_sdk_path" ldd "$binary" |
-    awk '$1 ~ /^libsearchkernel_vespa\.so([.]|$)/ { print $3; exit }')
+    m11_adapter_path_from_ldd)
   if [[ -z "$resolved_adapter" ||
         "$(readlink -f "$resolved_adapter")" != "$(readlink -f "$sdk/lib/libsearchkernel_vespa.so.2")" ]]; then
     fail_verification "M11 $lane driver does not resolve the sanitizer adapter from $sdk/lib"
@@ -171,6 +173,12 @@ run_lane() {
     asan-ubsan)
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$binary" compile "$config"
+        mkdir -p "$runtime/predicate-contract"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        SK_NATIVE_PREDICATE_CONTRACT_ONLY=1 "$buffer_contract_test" \
+        "$runtime/predicate-contract" "$config"
+        echo "predicate query packed-buffer ABI contract passed ($lane)"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$binary" malformed "$config" "$runtime/data"
