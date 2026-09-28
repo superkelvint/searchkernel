@@ -4,6 +4,18 @@ pub mod v2 {
     pub use crate::v2::*;
 
     #[allow(warnings)]
+    mod targeted_request_payload_generated {
+        use super::*;
+        include!("generated/search_kernel/protocol/v2/targeted_request_payload_generated.rs");
+    }
+    pub use targeted_request_payload_generated::*;
+    #[allow(warnings)]
+    mod targeted_request_generated {
+        use super::*;
+        include!("generated/search_kernel/protocol/v2/targeted_request_generated.rs");
+    }
+    pub use targeted_request_generated::*;
+    #[allow(warnings)]
     mod request_payload_generated {
         use super::*;
         include!("generated/search_kernel/protocol/v2/request_payload_generated.rs");
