@@ -79,7 +79,7 @@ pub fn request_index_target<'a>(
     let target = envelope.target().ok_or(RequestTargetError::Missing)?;
     let name = target
         .name()
-        .ok_or_else(|| RequestTargetError::Invalid(IndexTargetError::Empty))?;
+        .ok_or(RequestTargetError::Invalid(IndexTargetError::Empty))?;
     validate_index_target(name).map_err(RequestTargetError::Invalid)
 }
 
