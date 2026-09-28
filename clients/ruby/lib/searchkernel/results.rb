@@ -21,18 +21,18 @@ module SearchKernel
 
       def initialize(raw)
         Value.object!(raw, "Hit")
-        @id = raw["id"]
+        @id = raw["id"] || ""
         @relevance = Results.relevance(raw["relevance"])
         @score = @relevance
-        @fields = Value.optional_entries(raw["fields"])
-        @highlights = Results.vector(raw, "highlights") { |highlight| Results.highlight(highlight) }
+        @fields = Value.optional_entries(raw["fields"]) || {}.freeze
+        @highlights = Results.vector(raw, "highlights") { |highlight| Results.highlight(highlight) } || [].freeze
         @source = raw["source"]
-        @types = Results.vector(raw, "types") { |type| Value.string!(type, "Hit type").freeze }
-        @match_features = Value.optional_entries(raw["match_features"])
-        @summary_features = Value.optional_entries(raw["summary_features"])
-        @rank_features = Value.optional_entries(raw["rank_features"])
+        @types = Results.vector(raw, "types") { |type| Value.string!(type, "Hit type").freeze } || [].freeze
+        @match_features = Value.optional_entries(raw["match_features"]) || {}.freeze
+        @summary_features = Value.optional_entries(raw["summary_features"]) || {}.freeze
+        @rank_features = Value.optional_entries(raw["rank_features"]) || {}.freeze
         @features = @match_features
-        @sort_values = Results.vector(raw, "sort_values") { |value| Value.decode(value) }
+        @sort_values = Results.vector(raw, "sort_values") { |value| Value.decode(value) } || [].freeze
         freeze
       end
     end
@@ -47,16 +47,16 @@ module SearchKernel
         @label = raw["label"]
         @value = Value.decode(raw["value"]) if raw.key?("value")
         @_field_entries = Results.value_entries_with_kinds(raw["fields"])
-        @fields = Value.optional_entries(raw["fields"])
-        @children = Results.vector(raw, "children") { |node| Results.node(node) }
-        @groups = @children&.grep(ResultGroup)&.freeze
-        @hits = @children&.grep(Hit)&.freeze
-        @continuations = Results.vector(raw, "continuations") { |entry| Results.continuation(entry) }
+        @fields = Value.optional_entries(raw["fields"]) || {}.freeze
+        @children = Results.vector(raw, "children") { |node| Results.node(node) } || [].freeze
+        @groups = @children.grep(ResultGroup).freeze
+        @hits = @children.grep(Hit).freeze
+        @continuations = Results.vector(raw, "continuations") { |entry| Results.continuation(entry) } || [].freeze
         @source = raw["source"]
-        @types = Results.vector(raw, "types") { |type| Value.string!(type, "group type").freeze }
+        @types = Results.vector(raw, "types") { |type| Value.string!(type, "group type").freeze } || [].freeze
         @relevance = Results.relevance(raw["relevance"])
         @limits = Results.limits(raw["limits"]) if raw.key?("limits")
-        @metadata = Value.optional_entries(raw["metadata"])
+        @metadata = Value.optional_entries(raw["metadata"]) || {}.freeze
         freeze
       end
     end
@@ -70,6 +70,8 @@ module SearchKernel
         @root = Results.node(raw["root"]) unless raw["root"].nil?
         @hits = (@root.is_a?(Hit) ? [@root] : @root&.hits || []).freeze
         @groups = (@root.is_a?(ResultGroup) ? @root.groups || [] : []).freeze
+        @total_hits = 0
+        @total_hits_relation = "unknown"
         if raw.key?("total_hits")
           total = Value.object!(raw["total_hits"], "TotalHits")
           @total_hits = Value.decimal_integer!(total.fetch("value", "0"), Value::UINT64)
@@ -78,12 +80,12 @@ module SearchKernel
         end
         @coverage = Results.coverage(raw["coverage"]) if raw.key?("coverage")
         @timing = Results.timing(raw["timing"]) if raw.key?("timing")
-        @errors = Results.vector(raw, "errors") { |error| Results.issue(error) }
+        @errors = Results.vector(raw, "errors") { |error| Results.issue(error) } || [].freeze
         @issues = @errors
         @trace = Value.decode(raw["trace"]) if raw.key?("trace")
-        @metadata = Value.optional_entries(raw["metadata"])
-        @continuations = @root.is_a?(ResultGroup) ? @root.continuations : nil
-        @aggregations = @root.is_a?(ResultGroup) ? @root.fields : nil
+        @metadata = Value.optional_entries(raw["metadata"]) || {}.freeze
+        @continuations = @root.is_a?(ResultGroup) ? @root.continuations : [].freeze
+        @aggregations = @root.is_a?(ResultGroup) ? @root.fields : {}.freeze
         @facets = {}.freeze
         freeze
       end
@@ -238,7 +240,7 @@ module SearchKernel
                    nodes: optional(raw, "nodes"), results: optional(raw, "results"),
                    results_full: optional(raw, "results_full"),
                    degraded: raw.key?("degraded") ? degraded(raw["degraded"]) : nil,
-                   metadata: Value.optional_entries(raw["metadata"])).freeze
+                   metadata: Value.optional_entries(raw["metadata"]) || {}.freeze).freeze
     end
 
     def degraded(raw)
@@ -248,7 +250,7 @@ module SearchKernel
                            adaptive_timeout: optional(raw, "adaptive_timeout"),
                            ann_timeout: optional(raw, "ann_timeout"),
                            non_ideal_state: optional(raw, "non_ideal_state"),
-                           metadata: Value.optional_entries(raw["metadata"])).freeze
+                           metadata: Value.optional_entries(raw["metadata"]) || {}.freeze).freeze
     end
 
     def timing(raw)
@@ -256,7 +258,7 @@ module SearchKernel
       SearchTiming.new(query_time_seconds: optional(raw, "query_time_seconds"),
                        search_time_seconds: optional(raw, "search_time_seconds"),
                        summary_fetch_time_seconds: optional(raw, "summary_fetch_time_seconds"),
-                       metadata: Value.optional_entries(raw["metadata"])).freeze
+                       metadata: Value.optional_entries(raw["metadata"]) || {}.freeze).freeze
     end
 
     def issue(raw)
@@ -265,7 +267,7 @@ module SearchKernel
                       summary: raw["summary"],
                       message: raw["message"], source: raw["source"],
                       stack_trace: raw["stack_trace"], transient: optional(raw, "transient"),
-                      metadata: Value.optional_entries(raw["metadata"])).freeze
+                      metadata: Value.optional_entries(raw["metadata"]) || {}.freeze).freeze
     end
   end
 end

@@ -340,6 +340,49 @@ recording = RecordingTransport.new
 client = SearchKernel::Client.new(recording)
 same({ "root" => nil }, client.search({ "query" => { "source_type" => "MatchAllQuery" } }), "client returns operation payload")
 same([], client.search_results({}).hits, "client result wrapper derives hits from root")
+
+empty_results = SearchKernel::Results::SearchResults.new({})
+same([], empty_results.hits, "empty result hits match Python facade semantics")
+same([], empty_results.groups, "empty result groups match Python facade semantics")
+same(0, empty_results.total_hits, "absent total hits defaults to zero")
+same("unknown", empty_results.total_hits_relation, "absent total-hit relation is unknown")
+same([], empty_results.errors, "absent result errors default to an empty list")
+same({}, empty_results.metadata, "absent result metadata defaults to an empty map")
+same([], empty_results.continuations, "absent result continuations default to an empty list")
+same({}, empty_results.aggregations, "absent result aggregations default to an empty map")
+same({}, empty_results.facets, "absent result facets default to an empty map")
+
+empty_hit = SearchKernel::Results::SearchResults.new(
+  "root" => {"node_type" => "Hit", "node" => {}}
+).hits.first
+same("", empty_hit.id, "absent hit id defaults to an empty string")
+same({}, empty_hit.fields, "absent hit fields default to an empty map")
+same([], empty_hit.highlights, "absent hit highlights default to an empty list")
+same([], empty_hit.types, "absent hit types default to an empty list")
+same({}, empty_hit.match_features, "absent match features default to an empty map")
+same({}, empty_hit.summary_features, "absent summary features default to an empty map")
+same({}, empty_hit.rank_features, "absent rank features default to an empty map")
+same([], empty_hit.sort_values, "absent hit sort values default to an empty list")
+
+empty_group = SearchKernel::Results::SearchResults.new(
+  "root" => {"node_type" => "ResultGroup", "node" => {}}
+).root
+same({}, empty_group.fields, "absent group fields default to an empty map")
+same([], empty_group.children, "absent group children default to an empty list")
+same([], empty_group.groups, "absent nested groups default to an empty list")
+same([], empty_group.hits, "absent grouped hits default to an empty list")
+same([], empty_group.continuations, "absent group continuations default to an empty list")
+same([], empty_group.types, "absent group types default to an empty list")
+same({}, empty_group.metadata, "absent group metadata defaults to an empty map")
+
+empty_result_metadata = SearchKernel::Results::SearchResults.new(
+  "coverage" => {},
+  "timing" => {},
+  "errors" => [{"code" => "0"}]
+)
+same({}, empty_result_metadata.coverage.metadata, "absent coverage metadata defaults to an empty map")
+same({}, empty_result_metadata.timing.metadata, "absent timing metadata defaults to an empty map")
+same({}, empty_result_metadata.errors.first.metadata, "absent issue metadata defaults to an empty map")
 same(false, SearchKernel::Results::SearchResults.new({"coverage" => {"full" => {}}}).coverage.full,
      "present OptionalBool retains omitted default false")
 same(nil, SearchKernel::Results::SearchResults.new({"coverage" => {}}).coverage.full,
