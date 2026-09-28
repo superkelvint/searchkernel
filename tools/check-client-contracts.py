@@ -276,7 +276,7 @@ def collect_evidence(
                     for kind in kinds:
                         strength = (
                             "runtime"
-                            if runtime_lane is not None
+                            if kind == "e2e"
                             else "conformance"
                             if kind == "conformance"
                             else "builder"
@@ -335,6 +335,30 @@ def _validated_parity_requirements(
             )
 
         normalized = dict(item)
+        required_kinds = item.get("required_kinds", [])
+        if not isinstance(required_kinds, list) or not all(
+            isinstance(kind, str) and kind in VALID_KINDS for kind in required_kinds
+        ):
+            raise RegistryError(
+                f"{label}.required_kinds must be a list drawn from {sorted(VALID_KINDS)}"
+            )
+        if len(set(required_kinds)) != len(required_kinds):
+            raise RegistryError(f"{label}.required_kinds contains duplicates")
+        normalized["required_kinds"] = list(required_kinds)
+        required_contracts = item.get("required_contracts", [])
+        contract_re = re.compile(
+            r"[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+/[a-z0-9][a-z0-9_.-]*"
+        )
+        if not isinstance(required_contracts, list) or not all(
+            isinstance(contract, str) and contract_re.fullmatch(contract)
+            for contract in required_contracts
+        ):
+            raise RegistryError(
+                f"{label}.required_contracts must be capability/scenario strings"
+            )
+        if len(set(required_contracts)) != len(required_contracts):
+            raise RegistryError(f"{label}.required_contracts contains duplicates")
+        normalized["required_contracts"] = list(required_contracts)
         for field, surface in (
             ("source_runtimes", source),
             ("target_runtimes", target),
@@ -366,31 +390,74 @@ def validate_parity_evidence(
     for item in evidence:
         evidence_by_contract[(item["capability"], item["scenario"])].append(item)
 
+    def profiles(
+        contract_evidence: list[dict[str, Any]],
+        surface: str,
+        runtimes: set[str],
+    ) -> list[dict[str, Any]]:
+        grouped: dict[tuple[str, str, int], dict[str, Any]] = {}
+        for item in contract_evidence:
+            if item["surface"] != surface or item["runtime"] not in runtimes:
+                continue
+            key = (item["runtime"], item["path"], item["line"])
+            profile = grouped.setdefault(
+                key,
+                {
+                    "runtime": item["runtime"],
+                    "path": item["path"],
+                    "line": item["line"],
+                    "kinds": set(),
+                    "max_strength": "builder",
+                },
+            )
+            profile["kinds"].add(item["kind"])
+            if STRENGTH_RANK[item["strength"]] > STRENGTH_RANK[profile["max_strength"]]:
+                profile["max_strength"] = item["strength"]
+        return list(grouped.values())
+
     for requirement in requirements:
         source = requirement["source_surface"]
         target = requirement["target_surface"]
         minimum = requirement["minimum_strength"]
+        required_kinds = set(requirement["required_kinds"])
+        required_contracts = [
+            tuple(contract.rsplit("/", 1))
+            for contract in requirement["required_contracts"]
+        ]
         source_runtimes = set(requirement["source_runtimes"])
         target_runtimes = set(requirement["target_runtimes"])
         minimum_rank = STRENGTH_RANK[minimum]
 
-        for (capability, scenario), contract_evidence in sorted(evidence_by_contract.items()):
-            source_matches = [
-                item
-                for item in contract_evidence
-                if item["surface"] == source
-                and item["runtime"] in source_runtimes
-                and STRENGTH_RANK[item["strength"]] >= minimum_rank
+        for capability, scenario in required_contracts:
+            contract_evidence = evidence_by_contract.get((capability, scenario), [])
+            source_profiles = [
+                profile
+                for profile in profiles(contract_evidence, source, source_runtimes)
+                if STRENGTH_RANK[profile["max_strength"]] >= minimum_rank
+                and required_kinds.issubset(profile["kinds"])
             ]
-            if not source_matches:
+            if not source_profiles:
+                raise RegistryError(
+                    f"required source parity evidence missing for {capability}/{scenario}: "
+                    f"{source} needs {minimum} evidence with colocated kinds "
+                    f"{sorted(required_kinds)} on an allowed source runtime"
+                )
+
+        for (capability, scenario), contract_evidence in sorted(evidence_by_contract.items()):
+            source_profiles = [
+                profile
+                for profile in profiles(contract_evidence, source, source_runtimes)
+                if STRENGTH_RANK[profile["max_strength"]] >= minimum_rank
+                and required_kinds.issubset(profile["kinds"])
+            ]
+            if not source_profiles:
                 continue
 
-            target_matches = [
-                item
-                for item in contract_evidence
-                if item["surface"] == target
-                and item["runtime"] in target_runtimes
-                and STRENGTH_RANK[item["strength"]] >= minimum_rank
+            target_profiles = [
+                profile
+                for profile in profiles(contract_evidence, target, target_runtimes)
+                if STRENGTH_RANK[profile["max_strength"]] >= minimum_rank
+                and required_kinds.issubset(profile["kinds"])
             ]
             matching_overrides = [
                 item
@@ -400,7 +467,7 @@ def validate_parity_evidence(
                 and item["surface"] == target
                 and item["runtime"] in target_runtimes
             ]
-            if target_matches:
+            if target_profiles:
                 if matching_overrides:
                     raise RegistryError(
                         f"stale parity override for {capability}/{scenario}: "
@@ -414,24 +481,38 @@ def validate_parity_evidence(
                 item for item in contract_evidence if item["surface"] == target
             ]
             if target_evidence:
-                profiles = ", ".join(
+                target_groups = profiles(
+                    contract_evidence,
+                    target,
+                    {item["runtime"] for item in target_evidence},
+                )
+                profile_text = ", ".join(
                     sorted(
-                        {
-                            f"{item['runtime']}/{item['strength']} ({item['kind']})"
-                            for item in target_evidence
-                        }
+                        f"{profile['runtime']}/{profile['max_strength']} "
+                        f"({'+'.join(sorted(profile['kinds']))})"
+                        for profile in target_groups
                     )
                 )
-                target_detail = f"only weaker evidence: {profiles}"
+                target_detail = f"only weaker or split evidence: {profile_text}"
             else:
                 target_detail = "no evidence"
-            source_profiles = ", ".join(
-                sorted({f"{item['runtime']}/{item['strength']}" for item in source_matches})
+            source_text = ", ".join(
+                sorted(
+                    f"{profile['runtime']}/{profile['max_strength']} "
+                    f"({'+'.join(sorted(profile['kinds']))})"
+                    for profile in source_profiles
+                )
+            )
+            required_text = (
+                f" with colocated kinds {sorted(required_kinds)}"
+                if required_kinds
+                else ""
             )
             raise RegistryError(
                 f"{minimum} parity mismatch for {capability}/{scenario}: "
-                f"{source} has {source_profiles}; {target} has {target_detail}. "
-                "Add matching evidence on an allowed target runtime or an explicit override."
+                f"{source} has {source_text}; {target} has {target_detail}. "
+                f"Add matching {minimum} evidence{required_text} on an allowed "
+                "target runtime or an explicit override."
             )
 
 

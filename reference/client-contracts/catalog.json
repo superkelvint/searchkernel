@@ -136,6 +136,21 @@
       ],
       "target_runtimes": [
         "managed-local"
+      ],
+      "required_kinds": [
+        "ergonomic",
+        "e2e"
+      ],
+      "required_contracts": [
+        "update.document_crud/basic",
+        "query.phrase/basic",
+        "query.proximity/basic",
+        "query.fuzzy/basic",
+        "query.weighted_and_wand/basic",
+        "query.same_element/basic",
+        "query.geo/basic",
+        "result.docsum_field_projection/basic",
+        "result.highlighting/basic"
       ]
     }
   ],

@@ -32,13 +32,13 @@ surface must be explicitly designated HTTP-first by the architecture/SOP and
 must use standard FlatBuffers JSON through the official BFBS-backed generic
 execute edge.
 
-Evidence strength is derived separately from the annotation kind. Evidence in a
-registered `e2e_lanes` file for the annotated runtime has `runtime` strength,
-even when the same annotation is only claiming ergonomic facade coverage.
-Conformance evidence outside a real-runtime lane has `conformance` strength;
-remaining facade/request-construction evidence has `builder` strength. This
-prevents a request-builder test from silently satisfying a parity requirement
-that is backed by real daemon/backend execution on another client.
+Evidence strength is derived from the explicit evidence kind. `e2e` evidence has
+`runtime` strength and is accepted only when the annotation is owned by a
+registered E2E lane for that runtime. `conformance` evidence has `conformance`
+strength; ergonomic facade/request-construction evidence has `builder` strength.
+File placement or a runtime name alone never upgrades builder evidence to runtime
+proof. This prevents a request-builder test from silently satisfying a parity
+requirement backed by real daemon/backend execution on another client.
 
 Surfaces whose production runtime must have executable real-backend coverage
 declare `required_e2e_runtimes` in the catalog. Every listed runtime must be
@@ -60,11 +60,17 @@ The catalog may contain `[[overrides]]` entries only for intentional
 GitHub issue.
 
 `parity_requirements` compare evidence strength across client surfaces and map
-source runtimes to the target runtimes that must provide equivalent proof. If
-the source has evidence at or above the configured strength, weaker target
-evidence does not count. A known gap must therefore be represented by an
-explicit override until equivalent executable evidence lands; once matching
-runtime evidence exists, the checker rejects the override as stale.
+source runtimes to the target runtimes that must provide equivalent proof. A
+requirement may also name `required_kinds`; those kinds must be colocated in one
+evidence annotation/location, so a low-level runtime test cannot be combined with
+a separate builder-only ergonomic test to manufacture facade/runtime parity.
+`required_contracts` pins the current source baseline so deleting source runtime
+evidence cannot silently shrink the parity gate; additional source runtime
+evidence still expands the gate automatically. If the source has evidence at or
+above the configured strength, weaker or split target evidence does not count. A
+known gap must therefore be represented by an explicit override until equivalent
+executable evidence lands; once matching runtime evidence exists, the checker
+rejects the override as stale.
 
 ## Generated reports
 
