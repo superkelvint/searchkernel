@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import pathlib
-import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -12,16 +11,18 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
     def setUpClass(cls):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
-    def test_is_manual_only_and_read_only(self):
+    def test_uses_default_branch_repository_dispatch_and_read_only_permissions(self):
         text = self.text
-        self.assertIn("workflow_dispatch:", text)
+        self.assertIn("repository_dispatch:", text)
+        self.assertIn("types: [searchkernel-verification]", text)
+        self.assertNotIn("workflow_dispatch:", text)
         self.assertNotRegex(text, r"(?m)^\s+pull_request:")
         self.assertNotRegex(text, r"(?m)^\s+push:")
-        self.assertRegex(text, r"(?ms)^permissions:\n\s+contents: read\s*$")
+        self.assertIn("permissions:\n  contents: read\n", text)
 
-    def test_control_plane_must_run_from_default_branch(self):
+    def test_control_plane_is_proven_before_subject_checkout(self):
         text = self.text
-        guard = text.index("Require trusted default-branch control plane")
+        guard = text.index("Prove trusted default-branch control plane")
         checkout = text.index("Check out requested revision as untrusted subject")
         self.assertLess(guard, checkout)
         self.assertIn('expected="refs/heads/${DEFAULT_BRANCH}"', text)
@@ -30,19 +31,18 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
     def test_revision_is_exact_sha_and_checkout_is_proven(self):
         text = self.text
         self.assertIn("^[0-9a-fA-F]{40}$", text)
-        self.assertIn("ref: ${{ inputs.revision }}", text)
+        self.assertIn(
+            "ref: ${{ github.event.client_payload.revision }}",
+            text,
+        )
         self.assertIn("persist-credentials: false", text)
         self.assertIn("observed=$(git rev-parse HEAD)", text)
         self.assertIn('if [[ "${observed}" != "${requested}" ]]', text)
 
     def test_remote_surface_is_bounded_to_test_and_verify_for_now(self):
         text = self.text
-        operation_block = text[
-            text.index("operation:") : text.index("target:", text.index("operation:"))
-        ]
-        self.assertIn("- test", operation_block)
-        self.assertIn("- verify", operation_block)
-        self.assertNotIn("- ci", operation_block)
+        self.assertIn('case "${OPERATION}" in', text)
+        self.assertIn("test|verify)", text)
         self.assertIn('operation not in {"test", "verify"}', text)
         self.assertNotIn("eval ", text)
 
@@ -65,6 +65,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
             '"target"',
             '"canonical_command"',
             '"result"',
+            '"actor"',
             '"run_id"',
             '"run_attempt"',
             '"run_url"',
