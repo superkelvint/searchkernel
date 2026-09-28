@@ -27,6 +27,8 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertLess(guard, checkout)
         self.assertIn('expected="refs/heads/${DEFAULT_BRANCH}"', text)
         self.assertIn('if [[ "${GITHUB_REF}" != "${expected}" ]]', text)
+        self.assertIn("ref: ${{ github.sha }}", text)
+        self.assertIn("path: control", text)
 
     def test_revision_is_exact_sha_and_checkout_is_proven(self):
         text = self.text
@@ -53,7 +55,16 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertLess(validate, execute)
         self.assertIn('pathlib.Path("build/targets.json")', text)
         self.assertIn('metadata.get("aliases", [])', text)
-        self.assertIn('./dev "${OPERATION}" "${CANONICAL_TARGET}"', text)
+        self.assertIn("SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject", text)
+        self.assertIn('SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"', text)
+        self.assertIn(
+            'bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"',
+            text,
+        )
+        self.assertNotIn(
+            '\n          ./dev "${OPERATION}" "${CANONICAL_TARGET}"',
+            text,
+        )
 
     def test_structured_evidence_is_always_published(self):
         text = self.text
