@@ -4,6 +4,7 @@
 //! deliberately small makes the same identifier safe to use across transports
 //! and lets the daemon choose its own persistent directory mapping.
 
+use crate::protocol::v2 as wire;
 use std::fmt;
 
 /// Maximum UTF-8 byte length of a logical index target.
@@ -41,6 +42,41 @@ impl fmt::Display for IndexTargetError {
 }
 
 impl std::error::Error for IndexTargetError {}
+
+/// Envelope-level target failure used by multi-index routing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RequestTargetError {
+    /// The legacy/embedded envelope did not carry an index target.
+    Missing,
+    /// A target table was present but its logical name was invalid.
+    Invalid(IndexTargetError),
+}
+
+impl fmt::Display for RequestTargetError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Missing => write!(formatter, "Search Kernel request is missing an index target"),
+            Self::Invalid(error) => write!(formatter, "invalid Search Kernel index target: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for RequestTargetError {}
+
+/// Extracts and validates the canonical target from one request envelope.
+///
+/// Per-index embedded dispatchers may intentionally ignore this helper. A
+/// multi-index daemon/router must call it before selecting a dispatcher; it
+/// must never substitute a default target when this returns `RequestTargetError::Missing`.
+pub fn request_index_target<'a>(
+    envelope: wire::RequestEnvelope<'a>,
+) -> Result<&'a str, RequestTargetError> {
+    let target = envelope.target().ok_or(RequestTargetError::Missing)?;
+    let name = target
+        .name()
+        .ok_or_else(|| RequestTargetError::Invalid(IndexTargetError::Empty))?;
+    validate_index_target(name).map_err(RequestTargetError::Invalid)
+}
 
 /// Validates one canonical logical index target.
 ///
