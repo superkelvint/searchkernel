@@ -1,3 +1,4 @@
+use searchkernel_protocol::protocol::v2 as wire;
 use searchkernel_protocol::json::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
     response_json_to_flatbuffer,
@@ -318,6 +319,36 @@ fn standard_json_preserves_textual_filter_clause_bindings() {
     let again = request_json_to_flatbuffer(&printed).expect("printed textual filter JSON");
     let printed_again = request_flatbuffer_to_json(&again).expect("textual filter JSON again");
     assert_eq!(printed_again, printed);
+}
+
+#[test]
+fn v2_union_discriminators_are_append_only() {
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_InsertRequest.0, 1);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_UpsertRequest.0, 2);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_PatchRequest.0, 3);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_DeleteRequest.0, 4);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_GetRequest.0, 5);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_SearchRequest.0, 6);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_AnalyzeRequest.0, 7);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_DescribeRequest.0, 8);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_InspectQueryRequest.0, 9);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_UpdateRequest.0, 10);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_CreateIndexRequest.0, 11);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_OpenIndexRequest.0, 12);
+
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_InsertResult.0, 1);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_UpsertResult.0, 2);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_PatchResult.0, 3);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_DeleteResult.0, 4);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_GetResult.0, 5);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_SearchResult.0, 6);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_AnalyzeResult.0, 7);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_Error.0, 8);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_DescribeResult.0, 9);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_InspectQueryResult.0, 10);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_UpdateResult.0, 11);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_CreateIndexResult.0, 12);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_OpenIndexResult.0, 13);
 }
 
 #[test]
