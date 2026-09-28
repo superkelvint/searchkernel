@@ -1213,6 +1213,23 @@
       "limitations": [
         "Distributed routing, configuration services, schema deployment, federation, and other container-level Vespa facilities are outside this wrapper."
       ]
+    },
+    {
+      "id": "daemon.multi_index_lifecycle",
+      "title": "Targeted multi-index daemon lifecycle protocol",
+      "area": "daemon",
+      "represented": true,
+      "semantic": false,
+      "executable": false,
+      "verified_by": [
+        "api/searchkernel_request.fbs",
+        "core/crates/searchkernel-protocol/src/target.rs",
+        "core/crates/searchkernel-protocol/tests/standard_json.rs",
+        "core/crates/searchkernel-dispatch/src/tests.rs"
+      ],
+      "limitations": [
+        "The direct targeted request-envelope and create/open wire contract is the #848 forward-compatibility baseline, but daemon registry/data-root execution lands in #846. Target-less envelopes remain valid only for embedded/per-index callers."
+      ]
     }
   ]
 }

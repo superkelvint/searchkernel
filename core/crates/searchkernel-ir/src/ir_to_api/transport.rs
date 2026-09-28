@@ -11,6 +11,7 @@ fn finish_request(
         builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
+            target: None,
             payload_type,
             payload: Some(payload),
         },

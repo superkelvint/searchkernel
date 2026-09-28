@@ -7,6 +7,9 @@ import SearchKernel
 import flatbuffers
 from flatbuffers.compat import import_numpy
 from typing import Any
+from SearchKernel._lazy import lazy_type as _lazy_type
+_lazy_IndexTarget = _lazy_type("SearchKernel.V2.IndexTarget", "IndexTarget")
+IndexTarget = _lazy_IndexTarget
 from flatbuffers.table import Table
 from typing import Optional
 np = import_numpy()
@@ -56,8 +59,18 @@ class RequestEnvelope(object):
             return obj
         return None
 
+    # RequestEnvelope
+    def Target(self) -> Optional[IndexTarget]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        if o != 0:
+            x = self._tab.Indirect(o + self._tab.Pos)
+            obj = IndexTarget()
+            obj.Init(self._tab.Bytes, x)
+            return obj
+        return None
+
 def RequestEnvelopeStart(builder: flatbuffers.Builder):
-    builder.StartObject(3)
+    builder.StartObject(4)
 
 def Start(builder: flatbuffers.Builder):
     RequestEnvelopeStart(builder)
@@ -80,6 +93,12 @@ def RequestEnvelopeAddPayload(builder: flatbuffers.Builder, payload: int):
 def AddPayload(builder: flatbuffers.Builder, payload: int):
     RequestEnvelopeAddPayload(builder, payload)
 
+def RequestEnvelopeAddTarget(builder: flatbuffers.Builder, target: int):
+    builder.PrependUOffsetTRelativeSlot(3, flatbuffers.number_types.UOffsetTFlags.py_type(target), 0)
+
+def AddTarget(builder: flatbuffers.Builder, target: int):
+    RequestEnvelopeAddTarget(builder, target)
+
 def RequestEnvelopeEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
@@ -91,15 +110,21 @@ _lazy_RequestPayload = _lazy_module("SearchKernel.Protocol.V2.RequestPayload")
 
 _lazy_AnalyzeRequest = _lazy_module("SearchKernel.V2.AnalyzeRequest")
 
+_lazy_CreateIndexRequest = _lazy_module("SearchKernel.V2.CreateIndexRequest")
+
 _lazy_DeleteRequest = _lazy_module("SearchKernel.V2.DeleteRequest")
 
 _lazy_DescribeRequest = _lazy_module("SearchKernel.V2.DescribeRequest")
 
 _lazy_GetRequest = _lazy_module("SearchKernel.V2.GetRequest")
 
+_lazy_IndexTarget = _lazy_module("SearchKernel.V2.IndexTarget")
+
 _lazy_InsertRequest = _lazy_module("SearchKernel.V2.InsertRequest")
 
 _lazy_InspectQueryRequest = _lazy_module("SearchKernel.V2.InspectQueryRequest")
+
+_lazy_OpenIndexRequest = _lazy_module("SearchKernel.V2.OpenIndexRequest")
 
 _lazy_PatchRequest = _lazy_module("SearchKernel.V2.PatchRequest")
 
@@ -109,7 +134,7 @@ _lazy_UpdateRequest = _lazy_module("SearchKernel.V2.UpdateRequest")
 
 _lazy_UpsertRequest = _lazy_module("SearchKernel.V2.UpsertRequest")
 try:
-    from typing import Union
+    from typing import Optional, Union
 except:
     pass
 
@@ -121,10 +146,12 @@ class RequestEnvelopeT(object):
         protocolVersion = 0,
         payloadType = 0,
         payload = None,
+        target = None,
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
-        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertRequest.InsertRequestT', 'SearchKernel.V2.UpsertRequest.UpsertRequestT', 'SearchKernel.V2.PatchRequest.PatchRequestT', 'SearchKernel.V2.DeleteRequest.DeleteRequestT', 'SearchKernel.V2.GetRequest.GetRequestT', 'SearchKernel.V2.SearchRequest.SearchRequestT', 'SearchKernel.V2.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.V2.DescribeRequest.DescribeRequestT', 'SearchKernel.V2.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.V2.UpdateRequest.UpdateRequestT']
+        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertRequest.InsertRequestT', 'SearchKernel.V2.UpsertRequest.UpsertRequestT', 'SearchKernel.V2.PatchRequest.PatchRequestT', 'SearchKernel.V2.DeleteRequest.DeleteRequestT', 'SearchKernel.V2.GetRequest.GetRequestT', 'SearchKernel.V2.SearchRequest.SearchRequestT', 'SearchKernel.V2.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.V2.DescribeRequest.DescribeRequestT', 'SearchKernel.V2.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.V2.UpdateRequest.UpdateRequestT', 'SearchKernel.V2.CreateIndexRequest.CreateIndexRequestT', 'SearchKernel.V2.OpenIndexRequest.OpenIndexRequestT']
+        self.target = target  # type: Optional[SearchKernel.V2.IndexTarget.IndexTargetT]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -150,15 +177,21 @@ class RequestEnvelopeT(object):
         self.protocolVersion = requestEnvelope.ProtocolVersion()
         self.payloadType = requestEnvelope.PayloadType()
         self.payload = SearchKernel.Protocol.V2.RequestPayload.RequestPayloadCreator(self.payloadType, requestEnvelope.Payload())
+        if requestEnvelope.Target() is not None:
+            self.target = SearchKernel.V2.IndexTarget.IndexTargetT.InitFromObj(requestEnvelope.Target())
 
     # RequestEnvelopeT
     def Pack(self, builder):
         if self.payload is not None:
             payload = self.payload.Pack(builder)
+        if self.target is not None:
+            target = self.target.Pack(builder)
         RequestEnvelopeStart(builder)
         RequestEnvelopeAddProtocolVersion(builder, self.protocolVersion)
         RequestEnvelopeAddPayloadType(builder, self.payloadType)
         if self.payload is not None:
             RequestEnvelopeAddPayload(builder, payload)
+        if self.target is not None:
+            RequestEnvelopeAddTarget(builder, target)
         requestEnvelope = RequestEnvelopeEnd(builder)
         return requestEnvelope

@@ -2,6 +2,8 @@ use searchkernel_protocol::json::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
     response_json_to_flatbuffer,
 };
+use searchkernel_protocol::protocol::v2 as wire;
+use searchkernel_protocol::target::{request_index_target, RequestTargetError};
 
 const RICH_REQUEST: &[u8] = br#"
 {
@@ -318,6 +320,200 @@ fn standard_json_preserves_textual_filter_clause_bindings() {
     let again = request_json_to_flatbuffer(&printed).expect("printed textual filter JSON");
     let printed_again = request_flatbuffer_to_json(&again).expect("textual filter JSON again");
     assert_eq!(printed_again, printed);
+}
+
+#[test]
+fn multi_index_protocol_baseline_pins_wire_layout() {
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_InsertRequest.0, 1);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_UpsertRequest.0, 2);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_PatchRequest.0, 3);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_DeleteRequest.0, 4);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_GetRequest.0, 5);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_SearchRequest.0, 6);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_AnalyzeRequest.0, 7);
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_DescribeRequest.0, 8);
+    assert_eq!(
+        wire::RequestPayload::SearchKernel_V2_InspectQueryRequest.0,
+        9
+    );
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_UpdateRequest.0, 10);
+    assert_eq!(
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest.0,
+        11
+    );
+    assert_eq!(wire::RequestPayload::SearchKernel_V2_OpenIndexRequest.0, 12);
+
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_InsertResult.0, 1);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_UpsertResult.0, 2);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_PatchResult.0, 3);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_DeleteResult.0, 4);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_GetResult.0, 5);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_SearchResult.0, 6);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_AnalyzeResult.0, 7);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_Error.0, 8);
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_DescribeResult.0, 9);
+    assert_eq!(
+        wire::ResponsePayload::SearchKernel_V2_InspectQueryResult.0,
+        10
+    );
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_UpdateResult.0, 11);
+    assert_eq!(
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult.0,
+        12
+    );
+    assert_eq!(wire::ResponsePayload::SearchKernel_V2_OpenIndexResult.0, 13);
+
+    // #848 establishes this layout as the compatibility baseline. Future
+    // protocol evolution appends fields/variants rather than reusing slots.
+    assert_eq!(wire::RequestEnvelope::VT_PROTOCOL_VERSION, 4);
+    assert_eq!(wire::RequestEnvelope::VT_PAYLOAD_TYPE, 6);
+    assert_eq!(wire::RequestEnvelope::VT_PAYLOAD, 8);
+    assert_eq!(wire::RequestEnvelope::VT_TARGET, 10);
+    assert_eq!(wire::ResponseEnvelope::VT_PROTOCOL_VERSION, 4);
+    assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD_TYPE, 6);
+    assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD, 8);
+
+    // Lifecycle tables introduced by #848 are part of the same durable
+    // compatibility baseline. Their field slots must remain append-only too.
+    assert_eq!(wire::IndexTarget::VT_NAME, 4);
+    assert_eq!(wire::CreateIndexRequest::VT_DEFINITION, 4);
+    assert_eq!(wire::CreateIndexResult::VT_INDEX, 4);
+    assert_eq!(wire::OpenIndexResult::VT_INDEX, 4);
+
+    // ErrorCode values are portable wire ABI and must never be renumbered.
+    assert_eq!(wire::ErrorCode::Unspecified.0, 0);
+    assert_eq!(wire::ErrorCode::InvalidArgument.0, 1);
+    assert_eq!(wire::ErrorCode::NotFound.0, 2);
+    assert_eq!(wire::ErrorCode::AlreadyExists.0, 3);
+    assert_eq!(wire::ErrorCode::FailedPrecondition.0, 4);
+    assert_eq!(wire::ErrorCode::Conflict.0, 5);
+    assert_eq!(wire::ErrorCode::Unsupported.0, 6);
+    assert_eq!(wire::ErrorCode::ResourceExhausted.0, 7);
+    assert_eq!(wire::ErrorCode::Internal.0, 8);
+    assert_eq!(wire::ErrorCode::Unavailable.0, 9);
+    assert_eq!(wire::ErrorCode::DeadlineExceeded.0, 10);
+}
+
+#[test]
+fn standard_json_round_trips_targeted_open_lifecycle() {
+    let input = br#"{
+      "protocol_version": 2,
+      "target": {"name": "products"},
+      "payload_type": "SearchKernel_V2_OpenIndexRequest",
+      "payload": {}
+    }"#;
+
+    let bytes = request_json_to_flatbuffer(input).expect("targeted open-index request JSON");
+    let envelope =
+        flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("targeted request envelope");
+    assert_eq!(request_index_target(envelope), Ok("products"));
+    assert_eq!(
+        envelope.payload_type(),
+        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest
+    );
+
+    let printed = request_flatbuffer_to_json(&bytes).expect("targeted open-index JSON printer");
+    let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+    assert_eq!(value["target"]["name"], "products");
+    assert_eq!(value["payload_type"], "SearchKernel_V2_OpenIndexRequest");
+
+    request_json_to_flatbuffer(&printed).expect("printed lifecycle JSON remains readable");
+}
+
+#[test]
+fn create_index_keeps_logical_target_and_schema_identity_distinct() {
+    let request = br#"{
+      "protocol_version": 2,
+      "target": {"name": "catalog-a"},
+      "payload_type": "SearchKernel_V2_CreateIndexRequest",
+      "payload": {
+        "definition": {
+          "name": "product_schema",
+          "fields": []
+        }
+      }
+    }"#;
+    let request_bytes = request_json_to_flatbuffer(request).expect("create-index request JSON");
+    let envelope =
+        flatbuffers::root::<wire::RequestEnvelope<'_>>(&request_bytes).expect("request envelope");
+    assert_eq!(request_index_target(envelope), Ok("catalog-a"));
+    assert_eq!(
+        envelope.payload_type(),
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest
+    );
+
+    let request_printed =
+        request_flatbuffer_to_json(&request_bytes).expect("create-index JSON printer");
+    let request_value: serde_json::Value =
+        serde_json::from_slice(&request_printed).expect("valid request JSON");
+    assert_eq!(request_value["target"]["name"], "catalog-a");
+    assert_eq!(
+        request_value["payload_type"],
+        "SearchKernel_V2_CreateIndexRequest"
+    );
+    assert_eq!(
+        request_value["payload"]["definition"]["name"],
+        "product_schema"
+    );
+
+    for (payload_type, schema_name) in [
+        ("SearchKernel_V2_CreateIndexResult", "product_schema"),
+        ("SearchKernel_V2_OpenIndexResult", "product_schema"),
+    ] {
+        let response = format!(
+            r#"{{
+              "protocol_version": 2,
+              "payload_type": "{payload_type}",
+              "payload": {{"index": {{"name": "{schema_name}", "fields": []}}}}
+            }}"#
+        );
+        let bytes =
+            response_json_to_flatbuffer(response.as_bytes()).expect("lifecycle response JSON");
+        let printed = response_flatbuffer_to_json(&bytes).expect("lifecycle response JSON printer");
+        let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+        assert_eq!(value["payload_type"], payload_type);
+        assert_eq!(value["payload"]["index"]["name"], schema_name);
+    }
+}
+
+#[test]
+fn targetless_frames_remain_valid_for_embedded_callers_but_not_daemon_routing() {
+    let input = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_DescribeRequest",
+      "payload": {}
+    }"#;
+
+    let bytes = request_json_to_flatbuffer(input).expect("embedded targetless request JSON");
+    let envelope = flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes)
+        .expect("targetless request envelope");
+    assert_eq!(
+        request_index_target(envelope),
+        Err(RequestTargetError::Missing)
+    );
+
+    let printed = request_flatbuffer_to_json(&bytes).expect("targetless JSON printer");
+    let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+    assert!(value.get("target").is_none());
+    assert_eq!(value["payload_type"], "SearchKernel_V2_DescribeRequest");
+}
+
+#[test]
+fn request_target_validation_rejects_path_syntax_after_structural_decode() {
+    let input = br#"{
+      "protocol_version": 2,
+      "target": {"name": "../products"},
+      "payload_type": "SearchKernel_V2_OpenIndexRequest",
+      "payload": {}
+    }"#;
+    let bytes = request_json_to_flatbuffer(input)
+        .expect("FlatBuffers schema permits a string before semantic target validation");
+    let envelope =
+        flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("request envelope");
+    assert!(matches!(
+        request_index_target(envelope),
+        Err(RequestTargetError::Invalid(_))
+    ));
 }
 
 #[test]

@@ -206,6 +206,16 @@ pub mod search_kernel {
         pub use self::onnx_model_definition_generated::*;
         mod rank_profile_definition_generated;
         pub use self::rank_profile_definition_generated::*;
+        mod index_target_generated;
+        pub use self::index_target_generated::*;
+        mod create_index_request_generated;
+        pub use self::create_index_request_generated::*;
+        mod create_index_result_generated;
+        pub use self::create_index_result_generated::*;
+        mod open_index_request_generated;
+        pub use self::open_index_request_generated::*;
+        mod open_index_result_generated;
+        pub use self::open_index_result_generated::*;
         mod index_definition_generated;
         pub use self::index_definition_generated::*;
         mod insert_request_generated;
