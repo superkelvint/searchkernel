@@ -10,10 +10,17 @@ use crate::search::{
     GroupingResultValue, HighlightFragment, HighlightResult, HighlightSpan, Hit, MatchFeatureValue,
     SearchResult, TotalHitsRelation,
 };
-use crate::tensor::TensorValue;
+use crate::tensor::{validate_dense, TensorValue};
 use searchkernel_vespa_bindings as sys;
 use std::collections::BTreeMap;
 use std::ptr::{self, NonNull};
+
+#[cfg(test)]
+static DENSE_DOCUMENT_FFI_CALLS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+#[cfg(test)]
+static DENSE_UPDATE_FFI_CALLS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 pub(crate) struct NativeError(pub(crate) [u8; sys::SK_ERROR_MESSAGE_CAPACITY as usize]);
 
@@ -526,9 +533,14 @@ pub(crate) fn add_document_field(
             }
         }
         FieldValue::Tensor(TensorValue::Dense { type_spec, values }) => {
+            validate_dense(type_spec, values).map_err(|error| {
+                Error::invalid_argument_detail(error.detail_code, error.message)
+            })?;
             let type_spec = cstring(type_spec)?;
             let value_count = u32::try_from(values.len())
                 .map_err(|_| Error::message("tensor value count exceeds native capacity"))?;
+            #[cfg(test)]
+            DENSE_DOCUMENT_FFI_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             unsafe {
                 sys::sk_document_add_tensor_dense(
                     document,
@@ -701,9 +713,14 @@ pub(crate) fn add_update_field(
             }
         }
         FieldUpdate::Assign(FieldValue::Tensor(TensorValue::Dense { type_spec, values })) => {
+            validate_dense(type_spec, values).map_err(|error| {
+                Error::invalid_argument_detail(error.detail_code, error.message)
+            })?;
             let type_spec = cstring(type_spec)?;
             let value_count = u32::try_from(values.len())
                 .map_err(|_| Error::message("tensor value count exceeds native capacity"))?;
+            #[cfg(test)]
+            DENSE_UPDATE_FFI_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             unsafe {
                 sys::sk_document_update_assign_tensor_dense(
                     update,
@@ -2613,6 +2630,41 @@ mod native_slice_tests {
     use crate::document::PredicateValue;
     use std::collections::BTreeMap;
     use std::ptr;
+
+    #[test]
+    fn malformed_dense_tensors_are_rejected_before_document_ffi() {
+        use crate::{FieldUpdate, FieldValue, TensorValue};
+        use std::sync::atomic::Ordering;
+
+        super::DENSE_DOCUMENT_FFI_CALLS.store(0, Ordering::Relaxed);
+        super::DENSE_UPDATE_FFI_CALLS.store(0, Ordering::Relaxed);
+        for tensor in [
+            TensorValue::dense("not-a-tensor", [1.0, 0.0]),
+            TensorValue::dense("tensor<float>(x[2],y[1])", [1.0, 0.0]),
+            TensorValue::dense("tensor<float>(x[3])", [1.0, 0.0]),
+        ] {
+            let expected = match &tensor {
+                TensorValue::Dense { type_spec, .. } if type_spec == "not-a-tensor" => {
+                    "tensor_type_spec_invalid"
+                }
+                TensorValue::Dense { type_spec, .. } if type_spec.contains(',') => {
+                    "tensor_shape_unsupported"
+                }
+                _ => "tensor_cell_count_mismatch",
+            };
+            let value = FieldValue::Tensor(tensor.clone());
+            let put = super::add_document_field(ptr::null_mut(), "embedding", &value)
+                .expect_err("invalid dense tensor must fail before native document use");
+            assert_eq!(put.detail_code(), Some(expected));
+
+            let update = FieldUpdate::Assign(FieldValue::Tensor(tensor));
+            let patch = super::add_update_field(ptr::null_mut(), "embedding", &update)
+                .expect_err("invalid dense tensor must fail before native update use");
+            assert_eq!(patch.detail_code(), Some(expected));
+        }
+        assert_eq!(super::DENSE_DOCUMENT_FFI_CALLS.load(Ordering::Relaxed), 0);
+        assert_eq!(super::DENSE_UPDATE_FFI_CALLS.load(Ordering::Relaxed), 0);
+    }
 
     #[test]
     fn predicate_expression_normalization_preserves_expression_provenance() {
