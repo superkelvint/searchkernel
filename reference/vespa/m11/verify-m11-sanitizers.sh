@@ -141,11 +141,7 @@ run_lane() {
   local runtime_sdk_path="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   local resolved_adapter
   resolved_adapter=$(LD_LIBRARY_PATH="$runtime_sdk_path" ldd "$binary" |
-    awk '/libsearchkernel_vespa\.so/ {
-      for (index = 1; index <= NF; ++index) {
-        if ($index ~ /^\//) { print $index; exit }
-      }
-    }')
+    m11_adapter_path_from_ldd)
   if [[ -z "$resolved_adapter" ||
         "$(readlink -f "$resolved_adapter")" != "$(readlink -f "$sdk/lib/libsearchkernel_vespa.so.2")" ]]; then
     fail_verification "M11 $lane driver does not resolve the sanitizer adapter from $sdk/lib"

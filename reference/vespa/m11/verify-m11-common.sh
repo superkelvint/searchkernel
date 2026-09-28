@@ -13,6 +13,14 @@ M11_CARGO_TARGET="$CARGO_TARGET_DIR"
 M11_DRIVER="$M11_CARGO_TARGET/debug/searchkernel-m11-driver"
 M11_DEPS="${VESPA_DEPS:-$ROOT/vespa-deps}"
 
+m11_adapter_path_from_ldd() {
+  awk '/libsearchkernel_vespa\.so/ {
+    for (i = 1; i <= NF; ++i) {
+      if ($i ~ /^\//) { print $i; exit }
+    }
+  }'
+}
+
 stage_m11_driver_adapter() {
   local driver="${1:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
   local runtime_sdk="${2:?stage_m11_driver_adapter <driver> <runtime-sdk>}"

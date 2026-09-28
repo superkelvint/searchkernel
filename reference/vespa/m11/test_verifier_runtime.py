@@ -84,7 +84,43 @@ class M11VerifierRuntimeTests(unittest.TestCase):
         stage = sanitizer.index('stage_m11_driver_adapter "$binary" "$sdk"')
         resolve = sanitizer.index('resolved_adapter=$(LD_LIBRARY_PATH=')
         self.assertLess(stage, resolve)
-        self.assertIn("for (index = 1; index <= NF; ++index)", sanitizer)
+        self.assertIn("m11_adapter_path_from_ldd", sanitizer)
+
+    def test_ldd_parser_accepts_origin_and_legacy_shapes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            m11 = root / "reference/vespa/m11"
+            common = root / "reference/vespa/common/verify-common.sh"
+            m11.mkdir(parents=True)
+            common.parent.mkdir(parents=True)
+            (m11 / "verify-m11-common.sh").write_text(COMMON.read_text())
+            common.write_text(
+                'fail_verification() { echo "verification error: $*" >&2; return 1; }\n'
+            )
+            env = os.environ.copy()
+            env["CARGO_TARGET_DIR"] = str(root / "cargo-target")
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    f"source {m11 / 'verify-m11-common.sh'}; m11_adapter_path_from_ldd",
+                ],
+                cwd=root,
+                env=env,
+                text=True,
+                input=(
+                    "/tmp/debug/.searchkernel-native/libsearchkernel_vespa.so.2 (0x1234)\n"
+                    "libsearchkernel_vespa.so.2 => /tmp/sdk/lib/libsearchkernel_vespa.so.2 (0x5678)\n"
+                ),
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                result.stdout.strip(),
+                "/tmp/debug/.searchkernel-native/libsearchkernel_vespa.so.2",
+            )
+
 
 
 if __name__ == "__main__":
