@@ -64,3 +64,8 @@ jobs:
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
             '
+
+      - name: Run PR 849 multi-index regression
+        if: github.event_name == 'pull_request' && github.event.pull_request.number == 849
+        shell: bash
+        run: ./dev test searchkerneld-multi-index
