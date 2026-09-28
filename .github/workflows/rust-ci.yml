@@ -48,6 +48,8 @@ jobs:
               "$flatc_bin" --binary --schema -I api \
                 -o core/crates/searchkernel-protocol/bfbs api/searchkernel_response.fbs
               ./dev check-protocol
+              python3 tools/check-capabilities.py --write
+              python3 tools/check-capabilities.py --check
               chown -R "$HOST_UID:$HOST_GID" /work
             '
 
@@ -59,7 +61,9 @@ jobs:
           git add -f -- \
             core/crates/searchkernel-protocol/src/generated \
             core/crates/searchkernel-protocol/bfbs \
-            clients/python/searchkernel/_wire_generated
+            clients/python/searchkernel/_wire_generated \
+            docs/CAPABILITIES.md \
+            LIMITATIONS.md
           if git diff --cached --quiet; then
             echo "generated protocol artifacts already current"
           else
@@ -109,4 +113,10 @@ jobs:
 
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+
+              echo "== protocol tests =="
+              cargo test -p searchkernel-protocol --all-targets --no-default-features --locked
+
+              echo "== dispatcher tests =="
+              cargo test -p searchkernel-dispatch --all-targets --no-default-features --locked
             '
