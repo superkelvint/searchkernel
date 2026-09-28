@@ -3,6 +3,8 @@ include "searchkernel.fbs";
 namespace SearchKernel.Protocol.V2;
 
 union RequestPayload {
+  SearchKernel.V2.CreateIndexRequest,
+  SearchKernel.V2.OpenIndexRequest,
   SearchKernel.V2.InsertRequest,
   SearchKernel.V2.UpsertRequest,
   SearchKernel.V2.PatchRequest,
@@ -19,6 +21,13 @@ table RequestEnvelope {
   // Zero is deliberately invalid. A V1 writer that omits its default version
   // must decode as zero and be rejected rather than masquerading as V2.
   protocol_version:uint = 0;
+
+  // Canonical logical daemon target. New multi-index daemon routing requires
+  // this field for lifecycle and index-scoped operations. It is optional at the
+  // raw FlatBuffers level so old V2 frames still parse and can be rejected with
+  // an explicit missing-target error rather than being mistaken for malformed
+  // bytes. Per-index embedded/test dispatchers may remain target-agnostic.
+  target:SearchKernel.V2.IndexTarget;
   payload:RequestPayload;
 }
 
