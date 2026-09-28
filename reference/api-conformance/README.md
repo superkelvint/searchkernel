@@ -28,7 +28,7 @@ This suite tests:
 
 This suite deliberately does **not** freeze bulk execution, browse, grouping, presets, synonyms, curations, daemon lifecycle/management state, analyzer execution, or backend result mapping. Those v0.4 cases are classified in `migration/v0.4-classification.json`.
 
-Multi-index daemon targeting and create/open lifecycle are now a frozen **protocol/control-plane** contract, not API→IR semantics. Their conformance authority is `api/searchkernel_request.fbs`, `searchkernel-protocol::target`, the protocol standard-JSON tests, and dispatcher ingress tests. Do not infer daemon lifecycle semantics from this IR corpus or add a second lifecycle model here.
+Multi-index daemon targeting and create/open lifecycle are a **protocol/control-plane** contract, not API→IR semantics. #848 establishes their forward-compatibility baseline. Their conformance authority is `api/searchkernel_request.fbs`, `searchkernel-protocol::target`, the protocol standard-JSON tests, and dispatcher ingress tests. Do not infer daemon lifecycle semantics from this IR corpus or add a second lifecycle model here.
 
 Run:
 
