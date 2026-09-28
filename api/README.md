@@ -40,12 +40,17 @@ through these schemas merely to reach the local engine.
   `IndexDefinition.name` is schema identity, not daemon routing identity, and
   may differ from the enclosing logical target. Closing a client handle is not
   a server-side unload operation.
-- Multi-index routing uses stable portable lifecycle details: missing target is
+- Multi-index routing uses stable portable lifecycle details. Direct top-level
+  operation ingress is `InvalidArgument` / `targeted_request_required` at
+  `payload_type`; a malformed/empty targeted wrapper is `InvalidArgument` /
+  `invalid_targeted_request` at `payload`; missing target is
   `InvalidArgument` / `missing_index_target` at `target`; malformed target
   is `InvalidArgument` / `invalid_index_target` at `target.name`; strict
   create collision is `AlreadyExists` / `index_already_exists`; strict open
-  miss is `NotFound` / `index_not_found`. Transport layers must preserve
-  these domain errors rather than replacing them with HTTP/gRPC-only semantics.
+  miss is `NotFound` / `index_not_found`. The corresponding detail/path
+  strings are exported by `searchkernel_protocol::target` so the router does
+  not invent transport-local spellings. Transport layers must preserve these
+  domain errors rather than replacing them with HTTP/gRPC-only semantics.
 - The schemas describe the portable contract; they do not implement search.
 
 Generated Rust protocol code belongs under
