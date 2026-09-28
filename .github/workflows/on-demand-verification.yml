@@ -1,0 +1,213 @@
+name: On-demand verification
+
+run-name: >-
+  ${{ inputs.operation }} ${{ inputs.target }} @ ${{ inputs.revision }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Exact 40-character commit SHA to verify
+        required: true
+        type: string
+      operation:
+        description: Bounded canonical operation
+        required: true
+        type: choice
+        options:
+          - test
+          - verify
+      target:
+        description: Canonical target or registered alias from build/targets.json
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    on-demand-verification-${{ inputs.revision }}-${{ inputs.operation }}-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: exact-SHA ${{ inputs.operation }} ${{ inputs.target }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 120
+
+    steps:
+      - name: Require trusted default-branch control plane
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          expected="refs/heads/${DEFAULT_BRANCH}"
+          if [[ "${GITHUB_REF}" != "${expected}" ]]; then
+            echo "error: dispatch this workflow from the default branch (${DEFAULT_BRANCH}), not ${GITHUB_REF}" >&2
+            exit 2
+          fi
+
+      - name: Validate exact revision input
+        shell: bash
+        env:
+          REVISION: ${{ inputs.revision }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${REVISION}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "error: revision must be an exact 40-character commit SHA" >&2
+            exit 2
+          fi
+
+      - name: Check out requested revision as untrusted subject
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision }}
+          path: subject
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prove checked-out revision
+        id: subject
+        shell: bash
+        working-directory: subject
+        env:
+          REVISION: ${{ inputs.revision }}
+        run: |
+          set -euo pipefail
+          requested=$(printf '%s' "${REVISION}" | tr '[:upper:]' '[:lower:]')
+          observed=$(git rev-parse HEAD)
+          if [[ "${observed}" != "${requested}" ]]; then
+            echo "error: requested revision ${requested}, checked out ${observed}" >&2
+            exit 2
+          fi
+          printf 'sha=%s\n' "${observed}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate target against repository authority
+        id: target
+        shell: bash
+        working-directory: subject
+        env:
+          OPERATION: ${{ inputs.operation }}
+          REQUESTED_TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          canonical=$(python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          operation = os.environ["OPERATION"]
+          requested = os.environ["REQUESTED_TARGET"]
+          if operation not in {"test", "verify"}:
+              raise SystemExit(f"unsupported operation: {operation}")
+
+          registry_path = pathlib.Path("build/targets.json")
+          pairs_seen = []
+
+          def reject_duplicates(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError(f"duplicate key: {key}")
+                  result[key] = value
+              return result
+
+          registry = json.loads(
+              registry_path.read_text(encoding="utf-8"),
+              object_pairs_hook=reject_duplicates,
+          )
+          entries = registry.get(operation)
+          if not isinstance(entries, dict):
+              raise SystemExit(f"registry has no {operation!r} target map")
+
+          for target, metadata in entries.items():
+              aliases = metadata.get("aliases", []) if isinstance(metadata, dict) else []
+              if requested == target or requested in aliases:
+                  print(target)
+                  break
+          else:
+              raise SystemExit(
+                  f"unknown {operation} target: {requested}; "
+                  f"inspect build/targets.json for supported targets"
+              )
+          PY
+          )
+          if [[ -z "${canonical}" ]]; then
+            echo "error: target resolution returned an empty target" >&2
+            exit 2
+          fi
+          printf 'target=%s\n' "${canonical}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run canonical verification
+        id: execute
+        shell: bash
+        working-directory: subject
+        env:
+          OPERATION: ${{ inputs.operation }}
+          CANONICAL_TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          set -euo pipefail
+          printf 'canonical command: ./dev %q %q\n' "${OPERATION}" "${CANONICAL_TARGET}"
+          ./dev "${OPERATION}" "${CANONICAL_TARGET}"
+
+      - name: Write structured evidence
+        if: always()
+        shell: bash
+        env:
+          REQUESTED_REVISION: ${{ inputs.revision }}
+          OBSERVED_REVISION: ${{ steps.subject.outputs.sha }}
+          OPERATION: ${{ inputs.operation }}
+          CANONICAL_TARGET: ${{ steps.target.outputs.target }}
+          RESULT: ${{ steps.execute.outcome }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          evidence_dir="${RUNNER_TEMP}/searchkernel-verification"
+          mkdir -p "${evidence_dir}"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          operation = os.environ["OPERATION"]
+          target = os.environ.get("CANONICAL_TARGET", "")
+          evidence = {
+              "requested_revision": os.environ["REQUESTED_REVISION"].lower(),
+              "revision": os.environ.get("OBSERVED_REVISION", ""),
+              "operation": operation,
+              "target": target,
+              "canonical_command": f"./dev {operation} {target}".rstrip(),
+              "result": os.environ.get("RESULT", "not-run"),
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "run_url": (
+                  f"{os.environ['SERVER_URL']}/{os.environ['REPOSITORY']}"
+                  f"/actions/runs/{os.environ['RUN_ID']}"
+              ),
+          }
+          path = Path(os.environ["RUNNER_TEMP"]) / "searchkernel-verification" / "evidence.json"
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(path.read_text(encoding="utf-8"))
+          PY
+
+          {
+            echo '### On-demand verification evidence'
+            echo
+            echo '~~~json'
+            cat "${evidence_dir}/evidence.json"
+            echo '~~~'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload structured evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/searchkernel-verification/evidence.json
+          if-no-files-found: error
+          retention-days: 14
