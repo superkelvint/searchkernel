@@ -149,7 +149,7 @@ fn describe_request(version: u32, kind: wire::RequestPayload) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
-fn targeted_request(kind: wire::TargetedRequestPayload) -> Vec<u8> {
+fn lifecycle_request(kind: wire::RequestPayload) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let target_name = builder.create_string("products");
     let target = api::IndexTarget::create(
@@ -158,8 +158,8 @@ fn targeted_request(kind: wire::TargetedRequestPayload) -> Vec<u8> {
             name: Some(target_name),
         },
     );
-    let inner_payload = match kind {
-        wire::TargetedRequestPayload::SearchKernel_V2_CreateIndexRequest => {
+    let payload = match kind {
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
             let definition =
                 api::IndexDefinition::create(&mut builder, &api::IndexDefinitionArgs::default());
             api::CreateIndexRequest::create(
@@ -170,53 +170,19 @@ fn targeted_request(kind: wire::TargetedRequestPayload) -> Vec<u8> {
             )
             .as_union_value()
         }
-        wire::TargetedRequestPayload::SearchKernel_V2_OpenIndexRequest => {
+        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
             api::OpenIndexRequest::create(&mut builder, &api::OpenIndexRequestArgs::default())
                 .as_union_value()
         }
-        wire::TargetedRequestPayload::SearchKernel_V2_SearchRequest => {
-            api::SearchRequest::create(&mut builder, &api::SearchRequestArgs::default())
-                .as_union_value()
-        }
-        other => panic!("unsupported targeted test request: {other:?}"),
+        other => panic!("not a lifecycle request: {other:?}"),
     };
-    let targeted = wire::TargetedRequest::create(
+    let envelope = wire::RequestEnvelope::create(
         &mut builder,
-        &wire::TargetedRequestArgs {
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
             payload_type: kind,
-            payload: Some(inner_payload),
-        },
-    );
-    let envelope = wire::RequestEnvelope::create(
-        &mut builder,
-        &wire::RequestEnvelopeArgs {
-            protocol_version: PROTOCOL_VERSION,
-            target: Some(target),
-            payload_type: wire::RequestPayload::TargetedRequest,
-            payload: Some(targeted.as_union_value()),
-        },
-    );
-    wire::finish_request_envelope_buffer(&mut builder, envelope);
-    builder.finished_data().to_vec()
-}
-
-fn direct_search_with_target() -> Vec<u8> {
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let target_name = builder.create_string("products");
-    let target = api::IndexTarget::create(
-        &mut builder,
-        &api::IndexTargetArgs {
-            name: Some(target_name),
-        },
-    );
-    let search = api::SearchRequest::create(&mut builder, &api::SearchRequestArgs::default());
-    let envelope = wire::RequestEnvelope::create(
-        &mut builder,
-        &wire::RequestEnvelopeArgs {
-            protocol_version: PROTOCOL_VERSION,
-            target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
-            payload: Some(search.as_union_value()),
+            payload: Some(payload),
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
@@ -259,7 +225,7 @@ fn expected_search_operation() -> OperationIr {
 }
 
 #[test]
-fn frozen_pre_target_v2_request_preserves_original_envelope_slots() {
+fn targetless_embedded_request_remains_valid_without_daemon_routing() {
     let request = canonical_search_request();
     let envelope = root::<wire::RequestEnvelope<'_>>(&request).unwrap();
 
@@ -320,39 +286,17 @@ fn accepts_v2_and_rejects_stale_or_future_protocols() {
 }
 
 #[test]
-fn per_index_dispatcher_does_not_own_daemon_routing_or_lifecycle() {
-    let recording = Arc::new(RecordingBackend::new());
-    let dispatcher = Dispatcher::from_backend(context(), recording.clone());
+fn per_index_dispatcher_does_not_own_daemon_lifecycle() {
+    let dispatcher = Dispatcher::from_backend(context(), Arc::new(RecordingBackend::new()));
     for kind in [
-        wire::TargetedRequestPayload::SearchKernel_V2_SearchRequest,
-        wire::TargetedRequestPayload::SearchKernel_V2_CreateIndexRequest,
-        wire::TargetedRequestPayload::SearchKernel_V2_OpenIndexRequest,
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
     ] {
         assert_eq!(
-            dispatcher.dispatch(&targeted_request(kind)),
-            Err(DispatchError::UnsupportedOperation(
-                wire::RequestPayload::TargetedRequest.0
-            ))
+            dispatcher.dispatch(&lifecycle_request(kind)),
+            Err(DispatchError::UnsupportedOperation(kind.0))
         );
     }
-    assert!(
-        recording.take_calls().is_empty(),
-        "targeted daemon requests must not execute in a per-index dispatcher"
-    );
-}
-
-#[test]
-fn per_index_dispatcher_rejects_direct_operation_with_forged_target() {
-    let recording = Arc::new(RecordingBackend::new());
-    let dispatcher = Dispatcher::from_backend(context(), recording.clone());
-    assert_eq!(
-        dispatcher.dispatch(&direct_search_with_target()),
-        Err(DispatchError::InvalidRequest)
-    );
-    assert!(
-        recording.take_calls().is_empty(),
-        "a direct operation carrying target metadata must fail before execution"
-    );
 }
 
 #[test]
