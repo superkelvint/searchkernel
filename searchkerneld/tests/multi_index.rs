@@ -6,7 +6,7 @@ use searchkerneld::{IndexRegistry, RegistryDispatchError};
 use std::{
     fs,
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, Barrier},
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -369,6 +369,105 @@ fn concurrent_same_name_create_has_one_winner() {
     assert_eq!(created, 1);
     assert_eq!(already_exists, 5);
     registry.close_all().expect("close registry");
+}
+
+
+#[test]
+fn concurrent_create_and_open_are_linearizable() {
+    let temp = TempDir::new("create-open-race");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let barrier = Arc::new(Barrier::new(2));
+
+    let creator = {
+        let registry = registry.clone();
+        let barrier = barrier.clone();
+        thread::spawn(move || {
+            barrier.wait();
+            registry
+                .dispatch(&create_request("products", "title"))
+                .expect("dispatch create")
+        })
+    };
+    let opener = {
+        let registry = registry.clone();
+        let barrier = barrier.clone();
+        thread::spawn(move || {
+            barrier.wait();
+            registry
+                .dispatch(&open_request(Some("products")))
+                .expect("dispatch open")
+        })
+    };
+
+    let create_bytes = creator.join().expect("creator");
+    assert_eq!(
+        response(&create_bytes).payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult
+    );
+
+    let open_bytes = opener.join().expect("opener");
+    let open_envelope = response(&open_bytes);
+    match open_envelope.payload_type() {
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult => {}
+        wire::ResponsePayload::SearchKernel_V2_Error => {
+            let error = open_envelope
+                .payload_as_search_kernel_v2_error()
+                .expect("open error payload");
+            assert_eq!(
+                error.code(),
+                api::ErrorCode::NotFound,
+                "an open that linearizes before create may only report NotFound"
+            );
+        }
+        other => panic!("unexpected create/open race response: {other:?}"),
+    }
+
+    assert_eq!(
+        registry.loaded_targets().expect("loaded targets"),
+        vec!["products".to_owned()]
+    );
+    assert_lifecycle(
+        &registry
+            .dispatch(&open_request(Some("products")))
+            .expect("final open"),
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+    );
+    registry.close_all().expect("close registry");
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_symlinked_target_directory_without_following_it() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new("symlink-target");
+    let outside = TempDir::new("symlink-outside");
+    symlink(&outside.0, temp.0.join("products")).expect("create target symlink");
+
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    let bytes = registry
+        .dispatch(&open_request(Some("products")))
+        .expect("semantic lifecycle response");
+    let envelope = response(&bytes);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
+    );
+    let error = envelope
+        .payload_as_search_kernel_v2_error()
+        .expect("error payload");
+    assert_eq!(error.code(), api::ErrorCode::FailedPrecondition);
+    assert_eq!(
+        error.details().expect("error details").get(0).code(),
+        Some("unsafe_index_path")
+    );
+    assert!(
+        fs::read_dir(&outside.0)
+            .expect("read outside directory")
+            .next()
+            .is_none(),
+        "daemon must not follow a target symlink outside its data root"
+    );
 }
 
 #[test]
