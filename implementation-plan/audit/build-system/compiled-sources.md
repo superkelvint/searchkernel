@@ -1,8 +1,9 @@
 # Compiled-source inventory
 
 This table enumerates every compiled-language source under `reference/vespa`
-at the M1 inventory snapshot. It is evidence for the 55 active + 14 oracle +
-1 uncertain split documented in `README.md`.
+at audited `main` commit `287fe2413e0af376340d59b39146791fd79e9935`. It is
+evidence for the 55 active + 14 oracle + 1 uncertain split documented in
+`README.md`.
 
 | Path | Language | Role | Classification |
 | --- | --- | --- | --- |

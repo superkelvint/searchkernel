@@ -7,7 +7,7 @@ architecture.
 
 Snapshot:
 
-- audited tree: `main` at `c9414622fbc8da7f851bcafa65bd2efd15990913`;
+- audited tree: `main` at `287fe2413e0af376340d59b39146791fd79e9935`;
 - design audit baseline: `19ddb707eb2e966e49daab09d011252bb5bfef1c`;
 - tracker: #819; atomic inventory work: #825.
 
@@ -42,23 +42,26 @@ The classifications are the roadmap vocabulary:
    volume per invocation and delete it afterward. Shared `sccache` is
    non-authoritative and persistent, but the M1 requirement for persistent
    per-worktree + compatible-environment writable incremental output is not yet
-   established or benchmarked.
+   established or benchmarked. The revised M1 acceptance now explicitly requires
+   repeated first-class `./dev test <scope>` runs in fresh canonical containers,
+   including a Ruby run that proves no Rust/native rebuild, SDK reconstruction,
+   runtime download, or unnecessary code generation on the second run.
 6. The compiled-source audit has not drifted: 70 compiled-language files under
    `reference/vespa` = 55 active verifier sources + 14 oracle/golden-authoring
-   sources + 1 uncertain compile fixture. See `compiled-sources.md`.
+   sources + 1 uncertain compile fixture. The set and role counts were rechecked
+   against this snapshot and the design audit baseline. See `compiled-sources.md`.
 7. The P0 native-runtime topology/delivery decision remains separate work. Issue
    #807 owns the active static/shared topology investigation; this inventory does
    not change production runtime behavior.
-8. The reduced workflow set left a broader stale control-plane surface behind.
-   Current `main` contains only `rust-ci.yml` and `rustfmt-autofix.yml`, but
-   executable policy/tests still name ten other deleted workflow files. Sixteen
-   tracked files still name `ci-image-runner.yml` specifically. The newly landed
-   `c9414622` repair removed that dependency from `tools/test-ci-image-publishing.sh`,
-   but `./dev check-fast` still fails later in
-   `reference/vespa/verifiers/test-routing.sh` when it dereferences the same
-   deleted runner. Separate tool tests also fail on deleted
-   `client-capabilities.yml` and `issue-queue-reconcile.yml`. This is pre-existing
-   convergence debt, not behavior introduced by this documentation change.
+8. Current `main` still registers only `rust-ci.yml` and `rustfmt-autofix.yml`
+   under `.github/workflows`. The former `ci-image-runner.yml` now exists at
+   `.github/ci/ci-image-runner.yml` as structural/reference data; its header
+   explicitly says GitHub Actions does not register it. CI policy/tests and
+   verifier routing have moved to that path, but a few consumers still point to
+   the removed `.github/workflows/ci-image-runner.yml`, and nine other removed
+   workflow names remain referenced by executable/test code. Those stale
+   workflow contracts remain convergence debt. Current command outcomes are
+   recorded only after re-running them against this snapshot.
 9. Oracle execution is not yet explicit-only. `live_oracle_enabled()` defaults
    `SEARCHKERNEL_VERIFY_LIVE_ORACLE` to `auto`, so normal local verifier paths can
    execute live/prebuilt oracles when they are not using the published toolchain.
@@ -111,6 +114,7 @@ already existed.
 | `dev` | **CALLER** | Resolves canonical tools once, then invokes Cargo/interpreters for normal repository operations. |
 | `.github/workflows/rust-ci.yml` | **TEMPORARY COMPATIBILITY** | PR gate directly embeds `cargo fmt`, `cargo check`, and `cargo clippy`; M2 is intended to delegate this to `./dev ci`. |
 | `.github/workflows/rustfmt-autofix.yml` | **CALLER** | Runs pinned rustfmt inside the canonical image for untrusted PR formatting. |
+| `.github/ci/ci-image-runner.yml` | **TEMPORARY COMPATIBILITY** | Retained structural/reference workflow contract consumed by CI policy and verifier-routing tests; intentionally outside `.github/workflows`, so GitHub Actions does not register it as a workflow. |
 | `reference/vespa/**/rust-driver/Cargo.toml` and `reference/vespa/api-contract/Cargo.toml` | **TEMPORARY COMPATIBILITY** | 18 standalone verifier Cargo workspaces outside the normal product workspace. |
 | `tools/check-native-bindings/Cargo.toml`, `tools/rpc-codegen/Cargo.toml` | **CALLER** | Purpose-specific repository tooling Cargo projects. |
 | `reference/vespa/**/oracle/build-*.sh` | **ORACLE AUTHORING** | Direct C++/Java oracle compilation for independent behavioral evidence. |
@@ -131,6 +135,7 @@ already existed.
 | `tools/ensure-ci-sccache.sh` | **CALLER** | Provides shared non-authoritative compiler cache keyed by compatible toolchain identity. |
 | `.github/workflows/rust-ci.yml` | **TEMPORARY COMPATIBILITY** | Direct Docker launcher for the small PR gate rather than `./dev ci`. |
 | `.github/workflows/rustfmt-autofix.yml` | **CALLER** | Pulls the canonical leaf and runs pinned rustfmt inside it before credential-separated writeback. |
+| `.github/ci/ci-image-runner.yml` | **TEMPORARY COMPATIBILITY** | Structural/reference runner contract used by CI policy, fixtures, and local verifier routing; it is not a registered Actions workflow. |
 | `tools/ci/runner-bootstrap/{install,verify}.sh` | **CALLER** | Self-hosted runner Docker/bootstrap validation. |
 | `reference/vespa/{m4,m8,m9,m10}/oracle/run-cpp-oracle.sh` | **ORACLE AUTHORING** | Docker-backed independent oracle execution where needed. |
 | `docker/searchkernel-ci/base.Dockerfile` | **DEAD / SUSPECTED DEAD** | Historical composite image recipe that copies Vespa payload into the image. No tracked caller references this actual path; tests only use the basename as a forbidden token or temporary fixture name. Prove dead before deletion. |
@@ -159,7 +164,7 @@ and does not republish the Vespa bytes.
 | --- | --- | --- |
 | `searchkernel-ci-toolchain:<toolchain-id>` | `tools/publish-searchkernel-ci-toolchain.sh` | `tools/publish-searchkernel-ci-image.sh` resolves its digest and passes it to `docker/searchkernel-ci/Dockerfile` as the leaf runtime base. |
 | `searchkernel-ci-vespa:<vespa-commit>-<bundle-id>` | `tools/publish-searchkernel-ci-vespa.sh` | `tools/publish-searchkernel-ci-image.sh` uses it read-only for leaf build-time compatibility/native validation; `tools/ensure-ci-vespa-volume.sh` materializes the exact leaf-recorded digest for runtime verification. |
-| `searchkernel-ci:<searchkernel-revision>` (plus promoted `:latest`) | `tools/publish-searchkernel-ci-image.sh` | `tools/run-in-ci-image.sh`, `.github/workflows/rust-ci.yml`, and `.github/workflows/rustfmt-autofix.yml` pull/run the leaf; the local runner then resolves the leaf-recorded Vespa digest separately. |
+| `searchkernel-ci:<searchkernel-revision>` (plus promoted `:latest`) | `tools/publish-searchkernel-ci-image.sh` | `tools/run-in-ci-image.sh`, `.github/workflows/rust-ci.yml`, and `.github/workflows/rustfmt-autofix.yml` pull/run the leaf; the local runner then resolves the leaf-recorded Vespa digest separately. `.github/ci/ci-image-runner.yml` also records this execution contract but is not registered as a workflow. |
 
 This map is intentionally about the **development/CI images**. The host native
 base and future consumer-runtime artifact have separate identities and must not
@@ -256,7 +261,7 @@ design audit:
 | **Total** | **50** | **4** | **12** | **4** | **70** |
 
 The compiled-language file set is unchanged from the design audit baseline to
-this snapshot: diffing `19ddb707...c9414622` under `reference/vespa` yields no
+this snapshot: diffing `19ddb707...287fe241` under `reference/vespa` yields no
 added, removed, or modified `.rs`, `.c`, `.cc`, `.cpp`, or `.java` files. The
 current routing still explicitly selects the known API-contract bins and
 verifier drivers; `m-api.rs` remains the single source for which no normal
@@ -306,13 +311,14 @@ maintainer opts into live-oracle execution.
 | --- | --- | --- |
 | `.github/workflows/rust-ci.yml` | **TEMPORARY COMPATIBILITY** | Mandatory PR gate. It directly pulls/runs the canonical image and embeds fmt/check/clippy commands. |
 | `.github/workflows/rustfmt-autofix.yml` | **CALLER** | Isolated untrusted formatting plus credential-separated writeback. |
+| `.github/ci/ci-image-runner.yml` | **TEMPORARY COMPATIBILITY** | Structural/reference runner contract outside the registered workflow directory; it records exact-head execution for CI policy/verifier-routing checks. |
 | `.github/ci/resolve-native-adapter-lib.py` | **CALLER** | Active adapter-location helper used by current verifier, client-E2E, and release-packaging paths. |
 | `.github/ci/test_resolve_native_adapter_lib.py` | **CALLER** | Regression coverage for the active adapter resolver. |
 | `.github/ci/test_rustfmt_autofix.py` | **CALLER** | Regression coverage for the surviving `rustfmt-autofix.yml` workflow. |
-| Deleted-workflow policy/tests listed below | **TEMPORARY COMPATIBILITY** | Residual selector/runner/evidence/release/queue logic that still expects workflows removed from the current two-workflow CI surface; each must be reconciled before reuse. |
+| Deleted-workflow policy/tests listed below | **TEMPORARY COMPATIBILITY** | Residual selector/evidence/release/queue logic that still expects workflows removed from the current two-workflow CI surface; each must be reconciled before reuse. |
 | `.github/ci/check-python-workflows.sh` + `.github/ci/select-python.sh` | **DEAD / SUSPECTED DEAD** | No surviving workflow calls them; current references are residual tests/docs. Prove obsolete or reconnect deliberately. |
 | `tools/ci/runner-bootstrap/**` | **CALLER** | Self-hosted runner packaging/bootstrap/verification. |
-| `tools/test-ci-image-publishing.sh` | **CALLER** | Current image-publication regression test; `c9414622` removed its stale `ci-image-runner.yml` dependency. |
+| `tools/test-ci-image-publishing.sh` | **CALLER** | Current image-publication regression test; it does not depend on the structural CI runner file. |
 
 The current automatic PR gate is intentionally small, but it does **not** yet
 satisfy the M2 target state where GitHub Actions delegates the gate to
@@ -396,7 +402,9 @@ Current release/native artifact builders and checkers include:
 | `clients/typescript/scripts/verify-installed-managed-local-e2e.cjs` | **CALLER** | Installed TypeScript managed-local E2E path. |
 | `clients/typescript/tests/managed-local-host.test.ts` | **CALLER** | Node managed-local host behavior. |
 | `clients/php/tests/verify_package.sh` + `package_consumer.php` | **CALLER** | Composer/package consumer behavior. |
-| `dev:run_ruby_tests()` + `clients/ruby/searchkernel.gemspec` | **CALLER** | Builds and installs the gem into an isolated `GEM_HOME`, validates the installed package, then runs the real managed-local Ruby E2E from that installed gem. |
+| `dev:run_ruby_tests()` + `clients/ruby/searchkernel.gemspec` | **CALLER** | Builds and installs the gem into an isolated `GEM_HOME`, validates the installed package, then runs `try_searchkernel_client_api_e2e.rb` and `try_searchkernel_package_daemon_e2e.rb` from that installed gem. |
+| `clients/ruby/examples/run_searchkernel_package_daemon_e2e.sh` | **CALLER** | Builds/installs the Ruby gem in an isolated `GEM_HOME`, clears repository load-path overrides, and runs the real HTTP client against an externally owned daemon. |
+| `tools/run-python-native-e2e.sh --include-facade` | **CALLER** | Runs Python gRPC E2E and `clients/python/examples/try_searchkernel_client_api_e2e.py` under the shared managed-local runtime; the client-contract catalog invokes this combined lane. |
 | `reference/vespa/common/test-published-provenance.sh` | **CALLER** | Published native provenance contract. |
 
 These tests prove pieces of current packaging behavior; they do not by
@@ -423,13 +431,14 @@ These items should not be silently carried forward:
    deleted workflow surface below. `unit-tests.yml` is intentionally different:
    `check-ci-evidence-ownership.py` names it only as a file that must stay retired.
 
-Confirmed missing workflow names still consumed as if present:
+Confirmed missing workflow names still consumed as if present (the list excludes
+`ci-image-runner.yml`, whose structural/reference file now lives under
+`.github/ci/`):
 
 | Missing workflow | Tracked executable/test dependents |
 | --- | --- |
 | `abi-surface.yml` | `.github/ci/test_exact_head.py`; `.github/ci/test_native_verifier_runner.py`; `tools/test-native-build-hardening.sh`; `tools/test-native-environment-fingerprint.sh` |
 | `behavioral-verification.yml` | `.github/ci/behavioral_lanes_required.py`; `.github/ci/check-ci-evidence-ownership.py`; `.github/ci/native_verifier_required.py`; `.github/ci/test_behavioral_lanes_required.py`; `.github/ci/test_coverage_verifier_required.py`; `.github/ci/test_exact_head.py`; `.github/ci/test_native_verifier_required.py`; `.github/ci/test_tooling_invariant_required.py` |
-| `ci-image-runner.yml` | 16 paths listed below |
 | `client-capabilities-autofix-apply.yml` | `.github/ci/test_exact_head.py` |
 | `client-capabilities-autofix-prepare.yml` | `.github/ci/test_exact_head.py` |
 | `client-capabilities.yml` | `.github/ci/test_exact_head.py`; `tools/test_package_consumer_release.py` |
@@ -438,37 +447,38 @@ Confirmed missing workflow names still consumed as if present:
 | `nightly.yml` | `.github/ci/coverage_verifier_required.py`; `.github/ci/test_coverage_verifier_required.py` |
 | `persistence-compatibility.yml` | `.github/ci/test_ci_image_runner_isolation.py`; `tools/check-release-persistence-contract.py` |
 
-The 16 current `ci-image-runner.yml` references are:
+The remaining references to `ci-image-runner.yml` are split between the
+current structural/reference file and stale workflow-path contracts. The
+following four tracked files still dereference the removed
+`.github/workflows/ci-image-runner.yml` path:
 
 ```text
-.github/ci/check-ci-evidence-ownership.py
-.github/ci/check-self-hosted-rust-workflows.py
-.github/ci/coverage_verifier_required.py
-.github/ci/native_verifier_required.py
-.github/ci/test_behavioral_lanes_required.py
-.github/ci/test_ci_image_runner_isolation.py
-.github/ci/test_coverage_verifier_required.py
-.github/ci/test_exact_head.py
-.github/ci/test_native_verifier_runner.py
-.github/ci/test_tooling_invariant_required.py
-.github/ci/test_verification_cache_policy.py
-reference/vespa/verifiers/test-routing.sh
+tools/test-native-environment-fingerprint.sh
 tools/check-native-consumer-contract.py
 tools/check-release-persistence-contract.py
 tools/check-release-support.py
-tools/test-native-environment-fingerprint.sh
 ```
 
-Reproduce that subset with:
+The current structural/reference consumers use `.github/ci/ci-image-runner.yml`:
+
+```bash
+git grep -l 'ci-image-runner.yml' -- .github tools reference | sort
+```
+
+This broad search returns both valid structural-file consumers and the stale
+workflow-path contracts above; inspect the resolved path before treating a name
+match as a missing workflow.
+
+Reproduce the broad path-name inventory with:
 
 ```bash
 git grep -l ci-image-runner.yml -- .github tools reference | sort
 ```
 
-Current observable consequences include:
+Current observable consequences re-run from this snapshot:
 
-- `./dev check-fast` reaches `reference/vespa/verifiers/test-routing.sh` and
-  fails because `.github/workflows/ci-image-runner.yml` is absent;
+- `./dev check-fast` passes, including verifier routing through the structural
+  runner at `.github/ci/ci-image-runner.yml`;
 - `python3 tools/test_package_consumer_release.py -v` errors in
   `test_client_capability_workflow_watches_every_rust_bundle_input` because
   `.github/workflows/client-capabilities.yml` is absent;
@@ -476,7 +486,7 @@ Current observable consequences include:
   `test_write_capable_reconciler_uses_trusted_pr_close_trigger` because
   `.github/workflows/issue-queue-reconcile.yml` is absent.
 
-These failures are useful inventory evidence, not a reason to restore historical
+These errors are useful inventory evidence, not a reason to restore historical
 workflow topology blindly. M2 must decide which policy survives behind the new
 thin `./dev ci` / on-demand verification model and delete obsolete guards only
 after their intended invariant is either migrated or explicitly retired.
@@ -529,11 +539,11 @@ and 1 uncertain; language totals must be 50 Rust, 4 C, 12 C++, and 4 Java.
 | Standalone verifier workspaces | The exact 18 `reference/vespa/**/Cargo.toml` paths are listed. |
 | Active C/C++ verifier compilation | The exact four C and two C++ current-implementation probe sources and their runners are listed. |
 | Direct oracle compilation/execution | `compiled-sources.md` marks all 14 oracle sources; “Direct oracle compilation and execution” records their build/run and golden-authoring entrypoints. |
-| GitHub Actions workflows | “GitHub Actions and CI-only setup” records both surviving workflows, ten missing workflow dependencies still referenced by executable/test code, and the intentionally retired `unit-tests.yml` sentinel. |
+| GitHub Actions workflows | “GitHub Actions and CI-only setup” records both registered workflows, the non-registered structural runner file, nine missing workflow dependencies still referenced by executable/test code, and the intentionally retired `unit-tests.yml` sentinel. |
 | Release/package builders | The release/native section records the consumer release packager/checker, native-base packager/publisher, and generated Rust consumer-bundle authority. |
 | Support-matrix rows | The five supported rows and seven exact deferred identifiers from `docs/release-support.json` are recorded. |
 | Package-manager artifacts | Cargo, `pyproject.toml`, npm `package.json`, RubyGems `.gemspec`, and Composer metadata are listed and classified. |
-| External-consumer/package tests | The external-consumer table distinguishes source-only Python import coverage from real wheel install/runtime proof, and records Rust, npm/Node, Composer/PHP, Ruby installed-gem E2E, and published-provenance checks. |
+| External-consumer/package tests | The external-consumer table distinguishes source-only Python import coverage from real wheel install/runtime proof, records Python public-facade E2E, and covers Rust, npm/Node, Composer/PHP, Ruby installed-gem managed-local and external-daemon E2E, and published-provenance checks. |
 
 ## M1 handoff from this inventory
 
@@ -545,7 +555,9 @@ paths. In particular, the following remain explicit acceptance gaps:
   public command vocabulary;
 - preserve the image axes while testing fail-closed identity behavior;
 - implement/confirm persistent per-worktree compatible writable build state and
-  collect the required warm-performance baseline;
+  collect the required warm-performance baseline, including repeated language
+  scope tests in freshly created canonical containers and the explicit Ruby
+  no-rebuild acceptance;
 - finish #807 and the P0 runtime ADR/external-consumer proof;
 - prove the same chosen runtime delivery model behind minimal Cargo, pip, npm,
   and RubyGems feasibility prototypes.
