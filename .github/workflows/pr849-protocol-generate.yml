@@ -12,6 +12,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          path: source
       - name: Regenerate and emit affected artifacts
         shell: bash
         env:
@@ -19,8 +20,9 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$CI_IMAGE"
+          cd "$GITHUB_WORKSPACE/source"
           docker run --rm --pids-limit=-1 \
-            -v "$GITHUB_WORKSPACE:/work" -w /work \
+            -v "$GITHUB_WORKSPACE/source:/work" -w /work \
             -e FLATBUFFERS_CPP_ROOT=/usr/local -e FLATC_PATH=/usr/local/bin/flatc \
             -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
             -e CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc \
