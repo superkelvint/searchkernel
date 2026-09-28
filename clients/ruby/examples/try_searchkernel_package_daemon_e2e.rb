@@ -26,7 +26,7 @@ def daemon_diagnostic(path)
 
   text = File.binread(path)
   text = text.byteslice(-4096, 4096) if text.bytesize > 4096
-  text.to_s.force_encoding(Encoding::UTF_8).scrub.gsub(/[\\x00-\\x1f\\x7f]+/, " ").strip
+  text.to_s.force_encoding(Encoding::UTF_8).scrub.gsub(/[\x00-\x1f\x7f]+/, " ").strip
 rescue StandardError
   ""
 end
