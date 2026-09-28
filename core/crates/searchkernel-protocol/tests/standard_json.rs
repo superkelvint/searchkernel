@@ -321,6 +321,88 @@ fn standard_json_preserves_textual_filter_clause_bindings() {
 }
 
 #[test]
+fn standard_json_round_trips_explicit_index_targets_and_open_lifecycle() {
+    let input = br#"{
+      "protocol_version": 2,
+      "target": {"name": "products"},
+      "payload_type": "SearchKernel_V2_OpenIndexRequest",
+      "payload": {}
+    }"#;
+
+    let bytes = request_json_to_flatbuffer(input).expect("targeted open-index request JSON");
+    let printed = request_flatbuffer_to_json(&bytes).expect("targeted open-index JSON printer");
+    let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+
+    assert_eq!(value["target"]["name"], "products");
+    assert_eq!(value["payload_type"], "SearchKernel_V2_OpenIndexRequest");
+
+    let again =
+        request_json_to_flatbuffer(&printed).expect("printed targeted lifecycle JSON remains readable");
+    assert!(!again.is_empty());
+}
+
+#[test]
+fn standard_json_round_trips_create_index_definition_and_lifecycle_results() {
+    let request = br#"{
+      "protocol_version": 2,
+      "target": {"name": "catalog"},
+      "payload_type": "SearchKernel_V2_CreateIndexRequest",
+      "payload": {
+        "definition": {
+          "name": "catalog",
+          "fields": []
+        }
+      }
+    }"#;
+    let request_bytes = request_json_to_flatbuffer(request).expect("create-index request JSON");
+    let request_printed =
+        request_flatbuffer_to_json(&request_bytes).expect("create-index JSON printer");
+    let request_value: serde_json::Value =
+        serde_json::from_slice(&request_printed).expect("valid request JSON");
+    assert_eq!(request_value["target"]["name"], "catalog");
+    assert_eq!(
+        request_value["payload_type"],
+        "SearchKernel_V2_CreateIndexRequest"
+    );
+    assert_eq!(request_value["payload"]["definition"]["name"], "catalog");
+
+    for (payload_type, target_name) in [
+        ("SearchKernel_V2_CreateIndexResult", "catalog"),
+        ("SearchKernel_V2_OpenIndexResult", "catalog"),
+    ] {
+        let response = format!(
+            r#"{{
+              "protocol_version": 2,
+              "payload_type": "{payload_type}",
+              "payload": {{"index": {{"name": "{target_name}", "fields": []}}}}
+            }}"#
+        );
+        let bytes =
+            response_json_to_flatbuffer(response.as_bytes()).expect("lifecycle response JSON");
+        let printed = response_flatbuffer_to_json(&bytes).expect("lifecycle response JSON printer");
+        let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+        assert_eq!(value["payload_type"], payload_type);
+        assert_eq!(value["payload"]["index"]["name"], target_name);
+    }
+}
+
+#[test]
+fn standard_json_keeps_targetless_v2_frames_structurally_parseable() {
+    let input = br#"{
+      "protocol_version": 2,
+      "payload_type": "SearchKernel_V2_DescribeRequest",
+      "payload": {}
+    }"#;
+
+    let bytes = request_json_to_flatbuffer(input)
+        .expect("legacy targetless V2 remains structurally parseable");
+    let printed = request_flatbuffer_to_json(&bytes).expect("targetless V2 JSON printer");
+    let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
+    assert!(value.get("target").is_none());
+    assert_eq!(value["payload_type"], "SearchKernel_V2_DescribeRequest");
+}
+
+#[test]
 fn custom_union_shape_and_malformed_json_are_rejected() {
     assert!(
         request_json_to_flatbuffer(br#"{"protocol_version":2,"request":{"search":{}}}"#).is_err()
