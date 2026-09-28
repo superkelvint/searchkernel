@@ -775,6 +775,23 @@ void exercise_native_engine(const std::filesystem::path &data,
     expect_bad_predicate(predicate_bytes, 0, one_length, predicate_bytes, 1, one_length, 65537,
                          nullptr, 0, nullptr, 0, "predicate feature count limit");
 
+    expect_bad_predicate(predicate_bytes, std::numeric_limits<uint32_t>::max(), one_length,
+                         predicate_bytes, 1, one_length, 1, nullptr, 0, nullptr, 0,
+                         "predicate packed total size limit");
+
+    query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", predicate_bytes, 1, one_length,
+                                     predicate_bytes, 1, one_length, predicate_masks, 1, nullptr,
+                                     0, nullptr, nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+              "predicate zero-count zero-total range side");
+    sk_query_destroy(query);
+    query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", nullptr, 0, nullptr, nullptr, 0, nullptr,
+                                     nullptr, 0, predicate_bytes, 1, one_length, predicate_values,
+                                     predicate_masks, 1, error.data(), ERROR_CAPACITY),
+              "predicate zero-count zero-total feature side");
+    sk_query_destroy(query);
+
     query = predicate_query();
     expect_ok(sk_query_add_predicate(query, "access", predicate_bytes, 2, two_one_lengths,
                                      predicate_bytes, 2, two_one_lengths, predicate_masks, 2,
