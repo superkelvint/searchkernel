@@ -23,6 +23,42 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Regenerate protocol artifacts for issue 845
+        shell: bash
+        env:
+          CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
+        run: |
+          set -euo pipefail
+          docker pull "$CI_IMAGE"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            "$CI_IMAGE" /bin/bash -lc '
+              set -euo pipefail
+              ./dev regen protocol
+              bash tools/generate-python-flatbuffers.sh
+              bash tools/generate-typescript-flatbuffers.sh
+              flatc_bin=$(bash tools/resolve-flatbuffers.sh flatc)
+              "$flatc_bin" --binary --schema -I api \
+                -o core/crates/searchkernel-protocol/bfbs api/searchkernel_request.fbs
+              "$flatc_bin" --binary --schema -I api \
+                -o core/crates/searchkernel-protocol/bfbs api/searchkernel_response.fbs
+              git diff --binary -- \
+                core/crates/searchkernel-protocol/src/generated \
+                core/crates/searchkernel-protocol/bfbs \
+                clients/python/searchkernel/_wire_generated \
+                clients/typescript/src/generated \
+                > protocol-generated.patch
+              ./dev check-protocol
+            '
+
+      - name: Upload issue 845 protocol patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-845-protocol-generated
+          path: protocol-generated.patch
+          if-no-files-found: error
+
       - name: Run minimal Rust gate
         shell: bash
         env:
