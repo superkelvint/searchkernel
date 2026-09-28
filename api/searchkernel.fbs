@@ -2000,6 +2000,6 @@ table Error {
   retryable:bool;
 }
 
-// Transport framing deliberately does not live in this schema. A later native
-// ABI layer may add an operation envelope or per-operation root schemas once the
-// create/open/call lifecycle is frozen.
+// Transport framing deliberately does not live in this schema. Index lifecycle
+// is part of the canonical request/response envelopes; gRPC and HTTP remain
+// framing/representation layers around the same domain operations.
