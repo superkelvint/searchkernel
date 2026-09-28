@@ -39,13 +39,17 @@ use std::{
 
 use base64::Engine as _;
 use bytes::Bytes;
+use flatbuffers::root;
 use http::{
     header::{ALLOW, CONTENT_TYPE},
     Method, Request as HttpRequest, Response as HttpResponse, StatusCode,
 };
 use http_body_util::{BodyExt, Full};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
-use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
+use searchkernel_protocol::{
+    json::{request_json_to_flatbuffer, response_flatbuffer_to_json},
+    protocol::v2 as wire,
+};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 use tokio::{
@@ -206,9 +210,13 @@ impl SearchKernelTransport {
 
     fn dispatch(&self, payload: &[u8]) -> Result<Vec<u8>, Box<Status>> {
         match &self.target {
-            DispatchTarget::Single(dispatcher) => dispatcher
-                .dispatch(payload)
-                .map_err(|error| Box::new(dispatch_error_status(error))),
+            DispatchTarget::Single(dispatcher) => {
+                reject_targeted_single_request(payload)
+                    .map_err(|message| Box::new(Status::failed_precondition(message)))?;
+                dispatcher
+                    .dispatch(payload)
+                    .map_err(|error| Box::new(dispatch_error_status(error)))
+            }
             #[cfg(feature = "native")]
             DispatchTarget::Registry(registry) => registry
                 .dispatch(payload)
@@ -225,6 +233,8 @@ impl SearchKernelTransport {
         })?;
         let response = match &self.target {
             DispatchTarget::Single(dispatcher) => {
+                reject_targeted_single_request(&request)
+                    .map_err(|message| (StatusCode::PRECONDITION_FAILED, message.to_owned()))?;
                 dispatcher.dispatch(&request).map_err(dispatch_error_http)?
             }
             #[cfg(feature = "native")]
@@ -278,6 +288,22 @@ impl SearchKernel for SearchKernelTransport {
         .map_err(|status| *status)?
         .map_err(|status| *status)?;
         Ok(Response::new(FlatBufferFrame { payload }))
+    }
+}
+
+
+fn reject_targeted_single_request(payload: &[u8]) -> Result<(), &'static str> {
+    const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
+    if payload.len() < 8 || payload[4..8] != *REQUEST_IDENTIFIER {
+        return Ok(());
+    }
+    let Ok(envelope) = root::<wire::RequestEnvelope<'_>>(payload) else {
+        return Ok(());
+    };
+    if envelope.target().is_some() {
+        Err("targeted Search Kernel requests require the multi-index daemon")
+    } else {
+        Ok(())
     }
 }
 
