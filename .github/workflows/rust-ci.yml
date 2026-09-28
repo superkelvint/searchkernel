@@ -64,3 +64,20 @@ jobs:
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
             '
+
+
+  verify_810_ruby:
+    name: PR 810 exact-head Ruby parity
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Run exact-head Ruby client lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
+          SEARCHKERNEL_CI_PULL=never ./dev test ruby
