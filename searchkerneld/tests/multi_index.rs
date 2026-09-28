@@ -1,8 +1,19 @@
 #![cfg(feature = "native")]
 
 use flatbuffers::root;
-use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
-use searchkerneld::{IndexRegistry, RegistryDispatchError};
+use http_body_util::{BodyExt, Full};
+use hyper::{body::Bytes, Request as HttpRequest};
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use searchkernel_protocol::{
+    json::{request_flatbuffer_to_json, response_json_to_flatbuffer},
+    protocol::v2 as wire,
+    v2 as api,
+    PROTOCOL_VERSION,
+};
+use searchkerneld::{
+    rpc, start_multi, IndexRegistry, RegistryDispatchError, ServerConfig, JSON_EXECUTE_PATH,
+};
+use tonic::Request;
 use std::{
     fs,
     path::PathBuf,
@@ -203,6 +214,27 @@ fn search_request(target_name: &str, text: &str) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+
+async fn execute_http_json(address: std::net::SocketAddr, payload: &[u8]) -> Vec<u8> {
+    let json = request_flatbuffer_to_json(payload).expect("encode request JSON");
+    let request = HttpRequest::builder()
+        .method("POST")
+        .uri(format!("http://{address}{JSON_EXECUTE_PATH}"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(json)))
+        .expect("build HTTP JSON request");
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let response = client.request(request).await.expect("HTTP JSON request");
+    assert_eq!(response.status(), http::StatusCode::OK);
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("read HTTP JSON response")
+        .to_bytes();
+    response_json_to_flatbuffer(&body).expect("decode response JSON")
+}
+
 fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {
     root::<wire::ResponseEnvelope<'_>>(bytes).expect("response envelope")
 }
@@ -230,6 +262,60 @@ fn total_hits(bytes: &[u8]) -> u64 {
         .total_hits()
         .expect("total hits")
         .value()
+}
+
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grpc_and_http_json_share_one_registry() {
+    let temp = TempDir::new("cross-transport");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().expect("gRPC address"))
+            .with_web_listen_addr("127.0.0.1:0".parse().expect("HTTP address")),
+        registry.clone(),
+    )
+    .await
+    .expect("start multi-index daemon");
+
+    let grpc_address = server.tcp_addr().expect("gRPC listener");
+    let http_address = server.web_tcp_addr().expect("HTTP listener");
+    let mut grpc =
+        rpc::search_kernel_client::SearchKernelClient::connect(format!("http://{grpc_address}"))
+            .await
+            .expect("connect gRPC client");
+
+    let create = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: create_request("products", "title"),
+        }))
+        .await
+        .expect("create over gRPC")
+        .into_inner()
+        .payload;
+    assert_lifecycle(
+        &create,
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+
+    let upsert = execute_http_json(
+        http_address,
+        &upsert_request("products", "cross-transport", "title", "shared registry"),
+    )
+    .await;
+    assert_upsert(&upsert);
+
+    let search = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: search_request("products", "shared"),
+        }))
+        .await
+        .expect("search over gRPC")
+        .into_inner()
+        .payload;
+    assert_eq!(total_hits(&search), 1);
+
+    server.shutdown().await.expect("shutdown daemon");
+    registry.close_all().expect("close registry");
 }
 
 #[test]
