@@ -169,35 +169,6 @@ begin
   typed = index.query(SearchKernel::Query.contains("title", "shoes")).limit(10).execute
   check(ids(typed).include?("shoe-1"), "typed contains query")
 
-  # Exercise the public typed-query DSL against the real managed-local Vespa
-  # backend. These assertions intentionally distinguish operator semantics, not
-  # merely successful request construction.
-  phrase = index.query(SearchKernel::Query.contains("title", SearchKernel::Query.phrase("running", "shoes"))).limit(20).execute
-  same(%w[shoe-1 shoe-2], ids(phrase).sort, "typed phrase query")
-
-  near = index.query(SearchKernel::Query.contains("title", SearchKernel::Query.near("running", "shoes"))).limit(20).execute
-  same(%w[shoe-1 shoe-2], ids(near).sort, "typed near query")
-  ordered_near = index.query(SearchKernel::Query.contains("title", SearchKernel::Query.onear("running", "shoes"))).limit(20).execute
-  same(%w[shoe-1 shoe-2], ids(ordered_near).sort, "typed ordered-near query")
-
-  fuzzy = index.query(SearchKernel::Query.contains("brand", SearchKernel::Query.fuzzy("Acmf"))).limit(20).execute
-  check(ids(fuzzy).include?("shoe-1") && ids(fuzzy).include?("bag-1"), "typed fuzzy query")
-
-  weak = index.query(SearchKernel::Query.weak_and(
-    SearchKernel::Query.contains("title", "running"),
-    SearchKernel::Query.contains("title", "shoes")
-  )).limit(20).execute
-  check(ids(weak).include?("shoe-1") && ids(weak).include?("shoe-2"), "typed weak-and query")
-
-  wand = index.query(SearchKernel::Query.wand("title", {"running" => 10, "shoes" => 1})).limit(20).execute
-  check(ids(wand).include?("shoe-1") && ids(wand).include?("shoe-2"), "typed WAND query")
-
-  ranked_query = index.query(SearchKernel::Query.rank(
-    SearchKernel::Query.contains("title", "shoes"),
-    SearchKernel::Query.contains("title", "running")
-  )).limit(20).execute
-  same(%w[shoe-1 shoe-2], ids(ranked_query).sort, "typed rank-query composition")
-
   boosted = index.search("shoes").ranking("boosted").input("boost", 3.0).limit(10).execute
   check(boosted.hits.all? { |hit| hit.score && hit.features.fetch("query(boost)") == 3.0 }, "scalar query input + match feature")
 
@@ -465,6 +436,96 @@ ensure
   reopened.close
 end
 
+typed_path = "#{index_path}-typed"
+FileUtils.rm_rf(typed_path)
+typed_index = SearchKernel::Index.create(
+  typed_path,
+  fields: {
+    "title" => SearchKernel::Text.new(stored: true, searchable: true),
+    "category" => SearchKernel::Keyword.new(stored: true, filterable: true),
+    "people" => SearchKernel::ArrayField.new(
+      SearchKernel::StructField.new(
+        "first" => SearchKernel::Keyword.new,
+        "last" => SearchKernel::Keyword.new
+      ),
+      stored: false,
+      searchable: false
+    )
+  }
+)
+begin
+  typed_index.upsert("d1", {"title" => "quick brown fox", "category" => "fox"})
+  typed_index.upsert("d2", {"title" => "brown quick fox", "category" => "fox"})
+  typed_index.upsert("d3", {"title" => "quick fox", "category" => "fox"})
+  typed_index.upsert("d4", {"title" => "fox", "category" => "fox"})
+  typed_index.upsert("d5", {"title" => "cat", "category" => "cat"})
+  typed_index.upsert(
+    "people-1",
+    {
+      "people" => [
+        {"first" => "Ada", "last" => "Lovelace"},
+        {"first" => "Grace", "last" => "Hopper"}
+      ]
+    }
+  )
+  typed_index.upsert("people-2", {"people" => [{"first" => "Ada", "last" => "Hopper"}]})
+
+  phrase = typed_index.query(
+    SearchKernel::Query.contains("title", SearchKernel::Query.phrase("quick", "brown"))
+  ).limit(20).execute
+  same(["d1"], ids(phrase), "typed phrase query distinguishes exact order and adjacency")
+
+  near = typed_index.query(
+    SearchKernel::Query.contains("title", SearchKernel::Query.near("quick", "brown"))
+  ).limit(20).execute
+  same(%w[d1 d2], ids(near).sort, "typed near query accepts either adjacent order")
+
+  ordered_near = typed_index.query(
+    SearchKernel::Query.contains("title", SearchKernel::Query.onear("quick", "brown"))
+  ).limit(20).execute
+  same(["d1"], ids(ordered_near), "typed ordered-near query rejects reversed order")
+
+  fuzzy = typed_index.query(
+    SearchKernel::Query.contains("category", SearchKernel::Query.fuzzy("foxx"))
+  ).limit(20).execute
+  same(%w[d1 d2 d3 d4], ids(fuzzy).sort, "typed fuzzy query excludes unrelated terms")
+
+  weak = typed_index.query(
+    SearchKernel::Query.weak_and(
+      SearchKernel::Query.contains("title", "quick"),
+      SearchKernel::Query.contains("title", "fox")
+    )
+  ).limit(20).execute
+  same(%w[d1 d2 d3 d4], ids(weak).sort, "typed weak-and keeps one-term-only matches")
+
+  wand = typed_index.query(
+    SearchKernel::Query.wand("title", {"quick" => 10, "fox" => 1})
+  ).limit(20).execute
+  same(%w[d1 d2 d3 d4], ids(wand).sort, "typed WAND keeps one-term-only matches")
+
+  ranked_query = typed_index.query(
+    SearchKernel::Query.rank(
+      SearchKernel::Query.contains("title", "fox"),
+      SearchKernel::Query.contains("title", "quick")
+    )
+  ).limit(20).execute
+  same(%w[d1 d2 d3 d4], ids(ranked_query).sort, "rank-only clause does not filter match candidates")
+
+  same_element = typed_index.query(
+    SearchKernel::Query.contains(
+      "people",
+      SearchKernel::Query.same_element(
+        SearchKernel::Query.contains("first", "Ada"),
+        SearchKernel::Query.contains("last", "Lovelace")
+      )
+    )
+  ).limit(20).execute
+  same(["people-1"], ids(same_element), "typed sameElement preserves per-element correlation")
+ensure
+  typed_index.close
+  FileUtils.rm_rf(typed_path)
+end
+
 geo_path = "#{index_path}-geo"
 FileUtils.rm_rf(geo_path)
 geo = SearchKernel::Index.create(geo_path, fields: { "location" => SearchKernel::PositionField.new })
@@ -484,6 +545,7 @@ puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 # SKC: query.term/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.phrase/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.proximity/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.same_element/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.fuzzy/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.geo/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.weighted_and_wand/basic kinds=ergonomic,e2e runtime=managed-local
