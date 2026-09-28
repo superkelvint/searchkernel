@@ -4,9 +4,9 @@
 //! semantic work is delegated to the canonical transport-independent
 //! dispatcher.
 
-mod search_endpoints;
 #[cfg(feature = "native")]
 mod registry;
+mod search_endpoints;
 
 #[cfg(feature = "native")]
 pub use registry::{IndexRegistry, RegistryDispatchError, RegistryInitError};
