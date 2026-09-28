@@ -91,7 +91,7 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-image.XXXXXX")
 source_volume="searchkernel-dev-src-$(id -u)-$$-${RANDOM}"
 ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}
 if [[ "$ephemeral_target" == "1" ]]; then
-    target_volume="searchkernel-ci-target-$(id -u)-$-${RANDOM}"
+    target_volume="searchkernel-ci-target-$(id -u)-$$-${RANDOM}"
 else
     target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")
     ci_runtime_prune_target_volumes "$ROOT" "$target_volume"
