@@ -208,11 +208,11 @@ class RemoteVerificationClientTest(unittest.TestCase):
         text = RUNNER.read_text(encoding="utf-8")
         self.assertIn('ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}', text)
         self.assertIn(
-            'target_volume="searchkernel-ci-target-$(id -u)-$-${RANDOM}"',
+            'target_volume="searchkernel-ci-target-$(id -u)-$$-${RANDOM}"',
             text,
         )
         self.assertIn(
-            'cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$-${RANDOM}"',
+            'cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$$-${RANDOM}"',
             text,
         )
         self.assertIn('io.searchkernel.cache-kind=job-target', text)
