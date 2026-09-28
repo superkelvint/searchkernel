@@ -5,8 +5,7 @@ use searchkernel_ir::{ErrorCode, PortableError};
 use searchkernel_protocol::{
     protocol::v2 as wire,
     target::{request_index_target, RequestTargetError},
-    v2 as api,
-    PROTOCOL_VERSION,
+    v2 as api, PROTOCOL_VERSION,
 };
 use std::{
     collections::BTreeMap,
