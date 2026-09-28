@@ -1,9 +1,9 @@
-use searchkernel_protocol::protocol::v2 as wire;
-use searchkernel_protocol::target::{request_index_target, RequestTargetError};
 use searchkernel_protocol::json::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
     response_json_to_flatbuffer,
 };
+use searchkernel_protocol::protocol::v2 as wire;
+use searchkernel_protocol::target::{request_index_target, RequestTargetError};
 
 const RICH_REQUEST: &[u8] = br#"
 {
@@ -332,9 +332,15 @@ fn v2_union_discriminators_are_append_only() {
     assert_eq!(wire::RequestPayload::SearchKernel_V2_SearchRequest.0, 6);
     assert_eq!(wire::RequestPayload::SearchKernel_V2_AnalyzeRequest.0, 7);
     assert_eq!(wire::RequestPayload::SearchKernel_V2_DescribeRequest.0, 8);
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_InspectQueryRequest.0, 9);
+    assert_eq!(
+        wire::RequestPayload::SearchKernel_V2_InspectQueryRequest.0,
+        9
+    );
     assert_eq!(wire::RequestPayload::SearchKernel_V2_UpdateRequest.0, 10);
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_CreateIndexRequest.0, 11);
+    assert_eq!(
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest.0,
+        11
+    );
     assert_eq!(wire::RequestPayload::SearchKernel_V2_OpenIndexRequest.0, 12);
 
     assert_eq!(wire::ResponsePayload::SearchKernel_V2_InsertResult.0, 1);
@@ -346,9 +352,15 @@ fn v2_union_discriminators_are_append_only() {
     assert_eq!(wire::ResponsePayload::SearchKernel_V2_AnalyzeResult.0, 7);
     assert_eq!(wire::ResponsePayload::SearchKernel_V2_Error.0, 8);
     assert_eq!(wire::ResponsePayload::SearchKernel_V2_DescribeResult.0, 9);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_InspectQueryResult.0, 10);
+    assert_eq!(
+        wire::ResponsePayload::SearchKernel_V2_InspectQueryResult.0,
+        10
+    );
     assert_eq!(wire::ResponsePayload::SearchKernel_V2_UpdateResult.0, 11);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_CreateIndexResult.0, 12);
+    assert_eq!(
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult.0,
+        12
+    );
     assert_eq!(wire::ResponsePayload::SearchKernel_V2_OpenIndexResult.0, 13);
 }
 
@@ -432,9 +444,12 @@ fn standard_json_keeps_targetless_v2_frames_structurally_parseable() {
 
     let bytes = request_json_to_flatbuffer(input)
         .expect("legacy targetless V2 remains structurally parseable");
-    let envelope =
-        flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("targetless request envelope");
-    assert_eq!(request_index_target(envelope), Err(RequestTargetError::Missing));
+    let envelope = flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes)
+        .expect("targetless request envelope");
+    assert_eq!(
+        request_index_target(envelope),
+        Err(RequestTargetError::Missing)
+    );
 
     let printed = request_flatbuffer_to_json(&bytes).expect("targetless V2 JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
