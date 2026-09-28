@@ -513,9 +513,13 @@ end
 closed = TCPServer.new("127.0.0.1", 0)
 closed_port = closed.addr[1]
 closed.close
-raises(SearchKernel::TransportError, "connection failure is transport error") do
+connection_error = raises(SearchKernel::TransportError, "connection failure is transport error") do
   SearchKernel::HttpTransport.new("http://127.0.0.1:#{closed_port}", timeout: 0.1).execute({})
 end
+assert(
+  connection_error.message.include?("http://127.0.0.1:#{closed_port}/v1/execute"),
+  "connection failure identifies the target execute endpoint"
+)
 
 raises(ArgumentError, "client rejects objects that do not implement transport execute") do
   SearchKernel::Client.new(Object.new)

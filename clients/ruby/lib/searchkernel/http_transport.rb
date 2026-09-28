@@ -133,7 +133,7 @@ module SearchKernel
     rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Net::HTTPBadResponse,
            Net::HTTPHeaderSyntaxError, Net::ProtocolError, OpenSSL::SSL::SSLError,
            IOError, EOFError, SystemCallError, SocketError => error
-      raise TransportError, "Search Kernel HTTP transport failed: #{error.message}"
+      raise TransportError, "Search Kernel HTTP transport failed: #{@execute_uri}: #{error.message}"
     end
 
     def read_response_body(response)
