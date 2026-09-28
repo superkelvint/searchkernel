@@ -4,6 +4,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "on-demand-verification.yml"
+TRUST_POLICY = ROOT / "docs" / "ci.md"
 
 
 class OnDemandVerificationWorkflowTest(unittest.TestCase):
@@ -19,6 +20,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertNotRegex(text, r"(?m)^\s+pull_request:")
         self.assertNotRegex(text, r"(?m)^\s+push:")
         self.assertIn("permissions:\n  contents: read\n", text)
+        self.assertNotIn("${{ secrets.", text)
 
     def test_control_plane_is_proven_before_subject_checkout(self):
         text = self.text
@@ -41,11 +43,13 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn("observed=$(git rev-parse HEAD)", text)
         self.assertIn('if [[ "${observed}" != "${requested}" ]]', text)
 
-    def test_remote_surface_is_bounded_to_test_and_verify_for_now(self):
+    def test_remote_surface_is_bounded_to_ci_test_and_verify(self):
         text = self.text
         self.assertIn('case "${OPERATION}" in', text)
+        self.assertIn("ci)", text)
         self.assertIn("test|verify)", text)
         self.assertIn('operation not in {"test", "verify"}', text)
+        self.assertIn('if [[ -n "${REQUESTED_TARGET}" ]]', text)
         self.assertIn(
             'REQUESTED_TARGET}" =~ ^[A-Za-z0-9._-]{1,128}$',
             text,
@@ -55,6 +59,35 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
             text,
         )
         self.assertNotIn("eval ", text)
+
+    def test_ci_has_no_target_and_test_verify_keep_git_object_validation(self):
+        text = self.text
+        target = text.index("Validate target against repository authority")
+        validation = text[target:text.index("Run canonical verification", target)]
+        self.assertIn('if [[ "${OPERATION}" == "ci" ]]; then', validation)
+        self.assertIn("printf 'target=\\n'", validation)
+        self.assertLess(
+            validation.index('if [[ "${OPERATION}" == "ci" ]]'),
+            validation.index("git ls-tree HEAD -- build/targets.json"),
+        )
+        self.assertIn("git show HEAD:build/targets.json", validation)
+        self.assertIn('operation not in {"test", "verify"}', validation)
+
+        execute = text[text.index("Run canonical verification"):]
+        self.assertIn("canonical command: ./dev ci", execute)
+        self.assertIn('run-in-ci-image.sh" ci', execute)
+        self.assertIn('run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"', execute)
+        self.assertIn('"canonical_command": f"./dev {operation} {target}".rstrip()', text)
+
+    def test_requested_revision_must_exist_in_this_repository(self):
+        text = self.text
+        control = text.index("Check out trusted control plane")
+        provenance = text.index("Verify requested commit belongs to this repository")
+        subject = text.index("Check out requested revision as untrusted subject")
+        self.assertLess(control, provenance)
+        self.assertLess(provenance, subject)
+        self.assertIn("github.rest.repos.getCommit", text)
+        self.assertIn("requested revision ${revision} is unavailable", text)
 
     def test_target_validation_uses_git_object_without_dereferencing_subject_path(self):
         text = self.text
@@ -109,6 +142,19 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         text = self.text
         self.assertNotIn("cancel-in-progress:", text)
         self.assertNotRegex(text, r"(?m)^concurrency:")
+
+    def test_minimal_trust_policy_is_documented(self):
+        policy = " ".join(TRUST_POLICY.read_text(encoding="utf-8").split())
+        for fragment in (
+            "authenticated repository dispatch",
+            "exact commit SHAs available from this repository",
+            "fork-only or",
+            "read-only GitHub repository permissions",
+            "no release, deployment, or write secrets",
+            "no arbitrary",
+            "separate actor allowlist",
+        ):
+            self.assertIn(fragment, policy)
 
 
 if __name__ == "__main__":
