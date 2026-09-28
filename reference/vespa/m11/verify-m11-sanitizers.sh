@@ -171,6 +171,12 @@ run_lane() {
     asan-ubsan)
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$binary" compile "$config"
+        mkdir -p "$runtime/predicate-contract"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        SK_NATIVE_PREDICATE_CONTRACT_ONLY=1 "$buffer_contract_test" \
+        "$runtime/predicate-contract" "$config"
+        echo "predicate query packed-buffer ABI contract passed ($lane)"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$binary" malformed "$config" "$runtime/data"
