@@ -754,7 +754,7 @@
 use std::{sync::Arc, time::Duration};
 
 use searchkernel_protocol::{
-    protocol::v2 as wire, validate_index_target, v2 as api, PROTOCOL_VERSION,
+    protocol::v2 as wire, v2 as api, validate_index_target, PROTOCOL_VERSION,
 };
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError},
