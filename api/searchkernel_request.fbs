@@ -2,8 +2,11 @@ include "searchkernel.fbs";
 
 namespace SearchKernel.Protocol.V2;
 
-union RequestPayload {
-  // Append-only: existing V2 union discriminator numbers are wire ABI.
+// Daemon-targeted traffic must use this wrapper. The wrapper itself is an
+// append-only top-level RequestPayload discriminator that pre-multi-index V2
+// dispatchers do not understand, so they reject rather than silently ignore a
+// new target field and execute against their configured single index.
+union TargetedRequestPayload {
   SearchKernel.V2.InsertRequest,
   SearchKernel.V2.UpsertRequest,
   SearchKernel.V2.PatchRequest,
@@ -18,6 +21,27 @@ union RequestPayload {
   SearchKernel.V2.OpenIndexRequest
 }
 
+table TargetedRequest {
+  payload:TargetedRequestPayload;
+}
+
+union RequestPayload {
+  // Append-only: existing V2 union discriminator numbers are wire ABI. Direct
+  // operation variants remain the per-index/embedded contract. Daemon callers
+  // use TargetedRequest so older single-index daemons fail closed.
+  SearchKernel.V2.InsertRequest,
+  SearchKernel.V2.UpsertRequest,
+  SearchKernel.V2.PatchRequest,
+  SearchKernel.V2.DeleteRequest,
+  SearchKernel.V2.GetRequest,
+  SearchKernel.V2.SearchRequest,
+  SearchKernel.V2.AnalyzeRequest,
+  SearchKernel.V2.DescribeRequest,
+  SearchKernel.V2.InspectQueryRequest,
+  SearchKernel.V2.UpdateRequest,
+  TargetedRequest
+}
+
 table RequestEnvelope {
   // Zero is deliberately invalid. A V1 writer that omits its default version
   // must decode as zero and be rejected rather than masquerading as V2.
@@ -25,11 +49,9 @@ table RequestEnvelope {
   payload:RequestPayload;
 
   // Append-only field: the original V2 protocol_version/payload field IDs are
-  // wire ABI and must not move. New multi-index daemon routing requires target
-  // for lifecycle and index-scoped operations. It remains optional at the raw
-  // FlatBuffers level so old V2 frames still parse and can be rejected with an
-  // explicit missing-target error rather than being mistaken for malformed
-  // bytes. Per-index embedded/test dispatchers may remain target-agnostic.
+  // wire ABI and must not move. This field is meaningful only when payload_type
+  // is TargetedRequest. Per-index embedded/test dispatchers use the direct
+  // operation variants and leave target absent.
   target:SearchKernel.V2.IndexTarget;
 }
 
