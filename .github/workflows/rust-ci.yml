@@ -35,6 +35,7 @@ jobs:
             -w /work \
             "$CI_IMAGE" /bin/bash -lc '
               set -euo pipefail
+              git config --global --add safe.directory /work
               ./dev regen protocol
               bash tools/generate-python-flatbuffers.sh
               bash tools/generate-typescript-flatbuffers.sh
@@ -49,14 +50,21 @@ jobs:
                 clients/python/searchkernel/_wire_generated \
                 clients/typescript/src/generated \
                 > protocol-generated.patch
+              tar -czf protocol-generated.tgz \
+                core/crates/searchkernel-protocol/src/generated \
+                core/crates/searchkernel-protocol/bfbs \
+                clients/python/searchkernel/_wire_generated \
+                clients/typescript/src/generated
               ./dev check-protocol
             '
 
-      - name: Upload issue 845 protocol patch
+      - name: Upload issue 845 generated protocol artifacts
         uses: actions/upload-artifact@v4
         with:
           name: issue-845-protocol-generated
-          path: protocol-generated.patch
+          path: |
+            protocol-generated.patch
+            protocol-generated.tgz
           if-no-files-found: error
 
       - name: Run minimal Rust gate
