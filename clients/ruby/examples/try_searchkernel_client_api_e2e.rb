@@ -461,6 +461,7 @@ begin
   typed_index.upsert("d3", {"title" => "quick fox", "category" => "fox"})
   typed_index.upsert("d4", {"title" => "fox", "category" => "fox"})
   typed_index.upsert("d5", {"title" => "cat", "category" => "cat"})
+  typed_index.upsert("d6", {"title" => "quick agile brown fox", "category" => "fox"})
   typed_index.upsert(
     "people-1",
     {
@@ -470,7 +471,15 @@ begin
       ]
     }
   )
-  typed_index.upsert("people-2", {"people" => [{"first" => "Ada", "last" => "Hopper"}]})
+  typed_index.upsert(
+    "people-2",
+    {
+      "people" => [
+        {"first" => "Ada", "last" => "Hopper"},
+        {"first" => "Grace", "last" => "Lovelace"}
+      ]
+    }
+  )
 
   phrase = typed_index.query(
     SearchKernel::Query.contains("title", SearchKernel::Query.phrase("quick", "brown"))
@@ -480,17 +489,17 @@ begin
   near = typed_index.query(
     SearchKernel::Query.contains("title", SearchKernel::Query.near("quick", "brown"))
   ).limit(20).execute
-  same(%w[d1 d2], ids(near).sort, "typed near query accepts either adjacent order")
+  same(%w[d1 d2 d6], ids(near).sort, "typed near query accepts reversed order and one-gap proximity")
 
   ordered_near = typed_index.query(
     SearchKernel::Query.contains("title", SearchKernel::Query.onear("quick", "brown"))
   ).limit(20).execute
-  same(["d1"], ids(ordered_near), "typed ordered-near query rejects reversed order")
+  same(%w[d1 d6], ids(ordered_near).sort, "typed ordered-near query permits a gap but rejects reversed order")
 
   fuzzy = typed_index.query(
     SearchKernel::Query.contains("category", SearchKernel::Query.fuzzy("foxx"))
   ).limit(20).execute
-  same(%w[d1 d2 d3 d4], ids(fuzzy).sort, "typed fuzzy query excludes unrelated terms")
+  same(%w[d1 d2 d3 d4 d6], ids(fuzzy).sort, "typed fuzzy query excludes unrelated terms")
 
   weak = typed_index.query(
     SearchKernel::Query.weak_and(
@@ -498,12 +507,12 @@ begin
       SearchKernel::Query.contains("title", "fox")
     )
   ).limit(20).execute
-  same(%w[d1 d2 d3 d4], ids(weak).sort, "typed weak-and keeps one-term-only matches")
+  same(%w[d1 d2 d3 d4 d6], ids(weak).sort, "typed weak-and keeps one-term-only matches")
 
   wand = typed_index.query(
     SearchKernel::Query.wand("title", {"quick" => 10, "fox" => 1})
   ).limit(20).execute
-  same(%w[d1 d2 d3 d4], ids(wand).sort, "typed WAND keeps one-term-only matches")
+  same(%w[d1 d2 d3 d4 d6], ids(wand).sort, "typed WAND keeps one-term-only matches")
 
   ranked_query = typed_index.query(
     SearchKernel::Query.rank(
@@ -511,7 +520,7 @@ begin
       SearchKernel::Query.contains("title", "quick")
     )
   ).limit(20).execute
-  same(%w[d1 d2 d3 d4], ids(ranked_query).sort, "rank-only clause does not filter match candidates")
+  same(%w[d1 d2 d3 d4 d6], ids(ranked_query).sort, "rank-only clause does not filter match candidates")
 
   same_element = typed_index.query(
     SearchKernel::Query.contains(
