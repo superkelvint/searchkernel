@@ -31,8 +31,10 @@ The classifications are the roadmap vocabulary:
    owns semantic verification relationships, but it is not the single public
    test/verifier target registry required by M1.
 3. The three independently versioned Docker image axes are real and active:
-   toolchain, Vespa/native, and the thin Search Kernel leaf. The thin leaf records
-   exact immutable image identities and does not contain the Vespa payload.
+   toolchain, Vespa/native, and the thin Search Kernel leaf. Their tags are
+   logical coordinates; immutable execution identity is the resolved repository
+   digest. The thin leaf records exact toolchain/Vespa digests and does not
+   contain the Vespa payload.
 4. Canonical Docker execution fails rather than silently falling back to host
    execution. Host execution exists only behind the explicit
    `SEARCHKERNEL_DEV_USE_CI_IMAGE=0` override.
@@ -52,6 +54,23 @@ The classifications are the roadmap vocabulary:
    `tools/test-ci-image-publishing.sh` is still called by `./dev check-fast`, so
    current `main` fails that fast gate before product compilation. This is a
    pre-existing convergence defect, not evidence from this documentation change.
+9. Oracle execution is not yet explicit-only. `live_oracle_enabled()` defaults
+   `SEARCHKERNEL_VERIFY_LIVE_ORACLE` to `auto`, so normal local verifier paths can
+   execute live/prebuilt oracles when they are not using the published toolchain.
+   This conflicts with the target convergence rule that normal verification
+   replays frozen evidence unless a maintainer explicitly opts into live oracle.
+10. Package assembly has duplicate behavior. Normal
+   `clients/typescript/scripts/verify-package.cjs` proves that a plain npm package
+   does **not** bundle `searchkerneld` and requires `SEARCHKERNEL_LOCAL_HOST`, while
+   `tools/package-consumer-release.py` temporarily injects the same daemon/native
+   closure into both the Python and TypeScript package roots before building the
+   release wheel/tarball. `tools/check-consumer-release.py` then verifies that
+   injected npm runtime. The support matrix still claims TypeScript/Node only as
+   `connect`. These paths must converge before package-manager UX is authoritative.
+11. `tools/package-consumer-release.py` directly invokes `cargo`, `pip`, and `npm`
+    rather than a future `./dev release-check`/toolchain-resolution authority.
+    That is an explicit convergence gap, not a reason to treat the current packager
+    as the final release interface.
 
 ## Public command and target ownership
 
@@ -102,15 +121,16 @@ already existed.
 | `docker/searchkernel-ci/Dockerfile` | **CANONICAL AUTHORITY** | Thin source-specific leaf; validates exact toolchain/Vespa inputs without copying Vespa payload. |
 | `tools/publish-searchkernel-ci-image.sh` | **CANONICAL AUTHORITY** | Publishes `searchkernel-ci:<searchkernel-revision>` and records exact toolchain/Vespa digests. |
 | `tools/searchkernel-ci-image-common.sh` | **CANONICAL AUTHORITY** | Shared image identity, digest resolution, clean-checkout, and publication helpers. |
-| `tools/run-in-ci-image.sh` | **CANONICAL AUTHORITY** | Default local Docker launcher for build/test/verify commands; fails closed if Docker/image setup is unavailable. |
+| `tools/run-in-ci-image.sh` | **CANONICAL AUTHORITY** | Default local Docker launcher for Docker-backed check/test/verify commands; fails closed if Docker/image setup is unavailable. |
 | `tools/ensure-ci-vespa-volume.sh` | **CANONICAL AUTHORITY** | Materializes the exact leaf-selected Vespa image into digest-addressed read-only runtime storage. |
 | `tools/ensure-ci-sccache.sh` | **CALLER** | Provides shared non-authoritative compiler cache keyed by compatible toolchain identity. |
 | `.github/workflows/rust-ci.yml` | **TEMPORARY COMPATIBILITY** | Direct Docker launcher for the small PR gate rather than `./dev ci`. |
+| `.github/workflows/rustfmt-autofix.yml` | **CALLER** | Pulls the canonical leaf and runs pinned rustfmt inside it before credential-separated writeback. |
 | `tools/ci/runner-bootstrap/{install,verify}.sh` | **CALLER** | Self-hosted runner Docker/bootstrap validation. |
 | `reference/vespa/{m4,m8,m9,m10}/oracle/run-cpp-oracle.sh` | **ORACLE AUTHORING** | Docker-backed independent oracle execution where needed. |
-| `docker/searchkernel-ci/base.Dockerfile` | **DEAD / SUSPECTED DEAD** | Historical composite image recipe that copies Vespa payload into the image. No supported publisher/runner consumes it; current tests still mention it. Prove dead before deletion. |
+| `docker/searchkernel-ci/base.Dockerfile` | **DEAD / SUSPECTED DEAD** | Historical composite image recipe that copies Vespa payload into the image. No tracked caller references this actual path; tests only use the basename as a forbidden token or temporary fixture name. Prove dead before deletion. |
 
-The active immutable identities are therefore exactly:
+The active development/CI Docker **logical coordinates** are:
 
 ```text
 searchkernel-ci-toolchain:<toolchain-id>
@@ -118,9 +138,27 @@ searchkernel-ci-vespa:<vespa-commit>-<bundle-id>
 searchkernel-ci:<searchkernel-revision>
 ```
 
-The leaf additionally records exact repository digests in OCI labels. Ordinary
-Search Kernel leaf publication requires the toolchain and Vespa images to
-already exist and does not republish the Vespa bytes.
+The immutable identity used for execution/materialization is the resolved
+repository digest, not merely the tag above. This distinction matters because
+`publish-searchkernel-ci-vespa.sh` may replace the same logical Vespa tag when
+its producer fingerprint changes. The thin-leaf publisher likewise defaults its
+tag to `git rev-parse --short=12 HEAD` (and accepts an explicit tag), while the
+full Search Kernel commit is recorded separately in the OCI revision label. The
+leaf records exact toolchain and Vespa repository digests in OCI labels.
+Ordinary Search Kernel leaf publication requires those images to already exist
+and does not republish the Vespa bytes.
+
+### Image producer/consumer map
+
+| Logical image | Publisher | Direct consumers |
+| --- | --- | --- |
+| `searchkernel-ci-toolchain:<toolchain-id>` | `tools/publish-searchkernel-ci-toolchain.sh` | `tools/publish-searchkernel-ci-image.sh` resolves its digest and passes it to `docker/searchkernel-ci/Dockerfile` as the leaf runtime base. |
+| `searchkernel-ci-vespa:<vespa-commit>-<bundle-id>` | `tools/publish-searchkernel-ci-vespa.sh` | `tools/publish-searchkernel-ci-image.sh` uses it read-only for leaf build-time compatibility/native validation; `tools/ensure-ci-vespa-volume.sh` materializes the exact leaf-recorded digest for runtime verification. |
+| `searchkernel-ci:<searchkernel-revision>` (plus promoted `:latest`) | `tools/publish-searchkernel-ci-image.sh` | `tools/run-in-ci-image.sh`, `.github/workflows/rust-ci.yml`, and `.github/workflows/rustfmt-autofix.yml` pull/run the leaf; the local runner then resolves the leaf-recorded Vespa digest separately. |
+
+This map is intentionally about the **development/CI images**. The host native
+base and future consumer-runtime artifact have separate identities and must not
+be conflated with these Docker axes.
 
 ## Native SDK builders, resolvers, and runtime staging
 
@@ -133,9 +171,11 @@ already exist and does not republish the Vespa bytes.
 | `tools/prepare-searchkernel-ci-native-context.sh` | **CALLER** | Converts a qualified native SDK/Vespa checkout into the Vespa image build contexts. |
 | `core/crates/searchkernel-vespa-bindings/build.rs` | **CALLER** | Cargo/native link integration; consumes the selected base and builds the Search Kernel adapter locally. |
 | `reference/vespa/common/verify-common.sh` | **TEMPORARY COMPATIBILITY** | Verifier-specific SDK/runtime preparation layered around the normal native authorities. M3 is intended to collapse this secondary setup. |
-| `core/crates/searchkernel-vespa-bindings/consumer_bundle.rs` + `tools/generate-native-consumer-bundle.py` | **CANONICAL AUTHORITY** | Current consumer-safe #745 Rust bundle/runtime metadata path; retained until the M1 runtime replacement is proven. |
+| `tools/generate-native-consumer-bundle.py` | **CANONICAL AUTHORITY** | Defines and generates the source/tool bundle required by the packaged native bindings crate. |
+| `core/crates/searchkernel-vespa-bindings/consumer_bundle.rs` | **CALLER** | Generated bundle output (`@generated`; do not edit) consumed by the packaged bindings crate. |
 | `tools/bundle-native-runtime-closure.py`, `tools/native_runtime_closure.py` | **CANONICAL AUTHORITY** | Computes/stages the relocatable native runtime closure used by current consumer/release tooling. |
-| `tools/package-consumer-release.py`, `tools/check-consumer-release.py` | **CALLER** | Assemble and verify current external-consumer release artifacts. |
+| `tools/package-consumer-release.py` | **CANONICAL AUTHORITY** | Assembles the current supported Linux x86-64 consumer artifact set and provenance/checksums. |
+| `tools/check-consumer-release.py` | **CALLER** | Verifies the artifact set produced by the consumer release packager. |
 | `clients/python/searchkernel/client.py` | **CALLER** | Python managed-local runtime launch path. |
 | `clients/typescript/src/node/managed-local-host.ts` | **CALLER** | TypeScript/Node managed-local runtime launch path. |
 | `clients/ruby/lib/searchkernel/managed_local.rb` | **CALLER** | Ruby managed-local runtime launch path; product distribution remains deferred by the current support matrix. |
@@ -145,6 +185,31 @@ already exist and does not republish the Vespa bytes.
 The current production invariant is consumer-safe runtime identity/relocatability,
 not any particular DSO layout. The #745 mechanism remains authoritative until a
 replacement passes the M1 external-consumer and package-manager proofs.
+
+The current non-oracle verifier/runtime compatibility scripts that still name
+`LD_LIBRARY_PATH` are all **TEMPORARY COMPATIBILITY** paths:
+
+```text
+reference/vespa/i/verify-i.sh
+reference/vespa/m0/verify-m0.sh
+reference/vespa/m1/verify-m1.sh
+reference/vespa/m10/feature-values/verify-feature-values.sh
+reference/vespa/m11/verify-m11-common.sh
+reference/vespa/m11/verify-m11-core.sh
+reference/vespa/m11/verify-m11-sanitizers.sh
+reference/vespa/m13/verify-m13.sh
+reference/vespa/m14/verify-m14.sh
+reference/vespa/m2/verify-m2.sh
+reference/vespa/m3/run-rust.sh
+reference/vespa/m5/verify-m5.sh
+reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh
+reference/vespa/phase9/verify-phase9.sh
+reference/vespa/recovery/verify-recovery.sh
+reference/vespa/searchreply/verify-searchreply.sh
+```
+
+This list is intentionally separate from direct oracle loader setup, which is
+**ORACLE AUTHORING**, not a compatibility path to converge into product runtime.
 
 ## Standalone verifier workspaces and compiled sources
 
@@ -185,6 +250,13 @@ design audit:
 | Uncertain compile fixture | 1 | 0 | 0 | 0 | **1** |
 | **Total** | **50** | **4** | **12** | **4** | **70** |
 
+The compiled-language file set is unchanged from the design audit baseline to
+this snapshot: diffing `19ddb707...128291d9` under `reference/vespa` yields no
+added, removed, or modified `.rs`, `.c`, `.cc`, `.cpp`, or `.java` files. The
+current routing still explicitly selects the known API-contract bins and
+verifier drivers; `m-api.rs` remains the single source for which no normal
+entrypoint was found.
+
 The six active direct native probes are:
 
 | Source | Current runner | Classification |
@@ -211,9 +283,17 @@ under:
 - `reference/vespa/m2/oracle/embedded_crud_spike.cpp`.
 
 Golden-authoring entrypoints such as `freeze-goldens.sh`, `freeze-golden.sh`,
-and `m3/kstem/freeze-kstem.sh` are also **ORACLE AUTHORING**. They must remain
-outside ordinary build/test requirements unless explicitly invoked by a
-maintainer.
+and `m3/kstem/freeze-kstem.sh` are **ORACLE AUTHORING**. Direct oracle **build**
+and golden-generation remain explicit authoring operations, but current main does
+not yet make oracle **execution** explicit-only: `reference/vespa/common/verify-common.sh`
+defaults `SEARCHKERNEL_VERIFY_LIVE_ORACLE` to `auto`, and `live_oracle_enabled()`
+returns true when the verifier is not using the published Vespa toolchain.
+Consequently ordinary local verifier entrypoints including M3/M4/M6-M10,
+M12-M14, recursive grouping, phase9, SearchReply, and feature-values can execute
+a prebuilt/direct oracle opportunistically. That automatic execution policy is
+**TEMPORARY COMPATIBILITY** and is an explicit M3 convergence gap; the target
+contract requires normal verification to replay frozen evidence unless a
+maintainer opts into live-oracle execution.
 
 ## GitHub Actions and CI-only setup
 
@@ -221,10 +301,13 @@ maintainer.
 | --- | --- | --- |
 | `.github/workflows/rust-ci.yml` | **TEMPORARY COMPATIBILITY** | Mandatory PR gate. It directly pulls/runs the canonical image and embeds fmt/check/clippy commands. |
 | `.github/workflows/rustfmt-autofix.yml` | **CALLER** | Isolated untrusted formatting plus credential-separated writeback. |
-| `.github/ci/*.py`, `.github/ci/*.sh` | **TEMPORARY COMPATIBILITY** | Exact-head, runner, evidence/ownership, and policy helper/test surface. Several still name deleted reusable workflows and must be reconciled with the reduced CI model. |
+| `.github/ci/resolve-native-adapter-lib.py` | **CALLER** | Active adapter-location helper used by current verifier, client-E2E, and release-packaging paths. |
+| `.github/ci/test_resolve_native_adapter_lib.py` | **CALLER** | Regression coverage for the active adapter resolver. |
+| `.github/ci/test_rustfmt_autofix.py` | **CALLER** | Regression coverage for the surviving `rustfmt-autofix.yml` workflow. |
+| The 11 `.github/ci/` paths in the stale-reference list below | **TEMPORARY COMPATIBILITY** | Residual selector/runner/evidence policy or tests that still name the deleted `ci-image-runner.yml`; each must be reconciled before reuse. |
+| `.github/ci/check-python-workflows.sh` + `.github/ci/select-python.sh` | **DEAD / SUSPECTED DEAD** | No surviving workflow calls them; current references are residual tests/docs. Prove obsolete or reconnect deliberately. |
 | `tools/ci/runner-bootstrap/**` | **CALLER** | Self-hosted runner packaging/bootstrap/verification. |
 | `tools/test-ci-image-publishing.sh` | **TEMPORARY COMPATIBILITY** | Active `check-fast` regression test, but currently attempts to read the deleted `ci-image-runner.yml` and fails. |
-| `.github/ci/{check-ci-evidence-ownership.py,check-self-hosted-rust-workflows.py,coverage_verifier_required.py,native_verifier_required.py,test_*.py}` and related release/native guards | **TEMPORARY COMPATIBILITY** | Residual policy/tests with references to deleted reusable workflow names; inventory before deciding which logic migrates versus dies. |
 
 The current automatic PR gate is intentionally small, but it does **not** yet
 satisfy the M2 target state where GitHub Actions delegates the gate to
@@ -233,17 +316,43 @@ satisfy the M2 target state where GitHub Actions delegates the gate to
 ## Release/package builders, support rows, and package-manager artifacts
 
 `docs/release-support.json` is the machine-readable **CANONICAL AUTHORITY** for
-current supported/deferred release rows. At this snapshot it supports:
+current supported/deferred release rows. The supported rows at this snapshot are:
 
-- Rust embedded native;
-- `searchkerneld` native;
-- Python managed-local native;
-- Python connect;
-- TypeScript/Node connect.
+| Surface | Runtime | Evidence | Verification |
+| --- | --- | --- | --- |
+| `rust-embedded` | `native` | `native-full` | `./dev verify persistence` |
+| `searchkerneld` | `native` | `client-e2e` | `tools/check-client-contracts.py --run-e2e` |
+| `python` | `managed-local` | `native-full` | `tools/run-python-native-e2e.sh --prevalidated-native-sdk` |
+| `python` | `connect` | `client-e2e` | `tools/check-client-contracts.py --run-e2e` |
+| `typescript-node` | `connect` | `client-e2e` | `tools/check-client-contracts.py --run-e2e` |
 
-It defers TypeScript browser gRPC-Web, PHP, Ruby, Go, macOS, Windows, and Linux
-AArch64. This current support matrix is not evidence that the M1 promised
+The same file defers these exact identifiers:
+
+```text
+typescript-browser-grpc-web
+php
+ruby
+go
+macos
+windows
+linux-aarch64
+```
+
+This current support matrix is not evidence that the M1 promised
 Cargo/pip/npm/RubyGems lazy-runtime feasibility proof is complete.
+
+A current implementation mismatch is deliberately recorded here. Normal
+`clients/typescript/scripts/verify-package.cjs` creates a clean npm consumer and
+asserts that the installed package cannot resolve a bundled managed-local daemon;
+it must instruct the user to set `SEARCHKERNEL_LOCAL_HOST`. By contrast,
+`tools/package-consumer-release.py` temporarily copies `bin/` + `lib/` runtime
+trees into both `clients/python/searchkernel` and `clients/typescript` before
+building the release wheel/npm tarball, and `tools/check-consumer-release.py`
+requires a runnable daemon tree in that npm artifact. The support matrix still
+exposes only `typescript-node` / `connect`. Treat the support matrix as the
+support authority and these divergent assembly paths as convergence evidence;
+do not infer managed-local TypeScript release support from the release artifact
+contents alone.
 
 Package-manager surfaces present in the repository are:
 
@@ -257,8 +366,9 @@ Package-manager surfaces present in the repository are:
 
 Current release/native artifact builders and checkers include:
 
-- `tools/package-consumer-release.py` — **CALLER**;
-- `tools/check-consumer-release.py` — **CALLER**;
+- `tools/package-consumer-release.py` — **CANONICAL AUTHORITY** for assembling
+  the current supported Linux x86-64 consumer artifact set and its provenance;
+- `tools/check-consumer-release.py` — **CALLER** that verifies that artifact set;
 - `tools/generate-native-consumer-bundle.py` — **CANONICAL AUTHORITY** for the
   checked-in Rust consumer bundle mapping;
 - `tools/package-native-base-artifact.sh` and `tools/publish-native-base.sh` —
@@ -274,12 +384,14 @@ Current release/native artifact builders and checkers include:
 | --- | --- | --- |
 | `tools/test-native-consumer-package.sh` | **CALLER** | Clean external Rust/native consumer package behavior. |
 | `tools/test_package_consumer_release.py` | **CALLER** | Consumer release packager/verifier behavior. |
-| `clients/python/tests/test_package_import.py` | **CALLER** | Python package import/install shape. |
+| `clients/python/tests/test_package_import.py` | **CALLER** | Source-tree public-export/import regression only; it does **not** prove external wheel installation. |
+| `tools/check-consumer-release.py` (Python wheel path) | **CALLER** | Installs the built wheel into a temporary target and verifies the packaged daemon/native runtime with repository/runtime overrides removed. |
 | `clients/python/tests/test_managed_local_host.py` | **CALLER** | Python managed-local runtime hosting behavior. |
 | `clients/typescript/scripts/verify-package.cjs` | **CALLER** | npm package contents/install behavior. |
 | `clients/typescript/scripts/verify-installed-managed-local-e2e.cjs` | **CALLER** | Installed TypeScript managed-local E2E path. |
 | `clients/typescript/tests/managed-local-host.test.ts` | **CALLER** | Node managed-local host behavior. |
 | `clients/php/tests/verify_package.sh` + `package_consumer.php` | **CALLER** | Composer/package consumer behavior. |
+| `dev:run_ruby_tests()` + `clients/ruby/searchkernel.gemspec` | **CALLER** | Builds and installs the gem into an isolated `GEM_HOME`, validates the installed package, then runs the real managed-local Ruby E2E from that installed gem. |
 | `reference/vespa/common/test-published-provenance.sh` | **CALLER** | Published native provenance contract. |
 
 These tests prove pieces of current packaging behavior; they do not by
@@ -297,14 +409,43 @@ These items should not be silently carried forward:
 2. `docker/searchkernel-ci/base.Dockerfile` — **DEAD / SUSPECTED DEAD** as a
    production image path. It represents the older composite model that copies
    the Vespa payload. Current publishers use the thin
-   `docker/searchkernel-ci/Dockerfile`; only regression/identity tests were found
-   referencing `base.Dockerfile`.
+   `docker/searchkernel-ci/Dockerfile`; `git grep` finds no caller of the actual
+   path. Regression/identity tests mention only the basename as a forbidden token
+   or temporary fixture name.
 3. Deleted reusable-workflow references — **TEMPORARY COMPATIBILITY** until
    reconciled. The current workflow directory contains only `rust-ci.yml` and
    `rustfmt-autofix.yml`, while 17 tracked helpers still reference
    `ci-image-runner.yml`. Some encode still-useful policy and some may now be
    dead. They must not be treated as active CI authorities merely because their
    files remain tracked.
+
+The 17 stale-reference paths are:
+
+```text
+.github/ci/check-ci-evidence-ownership.py
+.github/ci/check-self-hosted-rust-workflows.py
+.github/ci/coverage_verifier_required.py
+.github/ci/native_verifier_required.py
+.github/ci/test_behavioral_lanes_required.py
+.github/ci/test_ci_image_runner_isolation.py
+.github/ci/test_coverage_verifier_required.py
+.github/ci/test_exact_head.py
+.github/ci/test_native_verifier_runner.py
+.github/ci/test_tooling_invariant_required.py
+.github/ci/test_verification_cache_policy.py
+reference/vespa/verifiers/test-routing.sh
+tools/check-native-consumer-contract.py
+tools/check-release-persistence-contract.py
+tools/check-release-support.py
+tools/test-ci-image-publishing.sh
+tools/test-native-environment-fingerprint.sh
+```
+
+Reproduce that set with:
+
+```bash
+git grep -l ci-image-runner.yml -- .github tools reference | sort
+```
 
 ## Reproducing the compiled-source audit
 
@@ -340,6 +481,25 @@ PY
 
 The set assertion must succeed. The role counts must be 55 active, 14 oracle,
 and 1 uncertain; language totals must be 50 Rust, 4 C, 12 C++, and 4 Java.
+
+## M1 inventory coverage matrix
+
+| Required M1 inventory category | Concrete evidence in this inventory |
+| --- | --- |
+| Public `./dev` commands | “Public command and target ownership” records `dev`, its current command surface, and missing M1 commands. |
+| Direct Cargo/compiler/interpreter invocations | “Compiler, interpreter, and Cargo authority” records canonical resolvers, `dev`, direct PR-CI Cargo, standalone verifier Cargo, and oracle compiler paths; release-packager direct tool use is also called out explicitly. |
+| Docker launchers | “Docker launchers and three image axes” records the local runner, both surviving workflows that invoke the leaf, publishers, runner bootstrap, and Docker-backed oracle execution. |
+| Image publishers/consumers | “Image producer/consumer map” names the publisher and direct consumers for all three image axes. |
+| Native SDK builders/resolvers | “Native SDK builders, resolvers, and runtime staging” records `build-sdk.sh`, `resolve-native-sdk.sh`, native-base cache operations, and CI-native context preparation. |
+| Runtime staging and loader behavior | The native/runtime table records consumer-bundle generation, runtime-closure staging, release packaging, managed-local hosts, verifier loader compatibility, and oracle loader isolation. |
+| Standalone verifier workspaces | The exact 18 `reference/vespa/**/Cargo.toml` paths are listed. |
+| Active C/C++ verifier compilation | The exact four C and two C++ current-implementation probe sources and their runners are listed. |
+| Direct oracle compilation/execution | `compiled-sources.md` marks all 14 oracle sources; “Direct oracle compilation and execution” records their build/run and golden-authoring entrypoints. |
+| GitHub Actions workflows | “GitHub Actions and CI-only setup” records both surviving workflows and the stale deleted-runner references. |
+| Release/package builders | The release/native section records the consumer release packager/checker, native-base packager/publisher, and generated Rust consumer-bundle authority. |
+| Support-matrix rows | The five supported rows and seven exact deferred identifiers from `docs/release-support.json` are recorded. |
+| Package-manager artifacts | Cargo, `pyproject.toml`, npm `package.json`, RubyGems `.gemspec`, and Composer metadata are listed and classified. |
+| External-consumer/package tests | The external-consumer table distinguishes source-only Python import coverage from real wheel install/runtime proof, and records Rust, npm/Node, Composer/PHP, Ruby installed-gem E2E, and published-provenance checks. |
 
 ## M1 handoff from this inventory
 
