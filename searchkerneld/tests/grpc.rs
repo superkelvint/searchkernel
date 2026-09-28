@@ -590,11 +590,9 @@ async fn legacy_single_transport_rejects_targeted_requests() {
         .await
         .expect_err("targeted request must not bypass the multi-index router");
     assert_eq!(status.code(), Code::FailedPrecondition);
-    assert!(
-        status
-            .message()
-            .contains("targeted Search Kernel requests require the multi-index daemon")
-    );
+    assert!(status
+        .message()
+        .contains("targeted Search Kernel requests require the multi-index daemon"));
 
     server.shutdown().await.expect("shutdown server");
     index.close().expect("close test index");
