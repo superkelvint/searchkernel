@@ -25,6 +25,14 @@ through these schemas merely to reach the local engine.
   values are not automatically treated as the same thing.
 - Union discriminators must agree with their payload tables. Malformed or
   incomplete unions are rejected at the boundary.
+- Daemon-bound requests carry an explicit logical `IndexTarget`. Targets are
+  protocol identities, not filesystem paths; the canonical validator accepts
+  lowercase ASCII slugs only. A multi-index daemon rejects target-less V2
+  requests rather than silently selecting a default index.
+- `CreateIndexRequest` and `OpenIndexRequest` are canonical lifecycle
+  operations. Create is strict (existing target -> `AlreadyExists`); open is
+  strict (missing target -> `NotFound`). Closing a client handle is not a
+  server-side unload operation.
 - The schemas describe the portable contract; they do not implement search.
 
 Generated Rust protocol code belongs under
