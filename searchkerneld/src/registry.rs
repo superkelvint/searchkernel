@@ -4,7 +4,7 @@ use searchkernel_dispatch::{DispatchError, Dispatcher};
 use searchkernel_ir::{ErrorCode, PortableError};
 use searchkernel_protocol::{
     protocol::v2 as wire,
-    target::{request_index_target, RequestTargetError},
+    target::{request_index_target, IndexControlError},
     v2 as api, PROTOCOL_VERSION,
 };
 use std::{
@@ -44,8 +44,6 @@ impl std::error::Error for RegistryInitError {}
 pub enum RegistryDispatchError {
     InvalidRequest,
     UnsupportedProtocol(u32),
-    MissingTarget,
-    InvalidTarget(String),
     UnsupportedOperation(u8),
     Closed,
     Poisoned,
@@ -60,13 +58,6 @@ impl fmt::Display for RegistryDispatchError {
                     formatter,
                     "unsupported Search Kernel protocol version {version}"
                 )
-            }
-            Self::MissingTarget => write!(
-                formatter,
-                "Search Kernel request is missing an index target"
-            ),
-            Self::InvalidTarget(message) => {
-                write!(formatter, "invalid Search Kernel index target: {message}")
             }
             Self::UnsupportedOperation(value) => {
                 write!(
@@ -116,21 +107,23 @@ impl IndexRegistry {
                 envelope.protocol_version(),
             ));
         }
-        let target = request_index_target(envelope).map_err(|error| match error {
-            RequestTargetError::Missing => RegistryDispatchError::MissingTarget,
-            RequestTargetError::Invalid(error) => {
-                RegistryDispatchError::InvalidTarget(error.to_string())
+        let target = match request_index_target(envelope) {
+            Ok(target) => target,
+            Err(error) => {
+                return Ok(encode_error(index_control_error_to_portable(error.into())));
             }
-        })?;
+        };
 
         match envelope.payload_type() {
             wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
                 let payload = envelope
                     .payload_as_search_kernel_v2_create_index_request()
                     .ok_or(RegistryDispatchError::InvalidRequest)?;
-                let definition = payload
-                    .definition()
-                    .ok_or(RegistryDispatchError::InvalidRequest)?;
+                let Some(definition) = payload.definition() else {
+                    return Ok(encode_error(index_control_error_to_portable(
+                        IndexControlError::MissingIndexDefinition,
+                    )));
+                };
                 self.create(target, definition)
             }
             wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
@@ -187,9 +180,8 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
         if entries.contains_key(target) {
-            return Ok(encode_error(PortableError::new(
-                ErrorCode::AlreadyExists,
-                format!("index already exists: {target}"),
+            return Ok(encode_error(index_control_error_to_portable(
+                IndexControlError::IndexAlreadyExists,
             )));
         }
 
@@ -204,7 +196,7 @@ impl IndexRegistry {
         };
         let index = match Index::create_from_definition_bytes(&path, &definition_bytes) {
             Ok(index) => index,
-            Err(error) => return Ok(encode_error(index_error_to_portable(error))),
+            Err(error) => return Ok(encode_error(lifecycle_index_error_to_portable(error))),
         };
         let (context, session) = index.clone().into_session_parts();
         let entry = Arc::new(RegistryEntry {
@@ -237,7 +229,7 @@ impl IndexRegistry {
         };
         let index = match Index::open(&path) {
             Ok(index) => index,
-            Err(error) => return Ok(encode_error(index_error_to_portable(error))),
+            Err(error) => return Ok(encode_error(lifecycle_index_error_to_portable(error))),
         };
         let (context, session) = index.clone().into_session_parts();
         let entry = Arc::new(RegistryEntry {
@@ -264,9 +256,8 @@ impl IndexRegistry {
             entries.get(target).map(|entry| entry.dispatcher.clone())
         };
         let Some(dispatcher) = dispatcher else {
-            return Ok(encode_error(PortableError::new(
-                ErrorCode::NotFound,
-                format!("index is not open: {target}"),
+            return Ok(encode_error(index_control_error_to_portable(
+                IndexControlError::IndexNotFound,
             )));
         };
         dispatcher.dispatch(request).map_err(map_dispatch_error)
@@ -314,6 +305,33 @@ fn map_dispatch_error(error: DispatchError) -> RegistryDispatchError {
             RegistryDispatchError::UnsupportedOperation(value)
         }
         DispatchError::Closed => RegistryDispatchError::Closed,
+    }
+}
+
+fn index_control_error_to_portable(error: IndexControlError) -> PortableError {
+    let code = match error.error_code() {
+        api::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
+        api::ErrorCode::AlreadyExists => ErrorCode::AlreadyExists,
+        api::ErrorCode::NotFound => ErrorCode::NotFound,
+        other => unreachable!("unexpected index-control error code: {other:?}"),
+    };
+    let message = error.to_string();
+    PortableError::new(code, message.clone()).with_detail(
+        error.detail_code(),
+        error.path(),
+        message,
+    )
+}
+
+fn lifecycle_index_error_to_portable(error: IndexError) -> PortableError {
+    match error.code() {
+        IndexErrorCode::AlreadyExists => {
+            index_control_error_to_portable(IndexControlError::IndexAlreadyExists)
+        }
+        IndexErrorCode::NotFound => {
+            index_control_error_to_portable(IndexControlError::IndexNotFound)
+        }
+        _ => index_error_to_portable(error),
     }
 }
 
