@@ -69,7 +69,7 @@ gh workflow run on-demand-verification.yml \
     -f "request_id=$request_id"
 
 run_id=
-for _ in $(seq 1 30); do
+for ((attempt = 0; attempt < 30; attempt += 1)); do
     while IFS=$'\t' read -r candidate_id candidate_title; do
         if [[ "$candidate_title" == *"[$request_id]"* ]]; then
             run_id=$candidate_id
