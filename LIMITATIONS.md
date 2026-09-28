@@ -290,7 +290,7 @@ approximated.
 
 ### Targeted multi-index daemon lifecycle protocol (`daemon.multi_index_lifecycle`)
 
-- The downgrade-safe targeted request and create/open wire contract is frozen, but daemon registry/data-root execution lands in #846; direct top-level V2 operations remain per-index/embedded only.
+- The direct targeted request-envelope and create/open wire contract is the #848 forward-compatibility baseline, but daemon registry/data-root execution lands in #846. Target-less envelopes remain valid only for embedded/per-index callers.
 
 ## Evidence and versioning
 

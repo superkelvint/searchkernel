@@ -108,9 +108,9 @@ def End(builder: flatbuffers.Builder) -> int:
 from SearchKernel._lazy import lazy_module as _lazy_module
 _lazy_RequestPayload = _lazy_module("SearchKernel.Protocol.V2.RequestPayload")
 
-_lazy_TargetedRequest = _lazy_module("SearchKernel.Protocol.V2.TargetedRequest")
-
 _lazy_AnalyzeRequest = _lazy_module("SearchKernel.V2.AnalyzeRequest")
+
+_lazy_CreateIndexRequest = _lazy_module("SearchKernel.V2.CreateIndexRequest")
 
 _lazy_DeleteRequest = _lazy_module("SearchKernel.V2.DeleteRequest")
 
@@ -123,6 +123,8 @@ _lazy_IndexTarget = _lazy_module("SearchKernel.V2.IndexTarget")
 _lazy_InsertRequest = _lazy_module("SearchKernel.V2.InsertRequest")
 
 _lazy_InspectQueryRequest = _lazy_module("SearchKernel.V2.InspectQueryRequest")
+
+_lazy_OpenIndexRequest = _lazy_module("SearchKernel.V2.OpenIndexRequest")
 
 _lazy_PatchRequest = _lazy_module("SearchKernel.V2.PatchRequest")
 
@@ -148,7 +150,7 @@ class RequestEnvelopeT(object):
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
-        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertRequest.InsertRequestT', 'SearchKernel.V2.UpsertRequest.UpsertRequestT', 'SearchKernel.V2.PatchRequest.PatchRequestT', 'SearchKernel.V2.DeleteRequest.DeleteRequestT', 'SearchKernel.V2.GetRequest.GetRequestT', 'SearchKernel.V2.SearchRequest.SearchRequestT', 'SearchKernel.V2.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.V2.DescribeRequest.DescribeRequestT', 'SearchKernel.V2.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.V2.UpdateRequest.UpdateRequestT', 'SearchKernel.Protocol.V2.TargetedRequest.TargetedRequestT']
+        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertRequest.InsertRequestT', 'SearchKernel.V2.UpsertRequest.UpsertRequestT', 'SearchKernel.V2.PatchRequest.PatchRequestT', 'SearchKernel.V2.DeleteRequest.DeleteRequestT', 'SearchKernel.V2.GetRequest.GetRequestT', 'SearchKernel.V2.SearchRequest.SearchRequestT', 'SearchKernel.V2.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.V2.DescribeRequest.DescribeRequestT', 'SearchKernel.V2.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.V2.UpdateRequest.UpdateRequestT', 'SearchKernel.V2.CreateIndexRequest.CreateIndexRequestT', 'SearchKernel.V2.OpenIndexRequest.OpenIndexRequestT']
         self.target = target  # type: Optional[SearchKernel.V2.IndexTarget.IndexTargetT]
 
     @classmethod

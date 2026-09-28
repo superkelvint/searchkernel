@@ -144,7 +144,7 @@ Capabilities with known constraints are collected in the generated
 - `result.grouping_tree` — The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Rust now preserves nested Hit children with the same Hit decoder used at the root, but its GroupingResult convenience separates nested groups and hits into distinct vectors and does not expose the canonical mixed-child ordering or canonical root directly.
 - `result.degradation_metadata` — The real backend populates coverage counters and match-phase/timeout/ANN degradation flags. Portable timing, trace, arbitrary metadata, and native Vespa UniqueIssues are not currently populated by this backend; UniqueIssues are deliberately not fabricated into SearchResult.errors.
 - `platform.embedded_vespa_scope` — Distributed routing, configuration services, schema deployment, federation, and other container-level Vespa facilities are outside this wrapper.
-- `daemon.multi_index_lifecycle` — The downgrade-safe targeted request and create/open wire contract is frozen, but daemon registry/data-root execution lands in #846; direct top-level V2 operations remain per-index/embedded only.
+- `daemon.multi_index_lifecycle` — The direct targeted request-envelope and create/open wire contract is the #848 forward-compatibility baseline, but daemon registry/data-root execution lands in #846. Target-less envelopes remain valid only for embedded/per-index callers.
 
 ## Structured facade support
 
