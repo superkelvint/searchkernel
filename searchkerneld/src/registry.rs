@@ -130,7 +130,7 @@ impl IndexRegistry {
     pub fn close_all(&self) -> Result<(), IndexError> {
         let entries = {
             let mut entries = self.entries.lock().map_err(|_| {
-                IndexError::Infrastructure("Search Kernel index registry lock is poisoned".into())
+                IndexError::search(IndexErrorCode::Internal, "Search Kernel index registry lock is poisoned")
             })?;
             std::mem::take(&mut *entries)
         };
@@ -274,6 +274,7 @@ fn index_error_to_portable(error: IndexError) -> PortableError {
         IndexErrorCode::Internal => ErrorCode::Internal,
         IndexErrorCode::Unavailable => ErrorCode::Unavailable,
         IndexErrorCode::DeadlineExceeded => ErrorCode::DeadlineExceeded,
+        _ => ErrorCode::Internal,
     };
     let mut portable = PortableError::new(code, error.to_string());
     portable.retryable = error.retryable();
