@@ -517,7 +517,6 @@ fn concurrent_create_and_open_are_linearizable() {
     registry.close_all().expect("close registry");
 }
 
-
 #[test]
 fn rejects_non_directory_target_entry() {
     let temp = TempDir::new("non-directory-target");
