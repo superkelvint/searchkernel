@@ -1508,6 +1508,7 @@ fn encode_search_request(
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
+            target: None,
             payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
             payload: Some(search.as_union_value()),
         },

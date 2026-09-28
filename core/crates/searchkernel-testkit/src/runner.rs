@@ -47,6 +47,7 @@ pub fn build_component_transport_case(
             &mut builder.builder,
             &transport::RequestEnvelopeArgs {
                 protocol_version: PROTOCOL_VERSION,
+                target: None,
                 payload_type,
                 payload: Some(payload),
             },

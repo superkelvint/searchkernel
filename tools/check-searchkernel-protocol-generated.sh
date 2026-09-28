@@ -9,4 +9,13 @@ SEARCHKERNEL_RUST_GENERATED_DIR="$temporary/generated"   bash "$root/tools/gener
 
 diff -ruN --   "$root/core/crates/searchkernel-protocol/src/generated"   "$temporary/generated"
 
+protocol_module="$root/core/crates/searchkernel-protocol/src/protocol.rs"
+for generated in "$root/core/crates/searchkernel-protocol/src/generated/search_kernel/protocol/v2/"*_generated.rs; do
+    basename=$(basename "$generated")
+    if ! grep -Fq "include!(\"generated/search_kernel/protocol/v2/$basename\");" "$protocol_module"; then
+        echo "Rust protocol module is missing generated export: $basename" >&2
+        exit 1
+    fi
+done
+
 echo "Rust FlatBuffers generation reproducibility PASS"

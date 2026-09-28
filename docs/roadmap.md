@@ -44,6 +44,31 @@ return.
 Do not start another broad capability family until the current tree is green on
 its exact head and the remaining semantic/schema acceptance work has converged.
 
+### 0. Multi-index daemon control plane
+
+`searchkerneld` must become a long-lived multi-index service before client
+lifecycle parity or release qualification can close. The current single-index
+`--index` startup model is a transitional implementation, not the target server
+architecture.
+
+Required closure:
+
+- one daemon-owned registry containing multiple independently isolated indexes;
+- explicit logical index targeting in the canonical FlatBuffers request path;
+- canonical create/open lifecycle operations shared by gRPC and HTTP/JSON;
+- a configured daemon data root that maps safe logical index identifiers to
+  persistent directories without exposing arbitrary host filesystem paths;
+- linearizable same-name create/open behavior and safe lifecycle races;
+- persistence/restart with multiple indexes resident or reopenable;
+- client lifecycle surfaces that create/open/select indexes through the daemon
+  without another language client or per-index daemon restart.
+
+Keep the existing per-index dispatcher as the semantic execution boundary where
+practical and place routing/registry ownership above it. Client-handle `close()`
+must not implicitly unload a shared daemon index.
+
+Tracking: #844, with protocol work in #845, daemon registry work in #846, and
+PHP lifecycle parity in #841.
 ### 1. Keep exact-head `main` green
 
 This is the first closure gate, not a follow-up task.
