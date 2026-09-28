@@ -25,34 +25,32 @@ through these schemas merely to reach the local engine.
   values are not automatically treated as the same thing.
 - Union discriminators must agree with their payload tables. Malformed or
   incomplete unions are rejected at the boundary.
-- Daemon-bound requests carry an explicit logical `IndexTarget` and use the
-  top-level `TargetedRequest` wrapper. The wrapper is a downgrade barrier:
-  pre-multi-index V2 daemons do not know its discriminator, so targeted traffic
-  is rejected instead of having the new target field ignored while a familiar
-  Search/Insert/etc. payload executes against the old daemon's single index.
-  Targets are protocol identities, not filesystem paths; the canonical
-  validator accepts lowercase ASCII slugs only. Direct top-level operation
-  variants remain the per-index/embedded ABI and are not valid multi-index
-  daemon ingress.
-- `CreateIndexRequest` and `OpenIndexRequest` are canonical lifecycle
-  operations carried inside `TargetedRequest`. Create is strict (existing
-  target -> `AlreadyExists`); open is strict (missing target -> `NotFound`).
-  `IndexDefinition.name` is schema identity, not daemon routing identity, and
-  may differ from the enclosing logical target. Closing a client handle is not
-  a server-side unload operation.
-- Multi-index routing uses stable portable lifecycle details. Direct top-level
-  operation ingress is `InvalidArgument` / `targeted_request_required` at
-  `payload_type`; a malformed/empty targeted wrapper is `InvalidArgument` /
-  `invalid_targeted_request` at `payload`; CreateIndex without a schema is
-  `InvalidArgument` / `missing_index_definition` at
-  `payload.payload.definition`; missing target is `InvalidArgument` /
-  `missing_index_target` at `target`; malformed target
-  is `InvalidArgument` / `invalid_index_target` at `target.name`; strict
-  create collision is `AlreadyExists` / `index_already_exists`; strict open
-  miss is `NotFound` / `index_not_found`. The corresponding detail/path
-  strings are exported by `searchkernel_protocol::target` so the router does
-  not invent transport-local spellings. Transport layers must preserve these
-  domain errors rather than replacing them with HTTP/gRPC-only semantics.
+- Daemon-bound requests carry an explicit logical `IndexTarget` in the
+  canonical `RequestEnvelope`. Targets are protocol identities, not filesystem
+  paths; the canonical validator accepts lowercase ASCII slugs only. Embedded
+  and per-index callers may omit `target` because their local handle already
+  binds an index, but multi-index daemon ingress must reject omission instead of
+  selecting a default.
+- `CreateIndexRequest` and `OpenIndexRequest` are direct canonical lifecycle
+  operations in the same request union as Search/Get/Update. Create is strict
+  (existing target -> `AlreadyExists`); open is strict (missing target ->
+  `NotFound`). `IndexDefinition.name` is schema identity, not daemon routing
+  identity, and may differ from the enclosing logical target. Closing a client
+  handle is not a server-side unload operation.
+- Multi-index routing uses stable portable lifecycle details: CreateIndex without
+  a schema is `InvalidArgument` / `missing_index_definition` at
+  `payload.definition`; missing target is `InvalidArgument` /
+  `missing_index_target` at `target`; malformed target is `InvalidArgument`
+  / `invalid_index_target` at `target.name`; strict create collision is
+  `AlreadyExists` / `index_already_exists`; strict open miss is `NotFound`
+  / `index_not_found`. The corresponding detail/path strings are exported by
+  `searchkernel_protocol::target` so the router does not invent
+  transport-local spellings. Transport layers must preserve these domain errors
+  rather than replacing them with HTTP/gRPC-only semantics.
+- #848 is the wire-compatibility baseline for this multi-index contract. Earlier
+  development snapshots are not compatibility targets. After #848 lands,
+  existing request/response field slots, enum/union discriminator values, and
+  established semantics must evolve compatibly; new fields and variants append.
 - The schemas describe the portable contract; they do not implement search.
 
 Generated Rust protocol code belongs under
