@@ -160,10 +160,8 @@ fn lifecycle_request(kind: wire::RequestPayload) -> Vec<u8> {
     );
     let payload = match kind {
         wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
-            let definition = api::IndexDefinition::create(
-                &mut builder,
-                &api::IndexDefinitionArgs::default(),
-            );
+            let definition =
+                api::IndexDefinition::create(&mut builder, &api::IndexDefinitionArgs::default());
             api::CreateIndexRequest::create(
                 &mut builder,
                 &api::CreateIndexRequestArgs {
