@@ -6,8 +6,16 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "build" / "targets.json"
 
+def _reject_duplicate_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate key: {key}")
+        result[key] = value
+    return result
+
 def load():
-    return json.loads(REGISTRY.read_text())
+    return json.loads(REGISTRY.read_text(), object_pairs_hook=_reject_duplicate_keys)
 
 def entries(kind):
     return load()[kind]

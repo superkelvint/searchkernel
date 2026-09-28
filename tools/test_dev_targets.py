@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+import importlib.util
 import json
 import pathlib
 import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -9,6 +11,20 @@ REGISTRY = ROOT / "build" / "targets.json"
 TOOL = ROOT / "tools" / "dev-targets.py"
 
 class DevTargetsTest(unittest.TestCase):
+    def test_registry_loader_rejects_duplicate_keys(self):
+        spec = importlib.util.spec_from_file_location("dev_targets", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            registry = pathlib.Path(directory) / "targets.json"
+            registry.write_text(
+                '{"verify":{"vespa.search-reply":{},"vespa.search-reply":{"aliases":["searchreply"]}}}'
+            )
+            module.REGISTRY = registry
+
+            with self.assertRaisesRegex(ValueError, "duplicate key: vespa.search-reply"):
+                module.load()
+
     def test_registry_has_required_public_commands(self):
         data = json.loads(REGISTRY.read_text())
         self.assertEqual(

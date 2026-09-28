@@ -38,7 +38,7 @@
     "vespa.grouping.yql": {},
     "vespa.ranking": {},
     "vespa.ranking.feature-values": {},
-    "vespa.search-reply": {},
+    "vespa.search-reply": {"aliases": ["searchreply"]},
     "vespa.hardening": {},
     "vespa.hardening.core": {},
     "vespa.hardening.stress": {},
@@ -63,8 +63,7 @@
     "milestone.m11": {"aliases": ["m11"]},
     "milestone.m12": {"aliases": ["m12"]},
     "milestone.m13": {"aliases": ["m13"]},
-    "milestone.m14": {"aliases": ["m14"]},
-    "vespa.search-reply": {"aliases": ["searchreply"]}
+    "milestone.m14": {"aliases": ["m14"]}
   },
   "change_areas": {
     "api/": ["test:ir", "verify:api-conformance", "verify:contracts"],
