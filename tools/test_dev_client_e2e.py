@@ -26,6 +26,10 @@ class DevClientE2ETest(unittest.TestCase):
 
         shutil.copy2(ROOT / "dev", self.repo / "dev")
         (self.repo / "dev").chmod(0o755)
+        shutil.copytree(ROOT / "build", self.repo / "build")
+        (self.repo / "tools").mkdir(exist_ok=True)
+        shutil.copy2(ROOT / "tools" / "dev-targets.py", self.repo / "tools" / "dev-targets.py")
+        (self.repo / "tools" / "dev-targets.py").chmod(0o755)
 
         subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
         subprocess.run(
@@ -102,6 +106,9 @@ esac
             self.fakebin / "python",
             """#!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == */tools/dev-targets.py ]]; then
+  exec python3 "$@"
+fi
 if [[ "$*" == *"check-client-contracts.py --run-e2e-surface"* ]]; then
   printf '%s installed_gem=%s\\n' "$*" "${SEARCHKERNEL_RUBY_USE_INSTALLED_GEM:-0}" >>"$E2E_LOG"
 fi
