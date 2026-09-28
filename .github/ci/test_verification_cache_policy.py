@@ -9,17 +9,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CHECKER = ROOT / ".github" / "ci" / "check-self-hosted-rust-workflows.py"
-RUNNER = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
+RUNNER = ROOT / ".github" / "ci" / "ci-image-runner.yml"
 
 
 class VerificationCachePolicyTests(unittest.TestCase):
     def run_fixture(self, workflow_extra: str = "", moon: bool = False, delegated_script: str = "") -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
-            workflows = root / ".github" / "workflows"
-            workflows.mkdir(parents=True)
+            ci_dir = root / ".github" / "ci"
+            ci_dir.mkdir(parents=True)
             runner = RUNNER.read_text(encoding="utf-8")
-            (workflows / "ci-image-runner.yml").write_text(runner + workflow_extra, encoding="utf-8")
+            (ci_dir / "ci-image-runner.yml").write_text(runner + workflow_extra, encoding="utf-8")
             if delegated_script:
                 tools = root / "tools"
                 tools.mkdir()

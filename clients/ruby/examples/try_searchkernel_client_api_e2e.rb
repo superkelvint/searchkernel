@@ -436,10 +436,130 @@ ensure
   reopened.close
 end
 
+typed_path = "#{index_path}-typed"
+FileUtils.rm_rf(typed_path)
+typed_index = SearchKernel::Index.create(
+  typed_path,
+  fields: {
+    "title" => SearchKernel::Text.new(stored: true, searchable: true),
+    "category" => SearchKernel::Keyword.new(stored: true, filterable: true),
+    "people" => SearchKernel::ArrayField.new(
+      SearchKernel::StructField.new(
+        {
+          "first" => SearchKernel::Keyword.new,
+          "last" => SearchKernel::Keyword.new
+        }
+      ),
+      stored: false,
+      searchable: false
+    )
+  }
+)
+begin
+  typed_index.upsert("d1", {"title" => "quick brown fox", "category" => "fox"})
+  typed_index.upsert("d2", {"title" => "brown quick fox", "category" => "fox"})
+  typed_index.upsert("d3", {"title" => "quick fox", "category" => "fox"})
+  typed_index.upsert("d4", {"title" => "fox", "category" => "fox"})
+  typed_index.upsert("d5", {"title" => "cat", "category" => "cat"})
+  typed_index.upsert("d6", {"title" => "quick agile brown fox", "category" => "fox"})
+  typed_index.upsert(
+    "people-1",
+    {
+      "people" => [
+        {"first" => "Ada", "last" => "Lovelace"},
+        {"first" => "Grace", "last" => "Hopper"}
+      ]
+    }
+  )
+  typed_index.upsert(
+    "people-2",
+    {
+      "people" => [
+        {"first" => "Ada", "last" => "Hopper"},
+        {"first" => "Grace", "last" => "Lovelace"}
+      ]
+    }
+  )
+
+  phrase = typed_index.query(
+    SearchKernel::Query.contains("title", SearchKernel::Query.phrase("quick", "brown"))
+  ).limit(20).execute
+  same(["d1"], ids(phrase), "typed phrase query distinguishes exact order and adjacency")
+
+  near = typed_index.query(
+    SearchKernel::Query.contains("title", SearchKernel::Query.near("quick", "brown"))
+  ).limit(20).execute
+  same(%w[d1 d2 d6], ids(near).sort, "typed near query accepts reversed order and one-gap proximity")
+
+  ordered_near = typed_index.query(
+    SearchKernel::Query.contains("title", SearchKernel::Query.onear("quick", "brown"))
+  ).limit(20).execute
+  same(%w[d1 d6], ids(ordered_near).sort, "typed ordered-near query permits a gap but rejects reversed order")
+
+  fuzzy = typed_index.query(
+    SearchKernel::Query.contains("category", SearchKernel::Query.fuzzy("foxx"))
+  ).limit(20).execute
+  same(%w[d1 d2 d3 d4 d6], ids(fuzzy).sort, "typed fuzzy query excludes unrelated terms")
+
+  weak = typed_index.query(
+    SearchKernel::Query.weak_and(
+      SearchKernel::Query.contains("title", "quick"),
+      SearchKernel::Query.contains("title", "fox")
+    )
+  ).limit(20).execute
+  same(%w[d1 d2 d3 d4 d6], ids(weak).sort, "typed weak-and keeps one-term-only matches")
+
+  wand = typed_index.query(
+    SearchKernel::Query.wand("title", {"quick" => 10, "fox" => 1})
+  ).limit(20).execute
+  same(%w[d1 d2 d3 d4 d6], ids(wand).sort, "typed WAND keeps one-term-only matches")
+
+  ranked_query = typed_index.query(
+    SearchKernel::Query.rank(
+      SearchKernel::Query.contains("title", "fox"),
+      SearchKernel::Query.contains("title", "quick")
+    )
+  ).limit(20).execute
+  same(%w[d1 d2 d3 d4 d6], ids(ranked_query).sort, "rank-only clause does not filter match candidates")
+
+  same_element = typed_index.query(
+    SearchKernel::Query.contains(
+      "people",
+      SearchKernel::Query.same_element(
+        SearchKernel::Query.contains("first", "Ada"),
+        SearchKernel::Query.contains("last", "Lovelace")
+      )
+    )
+  ).limit(20).execute
+  same(["people-1"], ids(same_element), "typed sameElement preserves per-element correlation")
+ensure
+  typed_index.close
+  FileUtils.rm_rf(typed_path)
+end
+
+geo_path = "#{index_path}-geo"
+FileUtils.rm_rf(geo_path)
+geo = SearchKernel::Index.create(geo_path, fields: { "location" => SearchKernel::PositionField.new })
+begin
+  geo.upsert("inside", {"location" => {"latitude" => 37.3, "longitude" => -121.9}})
+  geo.upsert("outside", {"location" => {"latitude" => 40.7, "longitude" => -74.0}})
+  same(["inside"], ids(geo.query(SearchKernel::Query.geo_location("location", lat: 37.3, lon: -121.9, radius: "10km")).limit(10).execute), "typed geo-location query")
+  same(["inside"], ids(geo.query(SearchKernel::Query.geo_box("location", south: 37.0, west: -122.2, north: 37.6, east: -121.5)).limit(10).execute), "typed geo bounding-box query")
+ensure
+  geo.close
+  FileUtils.rm_rf(geo_path)
+end
+
 puts "Ruby real-engine facade + managed-local create/reopen E2E PASS"
 
 # Executable capability evidence from the public Ruby facade.
 # SKC: query.term/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.phrase/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.proximity/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.same_element/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.fuzzy/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.geo/basic kinds=ergonomic,e2e runtime=managed-local
+# SKC: query.weighted_and_wand/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.boolean/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=managed-local
 # SKC: filter.textual/basic kinds=ergonomic,e2e runtime=managed-local

@@ -9,7 +9,7 @@ INTEGRATION="$ROOT/reference/vespa/i/verify-i.sh"
 PHASE9="$ROOT/reference/vespa/phase9/verify-phase9.sh"
 HNSW="$ROOT/reference/vespa/verifiers/nearest-neighbor/hnsw/verify.sh"
 M14="$ROOT/reference/vespa/m14/verify-m14.sh"
-CI_IMAGE_RUNNER="$ROOT/.github/workflows/ci-image-runner.yml"
+CI_IMAGE_RUNNER="$ROOT/.github/ci/ci-image-runner.yml"
 
 bash -n "$VERIFY"
 bash -n "$DEV"

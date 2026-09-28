@@ -66,7 +66,7 @@ NATIVE_PATTERNS = (
     "tools/run-python-native-e2e.sh",
     "tools/actions-runner-setup.sh",
     ".github/workflows/native-verifier-runner.yml",
-    ".github/workflows/ci-image-runner.yml",
+    ".github/ci/ci-image-runner.yml",
     ".github/workflows/behavioral-verification.yml",
     ".github/ci/native_verifier_required.py",
     ".github/ci/test_native_verifier_required.py",

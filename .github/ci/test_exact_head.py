@@ -14,7 +14,7 @@ SCRIPT = Path(__file__).with_name("exact_head.py")
 WORKFLOW = SCRIPT.parents[1] / "workflows" / "behavioral-verification.yml"
 ABI_WORKFLOW = SCRIPT.parents[1] / "workflows" / "abi-surface.yml"
 RUSTFMT_AUTOFIX_WORKFLOW = SCRIPT.parents[1] / "workflows" / "rustfmt-autofix.yml"
-CI_IMAGE_RUNNER_WORKFLOW = SCRIPT.parents[1] / "workflows" / "ci-image-runner.yml"
+CI_IMAGE_RUNNER_WORKFLOW = SCRIPT.parent / "ci-image-runner.yml"
 CLIENT_CAPABILITIES_WORKFLOW = SCRIPT.parents[1] / "workflows" / "client-capabilities.yml"
 CLIENT_CAPABILITIES_AUTOFIX_PREPARE = SCRIPT.parents[1] / "workflows" / "client-capabilities-autofix-prepare.yml"
 CLIENT_CAPABILITIES_AUTOFIX_APPLY = SCRIPT.parents[1] / "workflows" / "client-capabilities-autofix-apply.yml"
@@ -185,7 +185,7 @@ class ExactHeadTests(unittest.TestCase):
             "if: github.event.pull_request.head.repo.full_name == github.repository",
             workflow,
         )
-        self.assertIn("uses: ./.github/workflows/ci-image-runner.yml", workflow)
+        self.assertIn("uses: ./.github/ci/ci-image-runner.yml", workflow)
         self.assertIn("revision: ${{ github.event.pull_request.head.sha }}", workflow)
         self.assertIn("target: rustfmt-autofix", workflow)
         self.assertIn("head_ref: ${{ github.event.pull_request.head.ref }}", workflow)
