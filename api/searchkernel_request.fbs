@@ -22,14 +22,15 @@ table RequestEnvelope {
   // Zero is deliberately invalid. A V1 writer that omits its default version
   // must decode as zero and be rejected rather than masquerading as V2.
   protocol_version:uint = 0;
+  payload:RequestPayload;
 
-  // Canonical logical daemon target. New multi-index daemon routing requires
-  // this field for lifecycle and index-scoped operations. It is optional at the
-  // raw FlatBuffers level so old V2 frames still parse and can be rejected with
-  // an explicit missing-target error rather than being mistaken for malformed
+  // Append-only field: the original V2 protocol_version/payload field IDs are
+  // wire ABI and must not move. New multi-index daemon routing requires target
+  // for lifecycle and index-scoped operations. It remains optional at the raw
+  // FlatBuffers level so old V2 frames still parse and can be rejected with an
+  // explicit missing-target error rather than being mistaken for malformed
   // bytes. Per-index embedded/test dispatchers may remain target-agnostic.
   target:SearchKernel.V2.IndexTarget;
-  payload:RequestPayload;
 }
 
 root_type RequestEnvelope;
