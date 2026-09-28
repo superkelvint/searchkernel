@@ -204,17 +204,27 @@ class RemoteVerificationClientTest(unittest.TestCase):
         self.assertNotIn('$ROOT/tools/ensure-ci-vespa-volume.sh', text)
         self.assertNotIn('$ROOT/tools/ensure-ci-sccache.sh', text)
 
-    def test_remote_runner_uses_job_private_writable_target_state(self):
+    def test_remote_runner_uses_job_private_writable_cargo_state(self):
         text = RUNNER.read_text(encoding="utf-8")
         self.assertIn('ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}', text)
         self.assertIn(
-            'target_volume="searchkernel-ci-target-$(id -u)-$$-${RANDOM}"',
+            'target_volume="searchkernel-ci-target-$(id -u)-$-${RANDOM}"',
+            text,
+        )
+        self.assertIn(
+            'cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$-${RANDOM}"',
             text,
         )
         self.assertIn('io.searchkernel.cache-kind=job-target', text)
+        self.assertIn('io.searchkernel.cache-kind=job-cargo-registry', text)
         self.assertIn('docker volume rm -f "$target_volume"', text)
+        self.assertIn('docker volume rm -f "$cargo_registry_volume"', text)
         self.assertIn(
             'target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")',
+            text,
+        )
+        self.assertIn(
+            'cargo_registry_volume=$(ci_runtime_shared_download_volume cargo-registry "$environment_id")',
             text,
         )
 
