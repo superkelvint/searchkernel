@@ -371,7 +371,6 @@ fn concurrent_same_name_create_has_one_winner() {
     registry.close_all().expect("close registry");
 }
 
-
 #[test]
 fn concurrent_create_and_open_are_linearizable() {
     let temp = TempDir::new("create-open-race");
