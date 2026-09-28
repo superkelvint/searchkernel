@@ -730,16 +730,57 @@ void exercise_native_engine(const std::filesystem::path &data,
                                 sizeof(QUICK_TERM) - 1, query_text_lengths, 1,
                                 error.data(), ERROR_CAPACITY), "text query");
     sk_query_destroy(query);
-    const uint8_t predicate_bytes[] = {'x'};
-    const uint32_t predicate_lengths[] = {2};
-    const uint64_t predicate_masks[] = {1};
-    const uint64_t predicate_values[] = {1};
-    expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "predicate bounds query create");
-    expect_invalid(sk_query_add_predicate(query, "access", predicate_bytes, predicate_lengths,
-                                          predicate_bytes, predicate_lengths, predicate_masks, 1,
-                                          predicate_bytes, predicate_lengths, predicate_values,
-                                          predicate_masks, 1, error.data(), ERROR_CAPACITY),
-                   "predicate packed buffers reject oversized advertised lengths");
+    const uint8_t predicate_bytes[] = {'k', 'v'};
+    const uint32_t one_length[] = {1};
+    const uint32_t two_length[] = {2};
+    const uint32_t two_one_lengths[] = {1, 1};
+    const uint32_t zero_length[] = {0};
+    const uint64_t predicate_masks[] = {1, 2};
+    const uint64_t predicate_values[] = {7, 8};
+    auto predicate_query = [&] {
+        sk_query *result = nullptr;
+        expect_ok(sk_query_create(engine, &result, error.data(), ERROR_CAPACITY),
+                  "predicate bounds query create");
+        return result;
+    };
+    auto expect_bad_predicate = [&](const uint8_t *keys, uint32_t key_total,
+                                    const uint32_t *key_lengths, const uint8_t *values,
+                                    uint32_t value_total, const uint32_t *value_lengths,
+                                    uint32_t feature_count, const uint8_t *range_keys,
+                                    uint32_t range_total, const uint32_t *range_lengths,
+                                    uint32_t range_count, const char *label) {
+        auto *candidate = predicate_query();
+        expect_invalid(sk_query_add_predicate(
+                           candidate, "access", keys, key_total, key_lengths, values, value_total,
+                           value_lengths, predicate_masks, feature_count, range_keys, range_total,
+                           range_lengths, predicate_values, predicate_masks, range_count,
+                           error.data(), ERROR_CAPACITY),
+                       label);
+        sk_query_destroy(candidate);
+    };
+
+    // Each packed allocation is independently self-bounded by its explicit total.
+    expect_bad_predicate(predicate_bytes, 1, two_length, predicate_bytes, 1, one_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate feature key exceeds packed total");
+    expect_bad_predicate(predicate_bytes, 1, one_length, predicate_bytes, 1, two_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate feature value exceeds packed total");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 1,
+                         two_length, 1, "predicate range key exceeds packed total");
+    expect_bad_predicate(predicate_bytes, 2, one_length, predicate_bytes, 1, one_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate feature key trailing bytes rejected");
+    expect_bad_predicate(nullptr, 1, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 1,
+                         one_length, 1, "predicate null feature key with nonzero total");
+    expect_bad_predicate(predicate_bytes, 0, zero_length, predicate_bytes, 1, one_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate zero-length feature key rejected");
+    expect_bad_predicate(predicate_bytes, 0, one_length, predicate_bytes, 1, one_length, 65537,
+                         nullptr, 0, nullptr, 0, "predicate feature count limit");
+
+    query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", predicate_bytes, 2, two_one_lengths,
+                                     predicate_bytes, 2, two_one_lengths, predicate_masks, 2,
+                                     predicate_bytes, 2, two_one_lengths, predicate_values,
+                                     predicate_masks, 2, error.data(), ERROR_CAPACITY),
+              "predicate exact totals and multiple elements");
     sk_query_destroy(query);
 
     expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "range query create");
