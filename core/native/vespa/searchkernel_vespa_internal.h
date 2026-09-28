@@ -171,6 +171,7 @@
 #include <condition_variable>
 #include <cmath>
 #include <filesystem>
+#include <exception>
 #include <fcntl.h>
 #include <fstream>
 #include <iomanip>
