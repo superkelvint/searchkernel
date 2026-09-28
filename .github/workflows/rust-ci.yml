@@ -41,7 +41,7 @@ jobs:
           docker volume create "$target_volume" >/dev/null
 
           docker run --rm --pids-limit=-1 \
-            -v "$GITHUB_WORKSPACE:/work:ro" \
+            -v "$GITHUB_WORKSPACE:/work:rw" \
             -v "$target_volume:/cargo-target" \
             -w /work \
             -e CARGO_TARGET_DIR=/cargo-target \
