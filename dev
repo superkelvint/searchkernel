@@ -140,6 +140,8 @@ Search Kernel development commands
   ./dev test typescript       Test the TypeScript client, package, and real E2E
   ./dev test php              Test the PHP client, package, and real E2E
   ./dev test ruby             Test the Ruby client, packaged gem, and real E2E
+  ./dev test searchkerneld-multi-index
+                              Test multi-index daemon lifecycle against the real engine
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify vespa.grouping.yql  Run one semantic verifier target
@@ -571,8 +573,11 @@ test_target() {
         ruby)
             run_ruby_tests
             ;;
+        searchkerneld-multi-index)
+            "$CARGO" test -p searchkerneld --features native --test multi_index --test process_shutdown
+            ;;
         *)
-            echo "usage: ./dev test ir|rust-api|python|typescript|php|ruby" >&2
+            echo "usage: ./dev test ir|rust-api|python|typescript|php|ruby|searchkerneld-multi-index" >&2
             return 2
             ;;
     esac
