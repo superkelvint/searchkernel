@@ -6,21 +6,29 @@ import SearchKernel
 
 class RequestPayload(object):
     NONE = 0
-    SearchKernel_V2_InsertRequest = 1
-    SearchKernel_V2_UpsertRequest = 2
-    SearchKernel_V2_PatchRequest = 3
-    SearchKernel_V2_DeleteRequest = 4
-    SearchKernel_V2_GetRequest = 5
-    SearchKernel_V2_SearchRequest = 6
-    SearchKernel_V2_AnalyzeRequest = 7
-    SearchKernel_V2_DescribeRequest = 8
-    SearchKernel_V2_InspectQueryRequest = 9
-    SearchKernel_V2_UpdateRequest = 10
+    SearchKernel_V2_CreateIndexRequest = 1
+    SearchKernel_V2_OpenIndexRequest = 2
+    SearchKernel_V2_InsertRequest = 3
+    SearchKernel_V2_UpsertRequest = 4
+    SearchKernel_V2_PatchRequest = 5
+    SearchKernel_V2_DeleteRequest = 6
+    SearchKernel_V2_GetRequest = 7
+    SearchKernel_V2_SearchRequest = 8
+    SearchKernel_V2_AnalyzeRequest = 9
+    SearchKernel_V2_DescribeRequest = 10
+    SearchKernel_V2_InspectQueryRequest = 11
+    SearchKernel_V2_UpdateRequest = 12
 
 def RequestPayloadCreator(unionType, table):
     from flatbuffers.table import Table
     if not isinstance(table, Table):
         return None
+    if unionType == RequestPayload.SearchKernel_V2_CreateIndexRequest:
+        import SearchKernel.V2.CreateIndexRequest
+        return SearchKernel.V2.CreateIndexRequest.CreateIndexRequestT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == RequestPayload.SearchKernel_V2_OpenIndexRequest:
+        import SearchKernel.V2.OpenIndexRequest
+        return SearchKernel.V2.OpenIndexRequest.OpenIndexRequestT.InitFromBuf(table.Bytes, table.Pos)
     if unionType == RequestPayload.SearchKernel_V2_InsertRequest:
         import SearchKernel.V2.InsertRequest
         return SearchKernel.V2.InsertRequest.InsertRequestT.InitFromBuf(table.Bytes, table.Pos)

@@ -11,14 +11,16 @@ pub const ENUM_MIN_RESPONSE_PAYLOAD: u8 = 0;
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
-pub const ENUM_MAX_RESPONSE_PAYLOAD: u8 = 11;
+pub const ENUM_MAX_RESPONSE_PAYLOAD: u8 = 13;
 #[deprecated(
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 12] = [
+pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 14] = [
     ResponsePayload::NONE,
+    ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    ResponsePayload::SearchKernel_V2_OpenIndexResult,
     ResponsePayload::SearchKernel_V2_InsertResult,
     ResponsePayload::SearchKernel_V2_UpsertResult,
     ResponsePayload::SearchKernel_V2_PatchResult,
@@ -38,22 +40,26 @@ pub struct ResponsePayload(pub u8);
 #[allow(non_upper_case_globals)]
 impl ResponsePayload {
     pub const NONE: Self = Self(0);
-    pub const SearchKernel_V2_InsertResult: Self = Self(1);
-    pub const SearchKernel_V2_UpsertResult: Self = Self(2);
-    pub const SearchKernel_V2_PatchResult: Self = Self(3);
-    pub const SearchKernel_V2_DeleteResult: Self = Self(4);
-    pub const SearchKernel_V2_GetResult: Self = Self(5);
-    pub const SearchKernel_V2_SearchResult: Self = Self(6);
-    pub const SearchKernel_V2_AnalyzeResult: Self = Self(7);
-    pub const SearchKernel_V2_Error: Self = Self(8);
-    pub const SearchKernel_V2_DescribeResult: Self = Self(9);
-    pub const SearchKernel_V2_InspectQueryResult: Self = Self(10);
-    pub const SearchKernel_V2_UpdateResult: Self = Self(11);
+    pub const SearchKernel_V2_CreateIndexResult: Self = Self(1);
+    pub const SearchKernel_V2_OpenIndexResult: Self = Self(2);
+    pub const SearchKernel_V2_InsertResult: Self = Self(3);
+    pub const SearchKernel_V2_UpsertResult: Self = Self(4);
+    pub const SearchKernel_V2_PatchResult: Self = Self(5);
+    pub const SearchKernel_V2_DeleteResult: Self = Self(6);
+    pub const SearchKernel_V2_GetResult: Self = Self(7);
+    pub const SearchKernel_V2_SearchResult: Self = Self(8);
+    pub const SearchKernel_V2_AnalyzeResult: Self = Self(9);
+    pub const SearchKernel_V2_Error: Self = Self(10);
+    pub const SearchKernel_V2_DescribeResult: Self = Self(11);
+    pub const SearchKernel_V2_InspectQueryResult: Self = Self(12);
+    pub const SearchKernel_V2_UpdateResult: Self = Self(13);
 
     pub const ENUM_MIN: u8 = 0;
-    pub const ENUM_MAX: u8 = 11;
+    pub const ENUM_MAX: u8 = 13;
     pub const ENUM_VALUES: &'static [Self] = &[
         Self::NONE,
+        Self::SearchKernel_V2_CreateIndexResult,
+        Self::SearchKernel_V2_OpenIndexResult,
         Self::SearchKernel_V2_InsertResult,
         Self::SearchKernel_V2_UpsertResult,
         Self::SearchKernel_V2_PatchResult,
@@ -70,6 +76,8 @@ impl ResponsePayload {
     pub fn variant_name(self) -> Option<&'static str> {
         match self {
             Self::NONE => Some("NONE"),
+            Self::SearchKernel_V2_CreateIndexResult => Some("SearchKernel_V2_CreateIndexResult"),
+            Self::SearchKernel_V2_OpenIndexResult => Some("SearchKernel_V2_OpenIndexResult"),
             Self::SearchKernel_V2_InsertResult => Some("SearchKernel_V2_InsertResult"),
             Self::SearchKernel_V2_UpsertResult => Some("SearchKernel_V2_UpsertResult"),
             Self::SearchKernel_V2_PatchResult => Some("SearchKernel_V2_PatchResult"),
