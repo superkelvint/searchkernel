@@ -1,4 +1,5 @@
 use searchkernel_protocol::protocol::v2 as wire;
+use searchkernel_protocol::target::{request_index_target, RequestTargetError};
 use searchkernel_protocol::json::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
     response_json_to_flatbuffer,
@@ -361,6 +362,10 @@ fn standard_json_round_trips_explicit_index_targets_and_open_lifecycle() {
     }"#;
 
     let bytes = request_json_to_flatbuffer(input).expect("targeted open-index request JSON");
+    let envelope =
+        flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("targeted request envelope");
+    assert_eq!(request_index_target(envelope), Ok("products"));
+
     let printed = request_flatbuffer_to_json(&bytes).expect("targeted open-index JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
 
@@ -427,10 +432,32 @@ fn standard_json_keeps_targetless_v2_frames_structurally_parseable() {
 
     let bytes = request_json_to_flatbuffer(input)
         .expect("legacy targetless V2 remains structurally parseable");
+    let envelope =
+        flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("targetless request envelope");
+    assert_eq!(request_index_target(envelope), Err(RequestTargetError::Missing));
+
     let printed = request_flatbuffer_to_json(&bytes).expect("targetless V2 JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
     assert!(value.get("target").is_none());
     assert_eq!(value["payload_type"], "SearchKernel_V2_DescribeRequest");
+}
+
+#[test]
+fn request_target_validation_rejects_path_syntax_after_structural_decode() {
+    let input = br#"{
+      "protocol_version": 2,
+      "target": {"name": "../products"},
+      "payload_type": "SearchKernel_V2_OpenIndexRequest",
+      "payload": {}
+    }"#;
+    let bytes = request_json_to_flatbuffer(input)
+        .expect("FlatBuffers schema permits a string before semantic target validation");
+    let envelope =
+        flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("request envelope");
+    assert!(matches!(
+        request_index_target(envelope),
+        Err(RequestTargetError::Invalid(_))
+    ));
 }
 
 #[test]
