@@ -336,8 +336,8 @@ fn standard_json_round_trips_explicit_index_targets_and_open_lifecycle() {
     assert_eq!(value["target"]["name"], "products");
     assert_eq!(value["payload_type"], "SearchKernel_V2_OpenIndexRequest");
 
-    let again =
-        request_json_to_flatbuffer(&printed).expect("printed targeted lifecycle JSON remains readable");
+    let again = request_json_to_flatbuffer(&printed)
+        .expect("printed targeted lifecycle JSON remains readable");
     assert!(!again.is_empty());
 }
 
