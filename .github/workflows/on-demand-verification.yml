@@ -1,43 +1,23 @@
 name: On-demand verification
 
 run-name: >-
-  ${{ inputs.operation }} ${{ inputs.target }} @ ${{ inputs.revision }} [${{ inputs.request_id }}]
+  ${{ github.event.client_payload.operation }} ${{ github.event.client_payload.target }} @ ${{ github.event.client_payload.revision }} [${{ github.event.client_payload.request_id }}]
 
 on:
-  workflow_dispatch:
-    inputs:
-      revision:
-        description: Exact 40-character commit SHA to verify
-        required: true
-        type: string
-      operation:
-        description: Bounded canonical operation
-        required: true
-        type: choice
-        options:
-          - test
-          - verify
-      target:
-        description: Canonical target or registered alias from build/targets.json
-        required: true
-        type: string
-      request_id:
-        description: Correlation ID used by dispatch clients to identify the exact run
-        required: false
-        default: manual
-        type: string
+  repository_dispatch:
+    types: [searchkernel-verification]
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    name: exact-SHA ${{ inputs.operation }} ${{ inputs.target }}
+    name: exact-SHA ${{ github.event.client_payload.operation }} ${{ github.event.client_payload.target }}
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 120
 
     steps:
-      - name: Require trusted default-branch control plane
+      - name: Prove trusted default-branch control plane
         shell: bash
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -45,19 +25,32 @@ jobs:
           set -euo pipefail
           expected="refs/heads/${DEFAULT_BRANCH}"
           if [[ "${GITHUB_REF}" != "${expected}" ]]; then
-            echo "error: dispatch this workflow from the default branch (${DEFAULT_BRANCH}), not ${GITHUB_REF}" >&2
+            echo "error: repository_dispatch control plane is not running from ${expected}: ${GITHUB_REF}" >&2
             exit 2
           fi
 
       - name: Validate bounded dispatch inputs
         shell: bash
         env:
-          REVISION: ${{ inputs.revision }}
-          REQUEST_ID: ${{ inputs.request_id }}
+          REVISION: ${{ github.event.client_payload.revision }}
+          OPERATION: ${{ github.event.client_payload.operation }}
+          REQUESTED_TARGET: ${{ github.event.client_payload.target }}
+          REQUEST_ID: ${{ github.event.client_payload.request_id }}
         run: |
           set -euo pipefail
           if [[ ! "${REVISION}" =~ ^[0-9a-fA-F]{40}$ ]]; then
             echo "error: revision must be an exact 40-character commit SHA" >&2
+            exit 2
+          fi
+          case "${OPERATION}" in
+            test|verify) ;;
+            *)
+              echo "error: operation must be test or verify" >&2
+              exit 2
+              ;;
+          esac
+          if [[ -z "${REQUESTED_TARGET}" ]]; then
+            echo "error: target is required" >&2
             exit 2
           fi
           if [[ ! "${REQUEST_ID}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]; then
@@ -68,7 +61,7 @@ jobs:
       - name: Check out requested revision as untrusted subject
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.revision }}
+          ref: ${{ github.event.client_payload.revision }}
           path: subject
           fetch-depth: 1
           persist-credentials: false
@@ -78,7 +71,7 @@ jobs:
         shell: bash
         working-directory: subject
         env:
-          REVISION: ${{ inputs.revision }}
+          REVISION: ${{ github.event.client_payload.revision }}
         run: |
           set -euo pipefail
           requested=$(printf '%s' "${REVISION}" | tr '[:upper:]' '[:lower:]')
@@ -94,8 +87,8 @@ jobs:
         shell: bash
         working-directory: subject
         env:
-          OPERATION: ${{ inputs.operation }}
-          REQUESTED_TARGET: ${{ inputs.target }}
+          OPERATION: ${{ github.event.client_payload.operation }}
+          REQUESTED_TARGET: ${{ github.event.client_payload.target }}
         run: |
           set -euo pipefail
           canonical=$(python3 - <<'PY'
@@ -109,7 +102,6 @@ jobs:
               raise SystemExit(f"unsupported operation: {operation}")
 
           registry_path = pathlib.Path("build/targets.json")
-          pairs_seen = []
 
           def reject_duplicates(pairs):
               result = {}
@@ -150,7 +142,7 @@ jobs:
         shell: bash
         working-directory: subject
         env:
-          OPERATION: ${{ inputs.operation }}
+          OPERATION: ${{ github.event.client_payload.operation }}
           CANONICAL_TARGET: ${{ steps.target.outputs.target }}
         run: |
           set -euo pipefail
@@ -161,16 +153,17 @@ jobs:
         if: always()
         shell: bash
         env:
-          REQUESTED_REVISION: ${{ inputs.revision }}
-          REQUEST_ID: ${{ inputs.request_id }}
+          REQUESTED_REVISION: ${{ github.event.client_payload.revision }}
+          REQUEST_ID: ${{ github.event.client_payload.request_id }}
           OBSERVED_REVISION: ${{ steps.subject.outputs.sha }}
-          OPERATION: ${{ inputs.operation }}
+          OPERATION: ${{ github.event.client_payload.operation }}
           CANONICAL_TARGET: ${{ steps.target.outputs.target }}
           RESULT: ${{ steps.execute.outcome }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           REPOSITORY: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
+          ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
           evidence_dir="${RUNNER_TEMP}/searchkernel-verification"
@@ -190,6 +183,7 @@ jobs:
               "target": target,
               "canonical_command": f"./dev {operation} {target}".rstrip(),
               "result": os.environ.get("RESULT") or "not-run",
+              "actor": os.environ["ACTOR"],
               "run_id": int(os.environ["RUN_ID"]),
               "run_attempt": int(os.environ["RUN_ATTEMPT"]),
               "run_url": (
