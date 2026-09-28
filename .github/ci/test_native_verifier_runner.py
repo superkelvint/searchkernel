@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
+WORKFLOW = ROOT / ".github" / "ci" / "ci-image-runner.yml"
 ABI_WORKFLOW = ROOT / ".github" / "workflows" / "abi-surface.yml"
 WORKFLOWS = ROOT / ".github" / "workflows"
 INTEGRATION = ROOT / "reference" / "vespa" / "i" / "verify-i.sh"
@@ -129,7 +129,7 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertIn("target: abi-surface", abi_workflow)
         self.assertEqual(
             2,
-            abi_workflow.count('      - ".github/workflows/ci-image-runner.yml"'),
+            abi_workflow.count('      - ".github/ci/ci-image-runner.yml"'),
         )
 
     def test_python_native_e2e_skips_ensure_only_when_explicitly_prevalidated(self) -> None:
@@ -385,7 +385,7 @@ echo AFTER_GUARD
         )
         for workflow in workflows:
             source = workflow.read_text(encoding="utf-8")
-            if "uses: ./.github/workflows/ci-image-runner.yml" not in source:
+            if "uses: ./.github/ci/ci-image-runner.yml" not in source:
                 continue
             callers.append(workflow)
             header = source.split("\njobs:", 1)[0]

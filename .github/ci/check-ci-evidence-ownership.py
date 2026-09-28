@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 CANONICAL = WORKFLOWS / "behavioral-verification.yml"
-EXECUTOR = WORKFLOWS / "ci-image-runner.yml"
+EXECUTOR = ROOT / ".github" / "ci" / "ci-image-runner.yml"
 RETIRED = WORKFLOWS / "unit-tests.yml"
 
 EXPECTED_COMMANDS = {
@@ -69,7 +69,7 @@ def main() -> int:
         "name: Plan invariant lanes",
         "name: CI and build-tooling invariant",
         "name: Invariant gate",
-        "uses: ./.github/workflows/ci-image-runner.yml",
+        "uses: ./.github/ci/ci-image-runner.yml",
         "check-ci-evidence-ownership.py",
     ):
         if fragment not in canonical:

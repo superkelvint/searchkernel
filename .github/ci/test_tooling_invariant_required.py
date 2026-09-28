@@ -13,7 +13,7 @@ SPEC.loader.exec_module(POLICY)
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "behavioral-verification.yml"
-RUNNER = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
+RUNNER = ROOT / ".github" / "ci" / "ci-image-runner.yml"
 
 
 class ToolingInvariantRequiredTests(unittest.TestCase):

@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CHECKER = ROOT / ".github" / "ci" / "check-self-hosted-rust-workflows.py"
-RUNNER = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
+RUNNER = ROOT / ".github" / "ci" / "ci-image-runner.yml"
 
 
 class VerificationCachePolicyTests(unittest.TestCase):

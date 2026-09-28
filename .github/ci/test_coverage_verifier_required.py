@@ -24,7 +24,7 @@ class CoverageVerifierRequiredTests(unittest.TestCase):
             "tools/coverage.sh",
             "tools/run-in-ci-image.sh",
             "tools/test-dev-ci-image.sh",
-            ".github/workflows/ci-image-runner.yml",
+            ".github/ci/ci-image-runner.yml",
             ".github/workflows/nightly.yml",
             ".github/ci/coverage_verifier_required.py",
         ]

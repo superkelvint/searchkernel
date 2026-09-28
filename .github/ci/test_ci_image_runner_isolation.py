@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-RUNNER = ROOT / ".github" / "workflows" / "ci-image-runner.yml"
+RUNNER = ROOT / ".github" / "ci" / "ci-image-runner.yml"
 PERSISTENCE = ROOT / ".github" / "workflows" / "persistence-compatibility.yml"
 
 

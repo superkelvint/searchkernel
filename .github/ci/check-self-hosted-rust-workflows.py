@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
 WORKFLOWS = ROOT / ".github" / "workflows"
-IMAGE_RUNNER = WORKFLOWS / "ci-image-runner.yml"
+IMAGE_RUNNER = ROOT / ".github" / "ci" / "ci-image-runner.yml"
 SCCACHE_HELPER = ROOT / "tools" / "ensure-ci-sccache.sh"
 
 FORBIDDEN_IN_WORKFLOWS = (
