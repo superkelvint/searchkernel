@@ -59,6 +59,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         text = self.text
         for field in (
             '"requested_revision"',
+            '"request_id"',
             '"revision"',
             '"operation"',
             '"target"',
@@ -73,10 +74,10 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn("actions/upload-artifact@v4", text)
         self.assertIn("evidence.json", text)
 
-    def test_concurrency_does_not_cancel_exact_sha_evidence(self):
+    def test_on_demand_runs_are_not_subject_to_concurrency_cancellation(self):
         text = self.text
-        self.assertIn("on-demand-verification-${{ inputs.revision }}", text)
-        self.assertIn("cancel-in-progress: false", text)
+        self.assertNotIn("cancel-in-progress:", text)
+        self.assertNotRegex(text, r"(?m)^concurrency:")
 
 
 if __name__ == "__main__":
