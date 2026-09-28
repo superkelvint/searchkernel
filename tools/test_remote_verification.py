@@ -9,6 +9,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CLIENT = ROOT / "tools" / "remote-verification.sh"
 DEV = ROOT / "dev"
+RUNNER = ROOT / "tools" / "run-in-ci-image.sh"
 
 FAKE_GH = r"""#!/usr/bin/env bash
 set -euo pipefail
@@ -186,6 +187,33 @@ class RemoteVerificationClientTest(unittest.TestCase):
         toolchain = text.index("EXPECTED_FLATBUFFERS_VERSION=")
         self.assertLess(remote, image)
         self.assertLess(remote, toolchain)
+
+    def test_trusted_runner_separates_control_scripts_from_subject_source(self):
+        text = RUNNER.read_text(encoding="utf-8")
+        self.assertIn('CONTROL_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)', text)
+        self.assertIn('ROOT=${SEARCHKERNEL_CI_SOURCE_ROOT:-$CONTROL_ROOT}', text)
+        self.assertIn('source "$CONTROL_ROOT/tools/ci-runtime-ownership.sh"', text)
+        self.assertIn(
+            'native_volume=$(bash "$CONTROL_ROOT/tools/ensure-ci-vespa-volume.sh"',
+            text,
+        )
+        self.assertIn(
+            'bash "$CONTROL_ROOT/tools/ensure-ci-sccache.sh" "$IMAGE_ID"',
+            text,
+        )
+        self.assertNotIn('$ROOT/tools/ensure-ci-vespa-volume.sh', text)
+        self.assertNotIn('$ROOT/tools/ensure-ci-sccache.sh', text)
+
+    def test_remote_runner_uses_job_private_writable_target_state(self):
+        text = RUNNER.read_text(encoding="utf-8")
+        self.assertIn('ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}', text)
+        self.assertIn('target_volume="searchkernel-ci-target-', text)
+        self.assertIn('io.searchkernel.cache-kind=job-target', text)
+        self.assertIn('docker volume rm -f "$target_volume"', text)
+        self.assertIn(
+            'target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")',
+            text,
+        )
 
 
 if __name__ == "__main__":
