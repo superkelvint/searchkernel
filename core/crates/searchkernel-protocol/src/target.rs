@@ -13,6 +13,21 @@ use std::fmt;
 /// count.
 pub const MAX_INDEX_TARGET_LEN: usize = 128;
 
+/// Stable daemon-routing error detail codes and paths.
+///
+/// These strings are part of the portable error contract consumed by language
+/// clients and must not be replaced by transport-specific status text.
+pub const TARGETED_REQUEST_REQUIRED_DETAIL_CODE: &str = "targeted_request_required";
+pub const MISSING_INDEX_TARGET_DETAIL_CODE: &str = "missing_index_target";
+pub const INVALID_INDEX_TARGET_DETAIL_CODE: &str = "invalid_index_target";
+pub const INVALID_TARGETED_REQUEST_DETAIL_CODE: &str = "invalid_targeted_request";
+pub const INDEX_ALREADY_EXISTS_DETAIL_CODE: &str = "index_already_exists";
+pub const INDEX_NOT_FOUND_DETAIL_CODE: &str = "index_not_found";
+pub const PAYLOAD_TYPE_PATH: &str = "payload_type";
+pub const TARGET_PATH: &str = "target";
+pub const TARGET_NAME_PATH: &str = "target.name";
+pub const TARGETED_PAYLOAD_PATH: &str = "payload";
+
 /// Why a logical index target was rejected.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IndexTargetError {
@@ -68,6 +83,68 @@ impl fmt::Display for RequestTargetError {
 
 impl std::error::Error for RequestTargetError {}
 
+/// Failure to admit a request at the multi-index daemon routing boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DaemonRequestError {
+    /// A direct per-index V2 operation was presented to daemon ingress.
+    TargetedRequestRequired { payload_type: u8 },
+    /// The targeted wrapper did not carry an index target.
+    MissingTarget,
+    /// The targeted wrapper carried an invalid logical target.
+    InvalidTarget(IndexTargetError),
+    /// The wrapper was present but did not contain a concrete inner operation.
+    InvalidTargetedRequest,
+}
+
+impl fmt::Display for DaemonRequestError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TargetedRequestRequired { payload_type } => write!(
+                formatter,
+                "multi-index daemon ingress requires TargetedRequest; got payload type {payload_type}"
+            ),
+            Self::MissingTarget => write!(formatter, "targeted request is missing an index target"),
+            Self::InvalidTarget(error) => {
+                write!(formatter, "targeted request has an invalid index target: {error}")
+            }
+            Self::InvalidTargetedRequest => {
+                write!(formatter, "TargetedRequest is missing its inner operation")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DaemonRequestError {}
+
+/// Validates the structural routing contract required at multi-index daemon ingress.
+///
+/// Direct top-level operation variants are intentionally the per-index/embedded
+/// ABI. A daemon must call this helper before selecting a dispatcher so a legacy
+/// target-less frame or a direct operation with a forged target cannot bypass
+/// the TargetedRequest downgrade barrier.
+pub fn daemon_request<'a>(
+    envelope: wire::RequestEnvelope<'a>,
+) -> Result<(&'a str, wire::TargetedRequest<'a>), DaemonRequestError> {
+    if envelope.payload_type() != wire::RequestPayload::TargetedRequest {
+        return Err(DaemonRequestError::TargetedRequestRequired {
+            payload_type: envelope.payload_type().0,
+        });
+    }
+
+    let request = envelope
+        .payload_as_targeted_request()
+        .ok_or(DaemonRequestError::InvalidTargetedRequest)?;
+    if request.payload_type() == wire::TargetedRequestPayload::NONE || request.payload().is_none() {
+        return Err(DaemonRequestError::InvalidTargetedRequest);
+    }
+
+    let target = request_index_target(envelope).map_err(|error| match error {
+        RequestTargetError::Missing => DaemonRequestError::MissingTarget,
+        RequestTargetError::Invalid(error) => DaemonRequestError::InvalidTarget(error),
+    })?;
+    Ok((target, request))
+}
+
 /// Extracts and validates the canonical target from one request envelope.
 ///
 /// Per-index embedded dispatchers may intentionally ignore this helper. A
@@ -122,7 +199,27 @@ const fn is_tail(byte: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_index_target, IndexTargetError, MAX_INDEX_TARGET_LEN};
+    use super::{
+        validate_index_target, IndexTargetError, INDEX_ALREADY_EXISTS_DETAIL_CODE,
+        INDEX_NOT_FOUND_DETAIL_CODE, INVALID_INDEX_TARGET_DETAIL_CODE,
+        INVALID_TARGETED_REQUEST_DETAIL_CODE, MAX_INDEX_TARGET_LEN,
+        MISSING_INDEX_TARGET_DETAIL_CODE, PAYLOAD_TYPE_PATH, TARGETED_PAYLOAD_PATH,
+        TARGETED_REQUEST_REQUIRED_DETAIL_CODE, TARGET_NAME_PATH, TARGET_PATH,
+    };
+
+    #[test]
+    fn stable_daemon_error_contract_is_frozen() {
+        assert_eq!(TARGETED_REQUEST_REQUIRED_DETAIL_CODE, "targeted_request_required");
+        assert_eq!(MISSING_INDEX_TARGET_DETAIL_CODE, "missing_index_target");
+        assert_eq!(INVALID_INDEX_TARGET_DETAIL_CODE, "invalid_index_target");
+        assert_eq!(INVALID_TARGETED_REQUEST_DETAIL_CODE, "invalid_targeted_request");
+        assert_eq!(INDEX_ALREADY_EXISTS_DETAIL_CODE, "index_already_exists");
+        assert_eq!(INDEX_NOT_FOUND_DETAIL_CODE, "index_not_found");
+        assert_eq!(PAYLOAD_TYPE_PATH, "payload_type");
+        assert_eq!(TARGET_PATH, "target");
+        assert_eq!(TARGET_NAME_PATH, "target.name");
+        assert_eq!(TARGETED_PAYLOAD_PATH, "payload");
+    }
 
     #[test]
     fn accepts_safe_logical_targets() {
