@@ -128,20 +128,22 @@ usage() {
     cat <<'EOF'
 Search Kernel development commands
 
+  ./dev build                 Build the supported Search Kernel product (M1 convergence pending)
+  ./dev ci                    Run the intentionally cheap mandatory PR gate (M1 convergence pending)
   ./dev check                 Run the full repository quality and test suite
   ./dev universe              Run every repository test, E2E lane, and verifier
+  ./dev release-check         Run distributable release qualification (implemented in M5)
   ./dev check-fast            Run formatting, compile, and boundary checks
   ./dev check-protocol        Verify generated FlatBuffers/gRPC artifacts
   ./dev coverage              Generate Rust code coverage reports under coverage/
   ./dev lint --profile <id>   Run a canonical Clippy verification profile
+  ./dev test --list           List supported test scopes from build/targets.json
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client, including real E2E
   ./dev test typescript       Test the TypeScript client, package, and real E2E
   ./dev test php              Test the PHP client, package, and real E2E
   ./dev test ruby             Test the Ruby client, packaged gem, and real E2E
-  ./dev test searchkerneld-multi-index
-                              Test multi-index daemon lifecycle against the real engine
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev regen result-fixtures Generate canonical encoded result fixtures
   ./dev verify vespa.grouping.yql  Run one semantic verifier target
@@ -162,7 +164,8 @@ Search Kernel development commands
   ./dev doctor                Repair and verify local build/verification prerequisites
 
 Build/test/verify commands run in docker.io/superkelvint/searchkernel-ci:latest
-by default, using disposable source and Cargo-target volumes. Set
+by default, using a disposable source snapshot and worktree-scoped compatible
+Cargo target state. Set
 SEARCHKERNEL_DEV_USE_CI_IMAGE=0 for an intentional host execution,
 SEARCHKERNEL_CI_IMAGE to override the image, or SEARCHKERNEL_CI_PULL=never
 for an offline run against an already-pulled image.
@@ -554,11 +557,17 @@ lint_target() {
 }
 
 test_target() {
-    case "${1:-}" in
+    if [[ "${1:-}" == "--list" || "${1:-}" == "list" ]]; then
+        "$PYTHON" "$ROOT/tools/dev-targets.py" list test
+        return
+    fi
+    local requested=${1:-} target
+    target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
+    case "$target" in
         ir)
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
-        rust-api|rust)
+        rust-api)
             "$CARGO" test -p searchkernel --all-targets --no-default-features
             ;;
         python)
@@ -577,7 +586,7 @@ test_target() {
             "$CARGO" test -p searchkerneld --features native --test multi_index --test process_shutdown
             ;;
         *)
-            echo "usage: ./dev test ir|rust-api|python|typescript|php|ruby|searchkerneld-multi-index" >&2
+            echo "registry error: test target '$target' has no dispatcher" >&2
             return 2
             ;;
     esac
@@ -589,8 +598,17 @@ verify_target() {
     # SEARCHKERNEL_VERIFY_VESPA_LOG_LEVEL is forwarded into the canonical CI image.
     export VESPA_LOG_LEVEL="${SEARCHKERNEL_VERIFY_VESPA_LOG_LEVEL:-${VESPA_LOG_LEVEL:-all -info -event -config -debug -spam}}"
 
-    case "${1:-}" in
-        integration|i|product.integration)
+    if [[ "${1:-}" == "--list" || "${1:-}" == "list" ]]; then
+        "$PYTHON" "$ROOT/tools/dev-targets.py" list verify
+        return
+    fi
+    local requested=${1:-} target
+    target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve verify "$requested") || return $?
+    shift || true
+    set -- "$target" "$@"
+
+    case "$target" in
+        product.integration)
             "$ROOT/reference/vespa/verify-through.sh" "$@"
             ;;
         api-conformance)
@@ -632,12 +650,11 @@ verify_target() {
         issue-queue)
             "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
             ;;
-        m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|m14|milestone.*|vespa.*|product.rust-real-engine|phase10|searchreply|--list|list)
+        milestone.*|vespa.*|product.rust-real-engine)
             "$ROOT/reference/vespa/verify-through.sh" "$@"
             ;;
         *)
-            echo "usage: ./dev verify <semantic-target>|milestone.mN|mN|integration|api-conformance|contracts|abi|persistence|issue-queue" >&2
-            echo "       ./dev verify --list" >&2
+            echo "registry error: verify target '$target' has no dispatcher" >&2
             return 2
             ;;
     esac
@@ -1188,9 +1205,21 @@ doctor() {
     return "$status"
 }
 
+planned_command() {
+    local command=$1 milestone=$2
+    echo "./dev $command is part of the public build vocabulary but is not implemented until $milestone" >&2
+    return 2
+}
+
 case "${1:-help}" in
     help|-h|--help)
         usage
+        ;;
+    build)
+        planned_command build M1
+        ;;
+    ci)
+        planned_command ci M1
         ;;
     check)
         check_all
@@ -1259,6 +1288,9 @@ case "${1:-help}" in
         ;;
     doctor)
         doctor
+        ;;
+    release-check)
+        planned_command release-check M5
         ;;
     *)
         echo "unknown command: $1" >&2

@@ -1,4 +1,4 @@
-//! Validation for logical multi-index daemon targets.
+//! Validation and stable error vocabulary for logical multi-index daemon targets.
 //!
 //! Targets are protocol identities, not filesystem paths. Keeping the grammar
 //! deliberately small makes the same identifier safe to use across transports
@@ -12,6 +12,20 @@ use std::fmt;
 /// The accepted grammar is ASCII-only, so this is also the maximum character
 /// count.
 pub const MAX_INDEX_TARGET_LEN: usize = 128;
+
+/// Stable daemon-routing/lifecycle error detail codes and paths.
+///
+/// #848 establishes these strings as part of the forward-compatible portable
+/// error contract consumed by language clients. Transport layers must not
+/// replace them with transport-specific status text.
+pub const MISSING_INDEX_TARGET_DETAIL_CODE: &str = "missing_index_target";
+pub const INVALID_INDEX_TARGET_DETAIL_CODE: &str = "invalid_index_target";
+pub const MISSING_INDEX_DEFINITION_DETAIL_CODE: &str = "missing_index_definition";
+pub const INDEX_ALREADY_EXISTS_DETAIL_CODE: &str = "index_already_exists";
+pub const INDEX_NOT_FOUND_DETAIL_CODE: &str = "index_not_found";
+pub const TARGET_PATH: &str = "target";
+pub const TARGET_NAME_PATH: &str = "target.name";
+pub const CREATE_INDEX_DEFINITION_PATH: &str = "payload.definition";
 
 /// Why a logical index target was rejected.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,10 +57,78 @@ impl fmt::Display for IndexTargetError {
 
 impl std::error::Error for IndexTargetError {}
 
+/// Canonical daemon routing/lifecycle failure vocabulary.
+///
+/// These variants bind the portable error code, stable detail code, and stable
+/// path in one executable contract so daemon transports cannot invent
+/// transport-local semantics for control-plane failures.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IndexControlError {
+    MissingTarget,
+    InvalidTarget(IndexTargetError),
+    MissingIndexDefinition,
+    IndexAlreadyExists,
+    IndexNotFound,
+}
+
+impl IndexControlError {
+    /// Portable Search Kernel error code for this control-plane failure.
+    pub const fn error_code(&self) -> crate::v2::ErrorCode {
+        match self {
+            Self::MissingTarget | Self::InvalidTarget(_) | Self::MissingIndexDefinition => {
+                crate::v2::ErrorCode::InvalidArgument
+            }
+            Self::IndexAlreadyExists => crate::v2::ErrorCode::AlreadyExists,
+            Self::IndexNotFound => crate::v2::ErrorCode::NotFound,
+        }
+    }
+
+    /// Stable detail code for language clients.
+    pub const fn detail_code(&self) -> &'static str {
+        match self {
+            Self::MissingTarget => MISSING_INDEX_TARGET_DETAIL_CODE,
+            Self::InvalidTarget(_) => INVALID_INDEX_TARGET_DETAIL_CODE,
+            Self::MissingIndexDefinition => MISSING_INDEX_DEFINITION_DETAIL_CODE,
+            Self::IndexAlreadyExists => INDEX_ALREADY_EXISTS_DETAIL_CODE,
+            Self::IndexNotFound => INDEX_NOT_FOUND_DETAIL_CODE,
+        }
+    }
+
+    /// Canonical semantic path when the failure refers to a request field.
+    pub const fn path(&self) -> Option<&'static str> {
+        match self {
+            Self::MissingTarget => Some(TARGET_PATH),
+            Self::InvalidTarget(_) => Some(TARGET_NAME_PATH),
+            Self::MissingIndexDefinition => Some(CREATE_INDEX_DEFINITION_PATH),
+            Self::IndexAlreadyExists | Self::IndexNotFound => None,
+        }
+    }
+}
+
+impl fmt::Display for IndexControlError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingTarget => {
+                formatter.write_str("Search Kernel request is missing an index target")
+            }
+            Self::InvalidTarget(error) => {
+                write!(formatter, "invalid Search Kernel index target: {error}")
+            }
+            Self::MissingIndexDefinition => {
+                formatter.write_str("CreateIndex request is missing an index definition")
+            }
+            Self::IndexAlreadyExists => formatter.write_str("Search Kernel index already exists"),
+            Self::IndexNotFound => formatter.write_str("Search Kernel index was not found"),
+        }
+    }
+}
+
+impl std::error::Error for IndexControlError {}
+
 /// Envelope-level target failure used by multi-index routing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestTargetError {
-    /// The legacy/embedded envelope did not carry an index target.
+    /// The envelope did not carry an index target.
     Missing,
     /// A target table was present but its logical name was invalid.
     Invalid(IndexTargetError),
@@ -68,11 +150,21 @@ impl fmt::Display for RequestTargetError {
 
 impl std::error::Error for RequestTargetError {}
 
+impl From<RequestTargetError> for IndexControlError {
+    fn from(error: RequestTargetError) -> Self {
+        match error {
+            RequestTargetError::Missing => Self::MissingTarget,
+            RequestTargetError::Invalid(error) => Self::InvalidTarget(error),
+        }
+    }
+}
+
 /// Extracts and validates the canonical target from one request envelope.
 ///
-/// Per-index embedded dispatchers may intentionally ignore this helper. A
-/// multi-index daemon/router must call it before selecting a dispatcher; it
-/// must never substitute a default target when this returns `RequestTargetError::Missing`.
+/// Embedded/per-index dispatchers may intentionally ignore this helper because
+/// their target is already bound by the local handle. Multi-index daemon
+/// ingress must call it before selecting a dispatcher and must never substitute
+/// a default target when this returns `RequestTargetError::Missing`.
 pub fn request_index_target<'a>(
     envelope: wire::RequestEnvelope<'a>,
 ) -> Result<&'a str, RequestTargetError> {
@@ -122,7 +214,71 @@ const fn is_tail(byte: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_index_target, IndexTargetError, MAX_INDEX_TARGET_LEN};
+    use super::{
+        validate_index_target, IndexControlError, IndexTargetError, CREATE_INDEX_DEFINITION_PATH,
+        INDEX_ALREADY_EXISTS_DETAIL_CODE, INDEX_NOT_FOUND_DETAIL_CODE,
+        INVALID_INDEX_TARGET_DETAIL_CODE, MAX_INDEX_TARGET_LEN,
+        MISSING_INDEX_DEFINITION_DETAIL_CODE, MISSING_INDEX_TARGET_DETAIL_CODE, TARGET_NAME_PATH,
+        TARGET_PATH,
+    };
+    use crate::v2 as api;
+
+    #[test]
+    fn stable_daemon_error_contract_is_frozen_from_multi_index_baseline() {
+        assert_eq!(MISSING_INDEX_TARGET_DETAIL_CODE, "missing_index_target");
+        assert_eq!(INVALID_INDEX_TARGET_DETAIL_CODE, "invalid_index_target");
+        assert_eq!(
+            MISSING_INDEX_DEFINITION_DETAIL_CODE,
+            "missing_index_definition"
+        );
+        assert_eq!(INDEX_ALREADY_EXISTS_DETAIL_CODE, "index_already_exists");
+        assert_eq!(INDEX_NOT_FOUND_DETAIL_CODE, "index_not_found");
+        assert_eq!(TARGET_PATH, "target");
+        assert_eq!(TARGET_NAME_PATH, "target.name");
+        assert_eq!(CREATE_INDEX_DEFINITION_PATH, "payload.definition");
+    }
+
+    #[test]
+    fn canonical_daemon_control_errors_bind_code_detail_and_path() {
+        let cases = [
+            (
+                IndexControlError::MissingTarget,
+                api::ErrorCode::InvalidArgument,
+                MISSING_INDEX_TARGET_DETAIL_CODE,
+                Some(TARGET_PATH),
+            ),
+            (
+                IndexControlError::InvalidTarget(IndexTargetError::Empty),
+                api::ErrorCode::InvalidArgument,
+                INVALID_INDEX_TARGET_DETAIL_CODE,
+                Some(TARGET_NAME_PATH),
+            ),
+            (
+                IndexControlError::MissingIndexDefinition,
+                api::ErrorCode::InvalidArgument,
+                MISSING_INDEX_DEFINITION_DETAIL_CODE,
+                Some(CREATE_INDEX_DEFINITION_PATH),
+            ),
+            (
+                IndexControlError::IndexAlreadyExists,
+                api::ErrorCode::AlreadyExists,
+                INDEX_ALREADY_EXISTS_DETAIL_CODE,
+                None,
+            ),
+            (
+                IndexControlError::IndexNotFound,
+                api::ErrorCode::NotFound,
+                INDEX_NOT_FOUND_DETAIL_CODE,
+                None,
+            ),
+        ];
+
+        for (error, code, detail_code, path) in cases {
+            assert_eq!(error.error_code(), code);
+            assert_eq!(error.detail_code(), detail_code);
+            assert_eq!(error.path(), path);
+        }
+    }
 
     #[test]
     fn accepts_safe_logical_targets() {

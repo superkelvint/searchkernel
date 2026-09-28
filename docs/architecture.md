@@ -135,11 +135,22 @@ supply arbitrary server filesystem paths; the daemon maps validated logical
 identifiers under its configured data root.
 
 A daemon-bound `RequestEnvelope` therefore carries an explicit `IndexTarget`.
-Lifecycle uses canonical `CreateIndexRequest` / `OpenIndexRequest` operations.
-Target-less legacy V2 frames remain structurally parseable for compatibility but
-must be rejected by multi-index routing instead of falling back to a default.
-Client-handle close remains local and must not unload an index shared by other
-clients.
+Ordinary operations and canonical `CreateIndexRequest` / `OpenIndexRequest`
+lifecycle operations are direct members of the same request union. The daemon
+router validates `target` and selects the per-index dispatcher before semantic
+execution; the dispatcher itself remains target-agnostic because its index is
+already bound.
+
+`IndexDefinition.name` remains schema identity and may differ from the logical
+daemon target; routing must never be inferred from it. Target-less envelopes are
+valid for embedded/per-index callers, but multi-index daemon ingress must reject
+them rather than falling back to a default. Client-handle close remains local
+and must not unload an index shared by other clients.
+
+#848 establishes this shape as the forward-compatibility baseline. Earlier
+development snapshots are not compatibility targets. After this baseline lands,
+existing FlatBuffers slots, enum/union values, and established request semantics
+must be preserved through compatible evolution.
 
 There are two permitted transport representations, both terminating at the same
 canonical FlatBuffer router and per-index dispatcher.

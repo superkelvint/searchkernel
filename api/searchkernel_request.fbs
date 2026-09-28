@@ -2,8 +2,10 @@ include "searchkernel.fbs";
 
 namespace SearchKernel.Protocol.V2;
 
+// #848 establishes this request union as the forward-compatibility baseline.
+// Future variants append here; existing discriminator values must not be
+// reordered or reused.
 union RequestPayload {
-  // Append-only: existing V2 union discriminator numbers are wire ABI.
   SearchKernel.V2.InsertRequest,
   SearchKernel.V2.UpsertRequest,
   SearchKernel.V2.PatchRequest,
@@ -19,17 +21,17 @@ union RequestPayload {
 }
 
 table RequestEnvelope {
-  // Zero is deliberately invalid. A V1 writer that omits its default version
-  // must decode as zero and be rejected rather than masquerading as V2.
+  // Zero is deliberately invalid. This field is part of the #848 baseline and
+  // must retain its slot in future compatible evolution.
   protocol_version:uint = 0;
   payload:RequestPayload;
 
-  // Append-only field: the original V2 protocol_version/payload field IDs are
-  // wire ABI and must not move. New multi-index daemon routing requires target
-  // for lifecycle and index-scoped operations. It remains optional at the raw
-  // FlatBuffers level so old V2 frames still parse and can be rejected with an
-  // explicit missing-target error rather than being mistaken for malformed
-  // bytes. Per-index embedded/test dispatchers may remain target-agnostic.
+  // Logical daemon routing identity. Multi-index daemon ingress requires this
+  // field for every index operation. Embedded/per-index callers may omit it
+  // because their target is already bound by the local handle.
+  //
+  // #848 establishes this field at the current slot as the forward-compatibility
+  // baseline; future fields append rather than shifting existing slots.
   target:SearchKernel.V2.IndexTarget;
 }
 

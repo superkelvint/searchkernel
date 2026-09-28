@@ -225,7 +225,7 @@ fn expected_search_operation() -> OperationIr {
 }
 
 #[test]
-fn frozen_pre_target_v2_request_preserves_original_envelope_slots() {
+fn targetless_embedded_request_remains_valid_without_daemon_routing() {
     let request = canonical_search_request();
     let envelope = root::<wire::RequestEnvelope<'_>>(&request).unwrap();
 
