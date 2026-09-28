@@ -753,7 +753,9 @@
 
 use std::{sync::Arc, time::Duration};
 
-use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+use searchkernel_protocol::{
+    protocol::v2 as wire, validate_index_target, v2 as api, PROTOCOL_VERSION,
+};
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError},
     task::JoinHandle,
@@ -985,14 +987,20 @@ impl SearchEndpointPolicy {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SearchEndpointConfig {
     name: String,
+    target: String,
     policy: SearchEndpointPolicy,
 }
 
 impl SearchEndpointConfig {
-    /// Creates a named Search Endpoint with explicit serving policy.
-    pub fn new(name: impl Into<String>, policy: SearchEndpointPolicy) -> Self {
+    /// Creates a named Search Endpoint bound to one canonical logical index target.
+    pub fn new(
+        name: impl Into<String>,
+        target: impl Into<String>,
+        policy: SearchEndpointPolicy,
+    ) -> Self {
         Self {
             name: name.into(),
+            target: target.into(),
             policy,
         }
     }
@@ -1000,6 +1008,11 @@ impl SearchEndpointConfig {
     /// Returns the stable endpoint name used in `/search/{name}`.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Returns the canonical logical index target for this endpoint.
+    pub fn target(&self) -> &str {
+        &self.target
     }
 
     /// Returns the endpoint serving policy.
@@ -1025,6 +1038,12 @@ impl SearchEndpointRouter {
         let mut by_route = std::collections::BTreeMap::new();
         for endpoint in endpoints {
             validate_endpoint_name(endpoint.name())?;
+            validate_index_target(endpoint.target()).map_err(|error| {
+                SearchEndpointRouteError::InvalidIndexTarget {
+                    target: endpoint.target().to_owned(),
+                    reason: error.to_string(),
+                }
+            })?;
             endpoint
                 .policy
                 .validate()
@@ -1049,7 +1068,8 @@ impl SearchEndpointRouter {
             .get(path)
             .ok_or(SearchEndpointRouteError::UnknownRoute)?;
         let request = decode_get_query(endpoint.policy(), raw_query)?;
-        bind_search_request(endpoint.policy(), request).map_err(SearchEndpointRouteError::Bind)
+        bind_search_request(endpoint.target(), endpoint.policy(), request)
+            .map_err(SearchEndpointRouteError::Bind)
     }
 }
 
@@ -1074,6 +1094,10 @@ fn validate_endpoint_name(name: &str) -> Result<(), SearchEndpointRouteError> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SearchEndpointRouteError {
     InvalidEndpointName(String),
+    InvalidIndexTarget {
+        target: String,
+        reason: String,
+    },
     DuplicateRoute(String),
     UnknownRoute,
     QueryStringTooLarge {
@@ -1103,6 +1127,12 @@ impl std::fmt::Display for SearchEndpointRouteError {
         match self {
             Self::InvalidEndpointName(name) => {
                 write!(formatter, "invalid Search Endpoint name {name:?}")
+            }
+            Self::InvalidIndexTarget { target, reason } => {
+                write!(
+                    formatter,
+                    "invalid Search Endpoint index target {target:?}: {reason}"
+                )
             }
             Self::DuplicateRoute(route) => {
                 write!(formatter, "duplicate Search Endpoint route {route:?}")
@@ -1421,6 +1451,7 @@ impl std::error::Error for SearchEndpointBindError {}
 /// admission, blocking execution, and target lifecycle; this module owns only
 /// endpoint policy plus canonical request construction.
 pub(crate) fn bind_search_request(
+    target: &str,
     policy: &SearchEndpointPolicy,
     request: SearchEndpointRequest,
 ) -> Result<Vec<u8>, SearchEndpointBindError> {
@@ -1455,10 +1486,16 @@ pub(crate) fn bind_search_request(
         }
     }
 
-    Ok(encode_search_request(request.query, limit, request.offset))
+    Ok(encode_search_request(
+        target,
+        request.query,
+        limit,
+        request.offset,
+    ))
 }
 
 fn encode_search_request(
+    target: &str,
     query: SearchEndpointQuery,
     limit: Option<u32>,
     offset: Option<u32>,
@@ -1504,11 +1541,18 @@ fn encode_search_request(
             ..Default::default()
         },
     );
+    let target_name = builder.create_string(target);
+    let target = api::IndexTarget::create(
+        &mut builder,
+        &api::IndexTargetArgs {
+            name: Some(target_name),
+        },
+    );
     let envelope = wire::RequestEnvelope::create(
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
-            target: None,
+            target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
             payload: Some(search.as_union_value()),
         },
