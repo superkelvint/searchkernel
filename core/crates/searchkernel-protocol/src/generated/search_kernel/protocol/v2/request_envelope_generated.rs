@@ -302,6 +302,23 @@ impl<'a> RequestEnvelope<'a> {
             None
         }
     }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    pub fn payload_as_search_kernel_v2_delete_index_request(
+        &self,
+    ) -> Option<super::super::v2::DeleteIndexRequest<'a>> {
+        if self.payload_type() == RequestPayload::SearchKernel_V2_DeleteIndexRequest {
+            self.payload().map(|t| {
+                // Safety:
+                // Created from a valid Table for this object
+                // Which contains a valid union in this slot
+                unsafe { super::super::v2::DeleteIndexRequest::init_from_table(t) }
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
@@ -326,6 +343,7 @@ impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
           RequestPayload::SearchKernel_V2_UpdateRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::UpdateRequest>>("RequestPayload::SearchKernel_V2_UpdateRequest", pos),
           RequestPayload::SearchKernel_V2_CreateIndexRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::CreateIndexRequest>>("RequestPayload::SearchKernel_V2_CreateIndexRequest", pos),
           RequestPayload::SearchKernel_V2_OpenIndexRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::OpenIndexRequest>>("RequestPayload::SearchKernel_V2_OpenIndexRequest", pos),
+          RequestPayload::SearchKernel_V2_DeleteIndexRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::DeleteIndexRequest>>("RequestPayload::SearchKernel_V2_DeleteIndexRequest", pos),
           _ => Ok(()),
         }
      })?
@@ -524,6 +542,16 @@ impl ::core::fmt::Debug for RequestEnvelope<'_> {
             }
             RequestPayload::SearchKernel_V2_OpenIndexRequest => {
                 if let Some(x) = self.payload_as_search_kernel_v2_open_index_request() {
+                    ds.field("payload", &x)
+                } else {
+                    ds.field(
+                        "payload",
+                        &"InvalidFlatbuffer: Union discriminant does not match value.",
+                    )
+                }
+            }
+            RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
+                if let Some(x) = self.payload_as_search_kernel_v2_delete_index_request() {
                     ds.field("payload", &x)
                 } else {
                     ds.field(
