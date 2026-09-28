@@ -19,6 +19,18 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
     steps:
+      - name: Repair prior qualification workspace ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          uid=$(id -u)
+          gid=$(id -g)
+          docker pull docker.io/superkelvint/searchkernel-ci:latest
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work" \
+            docker.io/superkelvint/searchkernel-ci:latest \
+            /bin/bash -lc "chown -R $uid:$gid /work"
+
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
