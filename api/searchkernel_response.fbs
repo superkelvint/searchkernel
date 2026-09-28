@@ -3,6 +3,8 @@ include "searchkernel.fbs";
 namespace SearchKernel.Protocol.V2;
 
 union ResponsePayload {
+  SearchKernel.V2.CreateIndexResult,
+  SearchKernel.V2.OpenIndexResult,
   SearchKernel.V2.InsertResult,
   SearchKernel.V2.UpsertResult,
   SearchKernel.V2.PatchResult,
