@@ -462,8 +462,8 @@ fn targetless_frames_remain_valid_for_embedded_callers_but_not_daemon_routing() 
     }"#;
 
     let bytes = request_json_to_flatbuffer(input).expect("embedded targetless request JSON");
-    let envelope =
-        flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("targetless request envelope");
+    let envelope = flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes)
+        .expect("targetless request envelope");
     assert_eq!(
         request_index_target(envelope),
         Err(RequestTargetError::Missing)
