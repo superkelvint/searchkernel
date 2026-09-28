@@ -170,7 +170,7 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
       same(%w[inventory title], described.fetch("fields").map { |field| field.fetch("name") }.sort,
            "installed gem opens externally owned daemon index")
 
-      same("package-1", index.upsert("package-1", "title" => "Packaged Ruby Client", "inventory" => 1),
+      same("package-1", index.upsert("package-1", {"title" => "Packaged Ruby Client", "inventory" => 1}),
            "installed gem mutation id")
       same(["package-1"], index.search("packaged").limit(10).execute.hits.map(&:id),
            "installed gem search through external daemon")
