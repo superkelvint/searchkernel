@@ -56,12 +56,20 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         )
         self.assertNotIn("eval ", text)
 
-    def test_target_validation_uses_shared_registry_authority(self):
+    def test_target_validation_uses_git_object_without_dereferencing_subject_path(self):
         text = self.text
         validate = text.index("Validate target against repository authority")
         execute = text.index("Run canonical verification")
         self.assertLess(validate, execute)
-        self.assertIn('pathlib.Path("build/targets.json")', text)
+        self.assertIn("git ls-tree HEAD -- build/targets.json", text)
+        self.assertIn('registry_mode}" != "100644"', text)
+        self.assertIn('registry_type}" != "blob"', text)
+        self.assertIn('git cat-file -s "${registry_object}"', text)
+        self.assertIn("registry_size > 1048576", text)
+        self.assertIn("git show HEAD:build/targets.json", text)
+        self.assertIn("json.load(sys.stdin, object_pairs_hook=reject_duplicates)", text)
+        self.assertNotIn('pathlib.Path("build/targets.json")', text)
+        self.assertNotIn('read_text(encoding="utf-8")', text)
         self.assertIn('metadata.get("aliases", [])', text)
         self.assertIn(
             "SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject",
