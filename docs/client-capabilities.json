@@ -97,7 +97,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 442
+              "line": 547
             },
             {
               "capability": "query.term",
@@ -107,7 +107,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 442
+              "line": 547
             }
           ],
           "overrides": []
@@ -233,7 +233,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 443
+              "line": 554
             },
             {
               "capability": "query.boolean",
@@ -243,7 +243,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 443
+              "line": 554
             }
           ],
           "overrides": []
@@ -293,11 +293,31 @@
               "capability": "query.phrase",
               "scenario": "basic",
               "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 548
+            },
+            {
+              "capability": "query.phrase",
+              "scenario": "basic",
+              "surface": "ruby",
               "runtime": "http",
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 366
+              "line": 407
+            },
+            {
+              "capability": "query.phrase",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 548
             },
             {
               "capability": "query.phrase",
@@ -310,17 +330,7 @@
               "line": 415
             }
           ],
-          "overrides": [
-            {
-              "capability": "query.phrase",
-              "scenario": "basic",
-              "surface": "ruby",
-              "runtime": "managed-local",
-              "status": "blocked",
-              "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
-              "issue": 803
-            }
-          ]
+          "overrides": []
         }
       ]
     },
@@ -367,11 +377,31 @@
               "capability": "query.proximity",
               "scenario": "basic",
               "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 549
+            },
+            {
+              "capability": "query.proximity",
+              "scenario": "basic",
+              "surface": "ruby",
               "runtime": "http",
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 367
+              "line": 408
+            },
+            {
+              "capability": "query.proximity",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 549
             },
             {
               "capability": "query.proximity",
@@ -384,17 +414,7 @@
               "line": 416
             }
           ],
-          "overrides": [
-            {
-              "capability": "query.proximity",
-              "scenario": "basic",
-              "surface": "ruby",
-              "runtime": "managed-local",
-              "status": "blocked",
-              "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
-              "issue": 803
-            }
-          ]
+          "overrides": []
         }
       ]
     },
@@ -441,24 +461,34 @@
               "capability": "query.same_element",
               "scenario": "basic",
               "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 550
+            },
+            {
+              "capability": "query.same_element",
+              "scenario": "basic",
+              "surface": "ruby",
               "runtime": "http",
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 368
-            }
-          ],
-          "overrides": [
+              "line": 409
+            },
             {
               "capability": "query.same_element",
               "scenario": "basic",
               "surface": "ruby",
               "runtime": "managed-local",
-              "status": "blocked",
-              "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
-              "issue": 803
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 550
             }
-          ]
+          ],
+          "overrides": []
         }
       ]
     },
@@ -505,11 +535,31 @@
               "capability": "query.fuzzy",
               "scenario": "basic",
               "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 551
+            },
+            {
+              "capability": "query.fuzzy",
+              "scenario": "basic",
+              "surface": "ruby",
               "runtime": "http",
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 369
+              "line": 410
+            },
+            {
+              "capability": "query.fuzzy",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 551
             },
             {
               "capability": "query.fuzzy",
@@ -522,17 +572,7 @@
               "line": 417
             }
           ],
-          "overrides": [
-            {
-              "capability": "query.fuzzy",
-              "scenario": "basic",
-              "surface": "ruby",
-              "runtime": "managed-local",
-              "status": "blocked",
-              "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
-              "issue": 803
-            }
-          ]
+          "overrides": []
         }
       ]
     },
@@ -609,7 +649,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 444
+              "line": 555
             },
             {
               "capability": "query.nearest_neighbor",
@@ -619,7 +659,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 444
+              "line": 555
             },
             {
               "capability": "query.nearest_neighbor",
@@ -699,24 +739,34 @@
               "capability": "query.geo",
               "scenario": "basic",
               "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 552
+            },
+            {
+              "capability": "query.geo",
+              "scenario": "basic",
+              "surface": "ruby",
               "runtime": "http",
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 370
-            }
-          ],
-          "overrides": [
+              "line": 411
+            },
             {
               "capability": "query.geo",
               "scenario": "basic",
               "surface": "ruby",
               "runtime": "managed-local",
-              "status": "blocked",
-              "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
-              "issue": 803
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 552
             }
-          ]
+          ],
+          "overrides": []
         }
       ]
     },
@@ -787,11 +837,31 @@
               "capability": "query.weighted_and_wand",
               "scenario": "basic",
               "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 553
+            },
+            {
+              "capability": "query.weighted_and_wand",
+              "scenario": "basic",
+              "surface": "ruby",
               "runtime": "http",
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 371
+              "line": 412
+            },
+            {
+              "capability": "query.weighted_and_wand",
+              "scenario": "basic",
+              "surface": "ruby",
+              "runtime": "managed-local",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
+              "line": 553
             },
             {
               "capability": "query.weighted_and_wand",
@@ -804,17 +874,7 @@
               "line": 418
             }
           ],
-          "overrides": [
-            {
-              "capability": "query.weighted_and_wand",
-              "scenario": "basic",
-              "surface": "ruby",
-              "runtime": "managed-local",
-              "status": "blocked",
-              "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
-              "issue": 803
-            }
-          ]
+          "overrides": []
         }
       ]
     },
@@ -974,7 +1034,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 445
+              "line": 556
             },
             {
               "capability": "filter.textual",
@@ -984,7 +1044,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 445
+              "line": 556
             },
             {
               "capability": "filter.textual",
@@ -1068,7 +1128,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 446
+              "line": 557
             },
             {
               "capability": "search.sorting",
@@ -1078,7 +1138,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 446
+              "line": 557
             },
             {
               "capability": "search.sorting",
@@ -1185,7 +1245,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 447
+              "line": 558
             },
             {
               "capability": "search.pagination",
@@ -1195,7 +1255,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 447
+              "line": 558
             },
             {
               "capability": "search.pagination",
@@ -1343,7 +1403,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 448
+              "line": 559
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1353,7 +1413,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 448
+              "line": 559
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1437,7 +1497,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 449
+              "line": 560
             },
             {
               "capability": "result.named_summary_class",
@@ -1447,7 +1507,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 449
+              "line": 560
             }
           ],
           "overrides": []
@@ -1568,7 +1628,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 450
+              "line": 561
             },
             {
               "capability": "result.highlighting",
@@ -1578,7 +1638,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 450
+              "line": 561
             },
             {
               "capability": "result.highlighting",
@@ -1654,7 +1714,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 452
+              "line": 563
             },
             {
               "capability": "result.tensor_document_readback",
@@ -1664,7 +1724,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 452
+              "line": 563
             }
           ],
           "overrides": []
@@ -1731,7 +1791,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 455
+              "line": 566
             },
             {
               "capability": "grouping.structured",
@@ -1741,7 +1801,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 455
+              "line": 566
             },
             {
               "capability": "grouping.structured",
@@ -1849,7 +1909,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 456
+              "line": 567
             },
             {
               "capability": "grouping.aggregations",
@@ -1859,7 +1919,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 456
+              "line": 567
             },
             {
               "capability": "grouping.aggregations",
@@ -2045,7 +2105,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 457
+              "line": 568
             },
             {
               "capability": "update.document_crud",
@@ -2055,7 +2115,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 457
+              "line": 568
             },
             {
               "capability": "update.document_crud",
@@ -2139,7 +2199,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 458
+              "line": 569
             },
             {
               "capability": "update.arithmetic",
@@ -2149,7 +2209,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 458
+              "line": 569
             }
           ],
           "overrides": []
@@ -2203,7 +2263,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 459
+              "line": 570
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -2213,7 +2273,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 459
+              "line": 570
             }
           ],
           "overrides": []
@@ -2331,7 +2391,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 460
+              "line": 571
             },
             {
               "capability": "tensor.dense_document_crud",
@@ -2341,7 +2401,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 460
+              "line": 571
             }
           ],
           "overrides": []
@@ -2395,7 +2455,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 465
+              "line": 576
             },
             {
               "capability": "query.yql",
@@ -2405,7 +2465,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 465
+              "line": 576
             }
           ],
           "overrides": []
@@ -2628,7 +2688,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 461
+              "line": 572
             },
             {
               "capability": "ranking.profile_selection",
@@ -2638,7 +2698,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 461
+              "line": 572
             }
           ],
           "overrides": []
@@ -2682,7 +2742,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 462
+              "line": 573
             },
             {
               "capability": "ranking.numeric_query_inputs",
@@ -2692,7 +2752,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 462
+              "line": 573
             }
           ],
           "overrides": []
@@ -2746,7 +2806,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 464
+              "line": 575
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -2756,7 +2816,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 464
+              "line": 575
             }
           ],
           "overrides": []
@@ -2810,7 +2870,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 463
+              "line": 574
             },
             {
               "capability": "ranking.rank_properties",
@@ -2820,7 +2880,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 463
+              "line": 574
             }
           ],
           "overrides": []
@@ -2864,7 +2924,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 453
+              "line": 564
             },
             {
               "capability": "result.match_features",
@@ -2874,7 +2934,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 453
+              "line": 564
             }
           ],
           "overrides": []
@@ -2928,7 +2988,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 454
+              "line": 565
             },
             {
               "capability": "result.grouping_tree",
@@ -2938,7 +2998,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 454
+              "line": 565
             }
           ],
           "overrides": []
@@ -2992,7 +3052,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 451
+              "line": 562
             },
             {
               "capability": "result.degradation_metadata",
@@ -3002,7 +3062,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 451
+              "line": 562
             }
           ],
           "overrides": []
