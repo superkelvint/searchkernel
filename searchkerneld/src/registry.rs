@@ -325,7 +325,10 @@ impl IndexRegistry {
             .lifecycle
             .read()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
-        entry.dispatcher.dispatch(request).map_err(map_dispatch_error)
+        entry
+            .dispatcher
+            .dispatch(request)
+            .map_err(map_dispatch_error)
     }
 
     fn checked_index_path(&self, target: &str) -> Result<PathBuf, PortableError> {
