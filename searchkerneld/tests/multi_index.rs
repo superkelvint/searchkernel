@@ -152,6 +152,24 @@ fn open_request(target_name: Option<&str>) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+fn delete_index_request(target_name: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload =
+        api::DeleteIndexRequest::create(&mut builder, &api::DeleteIndexRequestArgs::default());
+    let target = target(&mut builder, target_name);
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
+            payload_type: wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
 fn upsert_request(target_name: &str, id: &str, field_name: &str, text: &str) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let text = builder.create_string(text);
@@ -461,6 +479,58 @@ fn routes_two_different_indexes_without_cross_index_leakage_and_reopens_them() {
         1
     );
     reopened.close_all().expect("close reopened registry");
+}
+
+#[test]
+fn delete_unloads_removes_persistence_and_allows_recreate() {
+    let temp = TempDir::new("delete-index");
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    assert_lifecycle(
+        &registry.dispatch(&create_request("products", "title")).expect("create products"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    assert!(temp.0.join("products").is_dir());
+    assert_lifecycle(
+        &registry.dispatch(&delete_index_request("products")).expect("delete products"),
+        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+    );
+    assert!(registry.loaded_targets().expect("loaded targets").is_empty());
+    assert!(!temp.0.join("products").exists());
+    assert_portable_error(
+        &registry.dispatch(&open_request(Some("products"))).expect("deleted open"),
+        api::ErrorCode::NotFound,
+        INDEX_NOT_FOUND_DETAIL_CODE,
+        None,
+    );
+    assert_lifecycle(
+        &registry.dispatch(&create_request("products", "title")).expect("recreate products"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    registry.close_all().expect("close recreated registry");
+}
+
+#[test]
+fn delete_persisted_but_unloaded_index() {
+    let temp = TempDir::new("delete-unloaded");
+    let first = IndexRegistry::new(&temp.0).expect("first registry");
+    assert_lifecycle(
+        &first.dispatch(&create_request("products", "title")).expect("create products"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    first.close_all().expect("close first registry");
+    drop(first);
+    let second = IndexRegistry::new(&temp.0).expect("second registry");
+    assert_lifecycle(
+        &second.dispatch(&delete_index_request("products")).expect("delete persisted products"),
+        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+    );
+    assert!(!temp.0.join("products").exists());
+    assert_portable_error(
+        &second.dispatch(&delete_index_request("products")).expect("second delete"),
+        api::ErrorCode::NotFound,
+        INDEX_NOT_FOUND_DETAIL_CODE,
+        None,
+    );
 }
 
 #[test]

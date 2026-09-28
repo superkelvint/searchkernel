@@ -191,7 +191,8 @@ expected_operations = {
   describe: %w[DescribeRequest DescribeResult],
   inspect_query: %w[InspectQueryRequest InspectQueryResult],
   create_index: %w[CreateIndexRequest CreateIndexResult],
-  open_index: %w[OpenIndexRequest OpenIndexResult]
+  open_index: %w[OpenIndexRequest OpenIndexResult],
+  delete_index: %w[DeleteIndexRequest DeleteIndexResult]
 }
 
 same(expected_operations.keys.sort, SearchKernel::Protocol::OPERATIONS.keys.sort, "all portable operations are mapped")

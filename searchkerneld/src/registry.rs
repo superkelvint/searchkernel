@@ -11,7 +11,7 @@ use std::{
     collections::BTreeMap,
     fmt,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
@@ -76,6 +76,7 @@ impl std::error::Error for RegistryDispatchError {}
 struct RegistryEntry {
     index: Index,
     dispatcher: Arc<Dispatcher>,
+    lifecycle: RwLock<()>,
 }
 
 pub struct IndexRegistry {
@@ -132,6 +133,12 @@ impl IndexRegistry {
                     .ok_or(RegistryDispatchError::InvalidRequest)?;
                 self.open(target)
             }
+            wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
+                envelope
+                    .payload_as_search_kernel_v2_delete_index_request()
+                    .ok_or(RegistryDispatchError::InvalidRequest)?;
+                self.delete_index(target)
+            }
             wire::RequestPayload::NONE => Err(RegistryDispatchError::InvalidRequest),
             _ => self.dispatch_loaded(target, request),
         }
@@ -150,11 +157,24 @@ impl IndexRegistry {
 
         let mut first_error = None;
         for entry in entries.into_values() {
+            let lifecycle = match entry.lifecycle.write() {
+                Ok(lifecycle) => lifecycle,
+                Err(_) => {
+                    if first_error.is_none() {
+                        first_error = Some(IndexError::search(
+                            IndexErrorCode::Internal,
+                            "Search Kernel index lifecycle lock is poisoned",
+                        ));
+                    }
+                    continue;
+                }
+            };
             if let Err(error) = entry.index.close() {
                 if first_error.is_none() {
                     first_error = Some(error);
                 }
             }
+            drop(lifecycle);
         }
         match first_error {
             Some(error) => Err(error),
@@ -202,6 +222,7 @@ impl IndexRegistry {
         let entry = Arc::new(RegistryEntry {
             index,
             dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
+            lifecycle: RwLock::new(()),
         });
         entries.insert(target.to_owned(), entry);
         Ok(encode_lifecycle_result(
@@ -235,6 +256,7 @@ impl IndexRegistry {
         let entry = Arc::new(RegistryEntry {
             index,
             dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
+            lifecycle: RwLock::new(()),
         });
         entries.insert(target.to_owned(), entry);
         Ok(encode_lifecycle_result(
@@ -243,24 +265,67 @@ impl IndexRegistry {
         ))
     }
 
+    fn delete_index(&self, target: &str) -> Result<Vec<u8>, RegistryDispatchError> {
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        let path = match self.checked_index_path(target) {
+            Ok(path) => path,
+            Err(error) => return Ok(encode_error(error)),
+        };
+
+        let entry = entries.remove(target);
+        if entry.is_none() && !path.exists() {
+            return Ok(encode_error(index_control_error_to_portable(
+                IndexControlError::IndexNotFound,
+            )));
+        }
+
+        if let Some(entry) = entry {
+            let _lifecycle = entry
+                .lifecycle
+                .write()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            if let Err(error) = entry.index.close() {
+                return Ok(encode_error(lifecycle_index_error_to_portable(error)));
+            }
+        }
+
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => Ok(encode_delete_index_result()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(encode_delete_index_result())
+            }
+            Err(error) => Ok(encode_error(PortableError::new(
+                ErrorCode::Unavailable,
+                format!("delete index target {target:?}: {error}"),
+            ))),
+        }
+    }
+
     fn dispatch_loaded(
         &self,
         target: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, RegistryDispatchError> {
-        let dispatcher = {
+        let entry = {
             let entries = self
                 .entries
                 .lock()
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
-            entries.get(target).map(|entry| entry.dispatcher.clone())
+            entries.get(target).cloned()
         };
-        let Some(dispatcher) = dispatcher else {
+        let Some(entry) = entry else {
             return Ok(encode_error(index_control_error_to_portable(
                 IndexControlError::IndexNotFound,
             )));
         };
-        dispatcher.dispatch(request).map_err(map_dispatch_error)
+        let _lifecycle = entry
+            .lifecycle
+            .read()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        entry.dispatcher.dispatch(request).map_err(map_dispatch_error)
     }
 
     fn checked_index_path(&self, target: &str) -> Result<PathBuf, PortableError> {
@@ -387,6 +452,18 @@ fn encode_lifecycle_result(
         _ => unreachable!("lifecycle result kind is fixed by caller"),
     };
     encode_response(&mut builder, payload_type, payload)
+}
+
+fn encode_delete_index_result() -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload =
+        api::DeleteIndexResult::create(&mut builder, &api::DeleteIndexResultArgs::default())
+            .as_union_value();
+    encode_response(
+        &mut builder,
+        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+        payload,
+    )
 }
 
 fn encode_error(error: PortableError) -> Vec<u8> {

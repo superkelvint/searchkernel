@@ -203,6 +203,14 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
     end
     check(process_alive?(pid), "second client close terminated an externally owned daemon")
 
+    check(SearchKernel::Index.delete(base_url, target: "products"), "delete logical index")
+    begin
+      SearchKernel::Index.open(base_url, target: "products")
+      raise "deleted logical index unexpectedly reopened"
+    rescue SearchKernel::SearchKernelError => error
+      same("NotFound", error.code, "deleted logical index returns canonical NotFound")
+    end
+
     stop_daemon(pid)
     pid = nil
 
