@@ -781,8 +781,24 @@ void predicate_query_buffer_contract(sk_engine *engine) {
     expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 2,
                          overflow_lengths, 2, "predicate range key overflow-shaped length");
 
-    // Zero-count/zero-total sides may carry non-null sentinels because they are never dereferenced.
+    // A completely absent zero-count/zero-total side is valid and must not be dereferenced.
     auto *query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", predicate_bytes, 1, one_length,
+                                     predicate_bytes, 1, one_length, predicate_masks, 1,
+                                     nullptr, 0, nullptr, nullptr, nullptr, 0,
+                                     error.data(), ERROR_CAPACITY),
+              "predicate null zero-count zero-total range side");
+    sk_query_destroy(query);
+    query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", nullptr, 0, nullptr, nullptr, 0, nullptr,
+                                     nullptr, 0, predicate_bytes, 1, one_length,
+                                     predicate_values, predicate_masks, 1,
+                                     error.data(), ERROR_CAPACITY),
+              "predicate null zero-count zero-total feature side");
+    sk_query_destroy(query);
+
+    // Zero-count/zero-total sides may also carry non-null sentinels because they are never dereferenced.
+    query = predicate_query();
     expect_ok(sk_query_add_predicate(query, "access", predicate_bytes, 1, one_length,
                                      predicate_bytes, 1, one_length, predicate_masks, 1,
                                      predicate_bytes, 0, one_length, predicate_values,
