@@ -82,10 +82,10 @@ build_m11_driver() {
   # override such an entry, so repoint the staged adapter explicitly for M11.
   stage_m11_driver_adapter "$M11_DRIVER" "$M11_SDK"
   require_native_driver "$M11_DRIVER" \
-    sk_engine_open sk_engine_close sk_engine_destroy sk_engine_search \
-    sk_engine_search_generic sk_engine_group_generic \
+    sk_engine_open sk_engine_close sk_engine_destroy \
+    sk_engine_search_generic sk_engine_group_tree \
     sk_generic_search_request_add_grouping \
-    sk_generic_search_result_match_feature_value \
+    sk_generic_search_result_match_feature_value_ref \
     sk_test_failpoint_set sk_test_failpoint_is_blocked
   rm -rf "$M11_CONFIG"
   mkdir -p "$(dirname "$M11_CONFIG")"

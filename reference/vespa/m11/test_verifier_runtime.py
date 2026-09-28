@@ -29,7 +29,7 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             (m11 / "verify-m11-common.sh").write_text(COMMON.read_text())
             common.write_text(
                 "require_native_driver() {\n"
-                "  case \"$*\" in *sk_test_failpoint_set*sk_test_failpoint_is_blocked*) ;; *) return 45 ;; esac\n"
+                "  case \"$*\" in *sk_engine_group_tree*sk_generic_search_result_match_feature_value_ref*sk_test_failpoint_set*sk_test_failpoint_is_blocked*) ;; *) return 45 ;; esac\n"
                 "}\n"
                 "fail_verification() { echo \"verification error: $*\" >&2; return 1; }\n"
             )
