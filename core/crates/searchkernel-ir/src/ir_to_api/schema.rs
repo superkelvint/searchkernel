@@ -248,7 +248,7 @@ fn unresolved_rank_profile_offsets<'a>(
     })
 }
 
-pub(super) fn index_definition_offset<'a>(
+pub(super) pub fn index_definition_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     definition: &crate::model::IndexDefinitionIr,
 ) -> flatbuffers::WIPOffset<api::IndexDefinition<'a>> {
