@@ -8,6 +8,9 @@ mod generated {
 /// The negotiated version of the canonical portable V2 contract.
 pub const PROTOCOL_VERSION: u32 = 2;
 
+/// Logical multi-index daemon target validation.
+pub mod target;
+
 /// Generic standard FlatBuffers JSON conversion at the protocol boundary.
 pub mod json;
 

@@ -91,6 +91,8 @@ _lazy_ResponsePayload = _lazy_module("SearchKernel.Protocol.V2.ResponsePayload")
 
 _lazy_AnalyzeResult = _lazy_module("SearchKernel.V2.AnalyzeResult")
 
+_lazy_CreateIndexResult = _lazy_module("SearchKernel.V2.CreateIndexResult")
+
 _lazy_DeleteResult = _lazy_module("SearchKernel.V2.DeleteResult")
 
 _lazy_DescribeResult = _lazy_module("SearchKernel.V2.DescribeResult")
@@ -102,6 +104,8 @@ _lazy_GetResult = _lazy_module("SearchKernel.V2.GetResult")
 _lazy_InsertResult = _lazy_module("SearchKernel.V2.InsertResult")
 
 _lazy_InspectQueryResult = _lazy_module("SearchKernel.V2.InspectQueryResult")
+
+_lazy_OpenIndexResult = _lazy_module("SearchKernel.V2.OpenIndexResult")
 
 _lazy_PatchResult = _lazy_module("SearchKernel.V2.PatchResult")
 
@@ -126,7 +130,7 @@ class ResponseEnvelopeT(object):
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
-        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertResult.InsertResultT', 'SearchKernel.V2.UpsertResult.UpsertResultT', 'SearchKernel.V2.PatchResult.PatchResultT', 'SearchKernel.V2.DeleteResult.DeleteResultT', 'SearchKernel.V2.GetResult.GetResultT', 'SearchKernel.V2.SearchResult.SearchResultT', 'SearchKernel.V2.AnalyzeResult.AnalyzeResultT', 'SearchKernel.V2.Error.ErrorT', 'SearchKernel.V2.DescribeResult.DescribeResultT', 'SearchKernel.V2.InspectQueryResult.InspectQueryResultT', 'SearchKernel.V2.UpdateResult.UpdateResultT']
+        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertResult.InsertResultT', 'SearchKernel.V2.UpsertResult.UpsertResultT', 'SearchKernel.V2.PatchResult.PatchResultT', 'SearchKernel.V2.DeleteResult.DeleteResultT', 'SearchKernel.V2.GetResult.GetResultT', 'SearchKernel.V2.SearchResult.SearchResultT', 'SearchKernel.V2.AnalyzeResult.AnalyzeResultT', 'SearchKernel.V2.Error.ErrorT', 'SearchKernel.V2.DescribeResult.DescribeResultT', 'SearchKernel.V2.InspectQueryResult.InspectQueryResultT', 'SearchKernel.V2.UpdateResult.UpdateResultT', 'SearchKernel.V2.CreateIndexResult.CreateIndexResultT', 'SearchKernel.V2.OpenIndexResult.OpenIndexResultT']
 
     @classmethod
     def InitFromBuf(cls, buf, pos):

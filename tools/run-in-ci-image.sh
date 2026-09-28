@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source "$ROOT/tools/ci-runtime-ownership.sh"
 IMAGE=${SEARCHKERNEL_CI_IMAGE:-docker.io/superkelvint/searchkernel-ci:latest}
 PULL_MODE=${SEARCHKERNEL_CI_PULL:-always}
 KEEP_STATE=${SEARCHKERNEL_CI_KEEP_STATE:-0}
@@ -47,9 +48,10 @@ label=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.v
     die "$IMAGE is missing the io.searchkernel.vespa-commit label"
 vespa_bundle=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-bundle-id"}}' "$IMAGE_ID")
 vespa_ref=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.vespa-image-digest"}}' "$IMAGE_ID")
-if [[ "$vespa_ref" != *@sha256:* ]]; then
-    vespa_ref="docker.io/superkelvint/searchkernel-ci-vespa:$label-$vespa_bundle"
-fi
+vespa_ref=$(ci_runtime_require_digest "$vespa_ref" "$IMAGE") || exit $?
+environment_id=$(docker image inspect --format '{{index .Config.Labels "io.searchkernel.environment-id"}}' "$IMAGE_ID")
+[[ -n "$environment_id" && "$environment_id" != "<no value>" ]] ||
+    die "$IMAGE is missing the io.searchkernel.environment-id label"
 
 case "$PULL_MODE" in
     always)
@@ -67,9 +69,6 @@ case "$PULL_MODE" in
             die "$vespa_ref is not available locally and SEARCHKERNEL_CI_PULL=never"
         ;;
 esac
-if [[ "$vespa_ref" != *@sha256:* ]]; then
-    vespa_ref=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$vespa_ref")
-fi
 [[ "$vespa_ref" == *@sha256:* ]] || die "could not resolve immutable Vespa image digest"
 
 native_volume=$(bash "$ROOT/tools/ensure-ci-vespa-volume.sh" "$IMAGE_ID" "$vespa_ref" "$label" "$vespa_bundle")
@@ -88,7 +87,9 @@ docker run --rm "$IMAGE_ID" /bin/bash -lc '
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-image.XXXXXX")
 source_volume="searchkernel-dev-src-$(id -u)-$$-${RANDOM}"
-target_volume="searchkernel-dev-target-$(id -u)-$$-${RANDOM}"
+target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")
+ci_runtime_prune_target_volumes "$ROOT" "$target_volume"
+cargo_registry_volume=$(ci_runtime_shared_download_volume cargo-registry "$environment_id")
 artifact_volume=""
 if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
     artifact_volume="searchkernel-dev-artifacts-$(id -u)-$$-${RANDOM}"
@@ -101,13 +102,14 @@ cleanup() {
     if [[ "$KEEP_STATE" == "1" ]]; then
         echo "Search Kernel CI-image volumes retained:"
         echo "  source volume: $source_volume"
-        echo "  target volume: $target_volume"
+        echo "  persistent target volume: $target_volume"
+        echo "  immutable/download Cargo registry volume: $cargo_registry_volume"
         [[ -n "$artifact_volume" ]] && echo "  artifact volume: $artifact_volume"
         return "$status"
     fi
 
     docker rm -f "$container_name" >/dev/null 2>&1 || true
-    docker volume rm -f "$source_volume" "$target_volume" >/dev/null 2>&1 || true
+    docker volume rm -f "$source_volume" >/dev/null 2>&1 || true
     [[ -z "$artifact_volume" ]] || docker volume rm -f "$artifact_volume" >/dev/null 2>&1 || true
     return "$status"
 }
@@ -116,7 +118,15 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 docker volume create "$source_volume" >/dev/null
-docker volume create "$target_volume" >/dev/null
+docker volume create \
+    --label io.searchkernel.cache-kind=immutable-download \
+    --label "io.searchkernel.environment-id=$environment_id" \
+    "$cargo_registry_volume" >/dev/null
+docker volume create \
+    --label io.searchkernel.cache-kind=worktree-target \
+    --label "io.searchkernel.environment-id=$environment_id" \
+    --label "io.searchkernel.worktree=$ROOT" \
+    "$target_volume" >/dev/null
 if [[ -n "$artifact_volume" ]]; then
     docker volume create "$artifact_volume" >/dev/null
 fi
@@ -139,6 +149,12 @@ cat "$bundle" |
             cat > "$bundle"
             git clone --quiet "$bundle" /workspace
             git -C /workspace checkout --quiet --detach "$SOURCE_HEAD"
+            # Cargo fingerprints include source mtimes. A fresh checkout would
+            # otherwise make unchanged tracked sources newer than the persistent
+            # target tree and force workspace recompilation on every container.
+            commit_epoch=$(git -C /workspace show -s --format=%ct "$SOURCE_HEAD")
+            (cd /workspace && git ls-files -z | xargs -0r touch -h -d "@$commit_epoch" --)
+            find /workspace -path /workspace/.git -prune -o -type d -exec touch -h -d "@$commit_epoch" {} +
             rm -f "$bundle"
         '
 
@@ -217,6 +233,7 @@ done < <(compgen -e)
 docker_volume_args=(
     -v "$source_volume:/work"
     -v "$target_volume:/cargo-target"
+    -v "$cargo_registry_volume:/root/.cargo/registry"
     -v "$native_volume:/opt/searchkernel/native-sdk-cache:ro"
     -v "$sccache_binary_volume:/opt/searchkernel/sccache:ro"
     -v "$sccache_socket_volume:/sccache:ro"

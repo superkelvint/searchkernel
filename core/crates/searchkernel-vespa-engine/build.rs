@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(searchkernel_hardening_sdk)");
@@ -21,10 +22,10 @@ fn main() {
         .unwrap_or_else(|| default_native_sdk(&manifest_dir));
     let manifest = sdk.join("manifest.json");
     println!("cargo:rerun-if-changed={}", manifest.display());
-    println!(
-        "cargo:rerun-if-changed={}",
-        sdk.join("native-build-fingerprint-v2.txt").display()
-    );
+    let fingerprint = sdk.join("native-build-fingerprint-v2.txt");
+    if fingerprint.is_file() {
+        println!("cargo:rerun-if-changed={}", fingerprint.display());
+    }
 
     let Ok(contents) = fs::read_to_string(&manifest) else {
         return;
@@ -42,6 +43,30 @@ fn main() {
 }
 
 fn default_native_sdk(manifest_dir: &Path) -> PathBuf {
+    // Canonical/container builds mount the immutable native base outside the
+    // writable Cargo target tree. Resolve that authority first so Cargo does
+    // not fingerprint a permanently-missing target/native-sdk path and rebuild
+    // every native dependent on each fresh container invocation.
+    let root = manifest_dir.join("../../..");
+    let resolver = root.join("tools/resolve-native-sdk.sh");
+    if resolver.is_file() {
+        let mut command = Command::new("bash");
+        command.arg(&resolver).arg("path");
+        if let Some(target) = env::var_os("TARGET") {
+            command.env("SK_NATIVE_TARGET", target);
+        }
+        if let Ok(output) = command.output() {
+            if output.status.success() {
+                if let Some(path) = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .rev()
+                    .find(|line| !line.trim().is_empty())
+                {
+                    return PathBuf::from(path);
+                }
+            }
+        }
+    }
     if let Some(out_dir) = env::var_os("OUT_DIR") {
         let out_dir = PathBuf::from(out_dir);
         if let Some(target_root) = out_dir.ancestors().nth(4) {
