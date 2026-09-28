@@ -7,13 +7,11 @@ use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use searchkernel_protocol::{
     json::{request_flatbuffer_to_json, response_json_to_flatbuffer},
     protocol::v2 as wire,
-    v2 as api,
-    PROTOCOL_VERSION,
+    v2 as api, PROTOCOL_VERSION,
 };
 use searchkerneld::{
     rpc, start_multi, IndexRegistry, RegistryDispatchError, ServerConfig, JSON_EXECUTE_PATH,
 };
-use tonic::Request;
 use std::{
     fs,
     path::PathBuf,
@@ -21,6 +19,7 @@ use std::{
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tonic::Request;
 
 struct TempDir(PathBuf);
 
@@ -214,7 +213,6 @@ fn search_request(target_name: &str, text: &str) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
-
 async fn execute_http_json(address: std::net::SocketAddr, payload: &[u8]) -> Vec<u8> {
     let json = request_flatbuffer_to_json(payload).expect("encode request JSON");
     let request = HttpRequest::builder()
@@ -263,7 +261,6 @@ fn total_hits(bytes: &[u8]) -> u64 {
         .expect("total hits")
         .value()
 }
-
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn grpc_and_http_json_share_one_registry() {

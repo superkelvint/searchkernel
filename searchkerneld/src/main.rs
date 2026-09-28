@@ -103,7 +103,8 @@ mod native_main {
             }
         }
 
-        let data_root = data_root.or_else(|| env::var_os("SEARCHKERNEL_DATA_ROOT").map(PathBuf::from));
+        let data_root =
+            data_root.or_else(|| env::var_os("SEARCHKERNEL_DATA_ROOT").map(PathBuf::from));
         let index_path =
             index_path.or_else(|| env::var_os("SEARCHKERNEL_INDEX_PATH").map(PathBuf::from));
         let definition_path = definition_path
@@ -115,9 +116,7 @@ mod native_main {
             return Err("--definition and --definition-json are mutually exclusive".into());
         }
         if data_root.is_some()
-            && (index_path.is_some()
-                || definition_path.is_some()
-                || definition_json_path.is_some())
+            && (index_path.is_some() || definition_path.is_some() || definition_json_path.is_some())
         {
             return Err(
                 "--data-root cannot be combined with legacy --index/--definition options".into(),
@@ -219,15 +218,16 @@ mod native_main {
                 let json = std::fs::read(path)?;
                 searchkernel_protocol::json::index_definition_json_to_flatbuffer(&json)?
             }
-            (None, None) => {
-                return Err(
-                    "--definition or --definition-json is required when creating a legacy single index"
-                        .into(),
-                )
-            }
+            (None, None) => return Err(
+                "--definition or --definition-json is required when creating a legacy single index"
+                    .into(),
+            ),
             (Some(_), Some(_)) => unreachable!("mutually exclusive definitions checked in config"),
         };
-        Ok(Index::create_from_definition_bytes(index_path, &definition)?)
+        Ok(Index::create_from_definition_bytes(
+            index_path,
+            &definition,
+        )?)
     }
 
     fn config_from_address(value: Option<&str>) -> Result<ServerConfig, ServerError> {
@@ -271,7 +271,9 @@ mod native_main {
         tokio::signal::ctrl_c().await
     }
 
-    async fn wait_for_shutdown(mut server: searchkerneld::RunningServer) -> Result<(), ServerError> {
+    async fn wait_for_shutdown(
+        mut server: searchkerneld::RunningServer,
+    ) -> Result<(), ServerError> {
         let signal = graceful_shutdown_signal();
         tokio::pin!(signal);
         tokio::select! {
