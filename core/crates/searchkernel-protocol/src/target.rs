@@ -138,12 +138,13 @@ const fn is_tail(byte: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_index_target, IndexTargetError, CREATE_INDEX_DEFINITION_PATH,
+        validate_index_target, IndexControlError, IndexTargetError, CREATE_INDEX_DEFINITION_PATH,
         INDEX_ALREADY_EXISTS_DETAIL_CODE, INDEX_NOT_FOUND_DETAIL_CODE,
         INVALID_INDEX_TARGET_DETAIL_CODE, MAX_INDEX_TARGET_LEN,
         MISSING_INDEX_DEFINITION_DETAIL_CODE, MISSING_INDEX_TARGET_DETAIL_CODE, TARGET_NAME_PATH,
         TARGET_PATH,
     };
+    use crate::v2 as api;
 
     #[test]
     fn stable_daemon_error_contract_is_frozen_from_multi_index_baseline() {
@@ -158,6 +159,48 @@ mod tests {
         assert_eq!(TARGET_PATH, "target");
         assert_eq!(TARGET_NAME_PATH, "target.name");
         assert_eq!(CREATE_INDEX_DEFINITION_PATH, "payload.definition");
+    }
+
+    #[test]
+    fn canonical_daemon_control_errors_bind_code_detail_and_path() {
+        let cases = [
+            (
+                IndexControlError::MissingTarget,
+                api::ErrorCode::InvalidArgument,
+                MISSING_INDEX_TARGET_DETAIL_CODE,
+                Some(TARGET_PATH),
+            ),
+            (
+                IndexControlError::InvalidTarget(IndexTargetError::Empty),
+                api::ErrorCode::InvalidArgument,
+                INVALID_INDEX_TARGET_DETAIL_CODE,
+                Some(TARGET_NAME_PATH),
+            ),
+            (
+                IndexControlError::MissingIndexDefinition,
+                api::ErrorCode::InvalidArgument,
+                MISSING_INDEX_DEFINITION_DETAIL_CODE,
+                Some(CREATE_INDEX_DEFINITION_PATH),
+            ),
+            (
+                IndexControlError::IndexAlreadyExists,
+                api::ErrorCode::AlreadyExists,
+                INDEX_ALREADY_EXISTS_DETAIL_CODE,
+                None,
+            ),
+            (
+                IndexControlError::IndexNotFound,
+                api::ErrorCode::NotFound,
+                INDEX_NOT_FOUND_DETAIL_CODE,
+                None,
+            ),
+        ];
+
+        for (error, code, detail_code, path) in cases {
+            assert_eq!(error.error_code(), code);
+            assert_eq!(error.detail_code(), detail_code);
+            assert_eq!(error.path(), path);
+        }
     }
 
     #[test]
