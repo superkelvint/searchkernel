@@ -621,6 +621,46 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         panic!("put visibility barrier returned before searchable state");
     }
 
+    // A successful mutation must also wait for the Vespa searchable
+    // generation, not merely source-document visibility. This failpoint is
+    // intentionally placed at the required publication fence. Before the
+    // production fix is wired in, the mutation returns without ever reaching
+    // it and this regression fails deterministically.
+    hardening::set(
+        &engine,
+        "mutation_before_search_publication_wait",
+        1,
+        Action::Block,
+    )?;
+    let publication_engine = Arc::clone(&engine);
+    let publication_put = thread::spawn(move || put(&publication_engine, "publication", 19));
+    for _ in 0..100 {
+        if hardening::is_blocked(&engine, "mutation_before_search_publication_wait")? {
+            break;
+        }
+        if publication_put.is_finished() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    if !hardening::is_blocked(&engine, "mutation_before_search_publication_wait")? {
+        let result = publication_put
+            .join()
+            .map_err(|_| "publication put panicked")?;
+        result?;
+        panic!("put returned without waiting for searchable publication");
+    }
+    if publication_put.is_finished() {
+        panic!("put returned before searchable publication was released");
+    }
+    hardening::release(&engine, "mutation_before_search_publication_wait")?;
+    publication_put
+        .join()
+        .map_err(|_| "publication put panicked")??;
+    if !search_ids(&engine, 19, 10)?.iter().any(|id| id == "publication") {
+        panic!("publication fence returned before searchable state");
+    }
+
     hardening::set(
         &engine,
         "attribute_mutation_before_native_call",
