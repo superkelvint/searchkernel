@@ -351,12 +351,6 @@ fn registry_error_status(error: RegistryDispatchError) -> Status {
         RegistryDispatchError::UnsupportedProtocol(version) => Status::failed_precondition(
             format!("unsupported Search Kernel protocol version {version}"),
         ),
-        RegistryDispatchError::MissingTarget => {
-            Status::invalid_argument("Search Kernel request is missing an index target")
-        }
-        RegistryDispatchError::InvalidTarget(message) => {
-            Status::invalid_argument(format!("invalid Search Kernel index target: {message}"))
-        }
         RegistryDispatchError::UnsupportedOperation(operation) => Status::unimplemented(format!(
             "unsupported Search Kernel operation discriminator {operation}"
         )),
@@ -379,14 +373,6 @@ fn registry_error_http(error: RegistryDispatchError) -> (StatusCode, String) {
         RegistryDispatchError::UnsupportedProtocol(version) => (
             StatusCode::PRECONDITION_FAILED,
             format!("unsupported Search Kernel protocol version {version}"),
-        ),
-        RegistryDispatchError::MissingTarget => (
-            StatusCode::BAD_REQUEST,
-            "Search Kernel request is missing an index target".to_owned(),
-        ),
-        RegistryDispatchError::InvalidTarget(message) => (
-            StatusCode::BAD_REQUEST,
-            format!("invalid Search Kernel index target: {message}"),
         ),
         RegistryDispatchError::UnsupportedOperation(operation) => (
             StatusCode::NOT_IMPLEMENTED,
