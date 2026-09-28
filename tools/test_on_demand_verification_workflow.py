@@ -29,7 +29,6 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
 
     def test_revision_is_exact_sha_and_checkout_is_proven(self):
         text = self.text
-        self.assertIn("^[-0-9a-fA-F]", "^[-0-9a-fA-F]")
         self.assertIn("^[0-9a-fA-F]{40}$", text)
         self.assertIn("ref: ${{ inputs.revision }}", text)
         self.assertIn("persist-credentials: false", text)
