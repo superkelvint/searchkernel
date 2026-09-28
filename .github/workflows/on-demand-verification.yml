@@ -58,6 +58,14 @@ jobs:
             exit 2
           fi
 
+      - name: Check out trusted control plane
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Check out requested revision as untrusted subject
         uses: actions/checkout@v4
         with:
@@ -140,14 +148,15 @@ jobs:
       - name: Run canonical verification
         id: execute
         shell: bash
-        working-directory: subject
         env:
           OPERATION: ${{ github.event.client_payload.operation }}
           CANONICAL_TARGET: ${{ steps.target.outputs.target }}
+          SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject
+          SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"
         run: |
           set -euo pipefail
           printf 'canonical command: ./dev %q %q\n' "${OPERATION}" "${CANONICAL_TARGET}"
-          ./dev "${OPERATION}" "${CANONICAL_TARGET}"
+          bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"
 
       - name: Write structured evidence
         if: always()
