@@ -65,7 +65,6 @@
 #include <vespa/searchcore/proton/documentmetastore/i_document_meta_store_context.h>
 #include <vespa/searchcore/proton/server/memoryconfigstore.h>
 #include <vespa/searchcore/proton/server/persistencehandlerproxy.h>
-#include <vespa/searchcore/proton/server/storeonlyfeedview.h>
 #include <vespa/searchcore/proton/matching/sessionmanager.h>
 #include <vespa/searchcore/proton/reference/document_db_reference_registry.h>
 #include <vespa/searchcore/proton/server/maintenance_job_token_source.h>

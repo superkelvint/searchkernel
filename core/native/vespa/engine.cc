@@ -1888,15 +1888,10 @@ class EmbeddedEngine {
         if (!feed_view) {
             throw std::runtime_error("Vespa DocumentDB has no ready feed view");
         }
-        auto *store_feed_view =
-            dynamic_cast<proton::StoreOnlyFeedView *>(feed_view.get());
-        if (!store_feed_view) {
-            throw std::runtime_error("Vespa ready feed view cannot expose its write service");
-        }
 
         vespalib::Gate gate;
         std::exception_ptr failure;
-        store_feed_view->getWriteService().blocking_master_execute(
+        _db->getWriteService().blocking_master_execute(
             vespalib::makeLambdaTask(
                 [feed_view = std::move(feed_view), serial, &gate, &failure]() mutable {
                     try {
