@@ -369,6 +369,9 @@ fn multi_index_protocol_baseline_pins_wire_layout() {
     assert_eq!(wire::RequestEnvelope::VT_PAYLOAD_TYPE, 6);
     assert_eq!(wire::RequestEnvelope::VT_PAYLOAD, 8);
     assert_eq!(wire::RequestEnvelope::VT_TARGET, 10);
+    assert_eq!(wire::ResponseEnvelope::VT_PROTOCOL_VERSION, 4);
+    assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD_TYPE, 6);
+    assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD, 8);
 }
 
 #[test]
