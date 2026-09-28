@@ -196,7 +196,10 @@ impl IndexRegistry {
             Err(error) => return Ok(encode_error(error)),
         };
         let definition_bytes = searchkernel_ir::index_definition_ir_to_api(&definition_ir);
-        let path = self.index_path(target);
+        let path = match self.checked_index_path(target) {
+            Ok(path) => path,
+            Err(error) => return Ok(encode_error(error)),
+        };
         let index = match Index::create_from_definition_bytes(&path, &definition_bytes) {
             Ok(index) => index,
             Err(error) => return Ok(encode_error(index_error_to_portable(error))),
@@ -226,7 +229,10 @@ impl IndexRegistry {
             ));
         }
 
-        let path = self.index_path(target);
+        let path = match self.checked_index_path(target) {
+            Ok(path) => path,
+            Err(error) => return Ok(encode_error(error)),
+        };
         let index = match Index::open(&path) {
             Ok(index) => index,
             Err(error) => return Ok(encode_error(index_error_to_portable(error))),
@@ -264,8 +270,28 @@ impl IndexRegistry {
         dispatcher.dispatch(request).map_err(map_dispatch_error)
     }
 
-    fn index_path(&self, target: &str) -> PathBuf {
-        self.data_root.join(target)
+    fn checked_index_path(&self, target: &str) -> Result<PathBuf, PortableError> {
+        let path = self.data_root.join(target);
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                Err(PortableError::failed_precondition(
+                    "unsafe_index_path",
+                    Some("target"),
+                    format!("index target {target:?} resolves through a symbolic link"),
+                ))
+            }
+            Ok(metadata) if !metadata.is_dir() => Err(PortableError::failed_precondition(
+                "unsafe_index_path",
+                Some("target"),
+                format!("index target {target:?} is not a directory"),
+            )),
+            Ok(_) => Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path),
+            Err(error) => Err(PortableError::new(
+                ErrorCode::Unavailable,
+                format!("inspect index target {target:?}: {error}"),
+            )),
+        }
     }
 }
 
