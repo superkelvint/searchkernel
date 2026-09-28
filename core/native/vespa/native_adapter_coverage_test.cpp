@@ -730,6 +730,18 @@ void exercise_native_engine(const std::filesystem::path &data,
                                 sizeof(QUICK_TERM) - 1, query_text_lengths, 1,
                                 error.data(), ERROR_CAPACITY), "text query");
     sk_query_destroy(query);
+    const uint8_t predicate_bytes[] = {'x'};
+    const uint32_t predicate_lengths[] = {2};
+    const uint64_t predicate_masks[] = {1};
+    const uint64_t predicate_values[] = {1};
+    expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "predicate bounds query create");
+    expect_invalid(sk_query_add_predicate(query, "access", predicate_bytes, predicate_lengths,
+                                          predicate_bytes, predicate_lengths, predicate_masks, 1,
+                                          predicate_bytes, predicate_lengths, predicate_values,
+                                          predicate_masks, 1, error.data(), ERROR_CAPACITY),
+                   "predicate packed buffers reject oversized advertised lengths");
+    sk_query_destroy(query);
+
     expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "range query create");
     expect_ok(sk_query_add_range(query, "qty", SK_QUERY_BOUND_INCLUDED, 1,
                                  SK_QUERY_BOUND_EXCLUDED, 100, error.data(), ERROR_CAPACITY),
