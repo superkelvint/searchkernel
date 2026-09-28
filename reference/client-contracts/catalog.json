@@ -44,7 +44,19 @@
           "path": "clients/python/tests/test_grpc_e2e.py",
           "command": [
             "bash",
-            "tools/run-python-native-e2e.sh"
+            "tools/run-python-native-e2e.sh",
+            "--include-facade"
+          ]
+        },
+        {
+          "runtimes": [
+            "managed-local"
+          ],
+          "path": "clients/python/examples/try_searchkernel_client_api_e2e.py",
+          "command": [
+            "bash",
+            "tools/run-python-native-e2e.sh",
+            "--include-facade"
           ]
         }
       ]
