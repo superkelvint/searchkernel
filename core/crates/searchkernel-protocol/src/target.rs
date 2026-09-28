@@ -21,12 +21,14 @@ pub const TARGETED_REQUEST_REQUIRED_DETAIL_CODE: &str = "targeted_request_requir
 pub const MISSING_INDEX_TARGET_DETAIL_CODE: &str = "missing_index_target";
 pub const INVALID_INDEX_TARGET_DETAIL_CODE: &str = "invalid_index_target";
 pub const INVALID_TARGETED_REQUEST_DETAIL_CODE: &str = "invalid_targeted_request";
+pub const MISSING_INDEX_DEFINITION_DETAIL_CODE: &str = "missing_index_definition";
 pub const INDEX_ALREADY_EXISTS_DETAIL_CODE: &str = "index_already_exists";
 pub const INDEX_NOT_FOUND_DETAIL_CODE: &str = "index_not_found";
 pub const PAYLOAD_TYPE_PATH: &str = "payload_type";
 pub const TARGET_PATH: &str = "target";
 pub const TARGET_NAME_PATH: &str = "target.name";
 pub const TARGETED_PAYLOAD_PATH: &str = "payload";
+pub const CREATE_INDEX_DEFINITION_PATH: &str = "payload.payload.definition";
 
 /// Why a logical index target was rejected.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,6 +96,8 @@ pub enum DaemonRequestError {
     InvalidTarget(IndexTargetError),
     /// The wrapper was present but did not contain a concrete inner operation.
     InvalidTargetedRequest,
+    /// CreateIndex was selected but its schema definition was absent.
+    MissingIndexDefinition,
 }
 
 impl fmt::Display for DaemonRequestError {
@@ -109,6 +113,9 @@ impl fmt::Display for DaemonRequestError {
             }
             Self::InvalidTargetedRequest => {
                 write!(formatter, "TargetedRequest is missing its inner operation")
+            }
+            Self::MissingIndexDefinition => {
+                write!(formatter, "CreateIndexRequest is missing its index definition")
             }
         }
     }
@@ -129,6 +136,7 @@ impl DaemonRequestError {
             Self::MissingTarget => MISSING_INDEX_TARGET_DETAIL_CODE,
             Self::InvalidTarget(_) => INVALID_INDEX_TARGET_DETAIL_CODE,
             Self::InvalidTargetedRequest => INVALID_TARGETED_REQUEST_DETAIL_CODE,
+            Self::MissingIndexDefinition => MISSING_INDEX_DEFINITION_DETAIL_CODE,
         }
     }
 
@@ -139,6 +147,7 @@ impl DaemonRequestError {
             Self::MissingTarget => TARGET_PATH,
             Self::InvalidTarget(_) => TARGET_NAME_PATH,
             Self::InvalidTargetedRequest => TARGETED_PAYLOAD_PATH,
+            Self::MissingIndexDefinition => CREATE_INDEX_DEFINITION_PATH,
         }
     }
 }
@@ -161,14 +170,25 @@ pub fn daemon_request<'a>(
     let request = envelope
         .payload_as_targeted_request()
         .ok_or(DaemonRequestError::InvalidTargetedRequest)?;
-    if request.payload_type() == wire::TargetedRequestPayload::NONE || request.payload().is_none() {
-        return Err(DaemonRequestError::InvalidTargetedRequest);
-    }
 
     let target = request_index_target(envelope).map_err(|error| match error {
         RequestTargetError::Missing => DaemonRequestError::MissingTarget,
         RequestTargetError::Invalid(error) => DaemonRequestError::InvalidTarget(error),
     })?;
+
+    if request.payload_type() == wire::TargetedRequestPayload::NONE || request.payload().is_none() {
+        return Err(DaemonRequestError::InvalidTargetedRequest);
+    }
+
+    if request.payload_type() == wire::TargetedRequestPayload::SearchKernel_V2_CreateIndexRequest {
+        let create = request
+            .payload_as_search_kernel_v2_create_index_request()
+            .ok_or(DaemonRequestError::InvalidTargetedRequest)?;
+        if create.definition().is_none() {
+            return Err(DaemonRequestError::MissingIndexDefinition);
+        }
+    }
+
     Ok((target, request))
 }
 
@@ -253,6 +273,7 @@ mod tests {
         assert_eq!(TARGET_PATH, "target");
         assert_eq!(TARGET_NAME_PATH, "target.name");
         assert_eq!(TARGETED_PAYLOAD_PATH, "payload");
+        assert_eq!(CREATE_INDEX_DEFINITION_PATH, "payload.payload.definition");
     }
 
     #[test]
@@ -277,6 +298,11 @@ mod tests {
                 DaemonRequestError::InvalidTargetedRequest,
                 INVALID_TARGETED_REQUEST_DETAIL_CODE,
                 TARGETED_PAYLOAD_PATH,
+            ),
+            (
+                DaemonRequestError::MissingIndexDefinition,
+                MISSING_INDEX_DEFINITION_DETAIL_CODE,
+                CREATE_INDEX_DEFINITION_PATH,
             ),
         ];
         for (error, code, path) in cases {
