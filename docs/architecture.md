@@ -134,12 +134,20 @@ canonical FlatBuffers semantics, not transport metadata. Remote clients never
 supply arbitrary server filesystem paths; the daemon maps validated logical
 identifiers under its configured data root.
 
-A daemon-bound `RequestEnvelope` therefore carries an explicit `IndexTarget`.
-Lifecycle uses canonical `CreateIndexRequest` / `OpenIndexRequest` operations.
-Target-less legacy V2 frames remain structurally parseable for compatibility but
-must be rejected by multi-index routing instead of falling back to a default.
-Client-handle close remains local and must not unload an index shared by other
-clients.
+A daemon-bound `RequestEnvelope` therefore carries an explicit `IndexTarget`
+and uses the canonical `TargetedRequest` top-level payload. The wrapper is an
+intentional downgrade barrier: older single-index V2 daemons see an unknown
+top-level operation and fail closed rather than ignoring the appended target
+field and executing a familiar operation against the wrong index. The wrapper's
+inner payload carries ordinary operations plus canonical `CreateIndexRequest` /
+`OpenIndexRequest` lifecycle operations. Direct top-level V2 operations remain
+the per-index/embedded ABI and must be rejected at the multi-index daemon ingress.
+
+`IndexDefinition.name` remains schema identity and may differ from the logical
+daemon target; routing must never be inferred from it. Target-less legacy V2
+frames remain structurally parseable for compatibility but must be rejected by
+multi-index routing instead of falling back to a default. Client-handle close
+remains local and must not unload an index shared by other clients.
 
 There are two permitted transport representations, both terminating at the same
 canonical FlatBuffer router and per-index dispatcher.
