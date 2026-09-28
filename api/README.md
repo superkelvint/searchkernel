@@ -25,14 +25,21 @@ through these schemas merely to reach the local engine.
   values are not automatically treated as the same thing.
 - Union discriminators must agree with their payload tables. Malformed or
   incomplete unions are rejected at the boundary.
-- Daemon-bound requests carry an explicit logical `IndexTarget`. Targets are
-  protocol identities, not filesystem paths; the canonical validator accepts
-  lowercase ASCII slugs only. A multi-index daemon rejects target-less V2
-  requests rather than silently selecting a default index.
+- Daemon-bound requests carry an explicit logical `IndexTarget` and use the
+  top-level `TargetedRequest` wrapper. The wrapper is a downgrade barrier:
+  pre-multi-index V2 daemons do not know its discriminator, so targeted traffic
+  is rejected instead of having the new target field ignored while a familiar
+  Search/Insert/etc. payload executes against the old daemon's single index.
+  Targets are protocol identities, not filesystem paths; the canonical
+  validator accepts lowercase ASCII slugs only. Direct top-level operation
+  variants remain the per-index/embedded ABI and are not valid multi-index
+  daemon ingress.
 - `CreateIndexRequest` and `OpenIndexRequest` are canonical lifecycle
-  operations. Create is strict (existing target -> `AlreadyExists`); open is
-  strict (missing target -> `NotFound`). Closing a client handle is not a
-  server-side unload operation.
+  operations carried inside `TargetedRequest`. Create is strict (existing
+  target -> `AlreadyExists`); open is strict (missing target -> `NotFound`).
+  `IndexDefinition.name` is schema identity, not daemon routing identity, and
+  may differ from the enclosing logical target. Closing a client handle is not
+  a server-side unload operation.
 - Multi-index routing uses stable portable lifecycle details: missing target is
   `InvalidArgument` / `missing_index_target` at `target`; malformed target
   is `InvalidArgument` / `invalid_index_target` at `target.name`; strict
