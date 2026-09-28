@@ -372,6 +372,26 @@ fn multi_index_protocol_baseline_pins_wire_layout() {
     assert_eq!(wire::ResponseEnvelope::VT_PROTOCOL_VERSION, 4);
     assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD_TYPE, 6);
     assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD, 8);
+
+    // Lifecycle tables introduced by #848 are part of the same durable
+    // compatibility baseline. Their field slots must remain append-only too.
+    assert_eq!(wire::IndexTarget::VT_NAME, 4);
+    assert_eq!(wire::CreateIndexRequest::VT_DEFINITION, 4);
+    assert_eq!(wire::CreateIndexResult::VT_INDEX, 4);
+    assert_eq!(wire::OpenIndexResult::VT_INDEX, 4);
+
+    // ErrorCode values are portable wire ABI and must never be renumbered.
+    assert_eq!(wire::ErrorCode::Unspecified.0, 0);
+    assert_eq!(wire::ErrorCode::InvalidArgument.0, 1);
+    assert_eq!(wire::ErrorCode::NotFound.0, 2);
+    assert_eq!(wire::ErrorCode::AlreadyExists.0, 3);
+    assert_eq!(wire::ErrorCode::FailedPrecondition.0, 4);
+    assert_eq!(wire::ErrorCode::Conflict.0, 5);
+    assert_eq!(wire::ErrorCode::Unsupported.0, 6);
+    assert_eq!(wire::ErrorCode::ResourceExhausted.0, 7);
+    assert_eq!(wire::ErrorCode::Internal.0, 8);
+    assert_eq!(wire::ErrorCode::Unavailable.0, 9);
+    assert_eq!(wire::ErrorCode::DeadlineExceeded.0, 10);
 }
 
 #[test]
