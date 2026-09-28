@@ -65,6 +65,7 @@
 #include <vespa/searchcore/proton/documentmetastore/i_document_meta_store_context.h>
 #include <vespa/searchcore/proton/server/memoryconfigstore.h>
 #include <vespa/searchcore/proton/server/persistencehandlerproxy.h>
+#include <vespa/searchcore/proton/server/storeonlyfeedview.h>
 #include <vespa/searchcore/proton/matching/sessionmanager.h>
 #include <vespa/searchcore/proton/reference/document_db_reference_registry.h>
 #include <vespa/searchcore/proton/server/maintenance_job_token_source.h>
@@ -147,6 +148,8 @@
 #include <vespa/vespalib/objects/nboserializer.h>
 #include <vespa/vespalib/objects/objectvisitor.h>
 #include <vespa/vespalib/util/host_name.h>
+#include <vespa/vespalib/util/gate.h>
+#include <vespa/vespalib/util/lambdatask.h>
 #include <vespa/vespalib/util/invokeserviceimpl.h>
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
 #include <vespa/eval/eval/fast_value.h>

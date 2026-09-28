@@ -116,11 +116,19 @@ pub fn run_low_level(root: &Json, config: &Path, data: &Path) -> Json {
         .update(DocumentUpdate::new(id_a).assign(field, tensor(root, "replacement")))
         .expect("patch tensor replacement");
     let patched = document_tensor(&engine, id_a, field);
+    let nn_after_patch_immediate = search(&engine);
+    if nn_after_patch_immediate == nn_before_patch {
+        panic!("tensor UPDATE returned before immediate NN search reflected the replacement");
+    }
     engine.close().expect("close after patched tensor");
 
     let engine = Engine::open(data, config).expect("reopen after patched tensor");
     let persisted_patch = document_tensor(&engine, id_a, field);
     let nn_after_patch = search(&engine);
+    assert_eq!(
+        nn_after_patch_immediate, nn_after_patch,
+        "immediate tensor NN state disagreed with the persisted post-update state"
+    );
 
     engine
         .update(DocumentUpdate::new(id_a).clear(field))

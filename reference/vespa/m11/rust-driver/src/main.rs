@@ -111,6 +111,26 @@ fn search_ids(engine: &Engine, value: i64, limit: u32) -> AnyResult<Vec<String>>
         .collect())
 }
 
+fn scalar_field(engine: &Engine, id: &str, field: &str) -> AnyResult<Option<ScalarValue>> {
+    let Some(document) = engine.get(id)? else {
+        return Ok(None);
+    };
+    match document.fields().get(field) {
+        Some(FieldValue::Scalar(value)) => Ok(Some(value.clone())),
+        Some(other) => Err(format!("field {field} was not scalar: {other:?}").into()),
+        None => Ok(None),
+    }
+}
+
+fn term_search_ids(engine: &Engine, field: &str, term: &str) -> AnyResult<Vec<String>> {
+    Ok(engine
+        .search(SearchRequest::new(Query::term(field, term)).limit(100))?
+        .hits
+        .into_iter()
+        .map(|hit| hit.document_id)
+        .collect())
+}
+
 fn advanced_direct(config: &Path, data: &Path) -> AnyResult<()> {
     let engine = open(config, data)?;
     for (id, category, qty, popularity) in [
@@ -659,6 +679,54 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         .map_err(|_| "publication put panicked")??;
     if !search_ids(&engine, 19, 10)?.iter().any(|id| id == "publication") {
         panic!("publication fence returned before searchable state");
+    }
+
+    // Freeze the public read-after-write/search-after-write completion
+    // contract across the non-tensor mutation families. Tensor/HNSW publication
+    // is covered cumulatively by M13/M14.
+    put(&engine, "publication-put", 31)?;
+    if scalar_field(&engine, "publication-put", "qty")? != Some(ScalarValue::Integer(31))
+        || !search_ids(&engine, 31, 10)?.iter().any(|id| id == "publication-put")
+    {
+        panic!("PUT returned before immediate GET/search observed the new document");
+    }
+
+    put(&engine, "publication-upsert", 41)?;
+    put(&engine, "publication-upsert", 42)?;
+    if scalar_field(&engine, "publication-upsert", "qty")? != Some(ScalarValue::Integer(42))
+        || search_ids(&engine, 41, 10)?.iter().any(|id| id == "publication-upsert")
+        || !search_ids(&engine, 42, 10)?.iter().any(|id| id == "publication-upsert")
+    {
+        panic!("UPSERT returned before immediate GET/search observed replacement B");
+    }
+
+    let indexed_id = "publication-indexed-update";
+    engine.put(Document::new(indexed_id).field("title", "beforepublicationmarker"))?;
+    engine.update(
+        DocumentUpdate::new(indexed_id).assign("title", "afterpublicationmarker"),
+    )?;
+    if scalar_field(&engine, indexed_id, "title")?
+        != Some(ScalarValue::String("afterpublicationmarker".to_owned()))
+        || term_search_ids(&engine, "title", "beforepublicationmarker")?
+            .iter()
+            .any(|id| id == indexed_id)
+        || !term_search_ids(&engine, "title", "afterpublicationmarker")?
+            .iter()
+            .any(|id| id == indexed_id)
+    {
+        panic!("indexed UPDATE returned before immediate GET/search observed B");
+    }
+
+    put(&engine, "publication-delete", 51)?;
+    if !engine.delete("publication-delete")? {
+        panic!("DELETE did not report the existing document");
+    }
+    if engine.get("publication-delete")?.is_some()
+        || search_ids(&engine, 51, 10)?
+            .iter()
+            .any(|id| id == "publication-delete")
+    {
+        panic!("DELETE returned before immediate GET/search stopped observing the document");
     }
 
     hardening::set(

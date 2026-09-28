@@ -1872,6 +1872,47 @@ class EmbeddedEngine {
         }
     }
 
+    void wait_for_search_publication(search::SerialNum serial) {
+        // Source/document-retriever visibility is not the same thing as the
+        // generation consumed by matching. Vespa publishes the document store,
+        // attributes (including HNSW), and memory index through the feed view's
+        // force-commit path. Run that canonical fence on Vespa's master write
+        // thread and do not return the mutation until every participating
+        // writer has released the commit callback.
+        failpoint("mutation_before_search_publication_wait");
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) {
+            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        }
+        auto feed_view = ready_sub_db->getFeedView();
+        if (!feed_view) {
+            throw std::runtime_error("Vespa DocumentDB has no ready feed view");
+        }
+        auto *store_feed_view =
+            dynamic_cast<proton::StoreOnlyFeedView *>(feed_view.get());
+        if (!store_feed_view) {
+            throw std::runtime_error("Vespa ready feed view cannot expose its write service");
+        }
+
+        vespalib::Gate gate;
+        std::exception_ptr failure;
+        store_feed_view->getWriteService().blocking_master_execute(
+            vespalib::makeLambdaTask(
+                [feed_view = std::move(feed_view), serial, &gate, &failure]() mutable {
+                    try {
+                        feed_view->forceCommitAndWait(search::CommitParam(
+                            serial, search::CommitParam::UpdateStats::SKIP));
+                    } catch (...) {
+                        failure = std::current_exception();
+                    }
+                    gate.countDown();
+                }));
+        gate.await();
+        if (failure) {
+            std::rethrow_exception(failure);
+        }
+    }
+
     void wait_for_source_state(
         const DocumentId &id, bool expected_present,
         const std::vector<std::pair<std::string, std::optional<OwnedValue>>> &expected_fields,
@@ -3251,7 +3292,9 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(document_id, true, {{field, integer_value(value)}}, true);
+        wait_for_search_publication(publication_serial);
     }
 
     void update(const std::string &id, const std::string &field, int64_t value) {
@@ -3267,7 +3310,9 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(document_id, was_present, {{field, integer_value(value)}}, false);
+        wait_for_search_publication(publication_serial);
     }
 
     bool remove(const std::string &id) {
@@ -3282,7 +3327,9 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(document_id, false, {}, false);
+        wait_for_search_publication(publication_serial);
         return result.wasFound();
     }
 
@@ -3405,7 +3452,9 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, true, {{text.field, string_value(text.text)}}, true);
+        wait_for_search_publication(publication_serial);
     }
 
     void update_text(const TextUpdate &text) {
@@ -3420,7 +3469,9 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, was_present, {{text.field, string_value(text.text)}}, false);
+        wait_for_search_publication(publication_serial);
     }
 
     std::vector<TextHit> search_text(const TextRequest &text) const {
@@ -4320,7 +4371,9 @@ public:
         auto result = _persistence.put(bucket, Timestamp(next_timestamp()), make_attribute_document(document));
         failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, true, expected_fields(document), true);
+        wait_for_search_publication(publication_serial);
     }
 
     void update_attributes(const AttributeUpdateState &update) {
@@ -4332,7 +4385,9 @@ public:
         auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()), make_attribute_update(update));
         failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, was_present, expected_fields(update), false);
+        wait_for_search_publication(publication_serial);
     }
 
     void put_document(const ValueDocument &document) {
@@ -4359,15 +4414,17 @@ public:
         const bool has_position = std::any_of(
             document.fields.begin(), document.fields.end(),
             [](const auto &field) { return field.value.kind == SK_VALUE_POSITION; });
-        // A successful put is the synchronization point for immediate GET and
-        // search. TensorFieldValue presence is intentionally a valid match in
-        // value_matches(), so tensors must not bypass this publication barrier.
-        // Struct-array/position values retain their presence-only contract.
+        // This source-state wait closes the document-store/retriever window.
+        // Search publication is fenced separately below through Vespa's
+        // force-commit path. TensorFieldValue presence remains a valid source
+        // visibility signal; it is not treated as proof of matcher publication.
+        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         if (has_struct_array || has_position) {
             wait_for_source_state(id, true, {}, true);
         } else {
             wait_for_source_state(id, true, expected_fields(document), true);
         }
+        wait_for_search_publication(publication_serial);
     }
 
     void update_document(const ValueUpdate &update) {
@@ -4397,7 +4454,9 @@ public:
                 failpoint("attribute_mutation_after_native_call");
                 failpoint("mutation_after_native_call");
                 if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+                const auto publication_serial = _db->getFeedHandler().getSerialNum();
                 wait_for_source_state(id, true, update.fields, false);
+                wait_for_search_publication(publication_serial);
                 return;
             }
         }
@@ -4409,7 +4468,9 @@ public:
         failpoint("attribute_mutation_after_native_call");
         failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, was_present || update.create_if_nonexistent, update.fields, false);
+        wait_for_search_publication(publication_serial);
     }
 
     LocalSearchResultState search_local_result(const NativeQueryState &query,
