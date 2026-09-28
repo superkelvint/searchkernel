@@ -30,11 +30,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: >-
-    on-demand-verification-${{ inputs.revision }}-${{ inputs.operation }}-${{ inputs.target }}-${{ inputs.request_id }}
-  cancel-in-progress: false
-
 jobs:
   verify:
     name: exact-SHA ${{ inputs.operation }} ${{ inputs.target }}
