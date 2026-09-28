@@ -72,7 +72,7 @@ pub fn validate_index_target(value: &str) -> Result<&str, IndexTargetError> {
 }
 
 const fn is_initial(byte: u8) -> bool {
-    byte.is_ascii_lowercase() || byte.is_ascii_digit()
+    matches!(byte, b'a'..=b'z' | b'0'..=b'9')
 }
 
 const fn is_tail(byte: u8) -> bool {
@@ -85,16 +85,11 @@ mod tests {
 
     #[test]
     fn accepts_safe_logical_targets() {
-        for value in [
-            "products",
-            "products-v2",
-            "tenant_42",
-            "0",
-            "a0_b-c",
-            &"a".repeat(MAX_INDEX_TARGET_LEN),
-        ] {
+        for value in ["products", "products-v2", "tenant_42", "0", "a0_b-c"] {
             assert_eq!(validate_index_target(value), Ok(value));
         }
+        let maximum = "a".repeat(MAX_INDEX_TARGET_LEN);
+        assert_eq!(validate_index_target(&maximum), Ok(maximum.as_str()));
     }
 
     #[test]
