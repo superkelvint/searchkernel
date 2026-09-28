@@ -127,8 +127,22 @@ This explicit remote mode must not become a second semantic implementation. Its 
 
 ### Non-Rust languages
 
-First-party non-Rust clients use the daemon. There are two permitted transport
-representations, both terminating at the same canonical FlatBuffer dispatcher.
+First-party non-Rust clients use the daemon. The daemon is a multi-index service:
+one long-lived process owns a registry of logical index targets, each backed by
+its own per-index semantic dispatcher. Lifecycle and target selection are
+canonical FlatBuffers semantics, not transport metadata. Remote clients never
+supply arbitrary server filesystem paths; the daemon maps validated logical
+identifiers under its configured data root.
+
+A daemon-bound `RequestEnvelope` therefore carries an explicit `IndexTarget`.
+Lifecycle uses canonical `CreateIndexRequest` / `OpenIndexRequest` operations.
+Target-less legacy V2 frames remain structurally parseable for compatibility but
+must be rejected by multi-index routing instead of falling back to a default.
+Client-handle close remains local and must not unload an index shared by other
+clients.
+
+There are two permitted transport representations, both terminating at the same
+canonical FlatBuffer router and per-index dispatcher.
 
 The default native/runtime path is binary FlatBuffers over generated gRPC:
 
