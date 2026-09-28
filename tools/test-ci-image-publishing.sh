@@ -12,6 +12,7 @@ for script in \
     "$ROOT/tools/ensure-ci-vespa-volume.sh" \
     "$ROOT/tools/ensure-ci-sccache.sh" \
     "$ROOT/tools/run-in-ci-image.sh" \
+    "$ROOT/tools/ci-runtime-ownership.sh" \
     "$ROOT/tools/generate-typescript-grpc-web.sh"; do
     bash -n "$script"
 done

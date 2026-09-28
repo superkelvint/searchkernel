@@ -78,7 +78,8 @@ stop_host() {
 }
 
 export SEARCHKERNEL_LOCAL_HOST="$HOST"
-"$PYTHON" "$ROOT/clients/php/examples/prepare_searchkernel_client_api_e2e.py" "$INDEX"
+PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
+  "$PYTHON" "$ROOT/clients/php/examples/prepare_searchkernel_client_api_e2e.py" "$INDEX"
 
 start_host
 php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" initial
