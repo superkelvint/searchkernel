@@ -1544,7 +1544,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/ruby/test/run.rb",
-              "line": 604
+              "line": 647
             }
           ],
           "overrides": []
