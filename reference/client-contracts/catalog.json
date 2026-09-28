@@ -125,6 +125,35 @@
       ]
     }
   },
+  "parity_requirements": [
+    {
+      "source_surface": "python",
+      "target_surface": "ruby",
+      "minimum_strength": "runtime",
+      "source_runtimes": [
+        "grpc",
+        "managed-local"
+      ],
+      "target_runtimes": [
+        "managed-local"
+      ],
+      "required_kinds": [
+        "ergonomic",
+        "e2e"
+      ],
+      "required_contracts": [
+        "update.document_crud/basic",
+        "query.phrase/basic",
+        "query.proximity/basic",
+        "query.fuzzy/basic",
+        "query.weighted_and_wand/basic",
+        "query.same_element/basic",
+        "query.geo/basic",
+        "result.docsum_field_projection/basic",
+        "result.highlighting/basic"
+      ]
+    }
+  ],
   "scenarios": [
     {
       "capability": "result.highlighting",
@@ -140,6 +169,62 @@
       "capability": "result.highlighting",
       "id": "continuation-fragments",
       "title": "Disjoint Juniper continuation regions become separate fragments"
+    }
+  ],
+  "overrides": [
+    {
+      "capability": "query.phrase",
+      "scenario": "basic",
+      "surface": "ruby",
+      "runtime": "managed-local",
+      "status": "blocked",
+      "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
+      "issue": 803
+    },
+    {
+      "capability": "query.proximity",
+      "scenario": "basic",
+      "surface": "ruby",
+      "runtime": "managed-local",
+      "status": "blocked",
+      "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
+      "issue": 803
+    },
+    {
+      "capability": "query.same_element",
+      "scenario": "basic",
+      "surface": "ruby",
+      "runtime": "managed-local",
+      "status": "blocked",
+      "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
+      "issue": 803
+    },
+    {
+      "capability": "query.fuzzy",
+      "scenario": "basic",
+      "surface": "ruby",
+      "runtime": "managed-local",
+      "status": "blocked",
+      "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
+      "issue": 803
+    },
+    {
+      "capability": "query.weighted_and_wand",
+      "scenario": "basic",
+      "surface": "ruby",
+      "runtime": "managed-local",
+      "status": "blocked",
+      "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
+      "issue": 803
+    },
+    {
+      "capability": "query.geo",
+      "scenario": "basic",
+      "surface": "ruby",
+      "runtime": "managed-local",
+      "status": "blocked",
+      "reason": "Ruby currently has only facade/request-builder evidence for this Python real-runtime capability; managed-local real-engine parity is tracked by #803.",
+      "issue": 803
     }
   ]
 }
