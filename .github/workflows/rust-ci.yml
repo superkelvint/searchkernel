@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: rust-ci-${{ github.event.pull_request.number || github.ref }}
@@ -21,7 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: true
 
       - name: Regenerate protocol artifacts for issue 845
         shell: bash
@@ -66,6 +67,23 @@ jobs:
             protocol-generated.patch
             protocol-generated.tgz
           if-no-files-found: error
+
+      - name: Commit regenerated protocol artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- \
+            core/crates/searchkernel-protocol/src/generated \
+            core/crates/searchkernel-protocol/bfbs \
+            clients/python/searchkernel/_wire_generated
+          if git diff --cached --quiet; then
+            echo "generated protocol artifacts already current"
+          else
+            git config user.name "searchkernel-protocol-bot"
+            git config user.email "searchkernel-protocol-bot@users.noreply.github.com"
+            git commit -m "build(protocol): regenerate multi-index bindings"
+            git push origin "HEAD:${GITHUB_HEAD_REF}"
+          fi
 
       - name: Run minimal Rust gate
         shell: bash
