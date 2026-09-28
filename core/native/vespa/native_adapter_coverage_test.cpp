@@ -674,6 +674,7 @@ void predicate_query_buffer_contract(sk_engine *engine) {
     const uint32_t one_length[] = {1};
     const uint32_t two_length[] = {2};
     const uint32_t two_one_lengths[] = {1, 1};
+    const uint32_t one_two_lengths[] = {1, 2};
     const uint32_t zero_length[] = {0};
     const uint32_t oversized_term_length[] = {1024 * 1024 + 1};
     const uint32_t overflow_lengths[] = {1, std::numeric_limits<uint32_t>::max()};
@@ -757,14 +758,28 @@ void predicate_query_buffer_contract(sk_engine *engine) {
     expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes,
                          std::numeric_limits<uint32_t>::max(), one_length, 1,
                          "predicate range key packed total size limit");
+    // Exercise the remaining-length check after a prior descriptor advances the
+    // offset. Each individual length is valid-sized, but the second span would
+    // read one byte past the actual two-byte allocation if checked after access.
+    expect_bad_predicate(predicate_bytes, 2, one_two_lengths, predicate_bytes, 2,
+                         two_one_lengths, 2, nullptr, 0, nullptr, 0,
+                         "predicate feature key exceeds remaining packed bytes");
+    expect_bad_predicate(predicate_bytes, 2, two_one_lengths, predicate_bytes, 2,
+                         one_two_lengths, 2, nullptr, 0, nullptr, 0,
+                         "predicate feature value exceeds remaining packed bytes");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 2,
+                         one_two_lengths, 2, "predicate range key exceeds remaining packed bytes");
+
+    // Overflow-shaped lengths are rejected before offset addition as an extra
+    // defense, even though the per-element limit makes arithmetic wrap unreachable.
     expect_bad_predicate(predicate_bytes, 2, overflow_lengths, predicate_bytes, 2,
                          two_one_lengths, 2, nullptr, 0, nullptr, 0,
-                         "predicate feature key checked offset accumulation");
+                         "predicate feature key overflow-shaped length");
     expect_bad_predicate(predicate_bytes, 2, two_one_lengths, predicate_bytes, 2,
                          overflow_lengths, 2, nullptr, 0, nullptr, 0,
-                         "predicate feature value checked offset accumulation");
+                         "predicate feature value overflow-shaped length");
     expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 2,
-                         overflow_lengths, 2, "predicate range key checked offset accumulation");
+                         overflow_lengths, 2, "predicate range key overflow-shaped length");
 
     // Zero-count/zero-total sides may carry non-null sentinels because they are never dereferenced.
     auto *query = predicate_query();
