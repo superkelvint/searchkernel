@@ -12,19 +12,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod native_main {
     use std::{env, error::Error, path::PathBuf, sync::Arc};
 
-    use searchkerneld::{start_multi, IndexRegistry, ServerConfig, ServerError};
+    use searchkernel::Index;
+    use searchkernel_dispatch::Dispatcher;
+    use searchkerneld::{start, start_multi, IndexRegistry, ServerConfig, ServerError};
 
     const DEFAULT_UNIX_SOCKET: &str = "/tmp/searchkerneld.sock";
 
     #[derive(Debug)]
+    enum Mode {
+        Multi {
+            data_root: PathBuf,
+        },
+        LegacySingle {
+            index_path: PathBuf,
+            definition_path: Option<PathBuf>,
+            definition_json_path: Option<PathBuf>,
+        },
+    }
+
+    #[derive(Debug)]
     struct Config {
-        data_root: PathBuf,
+        mode: Mode,
         server: ServerConfig,
     }
 
     fn config() -> Result<Config, Box<dyn Error>> {
         let mut args = env::args_os().skip(1);
         let mut data_root = None;
+        let mut index_path = None;
+        let mut definition_path = None;
+        let mut definition_json_path = None;
         let mut listen = None;
         let mut web_listen = None;
         let mut execution_limit = None;
@@ -36,6 +53,27 @@ mod native_main {
                     data_root = Some(
                         args.next()
                             .ok_or("--data-root requires a path")
+                            .map(PathBuf::from)?,
+                    )
+                }
+                "--index" => {
+                    index_path = Some(
+                        args.next()
+                            .ok_or("--index requires a path")
+                            .map(PathBuf::from)?,
+                    )
+                }
+                "--definition" => {
+                    definition_path = Some(
+                        args.next()
+                            .ok_or("--definition requires a path")
+                            .map(PathBuf::from)?,
+                    )
+                }
+                "--definition-json" => {
+                    definition_json_path = Some(
+                        args.next()
+                            .ok_or("--definition-json requires a path")
                             .map(PathBuf::from)?,
                     )
                 }
@@ -65,9 +103,43 @@ mod native_main {
             }
         }
 
-        let data_root = data_root
-            .or_else(|| env::var_os("SEARCHKERNEL_DATA_ROOT").map(PathBuf::from))
-            .ok_or("--data-root or SEARCHKERNEL_DATA_ROOT is required")?;
+        let data_root = data_root.or_else(|| env::var_os("SEARCHKERNEL_DATA_ROOT").map(PathBuf::from));
+        let index_path =
+            index_path.or_else(|| env::var_os("SEARCHKERNEL_INDEX_PATH").map(PathBuf::from));
+        let definition_path = definition_path
+            .or_else(|| env::var_os("SEARCHKERNEL_INDEX_DEFINITION").map(PathBuf::from));
+        let definition_json_path = definition_json_path
+            .or_else(|| env::var_os("SEARCHKERNEL_INDEX_DEFINITION_JSON").map(PathBuf::from));
+
+        if definition_path.is_some() && definition_json_path.is_some() {
+            return Err("--definition and --definition-json are mutually exclusive".into());
+        }
+        if data_root.is_some()
+            && (index_path.is_some()
+                || definition_path.is_some()
+                || definition_json_path.is_some())
+        {
+            return Err(
+                "--data-root cannot be combined with legacy --index/--definition options".into(),
+            );
+        }
+
+        let mode = match (data_root, index_path) {
+            (Some(data_root), None) => Mode::Multi { data_root },
+            (None, Some(index_path)) => Mode::LegacySingle {
+                index_path,
+                definition_path,
+                definition_json_path,
+            },
+            (None, None) => {
+                return Err(
+                    "--data-root/SEARCHKERNEL_DATA_ROOT is required for multi-index mode; legacy --index/SEARCHKERNEL_INDEX_PATH remains temporarily supported"
+                        .into(),
+                )
+            }
+            (Some(_), Some(_)) => unreachable!("mixed daemon modes rejected above"),
+        };
+
         let server = match listen {
             Some(value) => config_from_address(Some(&value.to_string_lossy()))?,
             None => match env::var("SEARCHKERNEL_GRPC_ADDR") {
@@ -108,7 +180,7 @@ mod native_main {
         };
 
         Ok(Config {
-            data_root,
+            mode,
             server: server
                 .with_execution_limit(execution_limit)
                 .with_admission_limit(admission_limit),
@@ -124,6 +196,38 @@ mod native_main {
         {
             ServerConfig::default()
         }
+    }
+
+    fn open_legacy_index(
+        index_path: &PathBuf,
+        definition_path: Option<&PathBuf>,
+        definition_json_path: Option<&PathBuf>,
+    ) -> Result<Index, Box<dyn Error>> {
+        if index_path.is_dir() {
+            if definition_path.is_some() || definition_json_path.is_some() {
+                return Err(
+                    "--definition and --definition-json are only valid when creating an index"
+                        .into(),
+                );
+            }
+            return Ok(Index::open(index_path)?);
+        }
+
+        let definition = match (definition_path, definition_json_path) {
+            (Some(path), None) => std::fs::read(path)?,
+            (None, Some(path)) => {
+                let json = std::fs::read(path)?;
+                searchkernel_protocol::json::index_definition_json_to_flatbuffer(&json)?
+            }
+            (None, None) => {
+                return Err(
+                    "--definition or --definition-json is required when creating a legacy single index"
+                        .into(),
+                )
+            }
+            (Some(_), Some(_)) => unreachable!("mutually exclusive definitions checked in config"),
+        };
+        Ok(Index::create_from_definition_bytes(index_path, &definition)?)
     }
 
     fn config_from_address(value: Option<&str>) -> Result<ServerConfig, ServerError> {
@@ -167,15 +271,10 @@ mod native_main {
         tokio::signal::ctrl_c().await
     }
 
-    #[tokio::main]
-    pub async fn run() -> Result<(), Box<dyn Error>> {
-        let config = config()?;
-        let registry = Arc::new(IndexRegistry::new(config.data_root)?);
-        let mut server = start_multi(config.server, registry.clone()).await?;
-
+    async fn wait_for_shutdown(mut server: searchkerneld::RunningServer) -> Result<(), ServerError> {
         let signal = graceful_shutdown_signal();
         tokio::pin!(signal);
-        let result = tokio::select! {
+        tokio::select! {
             result = server.wait() => match result {
                 Ok(()) => Err(ServerError::UnexpectedExit),
                 Err(error) => Err(error),
@@ -186,9 +285,44 @@ mod native_main {
                 signal?;
                 shutdown
             }
-        };
-        registry.close_all()?;
-        result?;
+        }
+    }
+
+    #[tokio::main]
+    pub async fn run() -> Result<(), Box<dyn Error>> {
+        let config = config()?;
+        match config.mode {
+            Mode::Multi { data_root } => {
+                let registry = Arc::new(IndexRegistry::new(data_root)?);
+                let server = start_multi(config.server, registry.clone()).await?;
+                let result = wait_for_shutdown(server).await;
+                registry.close_all()?;
+                result?;
+            }
+            Mode::LegacySingle {
+                index_path,
+                definition_path,
+                definition_json_path,
+            } => {
+                let index = open_legacy_index(
+                    &index_path,
+                    definition_path.as_ref(),
+                    definition_json_path.as_ref(),
+                )?;
+                let (context, session) = index.clone().into_session_parts();
+                let dispatcher = Arc::new(Dispatcher::new(context, session));
+                let server = match start(config.server, dispatcher).await {
+                    Ok(server) => server,
+                    Err(error) => {
+                        index.close()?;
+                        return Err(error.into());
+                    }
+                };
+                let result = wait_for_shutdown(server).await;
+                index.close()?;
+                result?;
+            }
+        }
         Ok(())
     }
 
