@@ -207,7 +207,10 @@ class RemoteVerificationClientTest(unittest.TestCase):
     def test_remote_runner_uses_job_private_writable_target_state(self):
         text = RUNNER.read_text(encoding="utf-8")
         self.assertIn('ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}', text)
-        self.assertIn('target_volume="searchkernel-ci-target-', text)
+        self.assertIn(
+            'target_volume="searchkernel-ci-target-$(id -u)-$-${RANDOM}"',
+            text,
+        )
         self.assertIn('io.searchkernel.cache-kind=job-target', text)
         self.assertIn('docker volume rm -f "$target_volume"', text)
         self.assertIn(
