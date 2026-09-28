@@ -15,6 +15,10 @@ The safety contract is:
   one another; the adapter serializes only first-use bucket preparation and
   allocates mutation timestamps atomically, while Vespa owns feed-operation
   concurrency.
+- Successful supported mutations are publication fences: the immediate GET and
+  search on the same engine observe the completed mutation. Source-document or
+  retriever visibility alone is insufficient; the native boundary waits for
+  Vespa's searchable attribute/index generation to commit before returning.
 - Native handles have one owner and one destruction path. `Drop` never panics.
 - All ABI entry points are `noexcept`; C++ exceptions become status errors.
 - Borrowed Rust buffers are used only for the duration of their call.
