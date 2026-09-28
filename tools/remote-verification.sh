@@ -51,7 +51,7 @@ if ! gh api "repos/$repo/commits/$revision" --silent >/dev/null 2>&1; then
     exit 2
 fi
 
-request_id="remote-${revision:0:12}-$(date -u +%Y%m%dT%H%M%SZ)-$"
+request_id="remote-${revision:0:12}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
 echo "Dispatching exact-SHA remote verification"
 echo "  revision: $revision"
