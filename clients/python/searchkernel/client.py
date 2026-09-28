@@ -136,17 +136,6 @@ def _document(identifier: str, fields: Mapping[str, Any]) -> DocumentT:
     )
 
 
-def _entries(entries: Sequence[ValueEntryT] | None) -> dict[str, ValueT]:
-    result = {}
-    for entry in entries or []:
-        if entry is None or entry.key is None:
-            continue
-        if entry.key in result:
-            raise ValueError(f"duplicate key: {entry.key!r}")
-        result[entry.key] = entry.value
-    return result
-
-
 def _decode_value_entries(entries: Sequence[ValueEntryT] | None) -> dict[str, Any]:
     result = {}
     for entry in entries or []:
@@ -675,7 +664,7 @@ class Index:
             return None
         return {
             "_id": result.document.id,
-            **{name: _python_value(item) for name, item in _entries(result.document.fields).items()},
+            **_decode_value_entries(result.document.fields),
         }
 
     def search(self, request: Any) -> Any:
