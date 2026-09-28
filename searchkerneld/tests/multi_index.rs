@@ -7,10 +7,16 @@ use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use searchkernel_protocol::{
     json::{request_flatbuffer_to_json, response_json_to_flatbuffer},
     protocol::v2 as wire,
+    target::{
+        CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE,
+        INDEX_NOT_FOUND_DETAIL_CODE, INVALID_INDEX_TARGET_DETAIL_CODE,
+        MISSING_INDEX_DEFINITION_DETAIL_CODE, MISSING_INDEX_TARGET_DETAIL_CODE,
+        TARGET_NAME_PATH, TARGET_PATH,
+    },
     v2 as api, PROTOCOL_VERSION,
 };
 use searchkerneld::{
-    rpc, start_multi, IndexRegistry, RegistryDispatchError, ServerConfig, JSON_EXECUTE_PATH,
+    rpc, start_multi, IndexRegistry, ServerConfig, JSON_EXECUTE_PATH,
 };
 use std::{
     fs,
@@ -95,6 +101,26 @@ fn create_request(target_name: &str, field_name: &str) -> Vec<u8> {
         &api::CreateIndexRequestArgs {
             definition: Some(definition),
         },
+    );
+    let target = target(&mut builder, target_name);
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
+            payload_type: wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+fn create_request_without_definition(target_name: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload = api::CreateIndexRequest::create(
+        &mut builder,
+        &api::CreateIndexRequestArgs { definition: None },
     );
     let target = target(&mut builder, target_name);
     let envelope = wire::RequestEnvelope::create(
@@ -239,6 +265,28 @@ fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {
 
 fn assert_lifecycle(bytes: &[u8], kind: wire::ResponsePayload) {
     assert_eq!(response(bytes).payload_type(), kind);
+}
+
+fn assert_portable_error(
+    bytes: &[u8],
+    code: api::ErrorCode,
+    detail_code: &str,
+    path: Option<&str>,
+) {
+    let envelope = response(bytes);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
+    );
+    let error = envelope
+        .payload_as_search_kernel_v2_error()
+        .expect("error payload");
+    assert_eq!(error.code(), code);
+    let details = error.details().expect("canonical error detail");
+    assert_eq!(details.len(), 1);
+    let detail = details.get(0);
+    assert_eq!(detail.code(), Some(detail_code));
+    assert_eq!(detail.path(), path);
 }
 
 fn assert_upsert(bytes: &[u8]) {
@@ -577,14 +625,68 @@ fn rejects_symlinked_target_directory_without_following_it() {
 }
 
 #[test]
+fn daemon_control_errors_use_the_canonical_portable_error_contract() {
+    let temp = TempDir::new("portable-control-errors");
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+
+    assert_portable_error(
+        &registry
+            .dispatch(&open_request(None))
+            .expect("missing target is a semantic response"),
+        api::ErrorCode::InvalidArgument,
+        MISSING_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_PATH),
+    );
+
+    assert_portable_error(
+        &registry
+            .dispatch(&open_request(Some("../escape")))
+            .expect("invalid target is a semantic response"),
+        api::ErrorCode::InvalidArgument,
+        INVALID_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_NAME_PATH),
+    );
+
+    assert_portable_error(
+        &registry
+            .dispatch(&create_request_without_definition("products"))
+            .expect("missing definition is a semantic response"),
+        api::ErrorCode::InvalidArgument,
+        MISSING_INDEX_DEFINITION_DETAIL_CODE,
+        Some(CREATE_INDEX_DEFINITION_PATH),
+    );
+
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request("products", "title"))
+            .expect("create products"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    assert_portable_error(
+        &registry
+            .dispatch(&create_request("products", "title"))
+            .expect("create collision is a semantic response"),
+        api::ErrorCode::AlreadyExists,
+        INDEX_ALREADY_EXISTS_DETAIL_CODE,
+        None,
+    );
+
+    assert_portable_error(
+        &registry
+            .dispatch(&open_request(Some("missing")))
+            .expect("open miss is a semantic response"),
+        api::ErrorCode::NotFound,
+        INDEX_NOT_FOUND_DETAIL_CODE,
+        None,
+    );
+
+    registry.close_all().expect("close registry");
+}
+
+#[test]
 fn rejects_missing_and_path_like_targets_before_mapping_the_data_root() {
     let temp = TempDir::new("invalid-targets");
     let registry = IndexRegistry::new(&temp.0).expect("registry");
-
-    assert_eq!(
-        registry.dispatch(&open_request(None)),
-        Err(RegistryDispatchError::MissingTarget)
-    );
 
     for invalid in [
         "",
@@ -598,12 +700,13 @@ fn rejects_missing_and_path_like_targets_before_mapping_the_data_root() {
         "Upper",
         "café",
     ] {
-        assert!(
-            matches!(
-                registry.dispatch(&open_request(Some(invalid))),
-                Err(RegistryDispatchError::InvalidTarget(_))
-            ),
-            "target {invalid:?} should fail closed"
+        assert_portable_error(
+            &registry
+                .dispatch(&open_request(Some(invalid)))
+                .expect("invalid target is a semantic response"),
+            api::ErrorCode::InvalidArgument,
+            INVALID_INDEX_TARGET_DETAIL_CODE,
+            Some(TARGET_NAME_PATH),
         );
     }
 
@@ -614,4 +717,50 @@ fn rejects_missing_and_path_like_targets_before_mapping_the_data_root() {
             .is_none(),
         "invalid targets must not create filesystem entries"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grpc_and_http_json_preserve_portable_control_errors() {
+    let temp = TempDir::new("portable-error-transports");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().expect("gRPC address"))
+            .with_web_listen_addr("127.0.0.1:0".parse().expect("HTTP address")),
+        registry.clone(),
+    )
+    .await
+    .expect("start multi-index daemon");
+
+    let grpc_address = server.tcp_addr().expect("gRPC listener");
+    let http_address = server.web_tcp_addr().expect("HTTP listener");
+    let mut grpc =
+        rpc::search_kernel_client::SearchKernelClient::connect(format!("http://{grpc_address}"))
+            .await
+            .expect("connect gRPC client");
+
+    let grpc_missing = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: open_request(None),
+        }))
+        .await
+        .expect("missing target must remain a SearchKernel response")
+        .into_inner()
+        .payload;
+    assert_portable_error(
+        &grpc_missing,
+        api::ErrorCode::InvalidArgument,
+        MISSING_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_PATH),
+    );
+
+    let http_invalid = execute_http_json(http_address, &open_request(Some("../escape"))).await;
+    assert_portable_error(
+        &http_invalid,
+        api::ErrorCode::InvalidArgument,
+        INVALID_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_NAME_PATH),
+    );
+
+    server.shutdown().await.expect("shutdown daemon");
+    registry.close_all().expect("close registry");
 }
