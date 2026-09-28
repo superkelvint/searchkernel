@@ -355,7 +355,10 @@ fn v2_union_discriminators_are_append_only() {
         wire::TargetedRequestPayload::SearchKernel_V2_DeleteRequest.0,
         4
     );
-    assert_eq!(wire::TargetedRequestPayload::SearchKernel_V2_GetRequest.0, 5);
+    assert_eq!(
+        wire::TargetedRequestPayload::SearchKernel_V2_GetRequest.0,
+        5
+    );
     assert_eq!(
         wire::TargetedRequestPayload::SearchKernel_V2_SearchRequest.0,
         6
@@ -437,8 +440,7 @@ fn standard_json_round_trips_targeted_open_lifecycle() {
         "SearchKernel_V2_OpenIndexRequest"
     );
 
-    request_json_to_flatbuffer(&printed)
-        .expect("printed targeted lifecycle JSON remains readable");
+    request_json_to_flatbuffer(&printed).expect("printed targeted lifecycle JSON remains readable");
 }
 
 #[test]
@@ -512,8 +514,8 @@ fn legacy_direct_v2_frames_remain_parseable_but_fail_daemon_admission() {
 
     let bytes = request_json_to_flatbuffer(input)
         .expect("legacy targetless V2 remains structurally parseable");
-    let envelope =
-        flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("targetless request envelope");
+    let envelope = flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes)
+        .expect("targetless request envelope");
     assert_eq!(
         daemon_request(envelope),
         Err(DaemonRequestError::TargetedRequestRequired {
@@ -559,7 +561,10 @@ fn targeted_request_requires_target_and_concrete_inner_operation() {
     let bytes = request_json_to_flatbuffer(missing_target).expect("targeted request JSON");
     let envelope =
         flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("request envelope");
-    assert_eq!(daemon_request(envelope), Err(DaemonRequestError::MissingTarget));
+    assert_eq!(
+        daemon_request(envelope),
+        Err(DaemonRequestError::MissingTarget)
+    );
 
     let missing_operation = br#"{
       "protocol_version": 2,
