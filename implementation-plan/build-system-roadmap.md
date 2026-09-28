@@ -303,11 +303,24 @@ Before changing cache topology, record baseline timings. Re-run the same benchma
 - focused native verifier;
 - second invocation of the same verifier;
 - two verifier lanes sharing dependencies;
-- complete `./dev ci`.
+- complete `./dev ci`;
+- two unchanged consecutive `./dev test <scope>` runs for each first-class language scope, with each run starting in a fresh canonical container;
+- an explicit `./dev test ruby` warm-container recreation check because Ruby exercises packaged-gem and real managed-local E2E behavior.
+
+For the second unchanged `./dev test ruby` invocation in a newly created canonical container, acceptance requires:
+
+- zero Rust recompilation;
+- zero C/C++ or native-adapter recompilation;
+- zero native SDK or Vespa reconstruction;
+- zero consumer-runtime download;
+- zero generated-code regeneration unless inputs changed;
+- reuse of the compatible worktree-scoped Cargo/native outputs and immutable caches created by the first invocation.
+
+Ruby tests, gem/package checks, and E2E still execute on the second run; only unnecessary build/setup work is forbidden.
 
 Exit criterion:
 
-> No material regression in the design-defined warm edit/build/test benchmark set.
+> No material regression in the design-defined warm edit/build/test benchmark set, and container recreation does not recreate compatible build state.
 
 If there is a regression, fix cache/mount ownership rather than creating a second correctness path.
 
@@ -1273,6 +1286,8 @@ Try to falsify:
 
 - cross-worktree native artifact contamination;
 - stale target/cache reuse;
+- fresh canonical-container recreation incorrectly discarding compatible worktree build state;
+- unchanged repeated `./dev test ruby` causing Rust/native recompilation, SDK/Vespa reconstruction, generated-code regeneration, or runtime download;
 - warm-performance claims;
 - stale remote evidence after a new push;
 - mutable-branch ambiguity;
