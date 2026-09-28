@@ -17,31 +17,37 @@
       "surface": "searchkerneld",
       "runtime": "native",
       "evidence": "client-e2e",
-      "verification": "tools/check-client-contracts.py --run-e2e"
+      "verification": "./dev verify product.integration"
     },
     {
       "surface": "python",
       "runtime": "managed-local",
       "evidence": "native-full",
-      "verification": "tools/run-python-native-e2e.sh --prevalidated-native-sdk"
+      "verification": "./dev test python"
     },
     {
       "surface": "python",
       "runtime": "connect",
       "evidence": "client-e2e",
-      "verification": "tools/check-client-contracts.py --run-e2e"
+      "verification": "./dev test python"
     },
     {
       "surface": "typescript-node",
       "runtime": "connect",
       "evidence": "client-e2e",
-      "verification": "tools/check-client-contracts.py --run-e2e"
+      "verification": "./dev test typescript"
+    },
+    {
+      "surface": "ruby",
+      "runtime": "connect",
+      "evidence": "client-e2e",
+      "verification": "./dev test ruby"
     }
   ],
   "deferred": [
     "typescript-browser-grpc-web",
     "php",
-    "ruby",
+    "ruby-managed-local",
     "go",
     "macos",
     "windows",
