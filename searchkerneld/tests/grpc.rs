@@ -47,6 +47,7 @@ fn describe_request(version: u32) -> Vec<u8> {
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: version,
+            target: None,
             payload_type: wire::RequestPayload::SearchKernel_V2_DescribeRequest,
             payload: Some(request.as_union_value()),
         },
@@ -62,6 +63,7 @@ fn search_request() -> Vec<u8> {
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
+            target: None,
             payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
             payload: Some(request.as_union_value()),
         },
@@ -95,6 +97,7 @@ fn valid_search_request() -> Vec<u8> {
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
+            target: None,
             payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
             payload: Some(request.as_union_value()),
         },
@@ -128,6 +131,7 @@ fn large_search_request() -> Vec<u8> {
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
+            target: None,
             payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
             payload: Some(request.as_union_value()),
         },
