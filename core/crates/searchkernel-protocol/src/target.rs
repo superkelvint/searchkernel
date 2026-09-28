@@ -55,8 +55,13 @@ pub enum RequestTargetError {
 impl fmt::Display for RequestTargetError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Missing => write!(formatter, "Search Kernel request is missing an index target"),
-            Self::Invalid(error) => write!(formatter, "invalid Search Kernel index target: {error}"),
+            Self::Missing => write!(
+                formatter,
+                "Search Kernel request is missing an index target"
+            ),
+            Self::Invalid(error) => {
+                write!(formatter, "invalid Search Kernel index target: {error}")
+            }
         }
     }
 }
