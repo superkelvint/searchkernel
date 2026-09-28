@@ -48,16 +48,6 @@ impl Dispatcher {
             ));
         }
 
-        // A target on a direct top-level operation is never meaningful. Direct
-        // variants are the per-index/embedded ABI; daemon routing must use the
-        // TargetedRequest wrapper. Reject a forged direct+target frame rather
-        // than silently executing it against this bound dispatcher.
-        if envelope.payload_type() != wire::RequestPayload::TargetedRequest
-            && envelope.target().is_some()
-        {
-            return Err(DispatchError::InvalidRequest);
-        }
-
         match envelope.payload_type() {
             wire::RequestPayload::SearchKernel_V2_InsertRequest => {
                 let payload = envelope
