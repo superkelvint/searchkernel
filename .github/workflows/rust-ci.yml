@@ -81,3 +81,20 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
           SEARCHKERNEL_CI_PULL=never ./dev test ruby
+
+
+  verify_810_contracts:
+    name: PR 810 exact-head client contracts
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Run exact-head client contract verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
+          SEARCHKERNEL_CI_PULL=never ./dev verify contracts
