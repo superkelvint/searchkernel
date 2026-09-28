@@ -90,6 +90,53 @@ module SearchKernel
     end
   end
 
+  class StructField < FieldSpec
+    def initialize(fields, **kwargs)
+      raise ArgumentError, "struct fields must be a non-empty Hash" unless fields.is_a?(Hash) && !fields.empty?
+      @fields = fields.dup
+      super(kind: :string, **kwargs)
+    end
+
+    def definition(name)
+      result = super
+      result["data_type"] = {
+        "kind_type" => "StructDataType",
+        "kind" => {
+          "fields" => @fields.keys.sort_by(&:to_s).map do |raw_name|
+            field_name = raw_name.to_s
+            specification = @fields.fetch(raw_name)
+            unless specification.respond_to?(:definition)
+              raise ArgumentError, "unsupported struct field specification for #{field_name.inspect}"
+            end
+            child = specification.definition(field_name)
+            { "name" => field_name, "data_type" => child.fetch("data_type") }
+          end
+        }
+      }
+      result.delete("matching")
+      result
+    end
+  end
+
+  class ArrayField < FieldSpec
+    def initialize(element, **kwargs)
+      raise ArgumentError, "array element must be a field specification" unless element.respond_to?(:definition)
+      @element = element
+      super(kind: :string, **kwargs)
+    end
+
+    def definition(name)
+      result = super
+      element = @element.definition("element")
+      result["data_type"] = {
+        "kind_type" => "ArrayDataType",
+        "kind" => { "element_type" => element.fetch("data_type") }
+      }
+      result.delete("matching")
+      result
+    end
+  end
+
   HnswIndexConfig = Struct.new(
     :max_links_per_node,
     :neighbors_to_explore_at_insert,
