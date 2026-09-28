@@ -3,8 +3,7 @@ include "searchkernel.fbs";
 namespace SearchKernel.Protocol.V2;
 
 union RequestPayload {
-  SearchKernel.V2.CreateIndexRequest,
-  SearchKernel.V2.OpenIndexRequest,
+  // Append-only: existing V2 union discriminator numbers are wire ABI.
   SearchKernel.V2.InsertRequest,
   SearchKernel.V2.UpsertRequest,
   SearchKernel.V2.PatchRequest,
@@ -14,7 +13,9 @@ union RequestPayload {
   SearchKernel.V2.AnalyzeRequest,
   SearchKernel.V2.DescribeRequest,
   SearchKernel.V2.InspectQueryRequest,
-  SearchKernel.V2.UpdateRequest
+  SearchKernel.V2.UpdateRequest,
+  SearchKernel.V2.CreateIndexRequest,
+  SearchKernel.V2.OpenIndexRequest
 }
 
 table RequestEnvelope {
