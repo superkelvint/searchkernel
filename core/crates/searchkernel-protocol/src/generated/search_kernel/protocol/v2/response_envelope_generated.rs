@@ -87,40 +87,6 @@ impl<'a> ResponseEnvelope<'a> {
     }
     #[inline]
     #[allow(non_snake_case)]
-    pub fn payload_as_search_kernel_v2_create_index_result(
-        &self,
-    ) -> Option<super::super::v2::CreateIndexResult<'a>> {
-        if self.payload_type() == ResponsePayload::SearchKernel_V2_CreateIndexResult {
-            self.payload().map(|t| {
-                // Safety:
-                // Created from a valid Table for this object
-                // Which contains a valid union in this slot
-                unsafe { super::super::v2::CreateIndexResult::init_from_table(t) }
-            })
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    #[allow(non_snake_case)]
-    pub fn payload_as_search_kernel_v2_open_index_result(
-        &self,
-    ) -> Option<super::super::v2::OpenIndexResult<'a>> {
-        if self.payload_type() == ResponsePayload::SearchKernel_V2_OpenIndexResult {
-            self.payload().map(|t| {
-                // Safety:
-                // Created from a valid Table for this object
-                // Which contains a valid union in this slot
-                unsafe { super::super::v2::OpenIndexResult::init_from_table(t) }
-            })
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    #[allow(non_snake_case)]
     pub fn payload_as_search_kernel_v2_insert_result(
         &self,
     ) -> Option<super::super::v2::InsertResult<'a>> {
@@ -303,6 +269,40 @@ impl<'a> ResponseEnvelope<'a> {
             None
         }
     }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    pub fn payload_as_search_kernel_v2_create_index_result(
+        &self,
+    ) -> Option<super::super::v2::CreateIndexResult<'a>> {
+        if self.payload_type() == ResponsePayload::SearchKernel_V2_CreateIndexResult {
+            self.payload().map(|t| {
+                // Safety:
+                // Created from a valid Table for this object
+                // Which contains a valid union in this slot
+                unsafe { super::super::v2::CreateIndexResult::init_from_table(t) }
+            })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    pub fn payload_as_search_kernel_v2_open_index_result(
+        &self,
+    ) -> Option<super::super::v2::OpenIndexResult<'a>> {
+        if self.payload_type() == ResponsePayload::SearchKernel_V2_OpenIndexResult {
+            self.payload().map(|t| {
+                // Safety:
+                // Created from a valid Table for this object
+                // Which contains a valid union in this slot
+                unsafe { super::super::v2::OpenIndexResult::init_from_table(t) }
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
@@ -315,8 +315,6 @@ impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
      .visit_field::<u32>("protocol_version", Self::VT_PROTOCOL_VERSION, false)?
      .visit_union::<ResponsePayload, _>("payload_type", Self::VT_PAYLOAD_TYPE, "payload", Self::VT_PAYLOAD, false, |key, v, pos| {
         match key {
-          ResponsePayload::SearchKernel_V2_CreateIndexResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::CreateIndexResult>>("ResponsePayload::SearchKernel_V2_CreateIndexResult", pos),
-          ResponsePayload::SearchKernel_V2_OpenIndexResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::OpenIndexResult>>("ResponsePayload::SearchKernel_V2_OpenIndexResult", pos),
           ResponsePayload::SearchKernel_V2_InsertResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::InsertResult>>("ResponsePayload::SearchKernel_V2_InsertResult", pos),
           ResponsePayload::SearchKernel_V2_UpsertResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::UpsertResult>>("ResponsePayload::SearchKernel_V2_UpsertResult", pos),
           ResponsePayload::SearchKernel_V2_PatchResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::PatchResult>>("ResponsePayload::SearchKernel_V2_PatchResult", pos),
@@ -328,6 +326,8 @@ impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
           ResponsePayload::SearchKernel_V2_DescribeResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::DescribeResult>>("ResponsePayload::SearchKernel_V2_DescribeResult", pos),
           ResponsePayload::SearchKernel_V2_InspectQueryResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::InspectQueryResult>>("ResponsePayload::SearchKernel_V2_InspectQueryResult", pos),
           ResponsePayload::SearchKernel_V2_UpdateResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::UpdateResult>>("ResponsePayload::SearchKernel_V2_UpdateResult", pos),
+          ResponsePayload::SearchKernel_V2_CreateIndexResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::CreateIndexResult>>("ResponsePayload::SearchKernel_V2_CreateIndexResult", pos),
+          ResponsePayload::SearchKernel_V2_OpenIndexResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::OpenIndexResult>>("ResponsePayload::SearchKernel_V2_OpenIndexResult", pos),
           _ => Ok(()),
         }
      })?
@@ -400,26 +400,6 @@ impl ::core::fmt::Debug for ResponseEnvelope<'_> {
         ds.field("protocol_version", &self.protocol_version());
         ds.field("payload_type", &self.payload_type());
         match self.payload_type() {
-            ResponsePayload::SearchKernel_V2_CreateIndexResult => {
-                if let Some(x) = self.payload_as_search_kernel_v2_create_index_result() {
-                    ds.field("payload", &x)
-                } else {
-                    ds.field(
-                        "payload",
-                        &"InvalidFlatbuffer: Union discriminant does not match value.",
-                    )
-                }
-            }
-            ResponsePayload::SearchKernel_V2_OpenIndexResult => {
-                if let Some(x) = self.payload_as_search_kernel_v2_open_index_result() {
-                    ds.field("payload", &x)
-                } else {
-                    ds.field(
-                        "payload",
-                        &"InvalidFlatbuffer: Union discriminant does not match value.",
-                    )
-                }
-            }
             ResponsePayload::SearchKernel_V2_InsertResult => {
                 if let Some(x) = self.payload_as_search_kernel_v2_insert_result() {
                     ds.field("payload", &x)
@@ -522,6 +502,26 @@ impl ::core::fmt::Debug for ResponseEnvelope<'_> {
             }
             ResponsePayload::SearchKernel_V2_UpdateResult => {
                 if let Some(x) = self.payload_as_search_kernel_v2_update_result() {
+                    ds.field("payload", &x)
+                } else {
+                    ds.field(
+                        "payload",
+                        &"InvalidFlatbuffer: Union discriminant does not match value.",
+                    )
+                }
+            }
+            ResponsePayload::SearchKernel_V2_CreateIndexResult => {
+                if let Some(x) = self.payload_as_search_kernel_v2_create_index_result() {
+                    ds.field("payload", &x)
+                } else {
+                    ds.field(
+                        "payload",
+                        &"InvalidFlatbuffer: Union discriminant does not match value.",
+                    )
+                }
+            }
+            ResponsePayload::SearchKernel_V2_OpenIndexResult => {
+                if let Some(x) = self.payload_as_search_kernel_v2_open_index_result() {
                     ds.field("payload", &x)
                 } else {
                     ds.field(

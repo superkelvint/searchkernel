@@ -6,30 +6,24 @@ import SearchKernel
 
 class ResponsePayload(object):
     NONE = 0
-    SearchKernel_V2_CreateIndexResult = 1
-    SearchKernel_V2_OpenIndexResult = 2
-    SearchKernel_V2_InsertResult = 3
-    SearchKernel_V2_UpsertResult = 4
-    SearchKernel_V2_PatchResult = 5
-    SearchKernel_V2_DeleteResult = 6
-    SearchKernel_V2_GetResult = 7
-    SearchKernel_V2_SearchResult = 8
-    SearchKernel_V2_AnalyzeResult = 9
-    SearchKernel_V2_Error = 10
-    SearchKernel_V2_DescribeResult = 11
-    SearchKernel_V2_InspectQueryResult = 12
-    SearchKernel_V2_UpdateResult = 13
+    SearchKernel_V2_InsertResult = 1
+    SearchKernel_V2_UpsertResult = 2
+    SearchKernel_V2_PatchResult = 3
+    SearchKernel_V2_DeleteResult = 4
+    SearchKernel_V2_GetResult = 5
+    SearchKernel_V2_SearchResult = 6
+    SearchKernel_V2_AnalyzeResult = 7
+    SearchKernel_V2_Error = 8
+    SearchKernel_V2_DescribeResult = 9
+    SearchKernel_V2_InspectQueryResult = 10
+    SearchKernel_V2_UpdateResult = 11
+    SearchKernel_V2_CreateIndexResult = 12
+    SearchKernel_V2_OpenIndexResult = 13
 
 def ResponsePayloadCreator(unionType, table):
     from flatbuffers.table import Table
     if not isinstance(table, Table):
         return None
-    if unionType == ResponsePayload.SearchKernel_V2_CreateIndexResult:
-        import SearchKernel.V2.CreateIndexResult
-        return SearchKernel.V2.CreateIndexResult.CreateIndexResultT.InitFromBuf(table.Bytes, table.Pos)
-    if unionType == ResponsePayload.SearchKernel_V2_OpenIndexResult:
-        import SearchKernel.V2.OpenIndexResult
-        return SearchKernel.V2.OpenIndexResult.OpenIndexResultT.InitFromBuf(table.Bytes, table.Pos)
     if unionType == ResponsePayload.SearchKernel_V2_InsertResult:
         import SearchKernel.V2.InsertResult
         return SearchKernel.V2.InsertResult.InsertResultT.InitFromBuf(table.Bytes, table.Pos)
@@ -63,4 +57,10 @@ def ResponsePayloadCreator(unionType, table):
     if unionType == ResponsePayload.SearchKernel_V2_UpdateResult:
         import SearchKernel.V2.UpdateResult
         return SearchKernel.V2.UpdateResult.UpdateResultT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == ResponsePayload.SearchKernel_V2_CreateIndexResult:
+        import SearchKernel.V2.CreateIndexResult
+        return SearchKernel.V2.CreateIndexResult.CreateIndexResultT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == ResponsePayload.SearchKernel_V2_OpenIndexResult:
+        import SearchKernel.V2.OpenIndexResult
+        return SearchKernel.V2.OpenIndexResult.OpenIndexResultT.InitFromBuf(table.Bytes, table.Pos)
     return None
