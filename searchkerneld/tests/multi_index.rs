@@ -517,6 +517,31 @@ fn concurrent_create_and_open_are_linearizable() {
     registry.close_all().expect("close registry");
 }
 
+
+#[test]
+fn rejects_non_directory_target_entry() {
+    let temp = TempDir::new("non-directory-target");
+    fs::write(temp.0.join("products"), b"not an index directory").expect("write target file");
+
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    let bytes = registry
+        .dispatch(&open_request(Some("products")))
+        .expect("semantic lifecycle response");
+    let envelope = response(&bytes);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
+    );
+    let error = envelope
+        .payload_as_search_kernel_v2_error()
+        .expect("error payload");
+    assert_eq!(error.code(), api::ErrorCode::FailedPrecondition);
+    assert_eq!(
+        error.details().expect("error details").get(0).code(),
+        Some("unsafe_index_path")
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn rejects_symlinked_target_directory_without_following_it() {
@@ -562,7 +587,18 @@ fn rejects_missing_and_path_like_targets_before_mapping_the_data_root() {
         Err(RegistryDispatchError::MissingTarget)
     );
 
-    for invalid in ["../escape", "/absolute", "nested/path", "dot.name", "Upper"] {
+    for invalid in [
+        "",
+        ".",
+        "..",
+        "../escape",
+        "/absolute",
+        "nested/path",
+        r"nested\path",
+        "dot.name",
+        "Upper",
+        "café",
+    ] {
         assert!(
             matches!(
                 registry.dispatch(&open_request(Some(invalid))),
