@@ -24,6 +24,7 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             common.parent.mkdir(parents=True)
             tools.mkdir(parents=True)
             (sdk / "lib").mkdir(parents=True)
+            (sdk / "lib/libsearchkernel_vespa.so.2").write_text("sanitizer-adapter")
             (sdk / "share/embedded_crud_cfg").mkdir(parents=True)
             (m11 / "verify-m11-common.sh").write_text(COMMON.read_text())
             common.write_text(
@@ -39,7 +40,8 @@ class M11VerifierRuntimeTests(unittest.TestCase):
                 "[[ -z \"${SK_NATIVE_SDK:-}\" ]] || { echo explicit-sdk-leaked >&2; exit 41; }\n"
                 "[[ -z \"${SK_NATIVE_BASE_SDK:-}\" ]] || { echo base-sdk-leaked >&2; exit 42; }\n"
                 "case \"${RUSTFLAGS:-}\" in *target/vespa-verifier/m11/sdk/hardening/lib*) ;; *) echo hardening-rpath-missing >&2; exit 46 ;; esac\n"
-                "mkdir -p \"$CARGO_TARGET_DIR/debug\"\n"
+                "mkdir -p \"$CARGO_TARGET_DIR/debug/.searchkernel-native\"\n"
+                "printf normal-adapter > \"$CARGO_TARGET_DIR/debug/.searchkernel-native/libsearchkernel_vespa.so.2\"\n"
                 "cat > \"$CARGO_TARGET_DIR/debug/searchkernel-m11-driver\" <<'DRIVER'\n"
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
@@ -73,6 +75,16 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertTrue((target / "debug/searchkernel-m11-driver").is_file())
+            staged = target / "debug/.searchkernel-native/libsearchkernel_vespa.so.2"
+            self.assertTrue(staged.is_symlink())
+            self.assertEqual(staged.resolve(), (sdk / "lib/libsearchkernel_vespa.so.2").resolve())
+
+    def test_sanitizer_verifier_repoints_driver_before_resolver_check(self):
+        sanitizer = Path(__file__).with_name("verify-m11-sanitizers.sh").read_text()
+        stage = sanitizer.index('stage_m11_driver_adapter "$binary" "$sdk"')
+        resolve = sanitizer.index('resolved_adapter=$(LD_LIBRARY_PATH=')
+        self.assertLess(stage, resolve)
+        self.assertIn("for (index = 1; index <= NF; ++index)", sanitizer)
 
 
 if __name__ == "__main__":
