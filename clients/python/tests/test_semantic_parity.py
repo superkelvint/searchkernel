@@ -1,7 +1,7 @@
 import json, os, subprocess, tempfile, unittest
 from pathlib import Path
 from searchkernel.ergonomic import SearchBuilder
-from searchkernel.client import value
+from searchkernel import uint64
 from searchkernel.protocol import pack_object
 class CaptureClient:
     def search(self, request): self.request=request; return type('R',(),{'hits':[],'groups':[],'facets':[],'total':0,'issues':[]})()
@@ -11,6 +11,14 @@ def snapshot(binary, fixture, request):
     with tempfile.NamedTemporaryFile() as f:
         f.write(pack_object(request)); f.flush()
         return json.loads(subprocess.check_output([str(binary),'--index-json',str(fixture),'--request',f.name],text=True))
+
+def corpus_scalar(item):
+    if 'int64' in item: return int(item['int64'])
+    if 'uint64' in item: return uint64(int(item['uint64']))
+    if 'string' in item: return item['string']
+    if 'float64' in item: return item['float64']
+    raise ValueError(f"unsupported parity scalar: {item!r}")
+
 class SemanticParity(unittest.TestCase):
     @unittest.skipUnless(
         os.getenv("SEARCHKERNEL_PARITY_CORPUS") and os.getenv("SEARCHKERNEL_PARITY_OUTPUT"),
@@ -23,9 +31,9 @@ class SemanticParity(unittest.TestCase):
         for scenario in data['scenarios']:
             i=scenario['intent']; idx=CaptureIndex(); b=SearchBuilder(idx,None if i['kind']=='browse' else i.get('query'))
             if 'filter' in i:
-                bindings={k:(int(v['int64']) if 'int64' in v else int(v['uint64']) if 'uint64' in v else v['string'] if 'string' in v else v['float64']) for k,v in i['filter']['bindings'].items()}; b.filter(i['filter']['source'],bindings)
+                bindings={k:corpus_scalar(v) for k,v in i['filter']['bindings'].items()}; b.filter(i['filter']['source'],bindings)
             if 'ranking' in i: b.ranking(i['ranking'])
-            for k,v in i.get('inputs',{}).items(): b.input(k,int(v['int64']) if 'int64' in v else int(v['uint64']))
+            for k,v in i.get('inputs',{}).items(): b.input(k,corpus_scalar(v))
             for k,v in i.get('rank_properties',{}).items(): b.rank_property(k,v)
             if 'limit' in i: b.limit(i['limit'])
             if 'offset' in i: b.offset(i['offset'])
