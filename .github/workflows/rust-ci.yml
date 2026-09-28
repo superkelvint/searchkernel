@@ -87,7 +87,7 @@ jobs:
         working-directory: issue845
         run: |
           set -euo pipefail
-          git add -- \
+          git add -f -- \
             core/crates/searchkernel-protocol/src/generated \
             core/crates/searchkernel-protocol/bfbs \
             clients/python/searchkernel/_wire_generated
