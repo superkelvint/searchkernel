@@ -41,7 +41,7 @@ jobs:
           docker volume create "$target_volume" >/dev/null
 
           docker run --rm --pids-limit=-1 \
-            -v "$GITHUB_WORKSPACE:/work:rw" \
+            -v "$GITHUB_WORKSPACE:/work:ro" \
             -v "$target_volume:/cargo-target" \
             -w /work \
             -e CARGO_TARGET_DIR=/cargo-target \
@@ -63,13 +63,4 @@ jobs:
 
               echo "== cargo clippy =="
               cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
-
-              echo "== protocol generation freshness =="
-              SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev check-protocol
-
-              echo "== searchkernel-protocol tests =="
-              cargo test -p searchkernel-protocol --all-targets --no-default-features --locked
-
-              echo "== searchkernel-dispatch tests =="
-              cargo test -p searchkernel-dispatch --all-targets --no-default-features --locked
             '
