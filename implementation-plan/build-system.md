@@ -1500,6 +1500,8 @@ Normal local development should preserve compatible:
 
 For local canonical-container development, writable Cargo/native incremental state must persist across compatible `./dev` invocations **without being globally shared between unrelated worktrees**. The cache key/namespace must include enough identity to prevent cross-worktree or cross-toolchain contamination. Immutable/content-addressed inputs and compiler caches may be shared safely where their own provenance model permits it.
 
+The canonical development/CI container is disposable; compatible build outputs are not. Recreating the container between `./dev` invocations must not imply recreating Cargo target state, generated/build-script outputs, native build outputs, or already-qualified immutable runtime inputs. Any mutable state expected to remain warm must live in an explicitly mounted per-worktree + compatible-environment namespace rather than only in the container filesystem.
+
 CI should isolate writable build outputs per job unless a cache is explicitly designed to be non-authoritative and content-addressed. Local development should optimize strongly for the warm edit-build-test loop.
 
 Before declaring convergence complete, benchmark:
@@ -1510,7 +1512,19 @@ Before declaring convergence complete, benchmark:
 - a focused native verifier;
 - the second invocation of the same verifier;
 - two verifier lanes sharing dependencies;
-- the complete `./dev ci` gate.
+- the complete `./dev ci` gate;
+- for each first-class language scope, two unchanged consecutive `./dev test <scope>` invocations where each invocation starts in a fresh canonical container.
+
+At minimum, `./dev test ruby` must be covered explicitly because it exercises the packaged gem plus real managed-local E2E path. The second unchanged invocation, in a new canonical container, must perform:
+
+- zero Rust recompilation;
+- zero C/C++ or native-adapter recompilation;
+- zero native SDK or Vespa reconstruction;
+- zero consumer-runtime download;
+- zero generated-code regeneration unless its inputs changed;
+- reuse of the first run's compatible worktree-scoped Cargo/native outputs and immutable caches.
+
+The Ruby tests, gem/package checks, and E2E themselves are expected to execute again. The requirement is that an unchanged warm test invocation does not pay build/setup work that should have been preserved across the container boundary.
 
 If the canonical-container boundary causes a material regression, fix the cache/mount boundary rather than creating a second build path.
 
@@ -2642,8 +2656,8 @@ The convergence project is complete when:
 1. `./dev ci` exactly reproduces the PR gate.
 2. GitHub Actions delegates the gate to `./dev`.
 3. Normal build/test/verify operations use one canonical development environment.
-4. Compatible Cargo/native outputs survive repeated container invocations.
-5. Warm edit-build-test performance has no material regression.
+4. Compatible Cargo/native outputs survive repeated container invocations; recreating the canonical container does not recreate compatible build state.
+5. Warm edit-build-test performance has no material regression; specifically, an unchanged second `./dev test ruby` in a fresh canonical container performs zero Rust/native recompilation, zero native SDK/Vespa reconstruction, and zero runtime download while rerunning the Ruby/package/E2E tests.
 6. The 55 active compiled verifier sources are owned by normal Rust/native build machinery.
 7. The 14 oracle sources remain explicitly outside ordinary build/test requirements.
 8. The uncertain compile fixture has been justified and migrated, or removed.
