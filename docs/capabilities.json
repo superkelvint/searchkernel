@@ -1213,6 +1213,23 @@
       "limitations": [
         "Distributed routing, configuration services, schema deployment, federation, and other container-level Vespa facilities are outside this wrapper."
       ]
+    },
+    {
+      "id": "daemon.multi_index_lifecycle",
+      "title": "Targeted multi-index daemon lifecycle protocol",
+      "area": "daemon",
+      "represented": true,
+      "semantic": false,
+      "executable": false,
+      "verified_by": [
+        "api/searchkernel_request.fbs",
+        "core/crates/searchkernel-protocol/src/target.rs",
+        "core/crates/searchkernel-protocol/tests/standard_json.rs",
+        "core/crates/searchkernel-dispatch/src/tests.rs"
+      ],
+      "limitations": [
+        "The downgrade-safe targeted request and create/open wire contract is frozen, but daemon registry/data-root execution lands in #846; direct top-level V2 operations remain per-index/embedded only."
+      ]
     }
   ]
 }
