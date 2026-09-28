@@ -564,7 +564,7 @@ table IndexTarget {
 
 // Strict lifecycle semantics: create fails with AlreadyExists when the target
 // already exists; open fails with NotFound when it does not exist. The logical
-// daemon target is carried by the enclosing targeted request. IndexDefinition.name
+// daemon target is carried by the enclosing request envelope. IndexDefinition.name
 // is independent schema identity (and contributes to document-type resolution);
 // it is not an alternate target and need not equal the logical target.
 // Client-handle close is local and does not implicitly unload a shared daemon index.
