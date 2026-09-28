@@ -182,7 +182,7 @@ jobs:
               "operation": operation,
               "target": target,
               "canonical_command": f"./dev {operation} {target}".rstrip(),
-              "result": os.environ.get("RESULT", "not-run"),
+              "result": os.environ.get("RESULT") or "not-run",
               "run_id": int(os.environ["RUN_ID"]),
               "run_attempt": int(os.environ["RUN_ATTEMPT"]),
               "run_url": (
