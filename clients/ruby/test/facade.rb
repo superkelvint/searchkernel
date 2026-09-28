@@ -217,9 +217,18 @@ same(
     .dig("source", "query", "expr_type"),
   "WAND query helper"
 )
-wand_items = SearchKernel::Query.wand("title", "running" => 10, "shoes" => 5)
-  .dig("source", "query", "expr", "items")
-assert(wand_items.all? { |item| item.fetch("weight").is_a?(String) }, "WAND weights use FlatBuffers int64 JSON strings")
+weighted_queries = {
+  "WAND" => SearchKernel::Query.wand("title", "running" => 10, "shoes" => 5),
+  "dot-product" => SearchKernel::Query.dot_product("title", "running" => 10, "shoes" => 5),
+  "weighted-set" => SearchKernel::Query.weighted_set("title", "running" => 10, "shoes" => 5)
+}
+weighted_queries.each do |label, query|
+  items = query.dig("source", "query", "expr", "items")
+  assert(items.all? { |item| item.fetch("weight").is_a?(String) }, "#{label} weights use FlatBuffers int64 JSON strings")
+end
+raises(ArgumentError, "weighted query rejects int64 overflow") do
+  SearchKernel::Query.wand("title", "running" => 2**63)
+end
 
 group = SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count.as("products"))
 grouping_request = group.to_request
@@ -237,6 +246,33 @@ definition = SearchKernel::Schema.index_definition(
 same(%w[active price title], definition.fetch("fields").map { |field| field.fetch("name") }, "schema fields are deterministic")
 same("Float64", definition.fetch("fields")[1].dig("data_type", "kind", "kind"), "float schema kind")
 same("custom", definition.dig("rank_profiles", 0, "name"), "rank profile schema")
+
+nested_definition = SearchKernel::Schema.index_definition(
+  {
+    "people" => SearchKernel::ArrayField.new(
+      SearchKernel::StructField.new(
+        "first" => SearchKernel::Keyword.new,
+        "last" => SearchKernel::Keyword.new
+      ),
+      stored: false,
+      searchable: false
+    )
+  }
+)
+people_type = nested_definition.fetch("fields").first.fetch("data_type")
+same("ArrayDataType", people_type.fetch("kind_type"), "array schema kind")
+struct_type = people_type.dig("kind", "element_type")
+same("StructDataType", struct_type.fetch("kind_type"), "struct element schema kind")
+same(
+  %w[first last],
+  struct_type.dig("kind", "fields").map { |field| field.fetch("name") },
+  "struct fields are deterministic"
+)
+same(
+  %w[String String],
+  struct_type.dig("kind", "fields").map { |field| field.dig("data_type", "kind", "kind") },
+  "struct child data types are preserved"
+)
 
 same("doc-1", index.patch("doc-1").set("price", 79.0).unset("sale_price").execute, "patch builder executes")
 patch = transport.requests.last.fetch("payload")
