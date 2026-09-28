@@ -214,7 +214,10 @@ impl IndexRegistry {
     }
 
     fn open(&self, target: &str) -> Result<Vec<u8>, RegistryDispatchError> {
-        let mut entries = self.entries.lock().map_err(|_| RegistryDispatchError::Poisoned)?;
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
         if let Some(entry) = entries.get(target) {
             let (context, _) = entry.index.clone().into_session_parts();
             return Ok(encode_lifecycle_result(
