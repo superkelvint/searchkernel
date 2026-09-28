@@ -134,20 +134,23 @@ canonical FlatBuffers semantics, not transport metadata. Remote clients never
 supply arbitrary server filesystem paths; the daemon maps validated logical
 identifiers under its configured data root.
 
-A daemon-bound `RequestEnvelope` therefore carries an explicit `IndexTarget`
-and uses the canonical `TargetedRequest` top-level payload. The wrapper is an
-intentional downgrade barrier: older single-index V2 daemons see an unknown
-top-level operation and fail closed rather than ignoring the appended target
-field and executing a familiar operation against the wrong index. The wrapper's
-inner payload carries ordinary operations plus canonical `CreateIndexRequest` /
-`OpenIndexRequest` lifecycle operations. Direct top-level V2 operations remain
-the per-index/embedded ABI and must be rejected at the multi-index daemon ingress.
+A daemon-bound `RequestEnvelope` therefore carries an explicit `IndexTarget`.
+Ordinary operations and canonical `CreateIndexRequest` / `OpenIndexRequest`
+lifecycle operations are direct members of the same request union. The daemon
+router validates `target` and selects the per-index dispatcher before semantic
+execution; the dispatcher itself remains target-agnostic because its index is
+already bound.
 
 `IndexDefinition.name` remains schema identity and may differ from the logical
-daemon target; routing must never be inferred from it. Target-less legacy V2
-frames remain structurally parseable for compatibility but must be rejected by
-multi-index routing instead of falling back to a default. Client-handle close
-remains local and must not unload an index shared by other clients.
+daemon target; routing must never be inferred from it. Target-less envelopes are
+valid for embedded/per-index callers, but multi-index daemon ingress must reject
+them rather than falling back to a default. Client-handle close remains local
+and must not unload an index shared by other clients.
+
+#848 establishes this shape as the forward-compatibility baseline. Earlier
+development snapshots are not compatibility targets. After this baseline lands,
+existing FlatBuffers slots, enum/union values, and established request semantics
+must be preserved through compatible evolution.
 
 There are two permitted transport representations, both terminating at the same
 canonical FlatBuffer router and per-index dispatcher.
