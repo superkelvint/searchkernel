@@ -116,6 +116,33 @@ impl fmt::Display for DaemonRequestError {
 
 impl std::error::Error for DaemonRequestError {}
 
+impl DaemonRequestError {
+    /// Canonical portable error category for daemon-ingress validation.
+    pub const fn error_code(&self) -> wire::ErrorCode {
+        wire::ErrorCode::InvalidArgument
+    }
+
+    /// Stable portable error-detail code for this ingress failure.
+    pub const fn detail_code(&self) -> &'static str {
+        match self {
+            Self::TargetedRequestRequired { .. } => TARGETED_REQUEST_REQUIRED_DETAIL_CODE,
+            Self::MissingTarget => MISSING_INDEX_TARGET_DETAIL_CODE,
+            Self::InvalidTarget(_) => INVALID_INDEX_TARGET_DETAIL_CODE,
+            Self::InvalidTargetedRequest => INVALID_TARGETED_REQUEST_DETAIL_CODE,
+        }
+    }
+
+    /// Stable portable error-detail path for this ingress failure.
+    pub const fn path(&self) -> &'static str {
+        match self {
+            Self::TargetedRequestRequired { .. } => PAYLOAD_TYPE_PATH,
+            Self::MissingTarget => TARGET_PATH,
+            Self::InvalidTarget(_) => TARGET_NAME_PATH,
+            Self::InvalidTargetedRequest => TARGETED_PAYLOAD_PATH,
+        }
+    }
+}
+
 /// Validates the structural routing contract required at multi-index daemon ingress.
 ///
 /// Direct top-level operation variants are intentionally the per-index/embedded
@@ -200,7 +227,8 @@ const fn is_tail(byte: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_index_target, IndexTargetError, INDEX_ALREADY_EXISTS_DETAIL_CODE,
+        validate_index_target, DaemonRequestError, IndexTargetError,
+        INDEX_ALREADY_EXISTS_DETAIL_CODE,
         INDEX_NOT_FOUND_DETAIL_CODE, INVALID_INDEX_TARGET_DETAIL_CODE,
         INVALID_TARGETED_REQUEST_DETAIL_CODE, MAX_INDEX_TARGET_LEN,
         MISSING_INDEX_TARGET_DETAIL_CODE, PAYLOAD_TYPE_PATH, TARGETED_PAYLOAD_PATH,
@@ -225,6 +253,37 @@ mod tests {
         assert_eq!(TARGET_PATH, "target");
         assert_eq!(TARGET_NAME_PATH, "target.name");
         assert_eq!(TARGETED_PAYLOAD_PATH, "payload");
+    }
+
+    #[test]
+    fn daemon_ingress_errors_map_to_one_portable_domain() {
+        let cases = [
+            (
+                DaemonRequestError::TargetedRequestRequired { payload_type: 6 },
+                TARGETED_REQUEST_REQUIRED_DETAIL_CODE,
+                PAYLOAD_TYPE_PATH,
+            ),
+            (
+                DaemonRequestError::MissingTarget,
+                MISSING_INDEX_TARGET_DETAIL_CODE,
+                TARGET_PATH,
+            ),
+            (
+                DaemonRequestError::InvalidTarget(IndexTargetError::Empty),
+                INVALID_INDEX_TARGET_DETAIL_CODE,
+                TARGET_NAME_PATH,
+            ),
+            (
+                DaemonRequestError::InvalidTargetedRequest,
+                INVALID_TARGETED_REQUEST_DETAIL_CODE,
+                TARGETED_PAYLOAD_PATH,
+            ),
+        ];
+        for (error, code, path) in cases {
+            assert_eq!(error.error_code(), crate::v2::ErrorCode::InvalidArgument);
+            assert_eq!(error.detail_code(), code);
+            assert_eq!(error.path(), path);
+        }
     }
 
     #[test]
