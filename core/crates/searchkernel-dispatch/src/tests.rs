@@ -140,6 +140,7 @@ fn describe_request(version: u32, kind: wire::RequestPayload) -> Vec<u8> {
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: version,
+            target: None,
             payload_type: kind,
             payload: Some(request.as_union_value()),
         },
@@ -155,6 +156,7 @@ fn empty_search_request() -> Vec<u8> {
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
+            target: None,
             payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
             payload: Some(request.as_union_value()),
         },
