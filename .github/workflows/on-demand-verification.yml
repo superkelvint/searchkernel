@@ -49,8 +49,8 @@ jobs:
               exit 2
               ;;
           esac
-          if [[ -z "${REQUESTED_TARGET}" ]]; then
-            echo "error: target is required" >&2
+          if [[ ! "${REQUESTED_TARGET}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+            echo "error: target must be 1-128 characters from [A-Za-z0-9._-]" >&2
             exit 2
           fi
           if [[ ! "${REQUEST_ID}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]; then
@@ -139,8 +139,8 @@ jobs:
               )
           PY
           )
-          if [[ -z "${canonical}" ]]; then
-            echo "error: target resolution returned an empty target" >&2
+          if [[ ! "${canonical}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+            echo "error: resolved target is not a safe canonical identifier" >&2
             exit 2
           fi
           printf 'target=%s\n' "${canonical}" >> "${GITHUB_OUTPUT}"
