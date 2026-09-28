@@ -91,12 +91,16 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-image.XXXXXX")
 source_volume="searchkernel-dev-src-$(id -u)-$$-${RANDOM}"
 ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}
 if [[ "$ephemeral_target" == "1" ]]; then
-    target_volume="searchkernel-ci-target-$(id -u)-$$-${RANDOM}"
+    target_volume="searchkernel-ci-target-$(id -u)-$-${RANDOM}"
+    # Remote exact-SHA verification executes untrusted repository code. Keep
+    # Cargo's writable registry/source state job-private alongside CARGO_TARGET_DIR
+    # so one subject revision cannot poison a later verification job.
+    cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$-${RANDOM}"
 else
     target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")
     ci_runtime_prune_target_volumes "$ROOT" "$target_volume"
+    cargo_registry_volume=$(ci_runtime_shared_download_volume cargo-registry "$environment_id")
 fi
-cargo_registry_volume=$(ci_runtime_shared_download_volume cargo-registry "$environment_id")
 artifact_volume=""
 if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
     artifact_volume="searchkernel-dev-artifacts-$(id -u)-$$-${RANDOM}"
@@ -119,6 +123,7 @@ cleanup() {
     docker volume rm -f "$source_volume" >/dev/null 2>&1 || true
     if [[ "$ephemeral_target" == "1" ]]; then
         docker volume rm -f "$target_volume" >/dev/null 2>&1 || true
+        docker volume rm -f "$cargo_registry_volume" >/dev/null 2>&1 || true
     fi
     [[ -z "$artifact_volume" ]] || docker volume rm -f "$artifact_volume" >/dev/null 2>&1 || true
     return "$status"
@@ -128,16 +133,20 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 docker volume create "$source_volume" >/dev/null
-docker volume create \
-    --label io.searchkernel.cache-kind=immutable-download \
-    --label "io.searchkernel.environment-id=$environment_id" \
-    "$cargo_registry_volume" >/dev/null
 if [[ "$ephemeral_target" == "1" ]]; then
+    docker volume create \
+        --label io.searchkernel.cache-kind=job-cargo-registry \
+        --label "io.searchkernel.environment-id=$environment_id" \
+        "$cargo_registry_volume" >/dev/null
     docker volume create \
         --label io.searchkernel.cache-kind=job-target \
         --label "io.searchkernel.environment-id=$environment_id" \
         "$target_volume" >/dev/null
 else
+    docker volume create \
+        --label io.searchkernel.cache-kind=immutable-download \
+        --label "io.searchkernel.environment-id=$environment_id" \
+        "$cargo_registry_volume" >/dev/null
     docker volume create \
         --label io.searchkernel.cache-kind=worktree-target \
         --label "io.searchkernel.environment-id=$environment_id" \
