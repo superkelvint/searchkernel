@@ -108,7 +108,9 @@ impl IndexControlError {
 impl fmt::Display for IndexControlError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingTarget => formatter.write_str("Search Kernel request is missing an index target"),
+            Self::MissingTarget => {
+                formatter.write_str("Search Kernel request is missing an index target")
+            }
             Self::InvalidTarget(error) => {
                 write!(formatter, "invalid Search Kernel index target: {error}")
             }
