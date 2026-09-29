@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "commands": {
     "doctor": {
       "status": "implemented"
@@ -27,6 +27,15 @@
     },
     "release-check": {
       "status": "planned_m5"
+    },
+    "check-fast": {
+      "status": "implemented"
+    },
+    "check-protocol": {
+      "status": "implemented"
+    },
+    "explain": {
+      "status": "implemented"
     }
   },
   "test": {
@@ -250,11 +259,13 @@
         "verify:api-conformance",
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "FlatBuffers is the sole portable domain contract."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-protocol",
+      "strong_check": "verify:api-conformance"
     },
     "build/": {
       "owner": "build-metadata",
@@ -267,11 +278,13 @@
       "verify": [
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Keep the command and area registry machine-readable and fail closed."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
     },
     "clients/php/": {
       "owner": "php",
@@ -287,11 +300,13 @@
         "verify:contracts",
         "verify:client-semantic-parity"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Keep the client a thin facade over canonical FlatBuffers and transport."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:contracts",
+      "strong_check": "test:php"
     },
     "clients/python/": {
       "owner": "python",
@@ -307,11 +322,13 @@
         "verify:contracts",
         "verify:client-semantic-parity"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Keep the client a thin facade over canonical FlatBuffers and transport."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:contracts",
+      "strong_check": "test:python"
     },
     "clients/python/searchkernel/_wire_generated/": {
       "owner": "python-wire-generated",
@@ -324,11 +341,13 @@
       "verify": [
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": true,
       "rules": [
         "Regenerate from the canonical FlatBuffers schema; do not hand-edit."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-protocol",
+      "strong_check": "test:python"
     },
     "clients/ruby/": {
       "owner": "ruby",
@@ -344,11 +363,13 @@
         "verify:contracts",
         "verify:client-semantic-parity"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Keep the client a thin facade over canonical FlatBuffers and transport."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:contracts",
+      "strong_check": "test:ruby"
     },
     "clients/typescript/": {
       "owner": "typescript",
@@ -364,11 +385,13 @@
         "verify:contracts",
         "verify:client-semantic-parity"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Keep the client a thin facade over canonical FlatBuffers and transport."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:contracts",
+      "strong_check": "test:typescript"
     },
     "core/crates/": {
       "owner": "rust-workspace",
@@ -379,11 +402,13 @@
       "architecture": "docs/architecture.md#runtime-structure",
       "test": [],
       "verify": [],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Use a crate-specific ownership entry when one is available."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
     },
     "core/crates/searchkernel-dispatch/": {
       "owner": "dispatch",
@@ -399,11 +424,13 @@
         "verify:product.integration",
         "verify:client-semantic-parity"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Every transport enters the same canonical dispatcher."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:rust-api",
+      "strong_check": "verify:product.integration"
     },
     "core/crates/searchkernel-filter/": {
       "owner": "filter",
@@ -414,11 +441,13 @@
       "architecture": "docs/architecture.md#semantic-structure",
       "test": [],
       "verify": [],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Keep this crate syntax-only; schema-aware filter meaning belongs in searchkernel-ir."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
     },
     "core/crates/searchkernel-ir-adapter/": {
       "owner": "ir-adapter",
@@ -433,12 +462,14 @@
       "verify": [
         "verify:product.rust-real-engine"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Lower owned IR into the safe engine API here.",
         "Do not move portable semantics into this crate."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:rust-api",
+      "strong_check": "verify:product.rust-real-engine"
     },
     "core/crates/searchkernel-ir/": {
       "owner": "ir",
@@ -454,12 +485,14 @@
         "verify:api-conformance",
         "verify:client-semantic-parity"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Portable defaults, validation, and normalization belong here.",
         "Do not depend on Vespa types."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:ir",
+      "strong_check": "verify:client-semantic-parity"
     },
     "core/crates/searchkernel-protocol/": {
       "owner": "protocol",
@@ -472,11 +505,13 @@
       "verify": [
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "FlatBuffers remains the domain contract; protobuf is transport framing."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-protocol",
+      "strong_check": "command:check-fast"
     },
     "core/crates/searchkernel-protocol/src/generated/": {
       "owner": "protocol-generated",
@@ -489,11 +524,13 @@
       "verify": [
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": true,
       "rules": [
         "Regenerate from the FlatBuffers schemas; do not hand-edit."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-protocol",
+      "strong_check": "command:check-fast"
     },
     "core/crates/searchkernel-rpc/": {
       "owner": "rust-rpc",
@@ -505,11 +542,13 @@
       "architecture": "docs/architecture.md#canonical-contracts",
       "test": [],
       "verify": [],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Protobuf remains transport framing; check generated RPC bindings with ./dev check-protocol."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-protocol",
+      "strong_check": "command:check-fast"
     },
     "core/crates/searchkernel-rpc/src/generated/": {
       "owner": "rpc-generated",
@@ -522,11 +561,13 @@
       "verify": [
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": true,
       "rules": [
         "Regenerate from the RPC schema; do not hand-edit."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-protocol",
+      "strong_check": "command:check-fast"
     },
     "core/crates/searchkernel-testkit/": {
       "owner": "testkit",
@@ -541,11 +582,13 @@
       "verify": [
         "verify:client-semantic-parity"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Test portable meaning without inventing a second semantic implementation."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:ir",
+      "strong_check": "verify:client-semantic-parity"
     },
     "core/crates/searchkernel-vespa-bindings/": {
       "owner": "vespa-bindings",
@@ -562,12 +605,14 @@
         "verify:abi",
         "verify:product.rust-real-engine"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Keep raw unsafe and ABI declarations at this boundary.",
         "Do not expose Vespa C++ types."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:abi",
+      "strong_check": "verify:product.rust-real-engine"
     },
     "core/crates/searchkernel-vespa-engine/": {
       "owner": "vespa-engine",
@@ -582,12 +627,14 @@
       "verify": [
         "verify:product.rust-real-engine"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Vespa-specific lowering belongs here.",
         "Portable semantics do not."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:rust-api",
+      "strong_check": "verify:product.rust-real-engine"
     },
     "core/crates/searchkernel/": {
       "owner": "rust-api",
@@ -603,12 +650,14 @@
         "verify:product.integration",
         "verify:client-semantic-parity"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Keep Vespa types out of the product-facing API.",
         "Resolve portable semantics through searchkernel-ir."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:rust-api",
+      "strong_check": "verify:product.integration"
     },
     "core/native/": {
       "owner": "native",
@@ -623,12 +672,14 @@
         "verify:abi",
         "verify:vespa.hardening.core"
       ],
-      "native_sdk_rebuild": true,
       "generated": false,
       "rules": [
         "Search Kernel C++ adaptation stays under core/native/vespa/.",
         "Catch C++ exceptions before crossing the ABI."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:abi",
+      "strong_check": "verify:vespa.hardening.core"
     },
     "docs/": {
       "owner": "documentation",
@@ -642,11 +693,13 @@
       "verify": [
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Document constraints at the narrowest durable ownership boundary."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
     },
     "integrations/instantsearch/": {
       "owner": "instantsearch",
@@ -659,11 +712,13 @@
       "verify": [
         "verify:product.integration"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Use the supported client and transport APIs; do not duplicate portable semantics."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:product.integration",
+      "strong_check": "verify:product.integration"
     },
     "reference/": {
       "owner": "reference",
@@ -676,11 +731,13 @@
       "verify": [
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Treat contracts, oracles, goldens, and verifier expectations as frozen acceptance artifacts."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:contracts",
+      "strong_check": "command:check-fast"
     },
     "reference/result-response-conformance/": {
       "owner": "result-response-conformance",
@@ -693,11 +750,13 @@
       "verify": [
         "verify:client-semantic-parity"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Treat the corpus and fixtures as frozen acceptance artifacts."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
     },
     "searchkernel-web/": {
       "owner": "web",
@@ -712,12 +771,14 @@
         "verify:contracts",
         "verify:product.integration"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Use the generated client and daemon integration.",
         "Do not import internal core crates or raw FlatBuffers."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:contracts",
+      "strong_check": "verify:product.integration"
     },
     "searchkerneld/": {
       "owner": "searchkerneld",
@@ -732,11 +793,13 @@
       "verify": [
         "verify:product.integration"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Transport framing must not duplicate the portable domain model."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:searchkerneld-multi-index",
+      "strong_check": "verify:product.integration"
     },
     "searchkerneld/src/generated/": {
       "owner": "daemon-generated",
@@ -749,11 +812,13 @@
       "verify": [
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": true,
       "rules": [
         "Regenerate from the canonical schema or generator; do not hand-edit."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-protocol",
+      "strong_check": "verify:product.integration"
     },
     "tools/": {
       "owner": "tooling",
@@ -766,11 +831,13 @@
       "verify": [
         "verify:contracts"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Use the canonical ./dev command surface and documented toolchain authorities."
-      ]
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
     },
     "verification/": {
       "owner": "verification",
@@ -784,10 +851,142 @@
       "verify": [
         "verify:product.integration"
       ],
-      "native_sdk_rebuild": false,
       "generated": false,
       "rules": [
         "Keep acceptance behavior aligned with frozen contracts and real Vespa where required."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "clients/python/searchkernel/rpc/searchkernel_pb2.py": {
+      "owner": "python-rpc-generated",
+      "area": "Generated Python protobuf bindings",
+      "read": [
+        "api/rpc/searchkernel.proto"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:contracts"
+      ],
+      "focused_check": "command:check-protocol",
+      "strong_check": "test:python",
+      "native_base_rebuild": false,
+      "generated": true,
+      "rules": [
+        "Regenerate from the RPC schema; do not hand-edit."
+      ]
+    },
+    "clients/python/searchkernel/rpc/searchkernel_pb2_grpc.py": {
+      "owner": "python-rpc-generated",
+      "area": "Generated Python gRPC bindings",
+      "read": [
+        "api/rpc/searchkernel.proto"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:contracts"
+      ],
+      "focused_check": "command:check-protocol",
+      "strong_check": "test:python",
+      "native_base_rebuild": false,
+      "generated": true,
+      "rules": [
+        "Regenerate from the RPC schema; do not hand-edit."
+      ]
+    },
+    "clients/typescript/src/generated/": {
+      "owner": "typescript-generated",
+      "area": "Generated TypeScript protocol and RPC bindings",
+      "read": [
+        "api/README.md",
+        "api/rpc/searchkernel.proto"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:contracts"
+      ],
+      "focused_check": "command:check-protocol",
+      "strong_check": "test:typescript",
+      "native_base_rebuild": false,
+      "generated": true,
+      "rules": [
+        "Regenerate from the canonical FlatBuffers/RPC schemas; do not hand-edit."
+      ]
+    },
+    "core/native/vespa/manifest.json": {
+      "owner": "native-base-pin",
+      "area": "Pinned Vespa native base manifest",
+      "read": [
+        "core/native/vespa/README.md",
+        "docs/native-build-provenance.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [
+        "verify:vespa.native-sdk",
+        "verify:product.rust-real-engine"
+      ],
+      "focused_check": "verify:vespa.native-sdk",
+      "strong_check": "verify:product.rust-real-engine",
+      "native_base_rebuild": true,
+      "generated": false,
+      "rules": [
+        "Changing the pinned Vespa/base authority requires reprovisioning and qualifying the immutable native base."
+      ]
+    },
+    "dev": {
+      "owner": "build-tooling",
+      "area": "Canonical development command",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast",
+      "native_base_rebuild": false,
+      "generated": false,
+      "rules": [
+        "Keep ./dev as the canonical repository command surface."
+      ]
+    },
+    ".github/": {
+      "owner": "ci-control-plane",
+      "area": "GitHub Actions and CI control plane",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast",
+      "native_base_rebuild": false,
+      "generated": false,
+      "rules": [
+        "Keep workflows aligned with the canonical ./dev command surface and exact-SHA verification model."
+      ]
+    },
+    "docker/": {
+      "owner": "ci-images",
+      "area": "Canonical CI image definitions",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast",
+      "native_base_rebuild": false,
+      "generated": false,
+      "rules": [
+        "Keep CI image inputs immutable and aligned with the toolchain/native bundle split."
       ]
     }
   }
