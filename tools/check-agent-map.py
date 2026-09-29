@@ -39,12 +39,12 @@ def tracked_paths(root: pathlib.Path = ROOT) -> set[str]:
 def workspace_members(root: pathlib.Path = ROOT) -> list[str]:
     text = (root / "Cargo.toml").read_text(encoding="utf-8")
     workspace = re.search(
-        r"(?ms)^\\[workspace\\]\\s*(.*?)(?=^\\[|\\Z)", text
+        r"(?ms)^\[workspace\]\s*(.*?)(?=^\[|\Z)", text
     )
     if workspace is None:
         raise ValueError("Cargo.toml is missing [workspace]")
     members = re.search(
-        r"(?ms)^members\\s*=\\s*\\[(.*?)\\]", workspace.group(1)
+        r"(?ms)^members\s*=\s*\[(.*?)\]", workspace.group(1)
     )
     if members is None:
         raise ValueError("Cargo.toml [workspace] is missing members")
