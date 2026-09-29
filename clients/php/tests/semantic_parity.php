@@ -28,7 +28,7 @@ function parityValue(array $value): mixed
         return $value['string'];
     }
     if (array_key_exists('float64', $value)) {
-        return $value['float64'];
+        return (float) $value['float64'];
     }
     throw new RuntimeException('unsupported parity corpus value');
 }
