@@ -1,0 +1,172 @@
+name: Bookkeeping autofix
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  generate_patch:
+    name: Produce bookkeeping patch
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Synchronize deterministic bookkeeping
+        shell: bash
+        run: |
+          set -euo pipefail
+          SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev bookkeeping sync
+
+      - name: Package untrusted bookkeeping patch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual=$(git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
+            exit 1
+          fi
+
+          artifact_dir="$RUNNER_TEMP/bookkeeping-artifact"
+          mkdir -p "$artifact_dir"
+          git diff --binary --full-index --no-ext-diff > "$artifact_dir/bookkeeping.patch"
+
+      - name: Upload bookkeeping patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookkeeping-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bookkeeping-artifact/bookkeeping.patch
+          if-no-files-found: error
+          retention-days: 1
+
+  write_autofix:
+    name: Validate and push bookkeeping patch
+    needs: generate_patch
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download bookkeeping patch
+        uses: actions/download-artifact@v4
+        with:
+          name: bookkeeping-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bookkeeping-artifact
+
+      - name: Validate and apply bookkeeping patch
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual=$(/usr/bin/git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
+            exit 1
+          fi
+
+          patch="$RUNNER_TEMP/bookkeeping-artifact/bookkeeping.patch"
+          [[ -f "$patch" ]] || {
+            echo "::error::bookkeeping artifact is missing bookkeeping.patch" >&2
+            exit 1
+          }
+
+          if [[ ! -s "$patch" ]]; then
+            echo "bookkeeping is already synchronized"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          /usr/bin/git apply --check --whitespace=error-all "$patch"
+          /usr/bin/git apply --index --whitespace=error-all "$patch"
+          /usr/bin/git diff --cached --check
+
+          found=0
+          while IFS= read -r -d '' status && IFS= read -r -d '' path; do
+            found=1
+            [[ "$status" == "M" ]] || {
+              echo "::error::bookkeeping patch contains non-modification status '$status' for '$path'" >&2
+              exit 1
+            }
+            case "$path" in
+              build/targets.json|docs/client-capabilities.json|docs/CLIENT_CAPABILITIES.md)
+                ;;
+              *)
+                echo "::error::bookkeeping patch changes unauthorized path '$path'" >&2
+                exit 1
+                ;;
+            esac
+            IFS=' ' read -r mode _ < <(/usr/bin/git ls-files -s -- "$path")
+            [[ "$mode" == "100644" || "$mode" == "100755" ]] || {
+              echo "::error::bookkeeping patch targets non-regular path '$path' (mode $mode)" >&2
+              exit 1
+            }
+          done < <(/usr/bin/git diff --cached --name-status -z)
+
+          [[ "$found" == 1 ]] || {
+            echo "::error::non-empty bookkeeping patch produced no staged changes" >&2
+            exit 1
+          }
+
+          if [[ -n "$(/usr/bin/git diff --cached --summary)" ]]; then
+            echo "::error::bookkeeping patch changes file modes or object types" >&2
+            /usr/bin/git diff --cached --summary >&2
+            exit 1
+          fi
+
+          SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev bookkeeping check
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push bookkeeping changes
+        if: steps.validate.outputs.has_changes == 'true'
+        shell: bash
+        env:
+          AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          [[ -n "${AUTOFIX_TOKEN:-}" ]] || {
+            echo "::error::RUSTFMT_AUTOFIX_TOKEN is not configured." >&2
+            exit 1
+          }
+
+          actual=$(/usr/bin/git rev-parse HEAD)
+          if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "::error::checkout moved from expected PR head $EXPECTED_HEAD to $actual" >&2
+            exit 1
+          fi
+
+          /usr/bin/git config user.name "github-actions[bot]"
+          /usr/bin/git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          /usr/bin/git -c core.hooksPath=/dev/null -c commit.gpgsign=false             commit -m "chore: sync deterministic bookkeeping"
+
+          /usr/bin/git -c core.hooksPath=/dev/null -c credential.helper= push             "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"             "HEAD:refs/heads/${HEAD_REF}"
