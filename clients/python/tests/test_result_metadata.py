@@ -49,6 +49,7 @@ class ResultMetadataTest(unittest.TestCase):
         result = SearchResults(
             SearchResultT(
                 root=ResultNodeT(ResultNodeKind.ResultGroup, root),
+                totalHits=TotalHitsT(value=0, relation=TotalHitsRelation.Exact),
                 timing=SearchTimingT(
                     queryTimeSeconds=OptionalDoubleT(0.25),
                     metadata=[ValueEntryT("timing-meta", value("yes"))],
