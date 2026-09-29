@@ -792,6 +792,12 @@ same([], $encodedEmptyObject['kind']['fields'], 'empty object encodes with an em
 $decodedEmptyObject = Protocol::decodeValue($encodedEmptyObject);
 truth($decodedEmptyObject instanceof ValueObject, 'decoded ValueObject retains its object type when empty');
 same([], $decodedEmptyObject->entries, 'empty decoded ValueObject has no entries');
+$decodedObject = Protocol::decodeValue(Protocol::value(ValueObject::fromPairs([
+    ['key' => 'name', 'value' => 'searchkernel'],
+])));
+truth($decodedObject instanceof ValueObject, 'decoded non-empty ValueObject retains its object type');
+same('name', $decodedObject->entries[0]['key'], 'decoded ValueObject preserves entry keys');
+same('searchkernel', $decodedObject->entries[0]['value'], 'decoded ValueObject preserves entry values');
 $decodedEmptyList = Protocol::decodeValue(['kind_type' => 'ValueList', 'kind' => ['values' => []]]);
 same([], $decodedEmptyList, 'decoded empty ValueList remains a PHP list');
 truth(!$decodedEmptyList instanceof ValueObject, 'decoded empty ValueList stays distinct from ValueObject');

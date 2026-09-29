@@ -57,6 +57,26 @@ def members(kind: str, body: str) -> dict[str, str]:
     return {}
 
 
+def member_signatures(kind: str, body: str) -> list[str]:
+    if kind in {"table", "struct"}:
+        return [
+            f"{name}:{re.sub(r'\s+', '', rhs)}"
+            for name, rhs in re.findall(
+                r"^\s*([A-Za-z_]\w*)\s*:\s*([^;]+);",
+                body,
+                re.M,
+            )
+        ]
+    if kind == "enum":
+        return [
+            f"{name}={value}"
+            for name, value in re.findall(r"\b(\w+)\s*=\s*([^,\s]+)", body)
+        ]
+    if kind == "union":
+        return re.findall(r"\b([A-Za-z_]\w*)\b", body)
+    return []
+
+
 def referenced_type(type_name: str) -> str | None:
     value = type_name.strip().strip("[]")
     return value if re.fullmatch(r"[A-Za-z_]\w*", value) else None
@@ -85,6 +105,7 @@ def result_closure(schema: str) -> dict[str, tuple[str, dict[str, str]]]:
 
 def verify_schema(schema: str, manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
+    decls = declarations(schema)
     closure = result_closure(schema)
     declared_types = manifest.get("schema", {})
     if set(declared_types) != set(closure):
@@ -106,6 +127,12 @@ def verify_schema(schema: str, manifest: dict[str, Any]) -> list[str]:
                 f"{name} members mismatch: "
                 f"missing={sorted(set(actual_members) - classified_names)}, "
                 f"stale={sorted(classified_names - set(actual_members))}"
+            )
+        actual_wire = member_signatures(kind, decls[name][1])
+        declared_wire = declared.get("wire_members")
+        if declared_wire != actual_wire:
+            errors.append(
+                f"{name} wire members mismatch: expected={declared_wire!r}, actual={actual_wire!r}"
             )
     fields = manifest.get("partitions", {}).get("fields", {})
     table_names = {name for name, (kind, _) in closure.items() if kind in {"table", "struct"}}
@@ -348,7 +375,7 @@ def _semantic_exercised(partition: str, envelope: dict[str, Any], envelopes: dic
     if partition.endswith("sibling_groups"):
         return len(children) >= 2 and all(child.get("node_type") == "ResultGroup" for child in children)
     if partition.endswith("group_without_children"):
-        return root_kind == "ResultGroup" and _leaves_are_empty(root)
+        return root_kind == "ResultGroup" and not children
     if partition.endswith("group_with_multiple_children"):
         return root_kind == "ResultGroup" and len(children) > 1
     if partition.endswith("keyed_continuations"):
@@ -369,12 +396,12 @@ def _semantic_exercised(partition: str, envelope: dict[str, Any], envelopes: dic
             obj.get("kind_type") == "ValueList" and not obj.get("kind", {}).get("values")
             for obj in walk_json(payload)
         ) and any(obj.get("kind_type") == "ValueObject" for obj in walk_json(payload))
-    if partition.endswith("populated_multi_key_maps") or partition.endswith("multiple_keys"):
+    if partition.endswith("populated_multi_key_maps"):
         return any(
-            len(obj.get("fields", [])) > 1
+            len(obj.get("kind", {}).get("fields", [])) > 1
             for obj in walk_json(payload)
             if obj.get("kind_type") == "ValueObject"
-        ) or any(len(obj) > 1 for obj in walk_json(payload) if "key" not in obj and "value" not in obj)
+        )
     if partition.endswith("supported_variants_and_integer_boundaries"):
         kinds = {obj.get("kind_type") for obj in walk_json(payload)}
         required = {"NullValueValue", "BoolValue", "Int64Value", "UInt64Value", "Float64Value", "StringValue", "BytesValue", "ValueList", "ValueObject"}
@@ -592,6 +619,37 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
                 for obj in walk_json(envelope)
             }
             exercised = {"FiniteRelevance", "PositiveInfinityRelevance", "NegativeInfinityRelevance"} <= relevance_kinds
+        if partition.endswith("empty_populated_and_multiple_keys"):
+            object_field_counts = [
+                len(obj.get("kind", {}).get("fields", []))
+                for envelope in projected
+                for obj in walk_json(envelope)
+                if obj.get("kind_type") == "ValueObject"
+            ]
+            exercised = (
+                any(count == 0 for count in object_field_counts)
+                and any(count > 0 for count in object_field_counts)
+                and any(count > 1 for count in object_field_counts)
+            )
+        if partition.endswith("empty_and_populated_maps_lists"):
+            list_counts = [
+                len(obj.get("kind", {}).get("values", []))
+                for envelope in projected
+                for obj in walk_json(envelope)
+                if obj.get("kind_type") == "ValueList"
+            ]
+            map_counts = [
+                len(obj.get("kind", {}).get("fields", []))
+                for envelope in projected
+                for obj in walk_json(envelope)
+                if obj.get("kind_type") == "ValueObject"
+            ]
+            exercised = (
+                any(count == 0 for count in list_counts)
+                and any(count > 0 for count in list_counts)
+                and any(count == 0 for count in map_counts)
+                and any(count > 0 for count in map_counts)
+            )
         if partition.endswith("limits_sides_independently_optional"):
             limit_values = [
                 obj["limits"]

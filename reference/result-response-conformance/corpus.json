@@ -139,6 +139,71 @@
       "id": "unknown-response-payload-union",
       "file": "result-malformed-unknown-response-payload-union.skrs",
       "failure_class": "response_payload_union"
+    },
+    {
+      "id": "missing-search-result-root",
+      "file": "result-malformed-missing-search-result-root.skrs",
+      "failure_class": "missing_search_result_root"
+    },
+    {
+      "id": "missing-search-result-total-hits",
+      "file": "result-malformed-missing-search-result-total-hits.skrs",
+      "failure_class": "missing_search_result_total_hits"
+    },
+    {
+      "id": "missing-search-result-root-and-total-hits",
+      "file": "result-malformed-missing-search-result-root-and-total-hits.skrs",
+      "failure_class": "missing_search_result_root_and_total_hits"
+    },
+    {
+      "id": "missing-continuation-key",
+      "file": "result-malformed-missing-continuation-key.skrs",
+      "failure_class": "missing_continuation_key"
+    },
+    {
+      "id": "missing-continuation-value",
+      "file": "result-malformed-missing-continuation-value.skrs",
+      "failure_class": "missing_continuation_value"
+    },
+    {
+      "id": "missing-sparse-address-dimension",
+      "file": "result-malformed-missing-sparse-address-dimension.skrs",
+      "failure_class": "missing_sparse_address_dimension"
+    },
+    {
+      "id": "missing-sparse-address-label",
+      "file": "result-malformed-missing-sparse-address-label.skrs",
+      "failure_class": "missing_sparse_address_label"
+    },
+    {
+      "id": "missing-mixed-address-dimension",
+      "file": "result-malformed-missing-mixed-address-dimension.skrs",
+      "failure_class": "missing_mixed_address_dimension"
+    },
+    {
+      "id": "missing-mixed-address-label",
+      "file": "result-malformed-missing-mixed-address-label.skrs",
+      "failure_class": "missing_mixed_address_label"
+    },
+    {
+      "id": "missing-value-entry-value",
+      "file": "result-malformed-missing-value-entry-value.skrs",
+      "failure_class": "missing_value_entry_value"
+    },
+    {
+      "id": "non-finite-dense-tensor-cell",
+      "file": "result-malformed-non-finite-dense-tensor-cell.skrs",
+      "failure_class": "non_finite_dense_tensor_cell"
+    },
+    {
+      "id": "non-finite-sparse-tensor-cell",
+      "file": "result-malformed-non-finite-sparse-tensor-cell.skrs",
+      "failure_class": "non_finite_sparse_tensor_cell"
+    },
+    {
+      "id": "non-finite-mixed-tensor-cell",
+      "file": "result-malformed-non-finite-mixed-tensor-cell.skrs",
+      "failure_class": "non_finite_mixed_tensor_cell"
     }
   ]
 }

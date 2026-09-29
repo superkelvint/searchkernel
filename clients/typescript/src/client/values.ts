@@ -47,7 +47,7 @@ export class Tensor {
 
 export interface DecodedTensorAddressEntry {
   dimension: string;
-  label: string | null;
+  label: string;
 }
 
 export interface DecodedSparseTensorCell {
@@ -179,11 +179,22 @@ export function value(input: ValueInput): ValueT {
   );
 }
 
+function finiteTensorCells(values: readonly number[], label: string): number[] {
+  const decoded = [...values];
+  if (decoded.some((cell) => !Number.isFinite(cell))) {
+    throw new ValueDecodeError(`${label} tensor cells must be finite`);
+  }
+  return decoded;
+}
+
 function decodeAddress(entries: readonly TensorAddressEntryT[]): DecodedTensorAddressEntry[] {
   return entries.map((entry) => {
     const dimension = portableText(entry.dimension);
-    if (dimension === null) throw new ValueDecodeError("tensor address entry has no dimension");
-    return { dimension, label: portableText(entry.label) };
+    const label = portableText(entry.label);
+    if (dimension === null || label === null) {
+      throw new ValueDecodeError("tensor address entry has a missing dimension or label");
+    }
+    return { dimension, label };
   });
 }
 
@@ -270,7 +281,7 @@ export function fromValue(input: ValueT | null): unknown {
           if (!(tensor.payload instanceof DenseTensorValuesT)) {
             throw new ValueDecodeError("dense tensor has a missing or mismatched payload");
           }
-          return { $searchkernel_tensor: { typeSpec, dense: [...tensor.payload.values] } } satisfies DecodedTensor;
+          return { $searchkernel_tensor: { typeSpec, dense: finiteTensorCells(tensor.payload.values, "dense") } } satisfies DecodedTensor;
         }
         case TensorPayloadKind.SparseTensorCells: {
           if (!(tensor.payload instanceof SparseTensorCellsT)) {
@@ -281,7 +292,7 @@ export function fromValue(input: ValueT | null): unknown {
               typeSpec,
               sparse: tensor.payload.cells.map((cell) => ({
                 address: decodeAddress(cell.address),
-                value: cell.value,
+                value: finiteTensorCells([cell.value], "sparse")[0]!,
               })),
             },
           } satisfies DecodedTensor;
@@ -295,7 +306,7 @@ export function fromValue(input: ValueT | null): unknown {
               typeSpec,
               mixed: tensor.payload.blocks.map((block) => ({
                 address: decodeAddress(block.address),
-                values: [...block.values],
+                values: finiteTensorCells(block.values, "mixed"),
               })),
             },
           } satisfies DecodedTensor;

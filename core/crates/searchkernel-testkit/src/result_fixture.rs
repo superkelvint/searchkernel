@@ -1679,6 +1679,19 @@ mod expanded_canonical_corpus {
                     "result-malformed-unknown-response-payload-union.skrs",
                     "envelope",
                 ),
+                ("result-malformed-missing-search-result-root.skrs", "result"),
+                ("result-malformed-missing-search-result-total-hits.skrs", "result"),
+                ("result-malformed-missing-search-result-root-and-total-hits.skrs", "result"),
+                ("result-malformed-missing-continuation-key.skrs", "result"),
+                ("result-malformed-missing-continuation-value.skrs", "result"),
+                ("result-malformed-missing-sparse-address-dimension.skrs", "result"),
+                ("result-malformed-missing-sparse-address-label.skrs", "result"),
+                ("result-malformed-missing-mixed-address-dimension.skrs", "result"),
+                ("result-malformed-missing-mixed-address-label.skrs", "result"),
+                ("result-malformed-missing-value-entry-value.skrs", "result"),
+                ("result-malformed-non-finite-dense-tensor-cell.skrs", "result"),
+                ("result-malformed-non-finite-sparse-tensor-cell.skrs", "result"),
+                ("result-malformed-non-finite-mixed-tensor-cell.skrs", "result"),
             ] {
                 let bytes = std::fs::read(directory.join(name)).unwrap();
                 let envelope =

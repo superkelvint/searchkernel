@@ -504,6 +504,68 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(sparse["$searchkernel_tensor"]["sparse"][0]["value"], 0.5)
         self.assertEqual(mixed["$searchkernel_tensor"]["mixed"][0]["values"], [0.25, 0.75])
 
+    def test_result_value_decoder_rejects_malformed_tensor_state(self):
+        malformed_addresses = [
+            TensorAddressEntryT(dimension=None, label="a"),
+            TensorAddressEntryT(dimension="x", label=None),
+        ]
+        for address in malformed_addresses:
+            with self.subTest(address=address):
+                with self.assertRaisesRegex(ValueError, "malformed tensor address"):
+                    _python_value(
+                        ValueT(
+                            kindType=ValueKind.TensorValue,
+                            kind=TensorValueT(
+                                typeSpec="tensor<float>(x{})",
+                                payloadType=TensorPayloadKind.SparseTensorCells,
+                                payload=SparseTensorCellsT(
+                                    cells=[TensorCellT(address=[address], value=0.5)]
+                                ),
+                            ),
+                        )
+                    )
+
+        for payload_type, payload in (
+            (
+                TensorPayloadKind.DenseTensorValues,
+                DenseTensorValuesT(values=[math.nan]),
+            ),
+            (
+                TensorPayloadKind.SparseTensorCells,
+                SparseTensorCellsT(
+                    cells=[
+                        TensorCellT(
+                            address=[TensorAddressEntryT(dimension="x", label="a")],
+                            value=math.inf,
+                        )
+                    ]
+                ),
+            ),
+            (
+                TensorPayloadKind.MixedTensorBlocks,
+                MixedTensorBlocksT(
+                    blocks=[
+                        TensorBlockT(
+                            address=[TensorAddressEntryT(dimension="x", label="a")],
+                            values=[-math.inf],
+                        )
+                    ]
+                ),
+            ),
+        ):
+            with self.subTest(payload_type=payload_type):
+                with self.assertRaisesRegex(ValueError, "tensor cells must be finite"):
+                    _python_value(
+                        ValueT(
+                            kindType=ValueKind.TensorValue,
+                            kind=TensorValueT(
+                                typeSpec="tensor<float>(x{})",
+                                payloadType=payload_type,
+                                payload=payload,
+                            ),
+                        )
+                    )
+
     def test_result_decoding_rejects_ambiguous_and_unknown_unions(self):
         entries = [
             ValueEntryT(key="duplicate", value=value(1)),

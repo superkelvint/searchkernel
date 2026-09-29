@@ -37,8 +37,17 @@ function loadFixture(name: string): SearchResults {
 }
 
 const node = (group: ResultGroupT) => new ResultNodeT(ResultNodeKind.ResultGroup, group);
+const searchResult = (root: ResultNodeT) =>
+  new SearchResultT(root, new TotalHitsT(0n, TotalHitsRelation.Exact));
 
 describe("ergonomic search results", () => {
+  it("rejects missing canonical root and total-hits state", () => {
+    expect(() => new SearchResults(
+      new SearchResultT(null, new TotalHitsT(0n, TotalHitsRelation.Exact)),
+    )).toThrow(/root/);
+    expect(() => new SearchResults(new SearchResultT(node(new ResultGroupT()), null))).toThrow(/total_hits/);
+  });
+
   it("projects hits, groups, facets, aggregations, coverage and continuations without losing root", () => {
     const hit = new HitT(
       "doc-1",
@@ -107,7 +116,7 @@ it("does not flatten unlabeled group wrappers by response shape", () => {
   const wrapper = new ResultGroupT(null, null, null, [], [node(bucket)]);
   const root = new ResultGroupT(null, null, null, [], [node(wrapper)]);
 
-  const result = new SearchResults(new SearchResultT(node(root)));
+  const result = new SearchResults(searchResult(node(root)));
 
   expect(result.groups).toHaveLength(1);
   expect(result.groups[0]?.label).toBeNull();
@@ -122,7 +131,7 @@ it("fails closed for mismatched result-node unions", () => {
     [],
     [new ResultNodeT(ResultNodeKind.Hit, null)],
   );
-  expect(() => new SearchResults(new SearchResultT(node(malformed)))).toThrow(/hit node has a missing or mismatched payload/);
+  expect(() => new SearchResults(searchResult(node(malformed)))).toThrow(/hit node has a missing or mismatched payload/);
 });
 
 it("rejects duplicate semantic-map keys in result fields", () => {
@@ -132,7 +141,7 @@ it("rejects duplicate semantic-map keys in result fields", () => {
     [new ValueEntryT("same", value(1)), new ValueEntryT("same", value(2))],
   );
   const root = new ResultGroupT(null, null, null, [], [new ResultNodeT(ResultNodeKind.Hit, malformed)]);
-  expect(() => new SearchResults(new SearchResultT(node(root)))).toThrow(/duplicate result map key/);
+  expect(() => new SearchResults(searchResult(node(root)))).toThrow(/duplicate result map key/);
 });
 
 it("rejects malformed result semantic-map entries and missing Value payloads", () => {
@@ -150,7 +159,7 @@ it("rejects malformed result semantic-map entries and missing Value payloads", (
       [],
       [new ResultNodeT(ResultNodeKind.Hit, malformed)],
     );
-    expect(() => new SearchResults(new SearchResultT(node(root)))).toThrow(ResultDecodeError);
+    expect(() => new SearchResults(searchResult(node(root)))).toThrow(ResultDecodeError);
   }
 });
 
@@ -174,10 +183,10 @@ it("does not infer arbitrary labeled groups or synthesize malformed facet counts
   const arbitraryRoot = new ResultGroupT(null, null, null, [], [node(arbitrary)]);
   const malformedRoot = new ResultGroupT(null, null, null, [], [node(malformed)]);
 
-  const generic = new SearchResults(new SearchResultT(node(arbitraryRoot)));
+  const generic = new SearchResults(searchResult(node(arbitraryRoot)));
   expect(generic.facets).toEqual({});
 
-  const wrong = new SearchResults(new SearchResultT(node(malformedRoot)));
+  const wrong = new SearchResults(searchResult(node(malformedRoot)));
   wrong.projectFacet("brand", "brand");
   expect(wrong.facets).toEqual({});
 });
@@ -203,7 +212,7 @@ it("does not project facets when the parent carries extra metadata", () => {
     [new ValueEntryT("unexpected", value(true))],
   );
   const root = new ResultGroupT(null, null, null, [], [node(facet)]);
-  const result = new SearchResults(new SearchResultT(node(root)));
+  const result = new SearchResults(searchResult(node(root)));
 
   result.projectFacet("brand", "brand");
   expect(result.facets).toEqual({});
@@ -218,7 +227,7 @@ it("projects named facets only when explicitly requested", () => {
   );
   const facet = new ResultGroupT(null, "brands", null, [], [node(bucket)]);
   const root = new ResultGroupT(null, null, null, [], [node(facet)]);
-  const result = new SearchResults(new SearchResultT(node(root)));
+  const result = new SearchResults(searchResult(node(root)));
 
   result.projectFacet("brands", "brands");
   expect(result.facets).toEqual({ brands: [{ value: "Acme", count: 3n }] });
@@ -234,7 +243,7 @@ it("projects native generic named facets with non-negative Int64 counts", () => 
   );
   const facet = new ResultGroupT("brand", "brands", null, [], [node(bucket)]);
   const root = new ResultGroupT(null, null, null, [], [node(facet)]);
-  const result = new SearchResults(new SearchResultT(node(root)));
+  const result = new SearchResults(searchResult(node(root)));
 
   result.projectFacet("brands", "brands", "brand");
   expect(result.facets).toEqual({ brands: [{ value: "Acme", count: 3n }] });
@@ -247,7 +256,7 @@ it("projects native generic named facets with non-negative Int64 counts", () => 
   );
   const negativeFacet = new ResultGroupT("brand", "brands", null, [], [node(negativeBucket)]);
   const negativeRoot = new ResultGroupT(null, null, null, [], [node(negativeFacet)]);
-  const negative = new SearchResults(new SearchResultT(node(negativeRoot)));
+  const negative = new SearchResults(searchResult(node(negativeRoot)));
 
   negative.projectFacet("brands", "brands", "brand");
   expect(negative.facets).toEqual({});
@@ -272,7 +281,7 @@ it("decodes timing and result issues into facade values", () => {
     transient: new OptionalBoolT(true),
     metadata: [new ValueEntryT("retry", value(false))],
   };
-  const raw = new SearchResultT(node(root));
+  const raw = searchResult(node(root));
   (raw as any).timing = timingWire;
   (raw as any).errors = [issueWire];
 
@@ -297,7 +306,7 @@ it("fails closed for malformed grouping continuation entries", () => {
     [],
     [new StringEntryT(null, "token")],
   );
-  expect(() => new SearchResults(new SearchResultT(node(malformed)))).toThrow(
+  expect(() => new SearchResults(searchResult(node(malformed)))).toThrow(
     /result continuation has a missing key or value/,
   );
 });
@@ -312,7 +321,7 @@ it("decodes finite and infinite relevance kinds consistently", () => {
   for (const [score, expected] of relevance) {
     const hit = new HitT("doc-1", score);
     const root = new ResultGroupT(null, null, null, [], [new ResultNodeT(ResultNodeKind.Hit, hit)]);
-    const result = new SearchResults(new SearchResultT(node(root)));
+    const result = new SearchResults(searchResult(node(root)));
     expect(result.hits[0]?.relevance).toBe(expected);
   }
 });

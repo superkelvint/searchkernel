@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Tensor, ValueDecodeError, float64, fromValue, int64, uint64, value } from "../src/client/values.js";
+import { DenseTensorValuesT } from "../src/generated/flatbuffers/search-kernel/v2/dense-tensor-values.js";
 import { MixedTensorBlocksT } from "../src/generated/flatbuffers/search-kernel/v2/mixed-tensor-blocks.js";
 import { NonFiniteFloatKind } from "../src/generated/flatbuffers/search-kernel/v2/non-finite-float-kind.js";
 import { NonFiniteFloatValueT } from "../src/generated/flatbuffers/search-kernel/v2/non-finite-float-value.js";
@@ -145,4 +146,51 @@ it("sorts semantic-map keys by Unicode scalar value, not UTF-16 code units", () 
   const encoded = value({ [nonBmp]: 1, [bmp]: 2 });
   const object = encoded.kind as ValueObjectT;
   expect(object.fields.map((entry) => entry.key)).toEqual([bmp, nonBmp]);
+});
+
+
+it("rejects missing required ValueObject payloads", () => {
+  const malformed = new ValueT(
+    ValueKind.ValueObject,
+    new ValueObjectT([new ValueEntryT("missing", null)]),
+  );
+  expect(() => fromValue(malformed)).toThrow(/Value payload/);
+});
+
+it("rejects malformed tensor addresses and non-finite decoded cells", () => {
+  const missingLabel = new ValueT(
+    ValueKind.TensorValue,
+    new TensorValueT(
+      "tensor<float>(category{})",
+      TensorPayloadKind.SparseTensorCells,
+      new SparseTensorCellsT([new TensorCellT([new TensorAddressEntryT("category", null)], 1)]),
+    ),
+  );
+  expect(() => fromValue(missingLabel)).toThrow(/dimension or label/);
+
+  const dense = new ValueT(
+    ValueKind.TensorValue,
+    new TensorValueT("tensor<float>(x[1])", TensorPayloadKind.DenseTensorValues, new DenseTensorValuesT([Number.NaN])),
+  );
+  expect(() => fromValue(dense)).toThrow(/finite/);
+
+  const sparse = new ValueT(
+    ValueKind.TensorValue,
+    new TensorValueT(
+      "tensor<float>(category{})",
+      TensorPayloadKind.SparseTensorCells,
+      new SparseTensorCellsT([new TensorCellT([new TensorAddressEntryT("category", "books")], Number.POSITIVE_INFINITY)]),
+    ),
+  );
+  expect(() => fromValue(sparse)).toThrow(/finite/);
+
+  const mixed = new ValueT(
+    ValueKind.TensorValue,
+    new TensorValueT(
+      "tensor<float>(category{},x[1])",
+      TensorPayloadKind.MixedTensorBlocks,
+      new MixedTensorBlocksT([new TensorBlockT([new TensorAddressEntryT("category", "books")], [Number.NEGATIVE_INFINITY])]),
+    ),
+  );
+  expect(() => fromValue(mixed)).toThrow(/finite/);
 });

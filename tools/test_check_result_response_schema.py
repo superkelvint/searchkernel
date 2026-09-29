@@ -34,6 +34,24 @@ class ResultResponseSchemaTest(unittest.TestCase):
         )
         self.assertTrue(any("TotalHitsRelation members mismatch" in error for error in MODULE.verify(schema)))
 
+    def test_field_type_change_fails(self) -> None:
+        schema = MODULE.SCHEMA.read_text().replace(
+            "fields:[ValueEntry];", "fields:[StringEntry];", 1
+        )
+        self.assertTrue(any("wire members mismatch" in error for error in MODULE.verify(schema)))
+
+    def test_enum_numeric_identity_change_fails(self) -> None:
+        schema = MODULE.SCHEMA.read_text().replace("Unknown = 4", "Unknown = 9", 1)
+        self.assertTrue(any("wire members mismatch" in error for error in MODULE.verify(schema)))
+
+    def test_union_reordering_fails(self) -> None:
+        schema = MODULE.SCHEMA.read_text().replace(
+            "union ResultNodeKind {\n  Hit,\n  ResultGroup\n}",
+            "union ResultNodeKind {\n  ResultGroup,\n  Hit\n}",
+            1,
+        )
+        self.assertTrue(any("wire members mismatch" in error for error in MODULE.verify(schema)))
+
     def test_new_union_arm_fails(self) -> None:
         schema = MODULE.SCHEMA.read_text().replace(
             "  ResultGroup\n}", "  ResultGroup,\n  FutureNode\n}", 1

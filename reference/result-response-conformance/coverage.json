@@ -12,6 +12,15 @@
         "timing",
         "total_hits",
         "trace"
+      ],
+      "wire_members": [
+        "root:ResultNode",
+        "total_hits:TotalHits",
+        "coverage:Coverage",
+        "timing:SearchTiming",
+        "errors:[SearchResultError]",
+        "trace:Value",
+        "metadata:[ValueEntry]"
       ]
     },
     "ValueEntry": {
@@ -19,12 +28,19 @@
       "members": [
         "key",
         "value"
+      ],
+      "wire_members": [
+        "key:string(key)",
+        "value:Value"
       ]
     },
     "Value": {
       "kind": "table",
       "members": [
         "kind"
+      ],
+      "wire_members": [
+        "kind:ValueKind"
       ]
     },
     "ValueKind": {
@@ -41,6 +57,19 @@
         "UInt64Value",
         "ValueList",
         "ValueObject"
+      ],
+      "wire_members": [
+        "NullValueValue",
+        "BoolValue",
+        "Int64Value",
+        "UInt64Value",
+        "Float64Value",
+        "NonFiniteFloatValue",
+        "StringValue",
+        "BytesValue",
+        "ValueList",
+        "ValueObject",
+        "TensorValue"
       ]
     },
     "TensorValue": {
@@ -48,6 +77,10 @@
       "members": [
         "payload",
         "type_spec"
+      ],
+      "wire_members": [
+        "type_spec:string",
+        "payload:TensorPayloadKind"
       ]
     },
     "TensorPayloadKind": {
@@ -56,12 +89,20 @@
         "DenseTensorValues",
         "MixedTensorBlocks",
         "SparseTensorCells"
+      ],
+      "wire_members": [
+        "DenseTensorValues",
+        "SparseTensorCells",
+        "MixedTensorBlocks"
       ]
     },
     "MixedTensorBlocks": {
       "kind": "table",
       "members": [
         "blocks"
+      ],
+      "wire_members": [
+        "blocks:[TensorBlock]"
       ]
     },
     "TensorBlock": {
@@ -69,6 +110,10 @@
       "members": [
         "address",
         "values"
+      ],
+      "wire_members": [
+        "address:[TensorAddressEntry]",
+        "values:[double]"
       ]
     },
     "TensorAddressEntry": {
@@ -76,12 +121,19 @@
       "members": [
         "dimension",
         "label"
+      ],
+      "wire_members": [
+        "dimension:string(key)",
+        "label:string"
       ]
     },
     "SparseTensorCells": {
       "kind": "table",
       "members": [
         "cells"
+      ],
+      "wire_members": [
+        "cells:[TensorCell]"
       ]
     },
     "TensorCell": {
@@ -89,42 +141,64 @@
       "members": [
         "address",
         "value"
+      ],
+      "wire_members": [
+        "address:[TensorAddressEntry]",
+        "value:double"
       ]
     },
     "DenseTensorValues": {
       "kind": "table",
       "members": [
         "values"
+      ],
+      "wire_members": [
+        "values:[double]"
       ]
     },
     "ValueObject": {
       "kind": "table",
       "members": [
         "fields"
+      ],
+      "wire_members": [
+        "fields:[ValueEntry]"
       ]
     },
     "ValueList": {
       "kind": "table",
       "members": [
         "values"
+      ],
+      "wire_members": [
+        "values:[Value]"
       ]
     },
     "BytesValue": {
       "kind": "table",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:[ubyte]"
       ]
     },
     "StringValue": {
       "kind": "table",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:string"
       ]
     },
     "NonFiniteFloatValue": {
       "kind": "table",
       "members": [
         "kind"
+      ],
+      "wire_members": [
+        "kind:NonFiniteFloatKind=Unspecified"
       ]
     },
     "NonFiniteFloatKind": {
@@ -134,36 +208,57 @@
         "NegativeInfinity",
         "PositiveInfinity",
         "Unspecified"
+      ],
+      "wire_members": [
+        "Unspecified=0",
+        "NaN=1",
+        "PositiveInfinity=2",
+        "NegativeInfinity=3"
       ]
     },
     "Float64Value": {
       "kind": "table",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:double"
       ]
     },
     "UInt64Value": {
       "kind": "table",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:ulong"
       ]
     },
     "Int64Value": {
       "kind": "table",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:long"
       ]
     },
     "BoolValue": {
       "kind": "table",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:bool"
       ]
     },
     "NullValueValue": {
       "kind": "table",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:NullValue=Unspecified"
       ]
     },
     "NullValue": {
@@ -171,6 +266,10 @@
       "members": [
         "Null",
         "Unspecified"
+      ],
+      "wire_members": [
+        "Unspecified=0",
+        "Null=1"
       ]
     },
     "SearchResultError": {
@@ -183,12 +282,24 @@
         "stack_trace",
         "summary",
         "transient"
+      ],
+      "wire_members": [
+        "code:long",
+        "summary:string",
+        "message:string",
+        "source:string",
+        "stack_trace:string",
+        "transient:OptionalBool",
+        "metadata:[ValueEntry]"
       ]
     },
     "OptionalBool": {
       "kind": "struct",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:bool"
       ]
     },
     "SearchTiming": {
@@ -198,12 +309,21 @@
         "query_time_seconds",
         "search_time_seconds",
         "summary_fetch_time_seconds"
+      ],
+      "wire_members": [
+        "query_time_seconds:OptionalDouble",
+        "search_time_seconds:OptionalDouble",
+        "summary_fetch_time_seconds:OptionalDouble",
+        "metadata:[ValueEntry]"
       ]
     },
     "OptionalDouble": {
       "kind": "struct",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:double"
       ]
     },
     "Coverage": {
@@ -217,6 +337,16 @@
         "nodes",
         "results",
         "results_full"
+      ],
+      "wire_members": [
+        "coverage_percent:OptionalDouble",
+        "documents:OptionalUInt64",
+        "full:OptionalBool",
+        "nodes:OptionalUInt32",
+        "results:OptionalUInt64",
+        "results_full:OptionalUInt64",
+        "degraded:CoverageDegraded",
+        "metadata:[ValueEntry]"
       ]
     },
     "CoverageDegraded": {
@@ -228,18 +358,32 @@
         "metadata",
         "non_ideal_state",
         "timeout"
+      ],
+      "wire_members": [
+        "match_phase:OptionalBool",
+        "timeout:OptionalBool",
+        "adaptive_timeout:OptionalBool",
+        "ann_timeout:OptionalBool",
+        "non_ideal_state:OptionalBool",
+        "metadata:[ValueEntry]"
       ]
     },
     "OptionalUInt64": {
       "kind": "struct",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:ulong"
       ]
     },
     "OptionalUInt32": {
       "kind": "struct",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:uint"
       ]
     },
     "TotalHits": {
@@ -247,6 +391,10 @@
       "members": [
         "relation",
         "value"
+      ],
+      "wire_members": [
+        "value:ulong",
+        "relation:TotalHitsRelation=Unspecified"
       ]
     },
     "TotalHitsRelation": {
@@ -257,17 +405,31 @@
         "LowerBound",
         "Unknown",
         "Unspecified"
+      ],
+      "wire_members": [
+        "Unspecified=0",
+        "Exact=1",
+        "LowerBound=2",
+        "Approximate=3",
+        "Unknown=4"
       ]
     },
     "ResultNode": {
       "kind": "table",
       "members": [
         "node"
+      ],
+      "wire_members": [
+        "node:ResultNodeKind"
       ]
     },
     "ResultNodeKind": {
       "kind": "union",
       "members": [
+        "Hit",
+        "ResultGroup"
+      ],
+      "wire_members": [
         "Hit",
         "ResultGroup"
       ]
@@ -286,6 +448,19 @@
         "source",
         "types",
         "value"
+      ],
+      "wire_members": [
+        "id:string",
+        "label:string",
+        "value:Value",
+        "fields:[ValueEntry]",
+        "children:[ResultNode]",
+        "continuations:[StringEntry]",
+        "source:string",
+        "types:[string]",
+        "relevance:Relevance",
+        "limits:ResultLimits",
+        "metadata:[ValueEntry]"
       ]
     },
     "ResultLimits": {
@@ -293,12 +468,19 @@
       "members": [
         "from",
         "to"
+      ],
+      "wire_members": [
+        "from:Value",
+        "to:Value"
       ]
     },
     "Relevance": {
       "kind": "table",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:RelevanceKind"
       ]
     },
     "RelevanceKind": {
@@ -307,20 +489,30 @@
         "FiniteRelevance",
         "NegativeInfinityRelevance",
         "PositiveInfinityRelevance"
+      ],
+      "wire_members": [
+        "FiniteRelevance",
+        "NegativeInfinityRelevance",
+        "PositiveInfinityRelevance"
       ]
     },
     "PositiveInfinityRelevance": {
       "kind": "table",
-      "members": []
+      "members": [],
+      "wire_members": []
     },
     "NegativeInfinityRelevance": {
       "kind": "table",
-      "members": []
+      "members": [],
+      "wire_members": []
     },
     "FiniteRelevance": {
       "kind": "table",
       "members": [
         "value"
+      ],
+      "wire_members": [
+        "value:double"
       ]
     },
     "StringEntry": {
@@ -328,6 +520,10 @@
       "members": [
         "key",
         "value"
+      ],
+      "wire_members": [
+        "key:string(key)",
+        "value:string"
       ]
     },
     "Hit": {
@@ -343,6 +539,18 @@
         "source",
         "summary_features",
         "types"
+      ],
+      "wire_members": [
+        "id:string",
+        "relevance:Relevance",
+        "fields:[ValueEntry]",
+        "highlights:[HighlightResult]",
+        "source:string",
+        "types:[string]",
+        "match_features:[ValueEntry]",
+        "summary_features:[ValueEntry]",
+        "rank_features:[ValueEntry]",
+        "sort_values:[Value]"
       ]
     },
     "HighlightResult": {
@@ -350,6 +558,10 @@
       "members": [
         "field",
         "fragments"
+      ],
+      "wire_members": [
+        "field:string",
+        "fragments:[HighlightFragment]"
       ]
     },
     "HighlightFragment": {
@@ -357,6 +569,10 @@
       "members": [
         "matches",
         "text"
+      ],
+      "wire_members": [
+        "text:string",
+        "matches:[HighlightSpan]"
       ]
     },
     "HighlightSpan": {
@@ -364,6 +580,10 @@
       "members": [
         "end_byte",
         "start_byte"
+      ],
+      "wire_members": [
+        "start_byte:uint",
+        "end_byte:uint"
       ]
     }
   },
@@ -951,6 +1171,45 @@
       ],
       "malformed.response_payload_union": [
         "unknown-response-payload-union"
+      ],
+      "malformed.missing_search_result_root": [
+        "missing-search-result-root"
+      ],
+      "malformed.missing_search_result_total_hits": [
+        "missing-search-result-total-hits"
+      ],
+      "malformed.missing_search_result_root_and_total_hits": [
+        "missing-search-result-root-and-total-hits"
+      ],
+      "malformed.missing_continuation_key": [
+        "missing-continuation-key"
+      ],
+      "malformed.missing_continuation_value": [
+        "missing-continuation-value"
+      ],
+      "malformed.missing_sparse_address_dimension": [
+        "missing-sparse-address-dimension"
+      ],
+      "malformed.missing_sparse_address_label": [
+        "missing-sparse-address-label"
+      ],
+      "malformed.missing_mixed_address_dimension": [
+        "missing-mixed-address-dimension"
+      ],
+      "malformed.missing_mixed_address_label": [
+        "missing-mixed-address-label"
+      ],
+      "malformed.missing_value_entry_value": [
+        "missing-value-entry-value"
+      ],
+      "malformed.non_finite_dense_tensor_cell": [
+        "non-finite-dense-tensor-cell"
+      ],
+      "malformed.non_finite_sparse_tensor_cell": [
+        "non-finite-sparse-tensor-cell"
+      ],
+      "malformed.non_finite_mixed_tensor_cell": [
+        "non-finite-mixed-tensor-cell"
       ]
     }
   },
