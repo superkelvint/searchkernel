@@ -111,13 +111,14 @@ pub fn run_low_level(root: &Json, config: &Path, data: &Path) -> Json {
         .put(Document::new(id_a).field(field, tensor(root, "b")))
         .expect("upsert tensor B");
     let upserted = document_tensor(&engine, id_a, field);
+    let nn_before_update = search(&engine);
 
     engine
         .update(DocumentUpdate::new(id_a).assign(field, tensor(root, "replacement")))
         .expect("patch tensor replacement");
     let patched = document_tensor(&engine, id_a, field);
     let nn_after_patch_immediate = search(&engine);
-    if nn_after_patch_immediate == nn_before_patch {
+    if nn_after_patch_immediate == nn_before_update {
         panic!("tensor UPDATE returned before immediate NN search reflected the replacement");
     }
     engine.close().expect("close after patched tensor");
