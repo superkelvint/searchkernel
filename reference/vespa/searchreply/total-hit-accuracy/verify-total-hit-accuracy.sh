@@ -29,8 +29,8 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
   grep -q 'approximate_nns_timed_out_queries' \
     "$VESPA_ROOT/searchcore/src/vespa/searchcore/proton/matching/matcher.cpp"
 fi
-grep -q 'TotalHitsRelation::Unknown' \
-  "$ROOT/core/crates/searchkernel-vespa-engine/src/native.rs"
+grep -R -q -E 'total_hits_relation:[[:space:]]*TotalHitsRelation::Unknown' \
+  "$ROOT/core/crates/searchkernel-vespa-engine/src/native" --include='*.rs'
 grep -q 'VespaTotalHitsRelation::Unknown' \
   "$ROOT/core/crates/searchkernel-ir-adapter/src/backend.rs"
 

@@ -13,7 +13,7 @@ fi
 
 should_use_ci_image() {
     case "${1:-}" in
-        ci|check|universe|check-fast|check-protocol|coverage|lint|test|verify)
+        ci|check|galaxy|universe|check-fast|check-protocol|coverage|lint|test|verify)
             return 0
             ;;
         native-sdk)
@@ -139,6 +139,7 @@ Search Kernel development commands
   ./dev build                 Build the supported Search Kernel product (M1 convergence pending)
   ./dev ci                    Run the intentionally cheap mandatory PR gate
   ./dev check                 Run the full repository quality and test suite
+  ./dev galaxy                Run broad routine checks without exhaustive verifiers
   ./dev universe              Run every repository test, E2E lane, and verifier
   ./dev release-check         Run distributable release qualification (implemented in M5)
   ./dev check-fast            Run formatting, compile, and boundary checks
@@ -358,6 +359,8 @@ check_fast() {
     bash "$ROOT/tools/test-ci-image-publishing.sh"
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
     "$PYTHON" "$ROOT/tools/test_searchkernel_native_linker.py"
+    "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+    "$PYTHON" "$ROOT/tools/test_dev_universe_summary.py"
     "$CARGO" fmt --all --check
     "$CARGO" check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
@@ -502,6 +505,8 @@ universe_print_summary() {
 
 universe() {
     local target
+    local failures_before_m14
+    local m14_baseline_proved=0
     local -a targets=()
     local -a UNIVERSE_PASSED=()
     local -a UNIVERSE_FAILED=()
@@ -536,24 +541,57 @@ universe() {
     universe_dev_step 'persistence compatibility verifier' verify persistence
     universe_dev_step 'issue queue verifier' verify issue-queue
 
-    mapfile -t targets < <(
-        "$ROOT/reference/vespa/verify-through.sh" --list |
-            awk '
-                /^Semantic verifier targets:/ { semantic = 1; next }
-                /^Milestone aggregate targets:/ { semantic = 0 }
-                semantic && NF { print $1 }
-            '
-    )
+    mapfile -t targets < <("$PYTHON" "$ROOT/tools/dev-targets.py" list universe)
     if (("${#targets[@]}" == 0)); then
         UNIVERSE_FAILED+=('semantic verifier discovery (no targets)')
         UNIVERSE_FAILED_REPRO+=('./dev verify --list')
-    else
-        for target in "${targets[@]}"; do
-            universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
-        done
     fi
 
+    # Run the cumulative M14 verifier once. Its chain proves the hardening
+    # (M11) and HNSW (M14) baselines before later semantic lanes run. Product
+    # integration can then use the existing baseline-reuse option to avoid
+    # replaying M13 while still running its Phase 10 checks.
+    failures_before_m14=${#UNIVERSE_FAILED[@]}
     universe_dev_step 'cumulative milestone.m14 closure' verify milestone.m14 --skip-workspace-quality
+    if (("${#UNIVERSE_FAILED[@]}" == failures_before_m14)); then
+        m14_baseline_proved=1
+    fi
+
+    for target in "${targets[@]}"; do
+        case "$target" in
+            vespa.nearest-neighbor.hnsw)
+                # This public verifier is an alias for verify-m14.sh. The
+                # cumulative lane above ran that exact verifier already.
+                echo "==> universe: semantic verifier $target covered by cumulative milestone.m14 closure"
+                if ((m14_baseline_proved)); then
+                    UNIVERSE_PASSED+=("semantic verifier $target (covered by cumulative milestone.m14 closure)")
+                else
+                    UNIVERSE_FAILED+=("semantic verifier $target (cumulative milestone.m14 closure failed)")
+                    UNIVERSE_FAILED_REPRO+=("./dev verify $target --skip-workspace-quality")
+                fi
+                ;;
+            vespa.hardening|vespa.hardening.core|vespa.hardening.stress|vespa.hardening.sanitizers)
+                if ((m14_baseline_proved)); then
+                    # M14's cumulative chain ran M11 and all three hardening
+                    # components. Do not execute those same scripts again.
+                    echo "==> universe: semantic verifier $target covered by cumulative milestone.m14 closure"
+                    UNIVERSE_PASSED+=("semantic verifier $target (covered by cumulative milestone.m14 closure)")
+                else
+                    universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
+                fi
+                ;;
+            product.integration)
+                if ((m14_baseline_proved)); then
+                    universe_dev_step "semantic verifier $target" verify "$target" --baseline-already-proved --skip-workspace-quality
+                else
+                    universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
+                fi
+                ;;
+            *)
+                universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
+                ;;
+        esac
+    done
 
     universe_print_summary "${#UNIVERSE_PASSED[@]}" UNIVERSE_FAILED UNIVERSE_FAILED_REPRO
 }
@@ -609,6 +647,9 @@ test_target() {
             ;;
         ruby)
             run_ruby_tests
+            ;;
+        searchkerneld-multi-index)
+            "$CARGO" test -p searchkerneld --features native --test multi_index --test process_shutdown
             ;;
         *)
             echo "registry error: test target '$target' has no dispatcher" >&2
@@ -1264,6 +1305,9 @@ case "${1:-help}" in
         ci_gate
         ;;
     check)
+        check_all
+        ;;
+    galaxy)
         check_all
         ;;
     universe)

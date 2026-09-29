@@ -129,6 +129,9 @@ Run these in increasing order of scope:
 # Full normal repository quality/test gate.
 ./dev check
 
+# Broad routine checks (same suite as ./dev check, without Universe-only lanes).
+./dev galaxy
+
 # Complete qualification: clients, E2E lanes, native/semantic verifiers,
 # ignored tests, and cumulative milestone closure.
 ./dev universe
@@ -173,6 +176,7 @@ cargo build -p searchkerneld
 
 ./dev check-fast
 ./dev check
+./dev galaxy
 ./dev universe
 ```
 

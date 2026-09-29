@@ -191,7 +191,7 @@ fn ruby_emitted_standard_json_matches_canonical_bfbs() {
     }
 
     assert_eq!(
-        count, 24,
+        count, 30,
         "expected operation discriminators, Error, values and recursive result"
     );
 }

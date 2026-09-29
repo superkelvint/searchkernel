@@ -133,8 +133,7 @@ host = ENV.fetch("SEARCHKERNEL_LOCAL_HOST")
 check(File.file?(host) && File.executable?(host), "SEARCHKERNEL_LOCAL_HOST is not an executable daemon: #{host}")
 
 Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
-  index_path = File.join(work, "index")
-  definition_path = File.join(work, "definition.json")
+  data_root = File.join(work, "data-root")
   socket_path = File.join(work, "searchkerneld.sock")
   stderr_path = File.join(work, "searchkerneld.stderr")
 
@@ -142,19 +141,15 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
     "title" => SearchKernel::Text.new(stored: true, searchable: true),
     "inventory" => SearchKernel::IntegerField.new(stored: true, filterable: true, sortable: true)
   }
-  definition = SearchKernel::Schema.index_definition(fields, nil)
-  File.write(definition_path, JSON.generate(definition, allow_nan: false))
-
   probe = TCPServer.new("127.0.0.1", 0)
   port = probe.addr[1]
   probe.close
 
   pid = Process.spawn(
     host,
-    "--index", index_path,
+    "--data-root", data_root,
     "--listen", "unix://#{socket_path}",
     "--web-listen", "127.0.0.1:#{port}",
-    "--definition-json", definition_path,
     pgroup: true,
     out: File::NULL,
     err: stderr_path
@@ -164,7 +159,11 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
     wait_until_ready(pid, port, stderr_path)
     base_url = "http://127.0.0.1:#{port}"
 
-    index = SearchKernel::Index.connect(base_url)
+    index = SearchKernel::Index.create(
+      base_url,
+      target: "products",
+      fields: fields
+    )
     begin
       described = index.describe
       same(%w[inventory title], described.fetch("fields").map { |field| field.fetch("name") }.sort,
@@ -193,7 +192,7 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
             "closed-client diagnostic lost its lifecycle error: #{error.message}")
     end
 
-    reopened = SearchKernel::Index.connect(base_url)
+    reopened = SearchKernel::Index.open(base_url, target: "products")
     begin
       same(2, reopened.get("package-1").fetch("inventory"),
            "external daemon remains usable after first client close")
@@ -204,10 +203,18 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
     end
     check(process_alive?(pid), "second client close terminated an externally owned daemon")
 
+    check(SearchKernel::Index.delete(base_url, target: "products"), "delete logical index")
+    begin
+      SearchKernel::Index.open(base_url, target: "products")
+      raise "deleted logical index unexpectedly reopened"
+    rescue SearchKernel::SearchKernelError => error
+      same("NotFound", error.code, "deleted logical index returns canonical NotFound")
+    end
+
     stop_daemon(pid)
     pid = nil
 
-    unavailable = SearchKernel::Index.connect(base_url, timeout: 0.25)
+    unavailable = SearchKernel::Index.connect(base_url, target: "products", timeout: 0.25)
     begin
       unavailable.get("package-1")
       raise "request to stopped external daemon unexpectedly succeeded"

@@ -28,12 +28,17 @@ def canonical(kind, name):
 
 def main():
     if len(sys.argv) < 3 or sys.argv[1] not in {"list", "resolve"}:
-        raise SystemExit("usage: dev-targets.py list <test|verify> | resolve <test|verify> <target>")
+        raise SystemExit("usage: dev-targets.py list <test|verify|universe> | resolve <test|verify> <target>")
     action, kind = sys.argv[1:3]
-    if kind not in {"test", "verify"}:
+    if kind not in {"test", "verify", "universe"}:
         raise SystemExit(f"unknown target kind: {kind}")
+    if action == "resolve" and kind == "universe":
+        raise SystemExit("universe is a list-only verifier collection")
     if action == "list":
-        for target, meta in entries(kind).items():
+        source = entries("verify") if kind == "universe" else entries(kind)
+        for target, meta in source.items():
+            if kind == "universe" and meta.get("universe") != "semantic":
+                continue
             prefix = "  " if kind == "verify" else ""
             print(f"{prefix}{target}")
         return

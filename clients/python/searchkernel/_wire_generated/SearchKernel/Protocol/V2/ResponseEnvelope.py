@@ -93,6 +93,8 @@ _lazy_AnalyzeResult = _lazy_module("SearchKernel.V2.AnalyzeResult")
 
 _lazy_CreateIndexResult = _lazy_module("SearchKernel.V2.CreateIndexResult")
 
+_lazy_DeleteIndexResult = _lazy_module("SearchKernel.V2.DeleteIndexResult")
+
 _lazy_DeleteResult = _lazy_module("SearchKernel.V2.DeleteResult")
 
 _lazy_DescribeResult = _lazy_module("SearchKernel.V2.DescribeResult")
@@ -130,7 +132,7 @@ class ResponseEnvelopeT(object):
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
-        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertResult.InsertResultT', 'SearchKernel.V2.UpsertResult.UpsertResultT', 'SearchKernel.V2.PatchResult.PatchResultT', 'SearchKernel.V2.DeleteResult.DeleteResultT', 'SearchKernel.V2.GetResult.GetResultT', 'SearchKernel.V2.SearchResult.SearchResultT', 'SearchKernel.V2.AnalyzeResult.AnalyzeResultT', 'SearchKernel.V2.Error.ErrorT', 'SearchKernel.V2.DescribeResult.DescribeResultT', 'SearchKernel.V2.InspectQueryResult.InspectQueryResultT', 'SearchKernel.V2.UpdateResult.UpdateResultT', 'SearchKernel.V2.CreateIndexResult.CreateIndexResultT', 'SearchKernel.V2.OpenIndexResult.OpenIndexResultT']
+        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertResult.InsertResultT', 'SearchKernel.V2.UpsertResult.UpsertResultT', 'SearchKernel.V2.PatchResult.PatchResultT', 'SearchKernel.V2.DeleteResult.DeleteResultT', 'SearchKernel.V2.GetResult.GetResultT', 'SearchKernel.V2.SearchResult.SearchResultT', 'SearchKernel.V2.AnalyzeResult.AnalyzeResultT', 'SearchKernel.V2.Error.ErrorT', 'SearchKernel.V2.DescribeResult.DescribeResultT', 'SearchKernel.V2.InspectQueryResult.InspectQueryResultT', 'SearchKernel.V2.UpdateResult.UpdateResultT', 'SearchKernel.V2.CreateIndexResult.CreateIndexResultT', 'SearchKernel.V2.OpenIndexResult.OpenIndexResultT', 'SearchKernel.V2.DeleteIndexResult.DeleteIndexResultT']
 
     @classmethod
     def InitFromBuf(cls, buf, pos):

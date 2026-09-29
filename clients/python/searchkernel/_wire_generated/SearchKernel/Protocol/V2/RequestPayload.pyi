@@ -6,6 +6,7 @@ import numpy as np
 import typing
 from SearchKernel.V2.AnalyzeRequest import AnalyzeRequest
 from SearchKernel.V2.CreateIndexRequest import CreateIndexRequest
+from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequest
 from SearchKernel.V2.DeleteRequest import DeleteRequest
 from SearchKernel.V2.DescribeRequest import DescribeRequest
 from SearchKernel.V2.GetRequest import GetRequest
@@ -35,5 +36,6 @@ class RequestPayload(object):
   SearchKernel_V2_UpdateRequest = cast(int, ...)
   SearchKernel_V2_CreateIndexRequest = cast(int, ...)
   SearchKernel_V2_OpenIndexRequest = cast(int, ...)
-def RequestPayloadCreator(union_type: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_V2_InsertRequest, RequestPayload.SearchKernel_V2_UpsertRequest, RequestPayload.SearchKernel_V2_PatchRequest, RequestPayload.SearchKernel_V2_DeleteRequest, RequestPayload.SearchKernel_V2_GetRequest, RequestPayload.SearchKernel_V2_SearchRequest, RequestPayload.SearchKernel_V2_AnalyzeRequest, RequestPayload.SearchKernel_V2_DescribeRequest, RequestPayload.SearchKernel_V2_InspectQueryRequest, RequestPayload.SearchKernel_V2_UpdateRequest, RequestPayload.SearchKernel_V2_CreateIndexRequest, RequestPayload.SearchKernel_V2_OpenIndexRequest], table: table.Table) -> typing.Union[None, InsertRequest, UpsertRequest, PatchRequest, DeleteRequest, GetRequest, SearchRequest, AnalyzeRequest, DescribeRequest, InspectQueryRequest, UpdateRequest, CreateIndexRequest, OpenIndexRequest]: ...
+  SearchKernel_V2_DeleteIndexRequest = cast(int, ...)
+def RequestPayloadCreator(union_type: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_V2_InsertRequest, RequestPayload.SearchKernel_V2_UpsertRequest, RequestPayload.SearchKernel_V2_PatchRequest, RequestPayload.SearchKernel_V2_DeleteRequest, RequestPayload.SearchKernel_V2_GetRequest, RequestPayload.SearchKernel_V2_SearchRequest, RequestPayload.SearchKernel_V2_AnalyzeRequest, RequestPayload.SearchKernel_V2_DescribeRequest, RequestPayload.SearchKernel_V2_InspectQueryRequest, RequestPayload.SearchKernel_V2_UpdateRequest, RequestPayload.SearchKernel_V2_CreateIndexRequest, RequestPayload.SearchKernel_V2_OpenIndexRequest, RequestPayload.SearchKernel_V2_DeleteIndexRequest], table: table.Table) -> typing.Union[None, InsertRequest, UpsertRequest, PatchRequest, DeleteRequest, GetRequest, SearchRequest, AnalyzeRequest, DescribeRequest, InspectQueryRequest, UpdateRequest, CreateIndexRequest, OpenIndexRequest, DeleteIndexRequest]: ...
 
