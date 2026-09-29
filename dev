@@ -13,7 +13,7 @@ fi
 
 should_use_ci_image() {
     case "${1:-}" in
-        check|galaxy|universe|check-fast|check-protocol|coverage|lint|test|verify)
+        ci|check|galaxy|universe|check-fast|check-protocol|coverage|lint|test|verify)
             return 0
             ;;
         native-sdk)
@@ -137,7 +137,7 @@ usage() {
 Search Kernel development commands
 
   ./dev build                 Build the supported Search Kernel product (M1 convergence pending)
-  ./dev ci                    Run the intentionally cheap mandatory PR gate (M1 convergence pending)
+  ./dev ci                    Run the intentionally cheap mandatory PR gate
   ./dev check                 Run the full repository quality and test suite
   ./dev galaxy                Run broad routine checks without exhaustive verifiers
   ./dev universe              Run every repository test, E2E lane, and verifier
@@ -174,7 +174,7 @@ Search Kernel development commands
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Repair and verify local build/verification prerequisites
 
-Build/test/verify commands run in docker.io/superkelvint/searchkernel-ci:latest
+Build/ci/test/verify commands run in docker.io/superkelvint/searchkernel-ci:latest
 by default, using a disposable source snapshot and worktree-scoped compatible
 Cargo target state. Set
 SEARCHKERNEL_DEV_USE_CI_IMAGE=0 for an intentional host execution,
@@ -377,6 +377,21 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
     run_typescript_generation_check
     "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
+    "$PYTHON" "$ROOT/tools/test_build_system_ci.py"
+}
+
+ci_gate() {
+    echo "== cargo fmt =="
+    "$CARGO" fmt --all -- --check
+
+    echo "== cargo check =="
+    "$CARGO" check --workspace --all-targets --no-default-features --locked
+
+    echo "== native test compile smoke =="
+    "$CARGO" check -p searchkerneld --tests --features native --locked
+
+    echo "== cargo clippy =="
+    "$CARGO" clippy --workspace --all-targets --no-default-features --locked -- -D warnings
 }
 
 check_protocol() {
@@ -521,6 +536,7 @@ universe() {
 
     universe_dev_step 'API conformance verifier' verify api-conformance
     universe_dev_step 'capability/client contract verifiers' verify contracts
+    universe_dev_step 'client semantic parity verifier' verify client-semantic-parity
     universe_dev_step 'native ABI verifier' verify abi
     universe_dev_step 'persistence compatibility verifier' verify persistence
     universe_dev_step 'issue queue verifier' verify issue-queue
@@ -667,6 +683,19 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
             "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
+            ;;
+        client-semantic-parity)
+            doctor_repair_python
+            doctor_repair_typescript
+            command -v php >/dev/null 2>&1 || {
+                echo 'error: PHP is required for client semantic parity' >&2
+                return 1
+            }
+            command -v ruby >/dev/null 2>&1 || {
+                echo 'error: Ruby is required for client semantic parity' >&2
+                return 1
+            }
+            "$PYTHON" "$ROOT/tools/check-client-semantic-parity.py"
             ;;
         abi)
             local_baseline=$(mktemp)
@@ -1266,7 +1295,11 @@ case "${1:-help}" in
         planned_command build M1
         ;;
     ci)
-        planned_command ci M1
+        [[ $# -eq 1 ]] || {
+            echo 'usage: ./dev ci' >&2
+            exit 2
+        }
+        ci_gate
         ;;
     check)
         check_all
