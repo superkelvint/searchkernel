@@ -426,6 +426,10 @@ bookkeeping_command() {
         sync)
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --write
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --write
+            "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+            "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+            "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
             ;;
         *)
             echo 'usage: ./dev bookkeeping check|sync' >&2
