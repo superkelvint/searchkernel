@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "authority": "SearchResult transitive closure from api/searchkernel.fbs; every member is pinned and exercised against official BFBS JSON projections.",
+  "authority": "SearchResult transitive closure from core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs reflection metadata; the checked-in BFBS is reproducibly generated from api/searchkernel_response.fbs and every member is pinned and exercised against official BFBS JSON projections.",
   "schema": {
     "SearchResult": {
       "kind": "table",
