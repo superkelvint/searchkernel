@@ -127,7 +127,6 @@ class DevTargetsTest(unittest.TestCase):
             text = (ROOT / relative).read_text()
             self.assertIn("SEARCHKERNEL_SEMANTIC_SNAPSHOT", text, relative)
             self.assertNotIn("target/debug/searchkernel-semantic-snapshot", text, relative)
-
         self.assertNotIn(
             "cargo','build",
             (ROOT / "clients/python/tests/test_semantic_parity.py").read_text(),
@@ -135,6 +134,39 @@ class DevTargetsTest(unittest.TestCase):
         self.assertNotIn(
             'execFileSync("cargo"',
             (ROOT / "clients/typescript/tests/semantic-parity.test.ts").read_text(),
+        )
+
+    def test_result_schema_changes_select_client_semantic_parity(self):
+        for path in (
+            "api/searchkernel.fbs",
+            "core/crates/searchkernel-protocol/src/lib.rs",
+            "core/crates/searchkernel-protocol/src/generated/search_kernel/v2/search_result_generated.rs",
+            "core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs",
+            "reference/result-response-conformance/coverage.json",
+            "tools/check-flatbuffers-bfbs.sh",
+            "tools/check-result-response-schema.py",
+            "tools/test_check_result_response_schema.py",
+            "tools/flatbuffers/reflection.fbs",
+            "dev",
+        ):
+            with self.subTest(path=path):
+                areas = json.loads(REGISTRY.read_text())["change_areas"]
+                matching = [
+                    (prefix, metadata)
+                    for prefix, metadata in areas.items()
+                    if path == prefix.rstrip("/")
+                    or (prefix.endswith("/") and path.startswith(prefix))
+                ]
+                self.assertTrue(matching, path)
+                _, metadata = max(matching, key=lambda item: len(item[0]))
+                self.assertIn("verify:client-semantic-parity", metadata["verify"])
+
+    def test_parity_verifies_bfbs_freshness_before_result_schema_walker(self):
+        driver = (ROOT / "dev").read_text()
+        parity = driver.split("client-semantic-parity)", 1)[1].split("abi)", 1)[0]
+        self.assertLess(
+            parity.index('bash "$ROOT/tools/check-flatbuffers-bfbs.sh"'),
+            parity.index('"$PYTHON" "$ROOT/tools/check-result-response-schema.py"'),
         )
 
     def test_unknown_target_fails_closed(self):
