@@ -1255,8 +1255,8 @@ mod tests {
             ..Default::default()
         });
 
-        let bytes =
-            core::search_result_to_api(&result).expect("production encoder must accept non-finite scalar values");
+        let bytes = core::search_result_to_api(&result)
+            .expect("production encoder must accept non-finite scalar values");
         let encoded = core::__flatbuffers::root::<wire::SearchResult>(&bytes)
             .expect("production-encoded SearchResult must decode as FlatBuffers");
         let decoded = core::search_result_from_api(encoded)
