@@ -14,6 +14,7 @@ from typing import NamedTuple
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "build" / "targets.json"
+ROOT_FILE_EXEMPTIONS = {"LICENSE"}
 
 
 class Boundary(NamedTuple):
@@ -76,6 +77,11 @@ def structural_boundaries(
     )
     result = [Boundary("top-level", f"{name}/") for name in top_level]
     result.extend(
+        Boundary("root-file", path)
+        for path in sorted(paths)
+        if "/" not in path and path not in ROOT_FILE_EXEMPTIONS
+    )
+    result.extend(
         Boundary("workspace", member.rstrip("/") + "/")
         for member in members
     )
@@ -130,16 +136,10 @@ def _autofix_boundary(
     name = path.rstrip("/").split("/")[-1]
 
     if boundary.kind == "workspace" and path.startswith("core/crates/"):
-        meta = _clone_template(data, "core/crates/")
-        meta["owner"] = name
-        meta["area"] = f"Rust crate: {name}"
-        meta["read"] = _read_path_for(
-            tracked, path, "core/crates/README.md"
+        return None, (
+            f"{path} is a new Rust crate boundary; owner, architecture, and "
+            "strong verifier require an explicit decision"
         )
-        meta["rules"] = [
-            "Start from the Rust-workspace defaults; replace generic checks when a crate gains a dedicated verification lane."
-        ]
-        return meta, None
 
     if boundary.kind == "client":
         if name not in data["test"]:
@@ -167,13 +167,10 @@ def _autofix_boundary(
         return meta, None
 
     if boundary.kind == "integration":
-        meta = _clone_template(data, "integrations/")
-        meta["owner"] = name
-        meta["area"] = f"{name.title()} integration"
-        meta["read"] = _read_path_for(
-            tracked, path, "docs/architecture.md"
+        return None, (
+            f"{path} is a new integration boundary; owner, architecture, and "
+            "strong verifier require an explicit decision"
         )
-        return meta, None
 
     if boundary.kind == "workspace":
         return None, (
@@ -185,6 +182,12 @@ def _autofix_boundary(
         return None, (
             f"{path} is a new top-level repository area; ownership and "
             "verification require an explicit map entry"
+        )
+
+    if boundary.kind == "root-file":
+        return None, (
+            f"{path} is a new tracked repository-root authority; ownership "
+            "and verification require an explicit map entry or exemption"
         )
 
     return None, f"unsupported boundary kind {boundary.kind}: {path}"
