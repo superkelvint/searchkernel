@@ -647,7 +647,16 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
             ;;
         client-semantic-parity)
+            doctor_repair_python
             doctor_repair_typescript
+            command -v php >/dev/null 2>&1 || {
+                echo 'error: PHP is required for client semantic parity' >&2
+                return 1
+            }
+            command -v ruby >/dev/null 2>&1 || {
+                echo 'error: Ruby is required for client semantic parity' >&2
+                return 1
+            }
             "$PYTHON" "$ROOT/tools/check-client-semantic-parity.py"
             ;;
         abi)
