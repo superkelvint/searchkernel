@@ -260,7 +260,8 @@
       ],
       "verify": [
         "verify:api-conformance",
-        "verify:contracts"
+        "verify:contracts",
+        "verify:client-semantic-parity"
       ],
       "generated": false,
       "rules": [
@@ -506,7 +507,8 @@
       "architecture": "docs/architecture.md#canonical-contracts",
       "test": [],
       "verify": [
-        "verify:contracts"
+        "verify:contracts",
+        "verify:client-semantic-parity"
       ],
       "generated": false,
       "rules": [
@@ -1226,6 +1228,44 @@
       "native_base_rebuild": false,
       "focused_check": "command:check-fast",
       "strong_check": "command:check-fast"
+    },
+    "tools/check-result-response-schema.py": {
+      "owner": "result-response-conformance",
+      "area": "BFBS-derived result schema coverage guard",
+      "read": [
+        "reference/result-response-conformance/coverage.json"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "generated": false,
+      "rules": [
+        "Derive SearchResult schema structure from the checked-in BFBS reflection authority; do not parse .fbs source text."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
+    },
+    "tools/test_check_result_response_schema.py": {
+      "owner": "result-response-conformance",
+      "area": "Result schema coverage guard regressions",
+      "read": [
+        "reference/result-response-conformance/coverage.json"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "generated": false,
+      "rules": [
+        "Keep BFBS authority and fail-closed schema coverage behavior under regression test."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
     }
   }
 }
