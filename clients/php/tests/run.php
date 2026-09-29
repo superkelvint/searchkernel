@@ -239,6 +239,44 @@ foreach ($malformedFacadeCases as [$resultType, $operation, $payload]) {
     );
 }
 
+$getFieldCases = [
+    'duplicate key' => [
+        ['key' => 'same', 'value' => Protocol::value(1)],
+        ['key' => 'same', 'value' => Protocol::value(2)],
+    ],
+    'null entry' => [null],
+    'missing key' => [['value' => Protocol::value(1)]],
+    'missing value' => [['key' => 'missing']],
+];
+foreach ($getFieldCases as $label => $fields) {
+    $malformedGet = new Index(new FixedResponseTransport([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_GetResult',
+        'payload' => ['document' => ['id' => 'doc-1', 'fields' => $fields]],
+    ]));
+    throws(
+        ProtocolException::class,
+        static fn () => $malformedGet->get('doc-1'),
+        'GET rejects malformed semantic map: ' . $label,
+    );
+}
+$validGet = new Index(new FixedResponseTransport([
+    'protocol_version' => 2,
+    'payload_type' => 'SearchKernel_V2_GetResult',
+    'payload' => ['document' => [
+        'id' => 'doc-1',
+        'fields' => [
+            ['key' => 'nothing', 'value' => Protocol::value(null)],
+            ['key' => 'count', 'value' => Protocol::value(3)],
+        ],
+    ]],
+]));
+same(
+    ['nothing' => null, 'count' => 3, '_id' => 'doc-1'],
+    $validGet->get('doc-1'),
+    'GET preserves explicit canonical null and valid semantic-map values',
+);
+
 $transport = new RecordingTransport();
 $index = new Index($transport);
 
