@@ -178,7 +178,7 @@ class PublicationGateFeedView final : public proton::IFeedView {
 
 public:
     PublicationGateFeedView(proton::IFeedView::SP delegate,
-                             std::shared_ptr<FailpointController> failpoints)
+                             std::shared_ptr<FailpointController> failpoints) noexcept
         : _delegate(std::move(delegate)), _failpoints(std::move(failpoints)) {}
 
     const std::shared_ptr<const document::DocumentTypeRepo>& getDocumentTypeRepo() const override {
