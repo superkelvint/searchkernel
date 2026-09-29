@@ -1259,7 +1259,7 @@ mod tests {
             relation: searchkernel_ir::TotalHitsRelation::Exact,
         };
 
-        let mut ordinary = searchkernel_ir::SearchResult::empty(total_hits.clone());
+        let mut ordinary = searchkernel_ir::SearchResult::empty(total_hits);
         ordinary.root = searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
             id: "ordinary".to_owned(),
             fields: BTreeMap::from([("title".to_owned(), Value::String("ok".into()))]),

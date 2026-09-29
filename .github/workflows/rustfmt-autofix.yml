@@ -26,11 +26,15 @@ jobs:
     env:
       CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}/rustfmt-${{ github.run_id }}-${{ github.run_attempt }}-format
 
     steps:
       - name: Check out exact PR head
         uses: actions/checkout@v4
         with:
+          path: rustfmt-${{ github.run_id }}-${{ github.run_attempt }}-format
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
@@ -97,11 +101,15 @@ jobs:
     env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}/rustfmt-${{ github.run_id }}-${{ github.run_attempt }}-push
 
     steps:
       - name: Check out exact PR head
         uses: actions/checkout@v4
         with:
+          path: rustfmt-${{ github.run_id }}-${{ github.run_attempt }}-push
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
