@@ -26,6 +26,13 @@ def canonical(kind, name):
             return target
     return None
 
+def _matches_area(normalized, prefix):
+    """Match exact files exactly and directory prefixes only at path boundaries."""
+    target = prefix.rstrip("/")
+    if normalized == target:
+        return True
+    return prefix.endswith("/") and normalized.startswith(prefix)
+
 def explain(path):
     """Print the most specific registered ownership guidance for a path."""
     parsed = pathlib.PurePosixPath(path.replace("\\", "/"))
@@ -36,7 +43,7 @@ def explain(path):
     matches = [
         (prefix, metadata)
         for prefix, metadata in entries("change_areas").items()
-        if normalized == prefix.rstrip("/") or normalized.startswith(prefix)
+        if _matches_area(normalized, prefix)
     ]
     if not matches:
         print(f"no change area registered for path: {path}", file=sys.stderr)
@@ -47,20 +54,20 @@ def explain(path):
     print(f"Owner: {metadata['owner']}")
     print(f"Architecture: {metadata['architecture']}")
     print("Read: " + ", ".join(metadata["read"]))
-    tests = metadata.get("test", [])
-    verifies = metadata.get("verify", [])
-    focused = tests[0] if tests else (verifies[0] if verifies else None)
-    strong = verifies[-1] if verifies else focused
-    print(f"Focused check: {command_for(focused) if focused else 'not registered'}")
-    print(f"Strong check: {command_for(strong) if strong else 'not registered'}")
-    print(f"Native SDK rebuild: {'yes' if metadata['native_sdk_rebuild'] else 'no'}")
+    print(f"Focused check: {command_for(metadata['focused_check'])}")
+    print(f"Strong check: {command_for(metadata['strong_check'])}")
+    print(f"Native base rebuild: {'yes' if metadata['native_base_rebuild'] else 'no'}")
     print(f"Generated file: {'yes' if metadata['generated'] else 'no'}")
     for rule in metadata.get("rules", []):
         print(f"Rule: {rule}")
 
 def command_for(reference):
     kind, target = reference.split(":", 1)
-    return f"./dev {kind} {target}"
+    if kind == "command":
+        return f"./dev {target}"
+    if kind in {"test", "verify"}:
+        return f"./dev {kind} {target}"
+    raise ValueError(f"unsupported check reference: {reference}")
 
 def main():
     if len(sys.argv) >= 2 and sys.argv[1] == "explain":
