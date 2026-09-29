@@ -15,7 +15,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/src/query.rs",
         "clients/python/searchkernel/ergonomic.py",
         "clients/typescript/tests/facade.test.ts"
@@ -35,7 +35,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "No high-level Rust, Python, or TypeScript facade helper currently constructs these constants."
@@ -53,7 +53,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/src/query.rs"
       ],
       "limitations": [
@@ -72,7 +72,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/src/query.rs"
       ],
       "limitations": [
@@ -93,7 +93,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/src/query.rs",
         "clients/python/searchkernel/ergonomic.py",
         "clients/typescript/tests/facade.test.ts"
@@ -112,7 +112,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs",
         "core/crates/searchkernel/src/query.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
@@ -133,7 +133,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/src/query.rs"
       ],
       "facade_support": {
@@ -189,7 +189,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/src/query.rs"
       ],
       "limitations": [
@@ -209,7 +209,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
       "limitations": [
@@ -247,7 +247,7 @@
       "executable": false,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs"
       ],
       "limitations": [
         "Alternatives currently executes only when every child is a term; general alternatives are rejected by the adapter. High-level Rust, Python, and TypeScript facades do not expose this node."
@@ -265,7 +265,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/tests/facade.test.ts",
@@ -288,7 +288,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end schema-and-query ergonomic SDK capability.",
@@ -307,7 +307,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "Only the supported predicate feature/range representation and documented expression shapes are lowered. Predicate field definitions are not exposed by the high-level Rust or Python schema facades.",
@@ -347,7 +347,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/src/query.rs"
       ],
       "limitations": [
@@ -366,7 +366,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "No high-level Rust, Python, or TypeScript facade helper currently constructs equivalence queries."
@@ -384,7 +384,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/src/query.rs",
         "clients/python/searchkernel/ergonomic.py"
       ],
@@ -405,7 +405,7 @@
       "executable": false,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs"
       ],
       "limitations": [
         "The parser intentionally supports only a reduced grammar; full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites are rejected. No high-level facade currently exposes userInput/userQuery constructors."
@@ -421,7 +421,7 @@
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/filter.rs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs"
       ],
       "limitations": [
         "The Python high-level facade currently uses textual filters; it does not expose a typed structured-filter helper namespace.",
@@ -953,7 +953,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "The typed QueryText node executes through the adapter, but no high-level Rust, Python, or TypeScript q facade helper constructs it."
@@ -972,7 +972,7 @@
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/query.rs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "The Python and TypeScript q facades do not yet expose"
@@ -990,7 +990,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "NonEmpty validates its lowered child and rejects statically empty boolean operators; it does not reproduce every parser-generated empty marker. No high-level facade helper exists yet.",
@@ -1009,7 +1009,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "Labels are allocated by the adapter and exported as internal vespa.label.* rank properties; callers must not provide those properties. No high-level labeled-query helper exists yet.",
@@ -1042,7 +1042,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "The portable/native path supports the existing array<object> shape used by SameElement. The high-level Rust Field, Python field-spec, and TypeScript schema facades expose only primitive/tensor kinds today; nested structs, maps, and heterogeneous object members remain unsupported."
@@ -1057,7 +1057,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
         "The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Position is not exposed by the high-level Rust, Python, or TypeScript schema builders."

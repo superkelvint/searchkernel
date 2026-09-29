@@ -421,15 +421,18 @@ bookkeeping_command() {
             "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
             "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+            "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
             ;;
         sync)
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --write
+            "$PYTHON" "$ROOT/tools/check-capabilities.py" --write
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --write
             "$PYTHON" "$ROOT/tools/test_dev_targets.py"
             "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
             "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+            "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
             ;;
         *)
