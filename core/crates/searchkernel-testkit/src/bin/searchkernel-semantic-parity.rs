@@ -5,6 +5,30 @@ use searchkernel_ir::{
 };
 use serde::Deserialize;
 use std::{collections::BTreeMap, fs, path::PathBuf};
+
+fn lossless_integer_tags(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(mut map) => {
+            if map.len() == 1 {
+                for tag in ["int64", "uint64"] {
+                    if let Some(number) = map.get(tag).and_then(serde_json::Value::as_number) {
+                        map.insert(tag.to_string(), serde_json::Value::String(number.to_string()));
+                        return serde_json::Value::Object(map);
+                    }
+                }
+            }
+            serde_json::Value::Object(
+                map.into_iter()
+                    .map(|(key, value)| (key, lossless_integer_tags(value)))
+                    .collect(),
+            )
+        }
+        serde_json::Value::Array(values) => serde_json::Value::Array(
+            values.into_iter().map(lossless_integer_tags).collect(),
+        ),
+        other => other,
+    }
+}
 #[derive(Deserialize)]
 struct Corpus {
     index: String,
@@ -126,7 +150,7 @@ fn main() {
             offset: i.offset,
         };
         let ir = searchkernel_ir::resolve_search(&ctx, input).unwrap();
-        out.insert(s.id, snapshot::search_request(&ir));
+        out.insert(s.id, lossless_integer_tags(snapshot::search_request(&ir)));
     }
     fs::write(output.unwrap(), serde_json::to_vec_pretty(&out).unwrap()).unwrap();
 }
