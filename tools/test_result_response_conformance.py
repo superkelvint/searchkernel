@@ -19,23 +19,70 @@ class ResultResponseRunnerTest(unittest.TestCase):
         languages = ("rust", "python", "typescript", "php", "ruby")
         traces = {
             language: {
-                "case-a": json.dumps({"payload_type": "SearchKernel_V2_SearchResult", "payload": {"value": 1}}),
-                "case-b": json.dumps({"payload_type": "SearchKernel_V2_SearchResult", "payload": {"value": 2}}),
+                "case-a": {"root": {"kind": "hit", "id": "a"}},
+                "case-b": {"root": {"kind": "hit", "id": "b"}},
             }
             for language in languages
         }
         return languages, traces
 
-    def test_perturbed_normalized_trace_fails_comparison(self):
-        languages, traces = self.fixtures()
-        traces["php"]["case-a"] = json.dumps(
-            {"payload_type": "SearchKernel_V2_SearchResult", "payload": {"value": 9}}
-        )
-        with self.assertRaisesRegex(SystemExit, "normalized result trace mismatch: case-a \(php\)"):
-            MODULE.compare(traces, [{"id": "case-a"}, {"id": "case-b"}])
+    def test_perturbed_decoded_trace_fails_comparison(self):
+        _, traces = self.fixtures()
+        traces["php"]["case-a"] = {"root": {"kind": "hit", "id": "wrong"}}
+        with self.assertRaisesRegex(
+            SystemExit, r"normalized result trace mismatch: case-a \(php\)"
+        ):
+            MODULE.compare(
+                traces,
+                [{"id": "case-a"}, {"id": "case-b"}],
+                validate_shapes=False,
+            )
 
     def test_missing_client_scenario_fails_comparison(self):
-        languages, traces = self.fixtures()
+        _, traces = self.fixtures()
         del traces["ruby"]["case-b"]
         with self.assertRaisesRegex(SystemExit, "ruby result trace coverage mismatch"):
-            MODULE.compare(traces, [{"id": "case-a"}, {"id": "case-b"}])
+            MODULE.compare(
+                traces,
+                [{"id": "case-a"}, {"id": "case-b"}],
+                validate_shapes=False,
+            )
+
+    def test_malformed_bridge_stage_is_distinguished_from_client_rejection(self):
+        languages = ("rust", "python", "typescript", "php", "ruby")
+        outputs = {
+            language: {
+                "malformed_outcomes": {
+                    "bridge-case": "bridge" if language in {"php", "ruby"} else "client",
+                    "client-case": "client",
+                }
+            }
+            for language in languages
+        }
+        MODULE.verify_malformed(
+            outputs,
+            [
+                {"id": "bridge-case", "bridge_rejected": True},
+                {"id": "client-case", "bridge_rejected": False},
+            ],
+        )
+
+    def test_malformed_bridge_case_cannot_be_claimed_as_client_rejection(self):
+        languages = ("rust", "python", "typescript", "php", "ruby")
+        outputs = {
+            language: {
+                "malformed_outcomes": {
+                    "bridge-case": "client",
+                }
+            }
+            for language in languages
+        }
+        with self.assertRaisesRegex(SystemExit, "php malformed outcome mismatch"):
+            MODULE.verify_malformed(
+                outputs,
+                [{"id": "bridge-case", "bridge_rejected": True}],
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
