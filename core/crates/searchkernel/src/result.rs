@@ -791,9 +791,9 @@ mod tests {
 
     fn trace_json_value(value: &serde_json::Value) -> serde_json::Value {
         match value {
-            serde_json::Value::Null
-            | serde_json::Value::Bool(_)
-            | serde_json::Value::String(_) => value.clone(),
+            serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::String(_) => {
+                value.clone()
+            }
             serde_json::Value::Number(number) => {
                 if number.is_i64() || number.is_u64() {
                     serde_json::Value::String(number.to_string())
@@ -801,9 +801,9 @@ mod tests {
                     value.clone()
                 }
             }
-            serde_json::Value::Array(values) => serde_json::Value::Array(
-                values.iter().map(trace_json_value).collect(),
-            ),
+            serde_json::Value::Array(values) => {
+                serde_json::Value::Array(values.iter().map(trace_json_value).collect())
+            }
             serde_json::Value::Object(values) => serde_json::Value::Object(
                 values
                     .iter()
@@ -817,12 +817,8 @@ mod tests {
         match value {
             None => serde_json::Value::Null,
             Some(value) if value.is_nan() => serde_json::Value::String("nan".into()),
-            Some(value) if value == f64::INFINITY => {
-                serde_json::Value::String("+inf".into())
-            }
-            Some(value) if value == f64::NEG_INFINITY => {
-                serde_json::Value::String("-inf".into())
-            }
+            Some(value) if value == f64::INFINITY => serde_json::Value::String("+inf".into()),
+            Some(value) if value == f64::NEG_INFINITY => serde_json::Value::String("-inf".into()),
             Some(value) => serde_json::Value::Number(
                 serde_json::Number::from_f64(value).expect("finite trace float"),
             ),
