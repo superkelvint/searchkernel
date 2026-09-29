@@ -130,6 +130,7 @@ from SearchKernel.V2.Hit import HitT
 from SearchKernel.V2.ResultGroup import ResultGroupT
 
 from .client import Tensor, _decode_value_entries, _python_value, value
+from .scalars import check_uint32
 
 
 class _FieldSpec:
@@ -202,10 +203,14 @@ class HnswIndexConfig:
     neighbors_to_explore_at_insert: int | None = None
 
     def _generated(self) -> HnswIndexConfigT:
-        optional = lambda setting: None if setting is None else OptionalUInt32T(value=setting)
+        optional = lambda setting, label: None if setting is None else OptionalUInt32T(
+            value=check_uint32(setting, label)
+        )
         return HnswIndexConfigT(
-            maxLinksPerNode=optional(self.max_links_per_node),
-            neighborsToExploreAtInsert=optional(self.neighbors_to_explore_at_insert),
+            maxLinksPerNode=optional(self.max_links_per_node, "max_links_per_node"),
+            neighborsToExploreAtInsert=optional(
+                self.neighbors_to_explore_at_insert, "neighbors_to_explore_at_insert"
+            ),
         )
 
 
@@ -283,9 +288,7 @@ class RankProfile:
         return self
 
     def rerank_count(self, count: int) -> "RankProfile":
-        if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 0xFFFF_FFFF:
-            raise ValueError("rerank count must be a uint32")
-        self._rerank_count = count
+        self._rerank_count = check_uint32(count, "rerank count")
         return self
 
     def match_feature(self, expression: str) -> "RankProfile":
@@ -663,9 +666,9 @@ class Group:
 
     @classmethod
     def by(cls, field): return cls(field)
-    def limit(self, value): self._limit = value; return self
+    def limit(self, value): self._limit = check_uint32(value, "grouping limit"); return self
     def unlimited(self): self._limit = None; return self
-    def precision(self, value): self._precision = value; return self
+    def precision(self, value): self._precision = check_uint32(value, "grouping precision"); return self
     def order_by(self, *expressions): self._orders.extend(expressions); return self
     def output(self, *expressions): self._outputs.extend(e if isinstance(e, _Output) else e.as_("") for e in expressions); return self
     def subgroup(self, group): self._subgroups.append(group); return self
@@ -718,6 +721,7 @@ class Group:
 
 
 def _facet_request(field: str, name: str, limit: int, ordering: str | None):
+    limit = check_uint32(limit, "facet limit")
     ordering = ordering or "count_desc"
     if ordering == "count_desc":
         expression = -agg.count()
@@ -775,9 +779,7 @@ def _root_aggregation_request(outputs):
 
 
 def _uint32(item, label):
-    if isinstance(item, bool) or not isinstance(item, int) or not 0 <= item <= 0xFFFF_FFFF:
-        raise ValueError(f"{label} must be a uint32")
-    return item
+    return check_uint32(item, label)
 
 
 class SearchBuilder:
@@ -798,7 +800,11 @@ class SearchBuilder:
     def fields(self, *fields): self._fields = list(fields); return self
     def summary(self, name): self._summary = name; return self
     def highlight(self, *fields): self._highlighting = list(fields); return self
-    def facet(self, field, *, name=None, limit=None, sort=None): self._facets.append((field, name or field, limit, sort)); return self
+    def facet(self, field, *, name=None, limit=None, sort=None):
+        if limit is not None:
+            check_uint32(limit, "facet limit")
+        self._facets.append((field, name or field, limit, sort))
+        return self
     def group(self, group): self._groups.append(group); return self
     def aggregate(self, expression): self._aggregates.append(expression if isinstance(expression, _Output) else expression.as_("")); return self
     def ranking(self, profile): self._ranking = profile; return self

@@ -122,6 +122,49 @@ def _canonical_snapshot(request):
 
 
 class FlatBuffersObjectApiTest(unittest.TestCase):
+    def test_signed_value_checks_int64_range_before_flatbuffers_packing(self):
+        for item in (-(2**63) - 1, 2**63):
+            with self.subTest(item=item):
+                with self.assertRaisesRegex(ValueError, "int64"):
+                    pack_object(value(item))
+
+        for item in (-(2**63), 2**63 - 1, 0, 2**32 - 1):
+            with self.subTest(item=item):
+                encoded = value(item)
+                self.assertEqual(encoded.kind.value, item)
+                self.assertGreater(len(pack_object(encoded)), 0)
+
+    def test_python_uint32_facades_reject_values_outside_wire_range(self):
+        for item in (-1, 2**32):
+            with self.subTest(kind="grouping max", item=item):
+                with self.assertRaisesRegex(ValueError, "uint32"):
+                    pack_object(Group.by("category").limit(item).to_request())
+            with self.subTest(kind="grouping precision", item=item):
+                with self.assertRaisesRegex(ValueError, "uint32"):
+                    pack_object(Group.by("category").precision(item).to_request())
+            with self.subTest(kind="HNSW max links", item=item):
+                with self.assertRaisesRegex(ValueError, "uint32"):
+                    HnswIndexConfig(max_links_per_node=item)._generated()
+            with self.subTest(kind="HNSW neighbors", item=item):
+                with self.assertRaisesRegex(ValueError, "uint32"):
+                    HnswIndexConfig(neighbors_to_explore_at_insert=item)._generated()
+            with self.subTest(kind="facet limit", item=item):
+                with self.assertRaisesRegex(ValueError, "uint32"):
+                    SearchBuilder(object(), None).facet("category", limit=item)
+                with self.assertRaisesRegex(ValueError, "uint32"):
+                    _facet_request("category", "category", item, None)
+
+        self.assertGreater(
+            len(pack_object(Group.by("category").limit(2**32 - 1).precision(2**32 - 1).to_request())),
+            0,
+        )
+        config = HnswIndexConfig(
+            max_links_per_node=2**32 - 1,
+            neighbors_to_explore_at_insert=2**32 - 1,
+        )._generated()
+        self.assertEqual(config.maxLinksPerNode.value, 2**32 - 1)
+        self.assertEqual(config.neighborsToExploreAtInsert.value, 2**32 - 1)
+
     def test_nested_grouping_uses_structural_all_scope(self):
         request = Group.by("category").output(agg.count()).subgroup(
             Group.by("brand").output(agg.count())
