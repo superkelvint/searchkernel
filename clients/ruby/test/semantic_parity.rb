@@ -6,7 +6,7 @@ def parity_value(value)
   return Integer(value.fetch("int64"), 10) if value.key?("int64")
   return SearchKernel::Value.uint64(Integer(value.fetch("uint64"), 10)) if value.key?("uint64")
   return value.fetch("string") if value.key?("string")
-  return value.fetch("float64") if value.key?("float64")
+  return Float(value.fetch("float64")) if value.key?("float64")
   raise "unsupported parity corpus value: #{value.inspect}"
 end
 corpus=ENV.fetch("SEARCHKERNEL_PARITY_CORPUS"); output=ENV.fetch("SEARCHKERNEL_PARITY_OUTPUT"); snapshot=ENV.fetch("SEARCHKERNEL_SEMANTIC_SNAPSHOT"); fixture=ENV.fetch("SEARCHKERNEL_PARITY_INDEX"); data=JSON.parse(File.read(corpus)); index=SearchKernel::Index.new(NoopTransport.new); out={}
