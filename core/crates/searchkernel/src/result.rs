@@ -1033,13 +1033,16 @@ mod tests {
                 "reference/result-response-conformance/fixtures/{}",
                 case["file"].as_str().unwrap()
             ));
-            let bytes = std::fs::read(&path)
-                .unwrap_or_else(|error| panic!("read malformed fixture {}: {error}", path.display()));
+            let bytes = std::fs::read(&path).unwrap_or_else(|error| {
+                panic!("read malformed fixture {}: {error}", path.display())
+            });
             let envelope = core::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
                 .unwrap_or_else(|error| panic!("{name} malformed envelope root: {error:?}"));
             if case["failure_class"] == "response_payload_union" {
                 assert!(
-                    envelope.payload_as_search_kernel_v2_search_result().is_none(),
+                    envelope
+                        .payload_as_search_kernel_v2_search_result()
+                        .is_none(),
                     "Rust response projection accepted malformed response payload {name}"
                 );
             } else {
@@ -1055,7 +1058,10 @@ mod tests {
         }
 
         if let Some(directory) = std::env::var_os("SEARCHKERNEL_RESULT_TRACE_DIR") {
-            traces.insert("malformed_outcomes".into(), serde_json::Value::Object(malformed_outcomes));
+            traces.insert(
+                "malformed_outcomes".into(),
+                serde_json::Value::Object(malformed_outcomes),
+            );
             std::fs::write(
                 std::path::PathBuf::from(directory).join("rust.json"),
                 serde_json::to_vec(&serde_json::Value::Object(traces)).unwrap(),

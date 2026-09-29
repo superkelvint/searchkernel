@@ -610,9 +610,15 @@ pub fn result_fixtures() -> Vec<ResultFixture> {
         ("mixed-hit-group-children", "mixed_hit_and_group_children"),
         ("sibling-groups", "sibling_groups"),
         ("group-fields-aggregations", "group_fields_and_aggregations"),
-        ("continuations-limits-metadata", "continuations_limits_and_metadata"),
+        (
+            "continuations-limits-metadata",
+            "continuations_limits_and_metadata",
+        ),
         ("absent-optional-fields", "absent_optional_fields"),
-        ("present-empty-optional-fields", "present_empty_optional_fields"),
+        (
+            "present-empty-optional-fields",
+            "present_empty_optional_fields",
+        ),
         ("limits-from-only", "limits_from_only"),
         ("limits-to-only", "limits_to_only"),
     ] {
@@ -1605,7 +1611,8 @@ mod expanded_canonical_corpus {
                     metadata: BTreeMap::new(),
                 };
                 let bytes = searchkernel_ir::search_result_to_api(&expected).unwrap();
-                let wire = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
+                let wire =
+                    searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
                 let actual = searchkernel_ir::search_result_from_api(wire).unwrap();
                 assert_eq!(actual, expected, "generated result tree seed {seed}");
             }
@@ -1663,9 +1670,15 @@ mod expanded_canonical_corpus {
                 ("result-malformed-unknown-result-node-union.skrs", "result"),
                 ("result-malformed-unknown-value-union.skrs", "result"),
                 ("result-malformed-unknown-relevance-union.skrs", "result"),
-                ("result-malformed-unknown-tensor-payload-union.skrs", "result"),
+                (
+                    "result-malformed-unknown-tensor-payload-union.skrs",
+                    "result",
+                ),
                 ("result-malformed-duplicate-result-map-key.skrs", "result"),
-                ("result-malformed-unknown-response-payload-union.skrs", "envelope"),
+                (
+                    "result-malformed-unknown-response-payload-union.skrs",
+                    "envelope",
+                ),
             ] {
                 let bytes = std::fs::read(directory.join(name)).unwrap();
                 let envelope =
