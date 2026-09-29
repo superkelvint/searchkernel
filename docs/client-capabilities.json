@@ -1598,7 +1598,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/python/tests/test_results.py",
-              "line": 222
+              "line": 227
             },
             {
               "capability": "result.highlighting",
@@ -1658,7 +1658,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/typescript/tests/results.test.ts",
-              "line": 321
+              "line": 325
             }
           ],
           "overrides": []
