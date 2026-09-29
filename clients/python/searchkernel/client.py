@@ -770,4 +770,4 @@ def _index_definition(
     return IndexDefinitionT(name="index", fields=fields, rankProfiles=profiles or None)
 
 
-__all__ = ["Client", "ClientError", "Index", "SearchKernelError", "Tensor", "value"]
+__all__ = ["Client", "ClientError", "Index", "SearchKernelError", "Tensor", "uint64", "value"]
