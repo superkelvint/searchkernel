@@ -292,12 +292,22 @@ class SharedResultFixtureTest(unittest.TestCase):
             hit["sparse"],
             {
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(label{})",
+                    "type_spec": "tensor<float>(label{},region{})",
                     "sparse": [
                         {
-                            "address": [{"dimension": "label", "label": "a"}],
+                            "address": [
+                                {"dimension": "label", "label": "a"},
+                                {"dimension": "region", "label": "east"},
+                            ],
                             "value": 0.5,
-                        }
+                        },
+                        {
+                            "address": [
+                                {"dimension": "label", "label": "b"},
+                                {"dimension": "region", "label": "west"},
+                            ],
+                            "value": -0.25,
+                        },
                     ],
                 }
             },
@@ -306,12 +316,22 @@ class SharedResultFixtureTest(unittest.TestCase):
             result.root.value,
             {
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(label{},x[2])",
+                    "type_spec": "tensor<float>(label{},region{},x[2])",
                     "mixed": [
                         {
-                            "address": [{"dimension": "label", "label": "b"}],
+                            "address": [
+                                {"dimension": "label", "label": "b"},
+                                {"dimension": "region", "label": "west"},
+                            ],
                             "values": [0.25, 0.75],
-                        }
+                        },
+                        {
+                            "address": [
+                                {"dimension": "label", "label": "c"},
+                                {"dimension": "region", "label": "north"},
+                            ],
+                            "values": [1.5, -2.0],
+                        },
                     ],
                 }
             },
