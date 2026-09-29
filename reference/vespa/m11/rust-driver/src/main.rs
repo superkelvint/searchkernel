@@ -723,8 +723,19 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         return Err("matcher-visible state changed while Vespa publication was held".into());
     }
     if publication_put.is_finished() {
+        let mutation_result = publication_put
+            .join()
+            .map_err(|_| "publication put panicked")?;
+        mutation_result?;
+        let immediate_old = term_search_ids(&engine, "title", "publication-old")?;
+        let immediate_new = term_search_ids(&engine, "title", "publication-new")?;
+        if immediate_old.contains(&"publication".to_owned()) && immediate_new.is_empty() {
+            return Err(
+                "mutation returned while matcher publication was held; immediate search still saw the old generation"
+                    .into(),
+            );
+        }
         hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
-        let _ = publication_put.join();
         return Err("mutation returned while matcher-visible publication was held".into());
     }
     hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
