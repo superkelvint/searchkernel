@@ -12,7 +12,7 @@ as the portable API path.
 ## Start reading here
 
 1. `src/model.rs` defines the owned IR and result values.
-2. `src/api_to_ir/mod.rs` and `src/api_to_ir/resolve.rs` perform parsing,
+2. `src/api_to_ir/mod.rs` and `src/api_to_ir/resolve/` perform parsing,
    validation, defaults, and normalization for portable and Rust resolver
    inputs.
 3. `src/backend.rs` defines the execution surface a backend receives.

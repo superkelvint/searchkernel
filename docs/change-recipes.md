@@ -204,11 +204,11 @@ the real Vespa schema/document lane required by the field capability.
 3. Decode the FlatBuffers operation in
    `core/crates/searchkernel-ir/src/api_to_ir/document.rs`, add/extend the
    corresponding `UpdateOperationInput` in
-   `core/crates/searchkernel-ir/src/api_to_ir/resolve.rs`, and add the owned
+   `core/crates/searchkernel-ir/src/api_to_ir/resolve/mod.rs`, and add the owned
    operation in `core/crates/searchkernel-ir/src/model/document.rs`.
 4. Put field/path validation, field-type legality, value normalization, and
    unsupported-operator behavior in the shared `resolve_update` path in
-   `core/crates/searchkernel-ir/src/api_to_ir/resolve.rs` so the direct Rust and
+   `core/crates/searchkernel-ir/src/api_to_ir/resolve/document.rs` so the direct Rust and
    FlatBuffers entry paths converge.
    Keep schema-time unknown-field errors distinct from backend runtime behavior
    for a missing document/value.
@@ -305,7 +305,7 @@ real search/result acceptance lane.
 3. If the setting is part of a search request, decode it into the unresolved
    search input in `core/crates/searchkernel-ir/src/api_to_ir/search.rs` and
    resolve/validate it in the shared `resolve_search` path in
-   `core/crates/searchkernel-ir/src/api_to_ir/resolve.rs`. Add the owned resolved
+   `core/crates/searchkernel-ir/src/api_to_ir/resolve/search.rs`. Add the owned resolved
    form to `core/crates/searchkernel-ir/src/model/ranking.rs`.
 4. Keep `core/crates/searchkernel-ir/src/api_to_ir/ranking.rs` consistent for
    standalone ranking conversion/testkit uses, but do not create a second set of
