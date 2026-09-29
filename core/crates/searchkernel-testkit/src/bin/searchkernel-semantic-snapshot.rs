@@ -11,7 +11,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-
 fn usage() -> ! {
     eprintln!("usage: searchkernel-semantic-snapshot --index-json PATH --request PATH");
     std::process::exit(2);
