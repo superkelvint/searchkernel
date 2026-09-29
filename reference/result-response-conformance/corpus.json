@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "wire_format": "SearchKernel V2 ResponseEnvelope / SearchResult",
+  "trace_format": "search-result-trace-v1",
+  "valid": [
+    {"id": "canonical", "file": "result-canonical.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-canonical.skrs"},
+    {"id": "empty", "file": "result-empty.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-empty.skrs"},
+    {"id": "root-hit", "file": "result-root-hit.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-root-hit.skrs"},
+    {"id": "infinite-relevance", "file": "result-infinite-relevance.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-infinite-relevance.skrs"},
+    {"id": "sparse-mixed-tensors", "file": "result-sparse-mixed-tensors.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-sparse-mixed-tensors.skrs"},
+    {"id": "value-variants", "file": "result-value-variants.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-value-variants.skrs"},
+    {"id": "total-hits-unspecified", "file": "result-total-hits-unspecified.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-total-hits-unspecified.skrs"},
+    {"id": "total-hits-approximate", "file": "result-total-hits-approximate.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-total-hits-approximate.skrs"},
+    {"id": "total-hits-unknown", "file": "result-total-hits-unknown.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-total-hits-unknown.skrs"},
+    {"id": "root-state-only", "file": "result-root-state-only.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-root-state-only.skrs"},
+    {"id": "facet-valid", "file": "result-facet-valid.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-facet-valid.skrs"},
+    {"id": "facet-valid-named", "file": "result-facet-valid-named.skrs", "source": "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses/result-facet-valid-named.skrs"}
+  ],
+  "malformed": [
+    {"id": "unknown-result-node-union", "file": "result-malformed-unknown-result-node-union.skrs"},
+    {"id": "unknown-value-union", "file": "result-malformed-unknown-value-union.skrs"},
+    {"id": "duplicate-result-map-key", "file": "result-malformed-duplicate-result-map-key.skrs"}
+  ]
+}

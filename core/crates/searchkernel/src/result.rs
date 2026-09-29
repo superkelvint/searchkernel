@@ -688,7 +688,8 @@ mod tests {
     use super::*;
     use searchkernel_testkit::{
         canonical_facet_result, canonical_result_fixtures, mixed_hit_and_group_children_result,
-        non_facet_grouping_result, sibling_groups_result, sparse_mixed_tensor_result,
+        non_facet_grouping_result, result_fixtures, sibling_groups_result,
+        sparse_mixed_tensor_result,
     };
     use std::collections::BTreeMap;
 
@@ -785,6 +786,81 @@ mod tests {
                     panic!("fixture {name} failed public conversion: {error:?}")
                 });
             assert_public_node_matches(&expected_root, &actual.root);
+        }
+    }
+
+    #[test]
+    fn response_byte_fixtures_reach_the_public_rust_result_projection() {
+        use searchkernel_protocol::protocol::v2 as wire;
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../");
+        let corpus: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("reference/result-response-conformance/corpus.json"))
+                .expect("read canonical response corpus"),
+        )
+        .expect("parse canonical response corpus");
+        let fixtures = result_fixtures();
+        for scenario in corpus["valid"].as_array().unwrap() {
+            let name = scenario["id"].as_str().unwrap();
+            let fixture = fixtures
+                .iter()
+                .find(|fixture| fixture.name == name)
+                .unwrap_or_else(|| panic!("canonical response fixture has no IR: {name}"));
+            let path = root.join(scenario["source"].as_str().unwrap());
+            let bytes = std::fs::read(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            let envelope = core::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
+                .unwrap_or_else(|error| panic!("decode {}: {error:?}", path.display()));
+            let encoded = envelope
+                .payload_as_search_kernel_v2_search_result()
+                .unwrap_or_else(|| panic!("{} must contain SearchResult", path.display()));
+            let decoded = core::search_result_from_api(encoded)
+                .unwrap_or_else(|error| panic!("{name} failed IR decoding: {error:?}"));
+            let actual: SearchResult<serde_json::Value> = search_result(decoded, &[])
+                .unwrap_or_else(|error| panic!("{name} failed public projection: {error:?}"));
+            assert_public_node_matches(&fixture.result.root, &actual.root);
+            assert_eq!(actual.total_hits, total_hits(fixture.result.total_hits));
+            assert_eq!(
+                actual.coverage,
+                fixture
+                    .result
+                    .coverage
+                    .clone()
+                    .map(coverage)
+                    .transpose()
+                    .unwrap()
+            );
+            assert_eq!(
+                actual.timing,
+                fixture
+                    .result
+                    .timing
+                    .clone()
+                    .map(search_timing)
+                    .transpose()
+                    .unwrap()
+            );
+            assert_eq!(actual.issues.len(), fixture.result.errors.len());
+            assert_eq!(
+                actual.trace,
+                fixture
+                    .result
+                    .trace
+                    .clone()
+                    .map(json_value)
+                    .transpose()
+                    .unwrap()
+            );
+            assert_eq!(
+                actual.metadata,
+                fields_to_json(fixture.result.metadata.clone())
+                    .unwrap()
+                    .as_object()
+                    .unwrap()
+                    .clone()
+                    .into_iter()
+                    .collect()
+            );
         }
     }
 

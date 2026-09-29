@@ -38,10 +38,15 @@ pub fn sparse_mixed_tensor_result() -> searchkernel_ir::SearchResult {
             values: vec![0.25, 0.75],
         }]),
     });
+    let dense = Value::Tensor(RequestTensorIr {
+        type_spec: "tensor<float>(x[2])".to_owned(),
+        payload: RequestTensorPayloadIr::Dense(vec![1.25, 2.5]),
+    });
 
     searchkernel_ir::SearchResult {
         root: ResultNode::Group(ResultGroup {
             value: Some(mixed),
+            fields: BTreeMap::from([("dense".into(), dense)]),
             children: vec![ResultNode::Hit(searchkernel_ir::Hit {
                 id: "tensor-hit".to_owned(),
                 fields: BTreeMap::from([("sparse".to_owned(), sparse)]),
@@ -59,6 +64,67 @@ pub fn sparse_mixed_tensor_result() -> searchkernel_ir::SearchResult {
         trace: None,
         metadata: BTreeMap::new(),
     }
+}
+
+/// Canonical result values that are otherwise easy for a client projection to
+/// coerce or omit. Non-finite scalar values are intentionally absent here:
+/// the response schema has a union for them, but the owned result IR currently
+/// has no corresponding `Value` variant.
+fn value_variants_result() -> searchkernel_ir::SearchResult {
+    use searchkernel_ir::{ResultGroup, ResultNode, Value};
+
+    let nested = Value::List(vec![
+        Value::Bool(true),
+        Value::List(vec![Value::String("nested".into()), Value::Int64(i64::MIN)]),
+        Value::Object(BTreeMap::from([(
+            "uint64_max".into(),
+            Value::UInt64(u64::MAX),
+        )])),
+    ]);
+    let fields = BTreeMap::from([
+        ("bool".into(), Value::Bool(false)),
+        ("bytes".into(), Value::Bytes(vec![0, 1, 127, 255])),
+        ("float64".into(), Value::Float64(1.25)),
+        ("int64_max".into(), Value::Int64(i64::MAX)),
+        ("int64_min".into(), Value::Int64(i64::MIN)),
+        ("list".into(), nested),
+        (
+            "object".into(),
+            Value::Object(BTreeMap::from([
+                ("null".into(), Value::Null),
+                ("text".into(), Value::String("value".into())),
+            ])),
+        ),
+        ("uint64_max".into(), Value::UInt64(u64::MAX)),
+    ]);
+    searchkernel_ir::SearchResult {
+        root: ResultNode::Group(ResultGroup {
+            fields,
+            children: vec![ResultNode::Hit(searchkernel_ir::Hit {
+                id: "value-variants".into(),
+                ..Default::default()
+            })],
+            ..ResultGroup::root(vec![])
+        }),
+        total_hits: searchkernel_ir::TotalHits {
+            value: 1,
+            relation: searchkernel_ir::TotalHitsRelation::Exact,
+        },
+        coverage: None,
+        timing: None,
+        errors: Vec::new(),
+        trace: None,
+        metadata: BTreeMap::new(),
+    }
+}
+
+fn total_hit_relation_result(
+    relation: searchkernel_ir::TotalHitsRelation,
+) -> searchkernel_ir::SearchResult {
+    let mut result =
+        searchkernel_ir::SearchResult::empty(searchkernel_ir::TotalHits { value: 9, relation });
+    result.root = searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(vec![]));
+    result
 }
 
 /// Representative canonical result tree used by response-path conformance.
@@ -451,6 +517,22 @@ pub fn result_fixtures() -> Vec<ResultFixture> {
         ResultFixture {
             name: "sparse-mixed-tensors",
             result: sparse_mixed_tensor_result(),
+        },
+        ResultFixture {
+            name: "value-variants",
+            result: value_variants_result(),
+        },
+        ResultFixture {
+            name: "total-hits-unspecified",
+            result: total_hit_relation_result(searchkernel_ir::TotalHitsRelation::Unspecified),
+        },
+        ResultFixture {
+            name: "total-hits-approximate",
+            result: total_hit_relation_result(searchkernel_ir::TotalHitsRelation::Approximate),
+        },
+        ResultFixture {
+            name: "total-hits-unknown",
+            result: total_hit_relation_result(searchkernel_ir::TotalHitsRelation::Unknown),
         },
         ResultFixture {
             name: "root-state-only",
@@ -1361,6 +1443,7 @@ mod expanded_canonical_corpus {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use searchkernel_protocol::protocol::v2 as wire;
 
         #[test]
         fn corpus_is_fresh_named_and_covers_the_canonical_cases() {
@@ -1428,6 +1511,95 @@ mod expanded_canonical_corpus {
                 .unwrap()
                 .relevance()
                 .is_none());
+        }
+
+        #[test]
+        fn result_response_wire_fixtures_reject_malformed_ir_inputs() {
+            let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../reference/result-response-conformance/fixtures");
+            for name in [
+                "result-malformed-unknown-result-node-union.skrs",
+                "result-malformed-unknown-value-union.skrs",
+                "result-malformed-duplicate-result-map-key.skrs",
+            ] {
+                let bytes = std::fs::read(directory.join(name)).unwrap();
+                let envelope =
+                    searchkernel_ir::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
+                        .unwrap_or_else(|error| {
+                            panic!("{name} envelope should be structurally valid: {error:?}")
+                        });
+                let result = envelope
+                    .payload_as_search_kernel_v2_search_result()
+                    .unwrap_or_else(|| {
+                        panic!("{name} must retain the SearchResult response union")
+                    });
+                assert!(
+                    searchkernel_ir::search_result_from_api(result).is_err(),
+                    "malformed result fixture was accepted: {name}"
+                );
+            }
+        }
+
+        #[test]
+        fn result_response_wire_fixtures_emit_rust_trace() {
+            let manifest_path = std::path::PathBuf::from(
+                std::env::var("SEARCHKERNEL_RESULT_CASES").expect("result case manifest is set"),
+            );
+            let case_directory = std::path::PathBuf::from(
+                std::env::var("SEARCHKERNEL_RESULT_CASE_DIR")
+                    .expect("result case directory is set"),
+            );
+            let output_directory = std::path::PathBuf::from(
+                std::env::var("SEARCHKERNEL_RESULT_TRACE_DIR").expect("trace directory is set"),
+            );
+            let manifest: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(manifest_path).expect("read result case manifest"),
+            )
+            .expect("parse result case manifest");
+            let mut traces = serde_json::Map::new();
+            for case in manifest["valid"].as_array().unwrap() {
+                let id = case["id"].as_str().unwrap();
+                let file = case["file"].as_str().unwrap();
+                let bytes = std::fs::read(case_directory.join(file)).unwrap();
+                let envelope =
+                    searchkernel_ir::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
+                        .unwrap_or_else(|error| {
+                            panic!("{id} response envelope must decode: {error:?}")
+                        });
+                let result = envelope
+                    .payload_as_search_kernel_v2_search_result()
+                    .unwrap_or_else(|| panic!("{id} response must contain SearchResult"));
+                searchkernel_ir::search_result_from_api(result).unwrap_or_else(|error| {
+                    panic!("{id} result must decode through IR: {error:?}")
+                });
+                let raw = std::fs::read(case_directory.join(case["json"].as_str().unwrap()))
+                    .expect("read official BFBS JSON trace source");
+                let response: serde_json::Value =
+                    serde_json::from_slice(&raw).expect("parse normalized response JSON");
+                assert!(response.get("payload").is_some(), "response payload exists");
+                traces.insert(
+                    id.to_owned(),
+                    serde_json::Value::String(String::from_utf8(raw).unwrap()),
+                );
+            }
+            traces.insert(
+                "malformed_rejected".into(),
+                serde_json::Value::Array(
+                    manifest["malformed"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|case| {
+                            serde_json::Value::String(case["id"].as_str().unwrap().to_owned())
+                        })
+                        .collect(),
+                ),
+            );
+            std::fs::write(
+                output_directory.join("rust.json"),
+                serde_json::to_vec(&serde_json::Value::Object(traces)).unwrap(),
+            )
+            .expect("write Rust result trace");
         }
     }
 }
