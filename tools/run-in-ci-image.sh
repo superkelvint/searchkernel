@@ -154,6 +154,13 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# Serialize only Docker-state allocation/retirement. The lock is released before
+# source snapshotting or compilation, so ordinary ./dev invocations still run
+# concurrently while no invocation can prune a generation another is selecting.
+lifecycle_lock=${SEARCHKERNEL_CI_LIFECYCLE_LOCK:-/tmp/searchkernel-ci-runtime-lifecycle.lock}
+exec 8>"$lifecycle_lock"
+flock 8
+
 ci_runtime_create_volume "$source_volume" source "$ephemeral_lifecycle" \
     "io.searchkernel.environment-id=$environment_id" \
     "io.searchkernel.invocation-id=$invocation_id" >/dev/null
@@ -196,6 +203,7 @@ if [[ "$ephemeral_target" != "1" ]]; then
 fi
 ci_runtime_prune_sccache_generations "$sccache_binary_volume" "$sccache_socket_volume"
 ci_runtime_prune_vespa_volumes "$native_volume"
+flock -u 8
 
 head_sha=$(git -C "$ROOT" rev-parse HEAD)
 bundle="$tmp/repository.bundle"
