@@ -1118,7 +1118,7 @@ fn failed_post_publication_open_reports_recoverable_published_index() {
     let _ = std::fs::remove_dir_all(root);
 }
 #[test]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", feature = "internal-api"))]
 fn failed_delete_cleanup_does_not_leave_a_partial_index_at_its_canonical_path() {
     let temp = temporary_path("delete-cleanup-failure");
     std::fs::create_dir_all(&temp).expect("create temporary parent");
@@ -1148,7 +1148,7 @@ fn failed_delete_cleanup_does_not_leave_a_partial_index_at_its_canonical_path() 
     let _ = std::fs::remove_dir_all(temp);
 }
 #[test]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", feature = "internal-api"))]
 fn delete_parent_fsync_failure_is_reported_after_atomic_unpublish() {
     let temp = temporary_path("delete-parent-fsync-failure");
     std::fs::create_dir_all(&temp).expect("create temporary parent");
