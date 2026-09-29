@@ -223,7 +223,14 @@ fi
 
 # Verify that the private Git repository still names the exact host HEAD before
 # executing any build/test command.
-actual=$(docker run --rm     -v "$source_volume:/work"     -w /work     "$IMAGE_ID"     /bin/bash -lc 'git config --global --add safe.directory /work && git rev-parse HEAD')
+actual=$(docker run --rm \
+    -e GIT_CONFIG_COUNT=1 \
+    -e GIT_CONFIG_KEY_0=safe.directory \
+    -e GIT_CONFIG_VALUE_0=/work \
+    -v "$source_volume:/work" \
+    -w /work \
+    "$IMAGE_ID" \
+    git rev-parse HEAD)
 [[ "${actual,,}" == "${head_sha,,}" ]] ||
     die "private source snapshot expected HEAD $head_sha, found $actual"
 
@@ -243,6 +250,13 @@ docker_env=(
     -e RANLIB=/opt/rh/gcc-toolset-15/root/usr/bin/ranlib
     -e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib
     -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc
+    # The source snapshot is created in a separate container and then mounted
+    # into this one. Docker volume ownership can differ across self-hosted
+    # runners, so make the repository trust policy explicit and process-local
+    # instead of relying on runner state or a mutable global Git config.
+    -e GIT_CONFIG_COUNT=1
+    -e GIT_CONFIG_KEY_0=safe.directory
+    -e GIT_CONFIG_VALUE_0=/work
 )
 
 # Preserve Search Kernel test knobs and diagnostics, but never forward host
