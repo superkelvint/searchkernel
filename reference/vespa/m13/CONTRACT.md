@@ -13,7 +13,8 @@ the canonical FlatBuffers dispatcher:
 - whole-field assignment and generic unset/reassign;
 - close/reopen persistence;
 - delete and not-found behavior;
-- nearest-neighbor ordering after a document tensor update.
+- nearest-neighbor ordering immediately after a document tensor update, before
+  close/reopen, with the same ordering preserved after reopen.
 
 The positive corpus is independently cross-checked against
 `oracle/m13_tensor_oracle.cpp`, which uses the pinned Vespa document,
