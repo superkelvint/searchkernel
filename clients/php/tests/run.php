@@ -338,6 +338,12 @@ throws(
 // Search request facade and canonical namespaces.
 // --------------------------------------------------------------------------
 
+throws(
+    ArgumentCountError::class,
+    static fn () => $index->search('fox')->sort('price'),
+    'field sort direction is required',
+);
+
 $request = $index
     ->search('brown fox')
     ->searchField('title', 3.0)
@@ -350,7 +356,7 @@ $request = $index
     ->summary('default')
     ->highlight('title')
     ->ranking('bm25')
-    ->rankProperty('foo', 123)
+    ->rankProperty('foo', '123')
     ->input('embedding', Tensor::dense('tensor<float>(x[2])', [1, 2]))
     ->property('trace.level', 2)
     ->page(2, 20)
@@ -377,6 +383,18 @@ same([], $request['presentation']['fields']['fields'], 'present-empty projection
 same(['title'], $request['presentation']['highlighting']['fields'], 'highlight fields');
 same('bm25', $request['ranking']['profile'], 'ranking profile');
 same([['key' => 'foo', 'value' => '123']], $request['ranking']['properties'], 'rank property namespace');
+foreach ([false, null, 7, [], new stdClass()] as $rankPropertyValue) {
+    throws(
+        TypeError::class,
+        static fn () => $index->search('fox')->rankProperty('enabled', $rankPropertyValue),
+        'rank property values must be strings',
+    );
+}
+throws(
+    TypeError::class,
+    static fn () => $index->search('fox')->rankProperties(['enabled' => false]),
+    'rankProperties rejects non-string values',
+);
 same('LiteralQueryInput', $request['inputs'][0]['input_type'], 'query input namespace');
 same('TensorValue', $request['inputs'][0]['input']['value']['kind_type'], 'tensor query input');
 same([['key' => 'trace.level', 'value' => Protocol::value(2)]], $request['properties'], 'generic property namespace');
@@ -395,7 +413,7 @@ same('q', $yql['query']['source']['parameters'][0]['key'], 'YQL parameter namesp
 
 $advanced = $index->search('fox')
     ->inputExpr('embedded_query', 'embed(transformer,@query)')
-    ->rankProperties(['alpha' => 1, 'beta' => 'two'])
+    ->rankProperties(['alpha' => 'one', 'beta' => 'two'])
     ->properties(['trace.level' => 2, 'custom.flag' => true])
     ->rawGrouping('all(output(count()))')
     ->format('json')
@@ -413,6 +431,12 @@ $advanced = $index->search('fox')
     ->queryProfile('web')
     ->searchChain('default')
     ->request();
+
+$implicitRanking = $index->search('fox')->rankProperty('source', 'catalog')->request()['ranking'];
+same(false, array_key_exists('profile', $implicitRanking), 'rank properties preserve absent ranking profile');
+same([['key' => 'source', 'value' => 'catalog']], $implicitRanking['properties'], 'rank properties remain present');
+$explicitRanking = $index->search('fox')->ranking('default')->rankProperty('source', 'catalog')->request()['ranking'];
+same('default', $explicitRanking['profile'], 'explicit default ranking profile remains explicit');
 
 $advancedInputs = [];
 foreach ($advanced['inputs'] as $input) {
@@ -727,6 +751,12 @@ throws(
 $encodedEmptyObject = Protocol::value(ValueObject::fromPairs([]));
 same('ValueObject', $encodedEmptyObject['kind_type'], 'empty object is distinct from empty list');
 same([], $encodedEmptyObject['kind']['fields'], 'empty object encodes with an empty field vector');
+$decodedEmptyObject = Protocol::decodeValue($encodedEmptyObject);
+truth($decodedEmptyObject instanceof ValueObject, 'decoded ValueObject retains its object type when empty');
+same([], $decodedEmptyObject->entries, 'empty decoded ValueObject has no entries');
+$decodedEmptyList = Protocol::decodeValue(['kind_type' => 'ValueList', 'kind' => ['values' => []]]);
+same([], $decodedEmptyList, 'decoded empty ValueList remains a PHP list');
+truth(!$decodedEmptyList instanceof ValueObject, 'decoded empty ValueList stays distinct from ValueObject');
 
 $encodedNumericKeyObject = Protocol::value(ValueObject::fromPairs([
     ['key' => '0', 'value' => 'zero'],

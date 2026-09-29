@@ -1,0 +1,565 @@
+use flatbuffers::root;
+use searchkernel::{Error as IndexError, ErrorCode as IndexErrorCode, Index};
+use searchkernel_dispatch::{DispatchError, Dispatcher};
+use searchkernel_ir::{ErrorCode, PortableError};
+use searchkernel_protocol::{
+    protocol::v2 as wire,
+    target::{request_index_target, IndexControlError},
+    v2 as api, PROTOCOL_VERSION,
+};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, RwLock, Weak},
+};
+
+const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
+const RESPONSE_IDENTIFIER: &str = "SKRS";
+
+#[derive(Debug)]
+pub enum RegistryInitError {
+    Io(std::io::Error),
+    NotDirectory(PathBuf),
+}
+
+impl fmt::Display for RegistryInitError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(error) => write!(formatter, "prepare Search Kernel data root: {error}"),
+            Self::NotDirectory(path) => {
+                write!(
+                    formatter,
+                    "Search Kernel data root is not a directory: {}",
+                    path.display()
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for RegistryInitError {}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RegistryDispatchError {
+    InvalidRequest,
+    UnsupportedProtocol(u32),
+    UnsupportedOperation(u8),
+    Closed,
+    Poisoned,
+}
+
+impl fmt::Display for RegistryDispatchError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidRequest => write!(formatter, "invalid Search Kernel request FlatBuffer"),
+            Self::UnsupportedProtocol(version) => {
+                write!(
+                    formatter,
+                    "unsupported Search Kernel protocol version {version}"
+                )
+            }
+            Self::UnsupportedOperation(value) => {
+                write!(
+                    formatter,
+                    "unsupported Search Kernel operation discriminator {value}"
+                )
+            }
+            Self::Closed => write!(formatter, "Search Kernel target is closed"),
+            Self::Poisoned => write!(formatter, "Search Kernel index registry lock is poisoned"),
+        }
+    }
+}
+
+impl std::error::Error for RegistryDispatchError {}
+
+struct RegistryEntry {
+    index: Index,
+    dispatcher: Arc<Dispatcher>,
+    lifecycle: RwLock<()>,
+}
+
+pub struct IndexRegistry {
+    data_root: PathBuf,
+    entries: Mutex<BTreeMap<String, Arc<RegistryEntry>>>,
+    transition_locks: Mutex<BTreeMap<String, Weak<Mutex<()>>>>,
+    shutdown: RwLock<bool>,
+}
+
+impl IndexRegistry {
+    pub fn new(data_root: impl Into<PathBuf>) -> Result<Self, RegistryInitError> {
+        let data_root = data_root.into();
+        std::fs::create_dir_all(&data_root).map_err(RegistryInitError::Io)?;
+        if !data_root.is_dir() {
+            return Err(RegistryInitError::NotDirectory(data_root));
+        }
+        Ok(Self {
+            data_root,
+            entries: Mutex::new(BTreeMap::new()),
+            transition_locks: Mutex::new(BTreeMap::new()),
+            shutdown: RwLock::new(false),
+        })
+    }
+
+    fn transition_lock(&self, target: &str) -> Result<Arc<Mutex<()>>, RegistryDispatchError> {
+        let mut locks = self
+            .transition_locks
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        if let Some(lock) = locks.get(target).and_then(Weak::upgrade) {
+            return Ok(lock);
+        }
+
+        // Keep the coordination table bounded even when callers probe many
+        // distinct valid-but-missing targets.
+        locks.retain(|_, lock| lock.strong_count() != 0);
+        let lock = Arc::new(Mutex::new(()));
+        locks.insert(target.to_owned(), Arc::downgrade(&lock));
+        Ok(lock)
+    }
+
+    pub fn data_root(&self) -> &Path {
+        &self.data_root
+    }
+
+    pub fn dispatch(&self, request: &[u8]) -> Result<Vec<u8>, RegistryDispatchError> {
+        // Keep shutdown linearizable with every request, including lifecycle
+        // transitions that temporarily operate outside the registry map.
+        let shutdown = self
+            .shutdown
+            .read()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        if *shutdown {
+            return Err(RegistryDispatchError::Closed);
+        }
+
+        let envelope = parse_request(request)?;
+        if envelope.protocol_version() != PROTOCOL_VERSION {
+            return Err(RegistryDispatchError::UnsupportedProtocol(
+                envelope.protocol_version(),
+            ));
+        }
+        let target = match request_index_target(envelope) {
+            Ok(target) => target,
+            Err(error) => {
+                return Ok(encode_error(index_control_error_to_portable(error.into())));
+            }
+        };
+
+        match envelope.payload_type() {
+            wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+                let payload = envelope
+                    .payload_as_search_kernel_v2_create_index_request()
+                    .ok_or(RegistryDispatchError::InvalidRequest)?;
+                let Some(definition) = payload.definition() else {
+                    return Ok(encode_error(index_control_error_to_portable(
+                        IndexControlError::MissingIndexDefinition,
+                    )));
+                };
+                self.create(target, definition)
+            }
+            wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+                envelope
+                    .payload_as_search_kernel_v2_open_index_request()
+                    .ok_or(RegistryDispatchError::InvalidRequest)?;
+                self.open(target)
+            }
+            wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
+                envelope
+                    .payload_as_search_kernel_v2_delete_index_request()
+                    .ok_or(RegistryDispatchError::InvalidRequest)?;
+                self.delete_index(target)
+            }
+            wire::RequestPayload::NONE => Err(RegistryDispatchError::InvalidRequest),
+            _ => self.dispatch_loaded(target, request),
+        }
+    }
+
+    pub fn close_all(&self) -> Result<(), IndexError> {
+        // Taking the exclusive shutdown gate waits for every in-flight request
+        // to finish. Marking the registry closed before draining the map also
+        // prevents a create/open transition from publishing a fresh entry
+        // after shutdown has begun.
+        let mut shutdown = self.shutdown.write().map_err(|_| {
+            IndexError::search(
+                IndexErrorCode::Internal,
+                "Search Kernel registry shutdown lock is poisoned",
+            )
+        })?;
+        if *shutdown {
+            return Ok(());
+        }
+        *shutdown = true;
+
+        let entries = {
+            let mut entries = self.entries.lock().map_err(|_| {
+                IndexError::search(
+                    IndexErrorCode::Internal,
+                    "Search Kernel index registry lock is poisoned",
+                )
+            })?;
+            std::mem::take(&mut *entries)
+        };
+
+        let mut first_error = None;
+        for entry in entries.into_values() {
+            let lifecycle = match entry.lifecycle.write() {
+                Ok(lifecycle) => lifecycle,
+                Err(_) => {
+                    if first_error.is_none() {
+                        first_error = Some(IndexError::search(
+                            IndexErrorCode::Internal,
+                            "Search Kernel index lifecycle lock is poisoned",
+                        ));
+                    }
+                    continue;
+                }
+            };
+            if let Err(error) = entry.index.close() {
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+            drop(lifecycle);
+        }
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    pub fn loaded_targets(&self) -> Result<Vec<String>, RegistryDispatchError> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        Ok(entries.keys().cloned().collect())
+    }
+
+    fn create(
+        &self,
+        target: &str,
+        definition: api::IndexDefinition<'_>,
+    ) -> Result<Vec<u8>, RegistryDispatchError> {
+        let definition_ir = match searchkernel_ir::index_definition_to_ir(definition) {
+            Ok(definition) => definition,
+            Err(error) => return Ok(encode_error(error)),
+        };
+        let definition_bytes = searchkernel_ir::index_definition_ir_to_api(&definition_ir);
+
+        let transition = self.transition_lock(target)?;
+        let _transition = transition
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        {
+            let entries = self
+                .entries
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            if entries.contains_key(target) {
+                return Ok(encode_error(index_control_error_to_portable(
+                    IndexControlError::IndexAlreadyExists,
+                )));
+            }
+        }
+
+        let path = match self.checked_index_path(target) {
+            Ok(path) => path,
+            Err(error) => return Ok(encode_error(error)),
+        };
+        let index = match Index::create_from_definition_bytes(&path, &definition_bytes) {
+            Ok(index) => index,
+            Err(error) => return Ok(encode_error(lifecycle_index_error_to_portable(error))),
+        };
+        let (context, session) = index.clone().into_session_parts();
+        let entry = Arc::new(RegistryEntry {
+            index,
+            dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
+            lifecycle: RwLock::new(()),
+        });
+        self.entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?
+            .insert(target.to_owned(), entry);
+        Ok(encode_lifecycle_result(
+            context.definition(),
+            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        ))
+    }
+
+    fn open(&self, target: &str) -> Result<Vec<u8>, RegistryDispatchError> {
+        let transition = self.transition_lock(target)?;
+        let _transition = transition
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        {
+            let entries = self
+                .entries
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            if let Some(entry) = entries.get(target) {
+                let (context, _) = entry.index.clone().into_session_parts();
+                return Ok(encode_lifecycle_result(
+                    context.definition(),
+                    wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+                ));
+            }
+        }
+
+        let path = match self.checked_index_path(target) {
+            Ok(path) => path,
+            Err(error) => return Ok(encode_error(error)),
+        };
+        let index = match Index::open(&path) {
+            Ok(index) => index,
+            Err(error) => return Ok(encode_error(lifecycle_index_error_to_portable(error))),
+        };
+        let (context, session) = index.clone().into_session_parts();
+        let entry = Arc::new(RegistryEntry {
+            index,
+            dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
+            lifecycle: RwLock::new(()),
+        });
+        self.entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?
+            .insert(target.to_owned(), entry);
+        Ok(encode_lifecycle_result(
+            context.definition(),
+            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+        ))
+    }
+
+    fn delete_index(&self, target: &str) -> Result<Vec<u8>, RegistryDispatchError> {
+        let transition = self.transition_lock(target)?;
+        let _transition = transition
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        let path = match self.checked_index_path(target) {
+            Ok(path) => path,
+            Err(error) => return Ok(encode_error(error)),
+        };
+
+        let entry = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?
+            .remove(target);
+        if entry.is_none() && !path.exists() {
+            return Ok(encode_error(index_control_error_to_portable(
+                IndexControlError::IndexNotFound,
+            )));
+        }
+
+        if let Some(entry) = entry {
+            let _lifecycle = entry
+                .lifecycle
+                .write()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            if let Err(error) = entry.index.close() {
+                return Ok(encode_error(lifecycle_index_error_to_portable(error)));
+            }
+        }
+
+        match Index::delete_storage(&path) {
+            Ok(()) => Ok(encode_delete_index_result()),
+            Err(error) => Ok(encode_error(lifecycle_index_error_to_portable(error))),
+        }
+    }
+
+    fn dispatch_loaded(
+        &self,
+        target: &str,
+        request: &[u8],
+    ) -> Result<Vec<u8>, RegistryDispatchError> {
+        // Acquire the per-entry admission guard while the entry is still
+        // reachable from the registry. Delete removes the entry under the same
+        // registry lock before taking its exclusive guard, so every request
+        // that successfully selects the target is guaranteed to drain first.
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        let Some(entry) = entries.get(target).cloned() else {
+            return Ok(encode_error(index_control_error_to_portable(
+                IndexControlError::IndexNotFound,
+            )));
+        };
+        let lifecycle = entry
+            .lifecycle
+            .read()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        drop(entries);
+
+        let result = entry
+            .dispatcher
+            .dispatch(request)
+            .map_err(map_dispatch_error);
+        drop(lifecycle);
+        result
+    }
+
+    fn checked_index_path(&self, target: &str) -> Result<PathBuf, PortableError> {
+        let path = self.data_root.join(target);
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                Err(PortableError::failed_precondition(
+                    "unsafe_index_path",
+                    Some("target"),
+                    format!("index target {target:?} resolves through a symbolic link"),
+                ))
+            }
+            Ok(metadata) if !metadata.is_dir() => Err(PortableError::failed_precondition(
+                "unsafe_index_path",
+                Some("target"),
+                format!("index target {target:?} is not a directory"),
+            )),
+            Ok(_) => Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path),
+            Err(error) => Err(PortableError::new(
+                ErrorCode::Unavailable,
+                format!("inspect index target {target:?}: {error}"),
+            )),
+        }
+    }
+}
+
+fn parse_request(bytes: &[u8]) -> Result<wire::RequestEnvelope<'_>, RegistryDispatchError> {
+    if bytes.len() < 8 || bytes[4..8] != *REQUEST_IDENTIFIER {
+        return Err(RegistryDispatchError::InvalidRequest);
+    }
+    root::<wire::RequestEnvelope<'_>>(bytes).map_err(|_| RegistryDispatchError::InvalidRequest)
+}
+
+fn map_dispatch_error(error: DispatchError) -> RegistryDispatchError {
+    match error {
+        DispatchError::InvalidRequest => RegistryDispatchError::InvalidRequest,
+        DispatchError::UnsupportedProtocol(version) => {
+            RegistryDispatchError::UnsupportedProtocol(version)
+        }
+        DispatchError::UnsupportedOperation(value) => {
+            RegistryDispatchError::UnsupportedOperation(value)
+        }
+        DispatchError::Closed => RegistryDispatchError::Closed,
+    }
+}
+
+fn index_control_error_to_portable(error: IndexControlError) -> PortableError {
+    let code = match error.error_code() {
+        api::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
+        api::ErrorCode::AlreadyExists => ErrorCode::AlreadyExists,
+        api::ErrorCode::NotFound => ErrorCode::NotFound,
+        other => unreachable!("unexpected index-control error code: {other:?}"),
+    };
+    let message = error.to_string();
+    PortableError::new(code, message.clone()).with_detail(
+        error.detail_code(),
+        error.path(),
+        message,
+    )
+}
+
+fn lifecycle_index_error_to_portable(error: IndexError) -> PortableError {
+    match error.code() {
+        IndexErrorCode::AlreadyExists => {
+            index_control_error_to_portable(IndexControlError::IndexAlreadyExists)
+        }
+        IndexErrorCode::NotFound => {
+            index_control_error_to_portable(IndexControlError::IndexNotFound)
+        }
+        _ => index_error_to_portable(error),
+    }
+}
+
+fn index_error_to_portable(error: IndexError) -> PortableError {
+    let code = match error.code() {
+        IndexErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
+        IndexErrorCode::NotFound => ErrorCode::NotFound,
+        IndexErrorCode::AlreadyExists => ErrorCode::AlreadyExists,
+        IndexErrorCode::FailedPrecondition
+        | IndexErrorCode::CorruptIndex
+        | IndexErrorCode::IncompatibleIndex
+        | IndexErrorCode::IndexClosed => ErrorCode::FailedPrecondition,
+        IndexErrorCode::Conflict => ErrorCode::Conflict,
+        IndexErrorCode::Unsupported => ErrorCode::Unsupported,
+        IndexErrorCode::ResourceExhausted => ErrorCode::ResourceExhausted,
+        IndexErrorCode::Internal => ErrorCode::Internal,
+        IndexErrorCode::Unavailable => ErrorCode::Unavailable,
+        IndexErrorCode::DeadlineExceeded => ErrorCode::DeadlineExceeded,
+        _ => ErrorCode::Internal,
+    };
+    let mut portable = PortableError::new(code, error.to_string());
+    portable.retryable = error.retryable();
+    portable.details = error
+        .details()
+        .iter()
+        .map(|detail| searchkernel_ir::ErrorDetail {
+            code: detail.code.clone(),
+            path: detail.path.clone(),
+            message: detail.message.clone(),
+            metadata: detail.metadata.clone(),
+        })
+        .collect();
+    portable
+}
+
+fn encode_lifecycle_result(
+    definition: &searchkernel_ir::IndexDefinitionIr,
+    payload_type: wire::ResponsePayload,
+) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
+    let payload = match payload_type {
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult => api::CreateIndexResult::create(
+            &mut builder,
+            &api::CreateIndexResultArgs { index: Some(index) },
+        )
+        .as_union_value(),
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult => api::OpenIndexResult::create(
+            &mut builder,
+            &api::OpenIndexResultArgs { index: Some(index) },
+        )
+        .as_union_value(),
+        _ => unreachable!("lifecycle result kind is fixed by caller"),
+    };
+    encode_response(&mut builder, payload_type, payload)
+}
+
+fn encode_delete_index_result() -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload =
+        api::DeleteIndexResult::create(&mut builder, &api::DeleteIndexResultArgs::default())
+            .as_union_value();
+    encode_response(
+        &mut builder,
+        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+        payload,
+    )
+}
+
+fn encode_error(error: PortableError) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload = searchkernel_ir::error_offset(&mut builder, &error).as_union_value();
+    encode_response(
+        &mut builder,
+        wire::ResponsePayload::SearchKernel_V2_Error,
+        payload,
+    )
+}
+
+fn encode_response(
+    builder: &mut flatbuffers::FlatBufferBuilder<'_>,
+    payload_type: wire::ResponsePayload,
+    payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+) -> Vec<u8> {
+    let envelope = wire::ResponseEnvelope::create(
+        builder,
+        &wire::ResponseEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            payload_type,
+            payload: Some(payload),
+        },
+    );
+    builder.finish(envelope, Some(RESPONSE_IDENTIFIER));
+    builder.finished_data().to_vec()
+}

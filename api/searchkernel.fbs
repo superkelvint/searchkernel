@@ -22,7 +22,7 @@
 // versioned request/response envelopes in searchkernel_request.fbs and
 // searchkernel_response.fbs. Embedded/per-index data operations execute against
 // an already-bound Index handle. Multi-index daemon routing and CreateIndex /
-// OpenIndex lifecycle operations are control-plane semantics handled above the
+// OpenIndex / DeleteIndex lifecycle operations are control-plane semantics handled above the
 // per-index dispatcher.
 
 namespace SearchKernel.V2;
@@ -566,7 +566,7 @@ table IndexTarget {
 }
 
 // Strict lifecycle semantics: create fails with AlreadyExists when the target
-// already exists; open fails with NotFound when it does not exist. The logical
+// already exists; open and delete fail with NotFound when the target does not exist. The logical
 // daemon target is carried by the enclosing request envelope. IndexDefinition.name
 // is independent schema identity (and contributes to document-type resolution);
 // it is not an alternate target and need not equal the logical target.
@@ -584,6 +584,15 @@ table OpenIndexRequest {
 
 table OpenIndexResult {
   index:IndexDefinition;
+}
+
+// Delete removes the logical target from the daemon registry and deletes its
+// persisted directory beneath the configured data root. Client-handle close is
+// still local-only and never implies index deletion.
+table DeleteIndexRequest {
+}
+
+table DeleteIndexResult {
 }
 
 table IndexDefinition {

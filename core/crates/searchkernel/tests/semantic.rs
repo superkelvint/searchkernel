@@ -259,7 +259,7 @@ fn public_api_round_trips_crud_and_match_all_search() {
         searchkernel::TotalHitsRelation::Exact
     );
     assert_eq!(result.hits[0].score, Some(1.0));
-    assert_eq!(result.hits[1].document, product);
+    assert_eq!(result.hits[1].document, Some(product));
 
     assert!(index.delete("sku-1").unwrap());
     assert!(!index.delete("sku-1").unwrap());

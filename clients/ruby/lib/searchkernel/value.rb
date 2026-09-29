@@ -130,6 +130,10 @@ module SearchKernel
     end
 
     def decimal_integer!(value, range)
+      if value.is_a?(Integer)
+        raise ProtocolError, "portable 64-bit integer out of range" unless range.cover?(value)
+        return value
+      end
       unless value.is_a?(String) && value.match?(/\A-?(?:0|[1-9][0-9]*)\z/)
         raise ProtocolError, "invalid portable 64-bit decimal string"
       end

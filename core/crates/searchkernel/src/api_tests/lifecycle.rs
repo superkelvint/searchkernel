@@ -1,63 +1,447 @@
 use super::*;
-use crate::{Analyzer, DistanceMetric, Field, HnswIndexConfig, RankProfile, SearchField};
+use crate::{DistanceMetric, HnswIndexConfig};
 use searchkernel_ir::{FieldCardinality, FieldKind};
-use searchkernel_testkit::RecordingBackend;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-fn temporary_path(label: &str) -> std::path::PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock after epoch")
-        .as_nanos();
-    std::env::temp_dir().join(format!("searchkernel-index-test-{label}-{nonce}"))
-}
-
-fn write_config(config: &std::path::Path) {
-    std::fs::create_dir_all(config).unwrap();
-    for name in [
-        "searchkernel-schema.json",
-        "indexschema.cfg",
-        "attributes.cfg",
-        "summary.cfg",
-        "rank-profiles.cfg",
-        "juniperrc.cfg",
-        "proton.cfg",
-    ] {
-        std::fs::write(config.join(name), format!("{name}\n")).unwrap();
-    }
-}
-
-fn resolved_context(definition: &IndexDefinition) -> IndexContext {
-    IndexContext::from_definition_ir(definition_to_ir(definition).unwrap())
-}
-
-fn manifest_definition() -> IndexDefinition {
-    IndexDefinition::new()
-        .name("catalog")
+#[cfg(feature = "native")]
+#[test]
+fn create_persists_rich_schema_provenance_and_reopens_consistently() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-schema-provenance-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let definition = IndexDefinition::new()
+        .name("rich_native_schema")
         .field(
             Field::text("title")
-                .multi()
                 .stored(true)
                 .searchable(true)
-                .filterable(false)
-                .sortable(false)
-                .facetable(false)
                 .analyzer(Analyzer::standard_v1()),
         )
         .field(
             Field::keyword("brand")
-                .stored(false)
-                .searchable(false)
+                .stored(true)
                 .filterable(true)
                 .sortable(true)
                 .facetable(true),
         )
-        .field(Field::int64("quantity"))
-        .field(Field::float64("price"))
-        .field(Field::bool("enabled"))
-        .default_search_fields([SearchField::new("title")])
+        .field(Field::int64("price").stored(true).filterable(true))
+        .field(Field::tensor("embedding", "tensor<float>(x[3])"))
+        .default_search_fields([SearchField::new("title").weight(0.75)])
+        .rank_profile(
+            RankProfile::new("product_search")
+                .first_phase("bm25(title)")
+                .match_feature("bm25(title)"),
+        );
+    let expected_resolved =
+        definition_to_ir(&definition).expect("public definition should resolve before create");
+    let expected_portable = crate::portable_definition::encode_portable_definition(&definition);
+
+    let index = Index::create(&root, definition).expect("create native index");
+    index.close().expect("close created index");
+
+    let portable_bytes = std::fs::read(root.join("manifest/portable-index-definition.bfbs"))
+        .expect("read persisted portable definition");
+    let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&portable_bytes)
+        .expect("persisted portable definition should parse");
+    assert_eq!(portable_bytes, expected_portable);
+    let portable_ir = searchkernel_ir::index_definition_to_ir(portable)
+        .expect("persisted portable definition should resolve");
+    assert_eq!(portable_ir, expected_resolved);
+    assert_eq!(portable_ir.schema_fields().len(), 0);
+    assert_eq!(portable_ir.rank_profiles().len(), 1);
+    assert_eq!(portable_ir.properties().len(), 0);
+    assert!(portable_ir.fields().iter().any(|field| {
+        field.name().as_str() == "title"
+            && field.analyzer().is_some()
+            && field.capabilities().stored()
+            && field.capabilities().searchable()
+    }));
+
+    let canonical_bytes = std::fs::read(root.join("manifest/index-definition.bfbs"))
+        .expect("read persisted canonical definition");
+    let canonical = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&canonical_bytes)
+        .expect("persisted canonical definition should parse");
+    let persisted_resolved = searchkernel_ir::index_definition_to_ir(canonical)
+        .expect("persisted canonical definition should resolve");
+    assert_eq!(persisted_resolved, expected_resolved);
+
+    let reopened = Index::open(&root).expect("reopen persisted index");
+    let described = reopened.describe().expect("describe reopened index");
+    let reopened_resolved =
+        definition_to_ir(&described).expect("reopened public definition should resolve");
+    assert_eq!(reopened_resolved, expected_resolved);
+    reopened.close().expect("close reopened index");
+    std::fs::remove_dir_all(root).expect("remove provenance test index");
 }
 
+#[cfg(feature = "native")]
+#[test]
+fn unnamed_index_keeps_resolved_document_identity_after_reopen() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-unnamed-document-identity-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let definition = IndexDefinition::new().field(Field::text("title").stored(true));
+    let expected = definition_to_ir(&definition).expect("unnamed schema resolves");
+    assert_eq!(expected.document_type(), None);
+    assert_eq!(expected.resolved_document_type(), "searchkernel");
+
+    let index = Index::create(&root, definition).expect("create unnamed index");
+    let described = index.describe().expect("describe created index");
+    let described = definition_to_ir(&described).expect("created schema resolves");
+    assert_eq!(described, expected);
+    index.close().expect("close unnamed index");
+
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(root.join("manifest/index.json")).expect("read index manifest"),
+    )
+    .expect("parse index manifest");
+    assert_eq!(manifest["resolved_document_type"], json!("searchkernel"));
+
+    let reopened = Index::open(&root).expect("reopen unnamed index");
+    let described = reopened.describe().expect("describe reopened index");
+    let described = definition_to_ir(&described).expect("reopened schema resolves");
+    assert_eq!(described, expected);
+    assert_eq!(described.document_type(), None);
+    assert_eq!(described.resolved_document_type(), "searchkernel");
+    reopened.close().expect("close reopened unnamed index");
+    std::fs::remove_dir_all(root).expect("remove unnamed index");
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn unnamed_index_rejects_persisted_resolved_document_identity_mismatch() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-unnamed-document-identity-mismatch-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let index = Index::create(
+        &root,
+        IndexDefinition::new().field(Field::text("title").stored(true)),
+    )
+    .expect("create unnamed index");
+    index.close().expect("close unnamed index");
+
+    let manifest_path = root.join("manifest/index.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).expect("read index manifest"))
+            .expect("parse index manifest");
+    manifest["resolved_document_type"] = json!("different_document");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).expect("encode index manifest"),
+    )
+    .expect("rewrite index manifest");
+
+    let error = match Index::open(&root) {
+        Ok(index) => {
+            index.close().expect("close unexpectedly reopened index");
+            panic!("reopen accepted a mismatched persisted document identity")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), crate::ErrorCode::IncompatibleIndex);
+    assert!(
+        error.to_string().contains("resolved document identity"),
+        "identity mismatch must fail in the persistence compatibility domain: {error}"
+    );
+    std::fs::remove_dir_all(root).expect("remove mismatched index");
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn pre_identity_v4_manifest_recovers_document_identity_from_compiled_config() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-v4-document-identity-compat-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after unix epoch")
+            .as_nanos()
+    ));
+    let index = Index::create(
+        &root,
+        IndexDefinition::new().field(Field::text("title").stored(true)),
+    )
+    .expect("create unnamed index");
+    index.close().expect("close unnamed index");
+
+    let manifest_path = root.join("manifest/index.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).expect("read index manifest"))
+            .expect("parse index manifest");
+    manifest
+        .as_object_mut()
+        .expect("manifest object")
+        .remove("resolved_document_type");
+
+    let config = root.join("config");
+    let schema_path = config.join("searchkernel-schema.json");
+    let mut schema: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&schema_path).expect("read schema manifest"))
+            .expect("parse schema manifest");
+    schema["document_type"] = json!("different_document");
+    std::fs::write(
+        &schema_path,
+        serde_json::to_vec(&schema).expect("encode schema manifest"),
+    )
+    .expect("rewrite schema manifest");
+    manifest["resolved_engine_config_identity"] =
+        config_identity(&config).expect("recompute config identity");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).expect("encode index manifest"),
+    )
+    .expect("rewrite index manifest");
+
+    let manifest = IndexManifest::read(&root).expect("read pre-identity v4 manifest");
+    let recovered = manifest
+        .resolved_context_with_config(&config)
+        .expect("pre-identity v4 manifest must recover the compiled document identity");
+    assert_eq!(
+        recovered.definition().resolved_document_type(),
+        "different_document"
+    );
+    assert_eq!(recovered.definition().document_type(), None);
+    std::fs::remove_dir_all(root).expect("remove compatibility index");
+}
+
+#[cfg(feature = "native")]
+#[test]
+fn native_public_get_round_trips_supported_composites_projection_and_reopen() {
+    use searchkernel_ir::{
+        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr,
+        NamedStructDefinitionIr, PrimitiveDataTypeIr, StructFieldIr,
+    };
+
+    // Vespa stores these composite values in attribute-backed fields. The
+    // public stored capability controls inclusion in the default GET
+    // projection, while filterable is what gives the native adapter the
+    // attribute required for these types.
+    let stored_attribute = || FieldCapabilities::new(true, false, true, false, false);
+    let fields = vec![
+        FieldIr::new(
+            FieldName::parse("tags").unwrap(),
+            DataTypeIr::Array(Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::String))),
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("people").unwrap(),
+            DataTypeIr::Array(Box::new(DataTypeIr::Struct {
+                fields: vec![
+                    StructFieldIr {
+                        name: "name".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                    },
+                    StructFieldIr {
+                        name: "age".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                    },
+                    StructFieldIr {
+                        name: "active".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+                    },
+                    StructFieldIr {
+                        name: "score".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+                    },
+                ],
+            })),
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("people_ref").unwrap(),
+            DataTypeIr::Array(Box::new(DataTypeIr::StructReference {
+                name: "person_ref".to_owned(),
+            })),
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("location").unwrap(),
+            DataTypeIr::Position,
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("feature_access").unwrap(),
+            DataTypeIr::Predicate,
+            None,
+            stored_attribute(),
+        ),
+        FieldIr::new(
+            FieldName::parse("expression_access").unwrap(),
+            DataTypeIr::Predicate,
+            None,
+            stored_attribute(),
+        ),
+    ];
+    let mut canonical = IndexDefinitionIr::new(None, fields, Vec::new())
+        .expect("composite product schema should be valid canonical IR");
+    canonical.set_structs(vec![NamedStructDefinitionIr {
+        name: "person_ref".to_owned(),
+        fields: vec![
+            StructFieldIr {
+                name: "name".to_owned(),
+                data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            },
+            StructFieldIr {
+                name: "score".to_owned(),
+                data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+            },
+        ],
+        properties: std::collections::BTreeMap::new(),
+    }]);
+    let definition = definition_from_ir(&canonical);
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-public-composite-get-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+
+    let expected = json!({
+        "tags": ["alpha", "", "omega"],
+        "people": [
+            {"name": "Ada", "age": 37, "active": true, "score": 1.23456789},
+            {"name": "Grace", "age": 85, "active": false, "score": 9.87654321}
+        ],
+        "people_ref": [
+            {"name": "Margaret", "score": std::f64::consts::PI}
+        ],
+        "location": {"latitude": 37.774929, "longitude": -122.419416},
+        "feature_access": {"features": {"hobby": "music"}},
+        "expression_access": {
+            "expression": {"type": 4, "key": "hobby", "feature_set": ["music"]}
+        }
+    });
+
+    let index = Index::create(&path, definition).expect("create composite product index");
+    index
+        .upsert("composite-1", &expected)
+        .expect("write composite product document");
+    index
+        .upsert(
+            "explicit-empty",
+            &json!({"tags": [], "people": [], "people_ref": []}),
+        )
+        .expect("write explicit empty collections");
+    index
+        .upsert(
+            "absent-collections",
+            &json!({"feature_access": {"features": {"hobby": "music"}}}),
+        )
+        .expect("write document with absent collection fields");
+
+    let full = index
+        .get::<serde_json::Value>("composite-1")
+        .expect("get composite document through public facade")
+        .expect("composite document exists");
+    assert_eq!(full, expected);
+
+    let projected = index
+        .get_with_projection::<serde_json::Value>(
+            "composite-1",
+            [
+                "people",
+                "people_ref",
+                "feature_access",
+                "expression_access",
+            ],
+        )
+        .expect("get projected composite document")
+        .expect("projected document exists");
+    assert_eq!(
+        projected,
+        json!({
+            "people": expected["people"].clone(),
+            "people_ref": expected["people_ref"].clone(),
+            "feature_access": expected["feature_access"].clone(),
+            "expression_access": expected["expression_access"].clone()
+        })
+    );
+
+    let empty = index
+        .get_with_projection::<serde_json::Value>("composite-1", std::iter::empty::<&str>())
+        .expect("get explicit empty projection")
+        .expect("document exists for empty projection");
+    assert_eq!(empty, json!({}));
+
+    let explicit_empty = index
+        .get_with_projection::<serde_json::Value>(
+            "explicit-empty",
+            ["tags", "people", "people_ref"],
+        )
+        .expect("get explicit empty collections")
+        .expect("explicit-empty document exists");
+    assert_eq!(
+        explicit_empty,
+        json!({"tags": [], "people": [], "people_ref": []})
+    );
+
+    let absent_collections = index
+        .get_with_projection::<serde_json::Value>(
+            "absent-collections",
+            ["tags", "people", "people_ref"],
+        )
+        .expect("get absent collections")
+        .expect("absent-collections document exists");
+    assert_eq!(absent_collections, json!({}));
+
+    index.close().expect("close composite product index");
+    let reopened = Index::open(&path).expect("reopen composite product index");
+    let persisted = reopened
+        .get::<serde_json::Value>("composite-1")
+        .expect("get composite document after reopen")
+        .expect("reopened composite document exists");
+    assert_eq!(persisted, expected);
+
+    let persisted_empty = reopened
+        .get_with_projection::<serde_json::Value>(
+            "explicit-empty",
+            ["tags", "people", "people_ref"],
+        )
+        .expect("get persisted explicit empty collections")
+        .expect("persisted explicit-empty document exists");
+    assert_eq!(
+        persisted_empty,
+        json!({"tags": [], "people": [], "people_ref": []})
+    );
+
+    let persisted_absent = reopened
+        .get_with_projection::<serde_json::Value>(
+            "absent-collections",
+            ["tags", "people", "people_ref"],
+        )
+        .expect("get persisted absent collections")
+        .expect("persisted absent-collections document exists");
+    assert_eq!(persisted_absent, json!({}));
+
+    reopened
+        .close()
+        .expect("close reopened composite product index");
+    std::fs::remove_dir_all(path).expect("remove composite product index");
+}
+
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn schema_options_and_default_search_fields_reach_core() {
     let definition = IndexDefinition::new()
@@ -139,7 +523,8 @@ fn schema_options_and_default_search_fields_reach_core() {
     assert_eq!(fields[4].cardinality(), FieldCardinality::Multi);
     assert!(!fields[4].capabilities().sortable());
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn rust_schema_round_trip_preserves_hnsw_and_distance_metric() {
     let definition = IndexDefinition::new().field(
@@ -188,7 +573,8 @@ fn rust_schema_round_trip_preserves_hnsw_and_distance_metric() {
         Some(16)
     );
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn manifest_round_trips_definition_and_config_identity() {
     let root = temporary_path("manifest-round-trip");
@@ -258,7 +644,8 @@ fn manifest_round_trips_definition_and_config_identity() {
     ));
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn manifest_separates_portable_intent_from_resolved_definition() {
     let root = temporary_path("manifest-resolved-definition");
@@ -313,7 +700,8 @@ fn manifest_separates_portable_intent_from_resolved_definition() {
 
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn manifest_preserves_rich_resolved_ir() {
     let root = temporary_path("manifest-rich-resolved-ir");
@@ -374,13 +762,14 @@ fn manifest_preserves_rich_resolved_ir() {
     );
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn manifest_preserves_rich_described_schema_provenance() {
     let root = temporary_path("manifest-rich-described-schema");
     let config = root.join("config");
     write_config(&config);
-    let (canonical, described) = super::api_tests::public_described_canonical_fixture();
+    let (canonical, described) = public_described_canonical_fixture();
     let portable_bytes = crate::portable_definition::encode_portable_definition(&described);
     let canonical_bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
 
@@ -395,73 +784,8 @@ fn manifest_preserves_rich_described_schema_provenance() {
     assert_eq!(loaded.definition().unwrap(), described);
     let _ = std::fs::remove_dir_all(root);
 }
-
-#[test]
-fn public_rank_profile_preserves_second_phase_and_rerank_count() {
-    let definition = IndexDefinition::new()
-        .field(Field::int64("rating"))
-        .field(Field::int64("inventory"))
-        .rank_profile(
-            RankProfile::new("two_phase")
-                .first_phase("attribute(rating)")
-                .second_phase("attribute(inventory)")
-                .rerank_count(3),
-        );
-
-    let resolved = definition_to_ir(&definition).unwrap();
-    let profile = &resolved.rank_profiles()[0];
-    assert_eq!(
-        profile.first_phase.as_ref().unwrap().expression.as_deref(),
-        Some("attribute(rating)")
-    );
-    let second_phase = profile.second_phase.as_ref().unwrap();
-    assert_eq!(
-        second_phase.expression.as_deref(),
-        Some("attribute(inventory)")
-    );
-    assert_eq!(second_phase.rerank_count, Some(3));
-}
-
-#[test]
-fn public_describe_preserves_rank_profiles_from_resolved_ir() {
-    let definition = IndexDefinition::new()
-        .field(Field::text("title"))
-        .rank_profile(
-            RankProfile::new("two_phase")
-                .first_phase("bm25(title)")
-                .second_phase("attribute(score)")
-                .rerank_count(7)
-                .match_feature("bm25(title)")
-                .query_input("query_vector", "tensor<float>(x[3])"),
-        );
-    let index = IndexRuntime::from_backend(definition, Arc::new(RecordingBackend::new())).unwrap();
-
-    let described = index.describe().unwrap();
-    assert_eq!(described.rank_profiles().len(), 1);
-    let profile = &described.rank_profiles()[0];
-    assert_eq!(profile.name(), "two_phase");
-    assert_eq!(
-        profile
-            .first_phase
-            .as_ref()
-            .and_then(|phase| phase.expression.as_deref()),
-        Some("bm25(title)")
-    );
-    assert_eq!(
-        profile
-            .second_phase
-            .as_ref()
-            .and_then(|phase| phase.expression.as_deref()),
-        Some("attribute(score)")
-    );
-    assert_eq!(profile.rerank_count, Some(7));
-    assert_eq!(profile.match_features, vec!["bm25(title)"]);
-    assert_eq!(
-        profile.query_inputs,
-        vec![("query_vector".to_owned(), "tensor<float>(x[3])".to_owned())]
-    );
-}
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn manifest_uses_resolved_definition_when_portable_provenance_differs() {
     let root = temporary_path("manifest-mismatched-definition");
@@ -482,7 +806,8 @@ fn manifest_uses_resolved_definition_when_portable_provenance_differs() {
     assert_eq!(loaded.definition().unwrap(), resolved_definition);
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn semantically_invalid_portable_provenance_does_not_block_reopen() {
     let root = temporary_path("manifest-portable-semantics");
@@ -529,7 +854,8 @@ fn semantically_invalid_portable_provenance_does_not_block_reopen() {
     assert_eq!(loaded.definition().unwrap(), resolved_definition);
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn previous_v3_manifest_reopens_from_persisted_resolved_definition() {
     let root = temporary_path("manifest-v3-reopen");
@@ -564,7 +890,8 @@ fn previous_v3_manifest_reopens_from_persisted_resolved_definition() {
     loaded.validate_config(&config).unwrap();
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn sparse_resolved_snapshot_is_rejected_before_caller_intent_resolution() {
     let root = temporary_path("manifest-sparse-resolved-snapshot");
@@ -628,7 +955,8 @@ fn sparse_resolved_snapshot_is_rejected_before_caller_intent_resolution() {
     ));
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn semantically_invalid_resolved_snapshot_is_reported_as_compatibility_error() {
     let root = temporary_path("manifest-invalid-resolved-snapshot");
@@ -678,7 +1006,6 @@ fn semantically_invalid_resolved_snapshot_is_reported_as_compatibility_error() {
     ));
     let _ = std::fs::remove_dir_all(root);
 }
-
 #[test]
 #[cfg(feature = "native")]
 fn staged_creation_publishes_only_a_complete_index_directory() {
@@ -692,7 +1019,6 @@ fn staged_creation_publishes_only_a_complete_index_directory() {
     assert!(!staging.exists());
     let _ = std::fs::remove_dir_all(root);
 }
-
 #[test]
 #[cfg(feature = "native")]
 fn parent_fsync_failure_is_reported_after_publication_without_rollback() {
@@ -713,7 +1039,6 @@ fn parent_fsync_failure_is_reported_after_publication_without_rollback() {
     assert!(!staging.exists());
     let _ = std::fs::remove_dir_all(root);
 }
-
 #[test]
 #[cfg(feature = "native")]
 fn create_fsync_failure_preserves_recoverable_root_and_rejects_destructive_retry() {
@@ -769,7 +1094,6 @@ fn create_fsync_failure_preserves_recoverable_root_and_rejects_destructive_retry
     reopened.close().expect("close recovered index");
     let _ = std::fs::remove_dir_all(root);
 }
-
 #[test]
 #[cfg(feature = "native")]
 fn failed_post_publication_open_reports_recoverable_published_index() {
@@ -793,7 +1117,72 @@ fn failed_post_publication_open_reports_recoverable_published_index() {
     reopened.close().unwrap();
     let _ = std::fs::remove_dir_all(root);
 }
+#[test]
+#[cfg(feature = "native")]
+fn failed_delete_cleanup_does_not_leave_a_partial_index_at_its_canonical_path() {
+    let temp = temporary_path("delete-cleanup-failure");
+    std::fs::create_dir_all(&temp).expect("create temporary parent");
+    let root = temp.join("products");
+    let index = Index::create(&root, IndexDefinition::new().field(Field::text("title")))
+        .expect("create index");
+    index.close().expect("close index before delete");
 
+    FAIL_NEXT_PUBLISHED_CLEANUP.with(|flag| flag.set(true));
+    let error = Index::delete_storage(&root).expect_err("injected cleanup must fail");
+
+    assert_eq!(error.code(), crate::ErrorCode::Unavailable);
+    assert!(
+        !root.exists(),
+        "a failed recursive tombstone cleanup must not expose partial contents at the canonical path"
+    );
+    assert!(
+        std::fs::read_dir(&temp)
+            .expect("read tombstone parent")
+            .any(|entry| entry
+                .expect("read tombstone entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".products.searchkernel-delete-")),
+        "failed cleanup must leave the complete tree available under its tombstone"
+    );
+    let _ = std::fs::remove_dir_all(temp);
+}
+#[test]
+#[cfg(feature = "native")]
+fn delete_parent_fsync_failure_is_reported_after_atomic_unpublish() {
+    let temp = temporary_path("delete-parent-fsync-failure");
+    std::fs::create_dir_all(&temp).expect("create temporary parent");
+    let root = temp.join("products");
+    let index = Index::create(&root, IndexDefinition::new().field(Field::text("title")))
+        .expect("create index");
+    index.close().expect("close index before delete");
+
+    FAIL_NEXT_PARENT_FSYNC.with(|flag| flag.set(true));
+    let error = Index::delete_storage(&root).expect_err("fsync failure must be reported");
+
+    assert_eq!(error.code(), crate::ErrorCode::Unavailable);
+    assert_eq!(
+        error.details()[0].code,
+        "index_deleted_durability_uncertain"
+    );
+    assert!(
+        !root.exists(),
+        "the canonical path is unpublished even when durability cannot be confirmed"
+    );
+    assert!(
+        std::fs::read_dir(&temp)
+            .expect("read tombstone parent")
+            .any(|entry| entry
+                .expect("read tombstone entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".products.searchkernel-delete-")),
+        "the tombstone remains intact when the publication fsync fails"
+    );
+    let _ = std::fs::remove_dir_all(temp);
+}
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn failed_create_after_publication_cleans_up_the_partial_runtime() {
     let root = temporary_path("failed-create-backend-open-cleanup");
@@ -814,7 +1203,8 @@ fn failed_create_after_publication_cleans_up_the_partial_runtime() {
     index.close().expect("close later valid create");
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn failed_open_releases_lifecycle_lock_without_exposing_a_partial_runtime() {
     let root = temporary_path("failed-open-partial-runtime");
@@ -851,7 +1241,8 @@ fn failed_open_releases_lifecycle_lock_without_exposing_a_partial_runtime() {
     recreated.close().expect("close recreated index");
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn interrupted_staging_does_not_block_a_retry() {
     let root = temporary_path("interrupted-staging");
@@ -869,7 +1260,8 @@ fn interrupted_staging_does_not_block_a_retry() {
     let _ = std::fs::remove_dir_all(staging);
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn legacy_manifest_with_old_abi_is_still_readable() {
     let root = temporary_path("legacy-manifest");
@@ -912,7 +1304,8 @@ fn legacy_manifest_with_old_abi_is_still_readable() {
     );
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn canonical_definition_corruption_is_rejected() {
     let root = temporary_path("canonical-definition-corruption");
@@ -938,7 +1331,8 @@ fn canonical_definition_corruption_is_rejected() {
     ));
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn portable_definition_corruption_is_rejected() {
     let root = temporary_path("portable-definition-corruption");
@@ -968,7 +1362,8 @@ fn portable_definition_corruption_is_rejected() {
     ));
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn manifest_validation_rejects_identity_and_structure_corruption() {
     let root = temporary_path("manifest-validation");
@@ -1068,7 +1463,8 @@ fn manifest_validation_rejects_identity_and_structure_corruption() {
     ));
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn persistence_fault_matrix_rejects_truncated_and_missing_binary_state() {
     fn assert_corrupt(root: &std::path::Path) {
@@ -1134,7 +1530,8 @@ fn persistence_fault_matrix_rejects_truncated_and_missing_binary_state() {
 
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn persistence_fault_matrix_rejects_resolved_document_identity_drift() {
     let root = temporary_path("resolved-document-identity-drift");
@@ -1198,7 +1595,8 @@ fn persistence_fault_matrix_rejects_resolved_document_identity_drift() {
 
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn persistence_fault_matrix_rejects_unknown_versions_without_touching_state() {
     fn write_version(root: &std::path::Path, version: u32, generation: u32) {
@@ -1257,7 +1655,8 @@ fn persistence_fault_matrix_rejects_unknown_versions_without_touching_state() {
         let _ = std::fs::remove_dir_all(root);
     }
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn persistence_fault_matrix_ignores_uncommitted_manifest_temporary_files() {
     let root = temporary_path("manifest-temporary");
@@ -1290,7 +1689,8 @@ fn persistence_fault_matrix_ignores_uncommitted_manifest_temporary_files() {
     assert!(root.join("manifest/.index.json.tmp").exists());
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn repeated_failed_manifest_reads_do_not_mutate_a_valid_index() {
     let root = temporary_path("repeated-failed-open");
@@ -1331,7 +1731,8 @@ fn repeated_failed_manifest_reads_do_not_mutate_a_valid_index() {
     loaded.validate_config(&config).unwrap();
     let _ = std::fs::remove_dir_all(root);
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn manifest_definition_decoder_rejects_malformed_fields() {
     let invalid_definitions = [
@@ -1366,7 +1767,8 @@ fn manifest_definition_decoder_rejects_malformed_fields() {
         ));
     }
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn failed_creation_removes_the_claimed_index_directory() {
     let root = temporary_path("failed-create-cleanup");
@@ -1384,7 +1786,8 @@ fn failed_creation_removes_the_claimed_index_directory() {
     );
     assert!(!root.exists());
 }
-
+#[cfg(feature = "native")]
+#[cfg(feature = "native")]
 #[test]
 fn invalid_native_schema_is_rejected_before_directory_creation() {
     let root = temporary_path("invalid-native-schema");

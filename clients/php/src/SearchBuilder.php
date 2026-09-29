@@ -96,7 +96,7 @@ class SearchBuilder
         return $copy;
     }
 
-    public function sort(string $field, string $direction = 'asc', mixed $missing = null): self
+    public function sort(string $field, string $direction, mixed $missing = null): self
     {
         if ($field === '') {
             throw new InvalidArgumentException('sort field must not be empty');
@@ -309,8 +309,11 @@ class SearchBuilder
         if ($name === '') {
             throw new InvalidArgumentException('rank property name must not be empty');
         }
+        if (!is_string($value)) {
+            throw new \TypeError('rank property value must be a string');
+        }
         $copy = clone $this;
-        $copy->rankProperties[$name] = (string) $value;
+        $copy->rankProperties[$name] = $value;
         return $copy;
     }
 
@@ -526,9 +529,11 @@ class SearchBuilder
         }
         if ($this->ranking !== null || $this->rankProperties !== []) {
             $request['ranking'] = [
-                'profile' => $this->ranking ?? 'default',
                 'properties' => Protocol::stringEntries($this->rankProperties),
             ];
+            if ($this->ranking !== null) {
+                $request['ranking']['profile'] = $this->ranking;
+            }
         }
         if ($this->inputs !== []) {
             $inputs = $this->inputs;

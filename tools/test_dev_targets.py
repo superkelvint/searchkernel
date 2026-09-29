@@ -29,7 +29,17 @@ class DevTargetsTest(unittest.TestCase):
         data = json.loads(REGISTRY.read_text())
         self.assertEqual(
             set(data["commands"]),
-            {"doctor", "build", "ci", "test", "lint", "verify", "universe", "release-check"},
+            {
+                "doctor",
+                "build",
+                "ci",
+                "test",
+                "lint",
+                "verify",
+                "galaxy",
+                "universe",
+                "release-check",
+            },
         )
 
     def test_aliases_resolve_to_canonical_targets(self):
@@ -45,6 +55,18 @@ class DevTargetsTest(unittest.TestCase):
             listed = [line.strip() for line in output.splitlines() if line.strip()]
             self.assertEqual(listed, list(data[kind]))
 
+    def test_universe_list_contains_only_registered_semantic_verifiers(self):
+        data = json.loads(REGISTRY.read_text())
+        expected = [
+            name
+            for name, meta in data["verify"].items()
+            if meta.get("universe") == "semantic"
+        ]
+        output = subprocess.check_output([TOOL, "list", "universe"], text=True)
+        self.assertEqual(output.splitlines(), expected)
+        self.assertTrue(expected)
+        self.assertTrue(all(name.startswith(("vespa.", "product.")) for name in expected))
+
     def test_aliases_do_not_create_duplicate_discovery_targets(self):
         data = json.loads(REGISTRY.read_text())
         output = subprocess.check_output([TOOL, "list", "verify"], text=True)
@@ -52,10 +74,45 @@ class DevTargetsTest(unittest.TestCase):
         for meta in data["verify"].values():
             self.assertTrue(listed.isdisjoint(meta.get("aliases", [])))
 
+    def test_client_semantic_parity_is_registered(self):
+        data = json.loads(REGISTRY.read_text())
+        self.assertIn("client-semantic-parity", data["verify"])
+        out = subprocess.check_output(
+            [TOOL, "resolve", "verify", "client-semantic-parity"], text=True
+        ).strip()
+        self.assertEqual(out, "client-semantic-parity")
+
+    def test_client_semantic_parity_has_one_snapshot_authority(self):
+        driver = (ROOT / "tools" / "check-client-semantic-parity.py").read_text()
+        self.assertIn("CARGO_TARGET_DIR", driver)
+        self.assertIn("SEARCHKERNEL_SEMANTIC_SNAPSHOT", driver)
+        self.assertNotIn("ROOT/'target/debug/searchkernel-semantic-snapshot'", driver)
+
+        for relative in (
+            "clients/python/tests/test_semantic_parity.py",
+            "clients/typescript/tests/semantic-parity.test.ts",
+            "clients/php/tests/semantic_parity.php",
+            "clients/ruby/test/semantic_parity.rb",
+        ):
+            text = (ROOT / relative).read_text()
+            self.assertIn("SEARCHKERNEL_SEMANTIC_SNAPSHOT", text, relative)
+            self.assertNotIn("target/debug/searchkernel-semantic-snapshot", text, relative)
+
+        self.assertNotIn("cargo','build", (ROOT / "clients/python/tests/test_semantic_parity.py").read_text())
+        self.assertNotIn('execFileSync("cargo"', (ROOT / "clients/typescript/tests/semantic-parity.test.ts").read_text())
+
     def test_unknown_target_fails_closed(self):
         result = subprocess.run([TOOL, "resolve", "verify", "nope"], text=True, capture_output=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn("unknown verify target: nope", result.stderr)
+
+        universe_resolve = subprocess.run(
+            [TOOL, "resolve", "universe", "vespa.ranking"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(universe_resolve.returncode, 1)
+        self.assertIn("universe is a list-only verifier collection", universe_resolve.stderr)
 
     def test_change_area_guidance_only_references_registered_targets(self):
         data = json.loads(REGISTRY.read_text())

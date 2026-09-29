@@ -109,7 +109,7 @@ export class SearchBuilder {
     return this;
   }
 
-  sort(field: string, direction: "asc" | "desc" = "asc"): this {
+  sort(field: string, direction: "asc" | "desc"): this {
     if (direction !== "asc" && direction !== "desc") {
       throw new TypeError("sort direction must be 'asc' or 'desc'");
     }
@@ -149,8 +149,11 @@ export class SearchBuilder {
     return this;
   }
 
-  rankProperty(name: string, item: unknown): this {
-    this.rankProperties.set(name, String(item));
+  rankProperty(name: string, item: string): this {
+    if (typeof item !== "string") {
+      throw new TypeError("rank property value must be a string");
+    }
+    this.rankProperties.set(name, item);
     return this;
   }
 
@@ -220,7 +223,7 @@ export class SearchBuilder {
 
     const ranking = this.rankingProfile !== undefined || this.rankProperties.size
       ? new RankingRequestT(
-          this.rankingProfile ?? "default",
+          this.rankingProfile ?? null,
           [...this.rankProperties]
             .sort(([a], [b]) => comparePortableKeys(a, b))
             .map(([key, item]) => new StringEntryT(key, item)),

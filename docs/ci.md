@@ -89,6 +89,7 @@ Developers and local-capable coding agents use `./dev`:
 ./dev verify --list
 ./dev verify <lane>
 
+./dev galaxy
 ./dev universe
 ./dev release-check
 ```
@@ -98,6 +99,7 @@ The intent is:
 - `ci` — cheap mandatory PR gate;
 - `test <scope>` — focused product/unit/client tests;
 - `verify <lane>` — focused specialist or semantic verification;
+- `galaxy` — broad routine suite, equivalent to `check`, without Universe-only exhaustive lanes;
 - `universe` — exhaustive repository/source qualification;
 - `release-check` — exact-revision shipability and artifact qualification.
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -17,6 +18,7 @@ def extract_function(name: str, next_name: str) -> str:
 
 FORMAT_COMMAND = extract_function("universe_format_command", "universe_step")
 PRINT_SUMMARY = extract_function("universe_print_summary", "universe")
+UNIVERSE = extract_function("universe", "regen_protocol")
 
 
 class DevUniverseSummaryTests(unittest.TestCase):
@@ -83,6 +85,76 @@ universe_print_summary 44 failed repro
             result.stdout,
         )
         self.assertIn("Search Kernel universe: FAIL", result.stdout)
+
+    def test_universe_discovers_semantic_verifiers_from_the_canonical_list(self) -> None:
+        result = self.run_bash(
+            f"""
+set -euo pipefail
+ROOT={str(ROOT)!r}
+CARGO=cargo
+PYTHON={sys.executable!r}
+universe_dev_step() {{ printf 'DEV:%s\\n' "$*"; }}
+universe_step() {{ printf 'STEP:%s\\n' "$*"; }}
+universe_print_summary() {{ printf 'SUMMARY:%s\\n' "$1"; }}
+{UNIVERSE}
+universe
+"""
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn(
+            "DEV:semantic verifier vespa.rust-ownership verify vespa.rust-ownership --skip-workspace-quality",
+            result.stdout,
+        )
+        self.assertIn(
+            "DEV:cumulative milestone.m14 closure verify milestone.m14 --skip-workspace-quality",
+            result.stdout,
+        )
+        self.assertIn(
+            "DEV:semantic verifier product.integration verify product.integration --baseline-already-proved --skip-workspace-quality",
+            result.stdout,
+        )
+        self.assertIn(
+            "semantic verifier vespa.nearest-neighbor.hnsw covered by cumulative milestone.m14 closure",
+            result.stdout,
+        )
+        self.assertNotIn(
+            "DEV:semantic verifier vespa.nearest-neighbor.hnsw verify",
+            result.stdout,
+        )
+        self.assertLess(
+            result.stdout.index("DEV:cumulative milestone.m14 closure"),
+            result.stdout.index("DEV:semantic verifier product.integration"),
+        )
+
+    def test_product_integration_does_not_skip_a_failed_cumulative_baseline(self) -> None:
+        result = self.run_bash(
+            f"""
+set -euo pipefail
+ROOT={str(ROOT)!r}
+CARGO=cargo
+PYTHON={sys.executable!r}
+universe_dev_step() {{
+  printf 'DEV:%s\\n' "$*"
+  if [[ "$*" == *"milestone.m14"* ]]; then
+    UNIVERSE_FAILED+=("M14 failed")
+    UNIVERSE_FAILED_REPRO+=("./dev verify milestone.m14")
+  fi
+}}
+universe_step() {{ printf 'STEP:%s\\n' "$*"; }}
+universe_print_summary() {{ printf 'SUMMARY:%s\\n' "$1"; }}
+{UNIVERSE}
+universe
+"""
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn(
+            "DEV:semantic verifier product.integration verify product.integration --skip-workspace-quality",
+            result.stdout,
+        )
+        self.assertNotIn(
+            "DEV:semantic verifier product.integration verify product.integration --baseline-already-proved",
+            result.stdout,
+        )
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 const DEFAULT_OUTPUT: &str = "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses";
+const MALFORMED_OUTPUT: &str = "reference/result-response-conformance/fixtures";
 const RESPONSE_IDENTIFIER: &str = "SKRS";
 
 fn encode_fixture(result: &searchkernel_ir::SearchResult) -> Vec<u8> {
@@ -59,6 +60,70 @@ fn main() {
             write_fixture(&path, &bytes);
         }
     }
+    let malformed_output = Path::new(MALFORMED_OUTPUT);
+    if !check {
+        std::fs::create_dir_all(malformed_output).expect("create malformed fixture directory");
+    }
+    let canonical = encode_fixture(
+        &searchkernel_testkit::result_fixtures()
+            .into_iter()
+            .find(|fixture| fixture.name == "canonical")
+            .expect("canonical fixture exists")
+            .result,
+    );
+    let values = encode_fixture(
+        &searchkernel_testkit::result_fixtures()
+            .into_iter()
+            .find(|fixture| fixture.name == "value-variants")
+            .expect("value-variants fixture exists")
+            .result,
+    );
+    let tensors = encode_fixture(
+        &searchkernel_testkit::result_fixtures()
+            .into_iter()
+            .find(|fixture| fixture.name == "sparse-mixed-tensors")
+            .expect("sparse-mixed-tensors fixture exists")
+            .result,
+    );
+    let malformed = [
+        (
+            "unknown-result-node-union",
+            unknown_result_node_union(canonical.clone()),
+        ),
+        ("unknown-value-union", unknown_value_union(values.clone())),
+        (
+            "unknown-relevance-union",
+            unknown_relevance_union(canonical.clone()),
+        ),
+        (
+            "unknown-tensor-payload-union",
+            unknown_tensor_payload_union(tensors),
+        ),
+        (
+            "unknown-response-payload-union",
+            unknown_response_payload_union(canonical.clone()),
+        ),
+        ("duplicate-result-map-key", duplicate_result_map_key(values)),
+    ];
+    let expected_malformed = malformed
+        .iter()
+        .map(|(name, _)| format!("result-malformed-{name}.skrs"))
+        .collect::<BTreeSet<_>>();
+    for (name, bytes) in malformed {
+        let path = malformed_output.join(format!("result-malformed-{name}.skrs"));
+        if check {
+            let existing = std::fs::read(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            assert_eq!(
+                existing,
+                bytes,
+                "malformed fixture drifted: {}",
+                path.display()
+            );
+        } else {
+            write_fixture(&path, &bytes);
+        }
+    }
     if check {
         for entry in std::fs::read_dir(&output).expect("read fixture output directory") {
             let name = entry
@@ -73,7 +138,139 @@ fn main() {
                 );
             }
         }
+        for entry in std::fs::read_dir(malformed_output).expect("read malformed fixture directory")
+        {
+            let name = entry
+                .expect("read malformed fixture directory entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned();
+            if name.starts_with("result-malformed-") && name.ends_with(".skrs") {
+                assert!(
+                    expected_malformed.contains(&name),
+                    "unexpected malformed fixture: {name}"
+                );
+            }
+        }
     }
+}
+
+fn table_field(bytes: &[u8], table: usize, slot: usize) -> usize {
+    let vtable = (table as isize - read_i32(bytes, table) as isize) as usize;
+    let field_offset = read_u16(bytes, vtable + 4 + slot * 2) as usize;
+    assert_ne!(field_offset, 0, "required fixture field is absent");
+    table + field_offset
+}
+
+fn indirect(bytes: &[u8], field: usize) -> usize {
+    field + read_i32(bytes, field) as usize
+}
+
+fn vector_table(bytes: &[u8], field: usize, index: usize) -> usize {
+    let vector = indirect(bytes, field);
+    assert!(index < read_u32(bytes, vector) as usize);
+    let element = vector + 4 + index * 4;
+    indirect(bytes, element)
+}
+
+fn response_payload(bytes: &[u8]) -> usize {
+    let root = read_u32(bytes, 0) as usize;
+    indirect(bytes, table_field(bytes, root, 2))
+}
+
+fn result_root(bytes: &[u8]) -> usize {
+    let payload = response_payload(bytes);
+    let field = table_field(bytes, payload, 0);
+    indirect(bytes, field)
+}
+
+fn unknown_result_node_union(mut bytes: Vec<u8>) -> Vec<u8> {
+    let node = result_root(&bytes);
+    let kind = table_field(&bytes, node, 0);
+    bytes[kind] = u8::MAX;
+    bytes
+}
+
+fn unknown_response_payload_union(mut bytes: Vec<u8>) -> Vec<u8> {
+    let root = read_u32(&bytes, 0) as usize;
+    let kind = table_field(&bytes, root, 1);
+    bytes[kind] = u8::MAX;
+    bytes
+}
+
+fn unknown_relevance_union(mut bytes: Vec<u8>) -> Vec<u8> {
+    let node = result_root(&bytes);
+    let group = indirect(&bytes, table_field(&bytes, node, 1));
+    let child = vector_table(&bytes, table_field(&bytes, group, 4), 0);
+    let hit = indirect(&bytes, table_field(&bytes, child, 1));
+    let relevance = indirect(&bytes, table_field(&bytes, hit, 1));
+    let kind = table_field(&bytes, relevance, 0);
+    bytes[kind] = u8::MAX;
+    bytes
+}
+
+fn unknown_tensor_payload_union(mut bytes: Vec<u8>) -> Vec<u8> {
+    let node = result_root(&bytes);
+    let group = indirect(&bytes, table_field(&bytes, node, 1));
+    let value = indirect(&bytes, table_field(&bytes, group, 2));
+    let tensor = indirect(&bytes, table_field(&bytes, value, 1));
+    let kind = table_field(&bytes, tensor, 1);
+    bytes[kind] = u8::MAX;
+    bytes
+}
+
+fn first_result_field_value(bytes: &[u8]) -> usize {
+    let node = result_root(bytes);
+    let group = indirect(bytes, table_field(bytes, node, 1));
+    let fields = table_field(bytes, group, 3);
+    let entry = vector_table(bytes, fields, 0);
+    indirect(bytes, table_field(bytes, entry, 1))
+}
+
+fn unknown_value_union(mut bytes: Vec<u8>) -> Vec<u8> {
+    let value = first_result_field_value(&bytes);
+    let kind = table_field(&bytes, value, 0);
+    bytes[kind] = u8::MAX;
+    bytes
+}
+
+fn duplicate_result_map_key(mut bytes: Vec<u8>) -> Vec<u8> {
+    let node = result_root(&bytes);
+    let group = indirect(&bytes, table_field(&bytes, node, 1));
+    let fields = table_field(&bytes, group, 3);
+    // `int64_max` and `int64_min` have equal-length keys, so replacing the
+    // latter's bytes preserves FlatBuffer bounds even as other fixture keys
+    // are added or reordered.
+    let vector = indirect(&bytes, fields);
+    let count = read_u32(&bytes, vector) as usize;
+    let entry = (0..count)
+        .map(|index| vector_table(&bytes, fields, index))
+        .find(|entry| string_value(&bytes, table_field(&bytes, *entry, 0)) == b"int64_min")
+        .expect("value-variants map contains int64_min");
+    let key_field = table_field(&bytes, entry, 0);
+    let string = indirect(&bytes, key_field);
+    let length = read_u32(&bytes, string) as usize;
+    assert_eq!(length, b"int64_min".len());
+    bytes[string + 4..string + 4 + length].copy_from_slice(b"int64_max");
+    bytes
+}
+
+fn string_value(bytes: &[u8], field: usize) -> &[u8] {
+    let string = indirect(bytes, field);
+    let length = read_u32(bytes, string) as usize;
+    &bytes[string + 4..string + 4 + length]
+}
+
+fn read_u16(bytes: &[u8], offset: usize) -> u16 {
+    u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap())
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
+}
+
+fn read_i32(bytes: &[u8], offset: usize) -> i32 {
+    i32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
 }
 
 fn write_fixture(path: &Path, bytes: &[u8]) {
