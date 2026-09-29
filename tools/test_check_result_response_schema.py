@@ -42,6 +42,14 @@ class ResultResponseSchemaTest(unittest.TestCase):
         )
         self.assertTrue(any("wire members mismatch" in error for error in MODULE.verify(schema)))
 
+    def test_enum_storage_type_change_fails(self) -> None:
+        schema = MODULE.SCHEMA.read_text().replace(
+            "enum TotalHitsRelation:ubyte {",
+            "enum TotalHitsRelation:ushort {",
+            1,
+        )
+        self.assertTrue(any("wire header mismatch" in error for error in MODULE.verify(schema)))
+
     def test_enum_numeric_identity_change_fails(self) -> None:
         schema = MODULE.SCHEMA.read_text().replace("Unknown = 4", "Unknown = 9", 1)
         self.assertTrue(any("wire members mismatch" in error for error in MODULE.verify(schema)))
