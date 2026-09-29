@@ -60,6 +60,25 @@ class DevTargetsTest(unittest.TestCase):
         ).strip()
         self.assertEqual(out, "client-semantic-parity")
 
+    def test_client_semantic_parity_has_one_snapshot_authority(self):
+        driver = (ROOT / "tools" / "check-client-semantic-parity.py").read_text()
+        self.assertIn("CARGO_TARGET_DIR", driver)
+        self.assertIn("SEARCHKERNEL_SEMANTIC_SNAPSHOT", driver)
+        self.assertNotIn("ROOT/'target/debug/searchkernel-semantic-snapshot'", driver)
+
+        for relative in (
+            "clients/python/tests/test_semantic_parity.py",
+            "clients/typescript/tests/semantic-parity.test.ts",
+            "clients/php/tests/semantic_parity.php",
+            "clients/ruby/test/semantic_parity.rb",
+        ):
+            text = (ROOT / relative).read_text()
+            self.assertIn("SEARCHKERNEL_SEMANTIC_SNAPSHOT", text, relative)
+            self.assertNotIn("target/debug/searchkernel-semantic-snapshot", text, relative)
+
+        self.assertNotIn("cargo','build", (ROOT / "clients/python/tests/test_semantic_parity.py").read_text())
+        self.assertNotIn('execFileSync("cargo"', (ROOT / "clients/typescript/tests/semantic-parity.test.ts").read_text())
+
     def test_unknown_target_fails_closed(self):
         result = subprocess.run([TOOL, "resolve", "verify", "nope"], text=True, capture_output=True)
         self.assertEqual(result.returncode, 2)
