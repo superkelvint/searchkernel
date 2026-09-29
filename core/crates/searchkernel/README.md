@@ -24,5 +24,21 @@ filter, and search types that an application uses.
 - Result documents are converted from owned backend values into caller-chosen
   `serde` types.
 
+Search result fields are also available as `ResultValue`, which preserves the
+portable value kinds, including unsigned integers, bytes, tensors, and explicit
+NaN or infinity values. `Hit<T>::document` is `None` when a value cannot be
+represented by the caller's `T`; inspect `Hit<T>::fields` for the lossless
+result values and `Hit<T>::document_error` for the projection error.
+
+For example, a non-finite field is read without a JSON conversion:
+
+```rust
+match hit.fields.get("score") {
+    Some(ResultValue::NonFiniteFloat(NonFiniteFloat::PositiveInfinity)) => { /* ... */ }
+    Some(ResultValue::Float64(score)) => { /* finite score */ }
+    _ => { /* absent or another value kind */ }
+}
+```
+
 When changing this crate, preserve the public vocabulary and route every
 operation through the core conversion path.

@@ -29,6 +29,69 @@ pub enum ResultNode {
     Group(ResultGroup),
 }
 
+/// One lossless value decoded from the canonical portable result contract.
+///
+/// `Float64` represents finite doubles. The explicit non-finite variant keeps
+/// the `Value` union discriminant intact and avoids coercing NaN or infinities
+/// into JSON strings or nulls.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum ResultValue {
+    Null,
+    Bool(bool),
+    Int64(i64),
+    UInt64(u64),
+    Float64(f64),
+    NonFiniteFloat(NonFiniteFloat),
+    String(String),
+    Bytes(Vec<u8>),
+    List(Vec<ResultValue>),
+    Object(std::collections::BTreeMap<String, ResultValue>),
+    Tensor(ResultTensor),
+}
+
+/// The three non-finite scalar values allowed by the portable `Value` union.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NonFiniteFloat {
+    NaN,
+    PositiveInfinity,
+    NegativeInfinity,
+}
+
+/// A portable result tensor, retaining its original payload encoding.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct ResultTensor {
+    pub type_spec: String,
+    pub payload: ResultTensorPayload,
+}
+
+/// Tensor payload encodings supported by the portable result contract.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum ResultTensorPayload {
+    Dense(Vec<f64>),
+    Sparse(Vec<ResultTensorCell>),
+    Mixed(Vec<ResultTensorBlock>),
+}
+
+/// One sparse tensor cell with its named dimension labels.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct ResultTensorCell {
+    pub address: std::collections::BTreeMap<String, String>,
+    pub value: f64,
+}
+
+/// One dense block in a mixed tensor.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct ResultTensorBlock {
+    pub address: std::collections::BTreeMap<String, String>,
+    pub values: Vec<f64>,
+}
+
 /// A hit stored in the canonical result tree.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -36,22 +99,22 @@ pub struct ResultHit {
     pub id: DocumentId,
     pub relevance: Option<f64>,
     pub score: Option<f64>,
-    pub fields: std::collections::BTreeMap<String, serde_json::Value>,
+    pub fields: std::collections::BTreeMap<String, ResultValue>,
     pub highlights: Vec<HighlightResult>,
     pub source: Option<String>,
     pub types: Vec<String>,
-    pub match_features: std::collections::BTreeMap<String, serde_json::Value>,
-    pub summary_features: std::collections::BTreeMap<String, serde_json::Value>,
-    pub rank_features: std::collections::BTreeMap<String, serde_json::Value>,
-    pub sort_values: Vec<serde_json::Value>,
+    pub match_features: std::collections::BTreeMap<String, ResultValue>,
+    pub summary_features: std::collections::BTreeMap<String, ResultValue>,
+    pub rank_features: std::collections::BTreeMap<String, ResultValue>,
+    pub sort_values: Vec<ResultValue>,
 }
 
 /// Limits attached to a canonical result group.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct ResultLimits {
-    pub from: Option<serde_json::Value>,
-    pub to: Option<serde_json::Value>,
+    pub from: Option<ResultValue>,
+    pub to: Option<ResultValue>,
 }
 
 /// A canonical recursive result group.
@@ -60,15 +123,15 @@ pub struct ResultLimits {
 pub struct ResultGroup {
     pub id: Option<String>,
     pub label: Option<String>,
-    pub value: Option<serde_json::Value>,
-    pub fields: std::collections::BTreeMap<String, serde_json::Value>,
+    pub value: Option<ResultValue>,
+    pub fields: std::collections::BTreeMap<String, ResultValue>,
     pub children: Vec<ResultNode>,
     pub continuations: std::collections::BTreeMap<String, String>,
     pub source: Option<String>,
     pub types: Vec<String>,
     pub relevance: Option<f64>,
     pub limits: Option<ResultLimits>,
-    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
+    pub metadata: std::collections::BTreeMap<String, ResultValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -80,12 +143,12 @@ pub struct SearchResult<T> {
     pub total_hits: TotalHits,
     pub facets: Vec<FacetResult>,
     pub groups: Vec<GroupingResult<T>>,
-    pub aggregations: std::collections::BTreeMap<String, serde_json::Value>,
+    pub aggregations: std::collections::BTreeMap<String, ResultValue>,
     pub coverage: Option<Coverage>,
     pub timing: Option<SearchTiming>,
     pub issues: Vec<ResultIssue>,
-    pub trace: Option<serde_json::Value>,
-    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
+    pub trace: Option<ResultValue>,
+    pub metadata: std::collections::BTreeMap<String, ResultValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -94,7 +157,14 @@ pub struct SearchResult<T> {
 pub struct Hit<T> {
     pub id: DocumentId,
     pub score: Option<f64>,
-    pub document: T,
+    /// Typed document projection, absent when a portable field cannot be
+    /// represented as JSON or deserialized as `T`. Lossless values remain in
+    /// `fields`.
+    pub document: Option<T>,
+    /// Exact portable field values, including bytes and non-finite floats.
+    pub fields: std::collections::BTreeMap<String, ResultValue>,
+    /// Why `document` could not be projected into the caller's chosen `T`.
+    pub document_error: Option<String>,
     pub highlights: Vec<HighlightResult>,
     pub source: Option<String>,
     pub types: Vec<String>,
@@ -103,7 +173,7 @@ pub struct Hit<T> {
     pub match_features: std::collections::BTreeMap<String, FeatureValue>,
     pub summary_features: std::collections::BTreeMap<String, FeatureValue>,
     pub rank_features: std::collections::BTreeMap<String, FeatureValue>,
-    pub sort_values: Vec<serde_json::Value>,
+    pub sort_values: Vec<ResultValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,14 +185,14 @@ pub enum FeatureSet {
 pub enum FeatureValue {
     Double(f64),
     Data(Vec<u8>),
-    /// Canonical non-binary feature values represented without debug-string coercion.
-    Json(serde_json::Value),
+    /// Canonical non-double feature values, preserving portable value kinds.
+    Value(ResultValue),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GroupingResult<T = serde_json::Value> {
-    pub key: Option<serde_json::Value>,
-    pub aggregations: std::collections::BTreeMap<String, serde_json::Value>,
+    pub key: Option<ResultValue>,
+    pub aggregations: std::collections::BTreeMap<String, ResultValue>,
     pub groups: Vec<GroupingResult<T>>,
     pub hits: Vec<Hit<T>>,
 }
@@ -134,7 +204,7 @@ pub struct CoverageDegraded {
     pub adaptive_timeout: Option<bool>,
     pub ann_timeout: Option<bool>,
     pub non_ideal_state: Option<bool>,
-    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
+    pub metadata: std::collections::BTreeMap<String, ResultValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -146,7 +216,7 @@ pub struct Coverage {
     pub results: Option<u64>,
     pub results_full: Option<u64>,
     pub degraded: Option<CoverageDegraded>,
-    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
+    pub metadata: std::collections::BTreeMap<String, ResultValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -157,7 +227,7 @@ pub struct ResultIssue {
     pub source: Option<String>,
     pub stack_trace: Option<String>,
     pub transient: Option<bool>,
-    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
+    pub metadata: std::collections::BTreeMap<String, ResultValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -166,7 +236,7 @@ pub struct SearchTiming {
     pub query_time_seconds: Option<f64>,
     pub search_time_seconds: Option<f64>,
     pub summary_fetch_time_seconds: Option<f64>,
-    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
+    pub metadata: std::collections::BTreeMap<String, ResultValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -182,7 +252,7 @@ pub struct FacetResult {
 /// One distinct facet value and its document count.
 #[non_exhaustive]
 pub struct FacetValue {
-    pub value: serde_json::Value,
+    pub value: ResultValue,
     pub count: u64,
 }
 
@@ -243,13 +313,8 @@ pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
             .into_iter()
             .map(result_issue)
             .collect::<Result<Vec<_>>>()?,
-        trace: result.trace.map(json_value).transpose()?,
-        metadata: fields_to_json(result.metadata)?
-            .as_object()
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .collect(),
+        trace: result.trace.map(result_value),
+        metadata: result_value_map(result.metadata),
     })
 }
 
@@ -294,8 +359,18 @@ pub(crate) fn document<T: serde::de::DeserializeOwned>(
 }
 
 fn convert_hit<T: serde::de::DeserializeOwned>(hit: core::Hit) -> Result<Hit<T>> {
-    let document = serde_json::from_value(fields_to_json(hit.fields)?)
-        .map_err(|error| Error::Deserialization(error.to_string()))?;
+    let contains_non_finite_scalar = hit.fields.values().any(contains_non_finite_scalar);
+    let fields = result_value_map(hit.fields.clone());
+    let (document, document_error) = if contains_non_finite_scalar {
+        (
+            None,
+            Some("document contains non-finite scalar values".to_owned()),
+        )
+    } else {
+        let document = serde_json::from_value(fields_to_json(hit.fields)?)
+            .map_err(|error| Error::Deserialization(error.to_string()))?;
+        (Some(document), None)
+    };
     let match_features = convert_feature_map(hit.match_features)?;
     let features = match_features
         .iter()
@@ -305,6 +380,8 @@ fn convert_hit<T: serde::de::DeserializeOwned>(hit: core::Hit) -> Result<Hit<T>>
         id: DocumentId::from(hit.id),
         score: hit.score,
         document,
+        fields,
+        document_error,
         highlights: hit.highlights.into_iter().map(convert_highlight).collect(),
         source: hit.source,
         types: hit.types,
@@ -312,11 +389,7 @@ fn convert_hit<T: serde::de::DeserializeOwned>(hit: core::Hit) -> Result<Hit<T>>
         match_features,
         summary_features: convert_feature_map(hit.summary_features)?,
         rank_features: convert_feature_map(hit.rank_features)?,
-        sort_values: hit
-            .sort_values
-            .into_iter()
-            .map(json_value)
-            .collect::<Result<Vec<_>>>()?,
+        sort_values: hit.sort_values.into_iter().map(result_value).collect(),
     })
 }
 
@@ -331,9 +404,9 @@ fn convert_feature_map(
 
 fn convert_feature_value(value: core::Value) -> Result<FeatureValue> {
     Ok(match value {
-        core::Value::Float64(value) => FeatureValue::Double(value),
+        core::Value::Float64(value) if value.is_finite() => FeatureValue::Double(value),
         core::Value::Bytes(value) => FeatureValue::Data(value),
-        other => FeatureValue::Json(json_value(other)?),
+        other => FeatureValue::Value(result_value(other)),
     })
 }
 
@@ -349,18 +422,14 @@ fn convert_result_hit(hit: core::Hit) -> Result<ResultHit> {
         id: DocumentId::from(hit.id),
         relevance: hit.score,
         score: hit.score,
-        fields: json_map(hit.fields)?,
+        fields: result_value_map(hit.fields),
         highlights: hit.highlights.into_iter().map(convert_highlight).collect(),
         source: hit.source,
         types: hit.types,
-        match_features: json_map(hit.match_features)?,
-        summary_features: json_map(hit.summary_features)?,
-        rank_features: json_map(hit.rank_features)?,
-        sort_values: hit
-            .sort_values
-            .into_iter()
-            .map(json_value)
-            .collect::<Result<Vec<_>>>()?,
+        match_features: result_value_map(hit.match_features),
+        summary_features: result_value_map(hit.summary_features),
+        rank_features: result_value_map(hit.rank_features),
+        sort_values: hit.sort_values.into_iter().map(result_value).collect(),
     })
 }
 
@@ -368,8 +437,8 @@ fn convert_result_group(group: core::ResultGroup) -> Result<ResultGroup> {
     Ok(ResultGroup {
         id: group.id,
         label: group.label,
-        value: group.value.map(json_value).transpose()?,
-        fields: json_map(group.fields)?,
+        value: group.value.map(result_value),
+        fields: result_value_map(group.fields),
         children: group
             .children
             .into_iter()
@@ -379,16 +448,11 @@ fn convert_result_group(group: core::ResultGroup) -> Result<ResultGroup> {
         source: group.source,
         types: group.types,
         relevance: group.score,
-        limits: group
-            .limits
-            .map(|limits| {
-                Ok(ResultLimits {
-                    from: limits.from.map(json_value).transpose()?,
-                    to: limits.to.map(json_value).transpose()?,
-                })
-            })
-            .transpose()?,
-        metadata: json_map(group.metadata)?,
+        limits: group.limits.map(|limits| ResultLimits {
+            from: limits.from.map(result_value),
+            to: limits.to.map(result_value),
+        }),
+        metadata: result_value_map(group.metadata),
     })
 }
 
@@ -403,13 +467,9 @@ fn convert_group<T: serde::de::DeserializeOwned>(
             core::ResultNode::Hit(hit) => hits.push(convert_hit(hit)?),
         }
     }
-    let aggregations = group
-        .fields
-        .into_iter()
-        .map(|(name, value)| json_value(value).map(|value| (name, value)))
-        .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+    let aggregations = result_value_map(group.fields);
     Ok(GroupingResult {
-        key: group.value.map(json_value).transpose()?,
+        key: group.value.map(result_value),
         aggregations,
         groups: nested,
         hits,
@@ -433,11 +493,11 @@ fn coverage(value: core::Coverage) -> Result<Coverage> {
                     adaptive_timeout: value.adaptive_timeout,
                     ann_timeout: value.ann_timeout,
                     non_ideal_state: value.non_ideal_state,
-                    metadata: json_map(value.metadata)?,
+                    metadata: result_value_map(value.metadata),
                 })
             })
             .transpose()?,
-        metadata: json_map(value.metadata)?,
+        metadata: result_value_map(value.metadata),
     })
 }
 
@@ -449,12 +509,7 @@ fn result_issue(value: core::SearchResultError) -> Result<ResultIssue> {
         source: value.source,
         stack_trace: value.stack_trace,
         transient: value.transient,
-        metadata: fields_to_json(value.metadata)?
-            .as_object()
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .collect(),
+        metadata: result_value_map(value.metadata),
     })
 }
 
@@ -463,12 +518,7 @@ fn search_timing(value: core::SearchTiming) -> Result<SearchTiming> {
         query_time_seconds: value.query_time_seconds,
         search_time_seconds: value.search_time_seconds,
         summary_fetch_time_seconds: value.summary_fetch_time_seconds,
-        metadata: fields_to_json(value.metadata)?
-            .as_object()
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .collect(),
+        metadata: result_value_map(value.metadata),
     })
 }
 
@@ -544,7 +594,7 @@ fn convert_facet_group(
             return Ok(None);
         };
         values.push(FacetValue {
-            value: json_value(value)?,
+            value: result_value(value),
             count: *count,
         });
     }
@@ -584,13 +634,74 @@ fn fields_to_json(fields: std::collections::BTreeMap<String, Value>) -> Result<s
     Ok(serde_json::Value::Object(object))
 }
 
-fn json_map(
+fn contains_non_finite_scalar(value: &Value) -> bool {
+    match value {
+        Value::Float64(value) => !value.is_finite(),
+        Value::List(values) => values.iter().any(contains_non_finite_scalar),
+        Value::Object(values) => values.values().any(contains_non_finite_scalar),
+        _ => false,
+    }
+}
+
+fn result_value_map(
     values: std::collections::BTreeMap<String, Value>,
-) -> Result<std::collections::BTreeMap<String, serde_json::Value>> {
+) -> std::collections::BTreeMap<String, ResultValue> {
     values
         .into_iter()
-        .map(|(name, value)| json_value(value).map(|value| (name, value)))
+        .map(|(name, value)| (name, result_value(value)))
         .collect()
+}
+
+fn result_value(value: Value) -> ResultValue {
+    match value {
+        Value::Null => ResultValue::Null,
+        Value::Bool(value) => ResultValue::Bool(value),
+        Value::Int64(value) => ResultValue::Int64(value),
+        Value::UInt64(value) => ResultValue::UInt64(value),
+        Value::Float64(value) if value.is_finite() => ResultValue::Float64(value),
+        Value::Float64(value) if value.is_nan() => ResultValue::NonFiniteFloat(NonFiniteFloat::NaN),
+        Value::Float64(value) if value.is_sign_positive() => {
+            ResultValue::NonFiniteFloat(NonFiniteFloat::PositiveInfinity)
+        }
+        Value::Float64(_) => ResultValue::NonFiniteFloat(NonFiniteFloat::NegativeInfinity),
+        Value::String(value) => ResultValue::String(value),
+        Value::Bytes(value) => ResultValue::Bytes(value),
+        Value::List(values) => ResultValue::List(values.into_iter().map(result_value).collect()),
+        Value::Object(values) => ResultValue::Object(result_value_map(values)),
+        Value::Tensor(tensor) => {
+            let payload = match tensor.payload {
+                searchkernel_ir::RequestTensorPayloadIr::Dense(values) => {
+                    ResultTensorPayload::Dense(values)
+                }
+                searchkernel_ir::RequestTensorPayloadIr::Sparse(cells) => {
+                    ResultTensorPayload::Sparse(
+                        cells
+                            .into_iter()
+                            .map(|cell| ResultTensorCell {
+                                address: cell.address,
+                                value: cell.value,
+                            })
+                            .collect(),
+                    )
+                }
+                searchkernel_ir::RequestTensorPayloadIr::Mixed(blocks) => {
+                    ResultTensorPayload::Mixed(
+                        blocks
+                            .into_iter()
+                            .map(|block| ResultTensorBlock {
+                                address: block.address,
+                                values: block.values,
+                            })
+                            .collect(),
+                    )
+                }
+            };
+            ResultValue::Tensor(ResultTensor {
+                type_spec: tensor.type_spec,
+                payload,
+            })
+        }
+    }
 }
 
 fn json_value(value: Value) -> Result<serde_json::Value> {
@@ -693,26 +804,30 @@ mod tests {
     };
     use std::collections::BTreeMap;
 
+    fn rv(value: core::Value) -> ResultValue {
+        result_value(value)
+    }
+
     fn assert_public_node_matches(expected: &core::ResultNode, actual: &ResultNode) {
         match (expected, actual) {
             (core::ResultNode::Hit(expected), ResultNode::Hit(actual)) => {
                 assert_eq!(actual.id.as_str(), expected.id);
                 assert_eq!(actual.relevance, expected.score);
                 assert_eq!(actual.score, expected.score);
-                assert_eq!(actual.fields, json_map(expected.fields.clone()).unwrap());
+                assert_eq!(actual.fields, result_value_map(expected.fields.clone()));
                 assert_eq!(actual.source, expected.source);
                 assert_eq!(actual.types, expected.types);
                 assert_eq!(
                     actual.match_features,
-                    json_map(expected.match_features.clone()).unwrap()
+                    result_value_map(expected.match_features.clone())
                 );
                 assert_eq!(
                     actual.summary_features,
-                    json_map(expected.summary_features.clone()).unwrap()
+                    result_value_map(expected.summary_features.clone())
                 );
                 assert_eq!(
                     actual.rank_features,
-                    json_map(expected.rank_features.clone()).unwrap()
+                    result_value_map(expected.rank_features.clone())
                 );
                 assert_eq!(
                     actual.sort_values,
@@ -720,9 +835,8 @@ mod tests {
                         .sort_values
                         .iter()
                         .cloned()
-                        .map(json_value)
-                        .collect::<Result<Vec<_>>>()
-                        .unwrap()
+                        .map(result_value)
+                        .collect::<Vec<_>>()
                 );
                 assert_eq!(actual.highlights.len(), expected.highlights.len());
                 for (actual, expected) in actual.highlights.iter().zip(&expected.highlights) {
@@ -741,19 +855,13 @@ mod tests {
             (core::ResultNode::Group(expected), ResultNode::Group(actual)) => {
                 assert_eq!(actual.id, expected.id);
                 assert_eq!(actual.label, expected.label);
-                assert_eq!(
-                    actual.value,
-                    expected.value.clone().map(json_value).transpose().unwrap()
-                );
-                assert_eq!(actual.fields, json_map(expected.fields.clone()).unwrap());
+                assert_eq!(actual.value, expected.value.clone().map(result_value));
+                assert_eq!(actual.fields, result_value_map(expected.fields.clone()));
                 assert_eq!(actual.continuations, expected.continuations);
                 assert_eq!(actual.source, expected.source);
                 assert_eq!(actual.types, expected.types);
                 assert_eq!(actual.relevance, expected.score);
-                assert_eq!(
-                    actual.metadata,
-                    json_map(expected.metadata.clone()).unwrap()
-                );
+                assert_eq!(actual.metadata, result_value_map(expected.metadata.clone()));
                 assert_eq!(actual.children.len(), expected.children.len());
                 for (expected, actual) in expected.children.iter().zip(&actual.children) {
                     assert_public_node_matches(expected, actual);
@@ -761,14 +869,8 @@ mod tests {
                 match (&expected.limits, &actual.limits) {
                     (None, None) => {}
                     (Some(expected), Some(actual)) => {
-                        assert_eq!(
-                            actual.from,
-                            expected.from.clone().map(json_value).transpose().unwrap()
-                        );
-                        assert_eq!(
-                            actual.to,
-                            expected.to.clone().map(json_value).transpose().unwrap()
-                        );
+                        assert_eq!(actual.from, expected.from.clone().map(result_value));
+                        assert_eq!(actual.to, expected.to.clone().map(result_value));
                     }
                     _ => panic!("public result changed limits presence"),
                 }
@@ -789,167 +891,6 @@ mod tests {
         }
     }
 
-    fn trace_json_value(value: &serde_json::Value) -> serde_json::Value {
-        match value {
-            serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::String(_) => {
-                value.clone()
-            }
-            serde_json::Value::Number(number) => {
-                if number.is_i64() || number.is_u64() {
-                    serde_json::Value::String(number.to_string())
-                } else {
-                    value.clone()
-                }
-            }
-            serde_json::Value::Array(values) => {
-                serde_json::Value::Array(values.iter().map(trace_json_value).collect())
-            }
-            serde_json::Value::Object(values) => serde_json::Value::Object(
-                values
-                    .iter()
-                    .map(|(key, value)| (key.clone(), trace_json_value(value)))
-                    .collect(),
-            ),
-        }
-    }
-
-    fn trace_optional_f64(value: Option<f64>) -> serde_json::Value {
-        match value {
-            None => serde_json::Value::Null,
-            Some(value) if value.is_nan() => serde_json::Value::String("nan".into()),
-            Some(value) if value == f64::INFINITY => serde_json::Value::String("+inf".into()),
-            Some(value) if value == f64::NEG_INFINITY => serde_json::Value::String("-inf".into()),
-            Some(value) => serde_json::Value::Number(
-                serde_json::Number::from_f64(value).expect("finite trace float"),
-            ),
-        }
-    }
-
-    fn trace_json_map(
-        values: &std::collections::BTreeMap<String, serde_json::Value>,
-    ) -> serde_json::Value {
-        serde_json::Value::Object(
-            values
-                .iter()
-                .map(|(key, value)| (key.clone(), trace_json_value(value)))
-                .collect(),
-        )
-    }
-
-    fn trace_result_node(node: &ResultNode) -> serde_json::Value {
-        match node {
-            ResultNode::Hit(hit) => serde_json::json!({
-                "kind": "hit",
-                "id": hit.id.as_str(),
-                "relevance": trace_optional_f64(hit.relevance),
-                "fields": trace_json_map(&hit.fields),
-                "highlights": hit.highlights.iter().map(|highlight| {
-                    serde_json::json!({
-                        "field": highlight.field,
-                        "fragments": highlight.fragments.iter().map(|fragment| {
-                            serde_json::json!({
-                                "text": fragment.text,
-                                "matches": fragment.matches.iter().map(|span| {
-                                    serde_json::json!({
-                                        "start_byte": span.start_byte.to_string(),
-                                        "end_byte": span.end_byte.to_string(),
-                                    })
-                                }).collect::<Vec<_>>(),
-                            })
-                        }).collect::<Vec<_>>(),
-                    })
-                }).collect::<Vec<_>>(),
-                "source": hit.source,
-                "types": hit.types,
-                "match_features": trace_json_map(&hit.match_features),
-                "summary_features": trace_json_map(&hit.summary_features),
-                "rank_features": trace_json_map(&hit.rank_features),
-                "sort_values": hit.sort_values.iter().map(trace_json_value).collect::<Vec<_>>(),
-            }),
-            ResultNode::Group(group) => serde_json::json!({
-                "kind": "group",
-                "id": group.id,
-                "label": group.label,
-                "value": group.value.as_ref().map(trace_json_value),
-                "fields": trace_json_map(&group.fields),
-                "children": group.children.iter().map(trace_result_node).collect::<Vec<_>>(),
-                "continuations": group.continuations.iter().map(|(key, value)| {
-                    serde_json::json!({"key": key, "value": value})
-                }).collect::<Vec<_>>(),
-                "source": group.source,
-                "types": group.types,
-                "relevance": trace_optional_f64(group.relevance),
-                "limits": group.limits.as_ref().map(|limits| serde_json::json!({
-                    "from": limits.from.as_ref().map(trace_json_value),
-                    "to": limits.to.as_ref().map(trace_json_value),
-                })),
-                "metadata": trace_json_map(&group.metadata),
-            }),
-        }
-    }
-
-    fn trace_total_hits_relation(value: TotalHitsRelation) -> &'static str {
-        match value {
-            TotalHitsRelation::Unspecified => "unspecified",
-            TotalHitsRelation::Exact => "exact",
-            TotalHitsRelation::LowerBound => "lower_bound",
-            TotalHitsRelation::Approximate => "approximate",
-            TotalHitsRelation::Unknown => "unknown",
-        }
-    }
-
-    fn trace_coverage(value: &Coverage) -> serde_json::Value {
-        serde_json::json!({
-            "coverage_percent": trace_optional_f64(value.coverage_percent),
-            "documents": value.documents.map(|item| item.to_string()),
-            "full": value.full,
-            "nodes": value.nodes.map(|item| item.to_string()),
-            "results": value.results.map(|item| item.to_string()),
-            "results_full": value.results_full.map(|item| item.to_string()),
-            "degraded": value.degraded.as_ref().map(|degraded| serde_json::json!({
-                "match_phase": degraded.match_phase,
-                "timeout": degraded.timeout,
-                "adaptive_timeout": degraded.adaptive_timeout,
-                "ann_timeout": degraded.ann_timeout,
-                "non_ideal_state": degraded.non_ideal_state,
-                "metadata": trace_json_map(&degraded.metadata),
-            })),
-            "metadata": trace_json_map(&value.metadata),
-        })
-    }
-
-    fn trace_timing(value: &SearchTiming) -> serde_json::Value {
-        serde_json::json!({
-            "query_time_seconds": trace_optional_f64(value.query_time_seconds),
-            "search_time_seconds": trace_optional_f64(value.search_time_seconds),
-            "summary_fetch_time_seconds": trace_optional_f64(value.summary_fetch_time_seconds),
-            "metadata": trace_json_map(&value.metadata),
-        })
-    }
-
-    fn trace_search_result(result: &SearchResult<serde_json::Value>) -> serde_json::Value {
-        serde_json::json!({
-            "root": trace_result_node(&result.root),
-            "total_hits": {
-                "value": result.total_hits.value.to_string(),
-                "relation": trace_total_hits_relation(result.total_hits.relation),
-            },
-            "coverage": result.coverage.as_ref().map(trace_coverage),
-            "timing": result.timing.as_ref().map(trace_timing),
-            "errors": result.issues.iter().map(|issue| serde_json::json!({
-                "code": issue.code.to_string(),
-                "summary": issue.summary,
-                "message": issue.message,
-                "source": issue.source,
-                "stack_trace": issue.stack_trace,
-                "transient": issue.transient,
-                "metadata": trace_json_map(&issue.metadata),
-            })).collect::<Vec<_>>(),
-            "trace": result.trace.as_ref().map(trace_json_value),
-            "metadata": trace_json_map(&result.metadata),
-        })
-    }
-
     #[test]
     fn response_byte_fixtures_reach_the_public_rust_result_projection() {
         use searchkernel_protocol::protocol::v2 as wire;
@@ -961,7 +902,6 @@ mod tests {
         )
         .expect("parse canonical response corpus");
         let fixtures = result_fixtures();
-        let mut traces = serde_json::Map::new();
         for scenario in corpus["valid"].as_array().unwrap() {
             let name = scenario["id"].as_str().unwrap();
             let fixture = fixtures
@@ -1003,52 +943,52 @@ mod tests {
                     .unwrap()
             );
             assert_eq!(actual.issues.len(), fixture.result.errors.len());
-            assert_eq!(
-                actual.trace,
-                fixture
-                    .result
-                    .trace
-                    .clone()
-                    .map(json_value)
-                    .transpose()
-                    .unwrap()
-            );
+            assert_eq!(actual.trace, fixture.result.trace.clone().map(result_value));
             assert_eq!(
                 actual.metadata,
-                fields_to_json(fixture.result.metadata.clone())
-                    .unwrap()
-                    .as_object()
-                    .unwrap()
-                    .clone()
-                    .into_iter()
-                    .collect()
+                result_value_map(fixture.result.metadata.clone())
             );
-            traces.insert(name.to_owned(), trace_search_result(&actual));
         }
+    }
 
-        if let Some(directory) = std::env::var_os("SEARCHKERNEL_RESULT_TRACE_DIR") {
-            traces.insert(
-                "malformed_outcomes".into(),
-                serde_json::Value::Object(
-                    corpus["malformed"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|case| {
-                            (
-                                case["id"].as_str().unwrap().to_owned(),
-                                serde_json::Value::String("client".into()),
-                            )
-                        })
-                        .collect(),
+    #[test]
+    fn public_result_projection_preserves_non_finite_scalar_values() {
+        let mut result = searchkernel_ir::SearchResult::empty(searchkernel_ir::TotalHits {
+            value: 1,
+            relation: searchkernel_ir::TotalHitsRelation::Exact,
+        });
+        result.root = searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+            id: "non-finite".to_owned(),
+            fields: BTreeMap::from([
+                ("nan".to_owned(), Value::Float64(f64::NAN)),
+                (
+                    "positive_infinity".to_owned(),
+                    Value::Float64(f64::INFINITY),
                 ),
-            );
-            std::fs::write(
-                std::path::PathBuf::from(directory).join("rust.json"),
-                serde_json::to_vec(&serde_json::Value::Object(traces)).unwrap(),
-            )
-            .expect("write Rust result trace");
-        }
+                (
+                    "negative_infinity".to_owned(),
+                    Value::Float64(f64::NEG_INFINITY),
+                ),
+            ]),
+            ..Default::default()
+        });
+
+        let projection: SearchResult<serde_json::Value> =
+            search_result(result, &[]).expect("result projection must retain non-finite values");
+        assert_eq!(
+            projection.hits[0].fields["nan"],
+            ResultValue::NonFiniteFloat(NonFiniteFloat::NaN)
+        );
+        assert_eq!(
+            projection.hits[0].fields["positive_infinity"],
+            ResultValue::NonFiniteFloat(NonFiniteFloat::PositiveInfinity)
+        );
+        assert_eq!(
+            projection.hits[0].fields["negative_infinity"],
+            ResultValue::NonFiniteFloat(NonFiniteFloat::NegativeInfinity)
+        );
+        assert!(projection.hits[0].document.is_none());
+        assert!(projection.hits[0].document_error.is_some());
     }
 
     #[test]
@@ -1073,8 +1013,8 @@ mod tests {
                 .map(|group| group.key.clone())
                 .collect::<Vec<_>>(),
             [
-                Some(serde_json::Value::String("A".into())),
-                Some(serde_json::Value::String("B".into()))
+                Some(rv(Value::String("A".into()))),
+                Some(rv(Value::String("B".into())))
             ]
         );
         assert_eq!(root.children.len(), 4);
@@ -1094,9 +1034,9 @@ mod tests {
                 .map(|group| group.key.clone())
                 .collect::<Vec<_>>(),
             [
-                Some(serde_json::Value::String("A".into())),
-                Some(serde_json::Value::String("B".into())),
-                Some(serde_json::Value::String("C".into()))
+                Some(rv(Value::String("A".into()))),
+                Some(rv(Value::String("B".into()))),
+                Some(rv(Value::String("C".into())))
             ]
         );
 
@@ -1105,11 +1045,11 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert_eq!(aggregations.aggregations["count"], serde_json::json!(7));
+        assert_eq!(aggregations.aggregations["count"], rv(Value::UInt64(7)));
         let ResultNode::Group(root) = aggregations.root else {
             panic!("aggregation fixture root must be a group");
         };
-        assert_eq!(root.fields["max_price"], serde_json::json!(19.5));
+        assert_eq!(root.fields["max_price"], rv(Value::Float64(19.5)));
     }
 
     #[test]
@@ -1130,7 +1070,7 @@ mod tests {
         assert_eq!(ordinary.groups.len(), 1);
         assert_eq!(
             ordinary.groups[0].groups[0].aggregations["count"],
-            serde_json::json!(4)
+            rv(Value::UInt64(4))
         );
         let ResultNode::Group(root) = ordinary.root else {
             panic!("ordinary grouping root must be a group");
@@ -1138,7 +1078,7 @@ mod tests {
         let ResultNode::Group(ordinary) = &root.children[0] else {
             panic!("ordinary grouping child must remain a group");
         };
-        assert_eq!(ordinary.metadata["owner"], serde_json::json!("user"));
+        assert_eq!(ordinary.metadata["owner"], rv(Value::String("user".into())));
     }
 
     #[test]
@@ -1156,12 +1096,12 @@ mod tests {
         .unwrap();
         assert!(present.coverage.is_some());
         assert!(present.timing.is_some());
-        assert_eq!(present.trace, Some(serde_json::json!({})));
+        assert_eq!(present.trace, Some(rv(Value::Object(BTreeMap::new()))));
         let ResultNode::Group(root) = present.root else {
             panic!("present-empty fixture root must be a group");
         };
         assert_eq!(root.source.as_deref(), Some(""));
-        assert_eq!(root.value, Some(serde_json::json!([])));
+        assert_eq!(root.value, Some(rv(Value::List(Vec::new()))));
         assert_eq!(
             root.limits,
             Some(ResultLimits {
@@ -1232,16 +1172,19 @@ mod tests {
         assert_eq!(converted.total_hits.relation, TotalHitsRelation::LowerBound);
         assert_eq!(converted.hits.len(), 1);
         assert_eq!(converted.hits[0].id.as_str(), "doc-1");
-        assert_eq!(converted.hits[0].document["nested"]["enabled"], true);
         assert_eq!(
-            converted.hits[0].document["bytes"],
+            converted.hits[0].document.as_ref().unwrap()["nested"]["enabled"],
+            true
+        );
+        assert_eq!(
+            converted.hits[0].document.as_ref().unwrap()["bytes"],
             serde_json::json!([1, 255])
         );
         assert_eq!(
             converted.hits[0].highlights[0].fragments[0].matches[0].end_byte,
             5
         );
-        assert_eq!(converted.facets[0].values[0].value, serde_json::json!(2));
+        assert_eq!(converted.facets[0].values[0].value, rv(Value::UInt64(2)));
     }
 
     #[test]
@@ -1280,7 +1223,7 @@ mod tests {
         assert_eq!(converted.facets[0].name, "brands");
         assert_eq!(
             converted.facets[0].values[0].value,
-            serde_json::json!("acme")
+            rv(Value::String("acme".into()))
         );
         assert_eq!(converted.facets[0].values[0].count, 4);
     }
@@ -1338,10 +1281,13 @@ mod tests {
             metadata: BTreeMap::from([("coverage_source".into(), Value::String("native".into()))]),
         })
         .unwrap();
-        assert_eq!(converted.metadata["coverage_source"], "native");
+        assert_eq!(
+            converted.metadata["coverage_source"],
+            rv(Value::String("native".into()))
+        );
         assert_eq!(
             converted.degraded.as_ref().unwrap().metadata["degraded_reason"],
-            "match-phase"
+            rv(Value::String("match-phase".into()))
         );
     }
 
@@ -1378,16 +1324,25 @@ mod tests {
             converted.timing.as_ref().unwrap().query_time_seconds,
             Some(0.25)
         );
-        assert_eq!(converted.timing.as_ref().unwrap().metadata["timing"], "yes");
+        assert_eq!(
+            converted.timing.as_ref().unwrap().metadata["timing"],
+            rv(Value::String("yes".into()))
+        );
         assert_eq!(converted.issues[0].code, 7);
         assert_eq!(converted.issues[0].summary.as_deref(), Some("summary"));
         assert_eq!(converted.issues[0].message.as_deref(), Some("message"));
         assert_eq!(converted.issues[0].source.as_deref(), Some("source"));
         assert_eq!(converted.issues[0].stack_trace.as_deref(), Some("stack"));
         assert_eq!(converted.issues[0].transient, Some(true));
-        assert_eq!(converted.issues[0].metadata["error"], "yes");
-        assert_eq!(converted.trace, Some(serde_json::json!("trace")));
-        assert_eq!(converted.metadata["result"], "yes");
+        assert_eq!(
+            converted.issues[0].metadata["error"],
+            rv(Value::String("yes".into()))
+        );
+        assert_eq!(converted.trace, Some(rv(Value::String("trace".into()))));
+        assert_eq!(
+            converted.metadata["result"],
+            rv(Value::String("yes".into()))
+        );
     }
 
     #[test]
@@ -1437,19 +1392,22 @@ mod tests {
         );
         assert_eq!(
             converted.match_features["list"],
-            FeatureValue::Json(serde_json::json!([1, true]))
+            FeatureValue::Value(rv(Value::List(vec![Value::Int64(1), Value::Bool(true)])))
         );
         assert_eq!(
             converted.summary_features["summary"],
-            FeatureValue::Json(serde_json::json!({"ready": true}))
+            FeatureValue::Value(rv(Value::Object(BTreeMap::from([(
+                "ready".into(),
+                Value::Bool(true)
+            )]))))
         );
         assert_eq!(
             converted.rank_features["rank"],
-            FeatureValue::Json(serde_json::json!(7))
+            FeatureValue::Value(rv(Value::UInt64(7)))
         );
         assert_eq!(
             converted.sort_values,
-            [serde_json::json!("a"), serde_json::json!(9)]
+            [rv(Value::String("a".into())), rv(Value::UInt64(9))]
         );
         assert_eq!(converted.highlights[0].fragments[0].matches[0].end_byte, 5);
     }
@@ -1477,10 +1435,13 @@ mod tests {
         assert_eq!(converted.hits[0].id.as_str(), "nested-1");
         assert_eq!(converted.hits[0].source.as_deref(), Some("catalog"));
         assert_eq!(converted.hits[0].types, ["product"]);
-        assert_eq!(converted.hits[0].document["title"], "nested");
+        assert_eq!(
+            converted.hits[0].document.as_ref().unwrap()["title"],
+            "nested"
+        );
         assert_eq!(
             converted.hits[0].match_features["typed"],
-            FeatureValue::Json(serde_json::json!([1, true]))
+            FeatureValue::Value(rv(Value::List(vec![Value::Int64(1), Value::Bool(true)])))
         );
     }
 
@@ -1535,15 +1496,22 @@ mod tests {
         );
         assert!(mixed_json["$searchkernel_tensor"].get("dense").is_none());
 
-        assert!(
-            matches!(convert_feature_value(sparse).unwrap(), FeatureValue::Json(value) if value == sparse_json)
-        );
+        assert!(matches!(
+            convert_feature_value(sparse).unwrap(),
+            FeatureValue::Value(ResultValue::Tensor(_))
+        ));
         let group = core::ResultGroup {
             value: Some(mixed),
             ..core::ResultGroup::root(vec![])
         };
         let converted = convert_result_group(group).expect("group tensor must convert");
-        assert_eq!(converted.value, Some(mixed_json));
+        assert!(matches!(
+            converted.value,
+            Some(ResultValue::Tensor(ResultTensor {
+                payload: ResultTensorPayload::Mixed(_),
+                ..
+            }))
+        ));
     }
 
     #[test]
@@ -1553,27 +1521,23 @@ mod tests {
         let ResultNode::Group(root) = converted.root else {
             panic!("tensor fixture root must remain a group");
         };
-        assert_eq!(
+        assert!(matches!(
             root.value,
-            Some(serde_json::json!({
-                "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(label{},x[2])",
-                    "mixed": [{"address": [{"dimension": "label", "label": "b"}], "values": [0.25, 0.75]}]
-                }
+            Some(ResultValue::Tensor(ResultTensor {
+                payload: ResultTensorPayload::Mixed(_),
+                ..
             }))
-        );
+        ));
         let ResultNode::Hit(hit) = &root.children[0] else {
             panic!("tensor fixture child must remain a hit");
         };
-        assert_eq!(
+        assert!(matches!(
             hit.fields["sparse"],
-            serde_json::json!({
-                "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(label{})",
-                    "sparse": [{"address": [{"dimension": "label", "label": "a"}], "value": 0.5}]
-                }
+            ResultValue::Tensor(ResultTensor {
+                payload: ResultTensorPayload::Sparse(_),
+                ..
             })
-        );
+        ));
     }
 
     #[test]
@@ -1624,13 +1588,13 @@ mod tests {
         };
 
         let converted: SearchResult<serde_json::Value> = search_result(result, &[]).unwrap();
-        assert_eq!(converted.aggregations["count"], serde_json::json!(2));
+        assert_eq!(converted.aggregations["count"], rv(Value::UInt64(2)));
         let ResultNode::Group(root) = converted.root else {
             panic!("canonical root must remain a result group");
         };
         assert_eq!(root.id.as_deref(), Some("root"));
-        assert_eq!(root.fields["count"], serde_json::json!(2));
-        assert_eq!(root.metadata["trace_id"], serde_json::json!("r-1"));
+        assert_eq!(root.fields["count"], rv(Value::UInt64(2)));
+        assert_eq!(root.metadata["trace_id"], rv(Value::String("r-1".into())));
         assert_eq!(root.children.len(), 2);
         let ResultNode::Hit(root_hit) = &root.children[0] else {
             panic!("first root child must remain a hit");
@@ -1644,10 +1608,10 @@ mod tests {
         assert_eq!(nested.source.as_deref(), Some("group-source"));
         assert_eq!(nested.types, ["bucket"]);
         assert_eq!(nested.relevance, Some(2.5));
-        assert_eq!(nested.metadata["owner"], serde_json::json!(true));
+        assert_eq!(nested.metadata["owner"], rv(Value::Bool(true)));
         assert_eq!(
             nested.limits.as_ref().unwrap().to,
-            Some(serde_json::json!(10))
+            Some(rv(Value::UInt64(10)))
         );
         assert_eq!(nested.children.len(), 1);
         let ResultNode::Hit(nested_hit) = &nested.children[0] else {
@@ -1657,7 +1621,7 @@ mod tests {
     }
 
     #[test]
-    fn result_conversion_rejects_nonfinite_values_and_bad_documents() {
+    fn result_conversion_preserves_nonfinite_values_and_rejects_bad_documents() {
         let nonfinite = core::SearchResult {
             root: core::ResultNode::Group(core::ResultGroup {
                 children: vec![core::ResultNode::Group(core::ResultGroup {
@@ -1682,10 +1646,12 @@ mod tests {
             trace: None,
             metadata: BTreeMap::new(),
         };
-        assert!(matches!(
-            search_result::<serde_json::Value>(nonfinite, &[("score", "score")]),
-            Err(Error::Infrastructure(message)) if message.contains("non-finite")
-        ));
+        let converted = search_result::<serde_json::Value>(nonfinite, &[("score", "score")])
+            .expect("explicit non-finite scalar value must survive result projection");
+        assert_eq!(
+            converted.facets[0].values[0].value,
+            ResultValue::NonFiniteFloat(NonFiniteFloat::PositiveInfinity)
+        );
 
         let bad_document = core::DocumentResult {
             id: "doc-2".into(),

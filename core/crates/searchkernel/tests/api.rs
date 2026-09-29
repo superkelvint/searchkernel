@@ -346,7 +346,10 @@ fn scripted_results_map_to_product_values_and_preserve_totals() {
     let result = index.browse().execute::<serde_json::Value>().unwrap();
     assert_eq!(result.hits[0].id.as_str(), "sku-42");
     assert_eq!(result.hits[0].score, Some(2.5));
-    assert_eq!(result.hits[0].document["title"], "headphones");
+    assert_eq!(
+        result.hits[0].document.as_ref().unwrap()["title"],
+        "headphones"
+    );
     assert_eq!(
         result.total_hits.relation,
         searchkernel::TotalHitsRelation::LowerBound
@@ -543,19 +546,28 @@ fn result_variants_map_to_owned_product_values() {
         .execute::<serde_json::Value>()
         .unwrap();
     assert_eq!(result.hits[0].score, None);
-    assert_eq!(result.hits[0].document["signed"], -7);
-    assert_eq!(result.hits[0].document["unsigned"], u64::MAX);
+    assert_eq!(result.hits[0].document.as_ref().unwrap()["signed"], -7);
     assert_eq!(
-        result.hits[0].document["bytes"],
+        result.hits[0].document.as_ref().unwrap()["unsigned"],
+        u64::MAX
+    );
+    assert_eq!(
+        result.hits[0].document.as_ref().unwrap()["bytes"],
         serde_json::json!([1, 2, 255])
     );
-    assert_eq!(result.hits[0].document["object"]["source"], "catalog");
+    assert_eq!(
+        result.hits[0].document.as_ref().unwrap()["object"]["source"],
+        "catalog"
+    );
     assert_eq!(result.hits[0].highlights[0].field, "title");
     assert_eq!(
         result.hits[0].highlights[0].fragments[0].matches[0].start_byte,
         0
     );
-    assert_eq!(result.facets[0].values[1].value, serde_json::json!(2));
+    assert_eq!(
+        result.facets[0].values[1].value,
+        searchkernel::ResultValue::UInt64(2)
+    );
     assert_eq!(
         result.total_hits.relation,
         searchkernel::TotalHitsRelation::Exact
@@ -680,7 +692,7 @@ fn portable_values_and_serialization_errors_are_preserved() {
 }
 
 #[test]
-fn result_conversion_reports_bad_documents_and_non_finite_numbers() {
+fn result_conversion_reports_bad_documents_and_preserves_non_finite_numbers() {
     let expected = expected_search_with_facet("brand");
     let bad_document = SearchResult {
         root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(vec![
@@ -712,8 +724,8 @@ fn result_conversion_reports_bad_documents_and_non_finite_numbers() {
             ScriptedResult::Search(Box::new(SearchResult {
                 root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(vec![
                     searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
-                        id: Some("ratio".into()),
-                        label: Some("ratio".into()),
+                        id: Some("brand".into()),
+                        label: Some("brand".into()),
                         children: vec![searchkernel_ir::ResultNode::Group(
                             searchkernel_ir::ResultGroup {
                                 value: Some(Value::Float64(f64::NAN)),
@@ -743,12 +755,15 @@ fn result_conversion_reports_bad_documents_and_non_finite_numbers() {
         .execute::<String>()
         .unwrap_err();
     assert!(matches!(error, Error::Deserialization(_)));
-    let error = index
+    let result = index
         .browse()
         .facet(Facet::new("brand"))
         .execute::<serde_json::Value>()
-        .unwrap_err();
-    assert!(matches!(error, Error::Infrastructure(message) if message.contains("non-finite")));
+        .unwrap();
+    assert_eq!(
+        result.facets[0].values[0].value,
+        searchkernel::ResultValue::NonFiniteFloat(searchkernel::NonFiniteFloat::NaN)
+    );
     backend.finish().unwrap();
 }
 
