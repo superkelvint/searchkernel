@@ -46,7 +46,12 @@
     "tensor_readback", "nearest_neighbor", "hybrid_text_vector", "coverage_degradation", "yql", "structured_filter_error",
     "text_filter_syntax_error", "patch", "advanced_update", "delete", "upsert_replacement", "reopen_persistence"
   ],
-  "parity_scenarios": [
-    "sorted_search", "filtered_search", "facets", "nearest_neighbor", "two_phase", "unknown_field_error", "mutation", "persistence"
-  ]
+  "non_comparable": {
+    "builder_misuse": "The Rust facade has no page() builder; negative limit and offset values are excluded by its unsigned types at compile time, so there is no shared runtime result to compare.",
+    "root_aggregations": "The Rust facade exposes grouping plans but no standalone root aggregation builder.",
+    "group_alias": "The Rust GroupingPlan facade exposes attribute and nested grouping but no grouping aliases.",
+    "group_keep_filter": "The Rust GroupingPlan facade exposes attribute and nested grouping but no keep-filter operation.",
+    "yql": "The Rust facade does not expose YQL or YQL property substitution.",
+    "advanced_update": "The Rust facade does not expose the portable advanced update operator set."
+  }
 }

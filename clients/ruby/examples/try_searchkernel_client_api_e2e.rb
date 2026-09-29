@@ -81,17 +81,82 @@ def capture_real_engine_parity(index)
     check(error.code == "InvalidArgument", "portable invalid-argument error code")
     error_codes = error.details.map { |detail| detail["code"] }.sort
   end
+  document = index.get("shoe-1")
+  full_text = index.search("shoes").limit(20).execute
+  stemming = index.search("jump").limit(20).execute
+  text_binding = index.search("shoes").filter("price <= :max", "max" => 100.0).sort("price", "asc").limit(20).execute
+  repeated = index.search("shoes").filter("price <= :value", "value" => 120.0)
+    .filter("rating >= :value", "value" => 4).filter("in_stock = true").sort("price", "asc").limit(20).execute
+  boolean_filter = index.search("shoes").filter("(brand IN (:brands) OR rating = :rating) AND NOT (in_stock = false)",
+    "brands" => ["Acme", "TrailCo"], "rating" => 3).sort("price", "asc").limit(20).execute
+  projection = index.search("shoes").sort("price", "desc").fields("title", "brand", "price").limit(2).execute
+  all_sorted = index.search("shoes").sort("price", "asc").limit(20).execute
+  page = index.search("shoes").sort("price", "asc").offset(1).limit(2).execute
+  filtered_facet = index.search("shoes").filter("in_stock = true").facet("brand", limit: 10, sort: "count_desc").limit(20).execute
+  nested = index.browse.filter("category IN (:categories)", "categories" => ["shoes", "bags"]).group(
+    SearchKernel::Group.by("category").limit(10).output(SearchKernel::Agg.count.as("products"))
+      .subgroup(SearchKernel::Group.by("rating").limit(10).output(SearchKernel::Agg.count.as("products"), SearchKernel::Agg.avg("price").as("avg_price")))
+  ).execute
+  aliased = index.search("shoes").group(
+    SearchKernel::Group.by("brand").limit(10).alias("revenue", SearchKernel::Agg.sum("price"))
+      .order_by(SearchKernel::Grouping.desc(SearchKernel::Grouping.alias_ref("revenue")))
+      .output(SearchKernel::Agg.count.as("products"), SearchKernel::Grouping.alias_ref("revenue").as("revenue"))
+  ).execute
+  kept = index.search("shoes").group(
+    SearchKernel::Group.by("brand").limit(10)
+      .keep(SearchKernel::GroupingFilter.regex(SearchKernel::Grouping.field("brand"), "^A.*"))
+      .output(SearchKernel::Agg.count.as("products"))
+  ).execute
+  typed = index.query(SearchKernel::Query.contains("title", "shoes")).ranking("default").limit(20).execute
+  rank_input = index.search("shoes").ranking("boosted").input("boost", 3.0).limit(20).execute
+  rank_property = index.search("shoes").ranking("boosted").rank_property("boost", "4.0").limit(20).execute
+  degraded = index.browse.filter("inventory = :value", "value" => 18).sort("inventory", "asc")
+    .rank_property("vespa.matchphase.degradation.maxfiltercoverage", "0.9")
+    .rank_property("vespa.matchphase.degradation.attribute", "inventory")
+    .rank_property("vespa.matchphase.degradation.maxhits", "10").limit(10).execute
+  yql = index.yql("select * from sources * where title contains text(@q) order by price asc")
+    .property("q", "shoes").ranking("default").page(1, 3).execute
+  begin
+    index.search("shoes").filter("price <=").execute
+    raise "malformed textual filter unexpectedly succeeded"
+  rescue SearchKernel::SearchKernelError => error
+    syntax_error = {"code" => error.code.downcase, "details" => error.details.map { |detail| detail["code"] }.sort}
+  end
   groups = grouping_buckets(grouped)
   {
+    "document_crud" => {"id" => document.fetch("_id"), "title" => document.fetch("title"), "brand" => document.fetch("brand"), "price" => document.fetch("price")},
+    "full_text_search" => {"ids" => ids(full_text), "total" => full_text.total_hits},
+    "stemming" => {"ids" => ids(stemming)},
+    "text_filter_binding" => {"ids" => ids(text_binding)},
+    "repeated_filters" => {"ids" => ids(repeated)},
+    "boolean_filter_grammar" => {"ids" => ids(boolean_filter)},
+    "sorting_projection" => {"hits" => projection.hits.map { |hit| {"id" => hit.id, "fields" => hit.fields} }},
+    "pagination" => {"all_ids" => ids(all_sorted), "offset_ids" => ids(page), "total" => page.total_hits},
     "sorted_search" => {"ids" => ids(ordered), "total" => ordered.total_hits},
     "filtered_search" => {"ids" => ids(filtered), "total" => filtered.total_hits},
     "facets" => faceted.facets.fetch("brands").to_h { |item| [item.fetch("value"), item.fetch("count")] },
     "aggregations" => root.aggregations,
-    "grouping" => groups.map { |group| {"brand" => group.value, "products" => group.fields.fetch("products"), "avg_price" => group.fields.fetch("avg_price")} },
+    "grouping_aggregations" => groups.map { |group| {"brand" => group.value, "products" => group.fields.fetch("products"), "avg_price" => group.fields.fetch("avg_price")} },
+    "filtered_facets" => filtered_facet.facets.fetch("brand").to_h { |item| [item.fetch("value"), item.fetch("count")] },
+    "nested_grouping" => grouping_buckets(nested).map { |group|
+      {"category" => group.value, "products" => group.fields.fetch("products"),
+       "ratings" => group.groups.map { |rating| {"rating" => rating.value, "products" => rating.fields.fetch("products"), "avg_price" => rating.fields.fetch("avg_price")} }}
+    },
+    "group_alias" => grouping_buckets(aliased).map { |group| {"value" => group.value, "fields" => group.fields} },
+    "group_keep_filter" => grouping_buckets(kept).map { |group| {"value" => group.value, "fields" => group.fields} },
+    "typed_query" => {"ids" => ids(typed)},
+    "rank_inputs" => rank_input.hits.map { |hit| {"id" => hit.id, "score" => hit.score, "feature" => hit.features["query(boost)"]} },
+    "rank_properties" => rank_property.hits.map { |hit| {"id" => hit.id, "score" => hit.score, "feature" => hit.features["query(boost)"]} },
+    "tensor_readback" => document.fetch("embedding").fetch("$searchkernel_tensor").fetch("dense"),
     "nearest_neighbor" => {"ids" => ids(nearest), "scores" => nearest.hits.map(&:relevance)},
+    "hybrid_text_vector" => {"ids" => ids(hybrid), "top_score" => hybrid.hits.first.score},
     "hybrid" => {"top_id" => hybrid.hits.first.id, "has_bag" => ids(hybrid).include?("bag-1")},
-    "two_phase" => {"ids" => ids(reranked)},
-    "unknown_field_error" => {"code" => "invalid_argument", "details" => error_codes}
+    "two_phase_reranking" => {"ids" => ids(reranked)},
+    "coverage_degradation" => {"ids" => ids(degraded), "full" => degraded.coverage.full, "degraded" => !degraded.coverage.degraded.nil?},
+    "yql" => {"ids" => ids(yql), "total" => yql.total_hits},
+    "unknown_field_error" => {"code" => "invalid_argument", "details" => error_codes},
+    "structured_filter_error" => {"code" => "invalid_argument", "details" => error_codes},
+    "text_filter_syntax_error" => {"code" => "invalid_argument", "details" => syntax_error.fetch("details")}
   }
 end
 
@@ -158,7 +223,9 @@ begin
   index.insert("_id" => "parity-mutation", "title" => "Parity Mutation", "category" => "parity", "price" => 100.0, "sale_price" => 110.0, "rating" => 1, "inventory" => 1, "in_stock" => true)
   index.patch("parity-mutation").set("price", 75.0).unset("sale_price").execute
   mutated = index.get("parity-mutation")
-  PARITY_OBSERVATIONS["mutation"] = {"price" => mutated.fetch("price"), "sale_price_present" => mutated.key?("sale_price"), "deleted" => index.delete("parity-mutation")}
+  PARITY_OBSERVATIONS["patch"] = {"price" => mutated.fetch("price"), "sale_price_present" => mutated.key?("sale_price")}
+  parity_mutation_deleted = index.delete("parity-mutation")
+  PARITY_OBSERVATIONS["delete"] = {"deleted" => parity_mutation_deleted, "absent_after_delete" => index.get("parity-mutation").nil?}
   index.insert("_id" => "parity-reopen", "title" => "Parity Reopen", "category" => "parity", "price" => 42.0, "inventory" => 7, "in_stock" => true)
 
   results = index.search("shoes")
@@ -439,7 +506,9 @@ begin
     same("Unsupported", error.code, "conditional mutation returns typed Unsupported")
   end
   index.upsert("shoe-2", {"title" => "Trail Running Shoes Updated", "brand" => "TrailCo", "price" => 119.0, "inventory" => 4, "in_stock" => true})
-  same(119.0, index.get("shoe-2").fetch("price"), "upsert replacement")
+  upserted_shoe2 = index.get("shoe-2")
+  same(119.0, upserted_shoe2.fetch("price"), "upsert replacement")
+  PARITY_OBSERVATIONS["upsert_replacement"] = {"price" => upserted_shoe2.fetch("price"), "updated_title_matches" => upserted_shoe2.fetch("title").include?("Updated"), "search_ids" => ids(index.search("updated").execute)}
 
   tokens = index.analyze("Running shoes", field: "title")
   check(!tokens.empty? && tokens.first.fetch("term").is_a?(String), "analysis result")
@@ -475,7 +544,12 @@ begin
   same(%w[shoe-3 shoe-1 shoe-5 shoe-2 shoe-4], ids(reopened.search("shoes").sort("price", "asc").limit(10).execute), "reopen search")
   persisted = reopened.get("parity-reopen")
   raise "parity-reopen document missing after reopen" unless persisted
-  PARITY_OBSERVATIONS["persistence"] = {"title" => persisted.fetch("title"), "price" => persisted.fetch("price"), "inventory" => persisted.fetch("inventory")}
+  persisted_shoe2 = reopened.get("shoe-2")
+  PARITY_OBSERVATIONS["reopen_persistence"] = {
+    "marker" => {"title" => persisted.fetch("title"), "price" => persisted.fetch("price"), "inventory" => persisted.fetch("inventory")},
+    "upserted" => {"updated_title_matches" => persisted_shoe2.fetch("title").include?("Updated"), "price" => persisted_shoe2.fetch("price")},
+    "deleted_absent" => reopened.get("parity-mutation").nil?
+  }
   check(reopened.delete("shoe-2"), "delete after reopen")
   same(false, reopened.delete("shoe-2"), "duplicate delete is false")
   same(nil, reopened.get("shoe-2"), "deleted document absent")

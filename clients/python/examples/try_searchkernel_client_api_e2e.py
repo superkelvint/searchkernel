@@ -234,6 +234,46 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     else:
         raise AssertionError("unknown field filter unexpectedly succeeded")
 
+    document = index.get("shoe-1")
+    full_text = index.search("shoes").limit(20).execute()
+    stemming = index.search("jump").limit(20).execute()
+    text_binding = index.search("shoes").filter("price <= :max", {"max": 100.0}).sort("price", "asc").limit(20).execute()
+    repeated_filters = (index.search("shoes").filter("price <= :value", {"value": 120.0})
+                        .filter("rating >= :value", {"value": 4}).filter("in_stock = true").sort("price", "asc").limit(20).execute())
+    boolean_filter = (index.search("shoes").filter("(brand IN (:brands) OR rating = :rating) AND NOT (in_stock = false)",
+                                     {"brands": ["Acme", "TrailCo"], "rating": 3})
+                      .sort("price", "asc").limit(20).execute())
+    projection = index.search("shoes").sort("price", "desc").fields("title", "brand", "price").limit(2).execute()
+    all_sorted = index.search("shoes").sort("price", "asc").limit(20).execute()
+    page = index.search("shoes").sort("price", "asc").offset(1).limit(2).execute()
+    filtered_facet = index.search("shoes").filter("in_stock = true").facet("brand", limit=10, sort="count_desc").limit(20).execute()
+    nested = index.browse().filter("category IN (:categories)", {"categories": ["shoes", "bags"]}).group(
+        Group.by("category").limit(10).output(agg.count().as_("products")).subgroup(
+            Group.by("rating").limit(10).output(agg.count().as_("products"), agg.avg("price").as_("avg_price"))
+        )
+    ).execute()
+    aliased = index.search("shoes").group(
+        Group.by("brand").limit(10).alias("revenue", agg.sum("price"))
+        .order_by(desc(g.alias_ref("revenue"))).output(agg.count().as_("products"), g.alias_ref("revenue").as_("revenue"))
+    ).execute()
+    kept = index.search("shoes").group(
+        Group.by("brand").limit(10).keep(gf.regex(g.field("brand"), "^A.*")).output(agg.count().as_("products"))
+    ).execute()
+    typed = index.query(q.contains("title", "shoes")).ranking("default").limit(20).execute()
+    rank_input = index.search("shoes").ranking("boosted").input("boost", 3.0).limit(20).execute()
+    rank_property = index.search("shoes").ranking("boosted").rank_property("boost", "4.0").limit(20).execute()
+    degraded = (index.browse().filter("inventory = :value", {"value": 18}).sort("inventory", "asc")
+                .rank_property("vespa.matchphase.degradation.maxfiltercoverage", "0.9")
+                .rank_property("vespa.matchphase.degradation.attribute", "inventory")
+                .rank_property("vespa.matchphase.degradation.maxhits", "10").limit(10).execute())
+    yql = index.yql("select * from sources * where title contains text(@q) order by price asc").property("q", "shoes").ranking("default").page(1, 3).execute()
+    try:
+        index.search("shoes").filter("price <=").execute()
+    except SearchKernelError as error:
+        syntax_error = {"code": str(error.code).lower(), "details": sorted(detail.code for detail in error.details)}
+    else:
+        raise AssertionError("malformed textual filter unexpectedly succeeded")
+
     brand_counts = {
         str(item["value"]): item["count"]
         for item in faceted.facets["brands"]
@@ -244,15 +284,40 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         for group in groups
     ]
     return {
+        "document_crud": {"id": document["_id"], "title": document["title"], "brand": document["brand"], "price": document["price"]},
+        "full_text_search": {"ids": [hit.id for hit in full_text.hits], "total": full_text.total_hits},
+        "stemming": {"ids": [hit.id for hit in stemming.hits]},
+        "text_filter_binding": {"ids": [hit.id for hit in text_binding.hits]},
+        "repeated_filters": {"ids": [hit.id for hit in repeated_filters.hits]},
+        "boolean_filter_grammar": {"ids": [hit.id for hit in boolean_filter.hits]},
+        "sorting_projection": {"hits": [{"id": hit.id, "fields": dict(hit.fields)} for hit in projection.hits]},
+        "pagination": {"all_ids": [hit.id for hit in all_sorted.hits], "offset_ids": [hit.id for hit in page.hits], "total": page.total_hits},
         "sorted_search": {"ids": [hit.id for hit in ordered.hits], "total": ordered.total_hits},
         "filtered_search": {"ids": [hit.id for hit in filtered.hits], "total": filtered.total_hits},
         "facets": brand_counts,
         "aggregations": dict(root.aggregations),
-        "grouping": group_values,
+        "grouping_aggregations": group_values,
+        "filtered_facets": {str(item["value"]): item["count"] for item in filtered_facet.facets["brand"]},
+        "nested_grouping": [{
+            "category": group.value,
+            "products": group.get("products"),
+            "ratings": [{"rating": child.value, "products": child.get("products"), "avg_price": child.get("avg_price")} for child in group.groups],
+        } for group in grouping_groups(nested)],
+        "group_alias": [{"value": group.value, "fields": dict(group.fields)} for group in grouping_groups(aliased)],
+        "group_keep_filter": [{"value": group.value, "fields": dict(group.fields)} for group in grouping_groups(kept)],
+        "typed_query": {"ids": [hit.id for hit in typed.hits]},
+        "rank_inputs": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_input.hits],
+        "rank_properties": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_property.hits],
+        "tensor_readback": document["embedding"]["$searchkernel_tensor"]["dense"],
         "nearest_neighbor": {"ids": [hit.id for hit in nearest.hits], "scores": [hit.relevance for hit in nearest.hits]},
+        "hybrid_text_vector": {"ids": [hit.id for hit in hybrid.hits], "top_score": hybrid.hits[0].score},
         "hybrid": {"top_id": hybrid.hits[0].id, "has_bag": any(hit.id == "bag-1" for hit in hybrid.hits)},
-        "two_phase": {"ids": [hit.id for hit in reranked.hits]},
+        "two_phase_reranking": {"ids": [hit.id for hit in reranked.hits]},
+        "coverage_degradation": {"ids": [hit.id for hit in degraded.hits], "full": degraded.coverage.full, "degraded": degraded.coverage.degraded is not None},
+        "yql": {"ids": [hit.id for hit in yql.hits], "total": yql.total_hits},
         "unknown_field_error": {"code": "invalid_argument", "details": error_codes},
+        "structured_filter_error": {"code": "invalid_argument", "details": error_codes},
+        "text_filter_syntax_error": syntax_error,
     }
 
 
@@ -325,7 +390,9 @@ with Index.create(
     index.insert({"_id": "parity-mutation", "title": "Parity Mutation", "category": "parity", "price": 100.0, "sale_price": 110.0, "rating": 1, "inventory": 1, "in_stock": True})
     index.patch("parity-mutation").set("price", 75.0).unset("sale_price").execute()
     mutated = index.get("parity-mutation")
-    PARITY_OBSERVATIONS["mutation"] = {"price": mutated["price"], "sale_price_present": "sale_price" in mutated, "deleted": index.delete("parity-mutation")}
+    PARITY_OBSERVATIONS["patch"] = {"price": mutated["price"], "sale_price_present": "sale_price" in mutated}
+    parity_mutation_deleted = index.delete("parity-mutation")
+    PARITY_OBSERVATIONS["delete"] = {"deleted": parity_mutation_deleted, "absent_after_delete": index.get("parity-mutation") is None}
     index.insert({"_id": "parity-reopen", "title": "Parity Reopen", "category": "parity", "price": 42.0, "inventory": 7, "in_stock": True})
 
     # -----------------------------------------------------------------------
@@ -1282,6 +1349,7 @@ with Index.create(
     print_results(results)
 
     assert {hit.id for hit in results.hits} == {"shoe-2"}
+    PARITY_OBSERVATIONS["upsert_replacement"] = {"price": doc["price"], "updated_title_matches": "Updated" in doc["title"], "search_ids": [hit.id for hit in results.hits]}
 
 
 heading("29. INDEX CLOSED")
@@ -1297,7 +1365,12 @@ heading("30. REOPEN PERSISTED INDEX")
 with Index.open(INDEX_PATH) as index:
     persisted = index.get("parity-reopen")
     assert persisted is not None
-    PARITY_OBSERVATIONS["persistence"] = {"title": persisted["title"], "price": persisted["price"], "inventory": persisted["inventory"]}
+    shoe2 = index.get("shoe-2")
+    PARITY_OBSERVATIONS["reopen_persistence"] = {
+        "marker": {"title": persisted["title"], "price": persisted["price"], "inventory": persisted["inventory"]},
+        "upserted": {"updated_title_matches": "Updated" in shoe2["title"], "price": shoe2["price"]},
+        "deleted_absent": index.get("parity-mutation") is None,
+    }
     # Deleted document remains deleted.
     assert index.get("shoe-3") is None
 
