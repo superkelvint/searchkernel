@@ -157,13 +157,15 @@ pub struct SearchResult<T> {
 pub struct Hit<T> {
     pub id: DocumentId,
     pub score: Option<f64>,
-    /// Typed document projection, absent when a portable field cannot be
-    /// represented as JSON or deserialized as `T`. Lossless values remain in
-    /// `fields`.
+    /// Typed document projection. This is absent when the lossless portable
+    /// fields cannot be represented through the JSON-backed projection path
+    /// (currently non-finite scalar values). Ordinary serde deserialization
+    /// failures for `T` are still returned as `Error::Deserialization`.
     pub document: Option<T>,
     /// Exact portable field values, including bytes and non-finite floats.
     pub fields: std::collections::BTreeMap<String, ResultValue>,
-    /// Why `document` could not be projected into the caller's chosen `T`.
+    /// Why the JSON-backed document projection was skipped. This is distinct
+    /// from ordinary `T` deserialization failures, which remain errors.
     pub document_error: Option<String>,
     pub highlights: Vec<HighlightResult>,
     pub source: Option<String>,
@@ -891,6 +893,241 @@ mod tests {
         }
     }
 
+    fn trace_result_value(value: &ResultValue) -> serde_json::Value {
+        match value {
+            ResultValue::Null => serde_json::Value::Null,
+            ResultValue::Bool(value) => serde_json::Value::Bool(*value),
+            ResultValue::Int64(value) => serde_json::Value::String(value.to_string()),
+            ResultValue::UInt64(value) => serde_json::Value::String(value.to_string()),
+            ResultValue::Float64(value) => serde_json::Value::Number(
+                serde_json::Number::from_f64(*value).expect("ResultValue::Float64 is finite"),
+            ),
+            ResultValue::NonFiniteFloat(NonFiniteFloat::NaN) => {
+                serde_json::Value::String("nan".into())
+            }
+            ResultValue::NonFiniteFloat(NonFiniteFloat::PositiveInfinity) => {
+                serde_json::Value::String("+inf".into())
+            }
+            ResultValue::NonFiniteFloat(NonFiniteFloat::NegativeInfinity) => {
+                serde_json::Value::String("-inf".into())
+            }
+            ResultValue::String(value) => serde_json::Value::String(value.clone()),
+            ResultValue::Bytes(values) => serde_json::Value::Array(
+                values
+                    .iter()
+                    .map(|value| serde_json::Value::String(value.to_string()))
+                    .collect(),
+            ),
+            ResultValue::List(values) => {
+                serde_json::Value::Array(values.iter().map(trace_result_value).collect())
+            }
+            ResultValue::Object(values) => trace_result_map(values),
+            ResultValue::Tensor(tensor) => {
+                let address = |values: &std::collections::BTreeMap<String, String>| {
+                    serde_json::Value::Array(
+                        values
+                            .iter()
+                            .map(|(dimension, label)| {
+                                serde_json::json!({"dimension": dimension, "label": label})
+                            })
+                            .collect(),
+                    )
+                };
+                let finite = |value: f64| {
+                    serde_json::Value::Number(
+                        serde_json::Number::from_f64(value)
+                            .expect("portable tensor values are finite"),
+                    )
+                };
+                let mut payload = serde_json::Map::new();
+                payload.insert(
+                    "type_spec".into(),
+                    serde_json::Value::String(tensor.type_spec.clone()),
+                );
+                match &tensor.payload {
+                    ResultTensorPayload::Dense(values) => {
+                        payload.insert(
+                            "dense".into(),
+                            serde_json::Value::Array(
+                                values.iter().copied().map(finite).collect(),
+                            ),
+                        );
+                    }
+                    ResultTensorPayload::Sparse(cells) => {
+                        payload.insert(
+                            "sparse".into(),
+                            serde_json::Value::Array(
+                                cells
+                                    .iter()
+                                    .map(|cell| {
+                                        serde_json::json!({
+                                            "address": address(&cell.address),
+                                            "value": finite(cell.value),
+                                        })
+                                    })
+                                    .collect(),
+                            ),
+                        );
+                    }
+                    ResultTensorPayload::Mixed(blocks) => {
+                        payload.insert(
+                            "mixed".into(),
+                            serde_json::Value::Array(
+                                blocks
+                                    .iter()
+                                    .map(|block| {
+                                        serde_json::json!({
+                                            "address": address(&block.address),
+                                            "values": block.values.iter().copied().map(finite).collect::<Vec<_>>(),
+                                        })
+                                    })
+                                    .collect(),
+                            ),
+                        );
+                    }
+                }
+                serde_json::json!({"$searchkernel_tensor": payload})
+            }
+        }
+    }
+
+    fn trace_result_map(
+        values: &std::collections::BTreeMap<String, ResultValue>,
+    ) -> serde_json::Value {
+        serde_json::Value::Object(
+            values
+                .iter()
+                .map(|(key, value)| (key.clone(), trace_result_value(value)))
+                .collect(),
+        )
+    }
+
+    fn trace_optional_f64(value: Option<f64>) -> serde_json::Value {
+        match value {
+            None => serde_json::Value::Null,
+            Some(value) if value.is_nan() => serde_json::Value::String("nan".into()),
+            Some(value) if value == f64::INFINITY => serde_json::Value::String("+inf".into()),
+            Some(value) if value == f64::NEG_INFINITY => serde_json::Value::String("-inf".into()),
+            Some(value) => serde_json::Value::Number(
+                serde_json::Number::from_f64(value).expect("finite trace float"),
+            ),
+        }
+    }
+
+    fn trace_result_node(node: &ResultNode) -> serde_json::Value {
+        match node {
+            ResultNode::Hit(hit) => serde_json::json!({
+                "kind": "hit",
+                "id": hit.id.as_str(),
+                "relevance": trace_optional_f64(hit.relevance),
+                "fields": trace_result_map(&hit.fields),
+                "highlights": hit.highlights.iter().map(|highlight| {
+                    serde_json::json!({
+                        "field": highlight.field,
+                        "fragments": highlight.fragments.iter().map(|fragment| {
+                            serde_json::json!({
+                                "text": fragment.text,
+                                "matches": fragment.matches.iter().map(|span| {
+                                    serde_json::json!({
+                                        "start_byte": span.start_byte.to_string(),
+                                        "end_byte": span.end_byte.to_string(),
+                                    })
+                                }).collect::<Vec<_>>(),
+                            })
+                        }).collect::<Vec<_>>(),
+                    })
+                }).collect::<Vec<_>>(),
+                "source": hit.source,
+                "types": hit.types,
+                "match_features": trace_result_map(&hit.match_features),
+                "summary_features": trace_result_map(&hit.summary_features),
+                "rank_features": trace_result_map(&hit.rank_features),
+                "sort_values": hit.sort_values.iter().map(trace_result_value).collect::<Vec<_>>(),
+            }),
+            ResultNode::Group(group) => serde_json::json!({
+                "kind": "group",
+                "id": group.id,
+                "label": group.label,
+                "value": group.value.as_ref().map(trace_result_value),
+                "fields": trace_result_map(&group.fields),
+                "children": group.children.iter().map(trace_result_node).collect::<Vec<_>>(),
+                "continuations": group.continuations.iter().map(|(key, value)| {
+                    serde_json::json!({"key": key, "value": value})
+                }).collect::<Vec<_>>(),
+                "source": group.source,
+                "types": group.types,
+                "relevance": trace_optional_f64(group.relevance),
+                "limits": group.limits.as_ref().map(|limits| serde_json::json!({
+                    "from": limits.from.as_ref().map(trace_result_value),
+                    "to": limits.to.as_ref().map(trace_result_value),
+                })),
+                "metadata": trace_result_map(&group.metadata),
+            }),
+        }
+    }
+
+    fn trace_total_hits_relation(value: TotalHitsRelation) -> &'static str {
+        match value {
+            TotalHitsRelation::Unspecified => "unspecified",
+            TotalHitsRelation::Exact => "exact",
+            TotalHitsRelation::LowerBound => "lower_bound",
+            TotalHitsRelation::Approximate => "approximate",
+            TotalHitsRelation::Unknown => "unknown",
+        }
+    }
+
+    fn trace_coverage(value: &Coverage) -> serde_json::Value {
+        serde_json::json!({
+            "coverage_percent": trace_optional_f64(value.coverage_percent),
+            "documents": value.documents.map(|item| item.to_string()),
+            "full": value.full,
+            "nodes": value.nodes.map(|item| item.to_string()),
+            "results": value.results.map(|item| item.to_string()),
+            "results_full": value.results_full.map(|item| item.to_string()),
+            "degraded": value.degraded.as_ref().map(|degraded| serde_json::json!({
+                "match_phase": degraded.match_phase,
+                "timeout": degraded.timeout,
+                "adaptive_timeout": degraded.adaptive_timeout,
+                "ann_timeout": degraded.ann_timeout,
+                "non_ideal_state": degraded.non_ideal_state,
+                "metadata": trace_result_map(&degraded.metadata),
+            })),
+            "metadata": trace_result_map(&value.metadata),
+        })
+    }
+
+    fn trace_timing(value: &SearchTiming) -> serde_json::Value {
+        serde_json::json!({
+            "query_time_seconds": trace_optional_f64(value.query_time_seconds),
+            "search_time_seconds": trace_optional_f64(value.search_time_seconds),
+            "summary_fetch_time_seconds": trace_optional_f64(value.summary_fetch_time_seconds),
+            "metadata": trace_result_map(&value.metadata),
+        })
+    }
+
+    fn trace_search_result(result: &SearchResult<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({
+            "root": trace_result_node(&result.root),
+            "total_hits": {
+                "value": result.total_hits.value.to_string(),
+                "relation": trace_total_hits_relation(result.total_hits.relation),
+            },
+            "coverage": result.coverage.as_ref().map(trace_coverage),
+            "timing": result.timing.as_ref().map(trace_timing),
+            "errors": result.issues.iter().map(|issue| serde_json::json!({
+                "code": issue.code.to_string(),
+                "summary": issue.summary,
+                "message": issue.message,
+                "source": issue.source,
+                "stack_trace": issue.stack_trace,
+                "transient": issue.transient,
+                "metadata": trace_result_map(&issue.metadata),
+            })).collect::<Vec<_>>(),
+            "trace": result.trace.as_ref().map(trace_result_value),
+            "metadata": trace_result_map(&result.metadata),
+        })
+    }
+
     #[test]
     fn response_byte_fixtures_reach_the_public_rust_result_projection() {
         use searchkernel_protocol::protocol::v2 as wire;
@@ -902,6 +1139,7 @@ mod tests {
         )
         .expect("parse canonical response corpus");
         let fixtures = result_fixtures();
+        let mut traces = serde_json::Map::new();
         for scenario in corpus["valid"].as_array().unwrap() {
             let name = scenario["id"].as_str().unwrap();
             let fixture = fixtures
@@ -948,6 +1186,31 @@ mod tests {
                 actual.metadata,
                 result_value_map(fixture.result.metadata.clone())
             );
+            traces.insert(name.to_owned(), trace_search_result(&actual));
+        }
+
+        if let Some(directory) = std::env::var_os("SEARCHKERNEL_RESULT_TRACE_DIR") {
+            traces.insert(
+                "malformed_outcomes".into(),
+                serde_json::Value::Object(
+                    corpus["malformed"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|case| {
+                            (
+                                case["id"].as_str().unwrap().to_owned(),
+                                serde_json::Value::String("client".into()),
+                            )
+                        })
+                        .collect(),
+                ),
+            );
+            std::fs::write(
+                std::path::PathBuf::from(directory).join("rust.json"),
+                serde_json::to_vec(&serde_json::Value::Object(traces)).unwrap(),
+            )
+            .expect("write Rust result trace");
         }
     }
 
@@ -989,6 +1252,46 @@ mod tests {
         );
         assert!(projection.hits[0].document.is_none());
         assert!(projection.hits[0].document_error.is_some());
+    }
+
+    #[test]
+    fn non_finite_document_fallback_has_explicit_precedence_over_t_deserialization() {
+        let total_hits = searchkernel_ir::TotalHits {
+            value: 1,
+            relation: searchkernel_ir::TotalHitsRelation::Exact,
+        };
+
+        let mut ordinary = searchkernel_ir::SearchResult::empty(total_hits.clone());
+        ordinary.root = searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+            id: "ordinary".to_owned(),
+            fields: BTreeMap::from([("title".to_owned(), Value::String("ok".into()))]),
+            ..Default::default()
+        });
+        assert!(matches!(
+            search_result::<String>(ordinary, &[]),
+            Err(Error::Deserialization(_))
+        ));
+
+        let mut mixed = searchkernel_ir::SearchResult::empty(total_hits);
+        mixed.root = searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+            id: "mixed".to_owned(),
+            fields: BTreeMap::from([
+                ("title".to_owned(), Value::String("ok".into())),
+                ("ratio".to_owned(), Value::Float64(f64::NAN)),
+            ]),
+            ..Default::default()
+        });
+        let result: SearchResult<String> =
+            search_result(mixed, &[]).expect("non-finite fields use the lossless fallback");
+        assert!(result.hits[0].document.is_none());
+        assert_eq!(
+            result.hits[0].document_error.as_deref(),
+            Some("document contains non-finite scalar values")
+        );
+        assert_eq!(
+            result.hits[0].fields["ratio"],
+            ResultValue::NonFiniteFloat(NonFiniteFloat::NaN)
+        );
     }
 
     #[test]
