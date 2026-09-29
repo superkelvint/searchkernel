@@ -181,11 +181,14 @@ pub(super) fn request_tensor_offset<'a>(
     let type_spec = builder.create_string(&tensor.type_spec);
     let (payload_type, payload) = match &tensor.payload {
         ir::RequestTensorPayloadIr::Dense(values) => {
-            let values = builder.create_vector(values);
+            // Absent and empty vectors decode identically. Omitting this vector
+            // keeps empty dense tensors valid through the BFBS JSON parser,
+            // which can misalign an explicit empty vector of doubles.
+            let values = (!values.is_empty()).then(|| builder.create_vector(values));
             let value = api::DenseTensorValues::create(
                 builder,
                 &api::DenseTensorValuesArgs {
-                    values: Some(values),
+                    values,
                 },
             );
             (

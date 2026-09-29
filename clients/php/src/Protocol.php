@@ -178,12 +178,19 @@ final class Protocol
             ];
         }
         if ($value instanceof Tensor) {
+            $payload = $value->payload;
+            if ($value->payloadType === 'DenseTensorValues' && ($payload['values'] ?? null) === []) {
+                // FlatBuffers JSON parsers can produce a misaligned empty
+                // vector of doubles. An absent vector decodes as the same
+                // empty dense payload in the canonical IR.
+                $payload = JsonObject::empty();
+            }
             return [
                 'kind_type' => 'TensorValue',
                 'kind' => [
                     'type_spec' => $value->typeSpec,
                     'payload_type' => $value->payloadType,
-                    'payload' => $value->payload,
+                    'payload' => $payload,
                 ],
             ];
         }

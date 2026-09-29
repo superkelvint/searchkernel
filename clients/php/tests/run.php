@@ -219,6 +219,18 @@ $decodedTensor = Protocol::decodeValue($encodedTensor);
 truth($decodedTensor instanceof Tensor, 'tensor decode to Tensor');
 same('tensor<float>(x[2])', $decodedTensor->typeSpec, 'tensor type spec round trip');
 same([1.0, 2.5], $decodedTensor->payload['values'], 'tensor cells round trip');
+$emptyTensor = Protocol::value(Tensor::dense('tensor<float>(x[2])', []));
+$emptyTensorJson = Protocol::encodeJson($emptyTensor);
+same(
+    '{"kind_type":"TensorValue","kind":{"type_spec":"tensor<float>(x[2])","payload_type":"DenseTensorValues","payload":{}}}',
+    $emptyTensorJson,
+    'empty dense tensor omits its vector and preserves an empty table for BFBS JSON alignment',
+);
+$decodedEmptyTensor = Protocol::decodeValue(
+    json_decode($emptyTensorJson, true, 512, JSON_THROW_ON_ERROR),
+);
+truth($decodedEmptyTensor instanceof Tensor, 'empty dense tensor decodes from omitted vector');
+same([], $decodedEmptyTensor->payload['values'], 'omitted dense tensor vector decodes as empty');
 
 throws(
     \InvalidArgumentException::class,

@@ -17,6 +17,7 @@ use SearchKernel\Agg;
 use SearchKernel\Bytes;
 use SearchKernel\Group;
 use SearchKernel\Index;
+use SearchKernel\JsonObject;
 use SearchKernel\Protocol;
 use SearchKernel\Query;
 use SearchKernel\Tensor;
