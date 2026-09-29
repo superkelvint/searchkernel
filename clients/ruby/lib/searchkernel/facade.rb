@@ -193,12 +193,19 @@ module SearchKernel
 
     def rank_property(name, item)
       Wire.name!(name, "rank property name")
-      @rank_properties[name] = item.to_s
+      raise TypeError, "rank property value must be a string" unless item.is_a?(String)
+      @rank_properties[name] = item
       self
     end
 
     def rank_properties(properties)
-      properties.each { |name, value| rank_property(name.to_s, value) }
+      normalized = properties.map do |name, value|
+        normalized_name = name.to_s
+        Wire.name!(normalized_name, "rank property name")
+        raise TypeError, "rank property value must be a string" unless value.is_a?(String)
+        [normalized_name, value]
+      end
+      normalized.each { |name, value| @rank_properties[name] = value }
       self
     end
 

@@ -8,6 +8,7 @@ source "$CONTROL_ROOT/tools/ci-runtime-ownership.sh"
 IMAGE=${SEARCHKERNEL_CI_IMAGE:-docker.io/superkelvint/searchkernel-ci:latest}
 PULL_MODE=${SEARCHKERNEL_CI_PULL:-always}
 KEEP_STATE=${SEARCHKERNEL_CI_KEEP_STATE:-0}
+EXACT_SOURCE=${SEARCHKERNEL_CI_EXACT_SOURCE:-0}
 COVERAGE_SNAPSHOT=0
 [[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1
 
@@ -15,6 +16,11 @@ die() {
     echo "error: $*" >&2
     exit 1
 }
+
+case "$EXACT_SOURCE" in
+    0|1) ;;
+    *) die "SEARCHKERNEL_CI_EXACT_SOURCE must be 0 or 1" ;;
+esac
 
 command -v docker >/dev/null 2>&1 ||
     die "Docker is required for Search Kernel build/test/verify commands. Set SEARCHKERNEL_DEV_USE_CI_IMAGE=0 for an intentional host run."
@@ -184,6 +190,9 @@ cat "$bundle" |
             rm -f "$bundle"
         '
 
+if [[ "$EXACT_SOURCE" == "1" ]]; then
+    echo "==> dev: exact-source mode; using committed Git tree only"
+else
 # Overlay exactly the non-ignored working-tree files that differ from HEAD.
 # This preserves local edits/new source files while deliberately excluding
 # target/, node_modules/, venvs, local SDKs, and all other ignored build state.
@@ -221,9 +230,18 @@ for raw in sys.stdin.buffer.read().split(b"\0"):
 '
 fi
 
+fi
+
 # Verify that the private Git repository still names the exact host HEAD before
 # executing any build/test command.
-actual=$(docker run --rm     -v "$source_volume:/work"     -w /work     "$IMAGE_ID"     /bin/bash -lc 'git config --global --add safe.directory /work && git rev-parse HEAD')
+actual=$(docker run --rm \
+    -e GIT_CONFIG_COUNT=1 \
+    -e GIT_CONFIG_KEY_0=safe.directory \
+    -e GIT_CONFIG_VALUE_0=/work \
+    -v "$source_volume:/work" \
+    -w /work \
+    "$IMAGE_ID" \
+    git rev-parse HEAD)
 [[ "${actual,,}" == "${head_sha,,}" ]] ||
     die "private source snapshot expected HEAD $head_sha, found $actual"
 
@@ -243,6 +261,13 @@ docker_env=(
     -e RANLIB=/opt/rh/gcc-toolset-15/root/usr/bin/ranlib
     -e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib
     -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/opt/rh/gcc-toolset-15/root/usr/bin/gcc
+    # The source snapshot is created in a separate container and then mounted
+    # into this one. Docker volume ownership can differ across self-hosted
+    # runners, so make the repository trust policy explicit and process-local
+    # instead of relying on runner state or a mutable global Git config.
+    -e GIT_CONFIG_COUNT=1
+    -e GIT_CONFIG_KEY_0=safe.directory
+    -e GIT_CONFIG_VALUE_0=/work
 )
 
 # Preserve Search Kernel test knobs and diagnostics, but never forward host
