@@ -90,12 +90,21 @@ stop_host() {
 export SEARCHKERNEL_LOCAL_HOST="$HOST"
 export SEARCHKERNEL_E2E_TARGET="php-e2e"
 
+run_php_phase() {
+  local phase="$1"
+  if ! php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" "$phase"; then
+    echo "PHP client E2E phase '$phase' failed; daemon output:" >&2
+    cat "$WORK/searchkerneld.log" >&2 || true
+    return 1
+  fi
+}
+
 start_host
-php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" initial
+run_php_phase initial
 stop_host
 
 start_host
-php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" reopen
+run_php_phase reopen
 stop_host
 
 echo "PHP real-engine multi-index E2E + reopen PASS"
