@@ -1,0 +1,1017 @@
+#![cfg(feature = "native")]
+
+use flatbuffers::root;
+use http_body_util::{BodyExt, Full};
+use hyper::{body::Bytes, Request as HttpRequest};
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use searchkernel_protocol::{
+    json::{request_flatbuffer_to_json, response_json_to_flatbuffer},
+    protocol::v2 as wire,
+    target::{
+        CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE,
+        INDEX_NOT_FOUND_DETAIL_CODE, INVALID_INDEX_TARGET_DETAIL_CODE,
+        MISSING_INDEX_DEFINITION_DETAIL_CODE, MISSING_INDEX_TARGET_DETAIL_CODE, TARGET_NAME_PATH,
+        TARGET_PATH,
+    },
+    v2 as api, PROTOCOL_VERSION,
+};
+use searchkerneld::{rpc, start_multi, IndexRegistry, ServerConfig, JSON_EXECUTE_PATH};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{Arc, Barrier},
+    thread,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tonic::Request;
+
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(label: &str) -> Self {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "searchkerneld-multi-index-{label}-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect("create test data root");
+        Self(path)
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn target<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    name: &str,
+) -> flatbuffers::WIPOffset<api::IndexTarget<'a>> {
+    let name = builder.create_string(name);
+    api::IndexTarget::create(builder, &api::IndexTargetArgs { name: Some(name) })
+}
+
+fn create_request(target_name: &str, field_name: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let field_name = builder.create_string(field_name);
+    let primitive = api::PrimitiveDataType::create(
+        &mut builder,
+        &api::PrimitiveDataTypeArgs {
+            kind: api::PrimitiveDataTypeKind::String,
+        },
+    );
+    let data_type = api::DataType::create(
+        &mut builder,
+        &api::DataTypeArgs {
+            kind_type: api::DataTypeKind::PrimitiveDataType,
+            kind: Some(primitive.as_union_value()),
+        },
+    );
+    let stored = api::OptionalBool::new(true);
+    let searchable = api::OptionalBool::new(true);
+    let field = api::FieldDefinition::create(
+        &mut builder,
+        &api::FieldDefinitionArgs {
+            name: Some(field_name),
+            data_type: Some(data_type),
+            stored: Some(&stored),
+            searchable: Some(&searchable),
+            ..Default::default()
+        },
+    );
+    let fields = builder.create_vector(&[field]);
+    let definition_name = builder.create_string(target_name);
+    let definition = api::IndexDefinition::create(
+        &mut builder,
+        &api::IndexDefinitionArgs {
+            name: Some(definition_name),
+            fields: Some(fields),
+            ..Default::default()
+        },
+    );
+    let payload = api::CreateIndexRequest::create(
+        &mut builder,
+        &api::CreateIndexRequestArgs {
+            definition: Some(definition),
+        },
+    );
+    let target = target(&mut builder, target_name);
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
+            payload_type: wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+fn create_request_without_definition(target_name: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload = api::CreateIndexRequest::create(
+        &mut builder,
+        &api::CreateIndexRequestArgs { definition: None },
+    );
+    let target = target(&mut builder, target_name);
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
+            payload_type: wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+fn open_request(target_name: Option<&str>) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload =
+        api::OpenIndexRequest::create(&mut builder, &api::OpenIndexRequestArgs::default());
+    let target = target_name.map(|name| target(&mut builder, name));
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target,
+            payload_type: wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+fn delete_index_request(target_name: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload =
+        api::DeleteIndexRequest::create(&mut builder, &api::DeleteIndexRequestArgs::default());
+    let target = target(&mut builder, target_name);
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
+            payload_type: wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+fn upsert_request(target_name: &str, id: &str, field_name: &str, text: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let text = builder.create_string(text);
+    let string_value =
+        api::StringValue::create(&mut builder, &api::StringValueArgs { value: Some(text) });
+    let value = api::Value::create(
+        &mut builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::StringValue,
+            kind: Some(string_value.as_union_value()),
+        },
+    );
+    let key = builder.create_string(field_name);
+    let entry = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(key),
+            value: Some(value),
+        },
+    );
+    let fields = builder.create_vector(&[entry]);
+    let id = builder.create_string(id);
+    let document = api::Document::create(
+        &mut builder,
+        &api::DocumentArgs {
+            id: Some(id),
+            fields: Some(fields),
+        },
+    );
+    let payload = api::UpsertRequest::create(
+        &mut builder,
+        &api::UpsertRequestArgs {
+            document: Some(document),
+            ..Default::default()
+        },
+    );
+    let target = target(&mut builder, target_name);
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
+            payload_type: wire::RequestPayload::SearchKernel_V2_UpsertRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+fn search_request(target_name: &str, text: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let text = builder.create_string(text);
+    let query = api::SearchKernelTextQuery::create(
+        &mut builder,
+        &api::SearchKernelTextQueryArgs { text: Some(text) },
+    );
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::SearchKernelTextQuery,
+            source: Some(query.as_union_value()),
+        },
+    );
+    let payload = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    let target = target(&mut builder, target_name);
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
+            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+async fn execute_http_json(address: std::net::SocketAddr, payload: &[u8]) -> Vec<u8> {
+    let json = request_flatbuffer_to_json(payload).expect("encode request JSON");
+    let request = HttpRequest::builder()
+        .method("POST")
+        .uri(format!("http://{address}{JSON_EXECUTE_PATH}"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(json)))
+        .expect("build HTTP JSON request");
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let response = client.request(request).await.expect("HTTP JSON request");
+    assert_eq!(response.status(), http::StatusCode::OK);
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("read HTTP JSON response")
+        .to_bytes();
+    response_json_to_flatbuffer(&body).expect("decode response JSON")
+}
+
+fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {
+    root::<wire::ResponseEnvelope<'_>>(bytes).expect("response envelope")
+}
+
+fn assert_lifecycle(bytes: &[u8], kind: wire::ResponsePayload) {
+    assert_eq!(response(bytes).payload_type(), kind);
+}
+
+fn assert_portable_error(
+    bytes: &[u8],
+    code: api::ErrorCode,
+    detail_code: &str,
+    path: Option<&str>,
+) {
+    let envelope = response(bytes);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
+    );
+    let error = envelope
+        .payload_as_search_kernel_v2_error()
+        .expect("error payload");
+    assert_eq!(error.code(), code);
+    let details = error.details().expect("canonical error detail");
+    assert_eq!(details.len(), 1);
+    let detail = details.get(0);
+    assert_eq!(detail.code(), Some(detail_code));
+    assert_eq!(detail.path(), path);
+}
+
+fn assert_upsert(bytes: &[u8]) {
+    assert_eq!(
+        response(bytes).payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_UpsertResult
+    );
+}
+
+fn total_hits(bytes: &[u8]) -> u64 {
+    let envelope = response(bytes);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_SearchResult
+    );
+    envelope
+        .payload_as_search_kernel_v2_search_result()
+        .expect("search result")
+        .total_hits()
+        .expect("total hits")
+        .value()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grpc_and_http_json_share_one_registry() {
+    let temp = TempDir::new("cross-transport");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().expect("gRPC address"))
+            .with_web_listen_addr("127.0.0.1:0".parse().expect("HTTP address")),
+        registry.clone(),
+    )
+    .await
+    .expect("start multi-index daemon");
+
+    let grpc_address = server.tcp_addr().expect("gRPC listener");
+    let http_address = server.web_tcp_addr().expect("HTTP listener");
+    let mut grpc =
+        rpc::search_kernel_client::SearchKernelClient::connect(format!("http://{grpc_address}"))
+            .await
+            .expect("connect gRPC client");
+
+    let create = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: create_request("products", "title"),
+        }))
+        .await
+        .expect("create over gRPC")
+        .into_inner()
+        .payload;
+    assert_lifecycle(
+        &create,
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+
+    let upsert = execute_http_json(
+        http_address,
+        &upsert_request("products", "cross-transport", "title", "shared registry"),
+    )
+    .await;
+    assert_upsert(&upsert);
+
+    let search = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: search_request("products", "shared"),
+        }))
+        .await
+        .expect("search over gRPC")
+        .into_inner()
+        .payload;
+    assert_eq!(total_hits(&search), 1);
+
+    server.shutdown().await.expect("shutdown daemon");
+    registry.close_all().expect("close registry");
+}
+
+#[test]
+fn routes_two_different_indexes_without_cross_index_leakage_and_reopens_them() {
+    let temp = TempDir::new("isolation");
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request("products", "title"))
+            .expect("create products"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request("articles", "body"))
+            .expect("create articles"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+
+    assert_upsert(
+        &registry
+            .dispatch(&upsert_request("products", "shared", "title", "red fox"))
+            .expect("upsert products"),
+    );
+    assert_upsert(
+        &registry
+            .dispatch(&upsert_request("articles", "shared", "body", "blue whale"))
+            .expect("upsert articles"),
+    );
+
+    assert_eq!(
+        total_hits(
+            &registry
+                .dispatch(&search_request("products", "red"))
+                .expect("search products red")
+        ),
+        1
+    );
+    assert_eq!(
+        total_hits(
+            &registry
+                .dispatch(&search_request("products", "blue"))
+                .expect("search products blue")
+        ),
+        0
+    );
+    assert_eq!(
+        total_hits(
+            &registry
+                .dispatch(&search_request("articles", "blue"))
+                .expect("search articles blue")
+        ),
+        1
+    );
+    assert_eq!(
+        total_hits(
+            &registry
+                .dispatch(&search_request("articles", "red"))
+                .expect("search articles red")
+        ),
+        0
+    );
+
+    registry.close_all().expect("close first registry");
+    assert!(registry
+        .loaded_targets()
+        .expect("loaded targets")
+        .is_empty());
+    registry.close_all().expect("second close is a no-op");
+    drop(registry);
+
+    let reopened = IndexRegistry::new(&temp.0).expect("reopened registry");
+    assert_lifecycle(
+        &reopened
+            .dispatch(&open_request(Some("products")))
+            .expect("open products"),
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+    );
+    assert_lifecycle(
+        &reopened
+            .dispatch(&open_request(Some("articles")))
+            .expect("open articles"),
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+    );
+    assert_eq!(
+        total_hits(
+            &reopened
+                .dispatch(&search_request("products", "red"))
+                .expect("reopened products search")
+        ),
+        1
+    );
+    assert_eq!(
+        total_hits(
+            &reopened
+                .dispatch(&search_request("articles", "blue"))
+                .expect("reopened articles search")
+        ),
+        1
+    );
+    reopened.close_all().expect("close reopened registry");
+}
+
+#[test]
+fn delete_unloads_removes_persistence_and_allows_recreate() {
+    let temp = TempDir::new("delete-index");
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request("products", "title"))
+            .expect("create products"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    assert!(temp.0.join("products").is_dir());
+    assert_lifecycle(
+        &registry
+            .dispatch(&delete_index_request("products"))
+            .expect("delete products"),
+        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+    );
+    assert!(registry
+        .loaded_targets()
+        .expect("loaded targets")
+        .is_empty());
+    assert!(!temp.0.join("products").exists());
+    assert_portable_error(
+        &registry
+            .dispatch(&open_request(Some("products")))
+            .expect("deleted open"),
+        api::ErrorCode::NotFound,
+        INDEX_NOT_FOUND_DETAIL_CODE,
+        None,
+    );
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request("products", "title"))
+            .expect("recreate products"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    registry.close_all().expect("close recreated registry");
+}
+
+#[test]
+fn delete_persisted_but_unloaded_index() {
+    let temp = TempDir::new("delete-unloaded");
+    let first = IndexRegistry::new(&temp.0).expect("first registry");
+    assert_lifecycle(
+        &first
+            .dispatch(&create_request("products", "title"))
+            .expect("create products"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    first.close_all().expect("close first registry");
+    drop(first);
+    let second = IndexRegistry::new(&temp.0).expect("second registry");
+    assert_lifecycle(
+        &second
+            .dispatch(&delete_index_request("products"))
+            .expect("delete persisted products"),
+        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+    );
+    assert!(!temp.0.join("products").exists());
+    assert_portable_error(
+        &second
+            .dispatch(&delete_index_request("products"))
+            .expect("second delete"),
+        api::ErrorCode::NotFound,
+        INDEX_NOT_FOUND_DETAIL_CODE,
+        None,
+    );
+}
+
+#[test]
+fn delete_rejects_storage_owned_by_another_runtime() {
+    let temp = TempDir::new("delete-owned");
+    let path = temp.0.join("products");
+    let owner = searchkernel::Index::create(
+        &path,
+        searchkernel::IndexDefinition::new().field(
+            searchkernel::Field::text("title")
+                .stored(true)
+                .searchable(true),
+        ),
+    )
+    .expect("create externally owned index");
+
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    assert_portable_error(
+        &registry
+            .dispatch(&delete_index_request("products"))
+            .expect("delete owned target"),
+        api::ErrorCode::Conflict,
+        "index_in_use",
+        None,
+    );
+    assert!(path.is_dir(), "failed delete must preserve owned storage");
+
+    owner.close().expect("close external owner");
+    assert_lifecycle(
+        &registry
+            .dispatch(&delete_index_request("products"))
+            .expect("delete after owner close"),
+        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+    );
+    assert!(!path.exists());
+}
+
+#[test]
+fn concurrent_same_name_create_has_one_winner() {
+    let temp = TempDir::new("create-race");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let request = Arc::new(create_request("products", "title"));
+
+    let workers = (0..6)
+        .map(|_| {
+            let registry = registry.clone();
+            let request = request.clone();
+            thread::spawn(move || registry.dispatch(&request).expect("dispatch create"))
+        })
+        .collect::<Vec<_>>();
+
+    let mut created = 0;
+    let mut already_exists = 0;
+    for worker in workers {
+        let bytes = worker.join().expect("create worker");
+        let envelope = response(&bytes);
+        match envelope.payload_type() {
+            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult => created += 1,
+            wire::ResponsePayload::SearchKernel_V2_Error => {
+                let error = envelope
+                    .payload_as_search_kernel_v2_error()
+                    .expect("error payload");
+                assert_eq!(error.code(), api::ErrorCode::AlreadyExists);
+                already_exists += 1;
+            }
+            other => panic!("unexpected create-race response: {other:?}"),
+        }
+    }
+
+    assert_eq!(created, 1);
+    assert_eq!(already_exists, 5);
+    registry.close_all().expect("close registry");
+}
+
+#[cfg(unix)]
+#[test]
+fn blocked_lifecycle_transition_does_not_stall_other_targets() {
+    use std::os::fd::AsRawFd;
+
+    let temp = TempDir::new("per-target-transition");
+    let lock_path = temp.0.join(".products.searchkernel.lock");
+    let lock_file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("open external lifecycle lock");
+    assert_eq!(
+        unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+        0,
+        "acquire external lifecycle lock"
+    );
+
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let blocked_registry = registry.clone();
+    let blocked = thread::spawn(move || {
+        blocked_registry
+            .dispatch(&create_request("products", "title"))
+            .expect("blocked products create")
+    });
+
+    // Give the products transition time to enter the native lifecycle-lock
+    // retry loop. A daemon-wide registry mutex would now stall every target.
+    thread::sleep(std::time::Duration::from_millis(100));
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let independent_registry = registry.clone();
+    let independent = thread::spawn(move || {
+        let response = independent_registry
+            .dispatch(&create_request("articles", "body"))
+            .expect("independent articles create");
+        sender.send(response).expect("send independent response");
+    });
+    let articles = receiver
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("unrelated target lifecycle must not wait for products");
+    assert_lifecycle(
+        &articles,
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+
+    assert_eq!(
+        unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_UN) },
+        0,
+        "release external lifecycle lock"
+    );
+    assert_lifecycle(
+        &blocked.join().expect("join blocked creator"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    independent.join().expect("join independent creator");
+    registry.close_all().expect("close registry");
+}
+
+#[cfg(unix)]
+#[test]
+fn close_all_waits_for_in_flight_create_and_prevents_republication() {
+    use std::os::fd::AsRawFd;
+
+    let temp = TempDir::new("close-create-race");
+    let lock_path = temp.0.join(".products.searchkernel.lock");
+    let lock_file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("open external lifecycle lock");
+    assert_eq!(
+        unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+        0,
+        "acquire external lifecycle lock"
+    );
+
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let creating_registry = registry.clone();
+    let creator = thread::spawn(move || {
+        creating_registry
+            .dispatch(&create_request("products", "title"))
+            .expect("dispatch create")
+    });
+
+    thread::sleep(std::time::Duration::from_millis(100));
+
+    let (closed_tx, closed_rx) = std::sync::mpsc::channel();
+    let closing_registry = registry.clone();
+    let closer = thread::spawn(move || {
+        let result = closing_registry.close_all();
+        closed_tx.send(result).expect("send close result");
+    });
+
+    assert!(
+        closed_rx
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .is_err(),
+        "close_all must wait for the in-flight create"
+    );
+
+    assert_eq!(
+        unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_UN) },
+        0,
+        "release external lifecycle lock"
+    );
+    assert_lifecycle(
+        &creator.join().expect("join creator"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    closed_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("close result after create")
+        .expect("close registry");
+    closer.join().expect("join closer");
+
+    assert!(registry
+        .loaded_targets()
+        .expect("loaded targets")
+        .is_empty());
+    assert_eq!(
+        registry.dispatch(&open_request(Some("products"))),
+        Err(searchkerneld::RegistryDispatchError::Closed),
+        "closed registry must not reopen a target after shutdown"
+    );
+}
+
+#[test]
+fn concurrent_create_and_open_are_linearizable() {
+    let temp = TempDir::new("create-open-race");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let barrier = Arc::new(Barrier::new(2));
+
+    let creator = {
+        let registry = registry.clone();
+        let barrier = barrier.clone();
+        thread::spawn(move || {
+            barrier.wait();
+            registry
+                .dispatch(&create_request("products", "title"))
+                .expect("dispatch create")
+        })
+    };
+    let opener = {
+        let registry = registry.clone();
+        let barrier = barrier.clone();
+        thread::spawn(move || {
+            barrier.wait();
+            registry
+                .dispatch(&open_request(Some("products")))
+                .expect("dispatch open")
+        })
+    };
+
+    let create_bytes = creator.join().expect("creator");
+    assert_eq!(
+        response(&create_bytes).payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult
+    );
+
+    let open_bytes = opener.join().expect("opener");
+    let open_envelope = response(&open_bytes);
+    match open_envelope.payload_type() {
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult => {}
+        wire::ResponsePayload::SearchKernel_V2_Error => {
+            let error = open_envelope
+                .payload_as_search_kernel_v2_error()
+                .expect("open error payload");
+            assert_eq!(
+                error.code(),
+                api::ErrorCode::NotFound,
+                "an open that linearizes before create may only report NotFound"
+            );
+        }
+        other => panic!("unexpected create/open race response: {other:?}"),
+    }
+
+    assert_eq!(
+        registry.loaded_targets().expect("loaded targets"),
+        vec!["products".to_owned()]
+    );
+    assert_lifecycle(
+        &registry
+            .dispatch(&open_request(Some("products")))
+            .expect("final open"),
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+    );
+    registry.close_all().expect("close registry");
+}
+
+#[test]
+fn rejects_non_directory_target_entry() {
+    let temp = TempDir::new("non-directory-target");
+    fs::write(temp.0.join("products"), b"not an index directory").expect("write target file");
+
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    let bytes = registry
+        .dispatch(&open_request(Some("products")))
+        .expect("semantic lifecycle response");
+    let envelope = response(&bytes);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
+    );
+    let error = envelope
+        .payload_as_search_kernel_v2_error()
+        .expect("error payload");
+    assert_eq!(error.code(), api::ErrorCode::FailedPrecondition);
+    assert_eq!(
+        error.details().expect("error details").get(0).code(),
+        Some("unsafe_index_path")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_symlinked_target_directory_without_following_it() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new("symlink-target");
+    let outside = TempDir::new("symlink-outside");
+    symlink(&outside.0, temp.0.join("products")).expect("create target symlink");
+
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    let bytes = registry
+        .dispatch(&open_request(Some("products")))
+        .expect("semantic lifecycle response");
+    let envelope = response(&bytes);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
+    );
+    let error = envelope
+        .payload_as_search_kernel_v2_error()
+        .expect("error payload");
+    assert_eq!(error.code(), api::ErrorCode::FailedPrecondition);
+    assert_eq!(
+        error.details().expect("error details").get(0).code(),
+        Some("unsafe_index_path")
+    );
+    assert!(
+        fs::read_dir(&outside.0)
+            .expect("read outside directory")
+            .next()
+            .is_none(),
+        "daemon must not follow a target symlink outside its data root"
+    );
+}
+
+#[test]
+fn daemon_control_errors_use_the_canonical_portable_error_contract() {
+    let temp = TempDir::new("portable-control-errors");
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+
+    assert_portable_error(
+        &registry
+            .dispatch(&open_request(None))
+            .expect("missing target is a semantic response"),
+        api::ErrorCode::InvalidArgument,
+        MISSING_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_PATH),
+    );
+
+    assert_portable_error(
+        &registry
+            .dispatch(&open_request(Some("../escape")))
+            .expect("invalid target is a semantic response"),
+        api::ErrorCode::InvalidArgument,
+        INVALID_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_NAME_PATH),
+    );
+
+    assert_portable_error(
+        &registry
+            .dispatch(&create_request_without_definition("products"))
+            .expect("missing definition is a semantic response"),
+        api::ErrorCode::InvalidArgument,
+        MISSING_INDEX_DEFINITION_DETAIL_CODE,
+        Some(CREATE_INDEX_DEFINITION_PATH),
+    );
+
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request("products", "title"))
+            .expect("create products"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    assert_portable_error(
+        &registry
+            .dispatch(&create_request("products", "title"))
+            .expect("create collision is a semantic response"),
+        api::ErrorCode::AlreadyExists,
+        INDEX_ALREADY_EXISTS_DETAIL_CODE,
+        None,
+    );
+
+    assert_portable_error(
+        &registry
+            .dispatch(&open_request(Some("missing")))
+            .expect("open miss is a semantic response"),
+        api::ErrorCode::NotFound,
+        INDEX_NOT_FOUND_DETAIL_CODE,
+        None,
+    );
+
+    registry.close_all().expect("close registry");
+}
+
+#[test]
+fn rejects_missing_and_path_like_targets_before_mapping_the_data_root() {
+    let temp = TempDir::new("invalid-targets");
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+
+    for invalid in [
+        "",
+        ".",
+        "..",
+        "../escape",
+        "/absolute",
+        "nested/path",
+        r"nested\path",
+        "dot.name",
+        "Upper",
+        "café",
+    ] {
+        assert_portable_error(
+            &registry
+                .dispatch(&open_request(Some(invalid)))
+                .expect("invalid target is a semantic response"),
+            api::ErrorCode::InvalidArgument,
+            INVALID_INDEX_TARGET_DETAIL_CODE,
+            Some(TARGET_NAME_PATH),
+        );
+    }
+
+    assert!(
+        fs::read_dir(&temp.0)
+            .expect("read data root")
+            .next()
+            .is_none(),
+        "invalid targets must not create filesystem entries"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grpc_and_http_json_preserve_portable_control_errors() {
+    let temp = TempDir::new("portable-error-transports");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().expect("gRPC address"))
+            .with_web_listen_addr("127.0.0.1:0".parse().expect("HTTP address")),
+        registry.clone(),
+    )
+    .await
+    .expect("start multi-index daemon");
+
+    let grpc_address = server.tcp_addr().expect("gRPC listener");
+    let http_address = server.web_tcp_addr().expect("HTTP listener");
+    let mut grpc =
+        rpc::search_kernel_client::SearchKernelClient::connect(format!("http://{grpc_address}"))
+            .await
+            .expect("connect gRPC client");
+
+    let grpc_missing = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: open_request(None),
+        }))
+        .await
+        .expect("missing target must remain a SearchKernel response")
+        .into_inner()
+        .payload;
+    assert_portable_error(
+        &grpc_missing,
+        api::ErrorCode::InvalidArgument,
+        MISSING_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_PATH),
+    );
+
+    let http_invalid = execute_http_json(http_address, &open_request(Some("../escape"))).await;
+    assert_portable_error(
+        &http_invalid,
+        api::ErrorCode::InvalidArgument,
+        INVALID_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_NAME_PATH),
+    );
+
+    server.shutdown().await.expect("shutdown daemon");
+    registry.close_all().expect("close registry");
+}

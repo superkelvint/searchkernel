@@ -17,7 +17,8 @@
     "python": {"description": "Python client, package, and real E2E tests"},
     "typescript": {"description": "TypeScript client, package, and real E2E tests"},
     "php": {"description": "PHP client, package, and real E2E tests"},
-    "ruby": {"description": "Ruby client, packaged gem, and real E2E tests"}
+    "ruby": {"description": "Ruby client, packaged gem, and real E2E tests"},
+    "searchkerneld-multi-index": {"description": "Multi-index daemon lifecycle against the real engine"}
   },
   "verify": {
     "api-conformance": {"description": "Portable API conformance"},
@@ -75,6 +76,6 @@
     "clients/typescript/": ["test:typescript", "verify:contracts", "verify:client-semantic-parity"],
     "clients/php/": ["test:php", "verify:contracts", "verify:client-semantic-parity"],
     "clients/ruby/": ["test:ruby", "verify:contracts", "verify:client-semantic-parity"],
-    "searchkerneld/": ["verify:product.integration"]
+    "searchkerneld/": ["test:searchkerneld-multi-index", "verify:product.integration"]
   }
 }

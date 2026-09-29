@@ -4,7 +4,12 @@
 //! semantic work is delegated to the canonical transport-independent
 //! dispatcher.
 
+#[cfg(feature = "native")]
+mod registry;
 mod search_endpoints;
+
+#[cfg(feature = "native")]
+pub use registry::{IndexRegistry, RegistryDispatchError, RegistryInitError};
 
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
@@ -34,13 +39,17 @@ use std::{
 
 use base64::Engine as _;
 use bytes::Bytes;
+use flatbuffers::root;
 use http::{
     header::{ALLOW, CONTENT_TYPE},
     Method, Request as HttpRequest, Response as HttpResponse, StatusCode,
 };
 use http_body_util::{BodyExt, Full};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
-use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
+use searchkernel_protocol::{
+    json::{request_json_to_flatbuffer, response_flatbuffer_to_json},
+    protocol::v2 as wire,
+};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 use tokio::{
@@ -169,26 +178,50 @@ impl Default for ServerConfig {
     }
 }
 
-/// The gRPC service for one process-local execution target.
+#[derive(Clone)]
+enum DispatchTarget {
+    Single(Arc<Dispatcher>),
+    #[cfg(feature = "native")]
+    Registry(Arc<IndexRegistry>),
+}
+
+/// The gRPC service for one process-local execution target or daemon registry.
 #[derive(Clone)]
 pub struct SearchKernelTransport {
-    dispatcher: Arc<Dispatcher>,
+    target: DispatchTarget,
     execution_limit: Arc<Semaphore>,
 }
 
 impl SearchKernelTransport {
-    /// Creates a service with the supplied canonical dispatcher.
-    fn new(dispatcher: Arc<Dispatcher>, execution_limit: Arc<Semaphore>) -> Self {
+    fn single(dispatcher: Arc<Dispatcher>, execution_limit: Arc<Semaphore>) -> Self {
         Self {
-            dispatcher,
+            target: DispatchTarget::Single(dispatcher),
+            execution_limit,
+        }
+    }
+
+    #[cfg(feature = "native")]
+    fn registry(registry: Arc<IndexRegistry>, execution_limit: Arc<Semaphore>) -> Self {
+        Self {
+            target: DispatchTarget::Registry(registry),
             execution_limit,
         }
     }
 
     fn dispatch(&self, payload: &[u8]) -> Result<Vec<u8>, Box<Status>> {
-        self.dispatcher
-            .dispatch(payload)
-            .map_err(|error| Box::new(dispatch_error_status(error)))
+        match &self.target {
+            DispatchTarget::Single(dispatcher) => {
+                reject_targeted_single_request(payload)
+                    .map_err(|message| Box::new(Status::failed_precondition(message)))?;
+                dispatcher
+                    .dispatch(payload)
+                    .map_err(|error| Box::new(dispatch_error_status(error)))
+            }
+            #[cfg(feature = "native")]
+            DispatchTarget::Registry(registry) => registry
+                .dispatch(payload)
+                .map_err(|error| Box::new(registry_error_status(error))),
+        }
     }
 
     fn dispatch_json(&self, json: &[u8]) -> Result<Vec<u8>, (StatusCode, String)> {
@@ -198,10 +231,17 @@ impl SearchKernelTransport {
                 format!("invalid Search Kernel FlatBuffers JSON request: {error}"),
             )
         })?;
-        let response = self
-            .dispatcher
-            .dispatch(&request)
-            .map_err(dispatch_error_http)?;
+        let response = match &self.target {
+            DispatchTarget::Single(dispatcher) => {
+                reject_targeted_single_request(&request)
+                    .map_err(|message| (StatusCode::PRECONDITION_FAILED, message.to_owned()))?;
+                dispatcher.dispatch(&request).map_err(dispatch_error_http)?
+            }
+            #[cfg(feature = "native")]
+            DispatchTarget::Registry(registry) => {
+                registry.dispatch(&request).map_err(registry_error_http)?
+            }
+        };
         response_flatbuffer_to_json(&response).map_err(|error| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -251,6 +291,21 @@ impl SearchKernel for SearchKernelTransport {
     }
 }
 
+fn reject_targeted_single_request(payload: &[u8]) -> Result<(), &'static str> {
+    const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
+    if payload.len() < 8 || payload[4..8] != *REQUEST_IDENTIFIER {
+        return Ok(());
+    }
+    let Ok(envelope) = root::<wire::RequestEnvelope<'_>>(payload) else {
+        return Ok(());
+    };
+    if envelope.target().is_some() {
+        Err("targeted Search Kernel requests require the multi-index daemon")
+    } else {
+        Ok(())
+    }
+}
+
 fn dispatch_error_status(error: DispatchError) -> Status {
     match error {
         DispatchError::InvalidRequest => {
@@ -283,6 +338,53 @@ fn dispatch_error_http(error: DispatchError) -> (StatusCode, String) {
         DispatchError::Closed => (
             StatusCode::CONFLICT,
             "Search Kernel target is closed".to_owned(),
+        ),
+    }
+}
+
+#[cfg(feature = "native")]
+fn registry_error_status(error: RegistryDispatchError) -> Status {
+    match error {
+        RegistryDispatchError::InvalidRequest => {
+            Status::invalid_argument("invalid Search Kernel request FlatBuffer")
+        }
+        RegistryDispatchError::UnsupportedProtocol(version) => Status::failed_precondition(
+            format!("unsupported Search Kernel protocol version {version}"),
+        ),
+        RegistryDispatchError::UnsupportedOperation(operation) => Status::unimplemented(format!(
+            "unsupported Search Kernel operation discriminator {operation}"
+        )),
+        RegistryDispatchError::Closed => {
+            Status::failed_precondition("Search Kernel target is closed")
+        }
+        RegistryDispatchError::Poisoned => {
+            Status::internal("Search Kernel index registry lock is poisoned")
+        }
+    }
+}
+
+#[cfg(feature = "native")]
+fn registry_error_http(error: RegistryDispatchError) -> (StatusCode, String) {
+    match error {
+        RegistryDispatchError::InvalidRequest => (
+            StatusCode::BAD_REQUEST,
+            "invalid Search Kernel request FlatBuffer".to_owned(),
+        ),
+        RegistryDispatchError::UnsupportedProtocol(version) => (
+            StatusCode::PRECONDITION_FAILED,
+            format!("unsupported Search Kernel protocol version {version}"),
+        ),
+        RegistryDispatchError::UnsupportedOperation(operation) => (
+            StatusCode::NOT_IMPLEMENTED,
+            format!("unsupported Search Kernel operation discriminator {operation}"),
+        ),
+        RegistryDispatchError::Closed => (
+            StatusCode::CONFLICT,
+            "Search Kernel target is closed".to_owned(),
+        ),
+        RegistryDispatchError::Poisoned => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Search Kernel index registry lock is poisoned".to_owned(),
         ),
     }
 }
@@ -795,7 +897,7 @@ impl Drop for RunningServer {
     }
 }
 
-/// Binds and starts a gRPC server backed by one canonical dispatcher.
+/// Binds and starts a server backed by one canonical per-index dispatcher.
 pub async fn start(
     config: ServerConfig,
     dispatcher: Arc<Dispatcher>,
@@ -808,7 +910,27 @@ pub async fn start(
         .ok_or(ServerError::InvalidAdmissionLimit)?;
     start_with_service(
         config,
-        SearchKernelTransport::new(dispatcher, execution_limit),
+        SearchKernelTransport::single(dispatcher, execution_limit),
+        admission_limit,
+    )
+    .await
+}
+
+/// Binds and starts a daemon server backed by the shared multi-index registry.
+#[cfg(feature = "native")]
+pub async fn start_multi(
+    config: ServerConfig,
+    registry: Arc<IndexRegistry>,
+) -> Result<RunningServer, ServerError> {
+    let execution_limit = (config.execution_limit > 0)
+        .then(|| Arc::new(Semaphore::new(config.execution_limit)))
+        .ok_or(ServerError::InvalidExecutionLimit)?;
+    let admission_limit = (config.admission_limit > 0)
+        .then(|| Arc::new(Semaphore::new(config.admission_limit)))
+        .ok_or(ServerError::InvalidAdmissionLimit)?;
+    start_with_service(
+        config,
+        SearchKernelTransport::registry(registry, execution_limit),
         admission_limit,
     )
     .await

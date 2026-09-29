@@ -17,7 +17,8 @@ union RequestPayload {
   SearchKernel.V2.InspectQueryRequest,
   SearchKernel.V2.UpdateRequest,
   SearchKernel.V2.CreateIndexRequest,
-  SearchKernel.V2.OpenIndexRequest
+  SearchKernel.V2.OpenIndexRequest,
+  SearchKernel.V2.DeleteIndexRequest
 }
 
 table RequestEnvelope {

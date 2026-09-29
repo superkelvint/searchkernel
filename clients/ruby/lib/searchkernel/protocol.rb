@@ -18,20 +18,32 @@ module SearchKernel
       search: { request: "SearchRequest", response: "SearchResult" },
       analyze: { request: "AnalyzeRequest", response: "AnalyzeResult" },
       describe: { request: "DescribeRequest", response: "DescribeResult" },
-      inspect_query: { request: "InspectQueryRequest", response: "InspectQueryResult" }
+      inspect_query: { request: "InspectQueryRequest", response: "InspectQueryResult" },
+      create_index: { request: "CreateIndexRequest", response: "CreateIndexResult" },
+      open_index: { request: "OpenIndexRequest", response: "OpenIndexResult" },
+      delete_index: { request: "DeleteIndexRequest", response: "DeleteIndexResult" }
     }.transform_values(&:freeze).freeze
 
     module_function
 
-    def request_envelope(operation, payload)
+    def request_envelope(operation, payload, target: nil)
       spec = operation_spec(operation)
       raise ArgumentError, "Search Kernel request payload must be an object" unless payload.is_a?(Hash)
 
-      {
+      envelope = {
         "protocol_version" => VERSION,
         "payload_type" => wire_type(spec.fetch(:request)),
         "payload" => payload
       }
+      unless target.nil?
+        unless target.is_a?(String) &&
+               target.bytesize.between?(1, 128) &&
+               target.match?(/\A[a-z0-9][a-z0-9_-]*\z/)
+          raise ArgumentError, "index target must match [a-z0-9][a-z0-9_-]{0,127}"
+        end
+        envelope["target"] = { "name" => target }
+      end
+      envelope
     end
 
     def expect_response(operation, response)
