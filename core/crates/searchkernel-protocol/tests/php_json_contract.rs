@@ -121,7 +121,7 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                     );
                     assert_eq!(
                         envelope.target().map(|target| target.name()),
-                        Some("php-e2e"),
+                        Some(Some("php-e2e")),
                         "{name}: exact PHP E2E target"
                     );
                 }
@@ -138,7 +138,7 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                         });
                     assert_eq!(
                         envelope.target().map(|target| target.name()),
-                        Some("php-e2e"),
+                        Some(Some("php-e2e")),
                         "{name}: exact PHP E2E target"
                     );
                 }
