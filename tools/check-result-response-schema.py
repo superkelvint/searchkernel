@@ -1,58 +1,57 @@
 #!/usr/bin/env python3
-"""Fail closed when the response conformance field inventory falls behind FBS."""
+"""Fail closed when response schema, corpus coverage, or trace shape drifts."""
 
 from __future__ import annotations
 
 import argparse
 import re
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "api/searchkernel.fbs"
 
-# Each field is either emitted in the normalized trace or deliberately
-# represented by a named projection. Keep this inventory explicit: a schema
-# field addition must be reviewed and classified before the verifier passes.
+# Every field must name a canonical scenario that actually populates it. The
+# cross-language runner verifies both fixture coverage and decoded trace shape.
 CLASSIFIED_FIELDS = {
     "Hit": {
-        "id": "trace.hit.id",
-        "relevance": "trace.hit.relevance",
-        "fields": "trace.hit.fields",
-        "highlights": "trace.hit.highlights",
-        "source": "trace.hit.source",
-        "types": "trace.hit.types",
-        "match_features": "trace.hit.match_features",
-        "summary_features": "trace.hit.summary_features",
-        "rank_features": "trace.hit.rank_features",
-        "sort_values": "trace.hit.sort_values",
+        "id": "canonical",
+        "relevance": "canonical",
+        "fields": "canonical",
+        "highlights": "canonical",
+        "source": "canonical",
+        "types": "canonical",
+        "match_features": "canonical",
+        "summary_features": "canonical",
+        "rank_features": "canonical",
+        "sort_values": "canonical",
     },
     "ResultGroup": {
-        "id": "trace.group.id",
-        "label": "trace.group.label",
-        "value": "trace.group.value",
-        "fields": "trace.group.fields",
-        "children": "trace.group.children (ordered)",
-        "continuations": "trace.group.continuations",
-        "source": "trace.group.source",
-        "types": "trace.group.types",
-        "relevance": "trace.group.relevance",
-        "limits": "trace.group.limits",
-        "metadata": "trace.group.metadata",
+        "id": "canonical",
+        "label": "canonical",
+        "value": "canonical",
+        "fields": "canonical",
+        "children": "canonical",
+        "continuations": "canonical",
+        "source": "canonical",
+        "types": "canonical",
+        "relevance": "canonical",
+        "limits": "canonical",
+        "metadata": "canonical",
     },
     "SearchResult": {
-        "root": "trace.root",
-        "total_hits": "trace.total_hits",
-        "coverage": "trace.coverage",
-        "timing": "trace.timing",
-        "errors": "trace.errors",
-        "trace": "trace.trace",
-        "metadata": "trace.metadata",
+        "root": "canonical",
+        "total_hits": "canonical",
+        "coverage": "canonical",
+        "timing": "canonical",
+        "errors": "canonical",
+        "trace": "canonical",
+        "metadata": "canonical",
     },
 }
 
 
 def table_fields(schema: str, table: str) -> set[str]:
-    """Read top-level field declarations from a FlatBuffers table body."""
     cleaned = re.sub(r"//[^\n]*|/\*.*?\*/", "", schema, flags=re.S)
     match = re.search(rf"\btable\s+{re.escape(table)}\s*\{{", cleaned)
     if match is None:
@@ -83,9 +82,97 @@ def verify(schema: str) -> list[str]:
             errors.append(f"{table} has unclassified schema fields: {', '.join(missing)}")
         if stale:
             errors.append(f"{table} classifications no longer exist: {', '.join(stale)}")
-        for field, reason in classified.items():
-            if not reason.strip():
-                errors.append(f"{table}.{field} has an empty classification")
+        for field, scenario in classified.items():
+            if not scenario.strip():
+                errors.append(f"{table}.{field} has no covering scenario")
+    return errors
+
+
+def _result_nodes(payload: dict[str, Any], table: str) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+
+    def walk(wrapper: Any) -> None:
+        if not isinstance(wrapper, dict):
+            return
+        kind = wrapper.get("node_type")
+        node = wrapper.get("node")
+        if kind == table and isinstance(node, dict):
+            found.append(node)
+        if kind == "ResultGroup" and isinstance(node, dict):
+            for child in node.get("children", []):
+                walk(child)
+
+    walk(payload.get("root"))
+    return found
+
+
+def verify_fixture_coverage(envelopes: dict[str, dict[str, Any]]) -> list[str]:
+    errors = []
+    for table, fields in CLASSIFIED_FIELDS.items():
+        by_scenario: dict[str, list[str]] = {}
+        for field, scenario in fields.items():
+            by_scenario.setdefault(scenario, []).append(field)
+        for scenario, expected_fields in by_scenario.items():
+            envelope = envelopes.get(scenario)
+            if envelope is None:
+                errors.append(f"{table} coverage scenario is missing: {scenario}")
+                continue
+            payload = envelope.get("payload")
+            if not isinstance(payload, dict):
+                errors.append(f"{scenario} has no SearchResult payload")
+                continue
+            objects = [payload] if table == "SearchResult" else _result_nodes(payload, table)
+            if not objects:
+                errors.append(f"{scenario} contains no {table} object")
+                continue
+            for field in expected_fields:
+                if not any(field in item for item in objects):
+                    errors.append(f"{table}.{field} is not populated by scenario {scenario}")
+    return errors
+
+
+def trace_shape_errors(trace: Any) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(trace, dict):
+        return ["SearchResult trace must be an object"]
+
+    expected_root = set(CLASSIFIED_FIELDS["SearchResult"])
+    actual_root = set(trace)
+    if actual_root != expected_root:
+        errors.append(
+            "SearchResult trace fields mismatch: "
+            f"missing={sorted(expected_root - actual_root)}, extra={sorted(actual_root - expected_root)}"
+        )
+
+    def walk(node: Any, path: str) -> None:
+        if node is None:
+            return
+        if not isinstance(node, dict):
+            errors.append(f"{path} must be a result-node object")
+            return
+        kind = node.get("kind")
+        if kind == "hit":
+            expected = set(CLASSIFIED_FIELDS["Hit"]) | {"kind"}
+        elif kind == "group":
+            expected = set(CLASSIFIED_FIELDS["ResultGroup"]) | {"kind"}
+        else:
+            errors.append(f"{path} has unknown kind: {kind!r}")
+            return
+        actual = set(node)
+        if actual != expected:
+            errors.append(
+                f"{path} fields mismatch: missing={sorted(expected - actual)}, "
+                f"extra={sorted(actual - expected)}"
+            )
+        if kind == "group":
+            children = node.get("children")
+            if isinstance(children, list):
+                for index, child in enumerate(children):
+                    walk(child, f"{path}.children[{index}]")
+            else:
+                errors.append(f"{path}.children must be a list")
+
+    walk(trace.get("root"), "root")
     return errors
 
 
