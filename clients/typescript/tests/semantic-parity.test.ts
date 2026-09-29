@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Index } from "../src/client/index.js";
-import { int64, uint64 } from "../src/client/values.js";
+import { float64, int64, uint64 } from "../src/client/values.js";
 import { packObject } from "../src/protocol/envelope.js";
 import type { GrpcWebTransport } from "../src/transport/grpc-web.js";
 const parityEnabled =
@@ -15,7 +15,7 @@ function corpusValue(value: any): unknown {
   if (value.int64 !== undefined) return int64(value.int64);
   if (value.uint64 !== undefined) return uint64(value.uint64);
   if (value.string !== undefined) return value.string;
-  if (value.float64 !== undefined) return value.float64;
+  if (value.float64 !== undefined) return float64(value.float64);
   throw new Error(`unsupported parity corpus value: ${JSON.stringify(value)}`);
 }
 
