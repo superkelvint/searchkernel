@@ -8,8 +8,8 @@ import copy
 import json
 import pathlib
 import subprocess
+import re
 import sys
-import tomllib
 from typing import NamedTuple
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -37,9 +37,18 @@ def tracked_paths(root: pathlib.Path = ROOT) -> set[str]:
 
 
 def workspace_members(root: pathlib.Path = ROOT) -> list[str]:
-    with (root / "Cargo.toml").open("rb") as stream:
-        manifest = tomllib.load(stream)
-    return list(manifest["workspace"]["members"])
+    text = (root / "Cargo.toml").read_text(encoding="utf-8")
+    workspace = re.search(
+        r"(?ms)^\\[workspace\\]\\s*(.*?)(?=^\\[|\\Z)", text
+    )
+    if workspace is None:
+        raise ValueError("Cargo.toml is missing [workspace]")
+    members = re.search(
+        r"(?ms)^members\\s*=\\s*\\[(.*?)\\]", workspace.group(1)
+    )
+    if members is None:
+        raise ValueError("Cargo.toml [workspace] is missing members")
+    return re.findall(r'"([^"]+)"', members.group(1))
 
 
 def immediate_tracked_dirs(paths: set[str], prefix: str) -> list[str]:
