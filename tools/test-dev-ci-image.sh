@@ -85,6 +85,9 @@ required_runner = (
     'ci_runtime_create_volume "$source_volume" source "$ephemeral_lifecycle"',
     'ci_runtime_remove_invocation_containers "$invocation_id"',
     'lease_container="searchkernel-dev-lease-$invocation_id"',
+    'lifecycle_lock=${SEARCHKERNEL_CI_LIFECYCLE_LOCK:-/tmp/searchkernel-ci-runtime-lifecycle.lock}',
+    'flock 8',
+    'flock -u 8',
     '-v "$target_volume:/lease/target:ro"',
     '-v "$native_volume:/lease/native-sdk:ro"',
     '-v "$sccache_socket_volume:/lease/sccache-socket:ro"',
@@ -117,15 +120,21 @@ for fragment in required_runner:
     if fragment not in runner:
         raise SystemExit(f"CI-image runner is missing {fragment!r}")
 
+lock_acquire = runner.index('flock 8')
 lease_create = runner.index('--name "$lease_container"')
+if lock_acquire > lease_create:
+    raise SystemExit("lifecycle lock must be acquired before the invocation lease")
 for prune in (
     'ci_runtime_prune_target_volumes "$ROOT" "$target_volume"',
     'ci_runtime_prune_shared_download_volumes "$environment_id" "$shared_cargo_registry_volume"',
     'ci_runtime_prune_sccache_generations "$sccache_binary_volume" "$sccache_socket_volume"',
     'ci_runtime_prune_vespa_volumes "$native_volume"',
 ):
-    if runner.index(prune) < lease_create:
+    prune_index = runner.index(prune)
+    if prune_index < lease_create:
         raise SystemExit(f"persistent cache pruning must happen after the invocation lease: {prune}")
+    if prune_index > runner.index('flock -u 8'):
+        raise SystemExit(f"persistent cache pruning must happen before lifecycle lock release: {prune}")
 
 # /work is a Docker volume populated by a separate container. Its numeric
 # ownership can vary across self-hosted runners, so both the exact-HEAD
