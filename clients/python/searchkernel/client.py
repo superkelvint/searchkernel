@@ -127,6 +127,15 @@ def value(item: Any) -> ValueT:
     raise TypeError(f"unsupported value type: {type(item).__name__}")
 
 
+def uint64(item: int) -> ValueT:
+    """Construct an explicitly tagged UInt64 request value."""
+    if isinstance(item, bool) or not isinstance(item, int):
+        raise TypeError("uint64 value must be an integer")
+    if item < 0 or item > 2**64 - 1:
+        raise ValueError("uint64 value is out of range")
+    return ValueT(kindType=ValueKind.UInt64Value, kind=UInt64ValueT(value=item))
+
+
 def _document(identifier: str, fields: Mapping[str, Any]) -> DocumentT:
     if not isinstance(identifier, str) or not identifier:
         raise ValueError("document id must be a non-empty string")
@@ -761,4 +770,4 @@ def _index_definition(
     return IndexDefinitionT(name="index", fields=fields, rankProfiles=profiles or None)
 
 
-__all__ = ["Client", "ClientError", "Index", "SearchKernelError", "Tensor", "value"]
+__all__ = ["Client", "ClientError", "Index", "SearchKernelError", "Tensor", "uint64", "value"]
