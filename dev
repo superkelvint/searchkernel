@@ -384,6 +384,9 @@ ci_gate() {
     echo "== cargo check =="
     "$CARGO" check --workspace --all-targets --no-default-features --locked
 
+    echo "== native test compile smoke =="
+    "$CARGO" check -p searchkerneld --tests --features native --locked
+
     echo "== cargo clippy =="
     "$CARGO" clippy --workspace --all-targets --no-default-features --locked -- -D warnings
 }

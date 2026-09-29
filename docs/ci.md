@@ -32,6 +32,7 @@ The mandatory PR gate is:
 ```text
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --no-default-features --locked
+cargo check -p searchkerneld --tests --features native --locked
 cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
 ```
 

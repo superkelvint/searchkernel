@@ -66,6 +66,7 @@ class BuildSystemCiTest(unittest.TestCase):
             [
                 "fmt --all -- --check",
                 "check --workspace --all-targets --no-default-features --locked",
+                "check -p searchkerneld --tests --features native --locked",
                 "clippy --workspace --all-targets --no-default-features --locked -- -D warnings",
             ],
         )

@@ -24,11 +24,12 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             common.parent.mkdir(parents=True)
             tools.mkdir(parents=True)
             (sdk / "lib").mkdir(parents=True)
+            (sdk / "lib/libsearchkernel_vespa.so.2").write_text("sanitizer-adapter")
             (sdk / "share/embedded_crud_cfg").mkdir(parents=True)
             (m11 / "verify-m11-common.sh").write_text(COMMON.read_text())
             common.write_text(
                 "require_native_driver() {\n"
-                "  case \"$*\" in *sk_test_failpoint_set*sk_test_failpoint_is_blocked*) ;; *) return 45 ;; esac\n"
+                "  case \"$*\" in *sk_engine_group_tree*sk_generic_search_result_match_feature_value_ref*sk_test_failpoint_set*sk_test_failpoint_is_blocked*) ;; *) return 45 ;; esac\n"
                 "}\n"
                 "fail_verification() { echo \"verification error: $*\" >&2; return 1; }\n"
             )
@@ -39,7 +40,8 @@ class M11VerifierRuntimeTests(unittest.TestCase):
                 "[[ -z \"${SK_NATIVE_SDK:-}\" ]] || { echo explicit-sdk-leaked >&2; exit 41; }\n"
                 "[[ -z \"${SK_NATIVE_BASE_SDK:-}\" ]] || { echo base-sdk-leaked >&2; exit 42; }\n"
                 "case \"${RUSTFLAGS:-}\" in *target/vespa-verifier/m11/sdk/hardening/lib*) ;; *) echo hardening-rpath-missing >&2; exit 46 ;; esac\n"
-                "mkdir -p \"$CARGO_TARGET_DIR/debug\"\n"
+                "mkdir -p \"$CARGO_TARGET_DIR/debug/.searchkernel-native\"\n"
+                "printf normal-adapter > \"$CARGO_TARGET_DIR/debug/.searchkernel-native/libsearchkernel_vespa.so.2\"\n"
                 "cat > \"$CARGO_TARGET_DIR/debug/searchkernel-m11-driver\" <<'DRIVER'\n"
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
@@ -73,6 +75,52 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertTrue((target / "debug/searchkernel-m11-driver").is_file())
+            staged = target / "debug/.searchkernel-native/libsearchkernel_vespa.so.2"
+            self.assertTrue(staged.is_symlink())
+            self.assertEqual(staged.resolve(), (sdk / "lib/libsearchkernel_vespa.so.2").resolve())
+
+    def test_sanitizer_verifier_repoints_driver_before_resolver_check(self):
+        sanitizer = Path(__file__).with_name("verify-m11-sanitizers.sh").read_text()
+        stage = sanitizer.index('stage_m11_driver_adapter "$binary" "$sdk"')
+        resolve = sanitizer.index('resolved_adapter=$(LD_LIBRARY_PATH=')
+        self.assertLess(stage, resolve)
+        self.assertIn("m11_adapter_path_from_ldd", sanitizer)
+
+    def test_ldd_parser_accepts_origin_and_legacy_shapes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            m11 = root / "reference/vespa/m11"
+            common = root / "reference/vespa/common/verify-common.sh"
+            m11.mkdir(parents=True)
+            common.parent.mkdir(parents=True)
+            (m11 / "verify-m11-common.sh").write_text(COMMON.read_text())
+            common.write_text(
+                'fail_verification() { echo "verification error: $*" >&2; return 1; }\n'
+            )
+            env = os.environ.copy()
+            env["CARGO_TARGET_DIR"] = str(root / "cargo-target")
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    f"source {m11 / 'verify-m11-common.sh'}; m11_adapter_path_from_ldd",
+                ],
+                cwd=root,
+                env=env,
+                text=True,
+                input=(
+                    "/tmp/debug/.searchkernel-native/libsearchkernel_vespa.so.2 (0x1234)\n"
+                    "libsearchkernel_vespa.so.2 => /tmp/sdk/lib/libsearchkernel_vespa.so.2 (0x5678)\n"
+                ),
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                result.stdout.strip(),
+                "/tmp/debug/.searchkernel-native/libsearchkernel_vespa.so.2",
+            )
+
 
 
 if __name__ == "__main__":
