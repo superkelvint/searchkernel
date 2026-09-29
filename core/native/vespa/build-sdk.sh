@@ -26,11 +26,26 @@ case "$SDK_PACKAGE" in
     /*) ;;
     *) SDK_PACKAGE=$ROOT/$SDK_PACKAGE ;;
 esac
-# Assemble the package away from the published path. This prevents a failed
-# compile or a concurrent Cargo build from observing a half-updated SDK and,
-# importantly, means stale files cannot survive from an older package layout.
-SDK_STAGING=${SK_NATIVE_STAGING_SDK:-${SDK_PACKAGE}.staging.$$}
-SDK=$SDK_STAGING
+
+# Multiple canonical ./dev containers intentionally share one writable Cargo
+# target volume for warm builds. Container PIDs are not globally unique, so
+# PID-derived staging paths alone cannot protect an SDK package from concurrent
+# builders in different containers. Serialize every mutation of one published
+# SDK path with a filesystem lock that is shared through that target volume.
+SDK_LOCK="${SDK_PACKAGE}.build.lock"
+mkdir -p "$(dirname -- "$SDK_LOCK")"
+if ! command -v flock >/dev/null 2>&1; then
+    echo "native SDK build requires flock for package publication locking" >&2
+    exit 1
+fi
+exec 9>"$SDK_LOCK"
+flock 9
+
+# Assemble the package away from the published path. The private staging path
+# is allocated immediately before the build so failed prerequisite checks do
+# not leave empty staging directories behind.
+SDK_STAGING=
+SDK=
 BUILD=${SK_NATIVE_BUILD_DIR:-$TARGET_ROOT/native-sdk-build}
 case "$BUILD" in
     /*) ;;
@@ -205,16 +220,27 @@ if [ -f "$VESPA_EXTRA_LIB_DIR/libxxhash.so" ]; then
     EXTRA_LINK_FLAGS="$EXTRA_LINK_FLAGS -L$VESPA_EXTRA_LIB_DIR"
 fi
 
+if [ -n "${SK_NATIVE_STAGING_SDK:-}" ]; then
+    SDK_STAGING=$SK_NATIVE_STAGING_SDK
+    if [ -e "$SDK_STAGING" ]; then
+        echo "SDK staging directory already exists: $SDK_STAGING" >&2
+        exit 1
+    fi
+    mkdir -p "$SDK_STAGING"
+else
+    # $ is only unique within one PID namespace. Canonical ./dev invocations
+    # run in separate containers while sharing /cargo-target, so use mktemp's
+    # random suffix to make the staging path unique across containers as well.
+    SDK_STAGING=$(mktemp -d "${SDK_PACKAGE}.staging.XXXXXX")
+fi
+SDK=$SDK_STAGING
+
 cleanup_staging() {
     if [ -d "$SDK_STAGING" ]; then
         rm -rf "$SDK_STAGING"
     fi
 }
 trap cleanup_staging EXIT
-if [ -e "$SDK_STAGING" ]; then
-    echo "SDK staging directory already exists: $SDK_STAGING" >&2
-    exit 1
-fi
 
 mkdir -p "$BUILD" "$SDK/include" "$SDK/lib" "$SDK/share/embedded_crud_cfg"
 rm -f "$BUILD/searchkernel_vespa.o" \
