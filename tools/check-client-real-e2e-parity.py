@@ -58,13 +58,47 @@ def run(command: list[str], env: dict[str, str]) -> None:
     subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
+def scenario_ids(corpus: dict[str, Any]) -> list[str]:
+    """Return the single scenario contract shared by the corpus and checker."""
+    scenarios = corpus.get("scenarios")
+    if not isinstance(scenarios, list) or not scenarios or any(
+        not isinstance(item, str) or not item for item in scenarios
+    ):
+        raise SystemExit("scenarios must contain non-empty scenario IDs")
+    if len(scenarios) != len(set(scenarios)):
+        raise SystemExit("scenario IDs must be unique")
+    return scenarios
+
+
+def scenario_contract(corpus: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+    scenarios = scenario_ids(corpus)
+    exclusions = corpus.get("non_comparable", {})
+    if not isinstance(exclusions, dict) or any(
+        not isinstance(key, str) or not isinstance(reason, str) or not reason.strip()
+        for key, reason in exclusions.items()
+    ):
+        raise SystemExit("non_comparable must map scenario IDs to non-empty rationales")
+    unknown = sorted(set(exclusions) - set(scenarios))
+    if unknown:
+        raise SystemExit(f"non_comparable references unknown scenarios: {', '.join(unknown)}")
+    return [scenario for scenario in scenarios if scenario not in exclusions], exclusions
+
+
+def scenario_observations(client: str, trace: dict[str, Any], scenarios: list[str]) -> dict[str, Any]:
+    observed = trace.get("scenarios")
+    if trace.get("version") != 1 or not isinstance(observed, dict):
+        raise SystemExit(f"{client} snapshot has an invalid version or scenarios object")
+    missing = sorted(set(scenarios) - observed.keys())
+    if missing:
+        raise SystemExit(f"{client} snapshot is missing scenarios: {', '.join(missing)}")
+    return observed
+
+
 def main() -> int:
     corpus = json.loads(CORPUS.read_text())
-    scenarios = corpus.get("parity_scenarios")
-    if not isinstance(scenarios, list) or not scenarios or any(not isinstance(item, str) or not item for item in scenarios):
-        raise SystemExit("parity_scenarios must contain non-empty scenario IDs")
-    if len(scenarios) != len(set(scenarios)):
-        raise SystemExit("parity scenario IDs must be unique")
+    scenarios, exclusions = scenario_contract(corpus)
+    for scenario, reason in exclusions.items():
+        print(f"non-comparable: {scenario}: {reason}")
 
     with tempfile.TemporaryDirectory(prefix="searchkernel-real-e2e-parity-") as temporary:
         output_dir = Path(temporary)
@@ -86,12 +120,7 @@ def main() -> int:
                 trace = json.loads(output.read_text())
             except (OSError, json.JSONDecodeError) as error:
                 raise SystemExit(f"{client} did not produce a valid real-engine parity snapshot: {error}") from error
-            if trace.get("version") != 1 or not isinstance(trace.get("scenarios"), dict):
-                raise SystemExit(f"{client} snapshot has an invalid version or scenarios object")
-            missing = sorted(set(scenarios) - trace["scenarios"].keys())
-            if missing:
-                raise SystemExit(f"{client} snapshot is missing scenarios: {', '.join(missing)}")
-            traces[client] = trace["scenarios"]
+            traces[client] = scenario_observations(client, trace, scenarios)
 
         failed = False
         for scenario in scenarios:
@@ -107,7 +136,7 @@ def main() -> int:
                     print(json.dumps({baseline_client: baseline, client: traces[client][scenario]}, indent=2, sort_keys=True))
         if failed:
             return 1
-    print(f"real-engine cross-client parity PASS ({len(CLIENTS)} clients, {len(scenarios)} shared scenarios; float tolerance {FLOAT_TOLERANCE:g})")
+    print(f"real-engine cross-client parity PASS ({len(CLIENTS)} clients, {len(scenarios)} comparable scenarios; {len(exclusions)} classified non-comparable; float tolerance {FLOAT_TOLERANCE:g})")
     return 0
 
 

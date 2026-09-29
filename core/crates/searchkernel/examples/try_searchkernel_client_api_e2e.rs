@@ -28,8 +28,8 @@ mod showcase {
     use searchkernel::{
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
         GroupingAggregation, GroupingPlan, Hit, Index, IndexDefinition, Patch, Query, QueryBound,
-        QueryValue, RankProfile, Ranking, SearchResult, Sort, Tensor, TotalHitsRelation,
-        WandOptions, WeightedQueryItem,
+        QueryValue, RankProfile, Ranking, ResultValue, SearchResult, Sort, Tensor,
+        TotalHitsRelation, WandOptions, WeightedQueryItem,
     };
     use serde_json::{json, Value};
     use std::collections::{BTreeMap, BTreeSet};
@@ -238,14 +238,156 @@ mod showcase {
             .filter("prcie = 1")
             .execute::<Value>()
             .expect_err("unknown field must fail");
+        let parity_document = index.get::<Value>("shoe-1")?.expect("shoe-1 exists");
+        let parity_full_text = index.search("shoes").limit(20).execute::<Value>()?;
+        let parity_stemming = index.search("jump").limit(20).execute::<Value>()?;
+        let parity_text_binding = index
+            .search("shoes")
+            .filter(("price <= :max", params! { "max" => 100.0_f64 }))
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_repeated = index
+            .search("shoes")
+            .filter(("price <= :value", params! { "value" => 120.0_f64 }))
+            .filter(("rating >= :value", params! { "value" => 4_i64 }))
+            .filter("in_stock = true")
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_boolean = index
+            .search("shoes")
+            .filter((
+                "(brand IN (:brands) OR rating = :rating) AND NOT (in_stock = false)",
+                params! { "brands" => vec!["Acme", "TrailCo"], "rating" => 3_i64 },
+            ))
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_projection = index
+            .search("shoes")
+            .sort(Sort::desc("price"))
+            .projection(["title", "brand", "price"])
+            .limit(2)
+            .execute::<Value>()?;
+        let parity_all_sorted = index
+            .search("shoes")
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_page = index
+            .search("shoes")
+            .sort(Sort::asc("price"))
+            .offset(1)
+            .limit(2)
+            .execute::<Value>()?;
+        let parity_filtered_facet = index
+            .search("shoes")
+            .filter(field("in_stock").eq(true))
+            .facet(Facet::new("brand").limit(10).sort(FacetSort::CountDesc))
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_grouped = index
+            .search("shoes")
+            .grouping(
+                GroupingPlan::new().level(
+                    GroupingPlan::by("brand")
+                        .output(GroupingAggregation::count())
+                        .output(GroupingAggregation::average("price")),
+                ),
+            )
+            .limit(0)
+            .execute::<Value>()?;
+        let parity_nested = index
+            .browse()
+            .filter((
+                "category IN (:categories)",
+                params! { "categories" => vec!["shoes", "bags"] },
+            ))
+            .grouping(
+                GroupingPlan::new().level(
+                    GroupingPlan::by("category")
+                        .output(GroupingAggregation::count())
+                        .nested(
+                            GroupingPlan::by("rating")
+                                .output(GroupingAggregation::count())
+                                .output(GroupingAggregation::average("price")),
+                        ),
+                ),
+            )
+            .limit(0)
+            .execute::<Value>()?;
+        let parity_typed = index
+            .search("")
+            .typed_query(Query::contains("title", Query::term_value("shoes")))
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_rank_input = index
+            .search("shoes")
+            .ranking(Ranking::named("boosted"))
+            .query_input("boost", 3.0_f64)
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_rank_property = index
+            .search("shoes")
+            .ranking(Ranking::named("boosted"))
+            .rank_property("boost", "4.0")
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_hybrid = index
+            .search("")
+            .ranking(Ranking::named("hybrid"))
+            .typed_query(Query::or([
+                Query::contains("title", Query::term_value("shoes")),
+                Query::nearest_neighbor("embedding", "query_embedding"),
+            ]))
+            .query_input(
+                "query_embedding",
+                Tensor::dense(VECTOR_TYPE, corpus_vector("bag-1")?),
+            )
+            .limit(20)
+            .execute::<Value>()?;
+        let mut parity_grouping_aggregations = parity_grouped
+            .groups
+            .first()
+            .into_iter()
+            .flat_map(|root| root.groups.iter())
+            .map(parity_grouping_aggregation)
+            .collect::<Vec<_>>();
+        parity_grouping_aggregations.sort_by(|left, right| {
+            right["products"]
+                .as_u64()
+                .cmp(&left["products"].as_u64())
+                .then_with(|| left["brand"].as_str().cmp(&right["brand"].as_str()))
+        });
         let mut parity_observations = json!({
+            "document_crud": {"id": "shoe-1", "title": parity_document["title"], "brand": parity_document["brand"], "price": parity_document["price"]},
+            "full_text_search": {"ids": ids(&parity_full_text), "total": parity_full_text.total_hits.value},
+            "stemming": {"ids": ids(&parity_stemming)},
+            "text_filter_binding": {"ids": ids(&parity_text_binding)},
+            "repeated_filters": {"ids": ids(&parity_repeated)},
+            "boolean_filter_grammar": {"ids": ids(&parity_boolean)},
+            "sorting_projection": {"hits": parity_projection.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "fields": hit.document})).collect::<Vec<_>>()},
+            "pagination": {"all_ids": ids(&parity_all_sorted), "offset_ids": ids(&parity_page), "total": parity_page.total_hits.value},
             "sorted_search": {"ids": ids(&parity_sorted), "total": parity_sorted.total_hits.value},
             "filtered_search": {"ids": ids(&parity_filtered), "total": parity_filtered.total_hits.value},
             "facets": facet_counts(&parity_faceted, "brand"),
+            "filtered_facets": facet_counts(&parity_filtered_facet, "brand"),
+            "grouping_aggregations": parity_grouping_aggregations,
+            "nested_grouping": parity_nested.groups.first().into_iter()
+                .flat_map(|root| root.groups.iter())
+                .map(parity_nested_group)
+                .collect::<Vec<_>>(),
+            "typed_query": {"ids": ids(&parity_typed)},
+            "rank_inputs": parity_rank_input.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
+            "rank_properties": parity_rank_property.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
+            "tensor_readback": parity_document["embedding"]["$searchkernel_tensor"]["dense"],
             "nearest_neighbor": {
                 "ids": ids(&parity_nearest),
                 "scores": parity_nearest.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()
             },
+            "two_phase_reranking": {"ids": ids(&parity_reranked)},
+            "hybrid_text_vector": {"ids": ids(&parity_hybrid), "top_score": parity_hybrid.hits.first().and_then(|hit| hit.score)},
             "two_phase": {"ids": ids(&parity_reranked)},
             "unknown_field_error": {
                 "code": "invalid_argument",
@@ -669,10 +811,10 @@ mod showcase {
             .iter()
             .map(|value| {
                 (
-                    value
-                        .value
-                        .as_str()
-                        .expect("brand facet value should be a string"),
+                    match &value.value {
+                        ResultValue::String(value) => value.as_str(),
+                        _ => panic!("brand facet value should be a string"),
+                    },
                     value.count,
                 )
             })
@@ -806,19 +948,38 @@ mod showcase {
         let shoes_group = category_root
             .groups
             .iter()
-            .find(|group| group.key == Some(json!("shoes")))
+            .find(|group| {
+                group
+                    .key
+                    .as_ref()
+                    .is_some_and(|key| parity_value(key) == json!("shoes"))
+            })
             .expect("shoes category group");
-        assert_eq!(shoes_group.aggregations["count"], json!(5));
-        assert_eq!(shoes_group.aggregations["average(price)"], json!(107.0));
+        assert_eq!(parity_value(&shoes_group.aggregations["count"]), json!(5));
+        assert_eq!(
+            parity_value(&shoes_group.aggregations["average(price)"]),
+            json!(107.0)
+        );
         assert_eq!(shoes_group.groups.len(), 3);
         for (rating, count, average) in [(3, 1, 49.0), (4, 2, 134.0), (5, 2, 109.0)] {
             let rating_group = shoes_group
                 .groups
                 .iter()
-                .find(|group| group.key == Some(json!(rating)))
+                .find(|group| {
+                    group
+                        .key
+                        .as_ref()
+                        .is_some_and(|key| parity_value(key) == json!(rating))
+                })
                 .unwrap_or_else(|| panic!("missing rating group {rating}"));
-            assert_eq!(rating_group.aggregations["count"], json!(count));
-            assert_eq!(rating_group.aggregations["average(price)"], json!(average));
+            assert_eq!(
+                parity_value(&rating_group.aggregations["count"]),
+                json!(count)
+            );
+            assert_eq!(
+                parity_value(&rating_group.aggregations["average(price)"]),
+                json!(average)
+            );
         }
         println!("nested grouping keys, count, and average values PASS");
 
@@ -948,10 +1109,18 @@ mod showcase {
             .limit(10)
             .execute::<Value>()?;
         assert!(!degraded.hits.is_empty());
-        let coverage = degraded.coverage.expect("degraded result coverage");
+        let coverage = degraded
+            .coverage
+            .as_ref()
+            .expect("degraded result coverage");
         assert_eq!(coverage.full, Some(false));
         assert_eq!(degraded.hits.len(), 10);
-        let degradation = coverage.degraded.expect("degradation reason");
+        parity_observations["coverage_degradation"] = json!({
+            "ids": ids(&degraded),
+            "full": coverage.full,
+            "degraded": coverage.degraded.is_some()
+        });
+        let degradation = coverage.degraded.as_ref().expect("degradation reason");
         assert_eq!(degradation.match_phase, Some(true));
         assert_eq!(degradation.timeout, Some(false));
         println!("valid degraded result retains hits, coverage, and degradation reason PASS");
@@ -992,6 +1161,10 @@ mod showcase {
             error.details()[0].path.as_deref(),
             Some("filters.structured[0].comparison.field")
         );
+        parity_observations["structured_filter_error"] = json!({
+            "code": "invalid_argument",
+            "details": error.details().iter().map(|detail| detail.code.as_str()).collect::<Vec<_>>()
+        });
 
         heading("21A. TEXTUAL FILTER SYNTAX ERROR");
 
@@ -1010,6 +1183,10 @@ mod showcase {
             syntax_error.path.as_deref(),
             Some("filters.textual[0].source")
         );
+        parity_observations["text_filter_syntax_error"] = json!({
+            "code": "invalid_argument",
+            "details": error.details().iter().map(|detail| detail.code.as_str()).collect::<Vec<_>>()
+        });
         println!("textual filter parser, clause-local bindings, grammar, and syntax errors PASS");
 
         heading("22. PATCH SET / UNSET");
@@ -1022,11 +1199,14 @@ mod showcase {
         let parity_mutated = index
             .get::<Value>("parity-mutation")?
             .expect("parity mutation should exist");
-        let parity_deleted = index.delete("parity-mutation")?;
-        parity_observations["mutation"] = json!({
+        parity_observations["patch"] = json!({
             "price": parity_mutated["price"],
-            "sale_price_present": parity_mutated.get("sale_price").is_some(),
-            "deleted": parity_deleted
+            "sale_price_present": parity_mutated.get("sale_price").is_some()
+        });
+        let parity_deleted = index.delete("parity-mutation")?;
+        parity_observations["delete"] = json!({
+            "deleted": parity_deleted,
+            "absent_after_delete": index.get::<Value>("parity-mutation")?.is_none()
         });
         index.insert("parity-reopen", &json!({"title": "Parity Reopen", "category": "parity", "price": 42.0, "inventory": 7, "in_stock": true}))?;
 
@@ -1093,6 +1273,15 @@ mod showcase {
         )?;
 
         let doc = index.get::<Value>("shoe-2")?.expect("shoe-2 should exist");
+        let upsert_title_matches = doc["title"]
+            .as_str()
+            .is_some_and(|title| title.contains("Updated Edition"));
+        let upsert_search = index.search("updated").limit(20).execute::<Value>()?;
+        parity_observations["upsert_replacement"] = json!({
+            "price": doc["price"],
+            "updated_title_matches": upsert_title_matches,
+            "search_ids": ids(&upsert_search)
+        });
         println!("{doc:#}");
         assert_eq!(doc["price"], json!(119.0));
         assert!(doc["title"]
@@ -1150,10 +1339,20 @@ mod showcase {
         let parity_persisted = index
             .get::<Value>("parity-reopen")?
             .expect("parity document should survive reopen");
-        parity_observations["persistence"] = json!({
-            "title": parity_persisted["title"],
-            "price": parity_persisted["price"],
-            "inventory": parity_persisted["inventory"]
+        let persisted_shoe2 = index
+            .get::<Value>("shoe-2")?
+            .expect("shoe-2 should survive reopen");
+        parity_observations["reopen_persistence"] = json!({
+            "marker": {
+                "title": parity_persisted["title"],
+                "price": parity_persisted["price"],
+                "inventory": parity_persisted["inventory"]
+            },
+            "upserted": {
+                "updated_title_matches": persisted_shoe2["title"].as_str().is_some_and(|title| title.contains("Updated Edition")),
+                "price": persisted_shoe2["price"]
+            },
+            "deleted_absent": index.get::<Value>("parity-mutation")?.is_none()
         });
         if let Some(output) = std::env::var_os("SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT") {
             let snapshot = json!({"version": 1, "scenarios": parity_observations});
@@ -1222,23 +1421,40 @@ mod showcase {
         let reopened_shoes_group = reopened_category_root
             .groups
             .iter()
-            .find(|group| group.key == Some(json!("shoes")))
+            .find(|group| {
+                group
+                    .key
+                    .as_ref()
+                    .is_some_and(|key| parity_value(key) == json!("shoes"))
+            })
             .expect("reopened shoes category group");
-        assert_eq!(reopened_shoes_group.aggregations["count"], json!(4));
         assert_eq!(
-            reopened_shoes_group.aggregations["average(price)"],
+            parity_value(&reopened_shoes_group.aggregations["count"]),
+            json!(4)
+        );
+        assert_eq!(
+            parity_value(&reopened_shoes_group.aggregations["average(price)"]),
             json!(116.5)
         );
         for (rating, count, average) in [(4, 3, 115.66666666666667), (5, 1, 119.0)] {
             let rating_group = reopened_shoes_group
                 .groups
                 .iter()
-                .find(|group| group.key == Some(json!(rating)))
+                .find(|group| {
+                    group
+                        .key
+                        .as_ref()
+                        .is_some_and(|key| parity_value(key) == json!(rating))
+                })
                 .unwrap_or_else(|| panic!("missing reopened rating group {rating}"));
-            assert_eq!(rating_group.aggregations["count"], json!(count));
-            let actual_average = rating_group.aggregations["average(price)"]
-                .as_f64()
-                .expect("reopened average should be numeric");
+            assert_eq!(
+                parity_value(&rating_group.aggregations["count"]),
+                json!(count)
+            );
+            let actual_average = match &rating_group.aggregations["average(price)"] {
+                ResultValue::Float64(value) => *value,
+                _ => panic!("reopened average should be numeric"),
+            };
             assert!((actual_average - average).abs() < 1e-9);
         }
 
@@ -1365,6 +1581,62 @@ native Vespa backend.
         println!("{}", "=".repeat(80));
     }
 
+    fn parity_value(value: &ResultValue) -> Value {
+        match value {
+            ResultValue::Null => Value::Null,
+            ResultValue::Bool(value) => json!(value),
+            ResultValue::Int64(value) => json!(value),
+            ResultValue::UInt64(value) => json!(value),
+            ResultValue::Float64(value) => json!(value),
+            ResultValue::String(value) => json!(value),
+            ResultValue::Bytes(value) => json!(value),
+            ResultValue::List(values) => Value::Array(values.iter().map(parity_value).collect()),
+            ResultValue::Object(values) => Value::Object(
+                values
+                    .iter()
+                    .map(|(key, value)| (key.clone(), parity_value(value)))
+                    .collect(),
+            ),
+            ResultValue::NonFiniteFloat(value) => json!(format!("{value:?}")),
+            ResultValue::Tensor(value) => json!({"type_spec": value.type_spec}),
+            _ => panic!("unsupported result value variant in parity snapshot"),
+        }
+    }
+
+    fn parity_aggregation(
+        group: &searchkernel::GroupingResult<Value>,
+        name: &str,
+    ) -> Option<Value> {
+        group.aggregations.get(name).map(parity_value)
+    }
+
+    fn parity_grouping_aggregation(group: &searchkernel::GroupingResult<Value>) -> Value {
+        json!({
+            "brand": group.key.as_ref().map(parity_value),
+            "products": parity_aggregation(group, "count"),
+            "avg_price": parity_aggregation(group, "average(price)"),
+        })
+    }
+
+    fn parity_nested_group(group: &searchkernel::GroupingResult<Value>) -> Value {
+        json!({
+            "category": group.key.as_ref().map(parity_value),
+            "products": parity_aggregation(group, "count"),
+            "ratings": group.groups.iter().map(|rating| json!({
+                "rating": rating.key.as_ref().map(parity_value),
+                "products": parity_aggregation(rating, "count"),
+                "avg_price": parity_aggregation(rating, "average(price)"),
+            })).collect::<Vec<_>>(),
+        })
+    }
+
+    fn parity_feature(hit: &Hit<Value>, name: &str) -> Option<f64> {
+        match hit.features.get(name) {
+            Some(FeatureSet::Value(FeatureValue::Double(value))) => Some(*value),
+            _ => None,
+        }
+    }
+
     fn print_results(results: &SearchResult<Value>) {
         println!(
             "total_hits = {} relation = {:?}",
@@ -1373,7 +1645,7 @@ native Vespa backend.
 
         for hit in &results.hits {
             println!(
-                "  id={:?} score={:?} features={:?} sort_values={:?} document={}",
+                "  id={:?} score={:?} features={:?} sort_values={:?} document={:?}",
                 hit.id.as_str(),
                 hit.score,
                 hit.features,
@@ -1440,11 +1712,11 @@ native Vespa backend.
             .values
             .iter()
             .map(|value| {
-                let key = value
-                    .value
-                    .as_str()
-                    .unwrap_or_else(|| panic!("facet {field:?} returned non-string value"))
-                    .to_owned();
+                let key = &value.value;
+                let key = match key {
+                    ResultValue::String(value) => value.clone(),
+                    _ => panic!("facet {field:?} returned non-string value"),
+                };
                 (key, value.count)
             })
             .collect()

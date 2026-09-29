@@ -151,16 +151,104 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
     assert(error instanceof SearchKernelError);
     errorCodes = error.details.map((detail) => (detail as { code: string }).code).sort();
   }
+  const document = await index.get("shoe-1");
+  assert(document !== null);
+  const fullText = await index.search("shoes").limit(20).execute();
+  const stemming = await index.search("jump").limit(20).execute();
+  const textBinding = await index.search("shoes").filter("price <= :max", { max: 100n }).sort("price", "asc").limit(20).execute();
+  const repeatedFilters = await index.search("shoes").filter("price <= :value", { value: float64(120) })
+    .filter("rating >= :value", { value: 4n }).filter("in_stock = true").sort("price", "asc").limit(20).execute();
+  const booleanFilter = await index.search("shoes").filter(
+    "(brand IN (:brands) OR rating = :rating) AND NOT (in_stock = false)",
+    { brands: ["Acme", "TrailCo"], rating: 3n },
+  ).sort("price", "asc").limit(20).execute();
+  const projection = await index.search("shoes").sort("price", "desc").fields("title", "brand", "price").limit(2).execute();
+  const allSorted = await index.search("shoes").sort("price", "asc").limit(20).execute();
+  const page = await index.search("shoes").sort("price", "asc").offset(1).limit(2).execute();
+  const filteredFacet = await index.search("shoes").filter("in_stock = true")
+    .facet("brand", { limit: 10, sort: "count_desc" }).limit(20).execute();
+  const nested = await index.browse().filter("category IN (:categories)", { categories: ["shoes", "bags"] }).group(
+    Group.by("category").limit(10).output(agg.count().as("products")).subgroup(
+      Group.by("rating").limit(10).output(agg.count().as("products"), agg.avg("price").as("avg_price")),
+    ),
+  ).execute();
+  const aliased = await index.search("shoes").group(
+    Group.by("brand").limit(10).alias("revenue", agg.sum("price"))
+      .orderBy(desc(g.aliasRef("revenue"))).output(agg.count().as("products"), g.aliasRef("revenue").as("revenue")),
+  ).execute();
+  const kept = await index.search("shoes").group(
+    Group.by("brand").limit(10).keep(gf.regex(g.field("brand"), "^A.*")).output(agg.count().as("products")),
+  ).execute();
+  const typed = await index.query(q.contains("title", "shoes")).ranking("default").limit(20).execute();
+  const rankInput = await index.search("shoes").ranking("boosted").input("boost", float64(3)).limit(20).execute();
+  const rankProperty = await index.search("shoes").ranking("boosted").rankProperty("boost", "4.0").limit(20).execute();
+  const degraded = await index.browse().filter("inventory = :value", { value: 18n }).sort("inventory", "asc")
+    .rankProperty("vespa.matchphase.degradation.maxfiltercoverage", "0.9")
+    .rankProperty("vespa.matchphase.degradation.attribute", "inventory")
+    .rankProperty("vespa.matchphase.degradation.maxhits", "10").limit(10).execute();
+  const yql = await index.yql("select * from sources * where title contains text(@q) order by price asc")
+    .property("q", "shoes").ranking("default").page(1, 3).execute();
+  let syntaxError: SearchKernelError;
+  try {
+    await index.search("shoes").filter("price <=").execute();
+    throw new Error("malformed textual filter unexpectedly succeeded");
+  } catch (error) {
+    assert(error instanceof SearchKernelError);
+    syntaxError = error;
+  }
+  const scenarioIds = (result: SearchResults) => result.hits.map((hit) => hit.id);
+  const groupsByBrand = (result: SearchResults) => groupingGroups(result).map((group) => ({
+    brand: group.value,
+    products: paritySafe(group.get("products")),
+    avg_price: paritySafe(group.get("avg_price")),
+  }));
+  const nestedGroups = groupingGroups(nested).map((category) => ({
+    category: category.value,
+    products: paritySafe(category.get("products")),
+    ratings: category.groups.map((group) => ({
+      rating: group.value,
+      products: paritySafe(group.get("products")),
+      avg_price: paritySafe(group.get("avg_price")),
+    })),
+  }));
   return {
+    document_crud: { id: document._id, title: document.title, brand: document.brand, price: document.price },
+    full_text_search: { ids: scenarioIds(fullText), total: Number(fullText.totalHits) },
+    stemming: { ids: scenarioIds(stemming) },
+    text_filter_binding: { ids: scenarioIds(textBinding) },
+    repeated_filters: { ids: scenarioIds(repeatedFilters) },
+    boolean_filter_grammar: { ids: scenarioIds(booleanFilter) },
+    sorting_projection: { hits: projection.hits.map((hit) => ({ id: hit.id, fields: paritySafe(hit.fields) })) },
+    pagination: { all_ids: scenarioIds(allSorted), offset_ids: scenarioIds(page), total: Number(page.totalHits) },
     sorted_search: { ids: ordered.hits.map((hit) => hit.id), total: Number(ordered.totalHits) },
     filtered_search: { ids: filtered.hits.map((hit) => hit.id), total: Number(filtered.totalHits) },
     facets: Object.fromEntries(faceted.facets.brands!.map((item) => [String(item.value), Number(item.count)])),
     aggregations: paritySafe(root.aggregations),
-    grouping: groupingGroups(grouped).map((group) => ({ brand: group.value, products: paritySafe(group.get("products")), avg_price: paritySafe(group.get("avg_price")) })),
+    grouping_aggregations: groupsByBrand(grouped),
+    filtered_facets: Object.fromEntries(filteredFacet.facets.brand!.map((item) => [String(item.value), Number(item.count)])),
+    nested_grouping: nestedGroups,
+    group_alias: groupsByBrand(aliased),
+    group_keep_filter: groupsByBrand(kept),
+    typed_query: { ids: scenarioIds(typed) },
+    rank_inputs: rankInput.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
+    rank_properties: rankProperty.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
+    tensor_readback: paritySafe((document.embedding as { $searchkernel_tensor: { dense: number[] } }).$searchkernel_tensor.dense),
     nearest_neighbor: { ids: nearest.hits.map((hit) => hit.id), scores: nearest.hits.map((hit) => hit.relevance) },
+    hybrid_text_vector: { ids: hybrid.hits.map((hit) => hit.id), top_score: hybrid.hits[0]!.score },
     hybrid: { top_id: hybrid.hits[0]!.id, has_bag: hybrid.hits.some((hit) => hit.id === "bag-1") },
-    two_phase: { ids: reranked.hits.map((hit) => hit.id) },
+    two_phase_reranking: { ids: reranked.hits.map((hit) => hit.id) },
+    coverage_degradation: {
+      ids: degraded.hits.map((hit) => hit.id),
+      full: degraded.coverage?.full,
+      degraded: degraded.coverage?.degraded !== null,
+    },
+    yql: { ids: scenarioIds(yql), total: Number(yql.totalHits) },
     unknown_field_error: { code: "invalid_argument", details: errorCodes },
+    structured_filter_error: { code: "invalid_argument", details: errorCodes },
+    text_filter_syntax_error: {
+      code: "invalid_argument",
+      details: syntaxError!.details.map((detail) => (detail as { code: string }).code).sort(),
+    },
   };
 }
 
@@ -312,7 +400,9 @@ async function main(): Promise<void> {
       await index.patch("parity-mutation").set("price", float64(75)).unset("sale_price").execute();
       const mutated = await index.get("parity-mutation");
       assert(mutated !== null);
-      PARITY_OBSERVATIONS.mutation = { price: mutated.price, sale_price_present: "sale_price" in mutated, deleted: await index.delete("parity-mutation") };
+      PARITY_OBSERVATIONS.patch = { price: mutated.price, sale_price_present: "sale_price" in mutated };
+      const parityMutationDeleted = await index.delete("parity-mutation");
+      PARITY_OBSERVATIONS.delete = { deleted: parityMutationDeleted, absent_after_delete: (await index.get("parity-mutation")) === null };
       await index.insert({ _id: "parity-reopen", title: "Parity Reopen", category: "parity", price: float64(42), inventory: 7n, in_stock: true });
 
       heading("3. GET BY ID");
@@ -675,6 +765,7 @@ async function main(): Promise<void> {
       assert(shoe2?.price === 119 && String(shoe2.title).includes("Updated Edition"));
       results = await index.search("updated").limit(20).execute();
       assert(results.hits.length === 1 && results.hits[0]!.id === "shoe-2");
+      PARITY_OBSERVATIONS.upsert_replacement = { price: shoe2?.price, updated_title_matches: String(shoe2?.title).includes("Updated"), search_ids: results.hits.map((hit) => hit.id) };
     } finally {
       await index.close();
     }
@@ -688,7 +779,13 @@ async function main(): Promise<void> {
       assert(await reopened.get("shoe-3") === null);
       const persistedParity = await reopened.get("parity-reopen");
       assert(persistedParity !== null);
-      PARITY_OBSERVATIONS.persistence = { title: persistedParity.title, price: persistedParity.price, inventory: persistedParity.inventory };
+      const persistedShoe1 = await reopened.get("shoe-1");
+      const persistedShoe2 = await reopened.get("shoe-2");
+      PARITY_OBSERVATIONS.reopen_persistence = {
+        marker: { title: persistedParity.title, price: persistedParity.price, inventory: persistedParity.inventory },
+        upserted: { updated_title_matches: String(persistedShoe2?.title).includes("Updated"), price: persistedShoe2?.price },
+        deleted_absent: (await reopened.get("parity-mutation")) === null,
+      };
       const shoe1 = await reopened.get("shoe-1");
       assert(shoe1 !== null);
       assert(shoe1.price === 79);
