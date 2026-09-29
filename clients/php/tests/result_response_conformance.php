@@ -18,6 +18,13 @@ use SearchKernel\Tensor;
 
 function traceValue(mixed $value): mixed
 {
+    if ($value instanceof SearchKernel\ValueObject) {
+        $object = new stdClass();
+        foreach ($value->entries as $entry) {
+            $object->{$entry['key']} = traceValue($entry['value']);
+        }
+        return $object;
+    }
     if ($value === null || is_bool($value) || is_string($value)) {
         return $value;
     }

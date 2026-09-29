@@ -338,6 +338,12 @@ throws(
 // Search request facade and canonical namespaces.
 // --------------------------------------------------------------------------
 
+throws(
+    ArgumentCountError::class,
+    static fn () => $index->search('fox')->sort('price'),
+    'field sort direction is required',
+);
+
 $request = $index
     ->search('brown fox')
     ->searchField('title', 3.0)
@@ -745,6 +751,12 @@ throws(
 $encodedEmptyObject = Protocol::value(ValueObject::fromPairs([]));
 same('ValueObject', $encodedEmptyObject['kind_type'], 'empty object is distinct from empty list');
 same([], $encodedEmptyObject['kind']['fields'], 'empty object encodes with an empty field vector');
+$decodedEmptyObject = Protocol::decodeValue($encodedEmptyObject);
+truth($decodedEmptyObject instanceof ValueObject, 'decoded ValueObject retains its object type when empty');
+same([], $decodedEmptyObject->entries, 'empty decoded ValueObject has no entries');
+$decodedEmptyList = Protocol::decodeValue(['kind_type' => 'ValueList', 'kind' => ['values' => []]]);
+same([], $decodedEmptyList, 'decoded empty ValueList remains a PHP list');
+truth(!$decodedEmptyList instanceof ValueObject, 'decoded empty ValueList stays distinct from ValueObject');
 
 $encodedNumericKeyObject = Protocol::value(ValueObject::fromPairs([
     ['key' => '0', 'value' => 'zero'],

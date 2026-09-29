@@ -48,6 +48,11 @@ from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
 from SearchKernel.V2.FilterClause import FilterClauseT  # noqa: E402
 from SearchKernel.V2.FilterRequest import FilterRequestT  # noqa: E402
 from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
+from SearchKernel.V2.SortDirection import SortDirection  # noqa: E402
+from SearchKernel.V2.SortExpr import SortExprT  # noqa: E402
+from SearchKernel.V2.SortTarget import SortTargetT  # noqa: E402
+from SearchKernel.V2.SortTargetKind import SortTargetKind  # noqa: E402
+from SearchKernel.V2.FieldSortTarget import FieldSortTargetT  # noqa: E402
 from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
 from SearchKernel.V2.QuerySource import QuerySourceT  # noqa: E402
 from SearchKernel.V2.QuerySourceKind import QuerySourceKind  # noqa: E402
@@ -122,6 +127,61 @@ def _canonical_snapshot(request):
 
 
 class FlatBuffersObjectApiTest(unittest.TestCase):
+    def test_field_sort_requires_an_explicit_direction(self):
+        class Index:
+            client = None
+
+        with self.assertRaises(TypeError):
+            SearchBuilder(Index(), "wireless").sort("price")
+
+        self.assertEqual(
+            SearchBuilder(Index(), "wireless").sort("price", "asc")._sort[0].direction,
+            SortDirection.Asc,
+        )
+        self.assertEqual(
+            SearchBuilder(Index(), "wireless").sort("price", "desc")._sort[0].direction,
+            SortDirection.Desc,
+        )
+
+    def test_field_sorts_match_canonical_rust_ir(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        for direction, enum_value in (("asc", SortDirection.Asc), ("desc", SortDirection.Desc)):
+            index = Index()
+            SearchBuilder(index, None).sort("price", direction).execute()
+            canonical = SearchRequestT(
+                query=QuerySourceT(
+                    sourceType=QuerySourceKind.MatchAllQuery,
+                    source=MatchAllQueryT(),
+                ),
+                sort=[SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.FieldSortTarget,
+                        target=FieldSortTargetT(field="price"),
+                    ),
+                    direction=enum_value,
+                )],
+            )
+            with self.subTest(direction=direction):
+                self.assertEqual(
+                    _canonical_snapshot(index.client.request),
+                    _canonical_snapshot(canonical),
+                )
+
     def test_nested_grouping_uses_structural_all_scope(self):
         request = Group.by("category").output(agg.count()).subgroup(
             Group.by("brand").output(agg.count())
