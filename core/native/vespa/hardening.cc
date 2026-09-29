@@ -1,5 +1,6 @@
 // Search Kernel native adapter: hardening and timing support.
 #include <thread>
+#include <type_traits>
 // This file is included by abi.cc so the private adapter remains one native
 // boundary while responsibilities stay physically searchable by subsystem.
 
@@ -229,6 +230,10 @@ public:
         _delegate->handleCompactLidSpace(op, on_done);
     }
 };
+
+static_assert(std::is_nothrow_constructible_v<PublicationGateFeedView,
+                                              proton::IFeedView::SP,
+                                              std::shared_ptr<FailpointController>>);
 
 // Open failpoints are process-global because no Engine exists yet. Make them
 // thread-affine so parallel tests cannot consume a failpoint armed by another
