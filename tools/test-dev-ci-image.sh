@@ -5,6 +5,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 DEV="$ROOT/dev"
 RUNNER="$ROOT/tools/run-in-ci-image.sh"
 COVERAGE="$ROOT/tools/coverage.sh"
+WORKFLOW="$ROOT/.github/workflows/on-demand-verification.yml"
 
 bash -n "$DEV"
 bash -n "$RUNNER"
@@ -12,13 +13,14 @@ bash -n "$COVERAGE"
 python3 -m py_compile "$ROOT/.github/ci/test_exact_head.py"
 python3 "$ROOT/tools/test_dev_client_e2e.py"
 
-python3 - "$DEV" "$RUNNER" "$ROOT/.github/ci/test_exact_head.py" <<'PY'
+python3 - "$DEV" "$RUNNER" "$ROOT/.github/ci/test_exact_head.py" "$WORKFLOW" <<'PY'
 from pathlib import Path
 import sys
 
 dev = Path(sys.argv[1]).read_text(encoding="utf-8")
 runner = Path(sys.argv[2]).read_text(encoding="utf-8")
 exact_head = Path(sys.argv[3]).read_text(encoding="utf-8")
+workflow = Path(sys.argv[4]).read_text(encoding="utf-8")
 
 if exact_head.count('if __name__ == "__main__":') != 1:
     raise SystemExit("exact-head regression module must contain exactly one module terminator")
@@ -67,6 +69,9 @@ required_runner = (
     'find /workspace -path /workspace/.git -prune -o -type d -exec touch -h -d "@$commit_epoch" {} +',
     'git -C "$ROOT" diff --no-renames --name-only -z HEAD',
     'git -C "$ROOT" ls-files --others --exclude-standard -z',
+    'EXACT_SOURCE=${SEARCHKERNEL_CI_EXACT_SOURCE:-0}',
+    'if [[ "$EXACT_SOURCE" == "1" ]]; then',
+    'exact-source mode; using committed Git tree only',
     '-v "$source_volume:/work"',
     '-v "$target_volume:/cargo-target"',
     "-e CARGO_TARGET_DIR=/cargo-target",
@@ -102,6 +107,17 @@ required_runner = (
 for fragment in required_runner:
     if fragment not in runner:
         raise SystemExit(f"CI-image runner is missing {fragment!r}")
+
+if 'SEARCHKERNEL_CI_EXACT_SOURCE: "1"' not in workflow:
+    raise SystemExit("on-demand exact-SHA verification must disable working-tree overlays")
+
+exact_guard = runner.index('if [[ "$EXACT_SOURCE" == "1" ]]; then')
+overlay_command = runner.index('git -C "$ROOT" diff --no-renames --name-only -z HEAD')
+snapshot_verify = runner.index("# Verify that the private Git repository still names the exact host HEAD")
+if not (exact_guard < overlay_command < snapshot_verify):
+    raise SystemExit("working-tree overlay is not guarded by exact-source mode")
+if "else\n" not in runner[exact_guard:overlay_command]:
+    raise SystemExit("exact-source mode does not bypass the working-tree overlay")
 
 # /work is a Docker volume populated by a separate container. Its numeric
 # ownership can vary across self-hosted runners, so both the exact-HEAD
