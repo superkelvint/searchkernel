@@ -71,7 +71,10 @@ jobs:
         with:
           ref: ${{ github.event.client_payload.revision }}
           path: subject
-          fetch-depth: 1
+          # run-in-ci-image bundles the checkout and walks its parent history.
+          # Keep merge parents available so exact-SHA verification can create
+          # a complete private source snapshot.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Prove checked-out revision
