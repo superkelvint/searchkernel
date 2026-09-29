@@ -26,18 +26,15 @@ jobs:
     env:
       CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}/rustfmt-${{ github.run_id }}-${{ github.run_attempt }}-format
 
     steps:
       - name: Check out exact PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
-          path: rustfmt-${{ github.run_id }}-${{ github.run_attempt }}-format
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
+          path: source
 
       - name: Apply rustfmt in pinned toolchain image
         shell: bash
@@ -48,7 +45,7 @@ jobs:
           docker run --rm \
             -e HOST_UID="$(id -u)" \
             -e HOST_GID="$(id -g)" \
-            -v "$GITHUB_WORKSPACE:/work" \
+            -v "$GITHUB_WORKSPACE/source:/work" \
             -w /work \
             "$CI_IMAGE" /bin/bash -lc '
               set -euo pipefail
@@ -71,6 +68,7 @@ jobs:
 
       - name: Package untrusted formatter patch
         shell: bash
+        working-directory: source
         run: |
           set -euo pipefail
 
@@ -85,12 +83,13 @@ jobs:
           git diff --binary --full-index --no-ext-diff > "$artifact_dir/rustfmt.patch"
 
       - name: Upload formatter patch
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: rustfmt-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rustfmt-patch-${{ github.run_id }}
           path: ${{ runner.temp }}/rustfmt-artifact/rustfmt.patch
           if-no-files-found: error
           retention-days: 1
+          overwrite: true
 
   write_autofix:
     name: Validate and push rustfmt patch
@@ -101,28 +100,26 @@ jobs:
     env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}/rustfmt-${{ github.run_id }}-${{ github.run_attempt }}-push
 
     steps:
       - name: Check out exact PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
-          path: rustfmt-${{ github.run_id }}-${{ github.run_attempt }}-push
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
+          path: source
 
       - name: Download formatter patch
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
-          name: rustfmt-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rustfmt-patch-${{ github.run_id }}
           path: ${{ runner.temp }}/rustfmt-artifact
 
       - name: Validate and apply formatter patch
         id: validate
         shell: bash
+        working-directory: source
         run: |
           set -euo pipefail
 
@@ -182,6 +179,7 @@ jobs:
       - name: Commit and push formatting changes
         if: steps.validate.outputs.has_changes == 'true'
         shell: bash
+        working-directory: source
         env:
           AUTOFIX_TOKEN: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN }}
         run: |

@@ -21,6 +21,7 @@ use searchkernel_vespa_engine::{Document, FieldValue, PositionValue, PredicateVa
 use std::collections::BTreeMap;
 
 #[cfg(all(test, feature = "native"))]
+#[path = "tests/mod.rs"]
 mod tests;
 
 pub use backend::VespaBackend;
