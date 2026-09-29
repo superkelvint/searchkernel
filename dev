@@ -354,6 +354,7 @@ check_fast() {
     bash "$ROOT/tools/check-shell-syntax.sh"
     bash "$ROOT/tools/test-shell-syntax.sh"
     bash "$ROOT/tools/test-dev-ci-image.sh"
+    bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
     "$PYTHON" "$ROOT/tools/test_on_demand_verification_workflow.py"
     "$PYTHON" "$ROOT/tools/test_remote_verification.py"
     bash "$ROOT/tools/test-ci-image-publishing.sh"
@@ -381,6 +382,9 @@ check_fast() {
 }
 
 ci_gate() {
+    echo "== Docker lifecycle contract =="
+    bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
+
     echo "== cargo fmt =="
     "$CARGO" fmt --all -- --check
 

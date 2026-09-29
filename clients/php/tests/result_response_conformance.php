@@ -62,6 +62,20 @@ function traceValue(mixed $value): mixed
     throw new RuntimeException('unsupported trace value: ' . get_debug_type($value));
 }
 
+/** @param array<string,mixed> $values */
+function traceMap(array $values): array|object
+{
+    ksort($values, SORT_STRING);
+    if ($values === []) {
+        return (object) [];
+    }
+    $normalized = [];
+    foreach ($values as $key => $item) {
+        $normalized[$key] = traceValue($item);
+    }
+    return $normalized;
+}
+
 function traceNode(Hit|ResultGroup|null $node): mixed
 {
     if ($node === null) return null;
@@ -70,7 +84,7 @@ function traceNode(Hit|ResultGroup|null $node): mixed
             'kind' => 'hit',
             'id' => $node->id,
             'relevance' => traceValue($node->relevance),
-            'fields' => traceValue($node->fields),
+            'fields' => traceMap($node->fields),
             'highlights' => array_map(
                 static fn (array $highlight): array => [
                     'field' => $highlight['field'],
@@ -92,9 +106,9 @@ function traceNode(Hit|ResultGroup|null $node): mixed
             ),
             'source' => $node->source,
             'types' => $node->types,
-            'match_features' => traceValue($node->matchFeatures),
-            'summary_features' => traceValue($node->summaryFeatures),
-            'rank_features' => traceValue($node->rankFeatures),
+            'match_features' => traceMap($node->matchFeatures),
+            'summary_features' => traceMap($node->summaryFeatures),
+            'rank_features' => traceMap($node->rankFeatures),
             'sort_values' => traceValue($node->sortValues),
         ];
     }
@@ -107,7 +121,7 @@ function traceNode(Hit|ResultGroup|null $node): mixed
         'id' => $node->id,
         'label' => $node->label,
         'value' => traceValue($node->value),
-        'fields' => traceValue($node->fields),
+        'fields' => traceMap($node->fields),
         'children' => array_map(traceNode(...), $node->children),
         'continuations' => $continuations,
         'source' => $node->source,
@@ -117,7 +131,7 @@ function traceNode(Hit|ResultGroup|null $node): mixed
             'from' => traceValue($node->limits['from']),
             'to' => traceValue($node->limits['to']),
         ],
-        'metadata' => traceValue($node->metadata),
+        'metadata' => traceMap($node->metadata),
     ];
 }
 
@@ -150,9 +164,9 @@ function traceCoverage(mixed $coverage): mixed
             'adaptive_timeout' => $degraded->adaptiveTimeout,
             'ann_timeout' => $degraded->annTimeout,
             'non_ideal_state' => $degraded->nonIdealState,
-            'metadata' => traceValue($degraded->metadata),
+            'metadata' => traceMap($degraded->metadata),
         ],
-        'metadata' => traceValue($coverage->metadata),
+        'metadata' => traceMap($coverage->metadata),
     ];
 }
 
@@ -163,7 +177,7 @@ function traceTiming(mixed $timing): mixed
         'query_time_seconds' => traceValue($timing->queryTimeSeconds),
         'search_time_seconds' => traceValue($timing->searchTimeSeconds),
         'summary_fetch_time_seconds' => traceValue($timing->summaryFetchTimeSeconds),
-        'metadata' => traceValue($timing->metadata),
+        'metadata' => traceMap($timing->metadata),
     ];
 }
 
@@ -185,12 +199,12 @@ function traceResult(SearchResult $result): array
                 'source' => $error->source,
                 'stack_trace' => $error->stackTrace,
                 'transient' => $error->transient,
-                'metadata' => traceValue($error->metadata),
+                'metadata' => traceMap($error->metadata),
             ],
             $result->errors,
         ),
         'trace' => traceValue($result->trace),
-        'metadata' => traceValue($result->metadata),
+        'metadata' => traceMap($result->metadata),
     ];
 }
 

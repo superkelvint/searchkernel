@@ -701,6 +701,20 @@ mod tests {
     use super::MatchFeatureValue;
 
     #[test]
+    fn query_dense_tensor_shape_is_validated_in_safe_ranking_inputs() {
+        use super::{validate_search_ranking_inputs, SearchRequest};
+        use crate::{Query, TensorValue};
+
+        let request = SearchRequest::new(Query::True).query_tensor(
+            "query_embedding",
+            TensorValue::dense("tensor<float>(x[3])", [1.0, 0.0]),
+        );
+        let error = validate_search_ranking_inputs(&request)
+            .expect_err("query tensor cell-count mismatch must be rejected in Rust");
+        assert!(error.to_string().contains("cell count"));
+    }
+
+    #[test]
     fn match_feature_values_keep_the_feature_set_boundary() {
         let scalar = MatchFeatureValue::Double(3.5);
         assert_eq!(scalar.as_double(), Some(3.5));

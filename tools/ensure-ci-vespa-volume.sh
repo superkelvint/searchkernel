@@ -15,6 +15,9 @@ set -euo pipefail
     exit 2
 }
 
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source "$ROOT/tools/ci-runtime-ownership.sh"
+
 CI_IMAGE=$1
 VESPA_IMAGE=$2
 VESPA_COMMIT=$3
@@ -88,7 +91,9 @@ if ! validate_volume; then
     echo "Materializing immutable Vespa cache volume $VOLUME" >&2
     docker rm -f "$SEED_CONTAINER" >/dev/null 2>&1 || true
     docker volume rm -f "$VOLUME" >/dev/null 2>&1 || true
-    docker volume create "$VOLUME" >/dev/null
+    ci_runtime_create_volume "$VOLUME" vespa cache \
+        "io.searchkernel.vespa-digest=$DIGEST" \
+        "io.searchkernel.vespa-commit=$VESPA_COMMIT" >/dev/null
 
     # The Vespa image is scratch-based, so it has no executable we can run.
     # Export its filesystem locally and stream only the native-cache subtree
