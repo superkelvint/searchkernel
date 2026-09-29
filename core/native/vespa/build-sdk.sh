@@ -408,7 +408,8 @@ PY
         --scope full \
         --output "$SDK/native-build-fingerprint-v2.txt"
 
-    SDK_BACKUP="${SDK_PACKAGE}.old.$$"
+    SDK_BACKUP=$(mktemp -d "${SDK_PACKAGE}.old.XXXXXX")
+    rmdir "$SDK_BACKUP"
     if [ -e "$SDK_BACKUP" ]; then
         echo "adapter backup path already exists: $SDK_BACKUP" >&2
         exit 1
@@ -611,7 +612,8 @@ fi
 # Publish only after every build, ABI, binding, and package check succeeded.
 # A uniquely named backup keeps the replacement recoverable until the new
 # directory is in place; the old generated package is then removed explicitly.
-SDK_BACKUP="${SDK_PACKAGE}.old.$$"
+SDK_BACKUP=$(mktemp -d "${SDK_PACKAGE}.old.XXXXXX")
+    rmdir "$SDK_BACKUP"
 if [ -e "$SDK_BACKUP" ]; then
     echo "SDK backup path already exists: $SDK_BACKUP" >&2
     exit 1
