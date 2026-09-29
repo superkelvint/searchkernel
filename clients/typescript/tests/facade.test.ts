@@ -113,6 +113,13 @@ describe("ergonomic facade", () => {
     expect(request.limit?.value).toBe(20);
   });
 
+  it("rejects non-string rank properties and preserves string values", () => {
+    const builder = index().search("running shoes");
+    expect(() => builder.rankProperty("enabled", false as unknown as string)).toThrow(TypeError);
+    expect(builder.rankProperty("source", "catalog").build().ranking?.properties?.[0]?.value)
+      .toBe("catalog");
+  });
+
   it("omits deprecated filter vectors when packing textual filters", () => {
     const request = index().search("running shoes").filter("price <= :max", { max: 120 }).build();
     const bytes = packRequest("search", request);

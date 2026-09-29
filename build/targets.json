@@ -3,7 +3,7 @@
   "commands": {
     "doctor": {"status": "implemented"},
     "build": {"status": "planned_m1"},
-    "ci": {"status": "planned_m1"},
+    "ci": {"status": "implemented"},
     "test": {"status": "implemented"},
     "lint": {"status": "implemented"},
     "verify": {"status": "implemented"},
@@ -22,6 +22,7 @@
   "verify": {
     "api-conformance": {"description": "Portable API conformance"},
     "contracts": {"description": "Capability and client contracts"},
+    "client-semantic-parity": {"description": "Cross-language canonical IR semantic parity"},
     "abi": {"description": "Public native ABI contract"},
     "persistence": {"description": "Persistence compatibility"},
     "issue-queue": {"description": "GitHub issue queue consistency"},
@@ -70,10 +71,10 @@
     "api/": ["test:ir", "verify:api-conformance", "verify:contracts"],
     "core/crates/searchkernel-ir/": ["test:ir", "verify:api-conformance"],
     "core/native/": ["verify:abi", "verify:vespa.hardening.core"],
-    "clients/python/": ["test:python", "verify:contracts"],
-    "clients/typescript/": ["test:typescript", "verify:contracts"],
-    "clients/php/": ["test:php", "verify:contracts"],
-    "clients/ruby/": ["test:ruby", "verify:contracts"],
+    "clients/python/": ["test:python", "verify:contracts", "verify:client-semantic-parity"],
+    "clients/typescript/": ["test:typescript", "verify:contracts", "verify:client-semantic-parity"],
+    "clients/php/": ["test:php", "verify:contracts", "verify:client-semantic-parity"],
+    "clients/ruby/": ["test:ruby", "verify:contracts", "verify:client-semantic-parity"],
     "searchkerneld/": ["test:searchkerneld-multi-index", "verify:product.integration"]
   }
 }

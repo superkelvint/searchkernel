@@ -95,5 +95,8 @@ fn main() {
     let resolved = context
         .search_to_ir(request)
         .unwrap_or_else(|error| panic!("resolve request: {error}"));
-    println!("{}", snapshot::search_request(&resolved));
+    println!(
+        "{}",
+        searchkernel_testkit::lossless_integer_tags(snapshot::search_request(&resolved))
+    );
 }

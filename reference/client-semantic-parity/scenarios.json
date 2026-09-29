@@ -50,7 +50,7 @@
         "kind": "search",
         "query": "running shoes",
         "filter": {
-          "source": "price <= :max",
+          "source": "popularity <= :max",
           "bindings": {
             "max": {
               "int64": "9223372036854775807"
@@ -62,20 +62,93 @@
       }
     },
     {
-      "id": "text-filter-uint64-max-exact",
+      "id": "query-input-uint64-max-exact",
       "intent": {
-        "kind": "search",
-        "query": "running shoes",
-        "filter": {
-          "source": "price <= :max",
-          "bindings": {
-            "max": {
-              "uint64": "18446744073709551615"
-            }
-          }
-        },
+        "kind": "browse",
         "limit": 20,
-        "offset": 0
+        "offset": 0,
+        "inputs": {
+          "exact_uint64": {
+            "uint64": "18446744073709551615"
+          }
+        }
+      }
+    }
+  ],
+  "facade_rejections": [
+    {
+      "id": "rank-property-boolean",
+      "clients": [
+        "python",
+        "typescript",
+        "php",
+        "ruby"
+      ],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "id": "rank-property-null",
+      "clients": [
+        "python",
+        "typescript",
+        "php",
+        "ruby"
+      ],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": null
+        }
+      }
+    },
+    {
+      "id": "rank-property-number",
+      "clients": [
+        "python",
+        "typescript",
+        "php",
+        "ruby"
+      ],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": 7
+        }
+      }
+    },
+    {
+      "id": "rank-property-object",
+      "clients": [
+        "python",
+        "typescript",
+        "php",
+        "ruby"
+      ],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": {}
+        }
+      }
+    },
+    {
+      "id": "rank-property-array",
+      "clients": [
+        "python",
+        "typescript",
+        "php",
+        "ruby"
+      ],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": []
+        }
       }
     }
   ],

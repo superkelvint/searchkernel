@@ -147,7 +147,7 @@ fn exercise(index: &Index) -> Value {
     let hits: Vec<Value> = result
         .hits
         .iter()
-        .map(|hit| json!({"id":hit.id, "document":hit.document}))
+        .map(|hit| json!({"id":hit.id.as_str(), "document":hit.document}))
         .collect();
 
     let bad = index
@@ -164,8 +164,8 @@ fn exercise(index: &Index) -> Value {
 
     let described = index.describe().unwrap();
     json!({
-        "schema_name": described.name(),
-        "field_names": described.fields().map(|field| field.name().to_owned()).collect::<BTreeSet<_>>(),
+        "schema_name": described.index_name(),
+        "field_names": described.fields().iter().map(|field| field.name().to_owned()).collect::<BTreeSet<_>>(),
         "total_hits": result.total_hits.value,
         "hits": hits,
         "negative": {"code": format!("{:?}", bad.code()), "details": detail_codes},

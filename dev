@@ -3,9 +3,17 @@ set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
+if [[ ("${1:-}" == "test" || "${1:-}" == "verify") && "${2:-}" == "--remote" ]]; then
+    [[ "$#" -eq 3 ]] || {
+        echo "usage: ./dev ${1:-test} --remote <target>" >&2
+        exit 2
+    }
+    exec bash "$ROOT/tools/remote-verification.sh" "$1" "$3"
+fi
+
 should_use_ci_image() {
     case "${1:-}" in
-        check|universe|check-fast|check-protocol|coverage|lint|test|verify)
+        ci|check|universe|check-fast|check-protocol|coverage|lint|test|verify)
             return 0
             ;;
         native-sdk)
@@ -129,7 +137,7 @@ usage() {
 Search Kernel development commands
 
   ./dev build                 Build the supported Search Kernel product (M1 convergence pending)
-  ./dev ci                    Run the intentionally cheap mandatory PR gate (M1 convergence pending)
+  ./dev ci                    Run the intentionally cheap mandatory PR gate
   ./dev check                 Run the full repository quality and test suite
   ./dev universe              Run every repository test, E2E lane, and verifier
   ./dev release-check         Run distributable release qualification (implemented in M5)
@@ -138,6 +146,7 @@ Search Kernel development commands
   ./dev coverage              Generate Rust code coverage reports under coverage/
   ./dev lint --profile <id>   Run a canonical Clippy verification profile
   ./dev test --list           List supported test scopes from build/targets.json
+  ./dev test --remote <scope> Dispatch exact-HEAD test through GitHub Actions
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client, including real E2E
@@ -150,6 +159,7 @@ Search Kernel development commands
   ./dev verify milestone.m14       Run a frozen cumulative milestone closure
   ./dev verify product.integration Run the cross-entry-point integration verifier
   ./dev verify --list              List semantic and legacy Vespa verifier targets
+  ./dev verify --remote <lane>      Dispatch exact-HEAD verifier through GitHub Actions
   ./dev verify contracts      Verify capability/client contract tooling
   ./dev verify abi            Verify the public native ABI contract
   ./dev verify persistence    Verify persistence compatibility
@@ -163,7 +173,7 @@ Search Kernel development commands
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Repair and verify local build/verification prerequisites
 
-Build/test/verify commands run in docker.io/superkelvint/searchkernel-ci:latest
+Build/ci/test/verify commands run in docker.io/superkelvint/searchkernel-ci:latest
 by default, using a disposable source snapshot and worktree-scoped compatible
 Cargo target state. Set
 SEARCHKERNEL_DEV_USE_CI_IMAGE=0 for an intentional host execution,
@@ -343,6 +353,8 @@ check_fast() {
     bash "$ROOT/tools/check-shell-syntax.sh"
     bash "$ROOT/tools/test-shell-syntax.sh"
     bash "$ROOT/tools/test-dev-ci-image.sh"
+    "$PYTHON" "$ROOT/tools/test_on_demand_verification_workflow.py"
+    "$PYTHON" "$ROOT/tools/test_remote_verification.py"
     bash "$ROOT/tools/test-ci-image-publishing.sh"
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
     "$PYTHON" "$ROOT/tools/test_searchkernel_native_linker.py"
@@ -362,6 +374,21 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
     run_typescript_generation_check
     "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
+    "$PYTHON" "$ROOT/tools/test_build_system_ci.py"
+}
+
+ci_gate() {
+    echo "== cargo fmt =="
+    "$CARGO" fmt --all -- --check
+
+    echo "== cargo check =="
+    "$CARGO" check --workspace --all-targets --no-default-features --locked
+
+    echo "== native test compile smoke =="
+    "$CARGO" check -p searchkerneld --tests --features native --locked
+
+    echo "== cargo clippy =="
+    "$CARGO" clippy --workspace --all-targets --no-default-features --locked -- -D warnings
 }
 
 check_protocol() {
@@ -504,6 +531,7 @@ universe() {
 
     universe_dev_step 'API conformance verifier' verify api-conformance
     universe_dev_step 'capability/client contract verifiers' verify contracts
+    universe_dev_step 'client semantic parity verifier' verify client-semantic-parity
     universe_dev_step 'native ABI verifier' verify abi
     universe_dev_step 'persistence compatibility verifier' verify persistence
     universe_dev_step 'issue queue verifier' verify issue-queue
@@ -620,6 +648,19 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
             "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
+            ;;
+        client-semantic-parity)
+            doctor_repair_python
+            doctor_repair_typescript
+            command -v php >/dev/null 2>&1 || {
+                echo 'error: PHP is required for client semantic parity' >&2
+                return 1
+            }
+            command -v ruby >/dev/null 2>&1 || {
+                echo 'error: Ruby is required for client semantic parity' >&2
+                return 1
+            }
+            "$PYTHON" "$ROOT/tools/check-client-semantic-parity.py"
             ;;
         abi)
             local_baseline=$(mktemp)
@@ -1219,7 +1260,11 @@ case "${1:-help}" in
         planned_command build M1
         ;;
     ci)
-        planned_command ci M1
+        [[ $# -eq 1 ]] || {
+            echo 'usage: ./dev ci' >&2
+            exit 2
+        }
+        ci_gate
         ;;
     check)
         check_all
