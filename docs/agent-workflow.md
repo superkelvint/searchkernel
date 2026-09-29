@@ -139,6 +139,65 @@ Stop only when progress requires something you cannot safely resolve, such as:
 When blocked, name the first non-self-resolvable blocker and the concrete
 external action required.
 
+## Exact-SHA remote verification
+
+Remote verification is a first-class path for agents or reviewers that cannot
+run a required Search Kernel check locally. The semantic authority remains
+`./dev`; GitHub only provides bounded orchestration around an exact pushed
+commit.
+
+The finite public target vocabulary is `build/targets.json`. Use that same
+registry for both local and remote target selection. Do not invent a workflow-
+only verifier name or shell command.
+
+### Local-capable agent
+
+When a checkout exists but a required check cannot run locally:
+
+```bash
+./dev test --remote <scope>
+./dev verify --remote <lane>
+```
+
+The wrapper must hand off the exact current `HEAD`, not a branch name. It
+refuses a dirty worktree/index or a commit that is not available from GitHub,
+dispatches the bounded on-demand workflow, waits for the exact correlated run,
+surfaces its run URL and failed-step logs, and propagates the run result.
+
+Do not bypass the dirty-state refusal merely to obtain a green remote run. Commit
+and push the source that is actually being reviewed, then rerun the required
+remote checks.
+
+### Remote-only agent
+
+No local Search Kernel environment is required. Through an authorized GitHub
+UI/API/CLI/connector:
+
+1. inspect `build/targets.json` at the revision you intend to test;
+2. identify an exact pushed 40-character commit SHA;
+3. dispatch the repository's **On-demand verification** workflow with one
+   bounded operation:
+   - `ci` with no target;
+   - `test` with one registered test scope;
+   - `verify` with one registered verifier lane;
+4. confirm the workflow evidence identifies the requested/observed revision,
+   operation, canonical target/command, result, run ID, and run URL;
+5. inspect failed-step logs when the result is not successful.
+
+The trusted default-branch workflow/control plane executes the requested revision
+as untrusted subject code. The request may not supply arbitrary shell commands
+or redefine the runner/permission boundary.
+
+### Evidence freshness
+
+Verification evidence is valid only for the exact commit SHA it names. A new
+commit or push creates a new head and invalidates older runs as evidence for the
+current change, even when the diff seems unrelated.
+
+After every fix or new commit, rerun every check required for acceptance against
+the new exact head. Never claim that the current PR/head was verified by a run
+for an older commit or by a mutable branch reference.
+
 ## Follow-up work
 
 Review follow-up uses this durable state transition:
