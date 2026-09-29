@@ -365,6 +365,7 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/test_searchkernel_native_linker.py"
     "$PYTHON" "$ROOT/tools/test_dev_targets.py"
     "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+    "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
     "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
     "$PYTHON" "$ROOT/tools/test_dev_universe_summary.py"
     "$CARGO" fmt --all --check
@@ -393,6 +394,7 @@ ci_gate() {
     echo "== agent map contract =="
     "$PYTHON" "$ROOT/tools/test_dev_targets.py"
     "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+    "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
     "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
 
     echo "== cargo fmt =="
@@ -409,22 +411,19 @@ ci_gate() {
 }
 
 bookkeeping_command() {
-    case "${1:-check}" in
+    local mode=${1:-check}
+    [[ "$#" -le 1 ]] || {
+        echo 'usage: ./dev bookkeeping check|sync' >&2
+        return 2
+    }
+    case "$mode" in
         check)
-            [[ "$#" -eq 1 ]] || {
-                echo 'usage: ./dev bookkeeping check|sync' >&2
-                return 2
-            }
             "$PYTHON" "$ROOT/tools/test_dev_targets.py"
             "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
             ;;
         sync)
-            [[ "$#" -eq 1 ]] || {
-                echo 'usage: ./dev bookkeeping check|sync' >&2
-                return 2
-            }
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --write
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --write
             ;;
@@ -1392,7 +1391,7 @@ case "${1:-help}" in
         ;;
     bookkeeping)
         shift
-        bookkeeping_command "${1:-check}"
+        bookkeeping_command "$@"
         ;;
     regen)
         case "${2:-}" in
