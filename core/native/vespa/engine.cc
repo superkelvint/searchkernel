@@ -1872,13 +1872,17 @@ class EmbeddedEngine {
         }
     }
 
-    void wait_for_search_publication(search::SerialNum serial) {
+    void wait_for_search_publication() {
         // Source/document-retriever visibility is not the same thing as the
-        // generation consumed by matching. Vespa publishes the document store,
-        // attributes (including HNSW), and memory index through the feed view's
-        // force-commit path. Run that canonical fence on Vespa's master write
-        // thread and do not return the mutation until every participating
-        // writer has released the commit callback.
+        // generation consumed by matching. Initiate the canonical feed-view
+        // force-commit on Vespa's master write thread, but never wait for its
+        // completion there. The caller waits on the completion callback so the
+        // master executor remains available to concurrent feed operations.
+        //
+        // Sample the serial on the master thread immediately before initiating
+        // the commit. This defines the fence by master ordering: it covers this
+        // mutation and any feed operations already processed ahead of the fence,
+        // but does not make the caller wait for operations still queued behind it.
         failpoint("mutation_before_search_publication_wait");
         auto *ready_sub_db = _db->getReadySubDB();
         if (!ready_sub_db) {
@@ -1891,21 +1895,28 @@ class EmbeddedEngine {
 
         vespalib::Gate gate;
         std::exception_ptr failure;
+        auto on_done = std::make_shared<vespalib::GateCallback>(gate);
         _db->getWriteService().blocking_master_execute(
             vespalib::makeLambdaTask(
-                [feed_view = std::move(feed_view), serial, &gate, &failure]() mutable {
+                [this, feed_view = std::move(feed_view), on_done, &failure]() mutable {
                     try {
-                        feed_view->forceCommitAndWait(search::CommitParam(
-                            serial, search::CommitParam::UpdateStats::SKIP));
+                        const auto serial = _db->getFeedHandler().getSerialNum();
+                        feed_view->forceCommit(
+                            search::CommitParam(serial, search::CommitParam::UpdateStats::SKIP),
+                            on_done);
                     } catch (...) {
                         failure = std::current_exception();
                     }
-                    gate.countDown();
                 }));
-        gate.await();
+        // The lambda and this local reference are the only non-Vespa owners.
+        // Dropping our copy makes GateCallback completion track only commit work.
+        on_done.reset();
         if (failure) {
+            gate.await();
             std::rethrow_exception(failure);
         }
+        failpoint("mutation_after_search_publication_start");
+        gate.await();
     }
 
     void wait_for_source_state(
@@ -3287,9 +3298,8 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
-        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(document_id, true, {{field, integer_value(value)}}, true);
-        wait_for_search_publication(publication_serial);
+        wait_for_search_publication();
     }
 
     void update(const std::string &id, const std::string &field, int64_t value) {
@@ -3305,9 +3315,8 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
-        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(document_id, was_present, {{field, integer_value(value)}}, false);
-        wait_for_search_publication(publication_serial);
+        wait_for_search_publication();
     }
 
     bool remove(const std::string &id) {
@@ -3322,9 +3331,8 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
-        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(document_id, false, {}, false);
-        wait_for_search_publication(publication_serial);
+        wait_for_search_publication();
         return result.wasFound();
     }
 
@@ -3447,9 +3455,8 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
-        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, true, {{text.field, string_value(text.text)}}, true);
-        wait_for_search_publication(publication_serial);
+        wait_for_search_publication();
     }
 
     void update_text(const TextUpdate &text) {
@@ -3464,9 +3471,8 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
-        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, was_present, {{text.field, string_value(text.text)}}, false);
-        wait_for_search_publication(publication_serial);
+        wait_for_search_publication();
     }
 
     std::vector<TextHit> search_text(const TextRequest &text) const {
@@ -4366,9 +4372,8 @@ public:
         auto result = _persistence.put(bucket, Timestamp(next_timestamp()), make_attribute_document(document));
         failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
-        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, true, expected_fields(document), true);
-        wait_for_search_publication(publication_serial);
+        wait_for_search_publication();
     }
 
     void update_attributes(const AttributeUpdateState &update) {
@@ -4380,9 +4385,8 @@ public:
         auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()), make_attribute_update(update));
         failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
-        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, was_present, expected_fields(update), false);
-        wait_for_search_publication(publication_serial);
+        wait_for_search_publication();
     }
 
     void put_document(const ValueDocument &document) {
@@ -4413,13 +4417,12 @@ public:
         // Search publication is fenced separately below through Vespa's
         // force-commit path. TensorFieldValue presence remains a valid source
         // visibility signal; it is not treated as proof of matcher publication.
-        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         if (has_struct_array || has_position) {
             wait_for_source_state(id, true, {}, true);
         } else {
             wait_for_source_state(id, true, expected_fields(document), true);
         }
-        wait_for_search_publication(publication_serial);
+        wait_for_search_publication();
     }
 
     void update_document(const ValueUpdate &update) {
@@ -4449,9 +4452,8 @@ public:
                 failpoint("attribute_mutation_after_native_call");
                 failpoint("mutation_after_native_call");
                 if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
-                const auto publication_serial = _db->getFeedHandler().getSerialNum();
-                wait_for_source_state(id, true, update.fields, false);
-                wait_for_search_publication(publication_serial);
+                        wait_for_source_state(id, true, update.fields, false);
+                wait_for_search_publication();
                 return;
             }
         }
@@ -4463,9 +4465,8 @@ public:
         failpoint("attribute_mutation_after_native_call");
         failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
-        const auto publication_serial = _db->getFeedHandler().getSerialNum();
         wait_for_source_state(id, was_present || update.create_if_nonexistent, update.fields, false);
-        wait_for_search_publication(publication_serial);
+        wait_for_search_publication();
     }
 
     LocalSearchResultState search_local_result(const NativeQueryState &query,

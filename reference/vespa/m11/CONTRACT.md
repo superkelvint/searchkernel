@@ -17,8 +17,9 @@ The safety contract is:
   concurrency.
 - Successful supported mutations are publication fences: the immediate GET and
   search on the same engine observe the completed mutation. Source-document or
-  retriever visibility alone is insufficient; the native boundary waits for
-  Vespa's searchable attribute/index generation to commit before returning.
+  retriever visibility alone is insufficient; the native boundary initiates a
+  feed-view force-commit on Vespa's master executor and waits for its completion
+  callback on the caller thread, preserving master-thread feed concurrency.
 - Native handles have one owner and one destruction path. `Drop` never panics.
 - All ABI entry points are `noexcept`; C++ exceptions become status errors.
 - Borrowed Rust buffers are used only for the duration of their call.

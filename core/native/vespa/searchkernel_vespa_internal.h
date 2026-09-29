@@ -146,6 +146,7 @@
 #include <vespa/vespalib/objects/nbostream.h>
 #include <vespa/vespalib/objects/nboserializer.h>
 #include <vespa/vespalib/objects/objectvisitor.h>
+#include <vespa/vespalib/util/destructor_callbacks.h>
 #include <vespa/vespalib/util/host_name.h>
 #include <vespa/vespalib/util/gate.h>
 #include <vespa/vespalib/util/lambdatask.h>

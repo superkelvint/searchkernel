@@ -646,11 +646,13 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         panic!("put visibility barrier returned before searchable state");
     }
 
-    // A successful mutation must also wait for the Vespa searchable
-    // generation, not merely source-document visibility. This failpoint is
-    // intentionally placed at the required publication fence. Before the
-    // production fix is wired in, the mutation returns without ever reaching
-    // it and this regression fails deterministically.
+    // The searchable-publication fence is reached only after source state is
+    // visible. While the mutation is held at that boundary, GET must already
+    // observe the new value, but the mutation itself must not have returned.
+    // Search may already have caught up through Vespa's independently scheduled
+    // automatic commit, so stale-search absence is not asserted at this hook;
+    // the immediate post-return matrix below and M13/M14 prove the public
+    // search-after-write contract against the real matcher.
     hardening::set(
         &engine,
         "mutation_before_search_publication_wait",
@@ -673,10 +675,13 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
             .join()
             .map_err(|_| "publication put panicked")?;
         result?;
-        panic!("put returned without waiting for searchable publication");
+        panic!("put returned without reaching the searchable-publication fence");
     }
     if publication_put.is_finished() {
         panic!("put returned before searchable publication was released");
+    }
+    if scalar_field(&engine, "publication", "qty")? != Some(ScalarValue::Integer(19)) {
+        panic!("publication fence was reached before source/GET state became visible");
     }
     hardening::release(&engine, "mutation_before_search_publication_wait")?;
     publication_put
@@ -685,6 +690,73 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     if !search_ids(&engine, 19, 10)?.iter().any(|id| id == "publication") {
         panic!("publication fence returned before searchable state");
     }
+
+    // Waiting for force-commit completion must happen on the caller, not on
+    // Vespa's master executor. Hold one caller immediately after it initiates
+    // its force-commit, then prove an independent mutation can reach and cross
+    // its own publication boundary while the first caller remains blocked.
+    hardening::set(
+        &engine,
+        "mutation_after_search_publication_start",
+        1,
+        Action::Block,
+    )?;
+    let overlap_a_engine = Arc::clone(&engine);
+    let overlap_a = thread::spawn(move || put(&overlap_a_engine, "publication-overlap-a", 21));
+    for _ in 0..100 {
+        if hardening::is_blocked(&engine, "mutation_after_search_publication_start")? {
+            break;
+        }
+        if overlap_a.is_finished() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    if !hardening::is_blocked(&engine, "mutation_after_search_publication_start")? {
+        let result = overlap_a.join().map_err(|_| "publication overlap A panicked")?;
+        result?;
+        panic!("publication wait did not expose the post-initiation caller boundary");
+    }
+
+    hardening::set(
+        &engine,
+        "mutation_before_search_publication_wait",
+        1,
+        Action::Block,
+    )?;
+    let overlap_b_engine = Arc::clone(&engine);
+    let overlap_b = thread::spawn(move || put(&overlap_b_engine, "publication-overlap-b", 22));
+    for _ in 0..100 {
+        if hardening::is_blocked(&engine, "mutation_before_search_publication_wait")? {
+            break;
+        }
+        if overlap_b.is_finished() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    if !hardening::is_blocked(&engine, "mutation_before_search_publication_wait")? {
+        hardening::release(&engine, "mutation_after_search_publication_start")?;
+        let a = overlap_a.join().map_err(|_| "publication overlap A panicked")?;
+        a?;
+        let b = overlap_b.join().map_err(|_| "publication overlap B panicked")?;
+        b?;
+        panic!("first publication wait prevented an independent mutation from reaching the fence");
+    }
+    hardening::release(&engine, "mutation_before_search_publication_wait")?;
+    overlap_b
+        .join()
+        .map_err(|_| "publication overlap B panicked")??;
+    if !search_ids(&engine, 22, 10)?
+        .iter()
+        .any(|id| id == "publication-overlap-b")
+    {
+        panic!("independent mutation did not become searchable while first caller was blocked");
+    }
+    hardening::release(&engine, "mutation_after_search_publication_start")?;
+    overlap_a
+        .join()
+        .map_err(|_| "publication overlap A panicked")??;
 
     // Freeze the public read-after-write/search-after-write completion
     // contract across the non-tensor mutation families. Tensor/HNSW publication
