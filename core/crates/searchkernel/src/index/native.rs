@@ -333,6 +333,53 @@ impl Index {
         )
     }
 
+    /// Delete a persisted index after proving that no other process owns its
+    /// lifecycle lock. This is daemon control-plane plumbing, not part of the
+    /// ergonomic document API.
+    #[doc(hidden)]
+    #[cfg(feature = "internal-api")]
+    pub fn delete_storage(path: impl AsRef<std::path::Path>) -> Result<()> {
+        let root = path.as_ref();
+        let _lifecycle_lock = LifecycleLock::acquire(root).map_err(|error| {
+            if error.code() == crate::error::ErrorCode::AlreadyExists {
+                Error::search(
+                    crate::error::ErrorCode::Conflict,
+                    format!("index storage is in use: {}", root.display()),
+                )
+                .with_detail(
+                    "index_in_use",
+                    None::<String>,
+                    "index storage is owned by another active runtime",
+                )
+            } else {
+                error
+            }
+        })?;
+        if !root.is_dir() {
+            return Err(Error::not_found(root.display().to_string()));
+        }
+
+        remove_published_root(root).map_err(|error| {
+            Error::Infrastructure(format!("delete index '{}': {error}", root.display()))
+        })?;
+
+        let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
+        sync_published_parent(parent).map_err(|error| {
+            Error::search(
+                crate::error::ErrorCode::Unavailable,
+                format!(
+                    "index was deleted at '{}' but parent directory sync failed: {error}",
+                    root.display()
+                ),
+            )
+            .with_detail(
+                "index_deleted_durability_uncertain",
+                None::<String>,
+                "index directory was removed but crash durability is uncertain",
+            )
+        })
+    }
+
     /// Construct an index around a backend for tests and infrastructure.
     #[doc(hidden)]
     pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {

@@ -11,7 +11,7 @@ use std::{
     collections::BTreeMap,
     fmt,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock, Weak},
 };
 
 const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
@@ -82,6 +82,7 @@ struct RegistryEntry {
 pub struct IndexRegistry {
     data_root: PathBuf,
     entries: Mutex<BTreeMap<String, Arc<RegistryEntry>>>,
+    transition_locks: Mutex<BTreeMap<String, Weak<Mutex<()>>>>,
 }
 
 impl IndexRegistry {
@@ -94,7 +95,28 @@ impl IndexRegistry {
         Ok(Self {
             data_root,
             entries: Mutex::new(BTreeMap::new()),
+            transition_locks: Mutex::new(BTreeMap::new()),
         })
+    }
+
+    fn transition_lock(
+        &self,
+        target: &str,
+    ) -> Result<Arc<Mutex<()>>, RegistryDispatchError> {
+        let mut locks = self
+            .transition_locks
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        if let Some(lock) = locks.get(target).and_then(Weak::upgrade) {
+            return Ok(lock);
+        }
+
+        // Keep the coordination table bounded even when callers probe many
+        // distinct valid-but-missing targets.
+        locks.retain(|_, lock| lock.strong_count() != 0);
+        let lock = Arc::new(Mutex::new(()));
+        locks.insert(target.to_owned(), Arc::downgrade(&lock));
+        Ok(lock)
     }
 
     pub fn data_root(&self) -> &Path {
@@ -195,21 +217,28 @@ impl IndexRegistry {
         target: &str,
         definition: api::IndexDefinition<'_>,
     ) -> Result<Vec<u8>, RegistryDispatchError> {
-        let mut entries = self
-            .entries
-            .lock()
-            .map_err(|_| RegistryDispatchError::Poisoned)?;
-        if entries.contains_key(target) {
-            return Ok(encode_error(index_control_error_to_portable(
-                IndexControlError::IndexAlreadyExists,
-            )));
-        }
-
         let definition_ir = match searchkernel_ir::index_definition_to_ir(definition) {
             Ok(definition) => definition,
             Err(error) => return Ok(encode_error(error)),
         };
         let definition_bytes = searchkernel_ir::index_definition_ir_to_api(&definition_ir);
+
+        let transition = self.transition_lock(target)?;
+        let _transition = transition
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        {
+            let entries = self
+                .entries
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            if entries.contains_key(target) {
+                return Ok(encode_error(index_control_error_to_portable(
+                    IndexControlError::IndexAlreadyExists,
+                )));
+            }
+        }
+
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
             Err(error) => return Ok(encode_error(error)),
@@ -224,7 +253,10 @@ impl IndexRegistry {
             dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
             lifecycle: RwLock::new(()),
         });
-        entries.insert(target.to_owned(), entry);
+        self.entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?
+            .insert(target.to_owned(), entry);
         Ok(encode_lifecycle_result(
             context.definition(),
             wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
@@ -232,16 +264,22 @@ impl IndexRegistry {
     }
 
     fn open(&self, target: &str) -> Result<Vec<u8>, RegistryDispatchError> {
-        let mut entries = self
-            .entries
+        let transition = self.transition_lock(target)?;
+        let _transition = transition
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
-        if let Some(entry) = entries.get(target) {
-            let (context, _) = entry.index.clone().into_session_parts();
-            return Ok(encode_lifecycle_result(
-                context.definition(),
-                wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
-            ));
+        {
+            let entries = self
+                .entries
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            if let Some(entry) = entries.get(target) {
+                let (context, _) = entry.index.clone().into_session_parts();
+                return Ok(encode_lifecycle_result(
+                    context.definition(),
+                    wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+                ));
+            }
         }
 
         let path = match self.checked_index_path(target) {
@@ -258,7 +296,10 @@ impl IndexRegistry {
             dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
             lifecycle: RwLock::new(()),
         });
-        entries.insert(target.to_owned(), entry);
+        self.entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?
+            .insert(target.to_owned(), entry);
         Ok(encode_lifecycle_result(
             context.definition(),
             wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
@@ -266,8 +307,8 @@ impl IndexRegistry {
     }
 
     fn delete_index(&self, target: &str) -> Result<Vec<u8>, RegistryDispatchError> {
-        let mut entries = self
-            .entries
+        let transition = self.transition_lock(target)?;
+        let _transition = transition
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
         let path = match self.checked_index_path(target) {
@@ -275,7 +316,11 @@ impl IndexRegistry {
             Err(error) => return Ok(encode_error(error)),
         };
 
-        let entry = entries.remove(target);
+        let entry = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?
+            .remove(target);
         if entry.is_none() && !path.exists() {
             return Ok(encode_error(index_control_error_to_portable(
                 IndexControlError::IndexNotFound,
@@ -292,15 +337,9 @@ impl IndexRegistry {
             }
         }
 
-        match std::fs::remove_dir_all(&path) {
+        match Index::delete_storage(&path) {
             Ok(()) => Ok(encode_delete_index_result()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Ok(encode_delete_index_result())
-            }
-            Err(error) => Ok(encode_error(PortableError::new(
-                ErrorCode::Unavailable,
-                format!("delete index target {target:?}: {error}"),
-            ))),
+            Err(error) => Ok(encode_error(lifecycle_index_error_to_portable(error))),
         }
     }
 
@@ -309,29 +348,34 @@ impl IndexRegistry {
         target: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, RegistryDispatchError> {
-        let entry = {
-            let entries = self
-                .entries
-                .lock()
-                .map_err(|_| RegistryDispatchError::Poisoned)?;
-            entries.get(target).cloned()
-        };
-        let Some(entry) = entry else {
+        // Acquire the per-entry admission guard while the entry is still
+        // reachable from the registry. Delete removes the entry under the same
+        // registry lock before taking its exclusive guard, so every request
+        // that successfully selects the target is guaranteed to drain first.
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        let Some(entry) = entries.get(target).cloned() else {
             return Ok(encode_error(index_control_error_to_portable(
                 IndexControlError::IndexNotFound,
             )));
         };
-        let _lifecycle = entry
+        let lifecycle = entry
             .lifecycle
             .read()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
-        entry
+        drop(entries);
+
+        let result = entry
             .dispatcher
             .dispatch(request)
-            .map_err(map_dispatch_error)
+            .map_err(map_dispatch_error);
+        drop(lifecycle);
+        result
     }
 
-    fn checked_index_path(&self, target: &str) -> Result<PathBuf, PortableError> {
+    fn checked_index_path(&self    fn checked_index_path(&self, target: &str) -> Result<PathBuf, PortableError> {
         let path = self.data_root.join(target);
         match std::fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.file_type().is_symlink() => {

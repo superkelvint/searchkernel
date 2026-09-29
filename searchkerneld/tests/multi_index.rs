@@ -551,6 +551,41 @@ fn delete_persisted_but_unloaded_index() {
 }
 
 #[test]
+fn delete_rejects_storage_owned_by_another_runtime() {
+    let temp = TempDir::new("delete-owned");
+    let path = temp.0.join("products");
+    let owner = searchkernel::Index::create(
+        &path,
+        searchkernel::IndexDefinition::new().field(
+            searchkernel::Field::text("title")
+                .stored(true)
+                .searchable(true),
+        ),
+    )
+    .expect("create externally owned index");
+
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    assert_portable_error(
+        &registry
+            .dispatch(&delete_index_request("products"))
+            .expect("delete owned target"),
+        api::ErrorCode::Conflict,
+        "index_in_use",
+        None,
+    );
+    assert!(path.is_dir(), "failed delete must preserve owned storage");
+
+    owner.close().expect("close external owner");
+    assert_lifecycle(
+        &registry
+            .dispatch(&delete_index_request("products"))
+            .expect("delete after owner close"),
+        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+    );
+    assert!(!path.exists());
+}
+
+#[test]
 fn concurrent_same_name_create_has_one_winner() {
     let temp = TempDir::new("create-race");
     let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
@@ -584,6 +619,67 @@ fn concurrent_same_name_create_has_one_winner() {
 
     assert_eq!(created, 1);
     assert_eq!(already_exists, 5);
+    registry.close_all().expect("close registry");
+}
+
+#[cfg(unix)]
+#[test]
+fn blocked_lifecycle_transition_does_not_stall_other_targets() {
+    use std::os::fd::AsRawFd;
+
+    let temp = TempDir::new("per-target-transition");
+    let lock_path = temp.0.join(".products.searchkernel.lock");
+    let lock_file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("open external lifecycle lock");
+    assert_eq!(
+        unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+        0,
+        "acquire external lifecycle lock"
+    );
+
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let blocked_registry = registry.clone();
+    let blocked = thread::spawn(move || {
+        blocked_registry
+            .dispatch(&create_request("products", "title"))
+            .expect("blocked products create")
+    });
+
+    // Give the products transition time to enter the native lifecycle-lock
+    // retry loop. A daemon-wide registry mutex would now stall every target.
+    thread::sleep(std::time::Duration::from_millis(100));
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let independent_registry = registry.clone();
+    let independent = thread::spawn(move || {
+        let response = independent_registry
+            .dispatch(&create_request("articles", "body"))
+            .expect("independent articles create");
+        sender.send(response).expect("send independent response");
+    });
+    let articles = receiver
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("unrelated target lifecycle must not wait for products");
+    assert_lifecycle(
+        &articles,
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+
+    assert_eq!(
+        unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_UN) },
+        0,
+        "release external lifecycle lock"
+    );
+    assert_lifecycle(
+        &blocked.join().expect("join blocked creator"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    independent.join().expect("join independent creator");
     registry.close_all().expect("close registry");
 }
 
