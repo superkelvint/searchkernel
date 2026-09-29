@@ -99,10 +99,7 @@ impl IndexRegistry {
         })
     }
 
-    fn transition_lock(
-        &self,
-        target: &str,
-    ) -> Result<Arc<Mutex<()>>, RegistryDispatchError> {
+    fn transition_lock(&self, target: &str) -> Result<Arc<Mutex<()>>, RegistryDispatchError> {
         let mut locks = self
             .transition_locks
             .lock()
