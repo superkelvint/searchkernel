@@ -25,6 +25,63 @@ class ResultResponseSchemaTest(unittest.TestCase):
             MODULE.verify(schema),
         )
 
+    def test_classified_field_must_be_populated_by_its_scenario(self) -> None:
+        envelope = {
+            "payload": {
+                "root": {
+                    "node_type": "ResultGroup",
+                    "node": {
+                        "id": "root",
+                        "label": "Root",
+                        "value": {},
+                        "fields": [],
+                        "children": [
+                            {
+                                "node_type": "Hit",
+                                "node": {
+                                    field: object()
+                                    for field in MODULE.CLASSIFIED_FIELDS["Hit"]
+                                    if field != "highlights"
+                                },
+                            }
+                        ],
+                        "continuations": [],
+                        "source": "source",
+                        "types": [],
+                        "relevance": {},
+                        "limits": {},
+                        "metadata": [],
+                    },
+                },
+                "total_hits": {},
+                "coverage": {},
+                "timing": {},
+                "errors": [],
+                "trace": {},
+                "metadata": [],
+            }
+        }
+        errors = MODULE.verify_fixture_coverage({"canonical": envelope})
+        self.assertIn(
+            "Hit.highlights is not populated by scenario canonical",
+            errors,
+        )
+
+    def test_trace_shape_requires_every_classified_field(self) -> None:
+        trace = {
+            field: None for field in MODULE.CLASSIFIED_FIELDS["SearchResult"]
+        }
+        trace["root"] = {
+            "kind": "hit",
+            **{
+                field: None
+                for field in MODULE.CLASSIFIED_FIELDS["Hit"]
+                if field != "sort_values"
+            },
+        }
+        errors = MODULE.trace_shape_errors(trace)
+        self.assertTrue(any("sort_values" in error for error in errors))
+
 
 if __name__ == "__main__":
     unittest.main()
