@@ -4452,7 +4452,7 @@ public:
                 failpoint("attribute_mutation_after_native_call");
                 failpoint("mutation_after_native_call");
                 if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
-                        wait_for_source_state(id, true, update.fields, false);
+                wait_for_source_state(id, true, update.fields, false);
                 wait_for_search_publication();
                 return;
             }
