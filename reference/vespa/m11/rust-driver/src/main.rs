@@ -8,9 +8,10 @@ use searchkernel_ir::{
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_vespa_engine::{
     hardening::{self, Action},
-    ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue,
-    GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan, Query, RankProfile,
-    ScalarValue, Schema, SearchRequest, SortField, SortOrder, SummaryRequest,
+    ConfigCompiler, DistanceMetric, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType,
+    FieldValue, GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan,
+    HnswIndexConfig, NearestNeighborOptions, Query, RankProfile, ScalarValue, Schema, SearchRequest,
+    SortField, SortOrder, SummaryRequest, TensorValue,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -143,6 +144,377 @@ fn term_search_ids(engine: &Engine, field: &str, term: &str) -> AnyResult<Vec<St
         .into_iter()
         .map(|hit| hit.document_id)
         .collect())
+}
+
+const PUBLICATION_GATE: &str = "matcher_publication_before_feedview_force_commit";
+
+struct BlockingFailpointGuard {
+    engine: Arc<Engine>,
+    name: &'static str,
+    released: bool,
+}
+
+impl BlockingFailpointGuard {
+    fn new(engine: &Arc<Engine>, name: &'static str) -> Self {
+        Self {
+            engine: Arc::clone(engine),
+            name,
+            released: false,
+        }
+    }
+
+    fn release(&mut self) -> AnyResult<()> {
+        if !self.released {
+            hardening::release(&self.engine, self.name)?;
+            self.released = true;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for BlockingFailpointGuard {
+    fn drop(&mut self) {
+        if !self.released {
+            let _ = hardening::release(&self.engine, self.name);
+        }
+    }
+}
+
+fn wait_for_blocked_failpoint(engine: &Engine, name: &str) -> AnyResult<()> {
+    for _ in 0..1000 {
+        if hardening::is_blocked(engine, name)? {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    Err(format!("failpoint {name} did not block").into())
+}
+
+fn wait_for_scalar_field(
+    engine: &Engine,
+    id: &str,
+    field: &str,
+    expected: Option<ScalarValue>,
+) -> AnyResult<()> {
+    for _ in 0..1000 {
+        if scalar_field(engine, id, field)? == expected {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    Err(format!("field {id}.{field} did not reach expected source-visible state").into())
+}
+
+fn tensor_value(values: &[f64]) -> TensorValue {
+    TensorValue::dense("tensor<float>(x[2])", values.to_vec())
+}
+
+fn tensor_field(engine: &Engine, id: &str, field: &str) -> AnyResult<Option<TensorValue>> {
+    let Some(document) = engine.get(id)? else {
+        return Ok(None);
+    };
+    match document.fields().get(field) {
+        Some(FieldValue::Tensor(value)) => Ok(Some(value.clone())),
+        Some(other) => Err(format!("field {field} was not a tensor: {other:?}").into()),
+        None => Ok(None),
+    }
+}
+
+fn nearest_neighbor_ids(engine: &Engine, query: TensorValue) -> AnyResult<Vec<String>> {
+    let options = NearestNeighborOptions {
+        target_num_hits: 2,
+        approximate: true,
+        distance_threshold: None,
+        explore_additional_hits: 4,
+    };
+    Ok(engine
+        .search(
+            SearchRequest::new(Query::NearestNeighborWithOptions {
+                document_field: "embedding".to_owned(),
+                query_tensor: "query_embedding".to_owned(),
+                options,
+            })
+            .rank_profile("semantic")
+            .query_tensor("query_embedding", query)
+            .limit(2),
+        )?
+        .hits
+        .into_iter()
+        .map(|hit| hit.document_id)
+        .collect())
+}
+
+fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
+    // New indexed PUT: source/GET may publish before the matcher generation,
+    // but mutation success must remain fenced until the real forceCommit completes.
+    hardening::set(engine, PUBLICATION_GATE, 1, Action::Block)?;
+    let put_engine = Arc::clone(engine);
+    let put_thread = thread::spawn(move || {
+        put_engine.put(
+            Document::new("publication-gated-put")
+                .field("title", "gatedputmarker")
+                .field("qty", 61),
+        )
+    });
+    wait_for_blocked_failpoint(engine, PUBLICATION_GATE)?;
+    let mut gate = BlockingFailpointGuard::new(engine, PUBLICATION_GATE);
+    wait_for_scalar_field(
+        engine,
+        "publication-gated-put",
+        "qty",
+        Some(ScalarValue::Integer(61)),
+    )?;
+    if term_search_ids(engine, "title", "gatedputmarker")?
+        .iter()
+        .any(|id| id == "publication-gated-put")
+    {
+        return Err("indexed PUT became searchable while publication was held".into());
+    }
+    if put_thread.is_finished() {
+        put_thread
+            .join()
+            .map_err(|_| "gated indexed PUT panicked")??;
+        return Err("indexed PUT returned while matcher publication was held".into());
+    }
+    gate.release()?;
+    put_thread
+        .join()
+        .map_err(|_| "gated indexed PUT panicked")??;
+    if !term_search_ids(engine, "title", "gatedputmarker")?
+        .iter()
+        .any(|id| id == "publication-gated-put")
+    {
+        return Err("indexed PUT returned before matcher publication completed".into());
+    }
+
+    // UPSERT A -> B: GET must expose B while the held matcher still exposes A,
+    // and the public mutation may not return until B is committed to matching.
+    engine.put(
+        Document::new("publication-gated-upsert")
+            .field("title", "gatedupsertold")
+            .field("qty", 71),
+    )?;
+    hardening::set(engine, PUBLICATION_GATE, 1, Action::Block)?;
+    let upsert_engine = Arc::clone(engine);
+    let upsert_thread = thread::spawn(move || {
+        upsert_engine.put(
+            Document::new("publication-gated-upsert")
+                .field("title", "gatedupsertnew")
+                .field("qty", 72),
+        )
+    });
+    wait_for_blocked_failpoint(engine, PUBLICATION_GATE)?;
+    let mut gate = BlockingFailpointGuard::new(engine, PUBLICATION_GATE);
+    wait_for_scalar_field(
+        engine,
+        "publication-gated-upsert",
+        "qty",
+        Some(ScalarValue::Integer(72)),
+    )?;
+    if !term_search_ids(engine, "title", "gatedupsertold")?
+        .iter()
+        .any(|id| id == "publication-gated-upsert")
+        || term_search_ids(engine, "title", "gatedupsertnew")?
+            .iter()
+            .any(|id| id == "publication-gated-upsert")
+    {
+        return Err("UPSERT did not preserve the old matcher generation while publication was held".into());
+    }
+    if upsert_thread.is_finished() {
+        upsert_thread
+            .join()
+            .map_err(|_| "gated UPSERT panicked")??;
+        return Err("UPSERT returned while matcher publication was held".into());
+    }
+    gate.release()?;
+    upsert_thread
+        .join()
+        .map_err(|_| "gated UPSERT panicked")??;
+    if term_search_ids(engine, "title", "gatedupsertold")?
+        .iter()
+        .any(|id| id == "publication-gated-upsert")
+        || !term_search_ids(engine, "title", "gatedupsertnew")?
+            .iter()
+            .any(|id| id == "publication-gated-upsert")
+    {
+        return Err("UPSERT returned before matcher replacement B was published".into());
+    }
+
+    // Indexed UPDATE A -> B uses the update path rather than replacement PUT.
+    engine.put(
+        Document::new("publication-gated-update")
+            .field("title", "gatedupdateold")
+            .field("qty", 81),
+    )?;
+    hardening::set(engine, PUBLICATION_GATE, 1, Action::Block)?;
+    let update_engine = Arc::clone(engine);
+    let update_thread = thread::spawn(move || {
+        update_engine.update(
+            DocumentUpdate::new("publication-gated-update").assign("title", "gatedupdatenew"),
+        )
+    });
+    wait_for_blocked_failpoint(engine, PUBLICATION_GATE)?;
+    let mut gate = BlockingFailpointGuard::new(engine, PUBLICATION_GATE);
+    wait_for_scalar_field(
+        engine,
+        "publication-gated-update",
+        "title",
+        Some(ScalarValue::String("gatedupdatenew".to_owned())),
+    )?;
+    if !term_search_ids(engine, "title", "gatedupdateold")?
+        .iter()
+        .any(|id| id == "publication-gated-update")
+        || term_search_ids(engine, "title", "gatedupdatenew")?
+            .iter()
+            .any(|id| id == "publication-gated-update")
+    {
+        return Err("indexed UPDATE did not hold the pre-update matcher generation".into());
+    }
+    if update_thread.is_finished() {
+        update_thread
+            .join()
+            .map_err(|_| "gated indexed UPDATE panicked")??;
+        return Err("indexed UPDATE returned while matcher publication was held".into());
+    }
+    gate.release()?;
+    update_thread
+        .join()
+        .map_err(|_| "gated indexed UPDATE panicked")??;
+    if term_search_ids(engine, "title", "gatedupdateold")?
+        .iter()
+        .any(|id| id == "publication-gated-update")
+        || !term_search_ids(engine, "title", "gatedupdatenew")?
+            .iter()
+            .any(|id| id == "publication-gated-update")
+    {
+        return Err("indexed UPDATE returned before matcher replacement B was published".into());
+    }
+
+    // DELETE: source/GET may disappear first, while the committed matcher still
+    // contains the document. Mutation success must fence the removal generation.
+    engine.put(
+        Document::new("publication-gated-delete")
+            .field("title", "gateddeletemarker")
+            .field("qty", 91),
+    )?;
+    hardening::set(engine, PUBLICATION_GATE, 1, Action::Block)?;
+    let delete_engine = Arc::clone(engine);
+    let delete_thread = thread::spawn(move || delete_engine.delete("publication-gated-delete"));
+    wait_for_blocked_failpoint(engine, PUBLICATION_GATE)?;
+    let mut gate = BlockingFailpointGuard::new(engine, PUBLICATION_GATE);
+    for _ in 0..1000 {
+        if engine.get("publication-gated-delete")?.is_none() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    if engine.get("publication-gated-delete")?.is_some() {
+        return Err("DELETE source state did not become absent while publication was held".into());
+    }
+    if !term_search_ids(engine, "title", "gateddeletemarker")?
+        .iter()
+        .any(|id| id == "publication-gated-delete")
+    {
+        return Err("DELETE matcher state disappeared before the held publication completed".into());
+    }
+    if delete_thread.is_finished() {
+        let deleted = delete_thread
+            .join()
+            .map_err(|_| "gated DELETE panicked")??;
+        if !deleted {
+            return Err("gated DELETE did not find the document".into());
+        }
+        return Err("DELETE returned while matcher publication was held".into());
+    }
+    gate.release()?;
+    let deleted = delete_thread
+        .join()
+        .map_err(|_| "gated DELETE panicked")??;
+    if !deleted {
+        return Err("gated DELETE did not find the document".into());
+    }
+    if term_search_ids(engine, "title", "gateddeletemarker")?
+        .iter()
+        .any(|id| id == "publication-gated-delete")
+    {
+        return Err("DELETE returned before matcher removal was published".into());
+    }
+
+    Ok(())
+}
+
+fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()> {
+    let tensor_config = config.join("publication-tensor-config");
+    let tensor_data = data.join("publication-tensor-data");
+    let tensor_type = "tensor<float>(x[2])".to_owned();
+    let tensor_schema = Schema::new("publicationtensor")
+        .field(
+            Field::new("embedding", FieldType::Tensor(tensor_type.clone()))
+                .attribute()
+                .distance_metric(DistanceMetric::Euclidean)
+                .hnsw(
+                    HnswIndexConfig::new()
+                        .max_links_per_node(4)
+                        .neighbors_to_explore_at_insert(16),
+                ),
+        )
+        .rank_profile(
+            RankProfile::new("semantic")
+                .first_phase("closeness(embedding)")
+                .query_input("query_embedding", tensor_type),
+        );
+    ConfigCompiler.compile_to(&tensor_schema, &tensor_config)?;
+    fs::create_dir_all(&tensor_data)?;
+    let engine = Arc::new(Engine::open(&tensor_data, &tensor_config)?);
+    let id_a = "id:ns:publicationtensor::a";
+    let id_b = "id:ns:publicationtensor::b";
+    engine.put(Document::new(id_a).field("embedding", tensor_value(&[1.0, 0.0])))?;
+    engine.put(Document::new(id_b).field("embedding", tensor_value(&[0.0, 1.0])))?;
+    let query = tensor_value(&[1.0, 0.0]);
+    let before = nearest_neighbor_ids(&engine, query.clone())?;
+    if before.first().map(String::as_str) != Some(id_a) {
+        return Err("HNSW publication fixture did not initially rank tensor A first".into());
+    }
+
+    hardening::set(&engine, PUBLICATION_GATE, 1, Action::Block)?;
+    let update_engine = Arc::clone(&engine);
+    let update_thread = thread::spawn(move || {
+        update_engine.update(
+            DocumentUpdate::new(id_a).assign("embedding", tensor_value(&[0.0, 2.0])),
+        )
+    });
+    wait_for_blocked_failpoint(&engine, PUBLICATION_GATE)?;
+    let mut gate = BlockingFailpointGuard::new(&engine, PUBLICATION_GATE);
+    let expected = tensor_value(&[0.0, 2.0]);
+    for _ in 0..1000 {
+        if tensor_field(&engine, id_a, "embedding")? == Some(expected.clone()) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    if tensor_field(&engine, id_a, "embedding")? != Some(expected) {
+        return Err("tensor UPDATE did not become GET-visible while HNSW publication was held".into());
+    }
+    let stale = nearest_neighbor_ids(&engine, query.clone())?;
+    if stale.first().map(String::as_str) != Some(id_a) {
+        return Err("HNSW matcher changed before the held tensor publication completed".into());
+    }
+    if update_thread.is_finished() {
+        update_thread
+            .join()
+            .map_err(|_| "gated tensor UPDATE panicked")??;
+        return Err("tensor UPDATE returned while HNSW publication was held".into());
+    }
+    gate.release()?;
+    update_thread
+        .join()
+        .map_err(|_| "gated tensor UPDATE panicked")??;
+    let after = nearest_neighbor_ids(&engine, query)?;
+    if after.first().map(String::as_str) != Some(id_b) {
+        return Err("tensor UPDATE returned before immediate HNSW search reflected replacement B".into());
+    }
+    engine.close()?;
+    Ok(())
 }
 
 fn advanced_direct(config: &Path, data: &Path) -> AnyResult<()> {
@@ -668,85 +1040,9 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         panic!("put visibility barrier returned before searchable state");
     }
 
-    // Gate the real ready FeedView's forceCommit before delegating to Vespa.
-    // FeedHandler's automatic commit and Search Kernel's explicit fence both
-    // pass through this hardening-only forwarding view. The source document is
-    // therefore allowed to become visible while the matcher keeps its old
-    // committed generation.
-    put_publication_fixture(&engine, "publication-old", 18)?;
-    if !term_search_ids(&engine, "title", "publication-old")?.contains(&"publication".to_owned()) {
-        return Err("publication fixture was not initially searchable".into());
-    }
-    hardening::set(
-        &engine,
-        "matcher_publication_before_feedview_force_commit",
-        1,
-        Action::Block,
-    )?;
-    let publication_engine = Arc::clone(&engine);
-    let publication_put =
-        thread::spawn(move || put_publication_fixture(&publication_engine, "publication-new", 19));
-    for _ in 0..100 {
-        if hardening::is_blocked(&engine, "matcher_publication_before_feedview_force_commit")? {
-            break;
-        }
-        if publication_put.is_finished() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(1));
-    }
-    if !hardening::is_blocked(&engine, "matcher_publication_before_feedview_force_commit")? {
-        let result = publication_put
-            .join()
-            .map_err(|_| "publication put panicked")?;
-        result?;
-        panic!("Vespa automatic feed commit did not reach the publication gate");
-    }
-    let mut source_visible = false;
-    for _ in 0..1000 {
-        if scalar_field(&engine, "publication", "qty")? == Some(ScalarValue::Integer(19)) {
-            source_visible = true;
-            break;
-        }
-        thread::sleep(Duration::from_millis(1));
-    }
-    if !source_visible {
-        hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
-        let _ = publication_put.join();
-        return Err("publication gate did not preserve source/GET visibility".into());
-    }
-    if term_search_ids(&engine, "title", "publication-old")?.is_empty()
-        || !term_search_ids(&engine, "title", "publication-new")?.is_empty()
-    {
-        hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
-        let _ = publication_put.join();
-        return Err("matcher-visible state changed while Vespa publication was held".into());
-    }
-    if publication_put.is_finished() {
-        let mutation_result = publication_put
-            .join()
-            .map_err(|_| "publication put panicked")?;
-        mutation_result?;
-        let immediate_old = term_search_ids(&engine, "title", "publication-old")?;
-        let immediate_new = term_search_ids(&engine, "title", "publication-new")?;
-        if immediate_old.contains(&"publication".to_owned()) && immediate_new.is_empty() {
-            return Err(
-                "mutation returned while matcher publication was held; immediate search still saw the old generation"
-                    .into(),
-            );
-        }
-        hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
-        return Err("mutation returned while matcher-visible publication was held".into());
-    }
-    hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
-    publication_put
-        .join()
-        .map_err(|_| "publication put panicked")??;
-    if !term_search_ids(&engine, "title", "publication-new")?.contains(&"publication".to_owned())
-        || !term_search_ids(&engine, "title", "publication-old")?.is_empty()
-    {
-        panic!("mutation returned before current matcher-visible state was published");
-    }
+    // Deterministically force source/GET-visible but matcher-unpublished state
+    // across every indexed mutation family in #858's closure matrix.
+    run_indexed_publication_regressions(&engine)?;
 
     // Waiting for force-commit completion must happen on the caller, not on
     // Vespa's master executor. Hold one caller immediately after it initiates
@@ -820,6 +1116,9 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     overlap_a
         .join()
         .map_err(|_| "publication overlap A panicked")??;
+
+    // HNSW/tensor publication has its own real-engine adverse-ordering proof.
+    run_tensor_publication_regression(config, data)?;
 
     // Freeze the public read-after-write/search-after-write completion
     // contract across the non-tensor mutation families. Tensor/HNSW publication
