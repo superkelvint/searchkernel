@@ -3,6 +3,9 @@ from pathlib import Path
 from searchkernel.ergonomic import SearchBuilder
 from searchkernel.client import value
 from searchkernel.protocol import pack_object
+from SearchKernel.V2.UInt64Value import UInt64ValueT
+from SearchKernel.V2.Value import ValueT
+from SearchKernel.V2.ValueKind import ValueKind
 class CaptureClient:
     def search(self, request):
         self.request = request
@@ -29,9 +32,9 @@ class SemanticParity(unittest.TestCase):
         for scenario in data['scenarios']:
             i=scenario['intent']; idx=CaptureIndex(); b=SearchBuilder(idx,None if i['kind']=='browse' else i.get('query'))
             if 'filter' in i:
-                bindings={k:(int(v['int64']) if 'int64' in v else int(v['uint64']) if 'uint64' in v else v['string'] if 'string' in v else v['float64']) for k,v in i['filter']['bindings'].items()}; b.filter(i['filter']['source'],bindings)
+                bindings={k:(int(v['int64']) if 'int64' in v else ValueT(kindType=ValueKind.UInt64Value, kind=UInt64ValueT(value=int(v['uint64']))) if 'uint64' in v else v['string'] if 'string' in v else v['float64']) for k,v in i['filter']['bindings'].items()}; b.filter(i['filter']['source'],bindings)
             if 'ranking' in i: b.ranking(i['ranking'])
-            for k,v in i.get('inputs',{}).items(): b.input(k,int(v['int64']) if 'int64' in v else int(v['uint64']))
+            for k,v in i.get('inputs',{}).items(): b.input(k,int(v['int64']) if 'int64' in v else ValueT(kindType=ValueKind.UInt64Value, kind=UInt64ValueT(value=int(v['uint64']))))
             for k,v in i.get('rank_properties',{}).items(): b.rank_property(k,v)
             if 'limit' in i: b.limit(i['limit'])
             if 'offset' in i: b.offset(i['offset'])
