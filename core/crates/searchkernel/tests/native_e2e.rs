@@ -315,7 +315,7 @@ fn native_product_path_has_current_search_and_facet_parity() {
         .expect("native empty projection");
     assert_eq!(empty_projection.total_hits.value, 6);
     assert_eq!(empty_projection.hits.len(), 1);
-    assert_eq!(empty_projection.hits[0].document, json!({}));
+    assert_eq!(empty_projection.hits[0].document, Some(json!({})));
 
     let brands_present = index
         .browse()
@@ -353,7 +353,7 @@ fn native_product_path_has_current_search_and_facet_parity() {
     assert_eq!(paged.hits[1].id.as_str(), "d2");
     assert!(paged.hits.iter().all(|hit| hit.score.is_some()));
     assert_eq!(
-        paged.hits[0].document,
+        paged.hits[0].document.as_ref().unwrap(),
         json!({"title": "Wireless Keyboard", "brand": "Charlie"})
     );
 
@@ -380,7 +380,7 @@ fn native_product_path_has_current_search_and_facet_parity() {
         .execute::<serde_json::Value>()
         .expect("native Vespa highlighting");
     assert!(highlighted.hits.iter().any(|hit| {
-        hit.document == json!({"brand": "Charlie"})
+        hit.document.as_ref() == Some(&json!({"brand": "Charlie"}))
             && hit.highlights.iter().any(|highlight| {
                 highlight.field == "title"
                     && highlight.fragments[0]

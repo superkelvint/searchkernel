@@ -11,8 +11,6 @@ use crate::schema::{
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
 };
-#[cfg(all(test, feature = "native"))]
-use searchkernel_ir::api;
 use searchkernel_ir::{Backend, BackendSession, IndexContext};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -36,14 +34,11 @@ use native::{
 };
 
 #[cfg(test)]
-#[path = "../api_tests.rs"]
+#[path = "../api_tests/mod.rs"]
 mod api_tests;
 #[cfg(test)]
 #[path = "model_state_machine_tests.rs"]
 mod model_state_machine_tests;
-#[cfg(all(test, feature = "native"))]
-#[path = "../tests.rs"]
-mod tests;
 
 struct IndexInner {
     context: Arc<IndexContext>,

@@ -48,6 +48,24 @@ class ResultResponseRunnerTest(unittest.TestCase):
                 validate_shapes=False,
             )
 
+    def test_empty_map_becoming_empty_list_fails_comparison(self):
+        _, traces = self.fixtures()
+        expected = {"kind": "group", "fields": {}, "metadata": {}}
+        for language in traces:
+            traces[language]["case-a"] = expected.copy()
+        traces["php"]["case-a"] = {"kind": "group", "fields": [], "metadata": {}}
+        with self.assertRaisesRegex(SystemExit, "normalized result trace mismatch: case-a \\(php\\)"):
+            MODULE.compare(traces, [{"id": "case-a"}, {"id": "case-b"}], validate_shapes=False)
+
+    def test_integer_precision_loss_fails_comparison(self):
+        _, traces = self.fixtures()
+        maximum = 2**64 - 1
+        for language in traces:
+            traces[language]["case-a"] = {"value": maximum}
+        traces["typescript"]["case-a"] = {"value": float(maximum)}
+        with self.assertRaisesRegex(SystemExit, "normalized result trace mismatch: case-a \\(typescript\\)"):
+            MODULE.compare(traces, [{"id": "case-a"}, {"id": "case-b"}], validate_shapes=False)
+
     def test_malformed_bridge_stage_is_distinguished_from_client_rejection(self):
         languages = ("rust", "python", "typescript", "php", "ruby")
         outputs = {

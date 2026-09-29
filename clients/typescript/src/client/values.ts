@@ -199,13 +199,18 @@ function requirePayload<T>(
   return input.kind;
 }
 
-function valueObjectEntries(fields: readonly ValueEntryT[]): Record<string, unknown> {
+export function decodeValueEntries(
+  fields: readonly (ValueEntryT | null)[] | null | undefined,
+  label = "value object",
+): Record<string, unknown> {
   const decoded: Record<string, unknown> = {};
   const seen = new Set<string>();
-  for (const entry of fields) {
+  for (const entry of fields ?? []) {
+    if (entry === null) throw new ValueDecodeError(`malformed ${label} entry`);
     const key = portableText(entry.key);
-    if (key === null) throw new ValueDecodeError("value object entry has no key");
-    if (seen.has(key)) throw new ValueDecodeError(`duplicate value object key: ${key}`);
+    if (key === null) throw new ValueDecodeError(`${label} entry has no key`);
+    if (seen.has(key)) throw new ValueDecodeError(`duplicate ${label} key: ${key}`);
+    if (entry.value === null) throw new ValueDecodeError(`${label} entry has no Value payload: ${key}`);
     seen.add(key);
     decoded[key] = fromValue(entry.value);
   }
@@ -255,7 +260,7 @@ export function fromValue(input: ValueT | null): unknown {
     case ValueKind.ValueList:
       return requirePayload(input, ValueListT, "list").values.map(fromValue);
     case ValueKind.ValueObject:
-      return valueObjectEntries(requirePayload(input, ValueObjectT, "object").fields);
+      return decodeValueEntries(requirePayload(input, ValueObjectT, "object").fields);
     case ValueKind.TensorValue: {
       const tensor = requirePayload(input, TensorValueT, "tensor");
       const typeSpec = portableText(tensor.typeSpec);

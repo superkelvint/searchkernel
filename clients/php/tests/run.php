@@ -278,6 +278,44 @@ foreach ($malformedFacadeCases as [$resultType, $operation, $payload]) {
     );
 }
 
+$getFieldCases = [
+    'duplicate key' => [
+        ['key' => 'same', 'value' => Protocol::value(1)],
+        ['key' => 'same', 'value' => Protocol::value(2)],
+    ],
+    'null entry' => [null],
+    'missing key' => [['value' => Protocol::value(1)]],
+    'missing value' => [['key' => 'missing']],
+];
+foreach ($getFieldCases as $label => $fields) {
+    $malformedGet = new Index(new FixedResponseTransport([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_GetResult',
+        'payload' => ['document' => ['id' => 'doc-1', 'fields' => $fields]],
+    ]));
+    throws(
+        ProtocolException::class,
+        static fn () => $malformedGet->get('doc-1'),
+        'GET rejects malformed semantic map: ' . $label,
+    );
+}
+$validGet = new Index(new FixedResponseTransport([
+    'protocol_version' => 2,
+    'payload_type' => 'SearchKernel_V2_GetResult',
+    'payload' => ['document' => [
+        'id' => 'doc-1',
+        'fields' => [
+            ['key' => 'nothing', 'value' => Protocol::value(null)],
+            ['key' => 'count', 'value' => Protocol::value(3)],
+        ],
+    ]],
+]));
+same(
+    ['nothing' => null, 'count' => 3, '_id' => 'doc-1'],
+    $validGet->get('doc-1'),
+    'GET preserves explicit canonical null and valid semantic-map values',
+);
+
 $transport = new RecordingTransport();
 $index = new Index($transport);
 
@@ -376,6 +414,12 @@ throws(
 // --------------------------------------------------------------------------
 // Search request facade and canonical namespaces.
 // --------------------------------------------------------------------------
+
+throws(
+    ArgumentCountError::class,
+    static fn () => $index->search('fox')->sort('price'),
+    'field sort direction is required',
+);
 
 $request = $index
     ->search('brown fox')
@@ -784,6 +828,12 @@ throws(
 $encodedEmptyObject = Protocol::value(ValueObject::fromPairs([]));
 same('ValueObject', $encodedEmptyObject['kind_type'], 'empty object is distinct from empty list');
 same([], $encodedEmptyObject['kind']['fields'], 'empty object encodes with an empty field vector');
+$decodedEmptyObject = Protocol::decodeValue($encodedEmptyObject);
+truth($decodedEmptyObject instanceof ValueObject, 'decoded ValueObject retains its object type when empty');
+same([], $decodedEmptyObject->entries, 'empty decoded ValueObject has no entries');
+$decodedEmptyList = Protocol::decodeValue(['kind_type' => 'ValueList', 'kind' => ['values' => []]]);
+same([], $decodedEmptyList, 'decoded empty ValueList remains a PHP list');
+truth(!$decodedEmptyList instanceof ValueObject, 'decoded empty ValueList stays distinct from ValueObject');
 
 $encodedNumericKeyObject = Protocol::value(ValueObject::fromPairs([
     ['key' => '0', 'value' => 'zero'],

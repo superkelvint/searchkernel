@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Hit, ResultGroup, SearchResults } from "../src/client/results.js";
+import { Hit, ResultDecodeError, ResultGroup, SearchResults } from "../src/client/results.js";
 import { uint64, value } from "../src/client/values.js";
 import { CoverageDegradedT } from "../src/generated/flatbuffers/search-kernel/v2/coverage-degraded.js";
 import { CoverageT } from "../src/generated/flatbuffers/search-kernel/v2/coverage.js";
@@ -133,6 +133,25 @@ it("rejects duplicate semantic-map keys in result fields", () => {
   );
   const root = new ResultGroupT(null, null, null, [], [new ResultNodeT(ResultNodeKind.Hit, malformed)]);
   expect(() => new SearchResults(new SearchResultT(node(root)))).toThrow(/duplicate result map key/);
+});
+
+it("rejects malformed result semantic-map entries and missing Value payloads", () => {
+  const cases = [
+    [null as unknown as ValueEntryT],
+    [new ValueEntryT("missing", null)],
+  ];
+
+  for (const fields of cases) {
+    const malformed = new HitT("doc-1", null, fields);
+    const root = new ResultGroupT(
+      null,
+      null,
+      null,
+      [],
+      [new ResultNodeT(ResultNodeKind.Hit, malformed)],
+    );
+    expect(() => new SearchResults(new SearchResultT(node(root)))).toThrow(ResultDecodeError);
+  }
 });
 
 

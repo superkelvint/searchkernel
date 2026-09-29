@@ -792,7 +792,7 @@ class SearchBuilder:
         self._paged = False
 
     def filter(self, source, bindings=None): self._filters.append((source, dict(bindings or {}))); return self
-    def sort(self, field, direction="asc"):
+    def sort(self, field, direction):
         if direction not in {"asc", "desc"}: raise ValueError("sort direction must be 'asc' or 'desc'")
         self._sort.append(SortExprT(target=SortTargetT(targetType=SortTargetKind.FieldSortTarget, target=FieldSortTargetT(field=field)), direction=SortDirection.Asc if direction == "asc" else SortDirection.Desc)); return self
     def fields(self, *fields): self._fields = list(fields); return self

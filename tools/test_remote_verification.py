@@ -206,17 +206,27 @@ class RemoteVerificationClientTest(unittest.TestCase):
 
     def test_remote_runner_uses_job_private_writable_cargo_state(self):
         text = RUNNER.read_text(encoding="utf-8")
+        ownership = (ROOT / "tools" / "ci-runtime-ownership.sh").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}', text)
+        self.assertIn('invocation_id="$(id -u)-$$-${RANDOM}"', text)
         self.assertIn(
-            'target_volume="searchkernel-ci-target-$(id -u)-$$-${RANDOM}"',
+            'target_volume="searchkernel-ci-target-$invocation_id"',
             text,
         )
         self.assertIn(
-            'cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$$-${RANDOM}"',
+            'cargo_registry_volume="searchkernel-ci-cargo-registry-$invocation_id"',
             text,
         )
-        self.assertIn('io.searchkernel.cache-kind=job-target', text)
-        self.assertIn('io.searchkernel.cache-kind=job-cargo-registry', text)
+        self.assertIn(
+            'ci_runtime_create_volume "$target_volume" job-target', text
+        )
+        self.assertIn(
+            'ci_runtime_create_volume "$cargo_registry_volume" job-cargo-registry',
+            text,
+        )
+        self.assertIn('--label "io.searchkernel.cache-kind=$kind"', ownership)
         self.assertIn('docker volume rm -f "$target_volume"', text)
         self.assertIn('docker volume rm -f "$cargo_registry_volume"', text)
         self.assertIn(

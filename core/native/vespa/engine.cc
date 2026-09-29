@@ -614,6 +614,11 @@ class EmbeddedEngine {
     const unsigned int _tls_port;
     TransLogServer _tls;
     proton::matching::QueryLimiter _query_limiter;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    // Declared before _db so the DocumentDB is destroyed before its active
+    // hardening-only forwarding view.
+    std::shared_ptr<PublicationGateFeedView> _hardening_feed_view;
+#endif
     DocumentDB::SP _db;
     // Non-owning while _db owns the config store. DocumentDB performs the
     // normal snapshot pruning before it closes the store.
@@ -1872,6 +1877,59 @@ class EmbeddedEngine {
         }
     }
 
+    void wait_for_search_publication() {
+        // Source/document-retriever visibility is not the same thing as the
+        // generation consumed by matching. Initiate the canonical feed-view
+        // force-commit on Vespa's master write thread, but never wait for its
+        // completion there. The caller waits on the completion callback so the
+        // master executor remains available to concurrent feed operations.
+        //
+        // Sample the serial on the master thread immediately before initiating
+        // the commit. This defines the fence by master ordering: it covers this
+        // mutation and any feed operations already processed ahead of the fence,
+        // but does not make the caller wait for operations still queued behind it.
+        failpoint("mutation_before_search_publication_wait");
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) {
+            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        }
+        auto feed_view = ready_sub_db->getFeedView();
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        // The hardening view forwards to this same real Vespa view and also
+        // gates FeedHandler's independently scheduled automatic forceCommit.
+        // Using it here makes the regression control both publication paths.
+        if (_hardening_feed_view) feed_view = _hardening_feed_view;
+#endif
+        if (!feed_view) {
+            throw std::runtime_error("Vespa DocumentDB has no ready feed view");
+        }
+
+        vespalib::Gate gate;
+        std::exception_ptr failure;
+        auto on_done = std::make_shared<vespalib::GateCallback>(gate);
+        _db->getWriteService().blocking_master_execute(
+            vespalib::makeLambdaTask(
+                [this, feed_view = std::move(feed_view), on_done, &failure]() mutable {
+                    try {
+                        const auto serial = _db->getFeedHandler().getSerialNum();
+                        feed_view->forceCommit(
+                            search::CommitParam(serial, search::CommitParam::UpdateStats::SKIP),
+                            on_done);
+                    } catch (...) {
+                        failure = std::current_exception();
+                    }
+                }));
+        // The lambda and this local reference are the only non-Vespa owners.
+        // Dropping our copy makes GateCallback completion track only commit work.
+        on_done.reset();
+        if (failure) {
+            gate.await();
+            std::rethrow_exception(failure);
+        }
+        failpoint("mutation_after_search_publication_start");
+        gate.await();
+    }
+
     void wait_for_source_state(
         const DocumentId &id, bool expected_present,
         const std::vector<std::pair<std::string, std::optional<OwnedValue>>> &expected_fields,
@@ -2984,6 +3042,30 @@ public:
     void release_failpoint(const char *name) { _failpoints->release(name); }
 
     bool failpoint_is_blocked(const char *name) const { return _failpoints->is_blocked(name); }
+
+    void install_hardening_feed_view() {
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) {
+            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        }
+        auto feed_view = ready_sub_db->getFeedView();
+        if (!feed_view) {
+            throw std::runtime_error("Vespa DocumentDB has no ready feed view");
+        }
+        _hardening_feed_view = std::make_shared<PublicationGateFeedView>(
+            std::move(feed_view), _failpoints);
+
+        // FeedHandler owns a non-owning active-view pointer and updates its
+        // document repo from that view, so install on Vespa's master executor
+        // and retain the forwarding view for the DocumentDB's full lifetime.
+        vespalib::Gate gate;
+        _db->getWriteService().blocking_master_execute(
+            vespalib::makeLambdaTask([this, &gate]() {
+                _db->getFeedHandler().setActiveFeedView(_hardening_feed_view.get());
+                gate.countDown();
+            }));
+        gate.await();
+    }
 #endif
 
     void initialize(const std::string &data_dir, const std::string &config_dir) {
@@ -3066,6 +3148,9 @@ public:
             _db->waitForOnlineState();
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         }
+#endif
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        install_hardening_feed_view();
 #endif
         const auto replay_serial = _db->getFeedHandler().getSerialNum();
         if (replay_serial == std::numeric_limits<uint64_t>::max()) {
@@ -3252,6 +3337,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(document_id, true, {{field, integer_value(value)}}, true);
+        wait_for_search_publication();
     }
 
     void update(const std::string &id, const std::string &field, int64_t value) {
@@ -3268,6 +3354,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(document_id, was_present, {{field, integer_value(value)}}, false);
+        wait_for_search_publication();
     }
 
     bool remove(const std::string &id) {
@@ -3283,6 +3370,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(document_id, false, {}, false);
+        wait_for_search_publication();
         return result.wasFound();
     }
 
@@ -3406,6 +3494,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(id, true, {{text.field, string_value(text.text)}}, true);
+        wait_for_search_publication();
     }
 
     void update_text(const TextUpdate &text) {
@@ -3421,6 +3510,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(id, was_present, {{text.field, string_value(text.text)}}, false);
+        wait_for_search_publication();
     }
 
     std::vector<TextHit> search_text(const TextRequest &text) const {
@@ -4321,6 +4411,7 @@ public:
         failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
         wait_for_source_state(id, true, expected_fields(document), true);
+        wait_for_search_publication();
     }
 
     void update_attributes(const AttributeUpdateState &update) {
@@ -4333,6 +4424,7 @@ public:
         failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
         wait_for_source_state(id, was_present, expected_fields(update), false);
+        wait_for_search_publication();
     }
 
     void put_document(const ValueDocument &document) {
@@ -4359,15 +4451,16 @@ public:
         const bool has_position = std::any_of(
             document.fields.begin(), document.fields.end(),
             [](const auto &field) { return field.value.kind == SK_VALUE_POSITION; });
-        // A successful put is the synchronization point for immediate GET and
-        // search. TensorFieldValue presence is intentionally a valid match in
-        // value_matches(), so tensors must not bypass this publication barrier.
-        // Struct-array/position values retain their presence-only contract.
+        // This source-state wait closes the document-store/retriever window.
+        // Search publication is fenced separately below through Vespa's
+        // force-commit path. TensorFieldValue presence remains a valid source
+        // visibility signal; it is not treated as proof of matcher publication.
         if (has_struct_array || has_position) {
             wait_for_source_state(id, true, {}, true);
         } else {
             wait_for_source_state(id, true, expected_fields(document), true);
         }
+        wait_for_search_publication();
     }
 
     void update_document(const ValueUpdate &update) {
@@ -4398,6 +4491,7 @@ public:
                 failpoint("mutation_after_native_call");
                 if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
                 wait_for_source_state(id, true, update.fields, false);
+                wait_for_search_publication();
                 return;
             }
         }
@@ -4410,6 +4504,7 @@ public:
         failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
         wait_for_source_state(id, was_present || update.create_if_nonexistent, update.fields, false);
+        wait_for_search_publication();
     }
 
     LocalSearchResultState search_local_result(const NativeQueryState &query,

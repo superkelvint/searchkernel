@@ -42,7 +42,7 @@ impl std::error::Error for RegistryInitError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RegistryDispatchError {
-    InvalidRequest(String),
+    InvalidRequest,
     UnsupportedProtocol(u32),
     UnsupportedOperation(u8),
     Closed,
@@ -52,12 +52,7 @@ pub enum RegistryDispatchError {
 impl fmt::Display for RegistryDispatchError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidRequest(detail) => {
-                write!(
-                    formatter,
-                    "invalid Search Kernel request FlatBuffer: {detail}"
-                )
-            }
+            Self::InvalidRequest => write!(formatter, "invalid Search Kernel request FlatBuffer"),
             Self::UnsupportedProtocol(version) => {
                 write!(
                     formatter,
@@ -155,11 +150,7 @@ impl IndexRegistry {
             wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
                 let payload = envelope
                     .payload_as_search_kernel_v2_create_index_request()
-                    .ok_or_else(|| {
-                        RegistryDispatchError::InvalidRequest(
-                            "lifecycle union discriminator does not match payload".to_owned(),
-                        )
-                    })?;
+                    .ok_or(RegistryDispatchError::InvalidRequest)?;
                 let Some(definition) = payload.definition() else {
                     return Ok(encode_error(index_control_error_to_portable(
                         IndexControlError::MissingIndexDefinition,
@@ -170,26 +161,16 @@ impl IndexRegistry {
             wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
                 envelope
                     .payload_as_search_kernel_v2_open_index_request()
-                    .ok_or_else(|| {
-                        RegistryDispatchError::InvalidRequest(
-                            "lifecycle union discriminator does not match payload".to_owned(),
-                        )
-                    })?;
+                    .ok_or(RegistryDispatchError::InvalidRequest)?;
                 self.open(target)
             }
             wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
                 envelope
                     .payload_as_search_kernel_v2_delete_index_request()
-                    .ok_or_else(|| {
-                        RegistryDispatchError::InvalidRequest(
-                            "lifecycle union discriminator does not match payload".to_owned(),
-                        )
-                    })?;
+                    .ok_or(RegistryDispatchError::InvalidRequest)?;
                 self.delete_index(target)
             }
-            wire::RequestPayload::NONE => Err(RegistryDispatchError::InvalidRequest(
-                "request payload discriminator is NONE".to_owned(),
-            )),
+            wire::RequestPayload::NONE => Err(RegistryDispatchError::InvalidRequest),
             _ => self.dispatch_loaded(target, request),
         }
     }
@@ -444,30 +425,15 @@ impl IndexRegistry {
 }
 
 fn parse_request(bytes: &[u8]) -> Result<wire::RequestEnvelope<'_>, RegistryDispatchError> {
-    if bytes.len() < 8 {
-        return Err(RegistryDispatchError::InvalidRequest(format!(
-            "request is too short: {} bytes",
-            bytes.len()
-        )));
+    if bytes.len() < 8 || bytes[4..8] != *REQUEST_IDENTIFIER {
+        return Err(RegistryDispatchError::InvalidRequest);
     }
-    if bytes[4..8] != *REQUEST_IDENTIFIER {
-        return Err(RegistryDispatchError::InvalidRequest(format!(
-            "wrong file identifier: {:?}",
-            &bytes[4..8]
-        )));
-    }
-    root::<wire::RequestEnvelope<'_>>(bytes).map_err(|error| {
-        RegistryDispatchError::InvalidRequest(format!(
-            "request envelope verification failed: {error}"
-        ))
-    })
+    root::<wire::RequestEnvelope<'_>>(bytes).map_err(|_| RegistryDispatchError::InvalidRequest)
 }
 
 fn map_dispatch_error(error: DispatchError) -> RegistryDispatchError {
     match error {
-        DispatchError::InvalidRequest => RegistryDispatchError::InvalidRequest(
-            "per-index dispatcher rejected request".to_owned(),
-        ),
+        DispatchError::InvalidRequest => RegistryDispatchError::InvalidRequest,
         DispatchError::UnsupportedProtocol(version) => {
             RegistryDispatchError::UnsupportedProtocol(version)
         }

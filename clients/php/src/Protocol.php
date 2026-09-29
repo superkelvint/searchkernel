@@ -300,9 +300,7 @@ final class Protocol
             'StringValue' => self::decodeString($payload),
             'BytesValue' => self::decodeBytes($payload),
             'ValueList' => self::decodeValueList($payload),
-            'ValueObject' => self::decodeValueEntries(
-                self::listField($payload, 'fields', 'ValueObject.fields'),
-            ),
+            'ValueObject' => self::decodeValueObject($payload),
             'TensorValue' => self::decodeTensor($payload),
             default => throw new ProtocolException(
                 'unsupported portable Value kind: ' . $type
@@ -342,6 +340,26 @@ final class Protocol
             },
             $values,
         );
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function decodeValueObject(array $payload): ValueObject
+    {
+        $entries = self::listField($payload, 'fields', 'ValueObject.fields');
+        $pairs = [];
+        $seen = [];
+        foreach ($entries as $entry) {
+            if (!is_array($entry) || !is_string($entry['key'] ?? null) || !is_array($entry['value'] ?? null)) {
+                throw new ProtocolException('malformed ValueObject entry');
+            }
+            $key = $entry['key'];
+            if (array_key_exists($key, $seen)) {
+                throw new ProtocolException('duplicate portable value key: ' . $key);
+            }
+            $seen[$key] = true;
+            $pairs[] = ['key' => $key, 'value' => self::decodeValue($entry['value'])];
+        }
+        return ValueObject::fromPairs($pairs);
     }
 
     /** @param array<string, mixed> $payload */

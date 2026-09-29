@@ -66,7 +66,7 @@ module SearchKernel
       self
     end
 
-    def sort(field, direction = "asc", missing: nil)
+    def sort(field, direction, missing: nil)
       Wire.name!(field, "sort field")
       sort = {
         "target" => {

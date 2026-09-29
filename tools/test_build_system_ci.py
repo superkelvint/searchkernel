@@ -93,7 +93,10 @@ class BuildSystemCiTest(unittest.TestCase):
     def test_ci_uses_the_canonical_image_by_default(self):
         dev = DEV.read_text(encoding="utf-8")
         route = dev[dev.index("should_use_ci_image() {"):dev.index("# Build/test/verify commands")]
-        self.assertIn("ci|check|universe", route)
+        self.assertIn(
+            "ci|check|galaxy|universe|check-fast|check-protocol|coverage|lint|test|verify",
+            route,
+        )
         self.assertIn('exec bash "$ROOT/tools/run-in-ci-image.sh" "$@"', dev)
         self.assertLess(
             dev.index('exec bash "$ROOT/tools/run-in-ci-image.sh" "$@"'),
