@@ -1,73 +1,30 @@
 {
   "schema_version": 1,
   "commands": {
-    "doctor": {
-      "status": "implemented"
-    },
-    "build": {
-      "status": "planned_m1"
-    },
-    "ci": {
-      "status": "implemented"
-    },
-    "test": {
-      "status": "implemented"
-    },
-    "lint": {
-      "status": "implemented"
-    },
-    "verify": {
-      "status": "implemented"
-    },
-    "universe": {
-      "status": "implemented"
-    },
-    "release-check": {
-      "status": "planned_m5"
-    }
+    "doctor": {"status": "implemented"},
+    "build": {"status": "planned_m1"},
+    "ci": {"status": "implemented"},
+    "test": {"status": "implemented"},
+    "lint": {"status": "implemented"},
+    "verify": {"status": "implemented"},
+    "universe": {"status": "implemented"},
+    "release-check": {"status": "planned_m5"}
   },
   "test": {
-    "ir": {
-      "description": "Portable semantic IR tests"
-    },
-    "rust-api": {
-      "description": "Public Rust API tests",
-      "aliases": [
-        "rust"
-      ]
-    },
-    "python": {
-      "description": "Python client, package, and real E2E tests"
-    },
-    "typescript": {
-      "description": "TypeScript client, package, and real E2E tests"
-    },
-    "php": {
-      "description": "PHP client, package, and real E2E tests"
-    },
-    "ruby": {
-      "description": "Ruby client, packaged gem, and real E2E tests"
-    }
+    "ir": {"description": "Portable semantic IR tests"},
+    "rust-api": {"description": "Public Rust API tests", "aliases": ["rust"]},
+    "python": {"description": "Python client, package, and real E2E tests"},
+    "typescript": {"description": "TypeScript client, package, and real E2E tests"},
+    "php": {"description": "PHP client, package, and real E2E tests"},
+    "ruby": {"description": "Ruby client, packaged gem, and real E2E tests"}
   },
   "verify": {
-    "api-conformance": {
-      "description": "Portable API conformance"
-    },
-    "contracts": {
-      "description": "Capability and client contracts"
-    },
-    "client-semantic-parity": {
-      "description": "Cross-language canonical IR semantic parity"
-    },
-    "abi": {
-      "description": "Public native ABI contract"
-    },
-    "persistence": {
-      "description": "Persistence compatibility"
-    },
-    "issue-queue": {
-      "description": "GitHub issue queue consistency"
-    },
+    "api-conformance": {"description": "Portable API conformance"},
+    "contracts": {"description": "Capability and client contracts"},
+    "client-semantic-parity": {"description": "Cross-language canonical IR semantic parity"},
+    "abi": {"description": "Public native ABI contract"},
+    "persistence": {"description": "Persistence compatibility"},
+    "issue-queue": {"description": "GitHub issue queue consistency"},
     "vespa.native-sdk": {},
     "vespa.rust-ownership": {},
     "vespa.document-mutation": {},
@@ -82,11 +39,7 @@
     "vespa.grouping.yql": {},
     "vespa.ranking": {},
     "vespa.ranking.feature-values": {},
-    "vespa.search-reply": {
-      "aliases": [
-        "searchreply"
-      ]
-    },
+    "vespa.search-reply": {"aliases": ["searchreply"]},
     "vespa.hardening": {},
     "vespa.hardening.core": {},
     "vespa.hardening.stress": {},
@@ -95,129 +48,32 @@
     "vespa.tensor.document-crud": {},
     "vespa.nearest-neighbor.hnsw": {},
     "vespa.recovery": {},
-    "product.rust-real-engine": {
-      "aliases": [
-        "phase10"
-      ]
-    },
-    "product.integration": {
-      "aliases": [
-        "integration",
-        "i"
-      ]
-    },
-    "milestone.m0": {
-      "aliases": [
-        "m0"
-      ]
-    },
-    "milestone.m1": {
-      "aliases": [
-        "m1"
-      ]
-    },
-    "milestone.m2": {
-      "aliases": [
-        "m2"
-      ]
-    },
-    "milestone.m3": {
-      "aliases": [
-        "m3"
-      ]
-    },
-    "milestone.m4": {
-      "aliases": [
-        "m4"
-      ]
-    },
-    "milestone.m5": {
-      "aliases": [
-        "m5"
-      ]
-    },
-    "milestone.m6": {
-      "aliases": [
-        "m6"
-      ]
-    },
-    "milestone.m7": {
-      "aliases": [
-        "m7"
-      ]
-    },
-    "milestone.m8": {
-      "aliases": [
-        "m8"
-      ]
-    },
-    "milestone.m9": {
-      "aliases": [
-        "m9"
-      ]
-    },
-    "milestone.m10": {
-      "aliases": [
-        "m10"
-      ]
-    },
-    "milestone.m11": {
-      "aliases": [
-        "m11"
-      ]
-    },
-    "milestone.m12": {
-      "aliases": [
-        "m12"
-      ]
-    },
-    "milestone.m13": {
-      "aliases": [
-        "m13"
-      ]
-    },
-    "milestone.m14": {
-      "aliases": [
-        "m14"
-      ]
-    }
+    "product.rust-real-engine": {"aliases": ["phase10"]},
+    "product.integration": {"aliases": ["integration", "i"]},
+    "milestone.m0": {"aliases": ["m0"]},
+    "milestone.m1": {"aliases": ["m1"]},
+    "milestone.m2": {"aliases": ["m2"]},
+    "milestone.m3": {"aliases": ["m3"]},
+    "milestone.m4": {"aliases": ["m4"]},
+    "milestone.m5": {"aliases": ["m5"]},
+    "milestone.m6": {"aliases": ["m6"]},
+    "milestone.m7": {"aliases": ["m7"]},
+    "milestone.m8": {"aliases": ["m8"]},
+    "milestone.m9": {"aliases": ["m9"]},
+    "milestone.m10": {"aliases": ["m10"]},
+    "milestone.m11": {"aliases": ["m11"]},
+    "milestone.m12": {"aliases": ["m12"]},
+    "milestone.m13": {"aliases": ["m13"]},
+    "milestone.m14": {"aliases": ["m14"]}
   },
   "change_areas": {
-    "api/": [
-      "test:ir",
-      "verify:api-conformance",
-      "verify:contracts"
-    ],
-    "core/crates/searchkernel-ir/": [
-      "test:ir",
-      "verify:api-conformance"
-    ],
-    "core/native/": [
-      "verify:abi",
-      "verify:vespa.hardening.core"
-    ],
-    "clients/python/": [
-      "test:python",
-      "verify:contracts",
-      "verify:client-semantic-parity"
-    ],
-    "clients/typescript/": [
-      "test:typescript",
-      "verify:contracts",
-      "verify:client-semantic-parity"
-    ],
-    "clients/php/": [
-      "test:php",
-      "verify:contracts",
-      "verify:client-semantic-parity"
-    ],
-    "clients/ruby/": [
-      "test:ruby",
-      "verify:contracts",
-      "verify:client-semantic-parity"
-    ],
-    "searchkerneld/": [
-      "verify:product.integration"
-    ]
+    "api/": ["test:ir", "verify:api-conformance", "verify:contracts"],
+    "core/crates/searchkernel-ir/": ["test:ir", "verify:api-conformance"],
+    "core/native/": ["verify:abi", "verify:vespa.hardening.core"],
+    "clients/python/": ["test:python", "verify:contracts", "verify:client-semantic-parity"],
+    "clients/typescript/": ["test:typescript", "verify:contracts", "verify:client-semantic-parity"],
+    "clients/php/": ["test:php", "verify:contracts", "verify:client-semantic-parity"],
+    "clients/ruby/": ["test:ruby", "verify:contracts", "verify:client-semantic-parity"],
+    "searchkerneld/": ["verify:product.integration"]
   }
 }
