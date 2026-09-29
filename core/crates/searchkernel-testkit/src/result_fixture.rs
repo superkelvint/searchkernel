@@ -1566,7 +1566,7 @@ mod expanded_canonical_corpus {
                     (
                         "nested".into(),
                         ir::Value::List(vec![
-                            ir::Value::Bool(seed % 2 == 0),
+                            ir::Value::Bool(seed.is_multiple_of(2)),
                             ir::Value::Object(BTreeMap::from([
                                 ("empty_list".into(), ir::Value::List(Vec::new())),
                                 ("empty_object".into(), ir::Value::Object(BTreeMap::new())),
@@ -1576,7 +1576,7 @@ mod expanded_canonical_corpus {
                     ("signed_min".into(), ir::Value::Int64(i64::MIN)),
                     ("unsigned_max".into(), ir::Value::UInt64(u64::MAX)),
                 ]);
-                if depth == 0 || seed % 3 == 0 {
+                if depth == 0 || seed.is_multiple_of(3) {
                     return ir::ResultNode::Hit(ir::Hit {
                         id: format!("hit-{depth}-{seed}"),
                         fields,
