@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          path: source
           # ./dev snapshots the exact checkout into its canonical container.
           # Keep ancestors available so that the Git bundle includes parents.
           fetch-depth: 0
@@ -29,4 +30,5 @@ jobs:
 
       - name: Run authoritative PR gate
         shell: bash
+        working-directory: source
         run: ./dev ci

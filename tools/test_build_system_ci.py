@@ -108,7 +108,10 @@ class BuildSystemCiTest(unittest.TestCase):
             workflow.index("- uses: actions/checkout@v4"):
             workflow.index("- name: Run authoritative PR gate")
         ]
+        run = workflow[workflow.index("- name: Run authoritative PR gate"):]
         self.assertIn("fetch-depth: 0", checkout)
+        self.assertIn("path: source", checkout)
+        self.assertIn("working-directory: source", run)
         for fragment in (
             "cargo fmt",
             "cargo check",
