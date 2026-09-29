@@ -43,6 +43,14 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn("observed=$(git rev-parse HEAD)", text)
         self.assertIn('if [[ "${observed}" != "${requested}" ]]', text)
 
+    def test_subject_history_is_complete_for_canonical_git_bundle(self):
+        text = self.text
+        subject = text.index("Check out requested revision as untrusted subject")
+        checkout = text[subject:text.index("Prove checked-out revision", subject)]
+        runner = (ROOT / "tools" / "run-in-ci-image.sh").read_text(encoding="utf-8")
+        self.assertIn("fetch-depth: 0", checkout)
+        self.assertIn('git -C "$ROOT" bundle create "$bundle" HEAD', runner)
+
     def test_remote_surface_is_bounded_to_ci_test_and_verify(self):
         text = self.text
         self.assertIn('case "${OPERATION}" in', text)

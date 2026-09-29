@@ -98,7 +98,9 @@ jobs:
         with:
           ref: ${{ github.event.client_payload.revision }}
           path: subject
-          fetch-depth: 1
+          # The canonical launcher bundles the exact subject commit for Docker;
+          # a shallow checkout omits parent objects needed by `git bundle`.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Prove checked-out revision
