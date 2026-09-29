@@ -49,7 +49,7 @@ fn main() {
 
     let fixtures = searchkernel_testkit::result_fixtures();
     let malformed_fixtures = malformed_tensor_fixtures::malformed_tensor_response_fixtures();
-    let mut expected = fixtures
+    let expected = fixtures
         .iter()
         .map(|fixture| format!("result-{}.skrs", fixture.name))
         .collect::<BTreeSet<_>>();
@@ -134,7 +134,12 @@ fn main() {
         if check {
             let existing = std::fs::read(&path)
                 .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-            assert_eq!(existing, bytes, "malformed fixture drifted: {}", path.display());
+            assert_eq!(
+                existing,
+                bytes,
+                "malformed fixture drifted: {}",
+                path.display()
+            );
         } else {
             write_fixture(&path, &bytes);
         }
