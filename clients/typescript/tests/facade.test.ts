@@ -120,6 +120,20 @@ describe("ergonomic facade", () => {
       .toBe("catalog");
   });
 
+  it("preserves absent and explicit ranking profiles with rank properties", () => {
+    const implicit = index().search("running shoes").rankProperty("source", "catalog").build();
+    expect(implicit.ranking?.profile).toBeNull();
+    expect(implicit.ranking?.properties?.[0]?.value).toBe("catalog");
+    const wire = packRequest("search", implicit);
+    const envelope = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(wire));
+    const search = envelope.payload(new SearchRequest());
+    expect(search?.ranking()?.profile()).toBeNull();
+
+    const explicit = index().search("running shoes").ranking("default")
+      .rankProperty("source", "catalog").build();
+    expect(explicit.ranking?.profile).toBe("default");
+  });
+
   it("omits deprecated filter vectors when packing textual filters", () => {
     const request = index().search("running shoes").filter("price <= :max", { max: 120 }).build();
     const bytes = packRequest("search", request);

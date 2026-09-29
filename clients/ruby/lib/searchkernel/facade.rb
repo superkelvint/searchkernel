@@ -313,10 +313,8 @@ module SearchKernel
       result["grouping"] = grouping unless grouping.empty?
 
       if @ranking || !@rank_properties.empty?
-        result["ranking"] = {
-          "profile" => @ranking || "default",
-          "properties" => Wire.string_entries(@rank_properties)
-        }
+        result["ranking"] = { "properties" => Wire.string_entries(@rank_properties) }
+        result["ranking"]["profile"] = @ranking unless @ranking.nil?
       end
 
       unless @inputs.empty?
