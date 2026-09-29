@@ -79,6 +79,58 @@
       }
     }
   ],
+  "facade_rejections": [
+    {
+      "id": "rank-property-boolean",
+      "clients": ["python", "typescript"],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "id": "rank-property-null",
+      "clients": ["python", "typescript"],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": null
+        }
+      }
+    },
+    {
+      "id": "rank-property-number",
+      "clients": ["python", "typescript"],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": 7
+        }
+      }
+    },
+    {
+      "id": "rank-property-object",
+      "clients": ["python", "typescript"],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": {}
+        }
+      }
+    },
+    {
+      "id": "rank-property-array",
+      "clients": ["python", "typescript"],
+      "intent": {
+        "kind": "browse",
+        "rank_properties": {
+          "enabled": []
+        }
+      }
+    }
+  ],
   "capability_gaps": [
     {
       "id": "tensor-query-input",

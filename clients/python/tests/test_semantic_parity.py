@@ -4,7 +4,13 @@ from searchkernel.ergonomic import SearchBuilder
 from searchkernel.client import value
 from searchkernel.protocol import pack_object
 class CaptureClient:
-    def search(self, request): self.request=request; return type('R',(),{'hits':[],'groups':[],'facets':[],'total':0,'issues':[]})()
+    def search(self, request):
+        self.request = request
+        return type(
+            "R",
+            (),
+            {"root": None, "totalHits": None, "hits": [], "groups": [], "facets": [], "total": 0, "issues": []},
+        )()
 class CaptureIndex:
     def __init__(self): self.client=CaptureClient()
 def snapshot(binary, fixture, request):
@@ -30,4 +36,13 @@ class SemanticParity(unittest.TestCase):
             if 'limit' in i: b.limit(i['limit'])
             if 'offset' in i: b.offset(i['offset'])
             b.execute(); out[scenario['id']]=snapshot(binary,fixture,idx.client.request)
+        for rejection in data.get('facade_rejections', []):
+            if 'python' not in rejection['clients']:
+                continue
+            intent = rejection['intent']
+            builder = SearchBuilder(CaptureIndex(), None)
+            for key, item in intent['rank_properties'].items():
+                with self.subTest(rejection=rejection['id'], key=key):
+                    with self.assertRaises(TypeError):
+                        builder.rank_property(key, item)
         Path(os.environ['SEARCHKERNEL_PARITY_OUTPUT']).write_text(json.dumps(out,sort_keys=True))
