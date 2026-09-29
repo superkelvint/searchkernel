@@ -5,9 +5,7 @@ use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, Request as HttpRequest};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use searchkernel_protocol::{
-    json::{
-        request_flatbuffer_to_json, request_json_to_flatbuffer, response_json_to_flatbuffer,
-    },
+    json::{request_flatbuffer_to_json, request_json_to_flatbuffer, response_json_to_flatbuffer},
     protocol::v2 as wire,
     target::{
         CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE,
