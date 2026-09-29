@@ -364,4 +364,7 @@ pub use self::projection::resolve_projection;
 pub(crate) use self::ranking::{resolve_highlighting, resolve_sort, resolve_sorts};
 pub use self::search::resolve_search;
 pub use self::search::DEFAULT_SEARCH_LIMIT;
-pub(crate) use self::search::{resolve_language, resolve_search_fields_at};
+pub(crate) use self::search::{
+    resolve_language, resolve_pagination, resolve_search_fields, resolve_search_fields_at,
+    resolve_timeout,
+};
