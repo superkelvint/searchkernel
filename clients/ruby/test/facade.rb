@@ -130,6 +130,11 @@ same(
   atomic_rank_properties.request.dig("ranking", "properties"),
   "failed rank_properties does not partially mutate builder",
 )
+implicit_ranking = index.search("shoes").rank_property("source", "catalog").request.fetch("ranking")
+same(false, implicit_ranking.key?("profile"), "rank properties preserve absent ranking profile")
+same([{ "key" => "source", "value" => "catalog" }], implicit_ranking.fetch("properties"), "rank properties remain present")
+explicit_ranking = index.search("shoes").ranking("default").rank_property("source", "catalog").request.fetch("ranking")
+same("default", explicit_ranking.fetch("profile"), "explicit default ranking profile remains explicit")
 raises(ArgumentError, "page zero rejects") { index.search("shoes").page(0, 3) }
 raises(ArgumentError, "page offset overflow rejects") { index.search("shoes").page(0xffff_ffff, 2) }
 raises(ArgumentError, "page size outside uint32 rejects") { index.search("shoes").page(1, 0x1_0000_0000) }

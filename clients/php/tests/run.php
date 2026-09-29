@@ -426,6 +426,12 @@ $advanced = $index->search('fox')
     ->searchChain('default')
     ->request();
 
+$implicitRanking = $index->search('fox')->rankProperty('source', 'catalog')->request()['ranking'];
+same(false, array_key_exists('profile', $implicitRanking), 'rank properties preserve absent ranking profile');
+same([['key' => 'source', 'value' => 'catalog']], $implicitRanking['properties'], 'rank properties remain present');
+$explicitRanking = $index->search('fox')->ranking('default')->rankProperty('source', 'catalog')->request()['ranking'];
+same('default', $explicitRanking['profile'], 'explicit default ranking profile remains explicit');
+
 $advancedInputs = [];
 foreach ($advanced['inputs'] as $input) {
     $advancedInputs[$input['name']] = $input;
