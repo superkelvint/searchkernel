@@ -13,6 +13,7 @@
   "test": {
     "ir": {"description": "Portable semantic IR tests"},
     "rust-api": {"description": "Public Rust API tests", "aliases": ["rust"]},
+    "client-real-e2e-parity": {"description": "Cross-client real-engine showcase parity"},
     "python": {"description": "Python client, package, and real E2E tests"},
     "typescript": {"description": "TypeScript client, package, and real E2E tests"},
     "php": {"description": "PHP client, package, and real E2E tests"},
@@ -68,11 +69,15 @@
   "change_areas": {
     "api/": ["test:ir", "verify:api-conformance", "verify:contracts"],
     "core/crates/searchkernel-ir/": ["test:ir", "verify:api-conformance"],
+    "core/crates/searchkernel/examples/": ["test:client-real-e2e-parity", "test:rust-api"],
     "core/native/": ["verify:abi", "verify:vespa.hardening.core"],
-    "clients/python/": ["test:python", "verify:contracts"],
-    "clients/typescript/": ["test:typescript", "verify:contracts"],
-    "clients/php/": ["test:php", "verify:contracts"],
-    "clients/ruby/": ["test:ruby", "verify:contracts"],
+    "clients/python/": ["test:python", "test:client-real-e2e-parity", "verify:contracts"],
+    "clients/typescript/": ["test:typescript", "test:client-real-e2e-parity", "verify:contracts"],
+    "clients/php/": ["test:php", "test:client-real-e2e-parity", "verify:contracts"],
+    "clients/ruby/": ["test:ruby", "test:client-real-e2e-parity", "verify:contracts"],
+    "reference/client-real-e2e-parity/": ["test:client-real-e2e-parity"],
+    "tools/check-client-real-e2e-parity.py": ["test:client-real-e2e-parity"],
+    ".github/ci/ci-image-runner.yml": ["test:client-real-e2e-parity"],
     "searchkerneld/": ["verify:product.integration"]
   }
 }
