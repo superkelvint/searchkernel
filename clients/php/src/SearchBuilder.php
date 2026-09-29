@@ -96,7 +96,7 @@ class SearchBuilder
         return $copy;
     }
 
-    public function sort(string $field, string $direction = 'asc', mixed $missing = null): self
+    public function sort(string $field, string $direction, mixed $missing = null): self
     {
         if ($field === '') {
             throw new InvalidArgumentException('sort field must not be empty');

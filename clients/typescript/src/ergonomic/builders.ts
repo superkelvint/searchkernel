@@ -109,7 +109,7 @@ export class SearchBuilder {
     return this;
   }
 
-  sort(field: string, direction: "asc" | "desc" = "asc"): this {
+  sort(field: string, direction: "asc" | "desc"): this {
     if (direction !== "asc" && direction !== "desc") {
       throw new TypeError("sort direction must be 'asc' or 'desc'");
     }

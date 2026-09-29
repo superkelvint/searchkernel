@@ -53,7 +53,7 @@ index = SearchKernel::Index.create(
 index.insert("_id" => "shoe-1", "title" => "Running Shoes", "price" => 89.0)
 results = index.search("shoes")
   .filter("price <= :max", "max" => 100.0)
-  .sort("price")
+  .sort("price", "asc")
   .limit(10)
   .execute
 index.close
