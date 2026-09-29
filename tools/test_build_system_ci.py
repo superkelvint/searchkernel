@@ -104,6 +104,11 @@ class BuildSystemCiTest(unittest.TestCase):
         self.assertIn("permissions:\n  contents: read", workflow)
         self.assertIn("actions/checkout@v4", workflow)
         self.assertIn("run: ./dev ci", workflow)
+        checkout = workflow[
+            workflow.index("- uses: actions/checkout@v4"):
+            workflow.index("- name: Run authoritative PR gate")
+        ]
+        self.assertIn("fetch-depth: 0", checkout)
         for fragment in (
             "cargo fmt",
             "cargo check",
