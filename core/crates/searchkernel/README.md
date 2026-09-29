@@ -26,9 +26,11 @@ filter, and search types that an application uses.
 
 Search result fields are also available as `ResultValue`, which preserves the
 portable value kinds, including unsigned integers, bytes, tensors, and explicit
-NaN or infinity values. `Hit<T>::document` is `None` when a value cannot be
-represented by the caller's `T`; inspect `Hit<T>::fields` for the lossless
-result values and `Hit<T>::document_error` for the projection error.
+NaN or infinity values. `Hit<T>::document` is `None` when the lossless
+fields cannot pass through the JSON-backed document projection (for example,
+because they contain non-finite scalars). Inspect `Hit<T>::fields` for the
+lossless values and `Hit<T>::document_error` for that fallback reason.
+Ordinary serde deserialization failures for the caller's `T` remain errors.
 
 For example, a non-finite field is read without a JSON conversion:
 
