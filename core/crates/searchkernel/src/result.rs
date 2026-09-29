@@ -688,7 +688,8 @@ mod tests {
     use super::*;
     use searchkernel_testkit::{
         canonical_facet_result, canonical_result_fixtures, mixed_hit_and_group_children_result,
-        non_facet_grouping_result, sibling_groups_result, sparse_mixed_tensor_result,
+        non_facet_grouping_result, result_fixtures, sibling_groups_result,
+        sparse_mixed_tensor_result,
     };
     use std::collections::BTreeMap;
 
@@ -785,6 +786,268 @@ mod tests {
                     panic!("fixture {name} failed public conversion: {error:?}")
                 });
             assert_public_node_matches(&expected_root, &actual.root);
+        }
+    }
+
+    fn trace_json_value(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::String(_) => {
+                value.clone()
+            }
+            serde_json::Value::Number(number) => {
+                if number.is_i64() || number.is_u64() {
+                    serde_json::Value::String(number.to_string())
+                } else {
+                    value.clone()
+                }
+            }
+            serde_json::Value::Array(values) => {
+                serde_json::Value::Array(values.iter().map(trace_json_value).collect())
+            }
+            serde_json::Value::Object(values) => serde_json::Value::Object(
+                values
+                    .iter()
+                    .map(|(key, value)| (key.clone(), trace_json_value(value)))
+                    .collect(),
+            ),
+        }
+    }
+
+    fn trace_optional_f64(value: Option<f64>) -> serde_json::Value {
+        match value {
+            None => serde_json::Value::Null,
+            Some(value) if value.is_nan() => serde_json::Value::String("nan".into()),
+            Some(value) if value == f64::INFINITY => serde_json::Value::String("+inf".into()),
+            Some(value) if value == f64::NEG_INFINITY => serde_json::Value::String("-inf".into()),
+            Some(value) => serde_json::Value::Number(
+                serde_json::Number::from_f64(value).expect("finite trace float"),
+            ),
+        }
+    }
+
+    fn trace_json_map(
+        values: &std::collections::BTreeMap<String, serde_json::Value>,
+    ) -> serde_json::Value {
+        serde_json::Value::Object(
+            values
+                .iter()
+                .map(|(key, value)| (key.clone(), trace_json_value(value)))
+                .collect(),
+        )
+    }
+
+    fn trace_result_node(node: &ResultNode) -> serde_json::Value {
+        match node {
+            ResultNode::Hit(hit) => serde_json::json!({
+                "kind": "hit",
+                "id": hit.id.as_str(),
+                "relevance": trace_optional_f64(hit.relevance),
+                "fields": trace_json_map(&hit.fields),
+                "highlights": hit.highlights.iter().map(|highlight| {
+                    serde_json::json!({
+                        "field": highlight.field,
+                        "fragments": highlight.fragments.iter().map(|fragment| {
+                            serde_json::json!({
+                                "text": fragment.text,
+                                "matches": fragment.matches.iter().map(|span| {
+                                    serde_json::json!({
+                                        "start_byte": span.start_byte.to_string(),
+                                        "end_byte": span.end_byte.to_string(),
+                                    })
+                                }).collect::<Vec<_>>(),
+                            })
+                        }).collect::<Vec<_>>(),
+                    })
+                }).collect::<Vec<_>>(),
+                "source": hit.source,
+                "types": hit.types,
+                "match_features": trace_json_map(&hit.match_features),
+                "summary_features": trace_json_map(&hit.summary_features),
+                "rank_features": trace_json_map(&hit.rank_features),
+                "sort_values": hit.sort_values.iter().map(trace_json_value).collect::<Vec<_>>(),
+            }),
+            ResultNode::Group(group) => serde_json::json!({
+                "kind": "group",
+                "id": group.id,
+                "label": group.label,
+                "value": group.value.as_ref().map(trace_json_value),
+                "fields": trace_json_map(&group.fields),
+                "children": group.children.iter().map(trace_result_node).collect::<Vec<_>>(),
+                "continuations": group.continuations.iter().map(|(key, value)| {
+                    serde_json::json!({"key": key, "value": value})
+                }).collect::<Vec<_>>(),
+                "source": group.source,
+                "types": group.types,
+                "relevance": trace_optional_f64(group.relevance),
+                "limits": group.limits.as_ref().map(|limits| serde_json::json!({
+                    "from": limits.from.as_ref().map(trace_json_value),
+                    "to": limits.to.as_ref().map(trace_json_value),
+                })),
+                "metadata": trace_json_map(&group.metadata),
+            }),
+        }
+    }
+
+    fn trace_total_hits_relation(value: TotalHitsRelation) -> &'static str {
+        match value {
+            TotalHitsRelation::Unspecified => "unspecified",
+            TotalHitsRelation::Exact => "exact",
+            TotalHitsRelation::LowerBound => "lower_bound",
+            TotalHitsRelation::Approximate => "approximate",
+            TotalHitsRelation::Unknown => "unknown",
+        }
+    }
+
+    fn trace_coverage(value: &Coverage) -> serde_json::Value {
+        serde_json::json!({
+            "coverage_percent": trace_optional_f64(value.coverage_percent),
+            "documents": value.documents.map(|item| item.to_string()),
+            "full": value.full,
+            "nodes": value.nodes.map(|item| item.to_string()),
+            "results": value.results.map(|item| item.to_string()),
+            "results_full": value.results_full.map(|item| item.to_string()),
+            "degraded": value.degraded.as_ref().map(|degraded| serde_json::json!({
+                "match_phase": degraded.match_phase,
+                "timeout": degraded.timeout,
+                "adaptive_timeout": degraded.adaptive_timeout,
+                "ann_timeout": degraded.ann_timeout,
+                "non_ideal_state": degraded.non_ideal_state,
+                "metadata": trace_json_map(&degraded.metadata),
+            })),
+            "metadata": trace_json_map(&value.metadata),
+        })
+    }
+
+    fn trace_timing(value: &SearchTiming) -> serde_json::Value {
+        serde_json::json!({
+            "query_time_seconds": trace_optional_f64(value.query_time_seconds),
+            "search_time_seconds": trace_optional_f64(value.search_time_seconds),
+            "summary_fetch_time_seconds": trace_optional_f64(value.summary_fetch_time_seconds),
+            "metadata": trace_json_map(&value.metadata),
+        })
+    }
+
+    fn trace_search_result(result: &SearchResult<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({
+            "root": trace_result_node(&result.root),
+            "total_hits": {
+                "value": result.total_hits.value.to_string(),
+                "relation": trace_total_hits_relation(result.total_hits.relation),
+            },
+            "coverage": result.coverage.as_ref().map(trace_coverage),
+            "timing": result.timing.as_ref().map(trace_timing),
+            "errors": result.issues.iter().map(|issue| serde_json::json!({
+                "code": issue.code.to_string(),
+                "summary": issue.summary,
+                "message": issue.message,
+                "source": issue.source,
+                "stack_trace": issue.stack_trace,
+                "transient": issue.transient,
+                "metadata": trace_json_map(&issue.metadata),
+            })).collect::<Vec<_>>(),
+            "trace": result.trace.as_ref().map(trace_json_value),
+            "metadata": trace_json_map(&result.metadata),
+        })
+    }
+
+    #[test]
+    fn response_byte_fixtures_reach_the_public_rust_result_projection() {
+        use searchkernel_protocol::protocol::v2 as wire;
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../");
+        let corpus: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("reference/result-response-conformance/corpus.json"))
+                .expect("read canonical response corpus"),
+        )
+        .expect("parse canonical response corpus");
+        let fixtures = result_fixtures();
+        let mut traces = serde_json::Map::new();
+        for scenario in corpus["valid"].as_array().unwrap() {
+            let name = scenario["id"].as_str().unwrap();
+            let fixture = fixtures
+                .iter()
+                .find(|fixture| fixture.name == name)
+                .unwrap_or_else(|| panic!("canonical response fixture has no IR: {name}"));
+            let path = root.join(scenario["source"].as_str().unwrap());
+            let bytes = std::fs::read(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            let envelope = core::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
+                .unwrap_or_else(|error| panic!("decode {}: {error:?}", path.display()));
+            let encoded = envelope
+                .payload_as_search_kernel_v2_search_result()
+                .unwrap_or_else(|| panic!("{} must contain SearchResult", path.display()));
+            let decoded = core::search_result_from_api(encoded)
+                .unwrap_or_else(|error| panic!("{name} failed IR decoding: {error:?}"));
+            let actual: SearchResult<serde_json::Value> = search_result(decoded, &[])
+                .unwrap_or_else(|error| panic!("{name} failed public projection: {error:?}"));
+            assert_public_node_matches(&fixture.result.root, &actual.root);
+            assert_eq!(actual.total_hits, total_hits(fixture.result.total_hits));
+            assert_eq!(
+                actual.coverage,
+                fixture
+                    .result
+                    .coverage
+                    .clone()
+                    .map(coverage)
+                    .transpose()
+                    .unwrap()
+            );
+            assert_eq!(
+                actual.timing,
+                fixture
+                    .result
+                    .timing
+                    .clone()
+                    .map(search_timing)
+                    .transpose()
+                    .unwrap()
+            );
+            assert_eq!(actual.issues.len(), fixture.result.errors.len());
+            assert_eq!(
+                actual.trace,
+                fixture
+                    .result
+                    .trace
+                    .clone()
+                    .map(json_value)
+                    .transpose()
+                    .unwrap()
+            );
+            assert_eq!(
+                actual.metadata,
+                fields_to_json(fixture.result.metadata.clone())
+                    .unwrap()
+                    .as_object()
+                    .unwrap()
+                    .clone()
+                    .into_iter()
+                    .collect()
+            );
+            traces.insert(name.to_owned(), trace_search_result(&actual));
+        }
+
+        if let Some(directory) = std::env::var_os("SEARCHKERNEL_RESULT_TRACE_DIR") {
+            traces.insert(
+                "malformed_outcomes".into(),
+                serde_json::Value::Object(
+                    corpus["malformed"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|case| {
+                            (
+                                case["id"].as_str().unwrap().to_owned(),
+                                serde_json::Value::String("client".into()),
+                            )
+                        })
+                        .collect(),
+                ),
+            );
+            std::fs::write(
+                std::path::PathBuf::from(directory).join("rust.json"),
+                serde_json::to_vec(&serde_json::Value::Object(traces)).unwrap(),
+            )
+            .expect("write Rust result trace");
         }
     }
 
