@@ -37,8 +37,9 @@ class NativeRuntimeLinkTests(unittest.TestCase):
         staging = sdk.index('mktemp -d "${SDK_PACKAGE}.staging.XXXXXX"')
         self.assertLess(lock, provenance_guard)
         self.assertLess(provenance_guard, staging)
-        self.assertIn('exec 9>"$SDK_LOCK"', sdk)
-        self.assertIn("flock 9", sdk)
+        self.assertIn('SK_NATIVE_SDK_PACKAGE_LOCK_HELD="$SDK_PACKAGE"', sdk)
+        self.assertIn('exec flock "$SDK_LOCK" "$0" "$@"', sdk)
+        self.assertNotIn('exec 9>"$SDK_LOCK"', sdk)
         self.assertNotIn("staging.$$", sdk)
         self.assertNotIn('SDK_BACKUP="${SDK_PACKAGE}.old.$"', sdk)
 
