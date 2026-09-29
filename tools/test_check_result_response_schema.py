@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -30,6 +32,58 @@ class ResultResponseSchemaTest(unittest.TestCase):
         self.assertEqual(set(closure["Value"][1]), {"kind"})
         self.assertNotIn("NONE", closure["ResultNodeKind"][1])
         self.assertEqual(set(closure["ResultNodeKind"][1]), {"Hit", "ResultGroup"})
+
+    def test_vector_union_discriminator_is_not_a_logical_field(self) -> None:
+        schema = """namespace SearchKernel.V2;
+
+table Hit {
+  id:string;
+}
+
+table ResultGroup {
+  id:string;
+}
+
+union ResultNodeKind {
+  Hit,
+  ResultGroup
+}
+
+table SearchResult {
+  nodes:[ResultNodeKind];
+}
+
+root_type SearchResult;
+"""
+        flatc = subprocess.check_output(
+            ["bash", str(ROOT / "tools/resolve-flatbuffers.sh"), "flatc"],
+            text=True,
+        ).strip()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "vector_union.fbs"
+            source.write_text(schema)
+            subprocess.run(
+                [
+                    flatc,
+                    "--binary",
+                    "--schema",
+                    "-o",
+                    directory,
+                    str(source),
+                ],
+                check=True,
+                cwd=ROOT,
+            )
+            closure = MODULE.result_closure(
+                (Path(directory) / "vector_union.bfbs").read_bytes()
+            )
+
+        self.assertEqual(set(closure["SearchResult"][1]), {"nodes"})
+        self.assertNotIn("nodes_type", closure["SearchResult"][1])
+        self.assertEqual(
+            set(closure["ResultNodeKind"][1]),
+            {"Hit", "ResultGroup"},
+        )
 
     def test_new_hit_field_fails_until_coverage_is_updated(self) -> None:
         closure = copy.deepcopy(MODULE.result_closure(MODULE.BFBS.read_bytes()))
