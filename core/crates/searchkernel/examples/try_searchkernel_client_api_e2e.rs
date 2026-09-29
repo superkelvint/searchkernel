@@ -36,6 +36,125 @@ mod showcase {
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    const E2E_CORPUS: &str =
+        include_str!("../../../../reference/client-real-e2e-parity/corpus.json");
+    const VECTOR_TYPE: &str = "tensor<float>(x[8])";
+
+    fn corpus_documents() -> Result<Vec<(String, Value)>, Box<dyn std::error::Error>> {
+        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let mut documents = Vec::new();
+        for source in corpus["documents"].as_array().ok_or("corpus documents missing")? {
+            let id = source["_id"].as_str().ok_or("corpus document id missing")?;
+            let mut document = source.clone();
+            document.as_object_mut().ok_or("corpus document must be an object")?.remove("_id");
+            if let Some(cells) = document.get("embedding").and_then(Value::as_array) {
+                let values = cells
+                    .iter()
+                    .map(|cell| cell.as_f64().ok_or("embedding cell must be numeric"))
+                    .collect::<Result<Vec<_>, _>>()?;
+                document["embedding"] = serde_json::to_value(Tensor::dense(VECTOR_TYPE, values))?;
+            }
+            documents.push((id.to_owned(), document));
+        }
+        Ok(documents)
+    }
+
+    fn corpus_vector(document_id: &str) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
+        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let document = corpus["documents"]
+            .as_array()
+            .and_then(|documents| documents.iter().find(|doc| doc["_id"] == document_id))
+            .ok_or("requested vector document missing from E2E corpus")?;
+        let cells = document["embedding"]
+            .as_array()
+            .ok_or("corpus embedding must be a dense vector")?;
+        Ok(cells
+            .iter()
+            .map(|cell| {
+                cell.as_f64()
+                    .map(|value| f64::from(value as f32))
+                    .ok_or("embedding cell must be numeric")
+            })
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
+    fn corpus_definition() -> Result<IndexDefinition, Box<dyn std::error::Error>> {
+        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let schema = &corpus["schema"];
+        let mut definition = IndexDefinition::new();
+        for (name, spec) in schema["fields"]
+            .as_object()
+            .ok_or("corpus fields missing")?
+        {
+            let type_name = spec["type"].as_str().ok_or("field type missing")?;
+            let mut field = match type_name {
+                "text" => Field::text(name),
+                "keyword" => Field::keyword(name),
+                "float64" => Field::float64(name),
+                "int64" => Field::int64(name),
+                "bool" => Field::bool(name),
+                tensor if tensor.starts_with("tensor<") => Field::tensor(name, tensor),
+                _ => return Err(format!("unknown corpus field type: {type_name}").into()),
+            };
+            if let Some(value) = spec.get("stored").and_then(Value::as_bool) {
+                field = field.stored(value);
+            }
+            if let Some(value) = spec.get("searchable").and_then(Value::as_bool) {
+                field = field.searchable(value);
+            }
+            if let Some(value) = spec.get("filterable").and_then(Value::as_bool) {
+                field = field.filterable(value);
+            }
+            if let Some(value) = spec.get("sortable").and_then(Value::as_bool) {
+                field = field.sortable(value);
+            }
+            if let Some(value) = spec.get("facetable").and_then(Value::as_bool) {
+                field = field.facetable(value);
+            }
+            definition = definition.field(field);
+        }
+        let default_fields = schema["default_search_fields"]
+            .as_array()
+            .ok_or("default search fields missing")?
+            .iter()
+            .map(|value| value.as_str().ok_or("search field must be text"))
+            .collect::<Result<Vec<_>, _>>()?;
+        definition = definition.default_search_fields(default_fields);
+        for spec in schema["rank_profiles"]
+            .as_array()
+            .ok_or("rank profiles missing")?
+        {
+            let name = spec["name"].as_str().ok_or("rank profile name missing")?;
+            let first_phase = spec["first_phase"]
+                .as_str()
+                .ok_or("rank profile first phase missing")?;
+            let mut profile = RankProfile::new(name).first_phase(first_phase);
+            if let Some(second_phase) = spec.get("second_phase").and_then(Value::as_str) {
+                profile = profile.second_phase(second_phase);
+            }
+            if let Some(count) = spec.get("rerank_count").and_then(Value::as_u64) {
+                profile = profile.rerank_count(count as u32);
+            }
+            if let Some(inputs) = spec.get("query_inputs").and_then(Value::as_object) {
+                for (input_name, type_spec) in inputs {
+                    profile = profile.query_input(
+                        input_name,
+                        type_spec.as_str().ok_or("query input type must be text")?,
+                    );
+                }
+            }
+            if let Some(features) = spec.get("match_features").and_then(Value::as_array) {
+                for feature in features {
+                    profile = profile.match_feature(
+                        feature.as_str().ok_or("match feature must be text")?,
+                    );
+                }
+            }
+            definition = definition.rank_profile(profile);
+        }
+        Ok(definition)
+    }
+
     pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Keep all showcase state, including any sibling lock files created by
         // Search Kernel, underneath one unique temporary directory. The guard
@@ -47,217 +166,87 @@ mod showcase {
 
         heading("1. CREATE INDEX");
 
-        let definition = IndexDefinition::new()
-            .field(Field::text("title").stored(true).searchable(true))
-            .field(Field::text("description").stored(true).searchable(true))
-            .field(
-                Field::keyword("brand")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true)
-                    .facetable(true),
-            )
-            .field(
-                Field::keyword("category")
-                    .stored(true)
-                    .filterable(true)
-                    .facetable(true),
-            )
-            .field(
-                Field::float64("price")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true),
-            )
-            .field(
-                Field::float64("sale_price")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true),
-            )
-            .field(
-                Field::int64("rating")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true)
-                    .facetable(true),
-            )
-            .field(
-                Field::int64("inventory")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true),
-            )
-            .field(Field::bool("in_stock").stored(true).filterable(true))
-            .field(Field::tensor("embedding", "tensor<float>(x[2])").stored(true))
-            .rank_profile(
-                RankProfile::new("boosted")
-                    .first_phase("query(boost)")
-                    .match_feature("query(boost)"),
-            )
-            .rank_profile(
-                RankProfile::new("semantic")
-                    .first_phase("closeness(embedding)")
-                    .query_input("query_embedding", "tensor<float>(x[2])"),
-            )
-            .default_search_fields(["title", "description"]);
-        let definition = definition.rank_profile(
-            RankProfile::new("two_phase")
-                .first_phase("attribute(rating)")
-                .second_phase("attribute(inventory)")
-                .rerank_count(3),
-        );
-        let definition = definition
-            .rank_profile(RankProfile::new("first_phase_only").first_phase("attribute(rating)"));
-        let definition = definition.rank_profile(
-            RankProfile::new("operator")
-                .first_phase("nativeRank")
-                .match_feature("nativeRank"),
-        );
+        let definition = corpus_definition()?;
 
         let index = Index::create(&path, definition)?;
         println!("created: {}", path.display());
 
         heading("2. INSERT DOCUMENTS");
 
-        let documents = [
-            (
-                "shoe-1",
-                json!({
-                    "title": "Jumped Running Shoes for Daily Training",
-                    "brand": "Acme",
-                    "category": "shoes",
-                    "price": 89.0,
-                    "sale_price": 79.0,
-                    "rating": 5,
-                    "inventory": 10,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]),
-                }),
-            ),
-            (
-                "shoe-2",
-                json!({
-                    "title": "Trail Running Shoes",
-                    "brand": "TrailCo",
-                    "category": "shoes",
-                    "price": 129.0,
-                    "rating": 5,
-                    "inventory": 4,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.8, 0.2]),
-                }),
-            ),
-            (
-                "shoe-3",
-                json!({
-                    "title": "Budget Walking Shoes",
-                    "brand": "Budget",
-                    "category": "shoes",
-                    "price": 49.0,
-                    "rating": 3,
-                    "inventory": 25,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.0, 1.0]),
-                }),
-            ),
-            (
-                "shoe-4",
-                json!({
-                    "title": "Acme Racing Shoes",
-                    "brand": "Acme",
-                    "category": "shoes",
-                    "price": 159.0,
-                    "rating": 4,
-                    "inventory": 0,
-                    "in_stock": false,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.7, 0.3]),
-                }),
-            ),
-            (
-                "shoe-5",
-                json!({
-                    "title": "TrailCo Hiking Shoes",
-                    "brand": "TrailCo",
-                    "category": "shoes",
-                    "price": 109.0,
-                    "rating": 4,
-                    "inventory": 8,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.9, 0.1]),
-                }),
-            ),
-            (
-                "bag-1",
-                json!({
-                    "title": "Lightweight Running Backpack",
-                    "description": "exclusive catalog marker",
-                    "brand": "Acme",
-                    "category": "bags",
-                    "price": 69.0,
-                    "rating": 4,
-                    "inventory": 12,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.6, 0.4]),
-                }),
-            ),
-            (
-                "rerank-a",
-                json!({
-                    "title": "Rerank Candidate A",
-                    "category": "two-phase",
-                    "rating": 100,
-                    "inventory": 1,
-                }),
-            ),
-            (
-                "rerank-b",
-                json!({
-                    "title": "Rerank Candidate B",
-                    "category": "two-phase",
-                    "rating": 90,
-                    "inventory": 100,
-                }),
-            ),
-            (
-                "rerank-c",
-                json!({
-                    "title": "Rerank Candidate C",
-                    "category": "two-phase",
-                    "rating": 80,
-                    "inventory": 90,
-                }),
-            ),
-            (
-                "rerank-d",
-                json!({
-                    "title": "Rerank Candidate D",
-                    "category": "two-phase",
-                    "rating": 70,
-                    "inventory": 1000,
-                }),
-            ),
-        ];
-
-        for (id, document) in &documents {
-            index.insert(*id, document)?;
+        let corpus = corpus_documents()?;
+        for (id, document) in &corpus {
+            index.insert(id, document)?;
             println!("insert: {id}");
         }
-        for probe in 0..200 {
+        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let probe_count = corpus["coverage_probes"]["count"]
+            .as_u64()
+            .ok_or("coverage probe count missing")?;
+        let probe_template = &corpus["coverage_probes"]["document"];
+        let probe_vector = probe_template["embedding"]
+            .as_array()
+            .ok_or("coverage probe embedding missing")?
+            .iter()
+            .map(|cell| cell.as_f64().ok_or("embedding cell must be numeric"))
+            .collect::<Result<Vec<_>, _>>()?;
+        for probe in 0..probe_count {
+            let mut document = probe_template.clone();
+            document["embedding"] =
+                serde_json::to_value(Tensor::dense(VECTOR_TYPE, probe_vector.clone()))?;
             index.insert(
                 format!("degraded-{probe}"),
-                &json!({
-                    "title": "Coverage Degradation Probe",
-                    "category": "degradation",
-                    "price": 18.0,
-                    "rating": 1,
-                    "inventory": 18,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.0, 1.0]),
-                }),
+                &document,
             )?;
         }
         println!("inserted 200 deterministic coverage probe documents");
+
+        let parity_sorted = index
+            .search("shoes")
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_filtered = index
+            .search("shoes")
+            .filter(field("in_stock").eq(true))
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_faceted = index
+            .search("shoes")
+            .facet("brand".into())
+            .limit(20)
+            .execute::<Value>()?;
+        let parity_nearest = index
+            .search("")
+            .ranking(Ranking::named("semantic"))
+            .typed_query(Query::nearest_neighbor("embedding", "query_embedding"))
+            .query_input("query_embedding", Tensor::dense(VECTOR_TYPE, corpus_vector("shoe-1")?))
+            .limit(3)
+            .execute::<Value>()?;
+        let parity_reranked = index
+            .search("candidate")
+            .ranking(Ranking::named("two_phase"))
+            .limit(4)
+            .execute::<Value>()?;
+        let parity_error = index
+            .search("shoes")
+            .filter("prcie = 1")
+            .execute::<Value>()
+            .expect_err("unknown field must fail");
+        let mut parity_observations = json!({
+            "sorted_search": {"ids": ids(&parity_sorted), "total": parity_sorted.total_hits.value},
+            "filtered_search": {"ids": ids(&parity_filtered), "total": parity_filtered.total_hits.value},
+            "facets": facet_counts(&parity_faceted, "brand"),
+            "nearest_neighbor": {
+                "ids": ids(&parity_nearest),
+                "scores": parity_nearest.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()
+            },
+            "two_phase": {"ids": ids(&parity_reranked)},
+            "unknown_field_error": {
+                "code": "invalid_argument",
+                "details": parity_error.details().iter().map(|detail| detail.code.as_str()).collect::<Vec<_>>()
+            }
+        });
 
         heading("3. GET BY ID");
 
@@ -268,10 +257,7 @@ mod showcase {
         assert_eq!(
             doc["embedding"],
             json!({
-                "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(x[2])",
-                    "dense": [1.0, 0.0]
-                }
+                "$searchkernel_tensor": { "type_spec": VECTOR_TYPE, "dense": corpus_vector("shoe-1")? }
             })
         );
 
@@ -828,7 +814,7 @@ mod showcase {
             .typed_query(Query::nearest_neighbor("embedding", "query_embedding"))
             .query_input(
                 "query_embedding",
-                Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]),
+                Tensor::dense(VECTOR_TYPE, corpus_vector("shoe-1")?),
             )
             .limit(3)
             .execute::<Value>()?;
@@ -985,7 +971,7 @@ mod showcase {
         assert_eq!(error.details()[0].code, "unknown_field");
         assert_eq!(
             error.details()[0].path.as_deref(),
-            Some("filters.structured[0].field")
+            Some("filters.structured[0].comparison.field")
         );
 
         heading("21A. TEXTUAL FILTER SYNTAX ERROR");
@@ -1008,6 +994,17 @@ mod showcase {
         println!("textual filter parser, clause-local bindings, grammar, and syntax errors PASS");
 
         heading("22. PATCH SET / UNSET");
+
+        index.insert("parity-mutation", &json!({"title": "Parity Mutation", "category": "parity", "price": 100.0, "sale_price": 110.0, "rating": 1, "inventory": 1, "in_stock": true}))?;
+        index.patch("parity-mutation", Patch::new().set("price", 75.0_f64).unset("sale_price"))?;
+        let parity_mutated = index.get::<Value>("parity-mutation")?.expect("parity mutation should exist");
+        let parity_deleted = index.delete("parity-mutation")?;
+        parity_observations["mutation"] = json!({
+            "price": parity_mutated["price"],
+            "sale_price_present": parity_mutated.get("sale_price").is_some(),
+            "deleted": parity_deleted
+        });
+        index.insert("parity-reopen", &json!({"title": "Parity Reopen", "category": "parity", "price": 42.0, "inventory": 7, "in_stock": true}))?;
 
         println!("before: {:#}", index.get::<Value>("shoe-1")?.unwrap());
         index.patch(
@@ -1067,7 +1064,7 @@ mod showcase {
                 "rating": 5,
                 "inventory": 4,
                 "in_stock": true,
-                "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.0, 1.0]),
+                "embedding": Tensor::dense(VECTOR_TYPE, corpus_vector("shoe-3")?),
             }),
         )?;
 
@@ -1082,8 +1079,8 @@ mod showcase {
             doc["embedding"],
             json!({
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(x[2])",
-                    "dense": [0.0, 1.0]
+                    "type_spec": VECTOR_TYPE,
+                    "dense": corpus_vector("shoe-3")?
                 }
             })
         );
@@ -1121,11 +1118,21 @@ mod showcase {
             shoe1["embedding"],
             json!({
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(x[2])",
-                    "dense": [1.0, 0.0]
+                    "type_spec": VECTOR_TYPE,
+                    "dense": corpus_vector("shoe-1")?
                 }
             })
         );
+        let parity_persisted = index.get::<Value>("parity-reopen")?.expect("parity document should survive reopen");
+        parity_observations["persistence"] = json!({
+            "title": parity_persisted["title"],
+            "price": parity_persisted["price"],
+            "inventory": parity_persisted["inventory"]
+        });
+        if let Some(output) = std::env::var_os("SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT") {
+            let snapshot = json!({"version": 1, "scenarios": parity_observations});
+            std::fs::write(output, serde_json::to_vec_pretty(&snapshot)?)?;
+        }
 
         let shoe2 = index
             .get::<Value>("shoe-2")?
@@ -1140,8 +1147,8 @@ mod showcase {
             shoe2["embedding"],
             json!({
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(x[2])",
-                    "dense": [0.0, 1.0]
+                    "type_spec": VECTOR_TYPE,
+                    "dense": corpus_vector("shoe-3")?
                 }
             })
         );
@@ -1215,7 +1222,7 @@ mod showcase {
             .typed_query(Query::nearest_neighbor("embedding", "query_embedding"))
             .query_input(
                 "query_embedding",
-                Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]),
+                Tensor::dense(VECTOR_TYPE, corpus_vector("shoe-1")?),
             )
             .limit(3)
             .execute::<Value>()?;

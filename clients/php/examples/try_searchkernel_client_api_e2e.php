@@ -13,7 +13,6 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
-use InvalidArgumentException;
 use SearchKernel\Agg;
 use SearchKernel\Bytes;
 use SearchKernel\G;
@@ -25,14 +24,27 @@ use SearchKernel\Query;
 use SearchKernel\SearchKernelException;
 use SearchKernel\Tensor;
 
-const VECTOR_TYPE = 'tensor<float>(x[8])';
+$corpusPath = dirname(__DIR__, 3) . '/reference/client-real-e2e-parity/corpus.json';
+$e2eCorpus = json_decode((string) file_get_contents($corpusPath), true, flags: JSON_THROW_ON_ERROR);
+$vectorType = $e2eCorpus['schema']['fields']['embedding']['type'];
+define('VECTOR_TYPE', $vectorType);
+function corpusVector(string $documentId): array
+{
+    global $e2eCorpus;
+    foreach ($e2eCorpus['documents'] as $document) {
+        if ($document['_id'] === $documentId && isset($document['embedding'])) {
+            return $document['embedding'];
+        }
+    }
+    throw new RuntimeException("missing corpus vector: {$documentId}");
+}
 
-const SHOE_1_VECTOR = [0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78];
-const SHOE_2_VECTOR = [0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64];
-const SHOE_3_VECTOR = [0.10, 0.16, 0.78, 0.12, 0.24, 0.28, 0.92, 0.16];
-const SHOE_4_VECTOR = [0.82, 0.12, 0.06, 0.96, 0.72, 0.82, 0.10, 0.88];
-const SHOE_5_VECTOR = [0.64, 0.82, 0.07, 0.62, 0.34, 0.92, 0.16, 0.62];
-const BAG_1_VECTOR = [0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55];
+define('SHOE_1_VECTOR', corpusVector('shoe-1'));
+define('SHOE_2_VECTOR', corpusVector('shoe-2'));
+define('SHOE_3_VECTOR', corpusVector('shoe-3'));
+define('SHOE_4_VECTOR', corpusVector('shoe-4'));
+define('SHOE_5_VECTOR', corpusVector('shoe-5'));
+define('BAG_1_VECTOR', corpusVector('bag-1'));
 
 function heading(string $title): void
 {
@@ -122,6 +134,69 @@ function detailCodes(SearchKernelException $error): array
     return array_map(static fn (array $detail): string => $detail['code'], $error->details);
 }
 
+function captureRealEngineParity(Index $index): array
+{
+    $ordered = $index->search('shoes')->sort('price', 'asc')->limit(20)->execute();
+    $filtered = $index->search('shoes')->filter('in_stock = true')->sort('price', 'asc')->limit(20)->execute();
+    $faceted = $index->search('shoes')->facet('brand', name: 'brands', limit: 10, sort: 'count_desc')->limit(20)->execute();
+    $root = $index->browse()->filter("category = 'shoes'")
+        ->aggregate(Agg::count()->as('products'))
+        ->aggregate(Agg::sum('price')->as('sum_price'))
+        ->aggregate(Agg::avg('price')->as('avg_price'))
+        ->limit(0)->execute();
+    $grouped = $index->search('shoes')->group(
+        Group::by('brand')->limit(10)->precision(100)
+            ->orderBy(GroupingOrder::desc(Agg::count()), GroupingOrder::asc(G::field('brand')))
+            ->output(Agg::count()->as('products'), Agg::avg('price')->as('avg_price'))
+    )->execute();
+    $nearest = $index->query(Query::nearestNeighbor('embedding', 'query_embedding'))
+        ->ranking('semantic')->input('query_embedding', embedding(SHOE_1_VECTOR))->limit(3)->execute();
+    $hybrid = $index->query(Query::anyOf(
+        Query::contains('title', 'shoes'),
+        Query::nearestNeighbor('embedding', 'query_embedding')
+    ))->ranking('hybrid')->input('query_embedding', embedding(BAG_1_VECTOR))->limit(20)->execute();
+    $reranked = $index->search('candidate')->ranking('two_phase')->limit(4)->execute();
+    try {
+        $index->search('shoes')->filter('prcie = 1')->execute();
+        throw new RuntimeException('unknown field filter unexpectedly succeeded');
+    } catch (SearchKernelException $error) {
+        same('InvalidArgument', $error->errorCode, 'portable invalid-argument error code');
+        $errorCodes = detailCodes($error);
+        sort($errorCodes);
+    }
+
+    $groups = groupingGroups($grouped);
+    return [
+        'sorted_search' => ['ids' => ids($ordered), 'total' => $ordered->totalHits],
+        'filtered_search' => ['ids' => ids($filtered), 'total' => $filtered->totalHits],
+        'facets' => array_column($faceted->facets['brands'], 'count', 'value'),
+        'aggregations' => $root->aggregations,
+        'grouping' => array_map(static fn ($group): array => [
+            'brand' => $group->value,
+            'products' => $group->fields['products'],
+            'avg_price' => $group->fields['avg_price'],
+        ], $groups),
+        'nearest_neighbor' => ['ids' => ids($nearest), 'scores' => array_map(static fn ($hit): float => (float) $hit->relevance, $nearest->hits)],
+        'hybrid' => ['top_id' => $hybrid->hits[0]->id, 'has_bag' => in_array('bag-1', ids($hybrid), true)],
+        'two_phase' => ['ids' => ids($reranked)],
+        'unknown_field_error' => ['code' => 'invalid_argument', 'details' => $errorCodes],
+    ];
+}
+
+function writeRealEngineParity(array $scenarios): void
+{
+    $path = getenv('SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT');
+    if ($path === false || $path === '') {
+        return;
+    }
+    $observations = ['version' => 1, 'scenarios' => $scenarios];
+    if (is_file($path)) {
+        $previous = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+        $observations['scenarios'] = array_replace($previous['scenarios'] ?? [], $scenarios);
+    }
+    file_put_contents($path, json_encode($observations, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
+}
+
 $url = getenv('SEARCHKERNEL_HTTP_URL') ?: 'http://127.0.0.1:50052';
 $phase = $argv[1] ?? 'initial';
 if (!in_array($phase, ['initial', 'reopen'], true)) {
@@ -133,6 +208,9 @@ if ($phase === 'reopen') {
     heading('30. REOPEN PERSISTED INDEX');
 
     same(null, $index->get('shoe-3'), 'deleted document remains deleted');
+    $persisted = $index->get('parity-reopen');
+    check($persisted !== null, 'parity-reopen survives daemon and index reopen');
+    writeRealEngineParity(['persistence' => ['title' => $persisted['title'], 'price' => $persisted['price'], 'inventory' => $persisted['inventory']]]);
 
     $shoe1 = $index->get('shoe-1');
     check($shoe1 !== null, 'shoe-1 survives reopen');
@@ -213,95 +291,29 @@ heading('1. INDEX SCHEMA + RANK PROFILES PREPARED BY CANONICAL HARNESS');
 echo "PHP executes the same product corpus through the HTTP/FlatBuffers-JSON edge.\n";
 
 heading('2. INSERT DOCUMENTS');
-$documents = [
-    [
-        '_id' => 'shoe-1',
-        'title' => 'Jumped Running Shoes for Daily Training',
-        'brand' => 'Acme',
-        'category' => 'shoes',
-        'price' => 89.0,
-        'sale_price' => 79.0,
-        'rating' => 5,
-        'inventory' => 10,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_1_VECTOR),
-    ],
-    [
-        '_id' => 'shoe-2',
-        'title' => 'Trail Running Shoes',
-        'brand' => 'TrailCo',
-        'category' => 'shoes',
-        'price' => 129.0,
-        'rating' => 5,
-        'inventory' => 4,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_2_VECTOR),
-    ],
-    [
-        '_id' => 'shoe-3',
-        'title' => 'Budget Walking Shoes',
-        'brand' => 'Budget',
-        'category' => 'shoes',
-        'price' => 49.0,
-        'rating' => 3,
-        'inventory' => 25,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_3_VECTOR),
-    ],
-    [
-        '_id' => 'shoe-4',
-        'title' => 'Acme Racing Shoes',
-        'brand' => 'Acme',
-        'category' => 'shoes',
-        'price' => 159.0,
-        'rating' => 4,
-        'inventory' => 0,
-        'in_stock' => false,
-        'embedding' => embedding(SHOE_4_VECTOR),
-    ],
-    [
-        '_id' => 'shoe-5',
-        'title' => 'TrailCo Hiking Shoes',
-        'brand' => 'TrailCo',
-        'category' => 'shoes',
-        'price' => 109.0,
-        'rating' => 4,
-        'inventory' => 8,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_5_VECTOR),
-    ],
-    [
-        '_id' => 'bag-1',
-        'title' => 'Lightweight Running Backpack',
-        'brand' => 'Acme',
-        'category' => 'bags',
-        'price' => 69.0,
-        'rating' => 4,
-        'inventory' => 12,
-        'in_stock' => true,
-        'embedding' => embedding(BAG_1_VECTOR),
-    ],
-    ['_id' => 'rerank-a', 'title' => 'Rerank Candidate A', 'category' => 'two-phase', 'rating' => 100, 'inventory' => 1],
-    ['_id' => 'rerank-b', 'title' => 'Rerank Candidate B', 'category' => 'two-phase', 'rating' => 90, 'inventory' => 100],
-    ['_id' => 'rerank-c', 'title' => 'Rerank Candidate C', 'category' => 'two-phase', 'rating' => 80, 'inventory' => 90],
-    ['_id' => 'rerank-d', 'title' => 'Rerank Candidate D', 'category' => 'two-phase', 'rating' => 70, 'inventory' => 1000],
-];
-
+$documents = array_map(static function (array $document): array {
+    if (isset($document['embedding']) && is_array($document['embedding'])) {
+        $document['embedding'] = embedding($document['embedding']);
+    }
+    return $document;
+}, $e2eCorpus['documents']);
 foreach ($documents as $document) {
     same($document['_id'], $index->insert($document), 'insert returns document id');
 }
-for ($probe = 0; $probe < 200; $probe++) {
-    $index->insert([
-        '_id' => "degraded-{$probe}",
-        'title' => 'Coverage Degradation Probe',
-        'category' => 'degradation',
-        'price' => 18.0,
-        'rating' => 1,
-        'inventory' => 18,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_3_VECTOR),
-    ]);
+$probeSpec = $e2eCorpus['coverage_probes'];
+for ($probe = 0; $probe < $probeSpec['count']; $probe++) {
+    $document = $probeSpec['document'];
+    $document['_id'] = "degraded-{$probe}";
+    $document['embedding'] = embedding($document['embedding']);
+    $index->insert($document);
 }
+
+$parity = captureRealEngineParity($index);
+$index->insert(['_id' => 'parity-mutation', 'title' => 'Parity Mutation', 'category' => 'parity', 'price' => 100.0, 'sale_price' => 110.0, 'rating' => 1, 'inventory' => 1, 'in_stock' => true]);
+$index->patch('parity-mutation')->set('price', 75.0)->unset('sale_price')->execute();
+$mutated = $index->get('parity-mutation');
+$parity['mutation'] = ['price' => $mutated['price'], 'sale_price_present' => array_key_exists('sale_price', $mutated), 'deleted' => $index->delete('parity-mutation')];
+$index->insert(['_id' => 'parity-reopen', 'title' => 'Parity Reopen', 'category' => 'parity', 'price' => 42.0, 'inventory' => 7, 'in_stock' => true]);
 
 heading('3. GET BY ID');
 $doc = $index->get('shoe-1');
@@ -768,6 +780,8 @@ same(119.0, $doc['price'], 'upsert replacement price');
 check(str_contains($doc['title'], 'Updated Edition'), 'upsert replacement title');
 $updatedSearch = $index->search('updated')->limit(20)->execute();
 same(['shoe-2'], ids($updatedSearch), 'replacement searchable');
+
+writeRealEngineParity($parity);
 
 heading('29. INITIAL PHP CLIENT API E2E CHECKS PASSED');
 echo "Real-engine PHP facade scenario complete; harness will restart searchkerneld for reopen checks.\n";

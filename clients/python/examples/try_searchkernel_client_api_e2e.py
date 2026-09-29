@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from math import isclose, isfinite
+import json
+import os
 from pathlib import Path
 import atexit
 import shutil
@@ -29,7 +31,38 @@ from searchkernel import (
 
 WORKSPACE_PATH = Path(tempfile.mkdtemp(prefix="searchkernel-client-api-e2e-"))
 INDEX_PATH = WORKSPACE_PATH / "showcase-index"
-VECTOR_TYPE = "tensor<float>(x[8])"
+ROOT = Path(__file__).resolve().parents[3]
+E2E_CORPUS_PATH = ROOT / "reference/client-real-e2e-parity/corpus.json"
+E2E_CORPUS = json.loads(E2E_CORPUS_PATH.read_text())
+VECTOR_TYPE = E2E_CORPUS["schema"]["fields"]["embedding"]["type"]
+
+
+FIELD_TYPES = {"text": Text, "keyword": Keyword, "int64": Integer, "float64": Float, "bool": Boolean}
+
+
+def fields_from_corpus():
+    fields = {}
+    for name, spec in E2E_CORPUS["schema"]["fields"].items():
+        field_type = spec["type"]
+        options = {key: value for key, value in spec.items() if key != "type"}
+        fields[name] = TensorField(field_type, **options) if field_type.startswith("tensor<") else FIELD_TYPES[field_type](**options)
+    return fields
+
+
+def rank_profiles_from_corpus():
+    profiles = []
+    for spec in E2E_CORPUS["schema"]["rank_profiles"]:
+        profile = RankProfile(spec["name"]).first_phase(spec["first_phase"])
+        if "second_phase" in spec:
+            profile = profile.second_phase(spec["second_phase"])
+        if "rerank_count" in spec:
+            profile = profile.rerank_count(spec["rerank_count"])
+        for name, type_spec in spec.get("query_inputs", {}).items():
+            profile = profile.query_input(name, type_spec)
+        for feature in spec.get("match_features", []):
+            profile = profile.match_feature(feature)
+        profiles.append(profile)
+    return profiles
 
 
 def embedding(*values: float) -> Tensor:
@@ -38,12 +71,17 @@ def embedding(*values: float) -> Tensor:
     return Tensor.dense(VECTOR_TYPE, values)
 
 
-SHOE_1_VECTOR = (0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78)
-SHOE_2_VECTOR = (0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64)
-SHOE_3_VECTOR = (0.10, 0.16, 0.78, 0.12, 0.24, 0.28, 0.92, 0.16)
-SHOE_4_VECTOR = (0.82, 0.12, 0.06, 0.96, 0.72, 0.82, 0.10, 0.88)
-SHOE_5_VECTOR = (0.64, 0.82, 0.07, 0.62, 0.34, 0.92, 0.16, 0.62)
-BAG_1_VECTOR = (0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55)
+def corpus_vector(document_id: str) -> tuple[float, ...]:
+    document = next(item for item in E2E_CORPUS["documents"] if item["_id"] == document_id)
+    return tuple(document["embedding"])
+
+
+SHOE_1_VECTOR = corpus_vector("shoe-1")
+SHOE_2_VECTOR = corpus_vector("shoe-2")
+SHOE_3_VECTOR = corpus_vector("shoe-3")
+SHOE_4_VECTOR = corpus_vector("shoe-4")
+SHOE_5_VECTOR = corpus_vector("shoe-5")
+BAG_1_VECTOR = corpus_vector("bag-1")
 
 
 def cleanup_workspace() -> None:
@@ -159,6 +197,72 @@ def grouping_groups(results):
     return wrapper.groups
 
 
+PARITY_OBSERVATIONS: dict[str, object] = {}
+
+
+def capture_real_engine_parity(index) -> dict[str, object]:
+    ordered = index.search("shoes").sort("price", "asc").limit(20).execute()
+    filtered = index.search("shoes").filter("in_stock = true").sort("price", "asc").limit(20).execute()
+    faceted = index.search("shoes").facet("brand", name="brands", limit=10, sort="count_desc").limit(20).execute()
+    root = (
+        index.browse().filter("category = 'shoes'")
+        .aggregate(agg.count().as_("products"))
+        .aggregate(agg.sum("price").as_("sum_price"))
+        .aggregate(agg.avg("price").as_("avg_price"))
+        .limit(0).execute()
+    )
+    grouped = index.search("shoes").group(
+        Group.by("brand").limit(10).precision(100)
+        .order_by(desc(agg.count()), asc(g.field("brand")))
+        .output(agg.count().as_("products"), agg.avg("price").as_("avg_price"))
+    ).execute()
+    nearest = (
+        index.query(q.nearest_neighbor("embedding", "query_embedding"))
+        .ranking("semantic").input("query_embedding", embedding(*SHOE_1_VECTOR))
+        .limit(3).execute()
+    )
+    hybrid = (
+        index.query(q.any_of(q.contains("title", "shoes"), q.nearest_neighbor("embedding", "query_embedding")))
+        .ranking("hybrid").input("query_embedding", embedding(*BAG_1_VECTOR)).limit(20).execute()
+    )
+    reranked = index.search("candidate").ranking("two_phase").limit(4).execute()
+    try:
+        index.search("shoes").filter("prcie = 1").execute()
+    except SearchKernelError as error:
+        assert str(error.code).lower() == "invalid_argument", error.code
+        error_codes = sorted(detail.code for detail in error.details)
+    else:
+        raise AssertionError("unknown field filter unexpectedly succeeded")
+
+    brand_counts = {
+        str(item["value"]): item["count"]
+        for item in faceted.facets["brands"]
+    }
+    groups = grouping_groups(grouped)
+    group_values = [
+        {"brand": group.value, "products": group.get("products"), "avg_price": group.get("avg_price")}
+        for group in groups
+    ]
+    return {
+        "sorted_search": {"ids": [hit.id for hit in ordered.hits], "total": ordered.total_hits},
+        "filtered_search": {"ids": [hit.id for hit in filtered.hits], "total": filtered.total_hits},
+        "facets": brand_counts,
+        "aggregations": dict(root.aggregations),
+        "grouping": group_values,
+        "nearest_neighbor": {"ids": [hit.id for hit in nearest.hits], "scores": [hit.relevance for hit in nearest.hits]},
+        "hybrid": {"top_id": hybrid.hits[0].id, "has_bag": any(hit.id == "bag-1" for hit in hybrid.hits)},
+        "two_phase": {"ids": [hit.id for hit in reranked.hits]},
+        "unknown_field_error": {"code": "invalid_argument", "details": error_codes},
+    }
+
+
+def write_real_engine_parity(observations: dict[str, object]) -> None:
+    output = os.getenv("SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT")
+    if output:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        Path(output).write_text(json.dumps({"version": 1, "scenarios": observations}, sort_keys=True))
+
+
 def all_continuations(results) -> list[str]:
     tokens: list[str] = []
 
@@ -187,68 +291,8 @@ heading("1. CREATE INDEX")
 
 with Index.create(
     INDEX_PATH,
-    fields={
-        "title": Text(
-            stored=True,
-            searchable=True,
-        ),
-        "brand": Keyword(
-            stored=True,
-            filterable=True,
-            sortable=True,
-            facetable=True,
-        ),
-        "category": Keyword(
-            stored=True,
-            filterable=True,
-            facetable=True,
-        ),
-        "price": Float(
-            stored=True,
-            filterable=True,
-            sortable=True,
-        ),
-        "sale_price": Float(
-            stored=True,
-            filterable=True,
-            sortable=True,
-        ),
-        "rating": Integer(
-            stored=True,
-            filterable=True,
-            sortable=True,
-        ),
-        "inventory": Integer(
-            stored=True,
-            filterable=True,
-            sortable=True,
-        ),
-        "in_stock": Boolean(
-            stored=True,
-            filterable=True,
-        ),
-        "embedding": TensorField(VECTOR_TYPE, stored=True),
-    },
-    rank_profiles=[
-        RankProfile("boosted")
-        .first_phase("query(boost)")
-        .match_feature("query(boost)"),
-        RankProfile("semantic")
-        .first_phase("closeness(embedding)")
-        .query_input("query_embedding", VECTOR_TYPE)
-        .match_feature("query(query_embedding)"),
-        RankProfile("hybrid")
-        .first_phase("bm25(title) + 10 * closeness(embedding)")
-        .query_input("query_embedding", VECTOR_TYPE)
-        .match_feature("bm25(title)")
-        .match_feature("closeness(embedding)")
-        .match_feature("query(query_embedding)"),
-        RankProfile("two_phase")
-        .first_phase("attribute(rating)")
-        .second_phase("attribute(inventory)")
-        .rerank_count(3),
-        RankProfile("first_phase_only").first_phase("attribute(rating)"),
-    ],
+    fields=fields_from_corpus(),
+    rank_profiles=rank_profiles_from_corpus(),
 ) as index:
     print("created:", INDEX_PATH)
 
@@ -258,122 +302,31 @@ with Index.create(
 
     heading("2. INSERT DOCUMENTS")
 
-    documents = [
-        {
-            "_id": "shoe-1",
-            "title": "Jumped Running Shoes for Daily Training",
-            "brand": "Acme",
-            "category": "shoes",
-            "price": 89.0,
-            "sale_price": 79.0,
-            "rating": 5,
-            "inventory": 10,
-            "in_stock": True,
-            "embedding": embedding(*SHOE_1_VECTOR),
-        },
-        {
-            "_id": "shoe-2",
-            "title": "Trail Running Shoes",
-            "brand": "TrailCo",
-            "category": "shoes",
-            "price": 129.0,
-            "rating": 5,
-            "inventory": 4,
-            "in_stock": True,
-            "embedding": embedding(*SHOE_2_VECTOR),
-        },
-        {
-            "_id": "shoe-3",
-            "title": "Budget Walking Shoes",
-            "brand": "Budget",
-            "category": "shoes",
-            "price": 49.0,
-            "rating": 3,
-            "inventory": 25,
-            "in_stock": True,
-            "embedding": embedding(*SHOE_3_VECTOR),
-        },
-        {
-            "_id": "shoe-4",
-            "title": "Acme Racing Shoes",
-            "brand": "Acme",
-            "category": "shoes",
-            "price": 159.0,
-            "rating": 4,
-            "inventory": 0,
-            "in_stock": False,
-            "embedding": embedding(*SHOE_4_VECTOR),
-        },
-        {
-            "_id": "shoe-5",
-            "title": "TrailCo Hiking Shoes",
-            "brand": "TrailCo",
-            "category": "shoes",
-            "price": 109.0,
-            "rating": 4,
-            "inventory": 8,
-            "in_stock": True,
-            "embedding": embedding(*SHOE_5_VECTOR),
-        },
-        {
-            "_id": "bag-1",
-            "title": "Lightweight Running Backpack",
-            "brand": "Acme",
-            "category": "bags",
-            "price": 69.0,
-            "rating": 4,
-            "inventory": 12,
-            "in_stock": True,
-            "embedding": embedding(*BAG_1_VECTOR),
-        },
-        {
-            "_id": "rerank-a",
-            "title": "Rerank Candidate A",
-            "category": "two-phase",
-            "rating": 100,
-            "inventory": 1,
-        },
-        {
-            "_id": "rerank-b",
-            "title": "Rerank Candidate B",
-            "category": "two-phase",
-            "rating": 90,
-            "inventory": 100,
-        },
-        {
-            "_id": "rerank-c",
-            "title": "Rerank Candidate C",
-            "category": "two-phase",
-            "rating": 80,
-            "inventory": 90,
-        },
-        {
-            "_id": "rerank-d",
-            "title": "Rerank Candidate D",
-            "category": "two-phase",
-            "rating": 70,
-            "inventory": 1000,
-        },
-    ]
+    documents = []
+    for source in E2E_CORPUS["documents"]:
+        document = dict(source)
+        if "embedding" in document:
+            document["embedding"] = embedding(*document["embedding"])
+        documents.append(document)
 
     for document in documents:
         index.insert(document)
         print("insert:", document["_id"])
 
-    for probe in range(200):
-        index.insert(
-            {
-                "_id": f"degraded-{probe}",
-                "title": "Coverage Degradation Probe",
-                "category": "degradation",
-                "price": 18.0,
-                "rating": 1,
-                "inventory": 18,
-                "in_stock": True,
-                "embedding": embedding(*SHOE_3_VECTOR),
-            }
-        )
-    print("inserted 200 deterministic coverage probe documents")
+    probe_spec = E2E_CORPUS["coverage_probes"]
+    for probe in range(probe_spec["count"]):
+        document = dict(probe_spec["document"])
+        document["_id"] = f"degraded-{probe}"
+        document["embedding"] = embedding(*document["embedding"])
+        index.insert(document)
+    print(f"inserted {probe_spec['count']} deterministic coverage probe documents")
+
+    PARITY_OBSERVATIONS.update(capture_real_engine_parity(index))
+    index.insert({"_id": "parity-mutation", "title": "Parity Mutation", "category": "parity", "price": 100.0, "sale_price": 110.0, "rating": 1, "inventory": 1, "in_stock": True})
+    index.patch("parity-mutation").set("price", 75.0).unset("sale_price").execute()
+    mutated = index.get("parity-mutation")
+    PARITY_OBSERVATIONS["mutation"] = {"price": mutated["price"], "sale_price_present": "sale_price" in mutated, "deleted": index.delete("parity-mutation")}
+    index.insert({"_id": "parity-reopen", "title": "Parity Reopen", "category": "parity", "price": 42.0, "inventory": 7, "in_stock": True})
 
     # -----------------------------------------------------------------------
     # GET
@@ -1342,6 +1295,9 @@ print("The first Engine instance has shut down.")
 heading("30. REOPEN PERSISTED INDEX")
 
 with Index.open(INDEX_PATH) as index:
+    persisted = index.get("parity-reopen")
+    assert persisted is not None
+    PARITY_OBSERVATIONS["persistence"] = {"title": persisted["title"], "price": persisted["price"], "inventory": persisted["inventory"]}
     # Deleted document remains deleted.
     assert index.get("shoe-3") is None
 
@@ -1438,6 +1394,7 @@ with Index.open(INDEX_PATH) as index:
     assert categories["shoes"]["products"] == 3
     assert categories["bags"]["products"] == 1
 
+    write_real_engine_parity(PARITY_OBSERVATIONS)
 
 heading("32. ALL CLIENT API E2E CHECKS PASSED")
 

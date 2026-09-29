@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "json"
 require "tmpdir"
 
 unless ENV["SEARCHKERNEL_RUBY_USE_INSTALLED_GEM"] == "1"
@@ -34,88 +35,131 @@ def grouping_buckets(results)
   candidates.first.groups || []
 end
 
-def embedding(*values)
-  raise ArgumentError, "expected 8 embedding values" unless values.length == 8
-  SearchKernel::Tensor.dense("tensor<float>(x[8])", values)
+E2E_CORPUS_PATH = File.expand_path("../../../reference/client-real-e2e-parity/corpus.json", __dir__)
+E2E_CORPUS = JSON.parse(File.read(E2E_CORPUS_PATH))
+VECTOR_TYPE = E2E_CORPUS.fetch("schema").fetch("fields").fetch("embedding").fetch("type")
+
+def corpus_vector(document_id)
+  document = E2E_CORPUS.fetch("documents").find { |item| item.fetch("_id") == document_id }
+  raise "missing corpus vector: #{document_id}" unless document && document["embedding"]
+
+  document.fetch("embedding")
 end
 
-SHOE_1_VECTOR = [0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78].freeze
-SHOE_2_VECTOR = [0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64].freeze
-BAG_1_VECTOR = [0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55].freeze
+def embedding(*values)
+  raise ArgumentError, "expected 8 embedding values" unless values.length == 8
+  SearchKernel::Tensor.dense(VECTOR_TYPE, values)
+end
+
+PARITY_OBSERVATIONS = {}
+
+def capture_real_engine_parity(index)
+  ordered = index.search("shoes").sort("price", "asc").limit(20).execute
+  filtered = index.search("shoes").filter("in_stock = true").sort("price", "asc").limit(20).execute
+  faceted = index.search("shoes").facet("brand", name: "brands", limit: 10).limit(20).execute
+  root = index.browse.filter("category = 'shoes'")
+    .aggregate(SearchKernel::Agg.count.as("products"))
+    .aggregate(SearchKernel::Agg.sum("price").as("sum_price"))
+    .aggregate(SearchKernel::Agg.avg("price").as("avg_price"))
+    .limit(0).execute
+  grouped = index.search("shoes").group(
+    SearchKernel::Group.by("brand").limit(10).precision(100)
+      .order_by(SearchKernel::Grouping.desc(SearchKernel::Agg.count), SearchKernel::Grouping.asc(SearchKernel::Grouping.field("brand")))
+      .output(SearchKernel::Agg.count.as("products"), SearchKernel::Agg.avg("price").as("avg_price"))
+  ).execute
+  nearest = index.query(SearchKernel::Query.nearest_neighbor("embedding", "query_embedding"))
+    .ranking("semantic").input("query_embedding", embedding(*SHOE_1_VECTOR)).limit(3).execute
+  hybrid = index.query(SearchKernel::Query.any_of(
+    SearchKernel::Query.contains("title", "shoes"),
+    SearchKernel::Query.nearest_neighbor("embedding", "query_embedding")
+  )).ranking("hybrid").input("query_embedding", embedding(*BAG_1_VECTOR)).limit(20).execute
+  reranked = index.search("candidate").ranking("two_phase").limit(4).execute
+  begin
+    index.search("shoes").filter("prcie = 1").execute
+    raise "unknown field filter unexpectedly succeeded"
+  rescue SearchKernel::SearchKernelError => error
+    check(error.code == "InvalidArgument", "portable invalid-argument error code")
+    error_codes = error.details.map { |detail| detail["code"] }.sort
+  end
+  groups = grouping_buckets(grouped)
+  {
+    "sorted_search" => {"ids" => ids(ordered), "total" => ordered.total_hits},
+    "filtered_search" => {"ids" => ids(filtered), "total" => filtered.total_hits},
+    "facets" => faceted.facets.fetch("brands").to_h { |item| [item.fetch("value"), item.fetch("count")] },
+    "aggregations" => root.aggregations,
+    "grouping" => groups.map { |group| {"brand" => group.value, "products" => group.fields.fetch("products"), "avg_price" => group.fields.fetch("avg_price")} },
+    "nearest_neighbor" => {"ids" => ids(nearest), "scores" => nearest.hits.map(&:relevance)},
+    "hybrid" => {"top_id" => hybrid.hits.first.id, "has_bag" => ids(hybrid).include?("bag-1")},
+    "two_phase" => {"ids" => ids(reranked)},
+    "unknown_field_error" => {"code" => "invalid_argument", "details" => error_codes}
+  }
+end
+
+def write_real_engine_parity(observations)
+  path = ENV["SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT"]
+  return unless path
+
+  File.write(path, JSON.generate({"version" => 1, "scenarios" => observations}))
+end
+
+SHOE_1_VECTOR = corpus_vector("shoe-1").freeze
+SHOE_2_VECTOR = corpus_vector("shoe-2").freeze
+SHOE_3_VECTOR = corpus_vector("shoe-3").freeze
+SHOE_4_VECTOR = corpus_vector("shoe-4").freeze
+SHOE_5_VECTOR = corpus_vector("shoe-5").freeze
+BAG_1_VECTOR = corpus_vector("bag-1").freeze
 
 index_path = ENV.fetch("SEARCHKERNEL_RUBY_E2E_INDEX")
 FileUtils.rm_rf(index_path)
 
-fields = {
-  "title" => SearchKernel::Text.new(stored: true, searchable: true),
-  "brand" => SearchKernel::Keyword.new(stored: true, filterable: true, sortable: true, facetable: true),
-  "price" => SearchKernel::FloatField.new(stored: true, filterable: true, sortable: true),
-  "sale_price" => SearchKernel::FloatField.new(stored: true, filterable: true, sortable: true),
-  "inventory" => SearchKernel::IntegerField.new(stored: true, filterable: true, sortable: true),
-  "active" => SearchKernel::BooleanField.new(stored: true, filterable: true),
-  "category" => SearchKernel::Keyword.new(stored: true, filterable: true, facetable: true),
-  "rating" => SearchKernel::IntegerField.new(stored: true, filterable: true, sortable: true),
-  "embedding" => SearchKernel::TensorField.new("tensor<float>(x[8])", stored: true)
+field_types = {
+  "text" => SearchKernel::Text,
+  "keyword" => SearchKernel::Keyword,
+  "int64" => SearchKernel::IntegerField,
+  "float64" => SearchKernel::FloatField,
+  "bool" => SearchKernel::BooleanField
 }
-
-rank_profiles = [
-  SearchKernel::RankProfile.new("boosted").first_phase("query(boost)").match_feature("query(boost)"),
-  SearchKernel::RankProfile.new("semantic").first_phase("closeness(embedding)")
-    .query_input("query_embedding", "tensor<float>(x[8])").match_feature("query(query_embedding)"),
-  SearchKernel::RankProfile.new("hybrid").first_phase("bm25(title) + 10 * closeness(embedding)")
-    .query_input("query_embedding", "tensor<float>(x[8])").match_feature("bm25(title)")
-    .match_feature("closeness(embedding)").match_feature("query(query_embedding)"),
-  SearchKernel::RankProfile.new("two_phase").first_phase("attribute(rating)")
-    .second_phase("attribute(inventory)").rerank_count(3),
-  SearchKernel::RankProfile.new("first_phase_only").first_phase("attribute(rating)")
-]
+fields = E2E_CORPUS.fetch("schema").fetch("fields").to_h do |name, spec|
+  type = spec.fetch("type")
+  options = spec.reject { |key, _value| key == "type" }.transform_keys(&:to_sym)
+  field = if type.start_with?("tensor<")
+            SearchKernel::TensorField.new(type, **options)
+          else
+            field_types.fetch(type).new(**options)
+          end
+  [name, field]
+end
+rank_profiles = E2E_CORPUS.fetch("schema").fetch("rank_profiles").map do |spec|
+  profile = SearchKernel::RankProfile.new(spec.fetch("name")).first_phase(spec.fetch("first_phase"))
+  profile = profile.second_phase(spec.fetch("second_phase")) if spec["second_phase"]
+  profile = profile.rerank_count(spec.fetch("rerank_count")) if spec["rerank_count"]
+  spec.fetch("query_inputs", {}).each { |name, type_spec| profile = profile.query_input(name, type_spec) }
+  spec.fetch("match_features", []).each { |feature| profile = profile.match_feature(feature) }
+  profile
+end
 
 index = SearchKernel::Index.create(index_path, fields: fields, rank_profiles: rank_profiles)
 begin
-  same("shoe-1", index.insert(
-    "_id" => "shoe-1",
-    "title" => "Jumped Running Shoes for Daily Training",
-    "brand" => "Acme",
-    "price" => 89.0,
-    "sale_price" => 79.0,
-    "inventory" => 10,
-    "active" => true, "category" => "shoes", "rating" => 5,
-    "embedding" => embedding(*SHOE_1_VECTOR)
-  ), "insert id")
-  index.insert(
-    "_id" => "shoe-2",
-    "title" => "Trail Running Shoes",
-    "brand" => "TrailCo",
-    "price" => 129.0,
-    "inventory" => 4,
-    "active" => true, "category" => "shoes", "rating" => 5,
-    "embedding" => embedding(*SHOE_2_VECTOR)
-  )
-  index.insert(
-    "_id" => "bag-1",
-    "title" => "Travel Bag",
-    "brand" => "Acme",
-    "price" => 49.0,
-    "inventory" => 7,
-    "active" => true, "category" => "bags", "rating" => 4,
-    "embedding" => embedding(*BAG_1_VECTOR)
-  )
-  index.insert("_id" => "rerank-a", "title" => "Rerank Candidate A", "category" => "two-phase", "rating" => 100, "inventory" => 1)
-  index.insert("_id" => "rerank-b", "title" => "Rerank Candidate B", "category" => "two-phase", "rating" => 90, "inventory" => 100)
-  index.insert("_id" => "rerank-c", "title" => "Rerank Candidate C", "category" => "two-phase", "rating" => 80, "inventory" => 90)
-  index.insert("_id" => "rerank-d", "title" => "Rerank Candidate D", "category" => "two-phase", "rating" => 70, "inventory" => 1000)
-
-  200.times do |probe|
-    index.insert(
-      "_id" => "degraded-#{probe}",
-      "title" => "Coverage Degradation Probe",
-      "category" => "degradation",
-      "price" => 18.0,
-      "rating" => 1,
-      "inventory" => 18,
-      "embedding" => embedding(*SHOE_2_VECTOR)
-    )
+  E2E_CORPUS.fetch("documents").each do |source|
+    document = source.dup
+    document["embedding"] = embedding(*document.fetch("embedding")) if document["embedding"]
+    index.insert(document)
   end
+
+  probe_spec = E2E_CORPUS.fetch("coverage_probes")
+  probe_spec.fetch("count").times do |probe|
+    document = probe_spec.fetch("document").dup
+    document["_id"] = "degraded-#{probe}"
+    document["embedding"] = embedding(*document.fetch("embedding"))
+    index.insert(document)
+  end
+
+  PARITY_OBSERVATIONS.merge!(capture_real_engine_parity(index))
+  index.insert("_id" => "parity-mutation", "title" => "Parity Mutation", "category" => "parity", "price" => 100.0, "sale_price" => 110.0, "rating" => 1, "inventory" => 1, "in_stock" => true)
+  index.patch("parity-mutation").set("price", 75.0).unset("sale_price").execute
+  mutated = index.get("parity-mutation")
+  PARITY_OBSERVATIONS["mutation"] = {"price" => mutated.fetch("price"), "sale_price_present" => mutated.key?("sale_price"), "deleted" => index.delete("parity-mutation")}
+  index.insert("_id" => "parity-reopen", "title" => "Parity Reopen", "category" => "parity", "price" => 42.0, "inventory" => 7, "in_stock" => true)
 
   results = index.search("shoes")
     .filter("price <= :max", "max" => 100.0)
@@ -123,8 +167,8 @@ begin
     .fields("title", "price")
     .limit(10)
     .execute
-  same(["shoe-1"], ids(results), "text/filter/sort result")
-  same("Jumped Running Shoes for Daily Training", results.hits.first.fields.fetch("title"), "stored field projection")
+  same(%w[shoe-3 shoe-1], ids(results), "text/filter/sort result")
+  same("Budget Walking Shoes", results.hits.first.fields.fetch("title"), "stored field projection")
   check(results.total_hits >= 1, "total hits retained")
 
   highlighted = index.search("jump")
@@ -146,19 +190,19 @@ begin
   repeated = index.search("shoes")
     .filter("price <= :value", "value" => 130.0)
     .filter("rating >= :value", "value" => 5)
-    .filter("active = true").sort("price", "asc").limit(10).execute
+    .filter("in_stock = true").sort("price", "asc").limit(10).execute
   same(%w[shoe-1 shoe-2], ids(repeated), "repeated filters AND with clause-local bindings")
 
   boolean_filter = index.search("shoes")
-    .filter("(brand IN (:brands) OR rating = :rating) AND NOT (active = false)",
+    .filter("(brand IN (:brands) OR rating = :rating) AND NOT (in_stock = false)",
       "brands" => ["Acme", "TrailCo"], "rating" => 3)
     .sort("price", "asc").limit(10).execute
-  same(%w[shoe-1 shoe-2], ids(boolean_filter), "OR / NOT / IN / parentheses filter grammar")
+  same(%w[shoe-3 shoe-1 shoe-5 shoe-2], ids(boolean_filter), "OR / NOT / IN / parentheses filter grammar")
 
   page_one = index.search("shoes").sort("price", "asc").page(1, 1).execute
   page_two = index.search("shoes").sort("price", "asc").page(2, 1).execute
-  same(["shoe-1"], ids(page_one), "page one")
-  same(["shoe-2"], ids(page_two), "page two")
+  same(["shoe-3"], ids(page_one), "page one")
+  same(["shoe-1"], ids(page_two), "page two")
   begin
     index.search("shoes").page(2, 20).offset(20)
     raise "page + offset should reject"
@@ -248,21 +292,21 @@ begin
     .property("q", "shoes")
     .limit(10)
     .execute
-  same(%w[shoe-1 shoe-2], ids(yql), "YQL property and ordering")
+  same(%w[shoe-3 shoe-1 shoe-5 shoe-2 shoe-4], ids(yql), "YQL property and ordering")
 
   yql_page = index.yql("select * from sources * where title contains text(@q) order by price asc")
     .property("q", "shoes")
     .page(2, 1)
     .execute
-  same(["shoe-2"], ids(yql_page), "YQL pagination")
-  same(2, yql_page.total_hits, "YQL pagination retains total hits")
+  same(["shoe-1"], ids(yql_page), "YQL pagination")
+  same(5, yql_page.total_hits, "YQL pagination retains total hits")
 
   yql_grouped = index.yql("select * from sources * where title contains text(@q)")
     .property("q", "shoes")
     .group(SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count.as("products")))
     .execute
   yql_brand_counts = grouping_buckets(yql_grouped).to_h { |group| [group.value, group.fields.fetch("products")] }
-  same({ "Acme" => 1, "TrailCo" => 1 }, yql_brand_counts, "YQL + programmatic grouping")
+  same({ "Acme" => 2, "TrailCo" => 2, "Budget" => 1 }, yql_brand_counts, "YQL + programmatic grouping")
 
   begin
     index.search("shoes").filter("prcie <= :max", "max" => 100).execute
@@ -284,10 +328,10 @@ begin
     .limit(10)
     .execute
   check(!grouped.groups.empty?, "structured facet/grouping tree retained")
-  same({"Acme" => 1, "TrailCo" => 1}, grouped.facets.fetch("brands").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "named facet exact counts")
-  same({"shoes" => 2}, grouped.facets.fetch("category").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "multiple facet projections accumulate")
-  filtered_facet = index.browse.filter("active = true").facet("brand").limit(10).execute
-  same({"Acme" => 2, "TrailCo" => 1}, filtered_facet.facets.fetch("brand").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "filtered facet exact counts")
+  same({"Acme" => 2, "TrailCo" => 2, "Budget" => 1}, grouped.facets.fetch("brands").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "named facet exact counts")
+  same({"shoes" => 5}, grouped.facets.fetch("category").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "multiple facet projections accumulate")
+  filtered_facet = index.browse.filter("category = 'shoes' AND in_stock = true").facet("brand").limit(10).execute
+  same({"Acme" => 1, "TrailCo" => 2, "Budget" => 1}, filtered_facet.facets.fetch("brand").to_h { |item| [item.fetch("value"), item.fetch("count")] }, "filtered facet exact counts")
 
   aggregate = index.search("shoes")
     .aggregate(SearchKernel::Agg.count.as("products"))
@@ -297,11 +341,11 @@ begin
     .aggregate(SearchKernel::Agg.max("price").as("max_price"))
     .aggregate(SearchKernel::Agg.stddev("price").as("stddev_price"))
     .limit(0).execute
-  same(2, aggregate.aggregations.fetch("products"), "root count aggregation")
-  same(218.0, aggregate.aggregations.fetch("sum_price"), "root sum aggregation")
-  same(109.0, aggregate.aggregations.fetch("avg_price"), "root avg aggregation")
-  same(89.0, aggregate.aggregations.fetch("min_price"), "root min aggregation")
-  same(129.0, aggregate.aggregations.fetch("max_price"), "root max aggregation")
+  same(5, aggregate.aggregations.fetch("products"), "root count aggregation")
+  same(535.0, aggregate.aggregations.fetch("sum_price"), "root sum aggregation")
+  same(107.0, aggregate.aggregations.fetch("avg_price"), "root avg aggregation")
+  same(49.0, aggregate.aggregations.fetch("min_price"), "root min aggregation")
+  same(159.0, aggregate.aggregations.fetch("max_price"), "root max aggregation")
   check(aggregate.aggregations.fetch("stddev_price") > 0, "root stddev aggregation")
 
   grouped_counts = index.browse
@@ -318,11 +362,11 @@ begin
         )
     ).limit(0).execute
   brand_groups = grouping_buckets(grouped_counts)
-  same(2, brand_groups.length, "structured group count")
-  same(["Acme", "TrailCo"], brand_groups.map(&:value), "group ordering by count")
-  same([2, 1], brand_groups.map { |group| group.fields.fetch("products") }, "group count outputs")
-  same(69.0, brand_groups[0].fields.fetch("avg_price"), "group avg output")
-  same(129.0, brand_groups[1].fields.fetch("avg_price"), "group avg output")
+  same(3, brand_groups.length, "structured group count")
+  same(["Acme", "TrailCo", "Budget"], brand_groups.map(&:value), "group ordering by count")
+  same([3, 2, 1], brand_groups.map { |group| group.fields.fetch("products") }, "group count outputs")
+  check((brand_groups[0].fields.fetch("avg_price") - 105.66666666666667).abs < 1e-9, "group avg output")
+  same(119.0, brand_groups[1].fields.fetch("avg_price"), "group avg output")
 
   nested = index.browse.filter("category IN (:categories)", "categories" => %w[shoes bags]).group(
     SearchKernel::Group.by("category").limit(10)
@@ -331,9 +375,9 @@ begin
   ).limit(0).execute
   by_category = grouping_buckets(nested).to_h { |group| [group.value, group] }
   same(%w[bags shoes], by_category.keys.sort, "nested category groups")
-  same(2, by_category.fetch("shoes").fields.fetch("products"), "nested shoes count")
+  same(5, by_category.fetch("shoes").fields.fetch("products"), "nested shoes count")
   same(1, by_category.fetch("bags").fields.fetch("products"), "nested bags count")
-  same(%w[Acme TrailCo], by_category.fetch("shoes").groups.map(&:value).sort, "recursive subgroup decoding")
+  same(%w[Acme Budget TrailCo], by_category.fetch("shoes").groups.map(&:value).sort, "recursive subgroup decoding")
 
   aliased = index.search("shoes").group(
     SearchKernel::Group.by("brand").limit(10)
@@ -358,7 +402,7 @@ begin
       )
   ).execute
   grouped_hit_ids = grouping_buckets(summarized).flat_map { |group| (group.hits || []).map(&:id) }.sort
-  same(%w[shoe-1 shoe-2], grouped_hit_ids, "summary aggregation preserves grouped Hit children")
+  same(%w[shoe-1 shoe-2 shoe-3 shoe-4 shoe-5], grouped_hit_ids, "summary aggregation preserves grouped Hit children")
   check(grouping_buckets(summarized).all? { |group| group.hits && !group.hits.empty? }, "summary groups retain hit children")
 
   same(79.0, index.get("shoe-1").fetch("sale_price"), "fixture stores sale_price before patch unset")
@@ -394,7 +438,7 @@ begin
   rescue SearchKernel::SearchKernelError => error
     same("Unsupported", error.code, "conditional mutation returns typed Unsupported")
   end
-  index.upsert("shoe-2", {"title" => "Trail Running Shoes Updated", "brand" => "TrailCo", "price" => 119.0, "inventory" => 4, "active" => true})
+  index.upsert("shoe-2", {"title" => "Trail Running Shoes Updated", "brand" => "TrailCo", "price" => 119.0, "inventory" => 4, "in_stock" => true})
   same(119.0, index.get("shoe-2").fetch("price"), "upsert replacement")
 
   tokens = index.analyze("Running shoes", field: "title")
@@ -428,13 +472,18 @@ begin
     .ranking("semantic").input("query_embedding", embedding(*SHOE_1_VECTOR)).limit(3).execute
   same("shoe-1", reopened_nearest.hits.first.id, "nearest-neighbor survives reopen")
 
-  same(%w[shoe-1 shoe-2], ids(reopened.search("shoes").sort("price", "asc").limit(10).execute), "reopen search")
+  same(%w[shoe-3 shoe-1 shoe-5 shoe-2 shoe-4], ids(reopened.search("shoes").sort("price", "asc").limit(10).execute), "reopen search")
+  persisted = reopened.get("parity-reopen")
+  raise "parity-reopen document missing after reopen" unless persisted
+  PARITY_OBSERVATIONS["persistence"] = {"title" => persisted.fetch("title"), "price" => persisted.fetch("price"), "inventory" => persisted.fetch("inventory")}
   check(reopened.delete("shoe-2"), "delete after reopen")
   same(false, reopened.delete("shoe-2"), "duplicate delete is false")
   same(nil, reopened.get("shoe-2"), "deleted document absent")
 ensure
   reopened.close
 end
+
+write_real_engine_parity(PARITY_OBSERVATIONS)
 
 typed_path = "#{index_path}-typed"
 FileUtils.rm_rf(typed_path)
