@@ -14,7 +14,7 @@ def corpus_value(item):
     if 'string' in item:
         return item['string']
     if 'float64' in item:
-        return item['float64']
+        return float(item['float64'])
     raise ValueError(f"unsupported parity corpus value: {item!r}")
 
 class CaptureClient:
