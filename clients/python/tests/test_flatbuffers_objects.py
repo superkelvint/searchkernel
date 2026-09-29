@@ -799,7 +799,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         builder = SearchBuilder(Index(), "wireless").rank_property("source", "catalog")
         self.assertEqual(builder._rank_properties, {"source": "catalog"})
 
-    def test_ergonomic_rank_properties_use_default_profile(self):
+    def test_ergonomic_rank_properties_preserve_absent_profile(self):
         class EmptyResult:
             root = None
             totalHits = None
@@ -821,6 +821,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             .rank_property("source", "catalog") \
             .execute()
 
+        ranking = index.client.request.ranking
+        self.assertIsNone(ranking.profile)
+        self.assertEqual(ranking.properties[0].value, "catalog")
+
+        SearchBuilder(index, "wireless").ranking("default") \
+            .rank_property("source", "catalog") \
+            .execute()
         self.assertEqual(index.client.request.ranking.profile, "default")
 
     def test_ergonomic_ranking_properties_and_inputs_are_canonical_order(self):

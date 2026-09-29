@@ -223,7 +223,7 @@ export class SearchBuilder {
 
     const ranking = this.rankingProfile !== undefined || this.rankProperties.size
       ? new RankingRequestT(
-          this.rankingProfile ?? "default",
+          this.rankingProfile ?? null,
           [...this.rankProperties]
             .sort(([a], [b]) => comparePortableKeys(a, b))
             .map(([key, item]) => new StringEntryT(key, item)),
