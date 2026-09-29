@@ -121,6 +121,15 @@ end
 raises(TypeError, "rank_properties rejects non-string values") do
   index.search("shoes").rank_properties("enabled" => false)
 end
+atomic_rank_properties = index.search("shoes").rank_property("existing", "keep")
+raises(TypeError, "rank_properties failure is atomic") do
+  atomic_rank_properties.rank_properties("valid" => "yes", "invalid" => false)
+end
+same(
+  [{ "key" => "existing", "value" => "keep" }],
+  atomic_rank_properties.request.dig("ranking", "properties"),
+  "failed rank_properties does not partially mutate builder",
+)
 raises(ArgumentError, "page zero rejects") { index.search("shoes").page(0, 3) }
 raises(ArgumentError, "page offset overflow rejects") { index.search("shoes").page(0xffff_ffff, 2) }
 raises(ArgumentError, "page size outside uint32 rejects") { index.search("shoes").page(1, 0x1_0000_0000) }
