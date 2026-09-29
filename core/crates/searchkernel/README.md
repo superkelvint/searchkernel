@@ -31,6 +31,7 @@ fields cannot pass through the JSON-backed document projection (for example,
 because they contain non-finite scalars). Inspect `Hit<T>::fields` for the
 lossless values and `Hit<T>::document_error` for that fallback reason.
 Ordinary serde deserialization failures for the caller's `T` remain errors.
+Portable non-double/non-byte feature values use `FeatureValue::Value(ResultValue)` rather than a JSON-specific feature variant, keeping one lossless result vocabulary across the Rust API.
 
 For example, a non-finite field is read without a JSON conversion:
 
