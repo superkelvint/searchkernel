@@ -36,6 +36,9 @@
     },
     "explain": {
       "status": "implemented"
+    },
+    "bookkeeping": {
+      "status": "implemented"
     }
   },
   "test": {
@@ -968,6 +971,91 @@
       "rules": [
         "Keep CI image inputs immutable and aligned with the toolchain/native bundle split."
       ]
+    },
+    ".cargo/": {
+      "owner": "build-tooling",
+      "area": "Cargo workspace configuration",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Keep workspace-local Cargo configuration aligned with the canonical build model."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "clients/": {
+      "owner": "client-platform",
+      "area": "Client SDK platform",
+      "read": [
+        "clients/README.md"
+      ],
+      "architecture": "docs/architecture.md#non-rust-client-apis",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Each first-party client directory must have an explicit ownership entry."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "core/": {
+      "owner": "core-architecture",
+      "area": "Core implementation",
+      "read": [
+        "docs/architecture.md"
+      ],
+      "architecture": "docs/architecture.md#runtime-structure",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Use a narrower crate or native ownership entry whenever one exists."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "implementation-plan/": {
+      "owner": "planning",
+      "area": "Implementation plans",
+      "read": [
+        "docs/architecture.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Plans are non-authoritative; durable architecture constraints belong in docs/architecture.md."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "integrations/": {
+      "owner": "integrations",
+      "area": "Integration platform",
+      "read": [
+        "docs/architecture.md"
+      ],
+      "architecture": "docs/architecture.md#non-rust-client-apis",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Each first-party integration directory must have an explicit ownership entry."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
     }
   }
 }
