@@ -185,12 +185,8 @@ pub(super) fn request_tensor_offset<'a>(
             // keeps empty dense tensors valid through the BFBS JSON parser,
             // which can misalign an explicit empty vector of doubles.
             let values = (!values.is_empty()).then(|| builder.create_vector(values));
-            let value = api::DenseTensorValues::create(
-                builder,
-                &api::DenseTensorValuesArgs {
-                    values,
-                },
-            );
+            let value =
+                api::DenseTensorValues::create(builder, &api::DenseTensorValuesArgs { values });
             (
                 api::TensorPayloadKind::DenseTensorValues,
                 value.as_union_value(),

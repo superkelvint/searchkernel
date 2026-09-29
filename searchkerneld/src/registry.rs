@@ -53,8 +53,11 @@ impl fmt::Display for RegistryDispatchError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidRequest(detail) => {
-                write!(formatter, "invalid Search Kernel request FlatBuffer: {detail}")
-            },
+                write!(
+                    formatter,
+                    "invalid Search Kernel request FlatBuffer: {detail}"
+                )
+            }
             Self::UnsupportedProtocol(version) => {
                 write!(
                     formatter,
@@ -152,9 +155,11 @@ impl IndexRegistry {
             wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
                 let payload = envelope
                     .payload_as_search_kernel_v2_create_index_request()
-                    .ok_or_else(|| RegistryDispatchError::InvalidRequest(
-                        "lifecycle union discriminator does not match payload".to_owned(),
-                    ))?;
+                    .ok_or_else(|| {
+                        RegistryDispatchError::InvalidRequest(
+                            "lifecycle union discriminator does not match payload".to_owned(),
+                        )
+                    })?;
                 let Some(definition) = payload.definition() else {
                     return Ok(encode_error(index_control_error_to_portable(
                         IndexControlError::MissingIndexDefinition,
@@ -165,17 +170,21 @@ impl IndexRegistry {
             wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
                 envelope
                     .payload_as_search_kernel_v2_open_index_request()
-                    .ok_or_else(|| RegistryDispatchError::InvalidRequest(
-                        "lifecycle union discriminator does not match payload".to_owned(),
-                    ))?;
+                    .ok_or_else(|| {
+                        RegistryDispatchError::InvalidRequest(
+                            "lifecycle union discriminator does not match payload".to_owned(),
+                        )
+                    })?;
                 self.open(target)
             }
             wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
                 envelope
                     .payload_as_search_kernel_v2_delete_index_request()
-                    .ok_or_else(|| RegistryDispatchError::InvalidRequest(
-                        "lifecycle union discriminator does not match payload".to_owned(),
-                    ))?;
+                    .ok_or_else(|| {
+                        RegistryDispatchError::InvalidRequest(
+                            "lifecycle union discriminator does not match payload".to_owned(),
+                        )
+                    })?;
                 self.delete_index(target)
             }
             wire::RequestPayload::NONE => Err(RegistryDispatchError::InvalidRequest(
