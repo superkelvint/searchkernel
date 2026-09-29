@@ -4,14 +4,44 @@
 from __future__ import annotations
 
 import json
-import re
+import struct
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = ROOT / "api/searchkernel.fbs"
+BFBS = ROOT / "core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs"
 MANIFEST = ROOT / "reference/result-response-conformance/coverage.json"
 CORPUS = ROOT / "reference/result-response-conformance/corpus.json"
+RESULT_ROOT = "SearchKernel.V2.SearchResult"
+
+# reflection.BaseType values from the pinned FlatBuffers reflection schema.
+_BASE_TYPES = {
+    0: "None",
+    1: "UType",
+    2: "Bool",
+    3: "Byte",
+    4: "UByte",
+    5: "Short",
+    6: "UShort",
+    7: "Int",
+    8: "UInt",
+    9: "Long",
+    10: "ULong",
+    11: "Float",
+    12: "Double",
+    13: "String",
+    14: "Vector",
+    15: "Obj",
+    16: "Union",
+    17: "Array",
+    18: "Vector64",
+    19: "MaxBaseType",
+}
+_UTYPE = 1
+_OBJ = 15
+_UNION = 16
+_SEQUENCES = {14, 17, 18}
+
 CLASSIFIED_FIELDS = {
     "SearchResult": {"root", "total_hits", "coverage", "timing", "errors", "trace", "metadata"},
     "Hit": {"id", "relevance", "fields", "highlights", "source", "types", "match_features", "summary_features", "rank_features", "sort_values"},
@@ -19,73 +49,276 @@ CLASSIFIED_FIELDS = {
 }
 
 
-def declarations(schema: str) -> dict[str, tuple[str, str]]:
-    """Return schema declarations, retaining bodies for structural checks."""
-    cleaned = re.sub(r"//[^\n]*|/\*.*?\*/", "", schema, flags=re.S)
-    result: dict[str, tuple[str, str]] = {}
-    for match in re.finditer(r"\b(table|struct|enum|union)\s+(\w+)[^{;]*\{", cleaned):
-        kind, name = match.group(1), match.group(2)
-        start = match.end()
-        depth = 1
-        end = start
-        while end < len(cleaned) and depth:
-            if cleaned[end] == "{":
-                depth += 1
-            elif cleaned[end] == "}":
-                depth -= 1
-            end += 1
-        if depth:
-            raise ValueError(f"unterminated schema declaration: {name}")
-        result[name] = (kind, cleaned[start : end - 1])
-    return result
+class _BfbsReflection:
+    """Minimal reader for FlatBuffers reflection.Schema BFBS metadata."""
 
+    def __init__(self, data: bytes):
+        self.data = data
+        if len(data) < 8 or data[4:8] != b"BFBS":
+            raise ValueError("response schema is not a BFBS reflection buffer")
+        self.root = self.u32(0)
+        self._require(self.root, 4)
 
-def members(kind: str, body: str) -> dict[str, str]:
-    if kind in {"table", "struct"}:
-        return {
-            name: type_name.strip()
-            for name, type_name in re.findall(
-                r"^\s*([A-Za-z_]\w*)\s*:\s*([^=;]+?)(?:\s*=\s*[^;]+)?\s*;",
-                body,
-                re.M,
+    def _require(self, offset: int, size: int) -> None:
+        if offset < 0 or size < 0 or offset + size > len(self.data):
+            raise ValueError(
+                f"BFBS reflection read out of bounds: offset={offset} size={size}"
             )
-        }
-    if kind == "enum":
-        return {name: value for name, value in re.findall(r"\b(\w+)\s*=\s*([^,\s]+)", body)}
-    if kind == "union":
-        return {name: name for name in re.findall(r"\b([A-Za-z_]\w*)\s*,?", body)}
-    return {}
+
+    def _unpack(self, fmt: str, offset: int) -> int:
+        size = struct.calcsize(fmt)
+        self._require(offset, size)
+        return int(struct.unpack_from(fmt, self.data, offset)[0])
+
+    def u16(self, offset: int) -> int:
+        return self._unpack("<H", offset)
+
+    def u32(self, offset: int) -> int:
+        return self._unpack("<I", offset)
+
+    def i8(self, offset: int) -> int:
+        return self._unpack("<b", offset)
+
+    def i32(self, offset: int) -> int:
+        return self._unpack("<i", offset)
+
+    def field(self, table: int, slot: int) -> int | None:
+        self._require(table, 4)
+        vtable = table - self.i32(table)
+        self._require(vtable, 4)
+        vtable_len = self.u16(vtable)
+        if vtable_len < 4:
+            raise ValueError("BFBS reflection table has an invalid vtable")
+        self._require(vtable, vtable_len)
+        entry = vtable + 4 + slot * 2
+        if entry + 2 > vtable + vtable_len:
+            return None
+        offset = self.u16(entry)
+        if offset == 0:
+            return None
+        result = table + offset
+        self._require(result, 1)
+        return result
+
+    def indirect(self, offset: int) -> int:
+        target = offset + self.u32(offset)
+        self._require(target, 1)
+        return target
+
+    def table_field(self, table: int, slot: int) -> int | None:
+        value = self.field(table, slot)
+        return None if value is None else self.indirect(value)
+
+    def string_field(self, table: int, slot: int) -> str | None:
+        value = self.field(table, slot)
+        if value is None:
+            return None
+        string = self.indirect(value)
+        length = self.u32(string)
+        start = string + 4
+        self._require(start, length)
+        try:
+            return self.data[start : start + length].decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ValueError("BFBS reflection string is not UTF-8") from error
+
+    def vector_tables(self, table: int, slot: int) -> list[int]:
+        value = self.field(table, slot)
+        if value is None:
+            return []
+        vector = self.indirect(value)
+        length = self.u32(vector)
+        start = vector + 4
+        self._require(start, length * 4)
+        return [self.indirect(start + index * 4) for index in range(length)]
+
+    def i8_field(self, table: int, slot: int, default: int = 0) -> int:
+        value = self.field(table, slot)
+        return default if value is None else self.i8(value)
+
+    def i32_field(self, table: int, slot: int, default: int = -1) -> int:
+        value = self.field(table, slot)
+        return default if value is None else self.i32(value)
+
+    def bool_field(self, table: int, slot: int) -> bool:
+        value = self.field(table, slot)
+        return value is not None and self.data[value] != 0
 
 
-def referenced_type(type_name: str) -> str | None:
-    value = type_name.strip().strip("[]")
-    return value if re.fullmatch(r"[A-Za-z_]\w*", value) else None
+def _bfbs_declarations(
+    path: Path = BFBS,
+) -> dict[str, tuple[str, dict[str, str]]]:
+    """Load logical schema declarations from checked-in BFBS reflection data."""
+    reflection = _BfbsReflection(path.read_bytes())
+    schema = reflection.root
+
+    objects: list[dict[str, Any]] = []
+    for table in reflection.vector_tables(schema, 0):
+        name = reflection.string_field(table, 0)
+        if not name:
+            raise ValueError("BFBS reflection object has no name")
+        fields: list[tuple[str, int, int, int]] = []
+        for field_table in reflection.vector_tables(table, 1):
+            field_name = reflection.string_field(field_table, 0)
+            type_table = reflection.table_field(field_table, 1)
+            if not field_name or type_table is None:
+                raise ValueError(f"BFBS reflection field is incomplete: {name}")
+            fields.append(
+                (
+                    field_name,
+                    reflection.i8_field(type_table, 0),
+                    reflection.i8_field(type_table, 1),
+                    reflection.i32_field(type_table, 2),
+                )
+            )
+        objects.append(
+            {
+                "name": name,
+                "kind": "struct" if reflection.bool_field(table, 2) else "table",
+                "fields": fields,
+            }
+        )
+
+    enums: list[dict[str, Any]] = []
+    for table in reflection.vector_tables(schema, 1):
+        name = reflection.string_field(table, 0)
+        if not name:
+            raise ValueError("BFBS reflection enum has no name")
+        values: list[tuple[str, tuple[int, int] | None]] = []
+        for value_table in reflection.vector_tables(table, 1):
+            value_name = reflection.string_field(value_table, 0)
+            if not value_name:
+                raise ValueError(f"BFBS reflection enum value is unnamed: {name}")
+            union_type = reflection.table_field(value_table, 3)
+            values.append(
+                (
+                    value_name,
+                    None
+                    if union_type is None
+                    else (
+                        reflection.i8_field(union_type, 0),
+                        reflection.i32_field(union_type, 2),
+                    ),
+                )
+            )
+        enums.append(
+            {
+                "name": name,
+                "kind": "union" if reflection.bool_field(table, 2) else "enum",
+                "values": values,
+            }
+        )
+
+    def indexed_name(values: list[dict[str, Any]], index: int, what: str) -> str:
+        if index < 0 or index >= len(values):
+            raise ValueError(f"BFBS reflection {what} index is invalid: {index}")
+        return str(values[index]["name"])
+
+    def type_name(base: int, element: int, index: int) -> str:
+        if base == _OBJ:
+            return indexed_name(objects, index, "object")
+        if base in {_UNION, _UTYPE}:
+            return indexed_name(enums, index, "enum")
+        if base in _SEQUENCES:
+            if element == _OBJ:
+                inner = indexed_name(objects, index, "object")
+            elif element in {_UNION, _UTYPE}:
+                inner = indexed_name(enums, index, "enum")
+            elif index >= 0:
+                inner = indexed_name(enums, index, "enum")
+            else:
+                inner = _BASE_TYPES.get(element, f"BaseType({element})")
+            return f"[{inner}]"
+        if index >= 0:
+            return indexed_name(enums, index, "enum")
+        return _BASE_TYPES.get(base, f"BaseType({base})")
+
+    declarations: dict[str, tuple[str, dict[str, str]]] = {}
+    for obj in objects:
+        fields: dict[str, str] = {}
+        for field_name, base, element, index in obj["fields"]:
+            # BFBS materializes a synthetic <union>_type UType field beside
+            # every logical union payload. The .fbs contract has one field;
+            # omit the implementation discriminator from the logical schema.
+            if base == _UTYPE or (base in _SEQUENCES and element == _UTYPE):
+                continue
+            fields[field_name] = type_name(base, element, index)
+        declarations[str(obj["name"])] = (str(obj["kind"]), fields)
+
+    for enum in enums:
+        members: dict[str, str] = {}
+        if enum["kind"] == "union":
+            for member, union_type in enum["values"]:
+                # Reflection unions contain a synthetic NONE=0 member with no
+                # payload type. It is absence, not a logical union arm.
+                if union_type is None or union_type[0] == 0:
+                    continue
+                base, index = union_type
+                members[member] = type_name(base, 0, index)
+        else:
+            members = {member: member for member, _ in enum["values"]}
+        declarations[str(enum["name"])] = (str(enum["kind"]), members)
+
+    return declarations
 
 
-def result_closure(schema: str) -> dict[str, tuple[str, dict[str, str]]]:
-    decls = declarations(schema)
-    pending = ["SearchResult"]
+def _referenced_type(type_name: str) -> str:
+    return type_name[1:-1] if type_name.startswith("[") and type_name.endswith("]") else type_name
+
+
+def result_closure(
+    path: Path = BFBS,
+) -> dict[str, tuple[str, dict[str, str]]]:
+    """Return the SearchResult transitive closure from BFBS reflection data."""
+    declarations = _bfbs_declarations(path)
+    pending = [RESULT_ROOT]
     found: dict[str, tuple[str, dict[str, str]]] = {}
+
     while pending:
         name = pending.pop()
         if name in found:
             continue
-        if name not in decls:
-            raise ValueError(f"result schema references missing declaration: {name}")
-        kind, body = decls[name]
-        values = members(kind, body)
+        if name not in declarations:
+            raise ValueError(f"result BFBS references missing declaration: {name}")
+        kind, values = declarations[name]
         found[name] = (kind, values)
-        refs = values.values() if kind != "union" else values.keys()
-        for value in refs:
-            ref = referenced_type(value)
-            if ref in decls and ref not in found:
-                pending.append(ref)
-    return found
+        for value in values.values():
+            referenced = _referenced_type(value)
+            if referenced in declarations and referenced not in found:
+                pending.append(referenced)
+
+    short_names: dict[str, str] = {}
+    used: dict[str, str] = {}
+    for full_name in found:
+        short = full_name.rsplit(".", 1)[-1]
+        previous = used.get(short)
+        if previous is not None and previous != full_name:
+            raise ValueError(
+                f"result BFBS short-name collision: {previous} and {full_name}"
+            )
+        used[short] = full_name
+        short_names[full_name] = short
+
+    def shorten(value: str) -> str:
+        sequence = value.startswith("[") and value.endswith("]")
+        inner = value[1:-1] if sequence else value
+        logical = short_names.get(inner, inner)
+        return f"[{logical}]" if sequence else logical
+
+    return {
+        short_names[full_name]: (
+            kind,
+            {member: shorten(value) for member, value in values.items()},
+        )
+        for full_name, (kind, values) in found.items()
+    }
 
 
-def verify_schema(schema: str, manifest: dict[str, Any]) -> list[str]:
+def verify_schema(
+    closure: dict[str, tuple[str, dict[str, str]]],
+    manifest: dict[str, Any],
+) -> list[str]:
     errors: list[str] = []
-    closure = result_closure(schema)
     declared_types = manifest.get("schema", {})
     if set(declared_types) != set(closure):
         errors.append(
@@ -126,8 +359,8 @@ def verify_schema(schema: str, manifest: dict[str, Any]) -> list[str]:
     return errors
 
 
-def verify(schema: str) -> list[str]:
-    return verify_schema(schema, json.loads(MANIFEST.read_text()))
+def verify(path: Path = BFBS) -> list[str]:
+    return verify_schema(result_closure(path), json.loads(MANIFEST.read_text()))
 
 
 def trace_shape_errors(trace: Any) -> list[str]:
@@ -259,44 +492,51 @@ def walk_json(value: Any):
             yield from walk_json(child)
 
 
-def typed_instances(schema: str, result_payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    """Walk only schema-typed tables reachable from the SearchResult payload."""
-    decls = declarations(schema)
+def typed_instances(
+    closure: dict[str, tuple[str, dict[str, str]]],
+    result_payload: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    """Walk only BFBS-typed tables reachable from the SearchResult payload."""
     found: dict[str, list[dict[str, Any]]] = {}
     visited: set[tuple[str, int]] = set()
 
     def visit(type_name: str, value: Any) -> None:
-        if not isinstance(value, dict) or type_name not in decls:
+        if not isinstance(value, dict) or type_name not in closure:
             return
-        kind, body = decls[type_name]
+        kind, fields = closure[type_name]
         marker = (type_name, id(value))
         if marker in visited:
             return
         visited.add(marker)
-        if kind in {"table", "struct"}:
-            found.setdefault(type_name, []).append(value)
-            values = members(kind, body)
-            for field, raw_type in values.items():
-                clean_type = raw_type.split("(", 1)[0].strip()
-                array = clean_type.startswith("[") and clean_type.endswith("]")
-                referenced = clean_type[1:-1] if array else clean_type
-                if referenced not in decls:
-                    continue
-                if decls[referenced][0] == "union":
-                    variant = value.get(f"{field}_type")
-                    payload = value.get(field)
-                    if variant in decls:
-                        visit(str(variant), payload)
-                elif array:
-                    for item in value.get(field, []) if isinstance(value.get(field, []), list) else []:
-                        visit(referenced, item)
-                else:
-                    visit(referenced, value.get(field))
-        elif kind == "union":
+        if kind not in {"table", "struct"}:
             return
+
+        found.setdefault(type_name, []).append(value)
+        for field, declared_type in fields.items():
+            sequence = declared_type.startswith("[") and declared_type.endswith("]")
+            referenced = declared_type[1:-1] if sequence else declared_type
+            if referenced not in closure:
+                continue
+
+            referenced_kind, union_members = closure[referenced]
+            if referenced_kind == "union":
+                variant = value.get(f"{field}_type")
+                target = union_members.get(str(variant))
+                payload = value.get(field)
+                if target in closure:
+                    visit(target, payload)
+            elif sequence:
+                items = value.get(field, [])
+                if isinstance(items, list):
+                    for item in items:
+                        visit(referenced, item)
+            else:
+                visit(referenced, value.get(field))
 
     visit("SearchResult", result_payload)
     return found
+
+
 def _contains_node(node: Any, kind: str) -> bool:
     if not isinstance(node, dict):
         return False
@@ -422,6 +662,7 @@ def _semantic_exercised(partition: str, envelope: dict[str, Any], envelopes: dic
     return False
 def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, Any]]) -> list[str]:
     errors: list[str] = []
+    closure = result_closure()
     corpus = json.loads(CORPUS.read_text())
     cases = {case["id"] for case in corpus["valid"] + corpus["malformed"]}
     malformed = {case["id"]: case for case in corpus["malformed"]}
@@ -439,7 +680,7 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
             f"missing={sorted(actual_malformed_classes - set(declared_malformed))}, "
             f"stale={sorted(set(declared_malformed) - actual_malformed_classes)}"
         )
-    closure = result_closure(SCHEMA.read_text())
+    closure = closure
     for table, fields in manifest.get("partitions", {}).get("fields", {}).items():
         for field, scenarios in fields.items():
             if isinstance(scenarios, dict) and "unsupported" in scenarios:
@@ -459,7 +700,7 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
                     errors.append(f"{table}.{field} scenario projection missing: {scenario}")
                     continue
                 payload = envelope.get("payload")
-                instances = typed_instances(SCHEMA.read_text(), payload) if isinstance(payload, dict) else {}
+                instances = typed_instances(closure, payload) if isinstance(payload, dict) else {}
                 present |= any(field in obj for obj in instances.get(table, []))
             if not present and table == "HighlightSpan" and field == "start_byte":
                 present = any(
@@ -467,15 +708,15 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
                     for scenario in scenarios
                 )
             if not present:
-                _, table_members = result_closure(SCHEMA.read_text())[table]
+                _, table_members = closure[table]
                 raw_type = table_members[field].split("(", 1)[0].strip().strip("[]")
-                if raw_type not in result_closure(SCHEMA.read_text()):
+                if raw_type not in closure:
                     # FlatBuffers omits default scalar and enum slots from
                     # JSON. A typed table instance proves their default value
                     # is decoded by the production clients.
                     present = any(
                         scenario in envelopes
-                        and bool(typed_instances(SCHEMA.read_text(), envelopes[scenario].get("payload", {})).get(table))
+                        and bool(typed_instances(closure, envelopes[scenario].get("payload", {})).get(table))
                         for scenario in scenarios
                     )
             if not present:
@@ -609,7 +850,7 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
 
 def main() -> int:
     manifest = json.loads(MANIFEST.read_text())
-    errors = verify_schema(SCHEMA.read_text(), manifest)
+    errors = verify_schema(result_closure(), manifest)
     if errors:
         print("\n".join(errors))
         return 1
