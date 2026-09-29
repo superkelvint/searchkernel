@@ -20,6 +20,7 @@ jobs:
     timeout-minutes: 10
     env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
 
     steps:
       - name: Check out exact PR head
@@ -29,11 +30,31 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Synchronize deterministic bookkeeping
+      - name: Synchronize deterministic bookkeeping in pinned image
         shell: bash
         run: |
           set -euo pipefail
-          SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev bookkeeping sync
+
+          docker pull "$CI_IMAGE"
+          docker run --rm --network none \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            "$CI_IMAGE" /bin/bash -lc '
+              set -euo pipefail
+              chmod o+x /root
+              exec setpriv \
+                --reuid="$HOST_UID" \
+                --regid="$HOST_GID" \
+                --clear-groups \
+                env \
+                  HOME=/tmp \
+                  PYTHONDONTWRITEBYTECODE=1 \
+                  SEARCHKERNEL_IN_CI_IMAGE=1 \
+                  SEARCHKERNEL_DEV_USE_CI_IMAGE=0 \
+                  ./dev bookkeeping sync
+            '
 
       - name: Package untrusted bookkeeping patch
         shell: bash
@@ -67,6 +88,7 @@ jobs:
     env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      CI_IMAGE: docker.io/superkelvint/searchkernel-ci:latest
 
     steps:
       - name: Check out exact PR head
@@ -143,7 +165,27 @@ jobs:
             exit 1
           fi
 
-          SEARCHKERNEL_DEV_USE_CI_IMAGE=0 ./dev bookkeeping check
+          docker pull "$CI_IMAGE"
+          docker run --rm --network none \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/work:ro" \
+            -w /work \
+            "$CI_IMAGE" /bin/bash -lc '
+              set -euo pipefail
+              chmod o+x /root
+              exec setpriv \
+                --reuid="$HOST_UID" \
+                --regid="$HOST_GID" \
+                --clear-groups \
+                env \
+                  HOME=/tmp \
+                  PYTHONDONTWRITEBYTECODE=1 \
+                  SEARCHKERNEL_IN_CI_IMAGE=1 \
+                  SEARCHKERNEL_DEV_USE_CI_IMAGE=0 \
+                  ./dev bookkeeping check
+            '
+
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push bookkeeping changes
