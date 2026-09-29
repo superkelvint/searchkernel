@@ -137,9 +137,12 @@ if "else\n" not in runner[exact_guard:overlay_command]:
     raise SystemExit("exact-source mode does not bypass the working-tree overlay")
 
 lock_acquire = runner.index('flock 8')
+vespa_ensure = runner.index('ensure-ci-vespa-volume.sh')
+sccache_ensure = runner.index('ensure-ci-sccache.sh')
+ephemeral_prune = runner.index('ci_runtime_prune_ephemeral_state')
 lease_create = runner.index('--name "$lease_container"')
-if lock_acquire > lease_create:
-    raise SystemExit("lifecycle lock must be acquired before the invocation lease")
+if not (lock_acquire < ephemeral_prune < vespa_ensure < sccache_ensure < lease_create):
+    raise SystemExit("lifecycle lock must cover stale cleanup and shared cache materialization before the invocation lease")
 for prune in (
     'ci_runtime_prune_target_volumes "$ROOT" "$target_volume"',
     'ci_runtime_prune_shared_download_volumes "$environment_id" "$shared_cargo_registry_volume"',
