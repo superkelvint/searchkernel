@@ -391,11 +391,8 @@ ci_gate() {
     echo "== Docker lifecycle contract =="
     bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
 
-    echo "== agent map contract =="
-    "$PYTHON" "$ROOT/tools/test_dev_targets.py"
-    "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
-    "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
-    "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+    echo "== bookkeeping contract =="
+    bookkeeping_command check
 
     echo "== cargo fmt =="
     "$CARGO" fmt --all -- --check
@@ -420,6 +417,7 @@ bookkeeping_command() {
         check)
             "$PYTHON" "$ROOT/tools/test_dev_targets.py"
             "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+            "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
             ;;
@@ -428,6 +426,7 @@ bookkeeping_command() {
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --write
             "$PYTHON" "$ROOT/tools/test_dev_targets.py"
             "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+            "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
             ;;
