@@ -26,9 +26,50 @@ def canonical(kind, name):
             return target
     return None
 
+def explain(path):
+    """Print the most specific registered ownership guidance for a path."""
+    parsed = pathlib.PurePosixPath(path.replace("\\", "/"))
+    if parsed.is_absolute() or ".." in parsed.parts:
+        print(f"path must be repository-relative: {path}", file=sys.stderr)
+        raise SystemExit(2)
+    normalized = parsed.as_posix()
+    matches = [
+        (prefix, metadata)
+        for prefix, metadata in entries("change_areas").items()
+        if normalized == prefix.rstrip("/") or normalized.startswith(prefix)
+    ]
+    if not matches:
+        print(f"no change area registered for path: {path}", file=sys.stderr)
+        print("add an ownership entry to build/targets.json", file=sys.stderr)
+        raise SystemExit(2)
+    prefix, metadata = max(matches, key=lambda item: len(item[0]))
+    print(f"Area: {metadata['area']}")
+    print(f"Owner: {metadata['owner']}")
+    print(f"Architecture: {metadata['architecture']}")
+    print("Read: " + ", ".join(metadata["read"]))
+    tests = metadata.get("test", [])
+    verifies = metadata.get("verify", [])
+    focused = tests[0] if tests else (verifies[0] if verifies else None)
+    strong = verifies[-1] if verifies else focused
+    print(f"Focused check: {command_for(focused) if focused else 'not registered'}")
+    print(f"Strong check: {command_for(strong) if strong else 'not registered'}")
+    print(f"Native SDK rebuild: {'yes' if metadata['native_sdk_rebuild'] else 'no'}")
+    print(f"Generated file: {'yes' if metadata['generated'] else 'no'}")
+    for rule in metadata.get("rules", []):
+        print(f"Rule: {rule}")
+
+def command_for(reference):
+    kind, target = reference.split(":", 1)
+    return f"./dev {kind} {target}"
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "explain":
+        if len(sys.argv) != 3:
+            raise SystemExit("usage: dev-targets.py explain <path>")
+        explain(sys.argv[2])
+        return
     if len(sys.argv) < 3 or sys.argv[1] not in {"list", "resolve"}:
-        raise SystemExit("usage: dev-targets.py list <test|verify> | resolve <test|verify> <target>")
+        raise SystemExit("usage: dev-targets.py list <test|verify> | resolve <test|verify> <target> | explain <path>")
     action, kind = sys.argv[1:3]
     if kind not in {"test", "verify"}:
         raise SystemExit(f"unknown target kind: {kind}")

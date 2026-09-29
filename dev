@@ -146,6 +146,7 @@ Search Kernel development commands
   ./dev coverage              Generate Rust code coverage reports under coverage/
   ./dev lint --profile <id>   Run a canonical Clippy verification profile
   ./dev test --list           List supported test scopes from build/targets.json
+  ./dev explain <path>        Explain ownership and checks from build/targets.json
   ./dev test --remote <scope> Dispatch exact-HEAD test through GitHub Actions
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
@@ -1279,6 +1280,13 @@ case "${1:-help}" in
     test)
         shift
         test_target "${1:-}"
+        ;;
+    explain)
+        [[ "$#" -eq 2 ]] || {
+            echo 'usage: ./dev explain <path>' >&2
+            exit 2
+        }
+        "$PYTHON" "$ROOT/tools/dev-targets.py" explain "$2"
         ;;
     regen)
         case "${2:-}" in

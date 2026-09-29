@@ -59,10 +59,17 @@ class DevTargetsTest(unittest.TestCase):
 
     def test_change_area_guidance_only_references_registered_targets(self):
         data = json.loads(REGISTRY.read_text())
-        for targets in data["change_areas"].values():
-            for ref in targets:
-                kind, target = ref.split(":", 1)
-                self.assertIn(target, data[kind])
+        required = {
+            "owner", "area", "read", "architecture", "test", "verify",
+            "native_sdk_rebuild", "generated", "rules",
+        }
+        for metadata in data["change_areas"].values():
+            self.assertTrue(required.issubset(metadata))
+            for kind in ("test", "verify"):
+                for ref in metadata[kind]:
+                    target_kind, target = ref.split(":", 1)
+                    self.assertEqual(target_kind, kind)
+                    self.assertIn(target, data[kind])
 
 if __name__ == "__main__":
     unittest.main()
