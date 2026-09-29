@@ -24,6 +24,7 @@ pub use result::{
 };
 
 #[cfg(test)]
+#[path = "tests/mod.rs"]
 mod tests;
 
 pub(crate) use grouping::grouping_to_input;
