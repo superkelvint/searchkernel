@@ -386,6 +386,9 @@ ci_gate() {
     echo "== Docker lifecycle contract =="
     bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
 
+    echo "== agent map contract =="
+    "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+
     echo "== cargo fmt =="
     "$CARGO" fmt --all -- --check
 
