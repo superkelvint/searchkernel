@@ -27,8 +27,9 @@ class SemanticParity(unittest.TestCase):
     )
     def test_frozen_corpus(self):
         root=Path(__file__).parents[3]; corpus=Path(os.environ['SEARCHKERNEL_PARITY_CORPUS']); data=json.loads(corpus.read_text());
-        subprocess.run(['cargo','build','--quiet','--no-default-features','-p','searchkernel-testkit','--bin','searchkernel-semantic-snapshot'],cwd=root,check=True)
-        meta=json.loads(subprocess.check_output(['cargo','metadata','--no-deps','--format-version','1'],cwd=root,text=True)); binary=Path(meta['target_directory'])/'debug/searchkernel-semantic-snapshot'; fixture=root/data['index']; out={}
+        binary=Path(os.environ['SEARCHKERNEL_SEMANTIC_SNAPSHOT']); fixture=Path(os.environ['SEARCHKERNEL_PARITY_INDEX']); out={}
+        self.assertTrue(binary.is_file(), f"missing semantic snapshot: {binary}")
+        self.assertTrue(fixture.is_file(), f"missing parity fixture: {fixture}")
         for scenario in data['scenarios']:
             i=scenario['intent']; idx=CaptureIndex(); b=SearchBuilder(idx,None if i['kind']=='browse' else i.get('query'))
             if 'filter' in i:
