@@ -1187,22 +1187,41 @@ mod tests {
             traces.insert(name.to_owned(), trace_search_result(&actual));
         }
 
+        let mut malformed_outcomes = serde_json::Map::new();
+        for case in corpus["malformed"].as_array().unwrap() {
+            let name = case["id"].as_str().unwrap();
+            let path = root.join(format!(
+                "reference/result-response-conformance/fixtures/{}",
+                case["file"].as_str().unwrap()
+            ));
+            let bytes = std::fs::read(&path).unwrap_or_else(|error| {
+                panic!("read malformed fixture {}: {error}", path.display())
+            });
+            let envelope = core::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
+                .unwrap_or_else(|error| panic!("{name} malformed envelope root: {error:?}"));
+            if case["failure_class"] == "response_payload_union" {
+                assert!(
+                    envelope
+                        .payload_as_search_kernel_v2_search_result()
+                        .is_none(),
+                    "Rust response projection accepted malformed response payload {name}"
+                );
+            } else {
+                let result = envelope
+                    .payload_as_search_kernel_v2_search_result()
+                    .unwrap_or_else(|| panic!("{name} must reach the SearchResult decoder"));
+                assert!(
+                    core::search_result_from_api(result).is_err(),
+                    "Rust public result decoding accepted malformed scenario {name}"
+                );
+            }
+            malformed_outcomes.insert(name.to_owned(), serde_json::Value::String("client".into()));
+        }
+
         if let Some(directory) = std::env::var_os("SEARCHKERNEL_RESULT_TRACE_DIR") {
             traces.insert(
                 "malformed_outcomes".into(),
-                serde_json::Value::Object(
-                    corpus["malformed"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|case| {
-                            (
-                                case["id"].as_str().unwrap().to_owned(),
-                                serde_json::Value::String("client".into()),
-                            )
-                        })
-                        .collect(),
-                ),
+                serde_json::Value::Object(malformed_outcomes),
             );
             std::fs::write(
                 std::path::PathBuf::from(directory).join("rust.json"),
@@ -1213,7 +1232,9 @@ mod tests {
     }
 
     #[test]
-    fn public_result_projection_preserves_non_finite_scalar_values() {
+    fn production_encoded_result_preserves_non_finite_scalar_values_in_public_projection() {
+        use searchkernel_protocol::protocol::v2 as wire;
+
         let mut result = searchkernel_ir::SearchResult::empty(searchkernel_ir::TotalHits {
             value: 1,
             relation: searchkernel_ir::TotalHitsRelation::Exact,
@@ -1234,8 +1255,14 @@ mod tests {
             ..Default::default()
         });
 
-        let projection: SearchResult<serde_json::Value> =
-            search_result(result, &[]).expect("result projection must retain non-finite values");
+        let bytes =
+            core::search_result_to_api(&result).expect("production encoder must accept non-finite scalar values");
+        let encoded = core::__flatbuffers::root::<wire::SearchResult>(&bytes)
+            .expect("production-encoded SearchResult must decode as FlatBuffers");
+        let decoded = core::search_result_from_api(encoded)
+            .expect("production-encoded non-finite values must decode to IR");
+        let projection: SearchResult<serde_json::Value> = search_result(decoded, &[])
+            .expect("public result projection must retain non-finite values");
         assert_eq!(
             projection.hits[0].fields["nan"],
             ResultValue::NonFiniteFloat(NonFiniteFloat::NaN)
