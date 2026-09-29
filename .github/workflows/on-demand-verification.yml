@@ -236,13 +236,19 @@ jobs:
 
           operation = os.environ["OPERATION"]
           target = os.environ.get("CANONICAL_TARGET", "")
+          if operation == "ci":
+              canonical_command = "./dev ci"
+          elif target:
+              canonical_command = f"./dev {operation} {target}"
+          else:
+              canonical_command = ""
           evidence = {
               "requested_revision": os.environ["REQUESTED_REVISION"].lower(),
               "request_id": os.environ["REQUEST_ID"],
               "revision": os.environ.get("OBSERVED_REVISION", ""),
               "operation": operation,
               "target": target,
-              "canonical_command": f"./dev {operation} {target}".rstrip(),
+              "canonical_command": canonical_command,
               "result": os.environ.get("RESULT") or "not-run",
               "actor": os.environ["ACTOR"],
               "run_id": int(os.environ["RUN_ID"]),

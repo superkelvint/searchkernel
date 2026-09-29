@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
+import json
+import os
 import pathlib
+import subprocess
+import sys
+import tempfile
+import textwrap
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -85,7 +91,9 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn("canonical command: ./dev ci", execute)
         self.assertIn('run-in-ci-image.sh" ci', execute)
         self.assertIn('run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"', execute)
-        self.assertIn('"canonical_command": f"./dev {operation} {target}".rstrip()', text)
+        self.assertIn('canonical_command = "./dev ci"', text)
+        self.assertIn('canonical_command = f"./dev {operation} {target}"', text)
+        self.assertIn('canonical_command = ""', text)
 
     def test_requested_revision_must_exist_in_this_repository(self):
         text = self.text
@@ -145,6 +153,45 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertGreaterEqual(text.count("if: always()"), 2)
         self.assertIn("actions/upload-artifact@v4", text)
         self.assertIn("evidence.json", text)
+
+    def test_evidence_does_not_claim_a_command_for_an_unresolved_target(self):
+        text = self.text
+        evidence_step = text.index("- name: Write structured evidence")
+        script_start = text.index("python3 - <<'PY'", evidence_step) + len("python3 - <<'PY'\n")
+        script_end = text.index("\n          PY", script_start)
+        script = textwrap.dedent(text[script_start:script_end])
+        with tempfile.TemporaryDirectory(prefix="searchkernel-evidence.") as raw_tmp:
+            temp = pathlib.Path(raw_tmp)
+            (temp / "searchkernel-verification").mkdir()
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "OPERATION": "test",
+                    "CANONICAL_TARGET": "",
+                    "REQUESTED_REVISION": "a" * 40,
+                    "REQUEST_ID": "test-request",
+                    "OBSERVED_REVISION": "a" * 40,
+                    "RESULT": "not-run",
+                    "RUN_ID": "123",
+                    "RUN_ATTEMPT": "1",
+                    "REPOSITORY": "superkelvint/searchkernel",
+                    "SERVER_URL": "https://github.com",
+                    "ACTOR": "test-actor",
+                    "RUNNER_TEMP": str(temp),
+                    "GITHUB_STEP_SUMMARY": str(temp / "summary.md"),
+                }
+            )
+            subprocess.run(
+                [sys.executable, "-c", script],
+                check=True,
+                cwd=ROOT,
+                env=environment,
+                text=True,
+                capture_output=True,
+            )
+            evidence_path = temp / "searchkernel-verification" / "evidence.json"
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+            self.assertEqual(evidence["canonical_command"], "")
 
     def test_on_demand_runs_are_not_subject_to_concurrency_cancellation(self):
         text = self.text
