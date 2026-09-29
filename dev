@@ -148,6 +148,8 @@ Search Kernel development commands
   ./dev lint --profile <id>   Run a canonical Clippy verification profile
   ./dev test --list           List supported test scopes from build/targets.json
   ./dev explain <path>        Explain ownership and checks from build/targets.json
+  ./dev bookkeeping check     Validate deterministic bookkeeping artifacts
+  ./dev bookkeeping sync      Repair deterministic bookkeeping artifacts
   ./dev test --remote <scope> Dispatch exact-HEAD test through GitHub Actions
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
@@ -362,6 +364,8 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
     "$PYTHON" "$ROOT/tools/test_searchkernel_native_linker.py"
     "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+    "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+    "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
     "$PYTHON" "$ROOT/tools/test_dev_universe_summary.py"
     "$CARGO" fmt --all --check
     "$CARGO" check --workspace --all-targets --no-default-features
@@ -388,6 +392,8 @@ ci_gate() {
 
     echo "== agent map contract =="
     "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+    "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+    "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
 
     echo "== cargo fmt =="
     "$CARGO" fmt --all -- --check
@@ -400,6 +406,31 @@ ci_gate() {
 
     echo "== cargo clippy =="
     "$CARGO" clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+}
+
+bookkeeping_command() {
+    case "${1:-check}" in
+        check)
+            [[ "$#" -eq 1 ]] || {
+                echo 'usage: ./dev bookkeeping check|sync' >&2
+                return 2
+            }
+            "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            ;;
+        sync)
+            [[ "$#" -eq 1 ]] || {
+                echo 'usage: ./dev bookkeeping check|sync' >&2
+                return 2
+            }
+            "$PYTHON" "$ROOT/tools/check-agent-map.py" --write
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --write
+            ;;
+        *)
+            echo 'usage: ./dev bookkeeping check|sync' >&2
+            return 2
+            ;;
+    esac
 }
 
 check_protocol() {
@@ -1356,6 +1387,10 @@ case "${1:-help}" in
             exit 2
         }
         "$PYTHON" "$ROOT/tools/dev-targets.py" explain "$2"
+        ;;
+    bookkeeping)
+        shift
+        bookkeeping_command "${1:-check}"
         ;;
     regen)
         case "${2:-}" in
