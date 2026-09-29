@@ -4,10 +4,12 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 DEV="$ROOT/dev"
 RUNNER="$ROOT/tools/run-in-ci-image.sh"
+RUNTIME="$ROOT/tools/ci-runtime-ownership.sh"
 COVERAGE="$ROOT/tools/coverage.sh"
 
 bash -n "$DEV"
 bash -n "$RUNNER"
+bash -n "$RUNTIME"
 bash -n "$COVERAGE"
 python3 -m py_compile "$ROOT/.github/ci/test_exact_head.py"
 python3 "$ROOT/tools/test_dev_client_e2e.py"
@@ -72,11 +74,23 @@ required_runner = (
     "-e CARGO_TARGET_DIR=/cargo-target",
     'ci_runtime_require_digest "$vespa_ref" "$IMAGE"',
     'io.searchkernel.environment-id',
-    'io.searchkernel.cache-kind=worktree-target',
+    'ci_runtime_create_volume "$target_volume" worktree-target cache',
     'ci_runtime_shared_download_volume cargo-registry "$environment_id"',
-    'io.searchkernel.cache-kind=immutable-download',
+    'ci_runtime_create_volume "$cargo_registry_volume" immutable-download cache',
     '-v "$cargo_registry_volume:/root/.cargo/registry"',
     'ci_runtime_prune_target_volumes "$ROOT" "$target_volume"',
+    'ci_runtime_prune_ephemeral_state',
+    'ci_runtime_prune_legacy_ephemeral_state',
+    'ci_runtime_prune_shared_download_volumes "$environment_id" "$shared_cargo_registry_volume"',
+    'ci_runtime_create_volume "$source_volume" source "$ephemeral_lifecycle"',
+    'ci_runtime_remove_invocation_containers "$invocation_id"',
+    'lease_container="searchkernel-dev-lease-$invocation_id"',
+    '-v "$target_volume:/lease/target:ro"',
+    '-v "$native_volume:/lease/native-sdk:ro"',
+    '-v "$sccache_socket_volume:/lease/sccache-socket:ro"',
+    'ci_runtime_prune_sccache_generations "$sccache_binary_volume" "$sccache_socket_volume"',
+    'ci_runtime_prune_vespa_volumes "$native_volume"',
+    'io.searchkernel.invocation-id=$invocation_id',
     'io.searchkernel.worktree=$ROOT',
     'ensure-ci-sccache.sh',
     '-v "$sccache_binary_volume:/opt/searchkernel/sccache:ro"',
@@ -93,7 +107,7 @@ required_runner = (
     "-e LIBRARY_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64:/opt/rh/gcc-toolset-15/root/usr/lib",
     "-e SEARCHKERNEL_IN_CI_IMAGE=1",
     '[[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1',
-    'artifact_volume="searchkernel-dev-artifacts-$(id -u)-$$-${RANDOM}"',
+    'artifact_volume="searchkernel-dev-artifacts-$invocation_id"',
     "-e SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage",
     'tar -C /artifacts -cf - coverage | tar -C "$ROOT" -xf -',
     'if [[ "$status" -eq 0 ]]; then',
@@ -102,6 +116,16 @@ required_runner = (
 for fragment in required_runner:
     if fragment not in runner:
         raise SystemExit(f"CI-image runner is missing {fragment!r}")
+
+lease_create = runner.index('--name "$lease_container"')
+for prune in (
+    'ci_runtime_prune_target_volumes "$ROOT" "$target_volume"',
+    'ci_runtime_prune_shared_download_volumes "$environment_id" "$shared_cargo_registry_volume"',
+    'ci_runtime_prune_sccache_generations "$sccache_binary_volume" "$sccache_socket_volume"',
+    'ci_runtime_prune_vespa_volumes "$native_volume"',
+):
+    if runner.index(prune) < lease_create:
+        raise SystemExit(f"persistent cache pruning must happen after the invocation lease: {prune}")
 
 # /work is a Docker volume populated by a separate container. Its numeric
 # ownership can vary across self-hosted runners, so both the exact-HEAD
@@ -130,6 +154,21 @@ for forbidden in (
 
 print("dev CI-image source contract: PASS")
 PY
+
+for fragment in \
+    'ci_runtime_create_volume()' \
+    'ci_runtime_prune_ephemeral_state()' \
+    'ci_runtime_prune_legacy_ephemeral_state()' \
+    'ci_runtime_prune_shared_download_volumes()' \
+    'ci_runtime_prune_sccache_generations()' \
+    'ci_runtime_prune_vespa_volumes()' \
+    'io.searchkernel.owner=searchkernel' \
+    'io.searchkernel.lifecycle'; do
+    grep -F -- "$fragment" "$RUNTIME" >/dev/null || {
+        echo "CI runtime ownership helper is missing lifecycle contract fragment: $fragment" >&2
+        exit 1
+    }
+done
 
 for fragment in \
     '"$CARGO" llvm-cov clean --workspace' \

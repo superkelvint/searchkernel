@@ -55,6 +55,12 @@ environment_id=$(docker image inspect --format '{{index .Config.Labels "io.searc
 [[ -n "$environment_id" && "$environment_id" != "<no value>" ]] ||
     die "$IMAGE is missing the io.searchkernel.environment-id label"
 
+# Recover resources left behind when a previous ./dev invocation, Actions runner,
+# or Docker client died before its EXIT trap could run. Labeled resources use a
+# short TTL; pre-label legacy job state gets a more conservative migration TTL.
+ci_runtime_prune_ephemeral_state
+ci_runtime_prune_legacy_ephemeral_state
+
 case "$PULL_MODE" in
     always)
         echo "==> dev: pulling external Vespa input $vespa_ref"
@@ -88,28 +94,45 @@ docker run --rm "$IMAGE_ID" /bin/bash -lc '
 ' || die "$IMAGE does not contain the required GCC 15 toolchain"
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-image.XXXXXX")
-source_volume="searchkernel-dev-src-$(id -u)-$$-${RANDOM}"
+invocation_id="$(id -u)-$$-${RANDOM}"
+resource_created_at=$(ci_runtime_now_epoch)
+ephemeral_lifecycle=ephemeral
+[[ "$KEEP_STATE" == "1" ]] && ephemeral_lifecycle=retained
+
+source_volume="searchkernel-dev-src-$invocation_id"
+shared_cargo_registry_volume=$(ci_runtime_shared_download_volume cargo-registry "$environment_id")
 ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}
 if [[ "$ephemeral_target" == "1" ]]; then
-    target_volume="searchkernel-ci-target-$(id -u)-$$-${RANDOM}"
+    target_volume="searchkernel-ci-target-$invocation_id"
     # Remote exact-SHA verification executes untrusted repository code. Keep
     # Cargo's writable registry/source state job-private alongside CARGO_TARGET_DIR
     # so one subject revision cannot poison a later verification job.
-    cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$$-${RANDOM}"
+    cargo_registry_volume="searchkernel-ci-cargo-registry-$invocation_id"
 else
     target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")
-    ci_runtime_prune_target_volumes "$ROOT" "$target_volume"
-    cargo_registry_volume=$(ci_runtime_shared_download_volume cargo-registry "$environment_id")
+    cargo_registry_volume=$shared_cargo_registry_volume
 fi
+
 artifact_volume=""
 if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
-    artifact_volume="searchkernel-dev-artifacts-$(id -u)-$$-${RANDOM}"
+    artifact_volume="searchkernel-dev-artifacts-$invocation_id"
 fi
-container_name="searchkernel-dev-$(id -u)-$$-${RANDOM}"
+container_name="searchkernel-dev-$invocation_id"
+lease_container="searchkernel-dev-lease-$invocation_id"
+docker_resource_labels=(
+    --label io.searchkernel.owner=searchkernel
+    --label "io.searchkernel.lifecycle=$ephemeral_lifecycle"
+    --label "io.searchkernel.created-at=$resource_created_at"
+    --label "io.searchkernel.invocation-id=$invocation_id"
+)
 
 cleanup() {
     local status=$?
     rm -rf -- "$tmp"
+    # The lease exists only to protect selected persistent volumes during this
+    # invocation. Remove all invocation-owned containers even when debug volumes
+    # are intentionally retained.
+    ci_runtime_remove_invocation_containers "$invocation_id"
     if [[ "$KEEP_STATE" == "1" ]]; then
         echo "Search Kernel CI-image volumes retained:"
         echo "  source volume: $source_volume"
@@ -119,7 +142,6 @@ cleanup() {
         return "$status"
     fi
 
-    docker rm -f "$container_name" >/dev/null 2>&1 || true
     docker volume rm -f "$source_volume" >/dev/null 2>&1 || true
     if [[ "$ephemeral_target" == "1" ]]; then
         docker volume rm -f "$target_volume" >/dev/null 2>&1 || true
@@ -132,30 +154,48 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-docker volume create "$source_volume" >/dev/null
+ci_runtime_create_volume "$source_volume" source "$ephemeral_lifecycle" \
+    "io.searchkernel.environment-id=$environment_id" \
+    "io.searchkernel.invocation-id=$invocation_id" >/dev/null
 if [[ "$ephemeral_target" == "1" ]]; then
-    docker volume create \
-        --label io.searchkernel.cache-kind=job-cargo-registry \
-        --label "io.searchkernel.environment-id=$environment_id" \
-        "$cargo_registry_volume" >/dev/null
-    docker volume create \
-        --label io.searchkernel.cache-kind=job-target \
-        --label "io.searchkernel.environment-id=$environment_id" \
-        "$target_volume" >/dev/null
+    ci_runtime_create_volume "$cargo_registry_volume" job-cargo-registry "$ephemeral_lifecycle" \
+        "io.searchkernel.environment-id=$environment_id" \
+        "io.searchkernel.invocation-id=$invocation_id" >/dev/null
+    ci_runtime_create_volume "$target_volume" job-target "$ephemeral_lifecycle" \
+        "io.searchkernel.environment-id=$environment_id" \
+        "io.searchkernel.invocation-id=$invocation_id" >/dev/null
 else
-    docker volume create \
-        --label io.searchkernel.cache-kind=immutable-download \
-        --label "io.searchkernel.environment-id=$environment_id" \
-        "$cargo_registry_volume" >/dev/null
-    docker volume create \
-        --label io.searchkernel.cache-kind=worktree-target \
-        --label "io.searchkernel.environment-id=$environment_id" \
-        --label "io.searchkernel.worktree=$ROOT" \
-        "$target_volume" >/dev/null
+    ci_runtime_create_volume "$cargo_registry_volume" immutable-download cache \
+        "io.searchkernel.environment-id=$environment_id" >/dev/null
+    ci_runtime_create_volume "$target_volume" worktree-target cache \
+        "io.searchkernel.environment-id=$environment_id" \
+        "io.searchkernel.worktree=$ROOT" >/dev/null
 fi
 if [[ -n "$artifact_volume" ]]; then
-    docker volume create "$artifact_volume" >/dev/null
+    ci_runtime_create_volume "$artifact_volume" artifact "$ephemeral_lifecycle" \
+        "io.searchkernel.environment-id=$environment_id" \
+        "io.searchkernel.invocation-id=$invocation_id" >/dev/null
 fi
+
+# Pin every selected persistent generation before retiring older generations.
+# A stopped container still owns its volume references, closing the race between
+# "selected" and the later build-container mount.
+docker create \
+    --name "$lease_container" \
+    "${docker_resource_labels[@]}" \
+    -v "$target_volume:/lease/target:ro" \
+    -v "$cargo_registry_volume:/lease/cargo-registry:ro" \
+    -v "$native_volume:/lease/native-sdk:ro" \
+    -v "$sccache_binary_volume:/lease/sccache-bin:ro" \
+    -v "$sccache_socket_volume:/lease/sccache-socket:ro" \
+    "$IMAGE_ID" /bin/true >/dev/null
+
+if [[ "$ephemeral_target" != "1" ]]; then
+    ci_runtime_prune_target_volumes "$ROOT" "$target_volume"
+    ci_runtime_prune_shared_download_volumes "$environment_id" "$shared_cargo_registry_volume"
+fi
+ci_runtime_prune_sccache_generations "$sccache_binary_volume" "$sccache_socket_volume"
+ci_runtime_prune_vespa_volumes "$native_volume"
 
 head_sha=$(git -C "$ROOT" rev-parse HEAD)
 bundle="$tmp/repository.bundle"
@@ -169,7 +209,7 @@ git -C "$ROOT" bundle create "$bundle" HEAD
 
 echo "==> dev: creating private source snapshot at $head_sha"
 cat "$bundle" |
-    docker run --rm -i         -e SOURCE_HEAD="$head_sha"         -v "$source_volume:/workspace"         "$IMAGE_ID"         /bin/bash -lc '
+    docker run --rm -i         "${docker_resource_labels[@]}"         -e SOURCE_HEAD="$head_sha"         -v "$source_volume:/workspace"         "$IMAGE_ID"         /bin/bash -lc '
             set -euo pipefail
             bundle=/tmp/searchkernel.bundle
             cat > "$bundle"
@@ -192,13 +232,13 @@ git -C "$ROOT" ls-files --others --exclude-standard -z >> "$overlay"
 
 if [[ -s "$overlay" ]]; then
     tar -C "$ROOT" --null --files-from="$overlay" -cf - |
-        docker run --rm -i             -v "$source_volume:/work"             "$IMAGE_ID"             tar -C /work -xf -
+        docker run --rm -i             "${docker_resource_labels[@]}"             -v "$source_volume:/work"             "$IMAGE_ID"             tar -C /work -xf -
 fi
 
 git -C "$ROOT" diff --no-renames --name-only -z HEAD --diff-filter=D > "$deleted"
 if [[ -s "$deleted" ]]; then
     cat "$deleted" |
-        docker run --rm -i             -v "$source_volume:/work"             "$IMAGE_ID"             python3 -c '
+        docker run --rm -i             "${docker_resource_labels[@]}"             -v "$source_volume:/work"             "$IMAGE_ID"             python3 -c '
 import os
 import shutil
 import sys
@@ -224,6 +264,7 @@ fi
 # Verify that the private Git repository still names the exact host HEAD before
 # executing any build/test command.
 actual=$(docker run --rm \
+    "${docker_resource_labels[@]}" \
     -e GIT_CONFIG_COUNT=1 \
     -e GIT_CONFIG_KEY_0=safe.directory \
     -e GIT_CONFIG_VALUE_0=/work \
@@ -294,15 +335,15 @@ fi
 
 echo "==> dev: running in $IMAGE ($IMAGE_ID)"
 status=0
-docker run --rm     --name "$container_name"     --pids-limit=-1     "${tty_args[@]}"     "${docker_volume_args[@]}"     -w /work     "${docker_env[@]}"     "$IMAGE_ID"     ./dev "$@" || status=$?
+docker run --rm     --name "$container_name"     "${docker_resource_labels[@]}"     --pids-limit=-1     "${tty_args[@]}"     "${docker_volume_args[@]}"     -w /work     "${docker_env[@]}"     "$IMAGE_ID"     ./dev "$@" || status=$?
 
 if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
     rm -rf -- "$ROOT/coverage"
     if [[ "$status" -eq 0 ]]; then
-        if ! docker run --rm -v "$artifact_volume:/artifacts" "$IMAGE_ID" test -d /artifacts/coverage; then
+        if ! docker run --rm "${docker_resource_labels[@]}" -v "$artifact_volume:/artifacts" "$IMAGE_ID" test -d /artifacts/coverage; then
             die "coverage command succeeded without producing /artifacts/coverage"
         fi
-        docker run --rm -v "$artifact_volume:/artifacts" "$IMAGE_ID" \
+        docker run --rm "${docker_resource_labels[@]}" -v "$artifact_volume:/artifacts" "$IMAGE_ID" \
             tar -C /artifacts -cf - coverage | tar -C "$ROOT" -xf -
         echo "==> dev: exported coverage reports to $ROOT/coverage"
     else
