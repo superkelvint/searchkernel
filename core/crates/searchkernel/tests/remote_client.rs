@@ -287,7 +287,7 @@ async fn same_index_facade_executes_crud_search_and_analysis_over_tcp() {
         .expect("remote search");
     assert_eq!(result.total_hits.value, 1);
     assert_eq!(result.hits.len(), 1);
-    assert_eq!(result.hits[0].document, product);
+    assert_eq!(result.hits[0].document, Some(product));
     assert_eq!(result.hits[0].score, Some(3.5));
 
     let analyzed = index

@@ -31,8 +31,9 @@ pub use query::{
 pub use remote::RemoteOptions;
 pub use result::{
     Coverage, CoverageDegraded, FacetResult, FacetValue, FeatureSet, FeatureValue, GroupingResult,
-    HighlightFragment, HighlightResult, HighlightSpan, Hit, ResultIssue, SearchResult,
-    SearchTiming, TotalHits, TotalHitsRelation,
+    HighlightFragment, HighlightResult, HighlightSpan, Hit, NonFiniteFloat, ResultIssue,
+    ResultTensor, ResultTensorBlock, ResultTensorCell, ResultTensorPayload, ResultValue,
+    SearchResult, SearchTiming, TotalHits, TotalHitsRelation,
 };
 pub use schema::{
     Analyzer, AnalyzerConfig, AttributeConfig, ConstantDefinition, ConstantSource, DataType,
