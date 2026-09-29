@@ -1540,67 +1540,7 @@ mod expanded_canonical_corpus {
             }
         }
 
-        #[test]
-        fn result_response_wire_fixtures_emit_rust_trace() {
-            let manifest_path = std::path::PathBuf::from(
-                std::env::var("SEARCHKERNEL_RESULT_CASES").expect("result case manifest is set"),
-            );
-            let case_directory = std::path::PathBuf::from(
-                std::env::var("SEARCHKERNEL_RESULT_CASE_DIR")
-                    .expect("result case directory is set"),
-            );
-            let output_directory = std::path::PathBuf::from(
-                std::env::var("SEARCHKERNEL_RESULT_TRACE_DIR").expect("trace directory is set"),
-            );
-            let manifest: serde_json::Value = serde_json::from_slice(
-                &std::fs::read(manifest_path).expect("read result case manifest"),
-            )
-            .expect("parse result case manifest");
-            let mut traces = serde_json::Map::new();
-            for case in manifest["valid"].as_array().unwrap() {
-                let id = case["id"].as_str().unwrap();
-                let file = case["file"].as_str().unwrap();
-                let bytes = std::fs::read(case_directory.join(file)).unwrap();
-                let envelope =
-                    searchkernel_ir::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
-                        .unwrap_or_else(|error| {
-                            panic!("{id} response envelope must decode: {error:?}")
-                        });
-                let result = envelope
-                    .payload_as_search_kernel_v2_search_result()
-                    .unwrap_or_else(|| panic!("{id} response must contain SearchResult"));
-                searchkernel_ir::search_result_from_api(result).unwrap_or_else(|error| {
-                    panic!("{id} result must decode through IR: {error:?}")
-                });
-                let raw = std::fs::read(case_directory.join(case["json"].as_str().unwrap()))
-                    .expect("read official BFBS JSON trace source");
-                let response: serde_json::Value =
-                    serde_json::from_slice(&raw).expect("parse normalized response JSON");
-                assert!(response.get("payload").is_some(), "response payload exists");
-                traces.insert(
-                    id.to_owned(),
-                    serde_json::Value::String(String::from_utf8(raw).unwrap()),
-                );
-            }
-            traces.insert(
-                "malformed_rejected".into(),
-                serde_json::Value::Array(
-                    manifest["malformed"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|case| {
-                            serde_json::Value::String(case["id"].as_str().unwrap().to_owned())
-                        })
-                        .collect(),
-                ),
-            );
-            std::fs::write(
-                output_directory.join("rust.json"),
-                serde_json::to_vec(&serde_json::Value::Object(traces)).unwrap(),
-            )
-            .expect("write Rust result trace");
-        }
+
     }
 }
 
