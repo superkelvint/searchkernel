@@ -1096,6 +1096,9 @@ impl Engine {
                     "sparse, mixed, and expression query inputs are not supported by the current native path",
                 ));
             };
+            crate::tensor::validate_dense(type_spec, values).map_err(|error| {
+                Error::invalid_argument_detail(error.detail_code, error.message)
+            })?;
             let name = cstring(name)?;
             let type_spec = cstring(type_spec)?;
             let value_count = u32::try_from(values.len())

@@ -316,9 +316,14 @@ pub(crate) fn add_document_field(
             }
         }
         FieldValue::Tensor(TensorValue::Dense { type_spec, values }) => {
+            crate::tensor::validate_dense(type_spec, values).map_err(|error| {
+                Error::invalid_argument_detail(error.detail_code, error.message)
+            })?;
             let type_spec = cstring(type_spec)?;
             let value_count = u32::try_from(values.len())
                 .map_err(|_| Error::message("tensor value count exceeds native capacity"))?;
+            #[cfg(test)]
+            super::DENSE_DOCUMENT_FFI_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             unsafe {
                 sys::sk_document_add_tensor_dense(
                     document,
