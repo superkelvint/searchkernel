@@ -21,6 +21,7 @@
   "verify": {
     "api-conformance": {"description": "Portable API conformance"},
     "contracts": {"description": "Capability and client contracts"},
+    "client-semantic-parity": {"description": "Cross-language canonical IR semantic parity"},
     "abi": {"description": "Public native ABI contract"},
     "persistence": {"description": "Persistence compatibility"},
     "issue-queue": {"description": "GitHub issue queue consistency"},
