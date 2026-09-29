@@ -30,7 +30,7 @@ if dispatch not in dev:
 if dev.index(dispatch) > dev.index(resolve_python):
     raise SystemExit("dev must dispatch before resolving any host language toolchain")
 for command in (
-    "check|universe|check-fast|check-protocol|coverage|lint|test|verify",
+    "check|galaxy|universe|check-fast|check-protocol|coverage|lint|test|verify",
     "native-sdk)",
     '[[ "${2:-ensure}" == "ensure" ]]',
     "SEARCHKERNEL_DEV_USE_CI_IMAGE",
@@ -75,6 +75,8 @@ required_runner = (
     'io.searchkernel.cache-kind=worktree-target',
     'ci_runtime_shared_download_volume cargo-registry "$environment_id"',
     'io.searchkernel.cache-kind=immutable-download',
+    'cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$$-${RANDOM}"',
+    'io.searchkernel.cache-kind=job-cargo-registry',
     '-v "$cargo_registry_volume:/root/.cargo/registry"',
     'ci_runtime_prune_target_volumes "$ROOT" "$target_volume"',
     'io.searchkernel.worktree=$ROOT',
@@ -104,7 +106,6 @@ for fragment in required_runner:
         raise SystemExit(f"CI-image runner is missing {fragment!r}")
 
 for forbidden in (
-    "searchkernel-ci-cargo-registry",
     "searchkernel-ci-cargo-git",
     "searchkernel-native-ci-lock",
     ":/root/.cargo/git",

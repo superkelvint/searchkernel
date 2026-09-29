@@ -29,7 +29,17 @@ class DevTargetsTest(unittest.TestCase):
         data = json.loads(REGISTRY.read_text())
         self.assertEqual(
             set(data["commands"]),
-            {"doctor", "build", "ci", "test", "lint", "verify", "universe", "release-check"},
+            {
+                "doctor",
+                "build",
+                "ci",
+                "test",
+                "lint",
+                "verify",
+                "galaxy",
+                "universe",
+                "release-check",
+            },
         )
 
     def test_aliases_resolve_to_canonical_targets(self):
@@ -45,6 +55,18 @@ class DevTargetsTest(unittest.TestCase):
             listed = [line.strip() for line in output.splitlines() if line.strip()]
             self.assertEqual(listed, list(data[kind]))
 
+    def test_universe_list_contains_only_registered_semantic_verifiers(self):
+        data = json.loads(REGISTRY.read_text())
+        expected = [
+            name
+            for name, meta in data["verify"].items()
+            if meta.get("universe") == "semantic"
+        ]
+        output = subprocess.check_output([TOOL, "list", "universe"], text=True)
+        self.assertEqual(output.splitlines(), expected)
+        self.assertTrue(expected)
+        self.assertTrue(all(name.startswith(("vespa.", "product.")) for name in expected))
+
     def test_aliases_do_not_create_duplicate_discovery_targets(self):
         data = json.loads(REGISTRY.read_text())
         output = subprocess.check_output([TOOL, "list", "verify"], text=True)
@@ -56,6 +78,14 @@ class DevTargetsTest(unittest.TestCase):
         result = subprocess.run([TOOL, "resolve", "verify", "nope"], text=True, capture_output=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn("unknown verify target: nope", result.stderr)
+
+        universe_resolve = subprocess.run(
+            [TOOL, "resolve", "universe", "vespa.ranking"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(universe_resolve.returncode, 1)
+        self.assertIn("universe is a list-only verifier collection", universe_resolve.stderr)
 
     def test_change_area_guidance_only_references_registered_targets(self):
         data = json.loads(REGISTRY.read_text())
