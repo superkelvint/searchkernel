@@ -29,6 +29,10 @@ const fixtureRoot = resolve(
   process.cwd(),
   "../../core/crates/searchkernel-dispatch/tests/fixtures/portable/responses",
 );
+const conformanceFixtureRoot = resolve(
+  process.cwd(),
+  "../../reference/result-response-conformance/fixtures",
+);
 
 function loadFixture(name: string): SearchResults {
   const bytes = readFileSync(`${fixtureRoot}/result-${name}.skrs`);
@@ -411,5 +415,17 @@ describe("shared canonical result corpus", () => {
       result.projectFacet("brand", "brand");
       expect(result.facets, filename).toEqual({});
     }
+  });
+
+  it.each([
+    "invalid-tensor-dense-nan.skrs",
+    "invalid-tensor-sparse-positive-infinity.skrs",
+    "invalid-tensor-mixed-negative-infinity.skrs",
+  ])("rejects forbidden tensor cells in %s", (filename) => {
+    expect(() => {
+      const bytes = readFileSync(`${conformanceFixtureRoot}/${filename}`);
+      const response = unpackResponse(new Uint8Array(bytes), "search");
+      return new SearchResults(response.payload as SearchResultT);
+    }).toThrow(/tensor cells must be finite/);
   });
 });

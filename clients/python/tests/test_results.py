@@ -17,6 +17,11 @@ from SearchKernel.V2.Value import ValueT
 from SearchKernel.V2.ValueEntry import ValueEntryT
 from SearchKernel.V2.ValueKind import ValueKind
 
+CONFORMANCE_FIXTURE_ROOT = (
+    Path(__file__).resolve().parents[3]
+    / "reference/result-response-conformance/fixtures"
+)
+
 
 def result_node(node):
     node_type = ResultNodeKind.Hit if isinstance(node, HitT) else ResultNodeKind.ResultGroup
@@ -327,6 +332,19 @@ class SharedResultFixtureTest(unittest.TestCase):
             result = self.load(path.stem.removeprefix("result-"))
             result._project_facet("brand", "brand")
             self.assertEqual(result.facets, {}, path.name)
+
+    def test_shared_malformed_tensor_fixtures_fail_closed(self):
+        for filename in (
+            "invalid-tensor-dense-nan.skrs",
+            "invalid-tensor-sparse-positive-infinity.skrs",
+            "invalid-tensor-mixed-negative-infinity.skrs",
+        ):
+            with self.subTest(filename=filename):
+                envelope = unpack_response(
+                    (CONFORMANCE_FIXTURE_ROOT / filename).read_bytes(), "search"
+                )
+                with self.assertRaisesRegex(ValueError, "finite"):
+                    SearchResults(envelope.payload)
 
 
 if __name__ == "__main__":

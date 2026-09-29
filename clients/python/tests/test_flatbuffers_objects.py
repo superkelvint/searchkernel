@@ -504,6 +504,41 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(sparse["$searchkernel_tensor"]["sparse"][0]["value"], 0.5)
         self.assertEqual(mixed["$searchkernel_tensor"]["mixed"][0]["values"], [0.25, 0.75])
 
+    def test_result_value_decoder_rejects_nonfinite_tensor_cells(self):
+        address = [TensorAddressEntryT(dimension="category", label="books")]
+        malformed = [
+            TensorValueT(
+                typeSpec="tensor<float>(x[1])",
+                payloadType=TensorPayloadKind.DenseTensorValues,
+                payload=DenseTensorValuesT(values=[math.nan]),
+            ),
+            TensorValueT(
+                typeSpec="tensor<float>(category{})",
+                payloadType=TensorPayloadKind.SparseTensorCells,
+                payload=SparseTensorCellsT(
+                    cells=[TensorCellT(address=address, value=math.inf)]
+                ),
+            ),
+            TensorValueT(
+                typeSpec="tensor<float>(category{},x[1])",
+                payloadType=TensorPayloadKind.MixedTensorBlocks,
+                payload=MixedTensorBlocksT(
+                    blocks=[
+                        TensorBlockT(
+                            address=address,
+                            values=[-math.inf],
+                        )
+                    ]
+                ),
+            ),
+        ]
+
+        for tensor in malformed:
+            with self.subTest(payloadType=tensor.payloadType):
+                encoded = ValueT(kindType=ValueKind.TensorValue, kind=tensor)
+                with self.assertRaisesRegex(ValueError, "finite"):
+                    _python_value(encoded)
+
     def test_result_decoding_rejects_ambiguous_and_unknown_unions(self):
         entries = [
             ValueEntryT(key="duplicate", value=value(1)),
