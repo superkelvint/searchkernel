@@ -43,10 +43,16 @@ mod showcase {
     fn corpus_documents() -> Result<Vec<(String, Value)>, Box<dyn std::error::Error>> {
         let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
         let mut documents = Vec::new();
-        for source in corpus["documents"].as_array().ok_or("corpus documents missing")? {
+        for source in corpus["documents"]
+            .as_array()
+            .ok_or("corpus documents missing")?
+        {
             let id = source["_id"].as_str().ok_or("corpus document id missing")?;
             let mut document = source.clone();
-            document.as_object_mut().ok_or("corpus document must be an object")?.remove("_id");
+            document
+                .as_object_mut()
+                .ok_or("corpus document must be an object")?
+                .remove("_id");
             if let Some(cells) = document.get("embedding").and_then(Value::as_array) {
                 let values = cells
                     .iter()
@@ -145,9 +151,8 @@ mod showcase {
             }
             if let Some(features) = spec.get("match_features").and_then(Value::as_array) {
                 for feature in features {
-                    profile = profile.match_feature(
-                        feature.as_str().ok_or("match feature must be text")?,
-                    );
+                    profile = profile
+                        .match_feature(feature.as_str().ok_or("match feature must be text")?);
                 }
             }
             definition = definition.rank_profile(profile);
@@ -193,10 +198,7 @@ mod showcase {
             let mut document = probe_template.clone();
             document["embedding"] =
                 serde_json::to_value(Tensor::dense(VECTOR_TYPE, probe_vector.clone()))?;
-            index.insert(
-                format!("degraded-{probe}"),
-                &document,
-            )?;
+            index.insert(format!("degraded-{probe}"), &document)?;
         }
         println!("inserted 200 deterministic coverage probe documents");
 
@@ -220,7 +222,10 @@ mod showcase {
             .search("")
             .ranking(Ranking::named("semantic"))
             .typed_query(Query::nearest_neighbor("embedding", "query_embedding"))
-            .query_input("query_embedding", Tensor::dense(VECTOR_TYPE, corpus_vector("shoe-1")?))
+            .query_input(
+                "query_embedding",
+                Tensor::dense(VECTOR_TYPE, corpus_vector("shoe-1")?),
+            )
             .limit(3)
             .execute::<Value>()?;
         let parity_reranked = index
@@ -996,8 +1001,13 @@ mod showcase {
         heading("22. PATCH SET / UNSET");
 
         index.insert("parity-mutation", &json!({"title": "Parity Mutation", "category": "parity", "price": 100.0, "sale_price": 110.0, "rating": 1, "inventory": 1, "in_stock": true}))?;
-        index.patch("parity-mutation", Patch::new().set("price", 75.0_f64).unset("sale_price"))?;
-        let parity_mutated = index.get::<Value>("parity-mutation")?.expect("parity mutation should exist");
+        index.patch(
+            "parity-mutation",
+            Patch::new().set("price", 75.0_f64).unset("sale_price"),
+        )?;
+        let parity_mutated = index
+            .get::<Value>("parity-mutation")?
+            .expect("parity mutation should exist");
         let parity_deleted = index.delete("parity-mutation")?;
         parity_observations["mutation"] = json!({
             "price": parity_mutated["price"],
@@ -1123,7 +1133,9 @@ mod showcase {
                 }
             })
         );
-        let parity_persisted = index.get::<Value>("parity-reopen")?.expect("parity document should survive reopen");
+        let parity_persisted = index
+            .get::<Value>("parity-reopen")?
+            .expect("parity document should survive reopen");
         parity_observations["persistence"] = json!({
             "title": parity_persisted["title"],
             "price": parity_persisted["price"],
