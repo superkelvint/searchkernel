@@ -89,6 +89,31 @@ pub(super) fn remove_published_root(root: &std::path::Path) -> std::io::Result<(
 }
 
 #[cfg(feature = "native")]
+fn delete_tombstone_path(root: &std::path::Path) -> Result<std::path::PathBuf> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TOMBSTONE: AtomicU64 = AtomicU64::new(0);
+
+    let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let name = root
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .ok_or_else(|| Error::Infrastructure("index path has no valid final component".into()))?;
+    loop {
+        let sequence = NEXT_TOMBSTONE.fetch_add(1, Ordering::Relaxed);
+        let candidate = parent.join(format!(
+            ".{name}.searchkernel-delete-{}-{sequence}",
+            std::process::id()
+        ));
+        match std::fs::symlink_metadata(&candidate) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(candidate),
+            Ok(_) => continue,
+            Err(error) => return Err(Error::Infrastructure(error.to_string())),
+        }
+    }
+}
+
+#[cfg(feature = "native")]
 fn open_native_backend(
     data: &std::path::Path,
     config: &std::path::Path,
@@ -359,24 +384,34 @@ impl Index {
             return Err(Error::not_found(root.display().to_string()));
         }
 
-        remove_published_root(root).map_err(|error| {
-            Error::Infrastructure(format!("delete index '{}': {error}", root.display()))
-        })?;
-
         let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let tombstone = delete_tombstone_path(root)?;
+        // Unpublish the complete tree in one rename. Recursive cleanup only
+        // touches the hidden tombstone, so a failure cannot leave a partial
+        // index visible at its canonical target path.
+        std::fs::rename(root, &tombstone).map_err(|error| {
+            Error::Infrastructure(format!("unpublish index '{}': {error}", root.display()))
+        })?;
         sync_published_parent(parent).map_err(|error| {
             Error::search(
                 crate::error::ErrorCode::Unavailable,
                 format!(
-                    "index was deleted at '{}' but parent directory sync failed: {error}",
+                    "index was unpublished at '{}' but parent directory sync failed: {error}",
                     root.display()
                 ),
             )
             .with_detail(
                 "index_deleted_durability_uncertain",
                 None::<String>,
-                "index directory was removed but crash durability is uncertain",
+                "index canonical path was unpublished but crash durability is uncertain",
             )
+        })?;
+
+        remove_published_root(&tombstone).map_err(|error| {
+            Error::Infrastructure(format!(
+                "index '{}' was deleted but tombstone cleanup failed: {error}",
+                root.display()
+            ))
         })
     }
 
