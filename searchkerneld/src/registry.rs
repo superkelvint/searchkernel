@@ -375,7 +375,7 @@ impl IndexRegistry {
         result
     }
 
-    fn checked_index_path(&self    fn checked_index_path(&self, target: &str) -> Result<PathBuf, PortableError> {
+    fn checked_index_path(&self, target: &str) -> Result<PathBuf, PortableError> {
         let path = self.data_root.join(target);
         match std::fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
