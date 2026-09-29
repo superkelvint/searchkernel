@@ -127,8 +127,9 @@ a fix.
 ## Build and verification
 
 `BUILDING.md` is authoritative for setup, canonical commands, toolchains,
-native SDK/runtime provisioning, exact-SHA remote verification, and environment
-recovery.
+native SDK/runtime provisioning, and environment recovery. The exact-SHA remote
+verification protocol for local-capable and remote-only agents is documented in
+`docs/agent-workflow.md`.
 
 Use the repository's `./dev` interface and the target vocabulary in
 `build/targets.json`; do not create a second command matrix in code, CI, or
@@ -156,8 +157,8 @@ expand verification according to blast radius. Also:
 
 For native-affecting changes, cheap PR CI alone is not evidence that real Vespa
 behavior was exercised. Run or dispatch the applicable native/real-engine lane
-using the current local or exact-SHA remote mechanism documented in
-`BUILDING.md`.
+using local `./dev test` / `./dev verify` or the exact-SHA remote protocol in
+`docs/agent-workflow.md`.
 
 If a required check cannot run, record the exact command, failure, and reason.
 Never claim a check passed when it did not run.
