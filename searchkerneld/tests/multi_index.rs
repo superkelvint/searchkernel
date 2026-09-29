@@ -683,6 +683,76 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
     registry.close_all().expect("close registry");
 }
 
+#[cfg(unix)]
+#[test]
+fn close_all_waits_for_in_flight_create_and_prevents_republication() {
+    use std::os::fd::AsRawFd;
+
+    let temp = TempDir::new("close-create-race");
+    let lock_path = temp.0.join(".products.searchkernel.lock");
+    let lock_file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("open external lifecycle lock");
+    assert_eq!(
+        unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+        0,
+        "acquire external lifecycle lock"
+    );
+
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let creating_registry = registry.clone();
+    let creator = thread::spawn(move || {
+        creating_registry
+            .dispatch(&create_request("products", "title"))
+            .expect("dispatch create")
+    });
+
+    thread::sleep(std::time::Duration::from_millis(100));
+
+    let (closed_tx, closed_rx) = std::sync::mpsc::channel();
+    let closing_registry = registry.clone();
+    let closer = thread::spawn(move || {
+        let result = closing_registry.close_all();
+        closed_tx.send(result).expect("send close result");
+    });
+
+    assert!(
+        closed_rx
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .is_err(),
+        "close_all must wait for the in-flight create"
+    );
+
+    assert_eq!(
+        unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_UN) },
+        0,
+        "release external lifecycle lock"
+    );
+    assert_lifecycle(
+        &creator.join().expect("join creator"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    closed_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("close result after create")
+        .expect("close registry");
+    closer.join().expect("join closer");
+
+    assert!(registry
+        .loaded_targets()
+        .expect("loaded targets")
+        .is_empty());
+    assert_eq!(
+        registry.dispatch(&open_request(Some("products"))),
+        Err(searchkerneld::RegistryDispatchError::Closed),
+        "closed registry must not reopen a target after shutdown"
+    );
+}
+
 #[test]
 fn concurrent_create_and_open_are_linearizable() {
     let temp = TempDir::new("create-open-race");

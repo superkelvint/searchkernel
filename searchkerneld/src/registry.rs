@@ -83,6 +83,7 @@ pub struct IndexRegistry {
     data_root: PathBuf,
     entries: Mutex<BTreeMap<String, Arc<RegistryEntry>>>,
     transition_locks: Mutex<BTreeMap<String, Weak<Mutex<()>>>>,
+    shutdown: RwLock<bool>,
 }
 
 impl IndexRegistry {
@@ -96,6 +97,7 @@ impl IndexRegistry {
             data_root,
             entries: Mutex::new(BTreeMap::new()),
             transition_locks: Mutex::new(BTreeMap::new()),
+            shutdown: RwLock::new(false),
         })
     }
 
@@ -121,6 +123,16 @@ impl IndexRegistry {
     }
 
     pub fn dispatch(&self, request: &[u8]) -> Result<Vec<u8>, RegistryDispatchError> {
+        // Keep shutdown linearizable with every request, including lifecycle
+        // transitions that temporarily operate outside the registry map.
+        let shutdown = self
+            .shutdown
+            .read()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        if *shutdown {
+            return Err(RegistryDispatchError::Closed);
+        }
+
         let envelope = parse_request(request)?;
         if envelope.protocol_version() != PROTOCOL_VERSION {
             return Err(RegistryDispatchError::UnsupportedProtocol(
@@ -164,6 +176,21 @@ impl IndexRegistry {
     }
 
     pub fn close_all(&self) -> Result<(), IndexError> {
+        // Taking the exclusive shutdown gate waits for every in-flight request
+        // to finish. Marking the registry closed before draining the map also
+        // prevents a create/open transition from publishing a fresh entry
+        // after shutdown has begun.
+        let mut shutdown = self.shutdown.write().map_err(|_| {
+            IndexError::search(
+                IndexErrorCode::Internal,
+                "Search Kernel registry shutdown lock is poisoned",
+            )
+        })?;
+        if *shutdown {
+            return Ok(());
+        }
+        *shutdown = true;
+
         let entries = {
             let mut entries = self.entries.lock().map_err(|_| {
                 IndexError::search(
