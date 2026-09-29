@@ -22,6 +22,8 @@ final class Protocol
         'analyze' => ['AnalyzeRequest', 'AnalyzeResult'],
         'describe' => ['DescribeRequest', 'DescribeResult'],
         'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
+        'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
+        'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
     ];
 
     /** @return array{0:string,1:string} */
@@ -40,13 +42,26 @@ final class Protocol
     }
 
     /** @return array<string, mixed> */
-    public static function envelope(string $payloadType, array $payload): array
+    public static function envelope(
+        string $payloadType,
+        array|JsonObject $payload,
+        ?string $target = null,
+    ): array
     {
-        return [
+        $envelope = [
             'protocol_version' => self::VERSION,
             'payload_type' => 'SearchKernel_V2_' . $payloadType,
             'payload' => $payload,
         ];
+        if ($target !== null) {
+            if (preg_match('/^[a-z0-9][a-z0-9_-]{0,127}$/', $target) !== 1) {
+                throw new InvalidArgumentException(
+                    'index target must match [a-z0-9][a-z0-9_-]{0,127}'
+                );
+            }
+            $envelope['target'] = ['name' => $target];
+        }
+        return $envelope;
     }
 
     /** @param array<string, mixed> $document
@@ -529,25 +544,16 @@ final class Protocol
 
     private static function encodeJsonNode(mixed $value): string
     {
+        if ($value instanceof JsonObject) {
+            return self::encodeJsonObject($value->fields);
+        }
+
         if (is_array($value)) {
             if (array_is_list($value)) {
                 return '[' . implode(',', array_map(self::encodeJsonNode(...), $value)) . ']';
             }
 
-            $parts = [];
-            foreach ($value as $key => $item) {
-                if (!is_string($key)) {
-                    throw new ProtocolException('standard FlatBuffers JSON object keys must be strings');
-                }
-                $encoded = self::encodeJsonNode($item);
-                try {
-                    $encodedKey = json_encode($key, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
-                } catch (\JsonException $error) {
-                    throw new ProtocolException('encode Search Kernel JSON object key', 0, $error);
-                }
-                $parts[] = $encodedKey . ':' . $encoded;
-            }
-            return '{' . implode(',', $parts) . '}';
+            return self::encodeJsonObject($value);
         }
 
         if (is_object($value)) {
@@ -562,6 +568,25 @@ final class Protocol
         } catch (\JsonException $error) {
             throw new ProtocolException('encode Search Kernel request JSON', 0, $error);
         }
+    }
+
+    /** @param array<string,mixed> $fields */
+    private static function encodeJsonObject(array $fields): string
+    {
+        $parts = [];
+        foreach ($fields as $key => $item) {
+            if (!is_string($key)) {
+                throw new ProtocolException('standard FlatBuffers JSON object keys must be strings');
+            }
+            $encoded = self::encodeJsonNode($item);
+            try {
+                $encodedKey = json_encode($key, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+            } catch (\JsonException $error) {
+                throw new ProtocolException('encode Search Kernel JSON object key', 0, $error);
+            }
+            $parts[] = $encodedKey . ':' . $encoded;
+        }
+        return '{' . implode(',', $parts) . '}';
     }
 
     /** @param array<string,mixed> $payload */

@@ -13,22 +13,28 @@ namespace SearchKernel;
  */
 final class Client
 {
-    public function __construct(private readonly Transport $transport) {}
+    public function __construct(
+        private readonly Transport $transport,
+        private readonly ?string $target = null,
+    ) {}
 
-    public static function connect(string $baseUrl, float $timeoutSeconds = 30.0): self
-    {
-        return new self(new HttpTransport($baseUrl, $timeoutSeconds));
+    public static function connect(
+        string $baseUrl,
+        float $timeoutSeconds = 30.0,
+        ?string $target = null,
+    ): self {
+        return new self(new HttpTransport($baseUrl, $timeoutSeconds), $target);
     }
 
     /**
-     * @param array<string,mixed> $payload
+     * @param array<string,mixed>|JsonObject $payload
      * @return array<string,mixed>
      */
-    public function execute(string $operation, array $payload): array
+    public function execute(string $operation, array|JsonObject $payload): array
     {
         [$requestType, $responseType] = Protocol::operation($operation);
         $response = $this->transport->execute(
-            Protocol::envelope($requestType, $payload),
+            Protocol::envelope($requestType, $payload, $this->target),
         );
         return Protocol::expectPayload($response, $responseType);
     }
@@ -53,4 +59,8 @@ final class Client
     public function describe(): array { return $this->execute('describe', []); }
     /** @param array<string,mixed> $payload @return array<string,mixed> */
     public function inspectQuery(array $payload): array { return $this->execute('inspect_query', $payload); }
+    /** @param array<string,mixed> $payload @return array<string,mixed> */
+    public function createIndex(array $payload): array { return $this->execute('create_index', $payload); }
+    /** @return array<string,mixed> */
+    public function openIndex(): array { return $this->execute('open_index', JsonObject::empty()); }
 }

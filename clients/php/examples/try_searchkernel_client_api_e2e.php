@@ -13,7 +13,6 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
-use InvalidArgumentException;
 use SearchKernel\Agg;
 use SearchKernel\Bytes;
 use SearchKernel\G;
@@ -24,6 +23,8 @@ use SearchKernel\Index;
 use SearchKernel\Query;
 use SearchKernel\SearchKernelException;
 use SearchKernel\Tensor;
+
+require __DIR__ . '/searchkernel_client_api_e2e_schema.php';
 
 const VECTOR_TYPE = 'tensor<float>(x[8])';
 
@@ -123,11 +124,14 @@ function detailCodes(SearchKernelException $error): array
 }
 
 $url = getenv('SEARCHKERNEL_HTTP_URL') ?: 'http://127.0.0.1:50052';
+$target = getenv('SEARCHKERNEL_E2E_TARGET') ?: 'php-e2e';
 $phase = $argv[1] ?? 'initial';
 if (!in_array($phase, ['initial', 'reopen'], true)) {
     throw new InvalidArgumentException('expected initial or reopen phase');
 }
-$index = Index::connect($url);
+$index = $phase === 'initial'
+    ? Index::create($url, $target, searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE))
+    : Index::open($url, $target);
 
 if ($phase === 'reopen') {
     heading('30. REOPEN PERSISTED INDEX');
@@ -209,8 +213,8 @@ if ($phase === 'reopen') {
     exit(0);
 }
 
-heading('1. INDEX SCHEMA + RANK PROFILES PREPARED BY CANONICAL HARNESS');
-echo "PHP executes the same product corpus through the HTTP/FlatBuffers-JSON edge.\n";
+heading('1. INDEX SCHEMA + RANK PROFILES CREATED THROUGH PHP');
+echo "PHP creates the logical daemon target and canonical schema through its public lifecycle API.\n";
 
 heading('2. INSERT DOCUMENTS');
 $documents = [
@@ -549,6 +553,101 @@ $results = $index->query(Query::contains('title', 'shoes'))
     ->execute();
 same(5, $results->totalHits, 'query input and rank-property namespaces');
 
+heading('21A. TYPED QUERY FAMILY PARITY');
+foreach ([
+    ['_id' => 'typed-d1', 'title' => 'quick brown fox', 'category' => 'fox'],
+    ['_id' => 'typed-d2', 'title' => 'brown quick fox', 'category' => 'fox'],
+    ['_id' => 'typed-d3', 'title' => 'quick fox', 'category' => 'fox'],
+    ['_id' => 'typed-d4', 'title' => 'fox', 'category' => 'fox'],
+    ['_id' => 'typed-d5', 'title' => 'cat', 'category' => 'cat'],
+    ['_id' => 'typed-d6', 'title' => 'quick agile brown fox', 'category' => 'fox'],
+    [
+        '_id' => 'people-1',
+        'people' => [
+            ['first' => 'Ada', 'last' => 'Lovelace'],
+            ['first' => 'Grace', 'last' => 'Hopper'],
+        ],
+    ],
+    [
+        '_id' => 'people-2',
+        'people' => [
+            ['first' => 'Ada', 'last' => 'Hopper'],
+            ['first' => 'Grace', 'last' => 'Lovelace'],
+        ],
+    ],
+    ['_id' => 'geo-inside', 'location' => ['latitude' => 37.3, 'longitude' => -121.9]],
+    ['_id' => 'geo-outside', 'location' => ['latitude' => 40.7, 'longitude' => -74.0]],
+] as $document) {
+    $index->upsert($document);
+}
+
+$phrase = $index->query(
+    Query::contains('title', Query::phrase('quick', 'brown'))
+)->limit(20)->execute();
+assertIds($phrase, ['typed-d1']);
+
+$nearIds = ids($index->query(
+    Query::contains('title', Query::near('quick', 'brown'))
+)->limit(20)->execute());
+sort($nearIds);
+same(['typed-d1', 'typed-d2', 'typed-d6'], $nearIds, 'typed near accepts reverse order and one-gap proximity');
+
+$orderedNearIds = ids($index->query(
+    Query::contains('title', Query::onear('quick', 'brown'))
+)->limit(20)->execute());
+sort($orderedNearIds);
+same(['typed-d1', 'typed-d6'], $orderedNearIds, 'typed ordered-near rejects reverse order');
+
+$fuzzyIds = ids($index->query(
+    Query::contains('category', Query::fuzzy('foxx'))
+)->limit(20)->execute());
+sort($fuzzyIds);
+same(
+    ['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'],
+    $fuzzyIds,
+    'typed fuzzy excludes unrelated terms',
+);
+
+$weakAndIds = ids($index->query(Query::weakAnd(
+    Query::contains('title', 'quick'),
+    Query::contains('title', 'fox'),
+))->limit(20)->execute());
+sort($weakAndIds);
+same(
+    ['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'],
+    $weakAndIds,
+    'typed weak-and keeps one-term-only matches',
+);
+
+$wandIds = ids($index->query(
+    Query::wand('title', ['quick' => 10, 'fox' => 1])
+)->limit(20)->execute());
+sort($wandIds);
+same(
+    ['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'],
+    $wandIds,
+    'typed WAND keeps one-term-only matches',
+);
+
+$sameElement = $index->query(Query::contains(
+    'people',
+    Query::sameElement(
+        Query::contains('first', 'Ada'),
+        Query::contains('last', 'Lovelace'),
+    ),
+))->limit(20)->execute();
+assertIds($sameElement, ['people-1']);
+
+$geoLocation = $index->query(
+    Query::geoLocation('location', 37.3, -121.9, '10km')
+)->limit(10)->execute();
+assertIds($geoLocation, ['geo-inside']);
+
+$geoBox = $index->query(
+    Query::geoBox('location', 37.0, -122.2, 37.6, -121.5)
+)->limit(10)->execute();
+assertIds($geoBox, ['geo-inside']);
+
 heading('RANKING, SCALAR FEATURES, AND OPAQUE FEATURES');
 $ranked = $index->search('shoes')
     ->ranking('boosted')
@@ -776,6 +875,12 @@ echo "Real-engine PHP facade scenario complete; harness will restart searchkerne
 Executable capability evidence from this real-engine showcase.
 
 SKC: query.term/basic kinds=ergonomic,e2e runtime=http
+SKC: query.phrase/basic kinds=ergonomic,e2e runtime=http
+SKC: query.proximity/basic kinds=ergonomic,e2e runtime=http
+SKC: query.fuzzy/basic kinds=ergonomic,e2e runtime=http
+SKC: query.same_element/basic kinds=ergonomic,e2e runtime=http
+SKC: query.geo/basic kinds=ergonomic,e2e runtime=http
+SKC: query.weighted_and_wand/basic kinds=ergonomic,e2e runtime=http
 SKC: query.boolean/basic kinds=ergonomic,e2e runtime=http
 SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=http
 SKC: filter.textual/basic kinds=ergonomic,e2e runtime=http

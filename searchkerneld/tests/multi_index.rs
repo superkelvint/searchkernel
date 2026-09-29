@@ -5,7 +5,9 @@ use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, Request as HttpRequest};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use searchkernel_protocol::{
-    json::{request_flatbuffer_to_json, response_json_to_flatbuffer},
+    json::{
+        request_flatbuffer_to_json, request_json_to_flatbuffer, response_json_to_flatbuffer,
+    },
     protocol::v2 as wire,
     target::{
         CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE,
@@ -19,6 +21,7 @@ use searchkerneld::{rpc, start_multi, IndexRegistry, ServerConfig, JSON_EXECUTE_
 use std::{
     fs,
     path::PathBuf,
+    process::Command,
     sync::{Arc, Barrier},
     thread,
     time::{SystemTime, UNIX_EPOCH},
@@ -255,23 +258,38 @@ fn search_request(target_name: &str, text: &str) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
-async fn execute_http_json(address: std::net::SocketAddr, payload: &[u8]) -> Vec<u8> {
-    let json = request_flatbuffer_to_json(payload).expect("encode request JSON");
+async fn execute_http_json_raw(
+    address: std::net::SocketAddr,
+    json: impl Into<Bytes>,
+) -> (http::StatusCode, Vec<u8>) {
     let request = HttpRequest::builder()
         .method("POST")
         .uri(format!("http://{address}{JSON_EXECUTE_PATH}"))
         .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(json)))
+        .body(Full::new(json.into()))
         .expect("build HTTP JSON request");
     let client = Client::builder(TokioExecutor::new()).build_http();
     let response = client.request(request).await.expect("HTTP JSON request");
-    assert_eq!(response.status(), http::StatusCode::OK);
+    let status = response.status();
     let body = response
         .into_body()
         .collect()
         .await
         .expect("read HTTP JSON response")
-        .to_bytes();
+        .to_bytes()
+        .to_vec();
+    (status, body)
+}
+
+async fn execute_http_json(address: std::net::SocketAddr, payload: &[u8]) -> Vec<u8> {
+    let json = request_flatbuffer_to_json(payload).expect("encode request JSON");
+    let (status, body) = execute_http_json_raw(address, Bytes::from(json)).await;
+    assert_eq!(
+        status,
+        http::StatusCode::OK,
+        "HTTP JSON request failed: {}",
+        String::from_utf8_lossy(&body)
+    );
     response_json_to_flatbuffer(&body).expect("decode response JSON")
 }
 
@@ -324,6 +342,85 @@ fn total_hits(bytes: &[u8]) -> u64 {
         .total_hits()
         .expect("total hits")
         .value()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires PHP; run through ./dev test php"]
+async fn php_emitted_create_index_json_reaches_multi_index_registry() {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .canonicalize()
+        .expect("repository root");
+    let script = repo_root.join("clients/php/tests/emit_bfbs_contract.php");
+    let output = Command::new("php")
+        .arg(&script)
+        .current_dir(&repo_root)
+        .output()
+        .expect("run PHP BFBS contract emitter");
+    assert!(
+        output.status.success(),
+        "PHP fixture emitter failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("PHP fixture output is UTF-8");
+    let json = stdout
+        .lines()
+        .find_map(|line| {
+            let mut parts = line.splitn(3, '\t');
+            let schema = parts.next()?;
+            let name = parts.next()?;
+            let json = parts.next()?;
+            (schema == "request" && name == "create-index-e2e-schema").then_some(json)
+        })
+        .expect("PHP emitter must produce exact E2E create-index request");
+
+    let request = request_json_to_flatbuffer(json.as_bytes())
+        .expect("PHP create-index JSON must convert to canonical request bytes");
+    let envelope = root::<wire::RequestEnvelope<'_>>(&request)
+        .expect("daemon request verifier must accept PHP create-index bytes");
+    assert_eq!(
+        envelope.payload_type(),
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest
+    );
+    let payload = envelope
+        .payload_as_search_kernel_v2_create_index_request()
+        .expect("daemon must access PHP create-index union payload");
+    let definition = payload.definition().expect("PHP create-index definition");
+    assert_eq!(definition.fields().map(|fields| fields.len()), Some(11));
+    assert_eq!(
+        definition.rank_profiles().map(|profiles| profiles.len()),
+        Some(5)
+    );
+
+    let temp = TempDir::new("php-create-json");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().expect("gRPC address"))
+            .with_web_listen_addr("127.0.0.1:0".parse().expect("HTTP address")),
+        registry.clone(),
+    )
+    .await
+    .expect("start multi-index daemon");
+    let http_address = server.web_tcp_addr().expect("HTTP listener");
+
+    let (status, body) =
+        execute_http_json_raw(http_address, Bytes::copy_from_slice(json.as_bytes())).await;
+    assert_eq!(
+        status,
+        http::StatusCode::OK,
+        "PHP create-index HTTP request failed: {}",
+        String::from_utf8_lossy(&body)
+    );
+    let response =
+        response_json_to_flatbuffer(&body).expect("decode PHP create-index HTTP response JSON");
+    assert_lifecycle(
+        &response,
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+
+    server.shutdown().await.expect("shutdown daemon");
+    registry.close_all().expect("close registry");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

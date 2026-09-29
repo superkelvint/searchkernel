@@ -3,14 +3,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-PYTHON="$(bash "$ROOT/tools/resolve-python.sh")"
 
 source "$ROOT/tools/client-e2e-runtime.sh"
 prepare_client_e2e_runtime
 
 HOST="$SEARCHKERNEL_LOCAL_HOST"
 WORK="$(mktemp -d)"
-INDEX="$WORK/showcase-index"
+DATA_ROOT="$WORK/data"
 PID=""
 
 cleanup() {
@@ -22,30 +21,41 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+command -v php >/dev/null 2>&1 || {
+  echo "PHP client E2E requires php" >&2
+  exit 1
+}
+
 free_port() {
-  "$PYTHON" - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
+  php -r '
+    $server = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr);
+    if ($server === false) {
+        fwrite(STDERR, "failed to allocate local port: {$errstr}\n");
+        exit(1);
+    }
+    $name = stream_socket_get_name($server, false);
+    fclose($server);
+    $separator = strrpos($name, ":");
+    echo substr($name, $separator + 1), PHP_EOL;
+  '
 }
 
 wait_port() {
   local port="$1"
-  "$PYTHON" - "$port" <<'PY'
-import socket, sys, time
-port = int(sys.argv[1])
-deadline = time.monotonic() + 60
-while time.monotonic() < deadline:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-            raise SystemExit(0)
-    except OSError:
-        time.sleep(0.05)
-raise SystemExit("searchkerneld web listener did not become ready")
-PY
+  php -r '
+    $port = (int) $argv[1];
+    $deadline = microtime(true) + 60.0;
+    do {
+        $socket = @fsockopen("127.0.0.1", $port, $errno, $errstr, 0.2);
+        if ($socket !== false) {
+            fclose($socket);
+            exit(0);
+        }
+        usleep(50_000);
+    } while (microtime(true) < $deadline);
+    fwrite(STDERR, "searchkerneld web listener did not become ready\n");
+    exit(1);
+  ' "$port"
 }
 
 start_host() {
@@ -53,7 +63,7 @@ start_host() {
   grpc_port="$(free_port)"
   web_port="$(free_port)"
   "$HOST" \
-    --index "$INDEX" \
+    --data-root "$DATA_ROOT" \
     --listen "127.0.0.1:$grpc_port" \
     --web-listen "127.0.0.1:$web_port" \
     >"$WORK/searchkerneld.log" 2>&1 &
@@ -78,8 +88,7 @@ stop_host() {
 }
 
 export SEARCHKERNEL_LOCAL_HOST="$HOST"
-PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
-  "$PYTHON" "$ROOT/clients/php/examples/prepare_searchkernel_client_api_e2e.py" "$INDEX"
+export SEARCHKERNEL_E2E_TARGET="php-e2e"
 
 start_host
 php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" initial
@@ -89,4 +98,4 @@ start_host
 php "$ROOT/clients/php/examples/try_searchkernel_client_api_e2e.php" reopen
 stop_host
 
-echo "PHP real-engine E2E + reopen PASS"
+echo "PHP real-engine multi-index E2E + reopen PASS"

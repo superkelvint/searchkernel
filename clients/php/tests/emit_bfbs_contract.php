@@ -24,6 +24,8 @@ use SearchKernel\Transport;
 use SearchKernel\UInt64;
 use SearchKernel\ValueObject;
 
+require dirname(__DIR__) . '/examples/searchkernel_client_api_e2e_schema.php';
+
 /**
  * Emit one actual wire JSON document. The Rust contract test feeds these bytes
  * through the official BFBS-backed FlatBuffers JSON bridge.
@@ -127,6 +129,27 @@ emitCase('request', 'describe', Protocol::envelope('DescribeRequest', []));
 emitCase('request', 'inspect-query', Protocol::envelope('InspectQueryRequest', [
     'request' => $search,
 ]));
+
+$createDefinition = searchkernelPhpClientApiE2eDefinition('tensor<float>(x[8])');
+emitCase(
+    'request',
+    'create-index-e2e-schema',
+    Protocol::envelope(
+        'CreateIndexRequest',
+        ['definition' => $createDefinition->toWire()],
+        'php-e2e',
+    ),
+);
+
+emitCase(
+    'request',
+    'open-index-empty-table',
+    Protocol::envelope(
+        'OpenIndexRequest',
+        JsonObject::empty(),
+        'php-e2e',
+    ),
+);
 
 emitCase('response', 'portable-error', Protocol::envelope('Error', [
     'code' => 'InvalidArgument',
