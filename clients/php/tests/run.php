@@ -350,7 +350,7 @@ $request = $index
     ->summary('default')
     ->highlight('title')
     ->ranking('bm25')
-    ->rankProperty('foo', 123)
+    ->rankProperty('foo', '123')
     ->input('embedding', Tensor::dense('tensor<float>(x[2])', [1, 2]))
     ->property('trace.level', 2)
     ->page(2, 20)
@@ -377,6 +377,18 @@ same([], $request['presentation']['fields']['fields'], 'present-empty projection
 same(['title'], $request['presentation']['highlighting']['fields'], 'highlight fields');
 same('bm25', $request['ranking']['profile'], 'ranking profile');
 same([['key' => 'foo', 'value' => '123']], $request['ranking']['properties'], 'rank property namespace');
+foreach ([false, null, 7, [], new stdClass()] as $rankPropertyValue) {
+    throws(
+        TypeError::class,
+        static fn () => $index->search('fox')->rankProperty('enabled', $rankPropertyValue),
+        'rank property values must be strings',
+    );
+}
+throws(
+    TypeError::class,
+    static fn () => $index->search('fox')->rankProperties(['enabled' => false]),
+    'rankProperties rejects non-string values',
+);
 same('LiteralQueryInput', $request['inputs'][0]['input_type'], 'query input namespace');
 same('TensorValue', $request['inputs'][0]['input']['value']['kind_type'], 'tensor query input');
 same([['key' => 'trace.level', 'value' => Protocol::value(2)]], $request['properties'], 'generic property namespace');
@@ -395,7 +407,7 @@ same('q', $yql['query']['source']['parameters'][0]['key'], 'YQL parameter namesp
 
 $advanced = $index->search('fox')
     ->inputExpr('embedded_query', 'embed(transformer,@query)')
-    ->rankProperties(['alpha' => 1, 'beta' => 'two'])
+    ->rankProperties(['alpha' => 'one', 'beta' => 'two'])
     ->properties(['trace.level' => 2, 'custom.flag' => true])
     ->rawGrouping('all(output(count()))')
     ->format('json')

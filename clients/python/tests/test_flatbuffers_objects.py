@@ -787,6 +787,18 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(request.inputs[0].name, "freshness")
         self.assertEqual(request.inputs[0].input.value.kind.value, 0.8)
 
+    def test_ergonomic_rank_property_rejects_non_string_values(self):
+        class Index:
+            client = None
+
+        for item in (False, None, 7, {}, []):
+            with self.subTest(item=item):
+                with self.assertRaises(TypeError):
+                    SearchBuilder(Index(), "wireless").rank_property("enabled", item)
+
+        builder = SearchBuilder(Index(), "wireless").rank_property("source", "catalog")
+        self.assertEqual(builder._rank_properties, {"source": "catalog"})
+
     def test_ergonomic_rank_properties_use_default_profile(self):
         class EmptyResult:
             root = None

@@ -532,6 +532,7 @@ universe() {
 
     universe_dev_step 'API conformance verifier' verify api-conformance
     universe_dev_step 'capability/client contract verifiers' verify contracts
+    universe_dev_step 'client semantic parity verifier' verify client-semantic-parity
     universe_dev_step 'native ABI verifier' verify abi
     universe_dev_step 'persistence compatibility verifier' verify persistence
     universe_dev_step 'issue queue verifier' verify issue-queue
@@ -645,6 +646,19 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
             "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
+            ;;
+        client-semantic-parity)
+            doctor_repair_python
+            doctor_repair_typescript
+            command -v php >/dev/null 2>&1 || {
+                echo 'error: PHP is required for client semantic parity' >&2
+                return 1
+            }
+            command -v ruby >/dev/null 2>&1 || {
+                echo 'error: Ruby is required for client semantic parity' >&2
+                return 1
+            }
+            "$PYTHON" "$ROOT/tools/check-client-semantic-parity.py"
             ;;
         abi)
             local_baseline=$(mktemp)

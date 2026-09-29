@@ -149,8 +149,11 @@ export class SearchBuilder {
     return this;
   }
 
-  rankProperty(name: string, item: unknown): this {
-    this.rankProperties.set(name, String(item));
+  rankProperty(name: string, item: string): this {
+    if (typeof item !== "string") {
+      throw new TypeError("rank property value must be a string");
+    }
+    this.rankProperties.set(name, item);
     return this;
   }
 
