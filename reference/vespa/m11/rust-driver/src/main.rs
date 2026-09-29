@@ -102,6 +102,15 @@ fn put(engine: &Engine, id: &str, value: i64) -> AnyResult<()> {
     Ok(())
 }
 
+fn put_publication_fixture(engine: &Engine, title: &str, value: i64) -> AnyResult<()> {
+    engine.put(
+        Document::new("publication")
+            .field("title", title)
+            .field("qty", value),
+    )?;
+    Ok(())
+}
+
 fn update(engine: &Engine, id: &str, value: i64) -> AnyResult<()> {
     engine.update(DocumentUpdate::new(id).assign("qty", value))?;
     Ok(())
@@ -592,7 +601,9 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     let first_engine = Arc::clone(&engine);
     let first = thread::spawn(move || put(&first_engine, "overlap-a", 21));
     for _ in 0..100 {
-        if hardening::is_blocked(&engine, "mutation_after_native_call")? { break; }
+        if hardening::is_blocked(&engine, "mutation_after_native_call")? {
+            break;
+        }
         thread::sleep(Duration::from_millis(1));
     }
     if !hardening::is_blocked(&engine, "mutation_after_native_call")? {
@@ -617,8 +628,12 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     second.join().map_err(|_| "overlap mutation B panicked")??;
     hardening::release(&engine, "mutation_after_native_call")?;
     first.join().map_err(|_| "overlap mutation A panicked")??;
-    if !search_ids(&engine, 21, 10)?.iter().any(|id| id == "overlap-a")
-        || !search_ids(&engine, 22, 10)?.iter().any(|id| id == "overlap-b")
+    if !search_ids(&engine, 21, 10)?
+        .iter()
+        .any(|id| id == "overlap-a")
+        || !search_ids(&engine, 22, 10)?
+            .iter()
+            .any(|id| id == "overlap-b")
     {
         panic!("overlapping mutations did not preserve final native state");
     }
@@ -631,7 +646,9 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     let visibility_engine = Arc::clone(&engine);
     let visibility_put = thread::spawn(move || put(&visibility_engine, "visibility", 9));
     for _ in 0..100 {
-        if hardening::is_blocked(&engine, "mutation_before_visibility_wait")? { break; }
+        if hardening::is_blocked(&engine, "mutation_before_visibility_wait")? {
+            break;
+        }
         thread::sleep(Duration::from_millis(1));
     }
     if !hardening::is_blocked(&engine, "mutation_before_visibility_wait")? {
@@ -641,28 +658,36 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         panic!("put returned before its visibility barrier");
     }
     hardening::release(&engine, "mutation_before_visibility_wait")?;
-    visibility_put.join().map_err(|_| "visibility put panicked")??;
-    if !search_ids(&engine, 9, 10)?.iter().any(|id| id == "visibility") {
+    visibility_put
+        .join()
+        .map_err(|_| "visibility put panicked")??;
+    if !search_ids(&engine, 9, 10)?
+        .iter()
+        .any(|id| id == "visibility")
+    {
         panic!("put visibility barrier returned before searchable state");
     }
 
-    // The searchable-publication fence is reached only after source state is
-    // visible. While the mutation is held at that boundary, GET must already
-    // observe the new value, but the mutation itself must not have returned.
-    // Search may already have caught up through Vespa's independently scheduled
-    // automatic commit, so stale-search absence is not asserted at this hook;
-    // the immediate post-return matrix below and M13/M14 prove the public
-    // search-after-write contract against the real matcher.
+    // Gate the real ready FeedView's forceCommit before delegating to Vespa.
+    // FeedHandler's automatic commit and Search Kernel's explicit fence both
+    // pass through this hardening-only forwarding view. The source document is
+    // therefore allowed to become visible while the matcher keeps its old
+    // committed generation.
+    put_publication_fixture(&engine, "publication-old", 18)?;
+    if !term_search_ids(&engine, "title", "publication-old")?.contains(&"publication".to_owned()) {
+        return Err("publication fixture was not initially searchable".into());
+    }
     hardening::set(
         &engine,
-        "mutation_before_search_publication_wait",
+        "matcher_publication_before_feedview_force_commit",
         1,
         Action::Block,
     )?;
     let publication_engine = Arc::clone(&engine);
-    let publication_put = thread::spawn(move || put(&publication_engine, "publication", 19));
+    let publication_put =
+        thread::spawn(move || put_publication_fixture(&publication_engine, "publication-new", 19));
     for _ in 0..100 {
-        if hardening::is_blocked(&engine, "mutation_before_search_publication_wait")? {
+        if hardening::is_blocked(&engine, "matcher_publication_before_feedview_force_commit")? {
             break;
         }
         if publication_put.is_finished() {
@@ -670,25 +695,46 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         }
         thread::sleep(Duration::from_millis(1));
     }
-    if !hardening::is_blocked(&engine, "mutation_before_search_publication_wait")? {
+    if !hardening::is_blocked(&engine, "matcher_publication_before_feedview_force_commit")? {
         let result = publication_put
             .join()
             .map_err(|_| "publication put panicked")?;
         result?;
-        panic!("put returned without reaching the searchable-publication fence");
+        panic!("Vespa automatic feed commit did not reach the publication gate");
+    }
+    let mut source_visible = false;
+    for _ in 0..1000 {
+        if scalar_field(&engine, "publication", "qty")? == Some(ScalarValue::Integer(19)) {
+            source_visible = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    if !source_visible {
+        hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
+        let _ = publication_put.join();
+        return Err("publication gate did not preserve source/GET visibility".into());
+    }
+    if term_search_ids(&engine, "title", "publication-old")?.is_empty()
+        || !term_search_ids(&engine, "title", "publication-new")?.is_empty()
+    {
+        hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
+        let _ = publication_put.join();
+        return Err("matcher-visible state changed while Vespa publication was held".into());
     }
     if publication_put.is_finished() {
-        panic!("put returned before searchable publication was released");
+        hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
+        let _ = publication_put.join();
+        return Err("mutation returned while matcher-visible publication was held".into());
     }
-    if scalar_field(&engine, "publication", "qty")? != Some(ScalarValue::Integer(19)) {
-        panic!("publication fence was reached before source/GET state became visible");
-    }
-    hardening::release(&engine, "mutation_before_search_publication_wait")?;
+    hardening::release(&engine, "matcher_publication_before_feedview_force_commit")?;
     publication_put
         .join()
         .map_err(|_| "publication put panicked")??;
-    if !search_ids(&engine, 19, 10)?.iter().any(|id| id == "publication") {
-        panic!("publication fence returned before searchable state");
+    if !term_search_ids(&engine, "title", "publication-new")?.contains(&"publication".to_owned())
+        || !term_search_ids(&engine, "title", "publication-old")?.is_empty()
+    {
+        panic!("mutation returned before current matcher-visible state was published");
     }
 
     // Waiting for force-commit completion must happen on the caller, not on
@@ -713,7 +759,9 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         thread::sleep(Duration::from_millis(1));
     }
     if !hardening::is_blocked(&engine, "mutation_after_search_publication_start")? {
-        let result = overlap_a.join().map_err(|_| "publication overlap A panicked")?;
+        let result = overlap_a
+            .join()
+            .map_err(|_| "publication overlap A panicked")?;
         result?;
         panic!("publication wait did not expose the post-initiation caller boundary");
     }
@@ -737,9 +785,13 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     }
     if !hardening::is_blocked(&engine, "mutation_before_search_publication_wait")? {
         hardening::release(&engine, "mutation_after_search_publication_start")?;
-        let a = overlap_a.join().map_err(|_| "publication overlap A panicked")?;
+        let a = overlap_a
+            .join()
+            .map_err(|_| "publication overlap A panicked")?;
         a?;
-        let b = overlap_b.join().map_err(|_| "publication overlap B panicked")?;
+        let b = overlap_b
+            .join()
+            .map_err(|_| "publication overlap B panicked")?;
         b?;
         panic!("first publication wait prevented an independent mutation from reaching the fence");
     }
@@ -763,7 +815,9 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     // is covered cumulatively by M13/M14.
     put(&engine, "publication-put", 31)?;
     if scalar_field(&engine, "publication-put", "qty")? != Some(ScalarValue::Integer(31))
-        || !search_ids(&engine, 31, 10)?.iter().any(|id| id == "publication-put")
+        || !search_ids(&engine, 31, 10)?
+            .iter()
+            .any(|id| id == "publication-put")
     {
         panic!("PUT returned before immediate GET/search observed the new document");
     }
@@ -771,17 +825,19 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     put(&engine, "publication-upsert", 41)?;
     put(&engine, "publication-upsert", 42)?;
     if scalar_field(&engine, "publication-upsert", "qty")? != Some(ScalarValue::Integer(42))
-        || search_ids(&engine, 41, 10)?.iter().any(|id| id == "publication-upsert")
-        || !search_ids(&engine, 42, 10)?.iter().any(|id| id == "publication-upsert")
+        || search_ids(&engine, 41, 10)?
+            .iter()
+            .any(|id| id == "publication-upsert")
+        || !search_ids(&engine, 42, 10)?
+            .iter()
+            .any(|id| id == "publication-upsert")
     {
         panic!("UPSERT returned before immediate GET/search observed replacement B");
     }
 
     let indexed_id = "publication-indexed-update";
     engine.put(Document::new(indexed_id).field("title", "beforepublicationmarker"))?;
-    engine.update(
-        DocumentUpdate::new(indexed_id).assign("title", "afterpublicationmarker"),
-    )?;
+    engine.update(DocumentUpdate::new(indexed_id).assign("title", "afterpublicationmarker"))?;
     if scalar_field(&engine, indexed_id, "title")?
         != Some(ScalarValue::String("afterpublicationmarker".to_owned()))
         || term_search_ids(&engine, "title", "beforepublicationmarker")?

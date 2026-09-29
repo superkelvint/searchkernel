@@ -614,6 +614,11 @@ class EmbeddedEngine {
     const unsigned int _tls_port;
     TransLogServer _tls;
     proton::matching::QueryLimiter _query_limiter;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    // Declared before _db so the DocumentDB is destroyed before its active
+    // hardening-only forwarding view.
+    std::shared_ptr<PublicationGateFeedView> _hardening_feed_view;
+#endif
     DocumentDB::SP _db;
     // Non-owning while _db owns the config store. DocumentDB performs the
     // normal snapshot pruning before it closes the store.
@@ -1889,6 +1894,12 @@ class EmbeddedEngine {
             throw std::runtime_error("Vespa DocumentDB has no ready sub database");
         }
         auto feed_view = ready_sub_db->getFeedView();
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        // The hardening view forwards to this same real Vespa view and also
+        // gates FeedHandler's independently scheduled automatic forceCommit.
+        // Using it here makes the regression control both publication paths.
+        if (_hardening_feed_view) feed_view = _hardening_feed_view;
+#endif
         if (!feed_view) {
             throw std::runtime_error("Vespa DocumentDB has no ready feed view");
         }
@@ -3031,6 +3042,30 @@ public:
     void release_failpoint(const char *name) { _failpoints->release(name); }
 
     bool failpoint_is_blocked(const char *name) const { return _failpoints->is_blocked(name); }
+
+    void install_hardening_feed_view() {
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) {
+            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        }
+        auto feed_view = ready_sub_db->getFeedView();
+        if (!feed_view) {
+            throw std::runtime_error("Vespa DocumentDB has no ready feed view");
+        }
+        _hardening_feed_view = std::make_shared<PublicationGateFeedView>(
+            std::move(feed_view), _failpoints);
+
+        // FeedHandler owns a non-owning active-view pointer and updates its
+        // document repo from that view, so install on Vespa's master executor
+        // and retain the forwarding view for the DocumentDB's full lifetime.
+        vespalib::Gate gate;
+        _db->getWriteService().blocking_master_execute(
+            vespalib::makeLambdaTask([this, &gate]() {
+                _db->getFeedHandler().setActiveFeedView(_hardening_feed_view.get());
+                gate.countDown();
+            }));
+        gate.await();
+    }
 #endif
 
     void initialize(const std::string &data_dir, const std::string &config_dir) {
@@ -3113,6 +3148,9 @@ public:
             _db->waitForOnlineState();
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         }
+#endif
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        install_hardening_feed_view();
 #endif
         const auto replay_serial = _db->getFeedHandler().getSerialNum();
         if (replay_serial == std::numeric_limits<uint64_t>::max()) {
