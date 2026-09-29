@@ -11,13 +11,13 @@ pub const ENUM_MIN_RESPONSE_PAYLOAD: u8 = 0;
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
-pub const ENUM_MAX_RESPONSE_PAYLOAD: u8 = 13;
+pub const ENUM_MAX_RESPONSE_PAYLOAD: u8 = 14;
 #[deprecated(
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 14] = [
+pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 15] = [
     ResponsePayload::NONE,
     ResponsePayload::SearchKernel_V2_InsertResult,
     ResponsePayload::SearchKernel_V2_UpsertResult,
@@ -32,6 +32,7 @@ pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 14] = [
     ResponsePayload::SearchKernel_V2_UpdateResult,
     ResponsePayload::SearchKernel_V2_CreateIndexResult,
     ResponsePayload::SearchKernel_V2_OpenIndexResult,
+    ResponsePayload::SearchKernel_V2_DeleteIndexResult,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -53,9 +54,10 @@ impl ResponsePayload {
     pub const SearchKernel_V2_UpdateResult: Self = Self(11);
     pub const SearchKernel_V2_CreateIndexResult: Self = Self(12);
     pub const SearchKernel_V2_OpenIndexResult: Self = Self(13);
+    pub const SearchKernel_V2_DeleteIndexResult: Self = Self(14);
 
     pub const ENUM_MIN: u8 = 0;
-    pub const ENUM_MAX: u8 = 13;
+    pub const ENUM_MAX: u8 = 14;
     pub const ENUM_VALUES: &'static [Self] = &[
         Self::NONE,
         Self::SearchKernel_V2_InsertResult,
@@ -71,6 +73,7 @@ impl ResponsePayload {
         Self::SearchKernel_V2_UpdateResult,
         Self::SearchKernel_V2_CreateIndexResult,
         Self::SearchKernel_V2_OpenIndexResult,
+        Self::SearchKernel_V2_DeleteIndexResult,
     ];
     /// Returns the variant's name or "" if unknown.
     pub fn variant_name(self) -> Option<&'static str> {
@@ -89,6 +92,7 @@ impl ResponsePayload {
             Self::SearchKernel_V2_UpdateResult => Some("SearchKernel_V2_UpdateResult"),
             Self::SearchKernel_V2_CreateIndexResult => Some("SearchKernel_V2_CreateIndexResult"),
             Self::SearchKernel_V2_OpenIndexResult => Some("SearchKernel_V2_OpenIndexResult"),
+            Self::SearchKernel_V2_DeleteIndexResult => Some("SearchKernel_V2_DeleteIndexResult"),
             _ => None,
         }
     }

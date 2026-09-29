@@ -30,7 +30,7 @@ class M11StructureTests(unittest.TestCase):
             "unsafe impl Sync for Engine {}\n",
         )
         self._write(
-            "core/crates/searchkernel-vespa-engine/src/native.rs",
+            "core/crates/searchkernel-vespa-engine/src/native/mod.rs",
             'fn decode(s: &str) { let _ = serde_json::from_str::<serde_json::Value>(s); }\n',
         )
         self._write("core/crates/searchkernel-vespa-engine/Cargo.toml", 'serde_json = "1"\n')
@@ -132,7 +132,7 @@ class M11StructureTests(unittest.TestCase):
     def test_production_runtime_launch_is_rejected(self):
         for path, code in (
             ("core/crates/searchkernel-vespa-engine/src/engine.rs", 'std::process::Command::new("java");\n'),
-            ("core/crates/searchkernel-vespa-engine/src/native.rs", 'Command::new("java");\n'),
+            ("core/crates/searchkernel-vespa-engine/src/native/mod.rs", 'Command::new("java");\n'),
             ("core/crates/searchkernel-vespa-bindings/src/lib.rs", 'ProcessBuilder::new("java");\n'),
             ("reference/vespa/m11/rust-driver/src/main.rs", 'JNI_CreateJavaVM();\n'),
         ):

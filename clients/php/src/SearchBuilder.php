@@ -309,8 +309,11 @@ class SearchBuilder
         if ($name === '') {
             throw new InvalidArgumentException('rank property name must not be empty');
         }
+        if (!is_string($value)) {
+            throw new \TypeError('rank property value must be a string');
+        }
         $copy = clone $this;
-        $copy->rankProperties[$name] = (string) $value;
+        $copy->rankProperties[$name] = $value;
         return $copy;
     }
 

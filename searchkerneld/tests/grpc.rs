@@ -56,6 +56,30 @@ fn describe_request(version: u32) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+fn targeted_describe_request(version: u32, target_name: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let request =
+        wire::DescribeRequest::create(&mut builder, &wire::DescribeRequestArgs::default());
+    let target_name = builder.create_string(target_name);
+    let target = wire::IndexTarget::create(
+        &mut builder,
+        &wire::IndexTargetArgs {
+            name: Some(target_name),
+        },
+    );
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: version,
+            target: Some(target),
+            payload_type: wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+            payload: Some(request.as_union_value()),
+        },
+    );
+    builder.finish(envelope, Some("SKRQ"));
+    builder.finished_data().to_vec()
+}
+
 fn search_request() -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let request = wire::SearchRequest::create(&mut builder, &wire::SearchRequestArgs::default());
@@ -542,6 +566,33 @@ async fn execute_uses_the_canonical_dispatcher_over_a_real_socket() {
     assert!(remote_envelope
         .payload_as_search_kernel_v2_describe_result()
         .is_some());
+
+    server.shutdown().await.expect("shutdown server");
+    index.close().expect("close test index");
+}
+
+#[tokio::test]
+async fn legacy_single_transport_rejects_targeted_requests() {
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let server = start(
+        ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))),
+        dispatcher,
+    )
+    .await
+    .expect("start single-index gRPC server");
+    let mut client = connect_client(server.tcp_addr().expect("TCP server address")).await;
+
+    let status = client
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: targeted_describe_request(PROTOCOL_VERSION, "other-index"),
+        }))
+        .await
+        .expect_err("targeted request must not bypass the multi-index router");
+    assert_eq!(status.code(), Code::FailedPrecondition);
+    assert!(status
+        .message()
+        .contains("targeted Search Kernel requests require the multi-index daemon"));
 
     server.shutdown().await.expect("shutdown server");
     index.close().expect("close test index");

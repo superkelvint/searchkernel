@@ -193,12 +193,19 @@ module SearchKernel
 
     def rank_property(name, item)
       Wire.name!(name, "rank property name")
-      @rank_properties[name] = item.to_s
+      raise TypeError, "rank property value must be a string" unless item.is_a?(String)
+      @rank_properties[name] = item
       self
     end
 
     def rank_properties(properties)
-      properties.each { |name, value| rank_property(name.to_s, value) }
+      normalized = properties.map do |name, value|
+        normalized_name = name.to_s
+        Wire.name!(normalized_name, "rank property name")
+        raise TypeError, "rank property value must be a string" unless value.is_a?(String)
+        [normalized_name, value]
+      end
+      normalized.each { |name, value| @rank_properties[name] = value }
       self
     end
 
@@ -495,25 +502,51 @@ module SearchKernel
   class Index
     attr_reader :client
 
-    def self.connect(base_url, timeout: 30.0)
-      new(Client.new(HttpTransport.new(base_url, timeout: timeout)))
+    def self.connect(base_url, target: nil, timeout: 30.0)
+      new(Client.new(HttpTransport.new(base_url, timeout: timeout), target: target))
     end
 
-    def self.create(path, fields:, rank_profiles: nil)
+    def self.create(location, fields:, rank_profiles: nil, target: nil, timeout: 30.0)
       definition = Schema.index_definition(fields, rank_profiles)
-      owner = ManagedLocalHost.new(path, definition_json: definition)
+      if target
+        client = Client.new(HttpTransport.new(location, timeout: timeout), target: target)
+        payload = client.create_index("definition" => definition)
+        index = payload["index"]
+        raise ProtocolError, "CreateIndexResult.index must be an object" unless index.is_a?(Hash)
+        return new(client)
+      end
+
+      owner = ManagedLocalHost.new(location, definition_json: definition)
       new(Client.new(HttpTransport.new(owner.base_url)), owner: owner)
     rescue StandardError
+      client&.close
       owner&.close(force: true)
       raise
     end
 
-    def self.open(path)
-      owner = ManagedLocalHost.new(path)
+    def self.open(location, target: nil, timeout: 30.0)
+      if target
+        client = Client.new(HttpTransport.new(location, timeout: timeout), target: target)
+        payload = client.open_index({})
+        index = payload["index"]
+        raise ProtocolError, "OpenIndexResult.index must be an object" unless index.is_a?(Hash)
+        return new(client)
+      end
+
+      owner = ManagedLocalHost.new(location)
       new(Client.new(HttpTransport.new(owner.base_url)), owner: owner)
     rescue StandardError
+      client&.close
       owner&.close(force: true)
       raise
+    end
+
+    def self.delete(base_url, target:, timeout: 30.0)
+      client = Client.new(HttpTransport.new(base_url, timeout: timeout), target: target)
+      client.delete_index({})
+      true
+    ensure
+      client&.close
     end
 
     def initialize(client, owner: nil)

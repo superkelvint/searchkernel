@@ -39,7 +39,7 @@ pub use result::{
 };
 pub use schema::{
     describe_result_offset, describe_result_to_api, index_definition_input_to_api,
-    index_definition_ir_to_api,
+    index_definition_ir_to_api, index_definition_offset,
 };
 pub use search::{
     inspect_query_result_offset, inspect_query_result_to_api, search_request_ir_to_api,

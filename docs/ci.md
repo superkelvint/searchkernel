@@ -27,12 +27,13 @@ verification DAG expands ordinary PR CI into a large native verifier matrix.
 
 ## 2. Mandatory pull-request CI
 
-The intended mandatory PR gate is:
+The mandatory PR gate is:
 
 ```text
-cargo fmt --check
-cargo check
-cargo clippy -D warnings
+cargo fmt --all -- --check
+cargo check --workspace --all-targets --no-default-features --locked
+cargo check -p searchkerneld --tests --features native --locked
+cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings
 ```
 
 The canonical semantic owner is `./dev ci`.
@@ -55,10 +56,9 @@ Workflow YAML should be thin orchestration. It should not independently own:
 - change classification;
 - subsystem dependency rules.
 
-At the time of writing, `.github/workflows/rust-ci.yml` already implements the
-small `fmt + compile + clippy` gate, although it still spells out those commands
-directly. M2 of the build-system roadmap owns convergence to delegating that gate
-to `./dev ci`.
+`.github/workflows/rust-ci.yml` checks out the event revision and delegates the
+gate to `./dev ci`. The workflow owns scheduling; the canonical launcher owns
+toolchain/container setup and the command flags.
 
 ### What PR CI intentionally does not do
 
@@ -89,6 +89,7 @@ Developers and local-capable coding agents use `./dev`:
 ./dev verify --list
 ./dev verify <lane>
 
+./dev galaxy
 ./dev universe
 ./dev release-check
 ```
@@ -98,6 +99,7 @@ The intent is:
 - `ci` — cheap mandatory PR gate;
 - `test <scope>` — focused product/unit/client tests;
 - `verify <lane>` — focused specialist or semantic verification;
+- `galaxy` — broad routine suite, equivalent to `check`, without Universe-only exhaustive lanes;
 - `universe` — exhaustive repository/source qualification;
 - `release-check` — exact-revision shipability and artifact qualification.
 
@@ -120,7 +122,7 @@ agent/reviewer identifies exact pushed SHA
 dispatch Search Kernel on-demand verification
   revision  = exact immutable SHA
   operation = ci | test | verify
-  target    = known scope/lane
+  target    = empty for ci; known scope/lane for test or verify
                   |
                   v
 trusted GitHub control plane
@@ -184,16 +186,24 @@ The on-demand control plane should therefore come from trusted/default-branch
 infrastructure while the requested SHA is checked out separately as code under
 test.
 
-Remote verification must:
+The current trust policy is deliberately small and uses authenticated
+repository dispatch as the caller authorization boundary. Remote verification
+must:
 
 - accept only bounded `ci`, `test`, and `verify` operations;
 - validate targets against the canonical repository-owned target registry;
 - expose no arbitrary shell input;
 - use read-only repository permissions by default;
 - receive no release/deploy/write secrets;
-- define authorized-actor and fork/untrusted-revision behavior;
+- accept only exact commit SHAs available from this repository; fork-only or
+  unavailable SHAs fail closed;
 - use job-private writable state;
 - preserve exact-SHA identity in results.
+
+The workflow has read-only GitHub repository permissions, exposes no release,
+deployment, or write secrets to subject execution, and accepts no arbitrary
+shell command. We do not currently maintain a separate actor allowlist or
+runner-permission service; callers must have repository dispatch access.
 
 A candidate may change implementation or verifier code, but it must not gain
 the ability to alter privileged orchestration for its own execution.
