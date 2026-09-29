@@ -531,6 +531,7 @@ universe() {
 
     universe_dev_step 'API conformance verifier' verify api-conformance
     universe_dev_step 'capability/client contract verifiers' verify contracts
+    universe_dev_step 'client semantic parity verifier' verify client-semantic-parity
     universe_dev_step 'native ABI verifier' verify abi
     universe_dev_step 'persistence compatibility verifier' verify persistence
     universe_dev_step 'issue queue verifier' verify issue-queue
@@ -644,6 +645,9 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
             "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
+            ;;
+        client-semantic-parity)
+            "$PYTHON" "$ROOT/tools/check-client-semantic-parity.py"
             ;;
         abi)
             local_baseline=$(mktemp)

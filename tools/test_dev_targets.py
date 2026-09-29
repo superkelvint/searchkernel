@@ -52,6 +52,14 @@ class DevTargetsTest(unittest.TestCase):
         for meta in data["verify"].values():
             self.assertTrue(listed.isdisjoint(meta.get("aliases", [])))
 
+    def test_client_semantic_parity_is_registered(self):
+        data = json.loads(REGISTRY.read_text())
+        self.assertIn("client-semantic-parity", data["verify"])
+        out = subprocess.check_output(
+            [TOOL, "resolve", "verify", "client-semantic-parity"], text=True
+        ).strip()
+        self.assertEqual(out, "client-semantic-parity")
+
     def test_unknown_target_fails_closed(self):
         result = subprocess.run([TOOL, "resolve", "verify", "nope"], text=True, capture_output=True)
         self.assertEqual(result.returncode, 2)

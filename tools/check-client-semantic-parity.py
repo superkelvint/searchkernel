@@ -3,6 +3,8 @@
 from pathlib import Path
 import json, os, subprocess, sys, tempfile
 ROOT=Path(__file__).resolve().parents[1]
+if os.environ.get("SEARCHKERNEL_IN_CI_IMAGE") != "1" and os.environ.get("SEARCHKERNEL_DEV_USE_CI_IMAGE", "1") != "0":
+ os.execv(str(ROOT/"dev"), [str(ROOT/"dev"), "verify", "client-semantic-parity"])
 CORPUS=ROOT/'reference/client-semantic-parity/scenarios.json'
 def run(cmd, **kw):
  print('+',' '.join(map(str,cmd)), flush=True); subprocess.run(cmd,cwd=ROOT,check=True,**kw)
