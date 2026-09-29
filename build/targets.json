@@ -370,6 +370,21 @@
         "Keep the client a thin facade over canonical FlatBuffers and transport."
       ]
     },
+    "core/crates/": {
+      "owner": "rust-workspace",
+      "area": "Rust crate files",
+      "read": [
+        "core/crates/README.md"
+      ],
+      "architecture": "docs/architecture.md#runtime-structure",
+      "test": [],
+      "verify": [],
+      "native_sdk_rebuild": false,
+      "generated": false,
+      "rules": [
+        "Use a crate-specific ownership entry when one is available."
+      ]
+    },
     "core/crates/searchkernel-dispatch/": {
       "owner": "dispatch",
       "area": "Canonical request dispatcher",
@@ -388,6 +403,21 @@
       "generated": false,
       "rules": [
         "Every transport enters the same canonical dispatcher."
+      ]
+    },
+    "core/crates/searchkernel-filter/": {
+      "owner": "filter",
+      "area": "Filter syntax parser",
+      "read": [
+        "core/crates/searchkernel-filter/src/lib.rs"
+      ],
+      "architecture": "docs/architecture.md#semantic-structure",
+      "test": [],
+      "verify": [],
+      "native_sdk_rebuild": false,
+      "generated": false,
+      "rules": [
+        "Keep this crate syntax-only; schema-aware filter meaning belongs in searchkernel-ir."
       ]
     },
     "core/crates/searchkernel-ir-adapter/": {
@@ -463,6 +493,22 @@
       "generated": true,
       "rules": [
         "Regenerate from the FlatBuffers schemas; do not hand-edit."
+      ]
+    },
+    "core/crates/searchkernel-rpc/": {
+      "owner": "rust-rpc",
+      "area": "Rust gRPC client",
+      "read": [
+        "api/rpc/searchkernel.proto",
+        "core/crates/searchkernel-rpc/src/lib.rs"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [],
+      "native_sdk_rebuild": false,
+      "generated": false,
+      "rules": [
+        "Protobuf remains transport framing; check generated RPC bindings with ./dev check-protocol."
       ]
     },
     "core/crates/searchkernel-rpc/src/generated/": {
@@ -636,6 +682,23 @@
         "Treat contracts, oracles, goldens, and verifier expectations as frozen acceptance artifacts."
       ]
     },
+    "reference/result-response-conformance/": {
+      "owner": "result-response-conformance",
+      "area": "Frozen result response conformance corpus",
+      "read": [
+        "reference/result-response-conformance/corpus.json"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "native_sdk_rebuild": false,
+      "generated": false,
+      "rules": [
+        "Treat the corpus and fixtures as frozen acceptance artifacts."
+      ]
+    },
     "searchkernel-web/": {
       "owner": "web",
       "area": "Administration dashboard",
@@ -725,23 +788,6 @@
       "generated": false,
       "rules": [
         "Keep acceptance behavior aligned with frozen contracts and real Vespa where required."
-      ]
-    },
-    "reference/result-response-conformance/": {
-      "owner": "result-response-conformance",
-      "area": "Frozen result response conformance corpus",
-      "read": [
-        "reference/result-response-conformance/corpus.json"
-      ],
-      "architecture": "docs/architecture.md#canonical-contracts",
-      "test": [],
-      "verify": [
-        "verify:client-semantic-parity"
-      ],
-      "native_sdk_rebuild": false,
-      "generated": false,
-      "rules": [
-        "Treat the corpus and fixtures as frozen acceptance artifacts."
       ]
     }
   }

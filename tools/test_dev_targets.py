@@ -128,5 +128,22 @@ class DevTargetsTest(unittest.TestCase):
                     self.assertEqual(target_kind, kind)
                     self.assertIn(target, data[kind])
 
+    def test_explain_covers_unmapped_core_crate_paths(self):
+        for path, area in (
+            ("core/crates/flatbuffers-build/LICENSE", "Rust crate files"),
+            ("core/crates/searchkernel-filter/src/lib.rs", "Filter syntax parser"),
+            ("core/crates/searchkernel-rpc/src/lib.rs", "Rust gRPC client"),
+        ):
+            with self.subTest(path=path):
+                result = subprocess.run(
+                    ["./dev", "explain", path],
+                    cwd=ROOT,
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("Owner:", result.stdout)
+                self.assertIn(f"Area: {area}", result.stdout)
+
 if __name__ == "__main__":
     unittest.main()
