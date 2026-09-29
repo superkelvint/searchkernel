@@ -151,7 +151,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         ):
             self.assertIn(field, text)
         self.assertGreaterEqual(text.count("if: always()"), 2)
-        self.assertIn("actions/upload-artifact@v4", text)
+        self.assertIn("actions/upload-artifact@v7", text)
         self.assertIn("evidence.json", text)
 
     def test_evidence_does_not_claim_a_command_for_an_unresolved_target(self):
