@@ -40,6 +40,17 @@ def declarations(schema: str) -> dict[str, tuple[str, str]]:
     return result
 
 
+def declaration_headers(schema: str) -> dict[str, str]:
+    cleaned = re.sub(r"//[^\n]*|/\*.*?\*/", "", schema, flags=re.S)
+    return {
+        name: re.sub(r"\s+", "", f"{kind}{suffix}")
+        for kind, name, suffix in re.findall(
+            r"\b(table|struct|enum|union)\s+(\w+)([^{};]*)\{",
+            cleaned,
+        )
+    }
+
+
 def members(kind: str, body: str) -> dict[str, str]:
     if kind in {"table", "struct"}:
         return {
@@ -106,6 +117,7 @@ def result_closure(schema: str) -> dict[str, tuple[str, dict[str, str]]]:
 def verify_schema(schema: str, manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     decls = declarations(schema)
+    headers = declaration_headers(schema)
     closure = result_closure(schema)
     declared_types = manifest.get("schema", {})
     if set(declared_types) != set(closure):
@@ -127,6 +139,12 @@ def verify_schema(schema: str, manifest: dict[str, Any]) -> list[str]:
                 f"{name} members mismatch: "
                 f"missing={sorted(set(actual_members) - classified_names)}, "
                 f"stale={sorted(classified_names - set(actual_members))}"
+            )
+        actual_header = headers[name]
+        declared_header = declared.get("wire_header")
+        if declared_header != actual_header:
+            errors.append(
+                f"{name} wire header mismatch: expected={declared_header!r}, actual={actual_header!r}"
             )
         actual_wire = member_signatures(kind, decls[name][1])
         declared_wire = declared.get("wire_members")
