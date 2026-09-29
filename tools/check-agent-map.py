@@ -10,14 +10,13 @@ import pathlib
 import subprocess
 import sys
 import tomllib
-from dataclasses import dataclass
+from typing import NamedTuple
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "build" / "targets.json"
 
 
-@dataclass(frozen=True)
-class Boundary:
+class Boundary(NamedTuple):
     kind: str
     path: str
 
