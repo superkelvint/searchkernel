@@ -897,26 +897,6 @@
         "Regenerate from the RPC schema; do not hand-edit."
       ]
     },
-    "clients/typescript/src/generated/": {
-      "owner": "typescript-generated",
-      "area": "Generated TypeScript protocol and RPC bindings",
-      "read": [
-        "api/README.md",
-        "api/rpc/searchkernel.proto"
-      ],
-      "architecture": "docs/architecture.md#canonical-contracts",
-      "test": [],
-      "verify": [
-        "verify:contracts"
-      ],
-      "focused_check": "command:check-protocol",
-      "strong_check": "test:typescript",
-      "native_base_rebuild": false,
-      "generated": true,
-      "rules": [
-        "Regenerate from the canonical FlatBuffers/RPC schemas; do not hand-edit."
-      ]
-    },
     "core/native/vespa/manifest.json": {
       "owner": "native-base-pin",
       "area": "Pinned Vespa native base manifest",
