@@ -105,6 +105,10 @@ search = index.search("shoes")
   .property("trace.level", 1)
   .page(2, 3)
 
+raises(ArgumentError, "field sort direction is required") do
+  index.search("shoes").sort("price")
+end
+
 request = search.request
 same("SearchKernelTextQuery", request.dig("query", "source_type"), "text search query source")
 same(2, request.dig("filters", "textual").length, "filter clauses remain clause-local")
