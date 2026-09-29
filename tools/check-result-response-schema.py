@@ -93,6 +93,35 @@ class ReflectedSchema:
         # enum index; UType is the synthetic union discriminator storage type.
         return [("enum", index)]
 
+    def _is_synthetic_union_discriminator(
+        self,
+        field_name: str,
+        field_type: Any,
+        by_name: dict[str, Any],
+    ) -> bool:
+        """Return whether a reflected field is FlatBuffers union tag metadata."""
+        if not field_name.endswith("_type"):
+            return False
+        payload = by_name.get(field_name.removesuffix("_type"))
+        payload_type = payload.Type() if payload is not None else None
+        if payload_type is None or payload_type.Index() != field_type.Index():
+            return False
+
+        bt = self.base.BaseType()
+        if (
+            field_type.BaseType() == bt.UType
+            and payload_type.BaseType() == bt.Union
+        ):
+            return True
+
+        sequence_types = (bt.Vector, bt.Vector64, bt.Array)
+        return (
+            field_type.BaseType() in sequence_types
+            and payload_type.BaseType() == field_type.BaseType()
+            and field_type.Element() == bt.UType
+            and payload_type.Element() == bt.Union
+        )
+
     def _result_closure(self) -> dict[str, tuple[str, dict[str, Any]]]:
         bt = self.base.BaseType()
         start = self.object_names.get("SearchKernel.V2.SearchResult")
@@ -136,19 +165,14 @@ class ReflectedSchema:
                 field_type = field.Type()
                 if field_type is None:
                     raise ValueError(f"field has no type metadata: {name}.{field_name}")
-                # FlatBuffers emits an adjacent UType discriminator for every
-                # union field. It is implementation metadata; the payload field
-                # remains the one logical field exposed to coverage.
-                if field_type.BaseType() == bt.UType:
-                    payload_name = field_name.removesuffix("_type")
-                    payload = by_name.get(payload_name)
-                    payload_type = payload.Type() if payload is not None else None
-                    if (
-                        payload_type is not None
-                        and payload_type.BaseType() == bt.Union
-                        and payload_type.Index() == field_type.Index()
-                    ):
-                        continue
+                # FlatBuffers emits an adjacent union discriminator for scalar
+                # unions and a parallel discriminator vector for union vectors.
+                # Both are implementation metadata; only the payload field is
+                # part of the logical schema exposed to coverage.
+                if self._is_synthetic_union_discriminator(
+                    field_name, field_type, by_name
+                ):
+                    continue
                 values[field_name] = field_name
                 pending.extend(self._references(field_type))
             found[name] = (kind, values)
