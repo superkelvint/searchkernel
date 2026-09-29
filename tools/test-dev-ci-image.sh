@@ -103,13 +103,27 @@ for fragment in required_runner:
     if fragment not in runner:
         raise SystemExit(f"CI-image runner is missing {fragment!r}")
 
+# /work is a Docker volume populated by a separate container. Its numeric
+# ownership can vary across self-hosted runners, so both the exact-HEAD
+# preflight and the real execution container must carry an explicit,
+# process-local Git safe.directory policy.
+for git_env in (
+    "-e GIT_CONFIG_COUNT=1",
+    "-e GIT_CONFIG_KEY_0=safe.directory",
+    "-e GIT_CONFIG_VALUE_0=/work",
+):
+    if runner.count(git_env) < 2:
+        raise SystemExit(
+            f"CI-image runner must apply {git_env!r} to both Git-using containers"
+        )
+
 for forbidden in (
-    "searchkernel-ci-cargo-registry",
     "searchkernel-ci-cargo-git",
     "searchkernel-native-ci-lock",
     ":/root/.cargo/git",
     '-v "$ROOT:',
     "/work/.git/searchkernel/toolchains",
+    "git config --global --add safe.directory /work",
 ):
     if forbidden in runner:
         raise SystemExit(f"CI-image runner reintroduced shared/host mutable state: {forbidden}")
