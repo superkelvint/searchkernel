@@ -803,7 +803,11 @@ class SearchBuilder:
     def aggregate(self, expression): self._aggregates.append(expression if isinstance(expression, _Output) else expression.as_("")); return self
     def ranking(self, profile): self._ranking = profile; return self
     def input(self, name, item): self._inputs[name] = item; return self
-    def rank_property(self, name, item): self._rank_properties[name] = str(item); return self
+    def rank_property(self, name, item: str):
+        if not isinstance(item, str):
+            raise TypeError("rank property value must be a string")
+        self._rank_properties[name] = item
+        return self
     def property(self, name, item): self._properties[name] = value(item); return self
     def limit(self, item):
         _uint32(item, "limit")

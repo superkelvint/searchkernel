@@ -200,6 +200,7 @@ jobs:
           CANONICAL_TARGET: ${{ steps.target.outputs.target }}
           SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject
           SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"
+          SEARCHKERNEL_CI_EXACT_SOURCE: "1"
         run: |
           set -euo pipefail
           if [[ "${OPERATION}" == "ci" ]]; then

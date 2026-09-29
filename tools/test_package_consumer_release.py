@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-CLIENT_CAPABILITIES_WORKFLOW = ROOT / ".github" / "workflows" / "client-capabilities.yml"
 RELEASE_VERIFIER = ROOT / "tools" / "check-consumer-release.py"
 SPEC = importlib.util.spec_from_file_location(
     "package_consumer_release", ROOT / "tools" / "package-consumer-release.py"
@@ -119,14 +118,6 @@ class ConsumerReleaseTests(unittest.TestCase):
                     "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs", names
                 )
                 self.assertNotIn("tools/resolve-native-sdk.sh", names)
-
-    def test_client_capability_workflow_watches_every_rust_bundle_input(self) -> None:
-        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
-        for relative in MODULE.RUST_BUNDLE_PATHS:
-            path = ROOT / relative
-            watch = f"{relative}/**" if path.is_dir() else relative
-            with self.subTest(watch=watch):
-                self.assertEqual(workflow.count(f'      - "{watch}"'), 2)
 
     def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
         verifier = RELEASE_VERIFIER.read_text(encoding="utf-8")

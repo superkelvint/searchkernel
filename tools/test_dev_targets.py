@@ -52,6 +52,33 @@ class DevTargetsTest(unittest.TestCase):
         for meta in data["verify"].values():
             self.assertTrue(listed.isdisjoint(meta.get("aliases", [])))
 
+    def test_client_semantic_parity_is_registered(self):
+        data = json.loads(REGISTRY.read_text())
+        self.assertIn("client-semantic-parity", data["verify"])
+        out = subprocess.check_output(
+            [TOOL, "resolve", "verify", "client-semantic-parity"], text=True
+        ).strip()
+        self.assertEqual(out, "client-semantic-parity")
+
+    def test_client_semantic_parity_has_one_snapshot_authority(self):
+        driver = (ROOT / "tools" / "check-client-semantic-parity.py").read_text()
+        self.assertIn("CARGO_TARGET_DIR", driver)
+        self.assertIn("SEARCHKERNEL_SEMANTIC_SNAPSHOT", driver)
+        self.assertNotIn("ROOT/'target/debug/searchkernel-semantic-snapshot'", driver)
+
+        for relative in (
+            "clients/python/tests/test_semantic_parity.py",
+            "clients/typescript/tests/semantic-parity.test.ts",
+            "clients/php/tests/semantic_parity.php",
+            "clients/ruby/test/semantic_parity.rb",
+        ):
+            text = (ROOT / relative).read_text()
+            self.assertIn("SEARCHKERNEL_SEMANTIC_SNAPSHOT", text, relative)
+            self.assertNotIn("target/debug/searchkernel-semantic-snapshot", text, relative)
+
+        self.assertNotIn("cargo','build", (ROOT / "clients/python/tests/test_semantic_parity.py").read_text())
+        self.assertNotIn('execFileSync("cargo"', (ROOT / "clients/typescript/tests/semantic-parity.test.ts").read_text())
+
     def test_unknown_target_fails_closed(self):
         result = subprocess.run([TOOL, "resolve", "verify", "nope"], text=True, capture_output=True)
         self.assertEqual(result.returncode, 2)

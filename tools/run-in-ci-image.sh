@@ -8,6 +8,7 @@ source "$CONTROL_ROOT/tools/ci-runtime-ownership.sh"
 IMAGE=${SEARCHKERNEL_CI_IMAGE:-docker.io/superkelvint/searchkernel-ci:latest}
 PULL_MODE=${SEARCHKERNEL_CI_PULL:-always}
 KEEP_STATE=${SEARCHKERNEL_CI_KEEP_STATE:-0}
+EXACT_SOURCE=${SEARCHKERNEL_CI_EXACT_SOURCE:-0}
 COVERAGE_SNAPSHOT=0
 [[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1
 
@@ -15,6 +16,11 @@ die() {
     echo "error: $*" >&2
     exit 1
 }
+
+case "$EXACT_SOURCE" in
+    0|1) ;;
+    *) die "SEARCHKERNEL_CI_EXACT_SOURCE must be 0 or 1" ;;
+esac
 
 command -v docker >/dev/null 2>&1 ||
     die "Docker is required for Search Kernel build/test/verify commands. Set SEARCHKERNEL_DEV_USE_CI_IMAGE=0 for an intentional host run."
@@ -184,6 +190,9 @@ cat "$bundle" |
             rm -f "$bundle"
         '
 
+if [[ "$EXACT_SOURCE" == "1" ]]; then
+    echo "==> dev: exact-source mode; using committed Git tree only"
+else
 # Overlay exactly the non-ignored working-tree files that differ from HEAD.
 # This preserves local edits/new source files while deliberately excluding
 # target/, node_modules/, venvs, local SDKs, and all other ignored build state.
@@ -219,6 +228,8 @@ for raw in sys.stdin.buffer.read().split(b"\0"):
         except FileNotFoundError:
             pass
 '
+fi
+
 fi
 
 # Verify that the private Git repository still names the exact host HEAD before

@@ -437,7 +437,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve/filter.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/tests/facade.test.ts",
         "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
@@ -547,7 +547,7 @@
       "executable": false,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve/search.rs",
         "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
         "core/native/vespa/abi.cc",
         "core/native/vespa/engine.cc",
@@ -761,7 +761,7 @@
       "executable": false,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs"
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve/grouping.rs"
       ],
       "limitations": [
         "Raw grouping text is represented as caller intent, but resolve_grouping rejects it until a parser/normalizer can produce canonical structured grouping IR.",
@@ -812,7 +812,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve/document.rs",
         "core/crates/searchkernel-ir-adapter/src/backend.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
