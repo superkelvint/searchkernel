@@ -103,15 +103,6 @@ fn put(engine: &Engine, id: &str, value: i64) -> AnyResult<()> {
     Ok(())
 }
 
-fn put_publication_fixture(engine: &Engine, title: &str, value: i64) -> AnyResult<()> {
-    engine.put(
-        Document::new("publication")
-            .field("title", title)
-            .field("qty", value),
-    )?;
-    Ok(())
-}
-
 fn update(engine: &Engine, id: &str, value: i64) -> AnyResult<()> {
     engine.update(DocumentUpdate::new(id).assign("qty", value))?;
     Ok(())
@@ -187,6 +178,9 @@ fn wait_for_blocked_failpoint(engine: &Engine, name: &str) -> AnyResult<()> {
         }
         thread::sleep(Duration::from_millis(1));
     }
+    // A timeout must not leave an armed block action behind. clear() is safe
+    // whether the failpoint has not fired yet or raced into its blocked state.
+    let _ = hardening::clear(engine, name);
     Err(format!("failpoint {name} did not block").into())
 }
 
@@ -513,7 +507,7 @@ fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()
     if after.first().map(String::as_str) != Some(id_b) {
         return Err("tensor UPDATE returned before immediate HNSW search reflected replacement B".into());
     }
-    engine.close()?;
+    drop(engine);
     Ok(())
 }
 
