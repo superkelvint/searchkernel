@@ -30,6 +30,18 @@ class NativeRuntimeLinkTests(unittest.TestCase):
         self.assertIn('profile_dir.join("examples")', source)
         self.assertIn('stage_adapter_for_cargo_outputs(&out_dir, &adapter)', source)
 
+    def test_sdk_builder_serializes_shared_target_publication(self) -> None:
+        sdk = BUILD_SDK.read_text(encoding="utf-8")
+        lock = sdk.index('SDK_LOCK="${SDK_PACKAGE}.build.lock"')
+        provenance_guard = sdk.index("# Never let a full/custom SDK rebuild")
+        staging = sdk.index('mktemp -d "${SDK_PACKAGE}.staging.XXXXXX"')
+        self.assertLess(lock, provenance_guard)
+        self.assertLess(provenance_guard, staging)
+        self.assertIn('exec 9>"$SDK_LOCK"', sdk)
+        self.assertIn("flock 9", sdk)
+        self.assertNotIn('staging.$}', sdk)
+        self.assertNotIn('SDK_BACKUP="${SDK_PACKAGE}.old.$"', sdk)
+
     def test_origin_needed_entry_resolves_without_loader_environment(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
