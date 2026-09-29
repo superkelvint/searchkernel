@@ -415,6 +415,8 @@ bookkeeping_command() {
                 echo 'usage: ./dev bookkeeping check|sync' >&2
                 return 2
             }
+            "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+            "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
             ;;
