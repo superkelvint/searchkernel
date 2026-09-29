@@ -795,6 +795,72 @@ fn failed_post_publication_open_reports_recoverable_published_index() {
 }
 
 #[test]
+#[cfg(feature = "native")]
+fn failed_delete_cleanup_does_not_leave_a_partial_index_at_its_canonical_path() {
+    let temp = temporary_path("delete-cleanup-failure");
+    std::fs::create_dir_all(&temp).expect("create temporary parent");
+    let root = temp.join("products");
+    let index = Index::create(&root, IndexDefinition::new().field(Field::text("title")))
+        .expect("create index");
+    index.close().expect("close index before delete");
+
+    FAIL_NEXT_PUBLISHED_CLEANUP.with(|flag| flag.set(true));
+    let error = Index::delete_storage(&root).expect_err("injected cleanup must fail");
+
+    assert_eq!(error.code(), crate::ErrorCode::Unavailable);
+    assert!(
+        !root.exists(),
+        "a failed recursive tombstone cleanup must not expose partial contents at the canonical path"
+    );
+    assert!(
+        std::fs::read_dir(&temp)
+            .expect("read tombstone parent")
+            .any(|entry| entry
+                .expect("read tombstone entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".products.searchkernel-delete-")),
+        "failed cleanup must leave the complete tree available under its tombstone"
+    );
+    let _ = std::fs::remove_dir_all(temp);
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn delete_parent_fsync_failure_is_reported_after_atomic_unpublish() {
+    let temp = temporary_path("delete-parent-fsync-failure");
+    std::fs::create_dir_all(&temp).expect("create temporary parent");
+    let root = temp.join("products");
+    let index = Index::create(&root, IndexDefinition::new().field(Field::text("title")))
+        .expect("create index");
+    index.close().expect("close index before delete");
+
+    FAIL_NEXT_PARENT_FSYNC.with(|flag| flag.set(true));
+    let error = Index::delete_storage(&root).expect_err("fsync failure must be reported");
+
+    assert_eq!(error.code(), crate::ErrorCode::Unavailable);
+    assert_eq!(
+        error.details()[0].code,
+        "index_deleted_durability_uncertain"
+    );
+    assert!(
+        !root.exists(),
+        "the canonical path is unpublished even when durability cannot be confirmed"
+    );
+    assert!(
+        std::fs::read_dir(&temp)
+            .expect("read tombstone parent")
+            .any(|entry| entry
+                .expect("read tombstone entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".products.searchkernel-delete-")),
+        "the tombstone remains intact when the publication fsync fails"
+    );
+    let _ = std::fs::remove_dir_all(temp);
+}
+
+#[test]
 fn failed_create_after_publication_cleans_up_the_partial_runtime() {
     let root = temporary_path("failed-create-backend-open-cleanup");
     FAIL_NEXT_BACKEND_OPEN.with(|flag| flag.set(true));

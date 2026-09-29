@@ -5,20 +5,21 @@ require_relative "results"
 
 module SearchKernel
   class Client
-    attr_reader :transport
+    attr_reader :transport, :target
 
-    def initialize(transport)
+    def initialize(transport, target: nil)
       unless transport.respond_to?(:execute)
         raise ArgumentError, "Search Kernel transport must respond to execute"
       end
 
       @transport = transport
+      @target = target
       @closed = false
     end
 
     def execute(operation, payload)
       raise TransportError, "Search Kernel client is closed" if @closed
-      response = @transport.execute(Protocol.request_envelope(operation, payload))
+      response = @transport.execute(Protocol.request_envelope(operation, payload, target: @target))
       Protocol.expect_response(operation, response)
     end
 

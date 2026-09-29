@@ -1,6 +1,6 @@
 """Search Kernel's Python façade and canonical generated V2 client."""
 
-from .client import Client, ClientError, Index, SearchKernelError, Tensor, value
+from .client import Client, ClientError, Index, SearchKernelError, Tensor, uint64, value
 from .grpc_transport import GrpcTransport, GrpcTransportError
 from .ergonomic import (
     Boolean, Coverage, CoverageDegraded, Float, Group, Hit, HnswIndexConfig, Integer, Keyword,
@@ -16,5 +16,5 @@ __all__ = [
     "ResultContinuation", "ResultGroup", "ResultIssue", "ResultLimits", "SearchBuilder",
     "SearchResults", "SearchTiming", "Tensor", "TensorField",
     "Text", "UpdateBuilder", "YqlBuilder", "agg", "asc", "desc", "g", "gf",
-    "q", "value",
+    "q", "uint64", "value",
 ]

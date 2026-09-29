@@ -112,6 +112,8 @@ _lazy_AnalyzeRequest = _lazy_module("SearchKernel.V2.AnalyzeRequest")
 
 _lazy_CreateIndexRequest = _lazy_module("SearchKernel.V2.CreateIndexRequest")
 
+_lazy_DeleteIndexRequest = _lazy_module("SearchKernel.V2.DeleteIndexRequest")
+
 _lazy_DeleteRequest = _lazy_module("SearchKernel.V2.DeleteRequest")
 
 _lazy_DescribeRequest = _lazy_module("SearchKernel.V2.DescribeRequest")
@@ -150,7 +152,7 @@ class RequestEnvelopeT(object):
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
-        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertRequest.InsertRequestT', 'SearchKernel.V2.UpsertRequest.UpsertRequestT', 'SearchKernel.V2.PatchRequest.PatchRequestT', 'SearchKernel.V2.DeleteRequest.DeleteRequestT', 'SearchKernel.V2.GetRequest.GetRequestT', 'SearchKernel.V2.SearchRequest.SearchRequestT', 'SearchKernel.V2.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.V2.DescribeRequest.DescribeRequestT', 'SearchKernel.V2.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.V2.UpdateRequest.UpdateRequestT', 'SearchKernel.V2.CreateIndexRequest.CreateIndexRequestT', 'SearchKernel.V2.OpenIndexRequest.OpenIndexRequestT']
+        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertRequest.InsertRequestT', 'SearchKernel.V2.UpsertRequest.UpsertRequestT', 'SearchKernel.V2.PatchRequest.PatchRequestT', 'SearchKernel.V2.DeleteRequest.DeleteRequestT', 'SearchKernel.V2.GetRequest.GetRequestT', 'SearchKernel.V2.SearchRequest.SearchRequestT', 'SearchKernel.V2.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.V2.DescribeRequest.DescribeRequestT', 'SearchKernel.V2.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.V2.UpdateRequest.UpdateRequestT', 'SearchKernel.V2.CreateIndexRequest.CreateIndexRequestT', 'SearchKernel.V2.OpenIndexRequest.OpenIndexRequestT', 'SearchKernel.V2.DeleteIndexRequest.DeleteIndexRequestT']
         self.target = target  # type: Optional[SearchKernel.V2.IndexTarget.IndexTargetT]
 
     @classmethod

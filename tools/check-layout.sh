@@ -25,6 +25,7 @@ legacy=(
     core/crates/searchkernel-vespa-native
     core/crates/searchkernel-vespa-sys
     core/crates/searchkernel-sys
+    core/crates/searchkernel-vespa-engine/src/native.rs
 )
 
 for path in "${required[@]}"; do
@@ -40,5 +41,11 @@ for path in "${legacy[@]}"; do
         exit 1
     fi
 done
+
+if grep -R -n -F 'core/crates/searchkernel-vespa-engine/src/native.rs' \
+    "$ROOT/reference/vespa" --include='*.sh' --include='*.py' 2>/dev/null; then
+    echo "executable Vespa verifier still references removed src/native.rs" >&2
+    exit 1
+fi
 
 echo "repository layout PASS"

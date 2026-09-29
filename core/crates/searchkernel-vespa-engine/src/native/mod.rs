@@ -15,6 +15,13 @@ use searchkernel_vespa_bindings as sys;
 use std::collections::BTreeMap;
 use std::ptr::{self, NonNull};
 
+#[cfg(test)]
+static DENSE_DOCUMENT_FFI_CALLS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+#[cfg(test)]
+static DENSE_UPDATE_FFI_CALLS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 mod buffer;
 mod document;
 mod grouping;
@@ -52,3 +59,45 @@ pub(crate) use handles::{
 pub(crate) use query::{nearest_neighbor_options, NativeGenericSearchRequest, NativeQuery};
 pub(crate) use result::read_generic_search_result;
 pub(crate) use update::{add_attribute_update_value, add_update_field, attribute_update_create};
+
+#[cfg(test)]
+mod tensor_boundary_tests {
+    use super::{add_document_field, add_update_field};
+    use crate::{FieldUpdate, FieldValue, TensorValue};
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn malformed_dense_tensors_are_rejected_before_document_ffi() {
+        super::DENSE_DOCUMENT_FFI_CALLS.store(0, Ordering::Relaxed);
+        super::DENSE_UPDATE_FFI_CALLS.store(0, Ordering::Relaxed);
+        for tensor in [
+            TensorValue::dense("not-a-tensor", [1.0, 0.0]),
+            TensorValue::dense("tensor<float>(x[2],y[1])", [1.0, 0.0]),
+            TensorValue::dense("tensor<float>(x[3])", [1.0, 0.0]),
+        ] {
+            let expected = match &tensor {
+                TensorValue::Dense { type_spec, .. } if type_spec == "not-a-tensor" => {
+                    "tensor_type_spec_invalid"
+                }
+                TensorValue::Dense { type_spec, .. } if type_spec.contains(',') => {
+                    "tensor_shape_unsupported"
+                }
+                _ => "tensor_cell_count_mismatch",
+            };
+            let value = FieldValue::Tensor(tensor.clone());
+            let put = add_document_field(std::ptr::null_mut(), "embedding", &value)
+                .expect_err("invalid dense tensor must fail before native document use");
+            assert_eq!(put.detail_code(), Some(expected));
+
+            let patch = add_update_field(
+                std::ptr::null_mut(),
+                "embedding",
+                &FieldUpdate::Assign(FieldValue::Tensor(tensor)),
+            )
+            .expect_err("invalid dense tensor must fail before native update use");
+            assert_eq!(patch.detail_code(), Some(expected));
+        }
+        assert_eq!(super::DENSE_DOCUMENT_FFI_CALLS.load(Ordering::Relaxed), 0);
+        assert_eq!(super::DENSE_UPDATE_FFI_CALLS.load(Ordering::Relaxed), 0);
+    }
+}

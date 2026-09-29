@@ -18,6 +18,7 @@ class RequestPayload(object):
     SearchKernel_V2_UpdateRequest = 10
     SearchKernel_V2_CreateIndexRequest = 11
     SearchKernel_V2_OpenIndexRequest = 12
+    SearchKernel_V2_DeleteIndexRequest = 13
 
 def RequestPayloadCreator(unionType, table):
     from flatbuffers.table import Table
@@ -59,4 +60,7 @@ def RequestPayloadCreator(unionType, table):
     if unionType == RequestPayload.SearchKernel_V2_OpenIndexRequest:
         import SearchKernel.V2.OpenIndexRequest
         return SearchKernel.V2.OpenIndexRequest.OpenIndexRequestT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == RequestPayload.SearchKernel_V2_DeleteIndexRequest:
+        import SearchKernel.V2.DeleteIndexRequest
+        return SearchKernel.V2.DeleteIndexRequest.DeleteIndexRequestT.InitFromBuf(table.Bytes, table.Pos)
     return None

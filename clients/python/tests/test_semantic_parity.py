@@ -1,16 +1,13 @@
 import json, os, subprocess, tempfile, unittest
 from pathlib import Path
 from searchkernel.ergonomic import SearchBuilder
-from searchkernel.client import value
+from searchkernel import uint64
 from searchkernel.protocol import pack_object
-from SearchKernel.V2.UInt64Value import UInt64ValueT
-from SearchKernel.V2.Value import ValueT
-from SearchKernel.V2.ValueKind import ValueKind
 def corpus_value(item):
     if 'int64' in item:
         return int(item['int64'])
     if 'uint64' in item:
-        return ValueT(kindType=ValueKind.UInt64Value, kind=UInt64ValueT(value=int(item['uint64'])))
+        return uint64(int(item['uint64']))
     if 'string' in item:
         return item['string']
     if 'float64' in item:
