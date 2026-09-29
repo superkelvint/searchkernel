@@ -43,16 +43,23 @@ jobs:
             exit 2
           fi
           case "${OPERATION}" in
-            test|verify) ;;
+            ci)
+              if [[ -n "${REQUESTED_TARGET}" ]]; then
+                echo "error: ci does not accept a target" >&2
+                exit 2
+              fi
+              ;;
+            test|verify)
+              if [[ ! "${REQUESTED_TARGET}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+                echo "error: target must be 1-128 characters from [A-Za-z0-9._-]" >&2
+                exit 2
+              fi
+              ;;
             *)
-              echo "error: operation must be test or verify" >&2
+              echo "error: operation must be ci, test, or verify" >&2
               exit 2
               ;;
           esac
-          if [[ ! "${REQUESTED_TARGET}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
-            echo "error: target must be 1-128 characters from [A-Za-z0-9._-]" >&2
-            exit 2
-          fi
           if [[ ! "${REQUEST_ID}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]; then
             echo "error: request_id must be 1-80 characters from [A-Za-z0-9._-]" >&2
             exit 2
@@ -66,12 +73,34 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Verify requested commit belongs to this repository
+        uses: actions/github-script@v7
+        env:
+          REVISION: ${{ github.event.client_payload.revision }}
+        with:
+          script: |
+            const revision = process.env.REVISION.toLowerCase();
+            try {
+              const { data: commit } = await github.rest.repos.getCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: revision,
+              });
+              if (commit.sha.toLowerCase() !== revision) {
+                core.setFailed(`requested commit ${revision} resolved to ${commit.sha}`);
+              }
+            } catch (error) {
+              core.setFailed(`requested revision ${revision} is unavailable from this repository: ${error.message}`);
+            }
+
       - name: Check out requested revision as untrusted subject
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.client_payload.revision }}
           path: subject
-          fetch-depth: 1
+          # The canonical launcher bundles the exact subject commit for Docker;
+          # a shallow checkout omits parent objects needed by `git bundle`.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Prove checked-out revision
@@ -99,6 +128,10 @@ jobs:
           REQUESTED_TARGET: ${{ github.event.client_payload.target }}
         run: |
           set -euo pipefail
+          if [[ "${OPERATION}" == "ci" ]]; then
+            printf 'target=\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           # Never dereference a path from the untrusted checkout on the host.
           # Read the registry directly from the proven Git tree and require the
           # tree entry to be an ordinary file rather than a symlink.
@@ -169,8 +202,13 @@ jobs:
           SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"
         run: |
           set -euo pipefail
-          printf 'canonical command: ./dev %q %q\n' "${OPERATION}" "${CANONICAL_TARGET}"
-          bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"
+          if [[ "${OPERATION}" == "ci" ]]; then
+            echo 'canonical command: ./dev ci'
+            bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" ci
+          else
+            printf 'canonical command: ./dev %q %q\n' "${OPERATION}" "${CANONICAL_TARGET}"
+            bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"
+          fi
 
       - name: Write structured evidence
         if: always()
@@ -198,13 +236,19 @@ jobs:
 
           operation = os.environ["OPERATION"]
           target = os.environ.get("CANONICAL_TARGET", "")
+          if operation == "ci":
+              canonical_command = "./dev ci"
+          elif target:
+              canonical_command = f"./dev {operation} {target}"
+          else:
+              canonical_command = ""
           evidence = {
               "requested_revision": os.environ["REQUESTED_REVISION"].lower(),
               "request_id": os.environ["REQUEST_ID"],
               "revision": os.environ.get("OBSERVED_REVISION", ""),
               "operation": operation,
               "target": target,
-              "canonical_command": f"./dev {operation} {target}".rstrip(),
+              "canonical_command": canonical_command,
               "result": os.environ.get("RESULT") or "not-run",
               "actor": os.environ["ACTOR"],
               "run_id": int(os.environ["RUN_ID"]),

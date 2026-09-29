@@ -13,7 +13,7 @@ fi
 
 should_use_ci_image() {
     case "${1:-}" in
-        check|universe|check-fast|check-protocol|coverage|lint|test|verify)
+        ci|check|universe|check-fast|check-protocol|coverage|lint|test|verify)
             return 0
             ;;
         native-sdk)
@@ -137,7 +137,7 @@ usage() {
 Search Kernel development commands
 
   ./dev build                 Build the supported Search Kernel product (M1 convergence pending)
-  ./dev ci                    Run the intentionally cheap mandatory PR gate (M1 convergence pending)
+  ./dev ci                    Run the intentionally cheap mandatory PR gate
   ./dev check                 Run the full repository quality and test suite
   ./dev universe              Run every repository test, E2E lane, and verifier
   ./dev release-check         Run distributable release qualification (implemented in M5)
@@ -173,7 +173,7 @@ Search Kernel development commands
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Repair and verify local build/verification prerequisites
 
-Build/test/verify commands run in docker.io/superkelvint/searchkernel-ci:latest
+Build/ci/test/verify commands run in docker.io/superkelvint/searchkernel-ci:latest
 by default, using a disposable source snapshot and worktree-scoped compatible
 Cargo target state. Set
 SEARCHKERNEL_DEV_USE_CI_IMAGE=0 for an intentional host execution,
@@ -374,6 +374,21 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
     run_typescript_generation_check
     "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
+    "$PYTHON" "$ROOT/tools/test_build_system_ci.py"
+}
+
+ci_gate() {
+    echo "== cargo fmt =="
+    "$CARGO" fmt --all -- --check
+
+    echo "== cargo check =="
+    "$CARGO" check --workspace --all-targets --no-default-features --locked
+
+    echo "== native test compile smoke =="
+    "$CARGO" check -p searchkerneld --tests --features native --locked
+
+    echo "== cargo clippy =="
+    "$CARGO" clippy --workspace --all-targets --no-default-features --locked -- -D warnings
 }
 
 check_protocol() {
@@ -1228,7 +1243,11 @@ case "${1:-help}" in
         planned_command build M1
         ;;
     ci)
-        planned_command ci M1
+        [[ $# -eq 1 ]] || {
+            echo 'usage: ./dev ci' >&2
+            exit 2
+        }
+        ci_gate
         ;;
     check)
         check_all
