@@ -611,14 +611,19 @@ ordinary Rust workspace
 
 A developer working on the Rust API, IR, RPC layer, or language clients should normally be able to run the relevant tests without entering the Vespa build container.
 
-Changes to the native C++ adapter may require rebuilding the native SDK.
+Changes to Search Kernel's native C++ adapter rebuild and relink the
+repository-local adapter against the immutable Vespa/native base. They do not
+rebuild or repackage that base. A new native base is required only when the
+pinned Vespa revision or the base/toolchain provisioning inputs themselves
+change.
 
 Native outputs are environment-sensitive. Host, project-container, and CI
-Cargo target roots are isolated, and the Vespa SDK records the compiler,
-runtime, target, flags, pinned source, and native configuration that produced
-it. The Rust bindings validate that record and perform a real ABI link probe;
-one targeted rebuild is attempted automatically when the record or probe is
-stale. See [native-build-provenance.md](native-build-provenance.md).
+Cargo target roots are isolated, and the native-base provenance records the
+compiler, runtime, target, flags, pinned source, and native configuration that
+produced it. The Rust bindings validate that record and perform a real ABI link
+probe; the repository-local adapter is rebuilt automatically when its source or
+the selected base changes. See
+[native-build-provenance.md](native-build-provenance.md).
 
 The transport migration should be additive until cutover:
 
