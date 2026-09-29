@@ -27,7 +27,7 @@
           "source": "price <= :max",
           "bindings": {
             "max": {
-              "float64": 120
+              "float64": 120.0
             }
           }
         },
