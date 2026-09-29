@@ -417,6 +417,21 @@ async fn php_emitted_create_index_json_reaches_multi_index_registry() {
         wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
     );
 
+    let php_http_script = repo_root.join("clients/php/tests/create_index_http_smoke.php");
+    let php_http = Command::new("php")
+        .arg(&php_http_script)
+        .arg(format!("http://{http_address}"))
+        .arg("php-http-smoke")
+        .current_dir(&repo_root)
+        .output()
+        .expect("run PHP HttpTransport create-index smoke");
+    assert!(
+        php_http.status.success(),
+        "PHP HttpTransport create-index failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&php_http.stdout),
+        String::from_utf8_lossy(&php_http.stderr)
+    );
+
     server.shutdown().await.expect("shutdown daemon");
     registry.close_all().expect("close registry");
 }
