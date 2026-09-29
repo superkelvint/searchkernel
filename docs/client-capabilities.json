@@ -1544,7 +1544,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/ruby/test/run.rb",
-              "line": 604
+              "line": 647
             }
           ],
           "overrides": []
@@ -3113,6 +3113,19 @@
       "id": "platform.embedded_vespa_scope",
       "title": "Embedded single-node Vespa scope",
       "area": "platform",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "daemon.multi_index_lifecycle",
+      "title": "Targeted multi-index daemon lifecycle protocol",
+      "area": "daemon",
       "scenarios": [
         {
           "id": "basic",

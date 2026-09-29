@@ -3,7 +3,7 @@
   "commands": {
     "doctor": {"status": "implemented"},
     "build": {"status": "planned_m1"},
-    "ci": {"status": "planned_m1"},
+    "ci": {"status": "implemented"},
     "test": {"status": "implemented"},
     "lint": {"status": "implemented"},
     "verify": {"status": "implemented"},

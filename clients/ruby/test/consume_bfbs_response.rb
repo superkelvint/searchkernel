@@ -52,7 +52,7 @@ elsif name == "recursive-search-response"
   raise "lost hit feature maps" unless result.hits.first.match_features == {} && result.hits.first.summary_features == { "summary" => "ok" } && result.hits.first.rank_features == { "rank" => 0.25 }
   raise "lost hit source or types" unless result.hits.first.source == "sample" && result.hits.first.types == ["document"]
   raise "lost present-empty metadata" unless result.metadata == {} && result.root.metadata == {}
-  raise "lost absent metadata" unless result.groups.first.metadata.nil?
+  raise "absent group metadata did not default to an empty map" unless result.groups.first.metadata == {}
   raise "lost continuation" unless result.groups.first.continuations.first.value == "opaque"
   raise "lost trace" unless result.trace == { "events" => [] }
   raise "lost coverage" unless result.coverage.degraded.timeout == true

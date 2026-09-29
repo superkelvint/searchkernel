@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-source "$ROOT/tools/ci-runtime-ownership.sh"
+CONTROL_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+ROOT=${SEARCHKERNEL_CI_SOURCE_ROOT:-$CONTROL_ROOT}
+ROOT=$(cd -- "$ROOT" && pwd)
+source "$CONTROL_ROOT/tools/ci-runtime-ownership.sh"
 IMAGE=${SEARCHKERNEL_CI_IMAGE:-docker.io/superkelvint/searchkernel-ci:latest}
 PULL_MODE=${SEARCHKERNEL_CI_PULL:-always}
 KEEP_STATE=${SEARCHKERNEL_CI_KEEP_STATE:-0}
@@ -71,8 +73,8 @@ case "$PULL_MODE" in
 esac
 [[ "$vespa_ref" == *@sha256:* ]] || die "could not resolve immutable Vespa image digest"
 
-native_volume=$(bash "$ROOT/tools/ensure-ci-vespa-volume.sh" "$IMAGE_ID" "$vespa_ref" "$label" "$vespa_bundle")
-read -r sccache_binary_volume sccache_socket_volume < <(bash "$ROOT/tools/ensure-ci-sccache.sh" "$IMAGE_ID")
+native_volume=$(bash "$CONTROL_ROOT/tools/ensure-ci-vespa-volume.sh" "$IMAGE_ID" "$vespa_ref" "$label" "$vespa_bundle")
+read -r sccache_binary_volume sccache_socket_volume < <(bash "$CONTROL_ROOT/tools/ensure-ci-sccache.sh" "$IMAGE_ID")
 
 docker run --rm "$IMAGE_ID" test -f /opt/searchkernel/native-validation-pass ||
     die "$IMAGE is missing its native validation marker"
@@ -87,9 +89,18 @@ docker run --rm "$IMAGE_ID" /bin/bash -lc '
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-ci-image.XXXXXX")
 source_volume="searchkernel-dev-src-$(id -u)-$$-${RANDOM}"
-target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")
-ci_runtime_prune_target_volumes "$ROOT" "$target_volume"
-cargo_registry_volume=$(ci_runtime_shared_download_volume cargo-registry "$environment_id")
+ephemeral_target=${SEARCHKERNEL_CI_EPHEMERAL_TARGET:-0}
+if [[ "$ephemeral_target" == "1" ]]; then
+    target_volume="searchkernel-ci-target-$(id -u)-$$-${RANDOM}"
+    # Remote exact-SHA verification executes untrusted repository code. Keep
+    # Cargo's writable registry/source state job-private alongside CARGO_TARGET_DIR
+    # so one subject revision cannot poison a later verification job.
+    cargo_registry_volume="searchkernel-ci-cargo-registry-$(id -u)-$$-${RANDOM}"
+else
+    target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")
+    ci_runtime_prune_target_volumes "$ROOT" "$target_volume"
+    cargo_registry_volume=$(ci_runtime_shared_download_volume cargo-registry "$environment_id")
+fi
 artifact_volume=""
 if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
     artifact_volume="searchkernel-dev-artifacts-$(id -u)-$$-${RANDOM}"
@@ -110,6 +121,10 @@ cleanup() {
 
     docker rm -f "$container_name" >/dev/null 2>&1 || true
     docker volume rm -f "$source_volume" >/dev/null 2>&1 || true
+    if [[ "$ephemeral_target" == "1" ]]; then
+        docker volume rm -f "$target_volume" >/dev/null 2>&1 || true
+        docker volume rm -f "$cargo_registry_volume" >/dev/null 2>&1 || true
+    fi
     [[ -z "$artifact_volume" ]] || docker volume rm -f "$artifact_volume" >/dev/null 2>&1 || true
     return "$status"
 }
@@ -118,15 +133,26 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 docker volume create "$source_volume" >/dev/null
-docker volume create \
-    --label io.searchkernel.cache-kind=immutable-download \
-    --label "io.searchkernel.environment-id=$environment_id" \
-    "$cargo_registry_volume" >/dev/null
-docker volume create \
-    --label io.searchkernel.cache-kind=worktree-target \
-    --label "io.searchkernel.environment-id=$environment_id" \
-    --label "io.searchkernel.worktree=$ROOT" \
-    "$target_volume" >/dev/null
+if [[ "$ephemeral_target" == "1" ]]; then
+    docker volume create \
+        --label io.searchkernel.cache-kind=job-cargo-registry \
+        --label "io.searchkernel.environment-id=$environment_id" \
+        "$cargo_registry_volume" >/dev/null
+    docker volume create \
+        --label io.searchkernel.cache-kind=job-target \
+        --label "io.searchkernel.environment-id=$environment_id" \
+        "$target_volume" >/dev/null
+else
+    docker volume create \
+        --label io.searchkernel.cache-kind=immutable-download \
+        --label "io.searchkernel.environment-id=$environment_id" \
+        "$cargo_registry_volume" >/dev/null
+    docker volume create \
+        --label io.searchkernel.cache-kind=worktree-target \
+        --label "io.searchkernel.environment-id=$environment_id" \
+        --label "io.searchkernel.worktree=$ROOT" \
+        "$target_volume" >/dev/null
+fi
 if [[ -n "$artifact_volume" ]]; then
     docker volume create "$artifact_volume" >/dev/null
 fi
