@@ -99,22 +99,58 @@ fn main() {
             "unknown-tensor-payload-union",
             unknown_tensor_payload_union(tensors.clone()),
         ),
-        ("missing-search-result-root", missing_search_result_root(canonical.clone())),
-        ("missing-search-result-total-hits", missing_search_result_total_hits(canonical.clone())),
+        (
+            "missing-search-result-root",
+            missing_search_result_root(canonical.clone()),
+        ),
+        (
+            "missing-search-result-total-hits",
+            missing_search_result_total_hits(canonical.clone()),
+        ),
         (
             "missing-search-result-root-and-total-hits",
             missing_search_result_root_and_total_hits(canonical.clone()),
         ),
-        ("missing-continuation-key", missing_continuation_key(canonical.clone())),
-        ("missing-continuation-value", missing_continuation_value(canonical.clone())),
-        ("missing-sparse-address-dimension", missing_sparse_address_dimension(tensors.clone())),
-        ("missing-sparse-address-label", missing_sparse_address_label(tensors.clone())),
-        ("missing-mixed-address-dimension", missing_mixed_address_dimension(tensors.clone())),
-        ("missing-mixed-address-label", missing_mixed_address_label(tensors.clone())),
-        ("missing-value-entry-value", missing_value_entry_value(values.clone())),
-        ("non-finite-dense-tensor-cell", non_finite_dense_tensor_cell(tensors.clone())),
-        ("non-finite-sparse-tensor-cell", non_finite_sparse_tensor_cell(tensors.clone())),
-        ("non-finite-mixed-tensor-cell", non_finite_mixed_tensor_cell(tensors)),
+        (
+            "missing-continuation-key",
+            missing_continuation_key(canonical.clone()),
+        ),
+        (
+            "missing-continuation-value",
+            missing_continuation_value(canonical.clone()),
+        ),
+        (
+            "missing-sparse-address-dimension",
+            missing_sparse_address_dimension(tensors.clone()),
+        ),
+        (
+            "missing-sparse-address-label",
+            missing_sparse_address_label(tensors.clone()),
+        ),
+        (
+            "missing-mixed-address-dimension",
+            missing_mixed_address_dimension(tensors.clone()),
+        ),
+        (
+            "missing-mixed-address-label",
+            missing_mixed_address_label(tensors.clone()),
+        ),
+        (
+            "missing-value-entry-value",
+            missing_value_entry_value(values.clone()),
+        ),
+        (
+            "non-finite-dense-tensor-cell",
+            non_finite_dense_tensor_cell(tensors.clone()),
+        ),
+        (
+            "non-finite-sparse-tensor-cell",
+            non_finite_sparse_tensor_cell(tensors.clone()),
+        ),
+        (
+            "non-finite-mixed-tensor-cell",
+            non_finite_mixed_tensor_cell(tensors),
+        ),
         (
             "unknown-response-payload-union",
             unknown_response_payload_union(canonical.clone()),
@@ -274,7 +310,11 @@ fn duplicate_result_map_key(mut bytes: Vec<u8>) -> Vec<u8> {
 fn clear_table_field(bytes: &mut [u8], table: usize, slot: usize) {
     let vtable = (table as isize - read_i32(bytes, table) as isize) as usize;
     let offset = vtable + 4 + slot * 2;
-    assert_ne!(read_u16(bytes, offset), 0, "fixture field is already absent");
+    assert_ne!(
+        read_u16(bytes, offset),
+        0,
+        "fixture field is already absent"
+    );
     bytes[offset..offset + 2].copy_from_slice(&0u16.to_le_bytes());
 }
 
