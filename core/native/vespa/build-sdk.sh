@@ -613,7 +613,7 @@ fi
 # A uniquely named backup keeps the replacement recoverable until the new
 # directory is in place; the old generated package is then removed explicitly.
 SDK_BACKUP=$(mktemp -d "${SDK_PACKAGE}.old.XXXXXX")
-    rmdir "$SDK_BACKUP"
+rmdir "$SDK_BACKUP"
 if [ -e "$SDK_BACKUP" ]; then
     echo "SDK backup path already exists: $SDK_BACKUP" >&2
     exit 1
