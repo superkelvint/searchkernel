@@ -4,9 +4,13 @@
 from __future__ import annotations
 
 import json
-import struct
 from pathlib import Path
 from typing import Any
+
+import flatbuffers.encode
+import flatbuffers.packer
+from flatbuffers import number_types as fb_types
+from flatbuffers.table import Table
 
 ROOT = Path(__file__).resolve().parents[1]
 BFBS = ROOT / "core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs"
@@ -50,99 +54,65 @@ CLASSIFIED_FIELDS = {
 
 
 class _BfbsReflection:
-    """Minimal reader for FlatBuffers reflection.Schema BFBS metadata."""
+    """Read reflection.Schema metadata using the pinned FlatBuffers runtime."""
 
     def __init__(self, data: bytes):
-        self.data = data
         if len(data) < 8 or data[4:8] != b"BFBS":
             raise ValueError("response schema is not a BFBS reflection buffer")
-        self.root = self.u32(0)
-        self._require(self.root, 4)
+        root = flatbuffers.encode.Get(flatbuffers.packer.uoffset, data, 0)
+        self.root = Table(data, root)
 
-    def _require(self, offset: int, size: int) -> None:
-        if offset < 0 or size < 0 or offset + size > len(self.data):
-            raise ValueError(
-                f"BFBS reflection read out of bounds: offset={offset} size={size}"
-            )
+    @staticmethod
+    def _slot(slot: int) -> int:
+        # Generated FlatBuffers accessors use vtable offsets 4, 6, 8, ...
+        return 4 + slot * 2
 
-    def _unpack(self, fmt: str, offset: int) -> int:
-        size = struct.calcsize(fmt)
-        self._require(offset, size)
-        return int(struct.unpack_from(fmt, self.data, offset)[0])
+    def field(self, table: Table, slot: int) -> int:
+        return int(table.Offset(self._slot(slot)))
 
-    def u16(self, offset: int) -> int:
-        return self._unpack("<H", offset)
-
-    def u32(self, offset: int) -> int:
-        return self._unpack("<I", offset)
-
-    def i8(self, offset: int) -> int:
-        return self._unpack("<b", offset)
-
-    def i32(self, offset: int) -> int:
-        return self._unpack("<i", offset)
-
-    def field(self, table: int, slot: int) -> int | None:
-        self._require(table, 4)
-        vtable = table - self.i32(table)
-        self._require(vtable, 4)
-        vtable_len = self.u16(vtable)
-        if vtable_len < 4:
-            raise ValueError("BFBS reflection table has an invalid vtable")
-        self._require(vtable, vtable_len)
-        entry = vtable + 4 + slot * 2
-        if entry + 2 > vtable + vtable_len:
-            return None
-        offset = self.u16(entry)
+    def table_field(self, table: Table, slot: int) -> Table | None:
+        offset = self.field(table, slot)
         if offset == 0:
             return None
-        result = table + offset
-        self._require(result, 1)
-        return result
+        return Table(table.Bytes, table.Indirect(table.Pos + offset))
 
-    def indirect(self, offset: int) -> int:
-        target = offset + self.u32(offset)
-        self._require(target, 1)
-        return target
-
-    def table_field(self, table: int, slot: int) -> int | None:
-        value = self.field(table, slot)
-        return None if value is None else self.indirect(value)
-
-    def string_field(self, table: int, slot: int) -> str | None:
-        value = self.field(table, slot)
-        if value is None:
+    def string_field(self, table: Table, slot: int) -> str | None:
+        offset = self.field(table, slot)
+        if offset == 0:
             return None
-        string = self.indirect(value)
-        length = self.u32(string)
-        start = string + 4
-        self._require(start, length)
         try:
-            return self.data[start : start + length].decode("utf-8")
+            return table.String(table.Pos + offset).decode("utf-8")
         except UnicodeDecodeError as error:
             raise ValueError("BFBS reflection string is not UTF-8") from error
 
-    def vector_tables(self, table: int, slot: int) -> list[int]:
-        value = self.field(table, slot)
-        if value is None:
+    def vector_tables(self, table: Table, slot: int) -> list[Table]:
+        offset = self.field(table, slot)
+        if offset == 0:
             return []
-        vector = self.indirect(value)
-        length = self.u32(vector)
-        start = vector + 4
-        self._require(start, length * 4)
-        return [self.indirect(start + index * 4) for index in range(length)]
+        start = table.Vector(offset)
+        length = table.VectorLen(offset)
+        return [
+            Table(table.Bytes, table.Indirect(start + index * 4))
+            for index in range(length)
+        ]
 
-    def i8_field(self, table: int, slot: int, default: int = 0) -> int:
-        value = self.field(table, slot)
-        return default if value is None else self.i8(value)
+    def i8_field(self, table: Table, slot: int, default: int = 0) -> int:
+        offset = self.field(table, slot)
+        if offset == 0:
+            return default
+        return int(table.Get(fb_types.Int8Flags, table.Pos + offset))
 
-    def i32_field(self, table: int, slot: int, default: int = -1) -> int:
-        value = self.field(table, slot)
-        return default if value is None else self.i32(value)
+    def i32_field(self, table: Table, slot: int, default: int = -1) -> int:
+        offset = self.field(table, slot)
+        if offset == 0:
+            return default
+        return int(table.Get(fb_types.Int32Flags, table.Pos + offset))
 
-    def bool_field(self, table: int, slot: int) -> bool:
-        value = self.field(table, slot)
-        return value is not None and self.data[value] != 0
+    def bool_field(self, table: Table, slot: int) -> bool:
+        offset = self.field(table, slot)
+        if offset == 0:
+            return False
+        return bool(table.Get(fb_types.BoolFlags, table.Pos + offset))
 
 
 def _bfbs_declarations(
