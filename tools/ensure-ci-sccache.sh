@@ -19,6 +19,9 @@ set -euo pipefail
     exit 2
 }
 
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source "$ROOT/tools/ci-runtime-ownership.sh"
+
 CI_IMAGE=$1
 SCCACHE_VERSION=0.17.0
 SCCACHE_SHA256=67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006
@@ -62,7 +65,8 @@ if ! validate_binary; then
     echo "Materializing pinned sccache v$SCCACHE_VERSION binary" >&2
     docker rm -f "$SERVER" >/dev/null 2>&1 || true
     docker volume rm -f "$BINARY_VOLUME" >/dev/null 2>&1 || true
-    docker volume create "$BINARY_VOLUME" >/dev/null
+    ci_runtime_create_volume "$BINARY_VOLUME" sccache-binary cache \
+        "io.searchkernel.sccache-version=$SCCACHE_VERSION" >/dev/null
 
     if docker run --rm "$CI_IMAGE" /usr/local/bin/sccache --version 2>/dev/null |
         grep -qx "sccache $SCCACHE_VERSION"; then
@@ -114,12 +118,21 @@ validate_server() {
 if ! validate_server; then
     echo "Starting shared sccache v$SCCACHE_VERSION server" >&2
     docker rm -f "$SERVER" >/dev/null 2>&1 || true
-    docker volume create "$CACHE_VOLUME" >/dev/null
-    docker volume create "$SOCKET_VOLUME" >/dev/null
+    ci_runtime_create_volume "$CACHE_VOLUME" sccache-cache cache \
+        "io.searchkernel.sccache-version=$SCCACHE_VERSION" \
+        "io.searchkernel.toolchain-id=$TOOLCHAIN_ID" >/dev/null
+    ci_runtime_create_volume "$SOCKET_VOLUME" sccache-socket cache \
+        "io.searchkernel.sccache-version=$SCCACHE_VERSION" \
+        "io.searchkernel.toolchain-id=$TOOLCHAIN_ID" >/dev/null
 
+    server_created_at=$(ci_runtime_now_epoch)
     docker run -d \
         --name "$SERVER" \
         --restart unless-stopped \
+        --label io.searchkernel.owner=searchkernel \
+        --label io.searchkernel.cache-kind=sccache-server \
+        --label io.searchkernel.lifecycle=cache \
+        --label "io.searchkernel.created-at=$server_created_at" \
         --label "io.searchkernel.sccache-version=$SCCACHE_VERSION" \
         --label "io.searchkernel.toolchain-id=$TOOLCHAIN_ID" \
         -e SCCACHE_DIR=/cache \
