@@ -4,10 +4,9 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CORE="$ROOT/core/crates/searchkernel-ir/src"
 MODEL="$CORE/model"
 
-# `api_to_ir/resolve.rs` is the intentional semantic composition boundary.
-# `resolve_*` functions there convert validated public inputs into owned IR;
-# they are not legacy IR names.  Keep this check limited to names that indicate
-# the removed pre-refactor model.
+# `api_to_ir/resolve/mod.rs` is the resolver façade; responsibility-specific
+# submodules convert validated public inputs into owned IR. These are not legacy
+# IR names. Keep this check limited to names from the removed pre-refactor model.
 if grep -rEn 'Resolved[A-Z][A-Za-z0-9_]*Ir|IndexSemantics' "$CORE"; then
   echo "legacy IR names remain" >&2; exit 1
 fi
