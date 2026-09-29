@@ -112,6 +112,15 @@ same(["max"], request.dig("filters", "textual", 0, "bindings").map { |entry| ent
 same(["min"], request.dig("filters", "textual", 1, "bindings").map { |entry| entry.fetch("key") }, "second filter bindings do not leak")
 same(3, request.dig("offset", "value"), "page computes offset")
 same(3, request.dig("limit", "value"), "page sets limit")
+same("yes", request.dig("ranking", "properties", 0, "value"), "rank property values stay strings")
+[false, nil, 7, [], {}].each do |value|
+  raises(TypeError, "rank property values reject #{value.inspect}") do
+    index.search("shoes").rank_property("enabled", value)
+  end
+end
+raises(TypeError, "rank_properties rejects non-string values") do
+  index.search("shoes").rank_properties("enabled" => false)
+end
 raises(ArgumentError, "page zero rejects") { index.search("shoes").page(0, 3) }
 raises(ArgumentError, "page offset overflow rejects") { index.search("shoes").page(0xffff_ffff, 2) }
 raises(ArgumentError, "page size outside uint32 rejects") { index.search("shoes").page(1, 0x1_0000_0000) }

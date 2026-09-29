@@ -44,7 +44,8 @@ module SearchKernel
         key = key.to_s if key.is_a?(Symbol)
         raise ArgumentError, "string entry keys must be strings" unless key.is_a?(String)
         raise ArgumentError, "duplicate string entry key #{key.inspect}" if normalized.key?(key)
-        normalized[key] = value.to_s
+        raise TypeError, "string entry values must be strings" unless value.is_a?(String)
+        normalized[key] = value
       end
       normalized.keys.sort.map { |key| { "key" => key, "value" => normalized.fetch(key) } }
     end

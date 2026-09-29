@@ -82,7 +82,7 @@
   "facade_rejections": [
     {
       "id": "rank-property-boolean",
-      "clients": ["python", "typescript"],
+      "clients": ["python", "typescript", "php", "ruby"],
       "intent": {
         "kind": "browse",
         "rank_properties": {
@@ -92,7 +92,7 @@
     },
     {
       "id": "rank-property-null",
-      "clients": ["python", "typescript"],
+      "clients": ["python", "typescript", "php", "ruby"],
       "intent": {
         "kind": "browse",
         "rank_properties": {
@@ -102,7 +102,7 @@
     },
     {
       "id": "rank-property-number",
-      "clients": ["python", "typescript"],
+      "clients": ["python", "typescript", "php", "ruby"],
       "intent": {
         "kind": "browse",
         "rank_properties": {
@@ -112,7 +112,7 @@
     },
     {
       "id": "rank-property-object",
-      "clients": ["python", "typescript"],
+      "clients": ["python", "typescript", "php", "ruby"],
       "intent": {
         "kind": "browse",
         "rank_properties": {
@@ -122,7 +122,7 @@
     },
     {
       "id": "rank-property-array",
-      "clients": ["python", "typescript"],
+      "clients": ["python", "typescript", "php", "ruby"],
       "intent": {
         "kind": "browse",
         "rank_properties": {

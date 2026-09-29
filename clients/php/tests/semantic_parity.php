@@ -6,4 +6,17 @@ final class NoopTransport implements Transport { public function execute(array $
 $corpus=getenv('SEARCHKERNEL_PARITY_CORPUS'); $output=getenv('SEARCHKERNEL_PARITY_OUTPUT'); $snapshot=getenv('SEARCHKERNEL_SEMANTIC_SNAPSHOT'); $fixture=getenv('SEARCHKERNEL_PARITY_INDEX');
 if(!$corpus||!$output||!$snapshot||!$fixture) throw new RuntimeException('missing parity environment'); $data=json_decode(file_get_contents($corpus),true,512,JSON_THROW_ON_ERROR); $index=new Index(new NoopTransport()); $out=[];
 foreach($data['scenarios'] as $scenario){ $i=$scenario['intent']; $b=$i['kind']==='browse'?$index->browse():$index->search($i['query']); if(isset($i['filter'])){$bindings=[]; foreach($i['filter']['bindings'] as $k=>$v){$bindings[$k]=isset($v['uint64'])?UInt64::fromDecimal($v['uint64']):($v['int64']??$v['string']??$v['float64']);} $b=$b->filter($i['filter']['source'],$bindings);} if(isset($i['ranking']))$b=$b->ranking($i['ranking']); foreach($i['inputs']??[] as $k=>$v){$value=isset($v['uint64'])?UInt64::fromDecimal($v['uint64']):($v['int64']??$v['string']??$v['float64']); $b=$b->input($k,$value);} foreach($i['rank_properties']??[] as $k=>$v)$b=$b->rankProperty($k,$v); if(array_key_exists('limit',$i))$b=$b->limit($i['limit']); if(array_key_exists('offset',$i))$b=$b->offset($i['offset']); $tmp=tempnam(sys_get_temp_dir(),'sk-parity-'); file_put_contents($tmp,Protocol::encodeJson($b->request())); $cmd=escapeshellarg($snapshot).' --index-json '.escapeshellarg($fixture).' --request-json '.escapeshellarg($tmp); $json=shell_exec($cmd); unlink($tmp); if($json===null) throw new RuntimeException('snapshot failed'); $out[$scenario['id']]=json_decode($json,true,512,JSON_THROW_ON_ERROR); }
+foreach ($data['facade_rejections'] ?? [] as $rejection) {
+    if (!in_array('php', $rejection['clients'], true)) {
+        continue;
+    }
+    foreach ($rejection['intent']['rank_properties'] as $name => $value) {
+        try {
+            $index->browse()->rankProperty($name, $value);
+        } catch (TypeError) {
+            continue;
+        }
+        throw new RuntimeException('rank-property rejection accepted: ' . $rejection['id']);
+    }
+}
 file_put_contents($output,json_encode($out,JSON_THROW_ON_ERROR));

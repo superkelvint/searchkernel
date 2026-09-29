@@ -193,7 +193,8 @@ module SearchKernel
 
     def rank_property(name, item)
       Wire.name!(name, "rank property name")
-      @rank_properties[name] = item.to_s
+      raise TypeError, "rank property value must be a string" unless item.is_a?(String)
+      @rank_properties[name] = item
       self
     end
 
