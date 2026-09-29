@@ -36,7 +36,9 @@ class ResultResponseSchemaTest(unittest.TestCase):
 
     def test_field_type_change_fails(self) -> None:
         schema = MODULE.SCHEMA.read_text().replace(
-            "fields:[ValueEntry];", "fields:[StringEntry];", 1
+            "table Hit {\n  id:string;\n  relevance:Relevance;\n  fields:[ValueEntry];",
+            "table Hit {\n  id:string;\n  relevance:Relevance;\n  fields:[StringEntry];",
+            1,
         )
         self.assertTrue(any("wire members mismatch" in error for error in MODULE.verify(schema)))
 
