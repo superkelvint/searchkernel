@@ -345,9 +345,9 @@ fn dispatch_error_http(error: DispatchError) -> (StatusCode, String) {
 #[cfg(feature = "native")]
 fn registry_error_status(error: RegistryDispatchError) -> Status {
     match error {
-        RegistryDispatchError::InvalidRequest => {
-            Status::invalid_argument("invalid Search Kernel request FlatBuffer")
-        }
+        RegistryDispatchError::InvalidRequest(detail) => Status::invalid_argument(format!(
+            "invalid Search Kernel request FlatBuffer: {detail}"
+        ))
         RegistryDispatchError::UnsupportedProtocol(version) => Status::failed_precondition(
             format!("unsupported Search Kernel protocol version {version}"),
         ),
@@ -366,9 +366,9 @@ fn registry_error_status(error: RegistryDispatchError) -> Status {
 #[cfg(feature = "native")]
 fn registry_error_http(error: RegistryDispatchError) -> (StatusCode, String) {
     match error {
-        RegistryDispatchError::InvalidRequest => (
+        RegistryDispatchError::InvalidRequest(detail) => (
             StatusCode::BAD_REQUEST,
-            "invalid Search Kernel request FlatBuffer".to_owned(),
+            format!("invalid Search Kernel request FlatBuffer: {detail}"),
         ),
         RegistryDispatchError::UnsupportedProtocol(version) => (
             StatusCode::PRECONDITION_FAILED,
