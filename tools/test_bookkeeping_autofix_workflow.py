@@ -44,6 +44,14 @@ class BookkeepingAutofixWorkflowTests(unittest.TestCase):
         self.assertIn("./dev bookkeeping sync", self.text)
         self.assertIn("./dev bookkeeping check", self.text)
 
+    def test_untrusted_execution_is_containerized_without_network(self):
+        self.assertGreaterEqual(self.text.count("docker run --rm --network none"), 2)
+        self.assertIn('docker.io/superkelvint/searchkernel-ci:latest', self.text)
+        self.assertIn('-v "$GITHUB_WORKSPACE:/work"', self.text)
+        self.assertIn('-v "$GITHUB_WORKSPACE:/work:ro"', self.text)
+        self.assertIn("SEARCHKERNEL_IN_CI_IMAGE=1", self.text)
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", self.text)
+
     def test_push_is_non_force_and_reuses_existing_autofix_credential(self):
         self.assertIn("secrets.RUSTFMT_AUTOFIX_TOKEN", self.text)
         self.assertNotIn("--force", self.text)
