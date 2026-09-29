@@ -1056,6 +1056,176 @@
       "native_base_rebuild": false,
       "focused_check": "command:check-fast",
       "strong_check": "command:check-fast"
+    },
+    "Cargo.toml": {
+      "owner": "build-tooling",
+      "area": "Cargo workspace manifest",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Workspace membership and package build authority live here; keep canonical ./dev behavior and ownership metadata coherent."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "Cargo.lock": {
+      "owner": "build-tooling",
+      "area": "Rust dependency lockfile",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Dependency resolution is checked in; update it through the canonical build environment."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "BUILDING.md": {
+      "owner": "build-documentation",
+      "area": "Build system documentation",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Keep build documentation aligned with the executable ./dev contract."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "AGENTS.md": {
+      "owner": "agent-guidance",
+      "area": "Repository agent guidance",
+      "read": [
+        "AGENTS.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Repository-wide agent instructions are explicit control-plane policy and must remain consistent with ./dev."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "README.md": {
+      "owner": "documentation",
+      "area": "Project overview",
+      "read": [
+        "README.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Keep public project guidance aligned with the implemented architecture and supported workflows."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    "LIMITATIONS.md": {
+      "owner": "documentation",
+      "area": "Product limitations",
+      "read": [
+        "LIMITATIONS.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Document only current, externally meaningful limitations and keep them aligned with implementation reality."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    ".gitignore": {
+      "owner": "build-tooling",
+      "area": "Git ignore policy",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Ignore rules must not hide tracked build authorities or required verification artifacts."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    ".rgignore": {
+      "owner": "build-tooling",
+      "area": "Repository search ignore policy",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Search exclusions must not hide source or verification authorities from repository tooling."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    ".yolobox.Dockerfile": {
+      "owner": "dev-environment",
+      "area": "Local development container",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Local development images must remain compatible with the canonical ./dev workflow."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
+    ".yolobox.toml": {
+      "owner": "dev-environment",
+      "area": "Local development environment configuration",
+      "read": [
+        "BUILDING.md"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Local development configuration must remain compatible with the canonical ./dev workflow."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
     }
   }
 }
