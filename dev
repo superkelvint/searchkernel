@@ -647,6 +647,7 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
             ;;
         client-semantic-parity)
+            doctor_repair_typescript
             "$PYTHON" "$ROOT/tools/check-client-semantic-parity.py"
             ;;
         abi)
