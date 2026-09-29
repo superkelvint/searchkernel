@@ -29,7 +29,7 @@ import { ResponsePayload } from "../generated/flatbuffers/search-kernel/protocol
 import { packRequest, unpackResponse, type Operation, type OperationRequestMap, ProtocolError } from "../protocol/envelope.js";
 import { GrpcWebTransport } from "../transport/grpc-web.js";
 import { TransportError, type ExecuteOptions } from "../transport/types.js";
-import { fromValue, value, type ValueInput } from "./values.js";
+import { decodeValueEntries, value, type ValueInput } from "./values.js";
 import { comparePortableKeys } from "../internal/scalars.js";
 import { PatchBuilder, SearchBuilder, UpdateBuilder, YqlBuilder } from "../ergonomic/builders.js";
 import type { TypedQuery } from "../ergonomic/query.js";
@@ -267,9 +267,7 @@ export class Index {
     return result.document
       ? {
           _id: result.document.id,
-          ...Object.fromEntries(
-            (result.document.fields ?? []).map((entry) => [entry.key, fromValue(entry.value)]),
-          ),
+          ...decodeValueEntries(result.document.fields, "document field"),
         }
       : null;
   }
