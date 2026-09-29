@@ -5,6 +5,7 @@ import { FieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/fiel
 import { MatchingConfigT } from "../generated/flatbuffers/search-kernel/v2/matching-config.js";
 import { MatchingMode } from "../generated/flatbuffers/search-kernel/v2/matching-mode.js";
 import { OptionalBoolT } from "../generated/flatbuffers/search-kernel/v2/optional-bool.js";
+import { OptionalUInt32T } from "../generated/flatbuffers/search-kernel/v2/optional-uint32.js";
 import { PrimitiveDataTypeKind } from "../generated/flatbuffers/search-kernel/v2/primitive-data-type-kind.js";
 import { PrimitiveDataTypeT } from "../generated/flatbuffers/search-kernel/v2/primitive-data-type.js";
 import { RankPhaseDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-phase-definition.js";
@@ -92,6 +93,8 @@ export class TensorField {
 
 export class RankProfile {
   private firstPhaseExpression?: string;
+  private secondPhaseExpression?: string;
+  private rerankCountValue?: number;
   private readonly matchFeatures: string[] = [];
   private readonly queryInputs = new Map<string, string>();
 
@@ -101,6 +104,20 @@ export class RankProfile {
 
   firstPhase(expression: string): this {
     this.firstPhaseExpression = expression;
+    return this;
+  }
+
+  secondPhase(expression: string): this {
+    if (!expression.trim()) throw new TypeError("second-phase expression must not be empty");
+    this.secondPhaseExpression = expression;
+    return this;
+  }
+
+  rerankCount(count: number): this {
+    if (!Number.isInteger(count) || count < 0 || count > 0xffff_ffff) {
+      throw new RangeError("rerank count must be a uint32");
+    }
+    this.rerankCountValue = count;
     return this;
   }
 
@@ -125,6 +142,13 @@ export class RankProfile {
         value(Tensor.dense(typeSpec, [])),
       ));
 
+    const secondPhase = this.secondPhaseExpression === undefined && this.rerankCountValue === undefined
+      ? null
+      : new RankPhaseDefinitionT(
+        this.secondPhaseExpression ?? null,
+        this.rerankCountValue === undefined ? null : new OptionalUInt32T(this.rerankCountValue),
+      );
+
     return new RankProfileDefinitionT(
       this.name,
       [],
@@ -133,7 +157,7 @@ export class RankProfile {
       this.firstPhaseExpression === undefined
         ? null
         : new RankPhaseDefinitionT(this.firstPhaseExpression),
-      null,
+      secondPhase,
       null,
       [],
       [...this.matchFeatures],

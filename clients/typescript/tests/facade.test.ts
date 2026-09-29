@@ -247,6 +247,8 @@ describe("ergonomic facade", () => {
     const tensor = new TensorField("tensor<float>(x[4])", { searchable: true }).definition("embedding");
     const rank = new RankProfile("semantic")
       .firstPhase("closeness(field, embedding)")
+      .secondPhase("attribute(inventory)")
+      .rerankCount(3)
       .matchFeature("bm25(title)")
       .queryInput("query_embedding", "tensor<float>(x[4])")
       .definition();
@@ -256,6 +258,14 @@ describe("ergonomic facade", () => {
     expect(tensor.name).toBe("embedding");
     expect(rank.name).toBe("semantic");
     expect(rank.inputs).toHaveLength(1);
+    expect(rank.secondPhase?.expression).toBe("attribute(inventory)");
+    expect(rank.secondPhase?.rerankCount?.value).toBe(3);
+  });
+
+  it("validates second-phase expressions and rerank counts", () => {
+    expect(() => new RankProfile("empty").secondPhase("  ")).toThrow(/must not be empty/);
+    expect(() => new RankProfile("negative").rerankCount(-1)).toThrow(/uint32/);
+    expect(() => new RankProfile("too-large").rerankCount(0x1_0000_0000)).toThrow(/uint32/);
   });
 
 

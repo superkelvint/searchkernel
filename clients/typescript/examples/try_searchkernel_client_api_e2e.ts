@@ -7,9 +7,10 @@
  * SEARCHKERNEL_LOCAL_HOST to its path.
  */
 
+import { readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   Boolean,
   Float,
@@ -32,6 +33,7 @@ import {
   type DocumentInput,
   type ResultGroup,
   type SearchResults,
+  type CreateIndexOptions,
 } from "@searchkernel/client/node";
 
 let WORKSPACE_PATH = "";
@@ -44,19 +46,128 @@ let INDEX_PATH = "";
 // SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=node
 // SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=node
 // SKC: grouping.aggregations/basic kinds=ergonomic,e2e runtime=node
-const VECTOR_TYPE = "tensor<float>(x[8])";
+const E2E_CORPUS: any = JSON.parse(readFileSync(resolve(process.cwd(), "../../reference/client-real-e2e-parity/corpus.json"), "utf8"));
+const VECTOR_TYPE: string = E2E_CORPUS.schema.fields.embedding.type;
 
 function embedding(...values: number[]): Tensor {
   if (values.length !== 8) throw new TypeError("the E2E corpus uses eight-dimensional embeddings");
   return Tensor.dense(VECTOR_TYPE, values);
 }
 
-const SHOE_1_VECTOR = [0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78] as const;
-const SHOE_2_VECTOR = [0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64] as const;
-const SHOE_3_VECTOR = [0.10, 0.16, 0.78, 0.12, 0.24, 0.28, 0.92, 0.16] as const;
-const SHOE_4_VECTOR = [0.82, 0.12, 0.06, 0.96, 0.72, 0.82, 0.10, 0.88] as const;
-const SHOE_5_VECTOR = [0.64, 0.82, 0.07, 0.62, 0.34, 0.92, 0.16, 0.62] as const;
-const BAG_1_VECTOR = [0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55] as const;
+function corpusVector(documentId: string): number[] {
+  const document = E2E_CORPUS.documents.find((item: any) => item._id === documentId);
+  if (!document || !Array.isArray(document.embedding)) throw new Error(`missing corpus vector: ${documentId}`);
+  return document.embedding;
+}
+
+const SHOE_1_VECTOR = corpusVector("shoe-1");
+const SHOE_2_VECTOR = corpusVector("shoe-2");
+const SHOE_3_VECTOR = corpusVector("shoe-3");
+const SHOE_4_VECTOR = corpusVector("shoe-4");
+const SHOE_5_VECTOR = corpusVector("shoe-5");
+const BAG_1_VECTOR = corpusVector("bag-1");
+
+interface CorpusFieldBuilder {
+  definition(name: string): any;
+}
+
+const FIELD_TYPES: Record<string, new (options?: any) => CorpusFieldBuilder> = {
+  text: Text,
+  keyword: Keyword,
+  int64: Integer,
+  float64: Float,
+  bool: Boolean,
+};
+
+function fieldsFromCorpus(): CreateIndexOptions["fields"] {
+  const fields: Record<string, CorpusFieldBuilder> = {};
+  for (const [name, spec] of Object.entries<any>(E2E_CORPUS.schema.fields)) {
+    const options = Object.fromEntries(Object.entries(spec).filter(([key]) => key !== "type"));
+    fields[name] = spec.type.startsWith("tensor<")
+      ? new TensorField(spec.type, options)
+      : new FIELD_TYPES[spec.type]!(options);
+  }
+  return fields;
+}
+
+function rankProfilesFromCorpus(): RankProfile[] {
+  return E2E_CORPUS.schema.rank_profiles.map((spec: any) => {
+    let profile = new RankProfile(spec.name).firstPhase(spec.first_phase);
+    if (spec.second_phase !== undefined) profile = profile.secondPhase(spec.second_phase);
+    if (spec.rerank_count !== undefined) profile = profile.rerankCount(spec.rerank_count);
+    for (const [name, typeSpec] of Object.entries<string>(spec.query_inputs ?? {})) profile = profile.queryInput(name, typeSpec);
+    for (const feature of spec.match_features ?? []) profile = profile.matchFeature(feature);
+    return profile;
+  });
+}
+
+function documentInput(source: Record<string, unknown>): DocumentInput {
+  const document: Record<string, unknown> = { ...source };
+  for (const key of ["price", "sale_price"] as const) {
+    if (typeof document[key] === "number") document[key] = float64(document[key]);
+  }
+  for (const key of ["rating", "inventory"] as const) {
+    if (typeof document[key] === "number") document[key] = BigInt(document[key]);
+  }
+  if (Array.isArray(document.embedding)) document.embedding = embedding(...document.embedding as number[]);
+  return document as DocumentInput;
+}
+
+const PARITY_OBSERVATIONS: Record<string, unknown> = {};
+
+function paritySafe(value: unknown): unknown {
+  if (typeof value === "bigint") return Number(value);
+  if (Array.isArray(value)) return value.map(paritySafe);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, paritySafe(item)]));
+  }
+  return value;
+}
+
+async function captureRealEngineParity(index: Index): Promise<Record<string, unknown>> {
+  const ordered = await index.search("shoes").sort("price", "asc").limit(20).execute();
+  const filtered = await index.search("shoes").filter("in_stock = true").sort("price", "asc").limit(20).execute();
+  const faceted = await index.search("shoes").facet("brand", { name: "brands", limit: 10, sort: "count_desc" }).limit(20).execute();
+  const root = await index.browse().filter("category = 'shoes'")
+    .aggregate(agg.count().as("products"))
+    .aggregate(agg.sum("price").as("sum_price"))
+    .aggregate(agg.avg("price").as("avg_price"))
+    .limit(0).execute();
+  const grouped = await index.search("shoes").group(
+    Group.by("brand").limit(10).precision(100)
+      .orderBy(desc(agg.count()), asc(g.field("brand")))
+      .output(agg.count().as("products"), agg.avg("price").as("avg_price")),
+  ).execute();
+  const nearest = await index.query(q.nearestNeighbor("embedding", "query_embedding"))
+    .ranking("semantic").input("query_embedding", embedding(...SHOE_1_VECTOR)).limit(3).execute();
+  const hybrid = await index.query(q.anyOf(q.contains("title", "shoes"), q.nearestNeighbor("embedding", "query_embedding")))
+    .ranking("hybrid").input("query_embedding", embedding(...BAG_1_VECTOR)).limit(20).execute();
+  const reranked = await index.search("candidate").ranking("two_phase").limit(4).execute();
+  let errorCodes: string[];
+  try {
+    await index.search("shoes").filter("prcie = 1").execute();
+    throw new Error("unknown field filter unexpectedly succeeded");
+  } catch (error) {
+    assert(error instanceof SearchKernelError);
+    errorCodes = error.details.map((detail) => (detail as { code: string }).code).sort();
+  }
+  return {
+    sorted_search: { ids: ordered.hits.map((hit) => hit.id), total: Number(ordered.totalHits) },
+    filtered_search: { ids: filtered.hits.map((hit) => hit.id), total: Number(filtered.totalHits) },
+    facets: Object.fromEntries(faceted.facets.brands!.map((item) => [String(item.value), Number(item.count)])),
+    aggregations: paritySafe(root.aggregations),
+    grouping: groupingGroups(grouped).map((group) => ({ brand: group.value, products: paritySafe(group.get("products")), avg_price: paritySafe(group.get("avg_price")) })),
+    nearest_neighbor: { ids: nearest.hits.map((hit) => hit.id), scores: nearest.hits.map((hit) => hit.relevance) },
+    hybrid: { top_id: hybrid.hits[0]!.id, has_bag: hybrid.hits.some((hit) => hit.id === "bag-1") },
+    two_phase: { ids: reranked.hits.map((hit) => hit.id) },
+    unknown_field_error: { code: "invalid_argument", details: errorCodes },
+  };
+}
+
+function writeRealEngineParity(observations: Record<string, unknown>): void {
+  const path = process.env.SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT;
+  if (path) writeFileSync(path, JSON.stringify({ version: 1, scenarios: paritySafe(observations) }));
+}
 
 function heading(title: string): void {
   console.log();
@@ -176,64 +287,33 @@ async function main(): Promise<void> {
     heading("1. CREATE INDEX");
 
     const index = await Index.create(INDEX_PATH, {
-      fields: {
-        title: new Text({ stored: true, searchable: true }),
-        brand: new Keyword({ stored: true, filterable: true, sortable: true, facetable: true }),
-        category: new Keyword({ stored: true, filterable: true, facetable: true }),
-        price: new Float({ stored: true, filterable: true, sortable: true }),
-        sale_price: new Float({ stored: true, filterable: true, sortable: true }),
-        rating: new Integer({ stored: true, filterable: true, sortable: true }),
-        inventory: new Integer({ stored: true, filterable: true, sortable: true }),
-        in_stock: new Boolean({ stored: true, filterable: true }),
-        embedding: new TensorField(VECTOR_TYPE, { stored: true }),
-      },
-      rankProfiles: [
-        new RankProfile("boosted")
-          .firstPhase("query(boost)")
-          .matchFeature("query(boost)"),
-        new RankProfile("semantic")
-          .firstPhase("closeness(embedding)")
-          .queryInput("query_embedding", VECTOR_TYPE)
-          .matchFeature("query(query_embedding)"),
-        new RankProfile("hybrid")
-          .firstPhase("bm25(title) + 10 * closeness(embedding)")
-          .queryInput("query_embedding", VECTOR_TYPE)
-          .matchFeature("bm25(title)")
-          .matchFeature("closeness(embedding)")
-          .matchFeature("query(query_embedding)"),
-      ],
+      fields: fieldsFromCorpus(),
+      rankProfiles: rankProfilesFromCorpus(),
     });
 
     try {
       console.log("created:", INDEX_PATH);
 
       heading("2. INSERT DOCUMENTS");
-      const documents: DocumentInput[] = [
-        { _id: "shoe-1", title: "Jumped Running Shoes for Daily Training", brand: "Acme", category: "shoes", price: float64(89), sale_price: float64(79), rating: 5n, inventory: 10n, in_stock: true, embedding: embedding(...SHOE_1_VECTOR) },
-        { _id: "shoe-2", title: "Trail Running Shoes", brand: "TrailCo", category: "shoes", price: float64(129), rating: 5n, inventory: 4n, in_stock: true, embedding: embedding(...SHOE_2_VECTOR) },
-        { _id: "shoe-3", title: "Budget Walking Shoes", brand: "Budget", category: "shoes", price: float64(49), rating: 3n, inventory: 25n, in_stock: true, embedding: embedding(...SHOE_3_VECTOR) },
-        { _id: "shoe-4", title: "Acme Racing Shoes", brand: "Acme", category: "shoes", price: float64(159), rating: 4n, inventory: 0n, in_stock: false, embedding: embedding(...SHOE_4_VECTOR) },
-        { _id: "shoe-5", title: "TrailCo Hiking Shoes", brand: "TrailCo", category: "shoes", price: float64(109), rating: 4n, inventory: 8n, in_stock: true, embedding: embedding(...SHOE_5_VECTOR) },
-        { _id: "bag-1", title: "Lightweight Running Backpack", brand: "Acme", category: "bags", price: float64(69), rating: 4n, inventory: 12n, in_stock: true, embedding: embedding(...BAG_1_VECTOR) },
-      ];
+      const documents: DocumentInput[] = E2E_CORPUS.documents.map((item: Record<string, unknown>) => documentInput(item));
 
       for (const document of documents) {
         await index.insert(document);
         console.log("insert:", document._id);
       }
-      for (let probe = 0; probe < 200; probe += 1) {
-        await index.insert({
-          _id: `degraded-${probe}`,
-          title: "Coverage Degradation Probe",
-          category: "degradation",
-          price: float64(18),
-          rating: 1n,
-          inventory: 18n,
-          in_stock: true,
-          embedding: embedding(...SHOE_3_VECTOR),
-        });
+      const probeSpec = E2E_CORPUS.coverage_probes;
+      for (let probe = 0; probe < probeSpec.count; probe += 1) {
+        await index.insert(documentInput({ ...probeSpec.document, _id: `degraded-${probe}` }));
       }
-      console.log("inserted 200 deterministic coverage probe documents");
+      console.log(`inserted ${probeSpec.count} deterministic coverage probe documents`);
+
+      Object.assign(PARITY_OBSERVATIONS, await captureRealEngineParity(index));
+      await index.insert(documentInput({ _id: "parity-mutation", title: "Parity Mutation", category: "parity", price: 100, sale_price: 110, rating: 1, inventory: 1, in_stock: true }));
+      await index.patch("parity-mutation").set("price", float64(75)).unset("sale_price").execute();
+      const mutated = await index.get("parity-mutation");
+      assert(mutated !== null);
+      PARITY_OBSERVATIONS.mutation = { price: mutated.price, sale_price_present: "sale_price" in mutated, deleted: await index.delete("parity-mutation") };
+      await index.insert({ _id: "parity-reopen", title: "Parity Reopen", category: "parity", price: float64(42), inventory: 7n, in_stock: true });
 
       heading("3. GET BY ID");
       const doc = await index.get("shoe-1");
@@ -428,6 +508,17 @@ async function main(): Promise<void> {
       assert(rankPropertyResults.hits.every((hit) => hit.score !== null && closeTo(asNumber(hit.features["query(boost)"]), 4)));
       console.log("scalar ranking feature PASS");
 
+      heading("TWO-PHASE RANKING / SECOND-PHASE RERANK");
+      const firstPhase = await index.search("candidate").ranking("first_phase_only").limit(4).execute();
+      assertIds(firstPhase, ["rerank-a", "rerank-b", "rerank-c", "rerank-d"]);
+      assert(firstPhase.hits.map((hit) => hit.score).join(",") === "100,90,80,70");
+      const twoPhase = await index.search("candidate").ranking("two_phase").limit(4).execute();
+      assertIds(twoPhase, ["rerank-b", "rerank-c", "rerank-a", "rerank-d"]);
+      assert(twoPhase.hits[0]!.score === 100 && twoPhase.hits[1]!.score === 90 && twoPhase.hits[2]!.score === 1);
+      assert(Number.isFinite(twoPhase.hits[3]!.score));
+      assert(twoPhase.hits[3]!.score !== 1000);
+      console.log("first-phase ordering and finite-window second-phase reranking PASS");
+
       heading("TENSOR READBACK + NEAREST NEIGHBOR");
       const nearest = await index.query(q.nearestNeighbor("embedding", "query_embedding"))
         .ranking("semantic")
@@ -595,6 +686,9 @@ async function main(): Promise<void> {
     const reopened = await Index.open(INDEX_PATH);
     try {
       assert(await reopened.get("shoe-3") === null);
+      const persistedParity = await reopened.get("parity-reopen");
+      assert(persistedParity !== null);
+      PARITY_OBSERVATIONS.persistence = { title: persistedParity.title, price: persistedParity.price, inventory: persistedParity.inventory };
       const shoe1 = await reopened.get("shoe-1");
       assert(shoe1 !== null);
       assert(shoe1.price === 79);
@@ -642,6 +736,8 @@ async function main(): Promise<void> {
     } finally {
       await reopened.close();
     }
+
+    writeRealEngineParity(PARITY_OBSERVATIONS);
 
     heading("32. ALL CLIENT API E2E CHECKS PASSED");
     console.log(`
