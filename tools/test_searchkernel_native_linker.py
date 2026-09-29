@@ -41,7 +41,9 @@ class NativeRuntimeLinkTests(unittest.TestCase):
         self.assertIn('exec flock "$SDK_LOCK" "$0" "$@"', sdk)
         self.assertNotIn('exec 9>"$SDK_LOCK"', sdk)
         self.assertNotIn("staging.$$", sdk)
+        self.assertEqual(sdk.count('mktemp -d "${SDK_PACKAGE}.old.XXXXXX"'), 2)
         self.assertNotIn('SDK_BACKUP="${SDK_PACKAGE}.old.$"', sdk)
+        self.assertNotIn('SDK_BACKUP="${SDK_PACKAGE}.old.$$"', sdk)
 
     def test_origin_needed_entry_resolves_without_loader_environment(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
