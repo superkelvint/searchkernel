@@ -170,6 +170,8 @@ class DevTargetsTest(unittest.TestCase):
         }
         for prefix, metadata in data["change_areas"].items():
             with self.subTest(prefix=prefix):
+                registered_path = ROOT / prefix.rstrip("/")
+                self.assertTrue(registered_path.exists(), prefix)
                 self.assertTrue(required.issubset(metadata))
                 self.assertNotIn("native_sdk_rebuild", metadata)
 
@@ -239,7 +241,7 @@ class DevTargetsTest(unittest.TestCase):
             ("core/crates/flatbuffers-build/LICENSE", "Rust crate files"),
             ("core/crates/searchkernel-filter/src/lib.rs", "Filter syntax parser"),
             ("core/crates/searchkernel-rpc/src/lib.rs", "Rust gRPC client"),
-            (".github/workflows/ci.yml", "GitHub Actions and CI control plane"),
+            (".github/workflows/rust-ci.yml", "GitHub Actions and CI control plane"),
             ("docker/searchkernel-ci-toolchain/Dockerfile", "Canonical CI image definitions"),
         ):
             with self.subTest(path=path):
