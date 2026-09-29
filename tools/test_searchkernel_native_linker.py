@@ -39,7 +39,7 @@ class NativeRuntimeLinkTests(unittest.TestCase):
         self.assertLess(provenance_guard, staging)
         self.assertIn('exec 9>"$SDK_LOCK"', sdk)
         self.assertIn("flock 9", sdk)
-        self.assertNotIn('staging.$$' , sdk)
+        self.assertNotIn("staging.$$", sdk)
         self.assertNotIn('SDK_BACKUP="${SDK_PACKAGE}.old.$"', sdk)
 
     def test_origin_needed_entry_resolves_without_loader_environment(self) -> None:
