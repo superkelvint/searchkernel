@@ -25,18 +25,42 @@ pub fn sparse_mixed_tensor_result() -> searchkernel_ir::SearchResult {
     };
 
     let sparse = Value::Tensor(RequestTensorIr {
-        type_spec: "tensor<float>(label{})".to_owned(),
-        payload: RequestTensorPayloadIr::Sparse(vec![RequestTensorCellIr {
-            address: BTreeMap::from([("label".to_owned(), "a".to_owned())]),
-            value: 0.5,
-        }]),
+        type_spec: "tensor<float>(label{},region{})".to_owned(),
+        payload: RequestTensorPayloadIr::Sparse(vec![
+            RequestTensorCellIr {
+                address: BTreeMap::from([
+                    ("label".to_owned(), "a".to_owned()),
+                    ("region".to_owned(), "east".to_owned()),
+                ]),
+                value: 0.5,
+            },
+            RequestTensorCellIr {
+                address: BTreeMap::from([
+                    ("label".to_owned(), "b".to_owned()),
+                    ("region".to_owned(), "west".to_owned()),
+                ]),
+                value: -0.25,
+            },
+        ]),
     });
     let mixed = Value::Tensor(RequestTensorIr {
-        type_spec: "tensor<float>(label{},x[2])".to_owned(),
-        payload: RequestTensorPayloadIr::Mixed(vec![RequestTensorBlockIr {
-            address: BTreeMap::from([("label".to_owned(), "b".to_owned())]),
-            values: vec![0.25, 0.75],
-        }]),
+        type_spec: "tensor<float>(label{},region{},x[2])".to_owned(),
+        payload: RequestTensorPayloadIr::Mixed(vec![
+            RequestTensorBlockIr {
+                address: BTreeMap::from([
+                    ("label".to_owned(), "b".to_owned()),
+                    ("region".to_owned(), "west".to_owned()),
+                ]),
+                values: vec![0.25, 0.75],
+            },
+            RequestTensorBlockIr {
+                address: BTreeMap::from([
+                    ("label".to_owned(), "c".to_owned()),
+                    ("region".to_owned(), "north".to_owned()),
+                ]),
+                values: vec![1.5, -2.0],
+            },
+        ]),
     });
     let dense = Value::Tensor(RequestTensorIr {
         type_spec: "tensor<float>(x[2])".to_owned(),
@@ -83,11 +107,15 @@ fn value_variants_result() -> searchkernel_ir::SearchResult {
     ]);
     let fields = BTreeMap::from([
         ("bool".into(), Value::Bool(false)),
+        ("empty_bytes".into(), Value::Bytes(Vec::new())),
         ("bytes".into(), Value::Bytes(vec![0, 1, 127, 255])),
         ("float64".into(), Value::Float64(1.25)),
+        ("float64_negative_fraction".into(), Value::Float64(-0.5)),
+        ("float64_zero".into(), Value::Float64(0.0)),
         ("int64_max".into(), Value::Int64(i64::MAX)),
         ("int64_min".into(), Value::Int64(i64::MIN)),
         ("list".into(), nested),
+        ("empty_string".into(), Value::String(String::new())),
         (
             "object".into(),
             Value::Object(BTreeMap::from([
@@ -571,6 +599,33 @@ pub fn result_fixtures() -> Vec<ResultFixture> {
         "facet-bucket-limits",
     ] {
         fixtures.push(invalid_facet_fixture(name));
+    }
+    // Surgical recursive/result-state cases are reused from the same canonical
+    // IR fixture builders as the encoder round-trip tests. Keeping these in the
+    // shared byte corpus lets each language cover the structural partitions
+    // without a Cartesian product of otherwise independent fields.
+    let extended = canonical_result_fixtures();
+    for (wire_name, fixture_name) in [
+        ("nested-groups", "nested_groups"),
+        ("mixed-hit-group-children", "mixed_hit_and_group_children"),
+        ("sibling-groups", "sibling_groups"),
+        ("group-fields-aggregations", "group_fields_and_aggregations"),
+        ("continuations-limits-metadata", "continuations_limits_and_metadata"),
+        ("absent-optional-fields", "absent_optional_fields"),
+        ("present-empty-optional-fields", "present_empty_optional_fields"),
+        ("limits-from-only", "limits_from_only"),
+        ("limits-to-only", "limits_to_only"),
+    ] {
+        let result = extended
+            .iter()
+            .find(|(name, _)| *name == fixture_name)
+            .unwrap_or_else(|| panic!("canonical result fixture missing: {fixture_name}"))
+            .1
+            .clone();
+        fixtures.push(ResultFixture {
+            name: wire_name,
+            result,
+        });
     }
     fixtures
 }
@@ -1073,6 +1128,32 @@ mod expanded_canonical_corpus {
                 negative_infinity_relevance_result(),
             ),
             ("absent_relevance", relevance_result(None)),
+            (
+                "limits_from_only",
+                result(
+                    ir::ResultNode::Group(ir::ResultGroup {
+                        limits: Some(ir::ResultLimits {
+                            from: Some(ir::Value::UInt64(3)),
+                            to: None,
+                        }),
+                        ..group(Vec::new())
+                    }),
+                    0,
+                ),
+            ),
+            (
+                "limits_to_only",
+                result(
+                    ir::ResultNode::Group(ir::ResultGroup {
+                        limits: Some(ir::ResultLimits {
+                            from: None,
+                            to: Some(ir::Value::UInt64(9)),
+                        }),
+                        ..group(Vec::new())
+                    }),
+                    0,
+                ),
+            ),
             ("representative", representative_search_result()),
         ]
     }
@@ -1466,6 +1547,67 @@ mod expanded_canonical_corpus {
                 let actual = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes)
                     .unwrap_or_else(|error| panic!("fixture {name} must decode: {error:?}"));
                 assert_api_search_result_matches(actual, &expected);
+                let decoded = searchkernel_ir::search_result_from_api(actual)
+                    .unwrap_or_else(|error| panic!("fixture {name} must decode to IR: {error:?}"));
+                assert_eq!(decoded, expected, "IR round trip changed fixture {name}");
+            }
+        }
+
+        #[test]
+        fn bounded_recursive_result_trees_and_nested_values_round_trip() {
+            fn generated_node(depth: usize, seed: usize) -> ir::ResultNode {
+                let fields = BTreeMap::from([
+                    (
+                        "nested".into(),
+                        ir::Value::List(vec![
+                            ir::Value::Bool(seed % 2 == 0),
+                            ir::Value::Object(BTreeMap::from([
+                                ("empty_list".into(), ir::Value::List(Vec::new())),
+                                ("empty_object".into(), ir::Value::Object(BTreeMap::new())),
+                            ])),
+                        ]),
+                    ),
+                    ("signed_min".into(), ir::Value::Int64(i64::MIN)),
+                    ("unsigned_max".into(), ir::Value::UInt64(u64::MAX)),
+                ]);
+                if depth == 0 || seed % 3 == 0 {
+                    return ir::ResultNode::Hit(ir::Hit {
+                        id: format!("hit-{depth}-{seed}"),
+                        fields,
+                        ..Default::default()
+                    });
+                }
+                let children = (0..(seed % 3 + 1))
+                    .map(|index| generated_node(depth - 1, seed + index + 1))
+                    .collect();
+                ir::ResultNode::Group(ir::ResultGroup {
+                    id: Some(format!("group-{depth}-{seed}")),
+                    fields,
+                    children,
+                    ..ir::ResultGroup::root(Vec::new())
+                })
+            }
+
+            for seed in 0..24 {
+                let expected = ir::SearchResult {
+                    root: generated_node(seed % 5, seed),
+                    total_hits: ir::TotalHits {
+                        value: seed as u64,
+                        relation: ir::TotalHitsRelation::Exact,
+                    },
+                    coverage: None,
+                    timing: None,
+                    errors: Vec::new(),
+                    trace: Some(ir::Value::Object(BTreeMap::from([
+                        ("empty_map".into(), ir::Value::Object(BTreeMap::new())),
+                        ("empty_list".into(), ir::Value::List(Vec::new())),
+                    ]))),
+                    metadata: BTreeMap::new(),
+                };
+                let bytes = searchkernel_ir::search_result_to_api(&expected).unwrap();
+                let wire = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
+                let actual = searchkernel_ir::search_result_from_api(wire).unwrap();
+                assert_eq!(actual, expected, "generated result tree seed {seed}");
             }
         }
 
@@ -1517,10 +1659,13 @@ mod expanded_canonical_corpus {
         fn result_response_wire_fixtures_reject_malformed_ir_inputs() {
             let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../../reference/result-response-conformance/fixtures");
-            for name in [
-                "result-malformed-unknown-result-node-union.skrs",
-                "result-malformed-unknown-value-union.skrs",
-                "result-malformed-duplicate-result-map-key.skrs",
+            for (name, class) in [
+                ("result-malformed-unknown-result-node-union.skrs", "result"),
+                ("result-malformed-unknown-value-union.skrs", "result"),
+                ("result-malformed-unknown-relevance-union.skrs", "result"),
+                ("result-malformed-unknown-tensor-payload-union.skrs", "result"),
+                ("result-malformed-duplicate-result-map-key.skrs", "result"),
+                ("result-malformed-unknown-response-payload-union.skrs", "envelope"),
             ] {
                 let bytes = std::fs::read(directory.join(name)).unwrap();
                 let envelope =
@@ -1528,11 +1673,11 @@ mod expanded_canonical_corpus {
                         .unwrap_or_else(|error| {
                             panic!("{name} envelope should be structurally valid: {error:?}")
                         });
-                let result = envelope
-                    .payload_as_search_kernel_v2_search_result()
-                    .unwrap_or_else(|| {
-                        panic!("{name} must retain the SearchResult response union")
-                    });
+                let Some(result) = envelope.payload_as_search_kernel_v2_search_result() else {
+                    assert_eq!(class, "envelope", "{name} must retain SearchResult payload");
+                    continue;
+                };
+                assert_eq!(class, "result", "{name} must reject before result decoding");
                 assert!(
                     searchkernel_ir::search_result_from_api(result).is_err(),
                     "malformed result fixture was accepted: {name}"

@@ -78,12 +78,31 @@ fn main() {
             .expect("value-variants fixture exists")
             .result,
     );
+    let tensors = encode_fixture(
+        &searchkernel_testkit::result_fixtures()
+            .into_iter()
+            .find(|fixture| fixture.name == "sparse-mixed-tensors")
+            .expect("sparse-mixed-tensors fixture exists")
+            .result,
+    );
     let malformed = [
         (
             "unknown-result-node-union",
             unknown_result_node_union(canonical.clone()),
         ),
         ("unknown-value-union", unknown_value_union(values.clone())),
+        (
+            "unknown-relevance-union",
+            unknown_relevance_union(canonical.clone()),
+        ),
+        (
+            "unknown-tensor-payload-union",
+            unknown_tensor_payload_union(tensors),
+        ),
+        (
+            "unknown-response-payload-union",
+            unknown_response_payload_union(canonical.clone()),
+        ),
         ("duplicate-result-map-key", duplicate_result_map_key(values)),
     ];
     let expected_malformed = malformed
@@ -172,6 +191,34 @@ fn unknown_result_node_union(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes
 }
 
+fn unknown_response_payload_union(mut bytes: Vec<u8>) -> Vec<u8> {
+    let root = read_u32(&bytes, 0) as usize;
+    let kind = table_field(&bytes, root, 1);
+    bytes[kind] = u8::MAX;
+    bytes
+}
+
+fn unknown_relevance_union(mut bytes: Vec<u8>) -> Vec<u8> {
+    let node = result_root(&bytes);
+    let group = indirect(&bytes, table_field(&bytes, node, 1));
+    let child = vector_table(&bytes, table_field(&bytes, group, 4), 0);
+    let hit = indirect(&bytes, table_field(&bytes, child, 1));
+    let relevance = indirect(&bytes, table_field(&bytes, hit, 1));
+    let kind = table_field(&bytes, relevance, 0);
+    bytes[kind] = u8::MAX;
+    bytes
+}
+
+fn unknown_tensor_payload_union(mut bytes: Vec<u8>) -> Vec<u8> {
+    let node = result_root(&bytes);
+    let group = indirect(&bytes, table_field(&bytes, node, 1));
+    let value = indirect(&bytes, table_field(&bytes, group, 2));
+    let tensor = indirect(&bytes, table_field(&bytes, value, 1));
+    let kind = table_field(&bytes, tensor, 1);
+    bytes[kind] = u8::MAX;
+    bytes
+}
+
 fn first_result_field_value(bytes: &[u8]) -> usize {
     let node = result_root(bytes);
     let group = indirect(bytes, table_field(bytes, node, 1));
@@ -191,15 +238,27 @@ fn duplicate_result_map_key(mut bytes: Vec<u8>) -> Vec<u8> {
     let node = result_root(&bytes);
     let group = indirect(&bytes, table_field(&bytes, node, 1));
     let fields = table_field(&bytes, group, 3);
-    // `int64_max` and `int64_min` have equal-length keys in the canonical
-    // value-variants map, so changing the bytes preserves FlatBuffer bounds.
-    let entry = vector_table(&bytes, fields, 4);
+    // `int64_max` and `int64_min` have equal-length keys, so replacing the
+    // latter's bytes preserves FlatBuffer bounds even as other fixture keys
+    // are added or reordered.
+    let vector = indirect(&bytes, fields);
+    let count = read_u32(&bytes, vector) as usize;
+    let entry = (0..count)
+        .map(|index| vector_table(&bytes, fields, index))
+        .find(|entry| string_value(&bytes, table_field(&bytes, *entry, 0)) == b"int64_min")
+        .expect("value-variants map contains int64_min");
     let key_field = table_field(&bytes, entry, 0);
     let string = indirect(&bytes, key_field);
     let length = read_u32(&bytes, string) as usize;
     assert_eq!(length, b"int64_min".len());
     bytes[string + 4..string + 4 + length].copy_from_slice(b"int64_max");
     bytes
+}
+
+fn string_value(bytes: &[u8], field: usize) -> &[u8] {
+    let string = indirect(bytes, field);
+    let length = read_u32(bytes, string) as usize;
+    &bytes[string + 4..string + 4 + length]
 }
 
 fn read_u16(bytes: &[u8], offset: usize) -> u16 {

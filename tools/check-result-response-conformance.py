@@ -164,6 +164,9 @@ def main() -> int:
             cases.append({"id": case["id"], "file": case["file"], "json": json_name})
 
         coverage_errors = _schema.verify_fixture_coverage(official_envelopes)
+        coverage_errors.extend(
+            _schema.verify_partitions(json.loads(_schema.MANIFEST.read_text()), official_envelopes)
+        )
         if coverage_errors:
             raise SystemExit("result fixture field coverage failed: " + "; ".join(coverage_errors))
 

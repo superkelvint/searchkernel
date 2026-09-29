@@ -1026,23 +1026,36 @@ mod tests {
             traces.insert(name.to_owned(), trace_search_result(&actual));
         }
 
+        let mut malformed_outcomes = serde_json::Map::new();
+        for case in corpus["malformed"].as_array().unwrap() {
+            let name = case["id"].as_str().unwrap();
+            let path = root.join(format!(
+                "reference/result-response-conformance/fixtures/{}",
+                case["file"].as_str().unwrap()
+            ));
+            let bytes = std::fs::read(&path)
+                .unwrap_or_else(|error| panic!("read malformed fixture {}: {error}", path.display()));
+            let envelope = core::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
+                .unwrap_or_else(|error| panic!("{name} malformed envelope root: {error:?}"));
+            if case["failure_class"] == "response_payload_union" {
+                assert!(
+                    envelope.payload_as_search_kernel_v2_search_result().is_none(),
+                    "Rust response projection accepted malformed response payload {name}"
+                );
+            } else {
+                let result = envelope
+                    .payload_as_search_kernel_v2_search_result()
+                    .unwrap_or_else(|| panic!("{name} must reach the SearchResult decoder"));
+                assert!(
+                    core::search_result_from_api(result).is_err(),
+                    "Rust public result decoding accepted malformed scenario {name}"
+                );
+            }
+            malformed_outcomes.insert(name.to_owned(), serde_json::Value::String("client".into()));
+        }
+
         if let Some(directory) = std::env::var_os("SEARCHKERNEL_RESULT_TRACE_DIR") {
-            traces.insert(
-                "malformed_outcomes".into(),
-                serde_json::Value::Object(
-                    corpus["malformed"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|case| {
-                            (
-                                case["id"].as_str().unwrap().to_owned(),
-                                serde_json::Value::String("client".into()),
-                            )
-                        })
-                        .collect(),
-                ),
-            );
+            traces.insert("malformed_outcomes".into(), serde_json::Value::Object(malformed_outcomes));
             std::fs::write(
                 std::path::PathBuf::from(directory).join("rust.json"),
                 serde_json::to_vec(&serde_json::Value::Object(traces)).unwrap(),
