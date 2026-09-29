@@ -66,6 +66,9 @@
     "searchkerneld-multi-index": {
       "description": "Multi-index daemon lifecycle against the real engine"
     }
+    ,"client-real-e2e-parity": {
+      "description": "Cross-client real-engine showcase parity"
+    }
   },
   "verify": {
     "api-conformance": {
@@ -248,6 +251,7 @@
     }
   },
   "change_areas": {
+<<<<<<< HEAD
     "api/": {
       "owner": "portable-api",
       "area": "Portable API contract",
@@ -1367,5 +1371,19 @@
       "focused_check": "command:check-fast",
       "strong_check": "command:check-fast"
     }
+=======
+    "api/": ["test:ir", "verify:api-conformance", "verify:contracts"],
+    "core/crates/searchkernel-ir/": ["test:ir", "verify:api-conformance"],
+    "core/crates/searchkernel/examples/": ["test:client-real-e2e-parity", "test:rust-api"],
+    "core/native/": ["verify:abi", "verify:vespa.hardening.core"],
+    "clients/python/": ["test:python", "test:client-real-e2e-parity", "verify:contracts"],
+    "clients/typescript/": ["test:typescript", "test:client-real-e2e-parity", "verify:contracts"],
+    "clients/php/": ["test:php", "test:client-real-e2e-parity", "verify:contracts"],
+    "clients/ruby/": ["test:ruby", "test:client-real-e2e-parity", "verify:contracts"],
+    "reference/client-real-e2e-parity/": ["test:client-real-e2e-parity"],
+    "tools/check-client-real-e2e-parity.py": ["test:client-real-e2e-parity"],
+    ".github/ci/ci-image-runner.yml": ["test:client-real-e2e-parity"],
+    "searchkerneld/": ["verify:product.integration"]
+>>>>>>> 1b5d369b (test(dev): add real-engine client parity target)
   }
 }

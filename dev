@@ -153,6 +153,7 @@ Search Kernel development commands
   ./dev test --remote <scope> Dispatch exact-HEAD test through GitHub Actions
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
+  ./dev test client-real-e2e-parity Compare first-party real-engine showcases
   ./dev test python           Test the Python client, including real E2E
   ./dev test typescript       Test the TypeScript client, package, and real E2E
   ./dev test php              Test the PHP client, package, and real E2E
@@ -576,6 +577,7 @@ universe() {
     universe_dev_step 'TypeScript client/package tests' test typescript
     universe_dev_step 'PHP client/package tests' test php
     universe_dev_step 'Ruby client/package tests' test ruby
+    universe_dev_step 'first-party real-engine parity' test client-real-e2e-parity
 
     universe_step 'Python tooling regression tests'         "$PYTHON" -m unittest discover -s "$ROOT/tools" -p 'test_*.py'
     while IFS= read -r target; do
@@ -683,6 +685,9 @@ test_target() {
             ;;
         rust-api)
             "$CARGO" test -p searchkernel --all-targets --no-default-features
+            ;;
+        client-real-e2e-parity)
+            "$PYTHON" "$ROOT/tools/check-client-real-e2e-parity.py"
             ;;
         python)
             run_python_tests

@@ -644,7 +644,7 @@ jobs:
               run_phase client-release-verify "$PYTHON" tools/check-consumer-release.py /tmp/searchkernel-consumer-release
               build_native_searchkerneld client-e2e-build
               run_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e
-              run_phase client-real-e2e-parity "$PYTHON" tools/check-client-real-e2e-parity.py
+              run_phase client-real-e2e-parity ./dev test client-real-e2e-parity
               ;;
 
             closure-422)
