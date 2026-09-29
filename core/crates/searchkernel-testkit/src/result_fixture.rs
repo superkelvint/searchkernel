@@ -1545,7 +1545,6 @@ mod expanded_canonical_corpus {
                 );
             }
         }
-
     }
 }
 
