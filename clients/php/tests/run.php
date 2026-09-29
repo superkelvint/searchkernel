@@ -338,6 +338,12 @@ throws(
 // Search request facade and canonical namespaces.
 // --------------------------------------------------------------------------
 
+throws(
+    ArgumentCountError::class,
+    static fn () => $index->search('fox')->sort('price'),
+    'field sort direction is required',
+);
+
 $request = $index
     ->search('brown fox')
     ->searchField('title', 3.0)
