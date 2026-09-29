@@ -19,6 +19,11 @@ class AgentMapCoverageTests(unittest.TestCase):
         self.data = MODULE.load_registry()
         self.tracked = MODULE.tracked_paths()
 
+    def test_workspace_members_reads_manifest_paths(self):
+        members = MODULE.workspace_members()
+        self.assertIn("core/crates/searchkernel-ir", members)
+        self.assertIn("searchkerneld", members)
+
     def test_committed_map_covers_current_structural_boundaries(self):
         boundaries = MODULE.structural_boundaries(
             self.tracked, MODULE.workspace_members()
