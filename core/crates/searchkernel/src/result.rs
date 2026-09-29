@@ -948,9 +948,7 @@ mod tests {
                     ResultTensorPayload::Dense(values) => {
                         payload.insert(
                             "dense".into(),
-                            serde_json::Value::Array(
-                                values.iter().copied().map(finite).collect(),
-                            ),
+                            serde_json::Value::Array(values.iter().copied().map(finite).collect()),
                         );
                     }
                     ResultTensorPayload::Sparse(cells) => {
