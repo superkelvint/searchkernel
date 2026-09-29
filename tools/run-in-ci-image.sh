@@ -61,6 +61,13 @@ environment_id=$(docker image inspect --format '{{index .Config.Labels "io.searc
 [[ -n "$environment_id" && "$environment_id" != "<no value>" ]] ||
     die "$IMAGE is missing the io.searchkernel.environment-id label"
 
+# Serialize shared Docker-state selection/materialization/retirement. The
+# Vespa and sccache ensure helpers mutate shared named volumes/containers, so
+# they must be covered by the same lock as later cache retirement.
+lifecycle_lock=${SEARCHKERNEL_CI_LIFECYCLE_LOCK:-/tmp/searchkernel-ci-runtime-lifecycle.lock}
+exec 8>"$lifecycle_lock"
+flock 8
+
 # Recover resources left behind when a previous ./dev invocation, Actions runner,
 # or Docker client died before its EXIT trap could run. Labeled resources use a
 # short TTL; pre-label legacy job state gets a more conservative migration TTL.
@@ -160,13 +167,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Serialize only Docker-state allocation/retirement. The lock is released before
-# source snapshotting or compilation, so ordinary ./dev invocations still run
-# concurrently while no invocation can prune a generation another is selecting.
-lifecycle_lock=${SEARCHKERNEL_CI_LIFECYCLE_LOCK:-/tmp/searchkernel-ci-runtime-lifecycle.lock}
-exec 8>"$lifecycle_lock"
-flock 8
-
+# The lifecycle lock was acquired before shared cache ensure/materialization.
+# Keep it through invocation leases and retirement, then release before source
+# snapshotting/compilation so ordinary ./dev invocations still run concurrently.
 ci_runtime_create_volume "$source_volume" source "$ephemeral_lifecycle" \
     "io.searchkernel.environment-id=$environment_id" \
     "io.searchkernel.invocation-id=$invocation_id" >/dev/null
