@@ -27,6 +27,16 @@ class FailingCloseTransport
   end
 end
 
+class FacadeFixedResponseTransport
+  def initialize(response)
+    @response = response
+  end
+
+  def execute(_request)
+    @response
+  end
+end
+
 class FacadeRecordingTransport
   attr_reader :requests
 
@@ -91,6 +101,51 @@ same("doc-1", insert_request.dig("document", "id"), "facade insert document id")
 same(%w[price title], insert_request.dig("document", "fields").map { |entry| entry.fetch("key") }, "document fields are deterministic")
 
 same("Running Shoes", index.get("doc-1").fetch("title"), "facade get decodes portable fields")
+
+malformed_get_fields = {
+  "duplicate key" => [
+    { "key" => "same", "value" => SearchKernel::Value.encode(1) },
+    { "key" => "same", "value" => SearchKernel::Value.encode(2) }
+  ],
+  "null entry" => [nil],
+  "missing key" => [{ "value" => SearchKernel::Value.encode(1) }],
+  "missing value" => [{ "key" => "missing" }]
+}
+malformed_get_fields.each do |label, fields|
+  response = {
+    "protocol_version" => 2,
+    "payload_type" => "SearchKernel_V2_GetResult",
+    "payload" => { "document" => { "id" => "doc-1", "fields" => fields } }
+  }
+  malformed = SearchKernel::Index.new(
+    SearchKernel::Client.new(FacadeFixedResponseTransport.new(response))
+  )
+  raises(SearchKernel::ProtocolError, "GET rejects malformed semantic map: #{label}") do
+    malformed.get("doc-1")
+  end
+end
+valid_response = {
+  "protocol_version" => 2,
+  "payload_type" => "SearchKernel_V2_GetResult",
+  "payload" => {
+    "document" => {
+      "id" => "doc-1",
+      "fields" => [
+        { "key" => "nothing", "value" => SearchKernel::Value.encode(nil) },
+        { "key" => "count", "value" => SearchKernel::Value.encode(3) }
+      ]
+    }
+  }
+}
+valid_get = SearchKernel::Index.new(
+  SearchKernel::Client.new(FacadeFixedResponseTransport.new(valid_response))
+)
+same(
+  { "_id" => "doc-1", "nothing" => nil, "count" => 3 },
+  valid_get.get("doc-1"),
+  "GET preserves explicit canonical null and valid semantic-map values"
+)
+
 assert(index.delete("doc-1"), "facade delete decodes boolean")
 
 search = index.search("shoes")
