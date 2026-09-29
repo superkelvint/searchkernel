@@ -49,10 +49,19 @@ class BookkeepingAutofixWorkflowTests(unittest.TestCase):
     def test_untrusted_execution_is_containerized_without_network(self):
         self.assertGreaterEqual(self.text.count("docker run --rm --network none"), 2)
         self.assertIn('docker.io/superkelvint/searchkernel-ci:latest', self.text)
-        self.assertIn('-v "$GITHUB_WORKSPACE:/work"', self.text)
-        self.assertIn('-v "$GITHUB_WORKSPACE:/work:ro"', self.text)
+        self.assertIn('-v "$GITHUB_WORKSPACE/source:/work"', self.text)
+        self.assertIn('-v "$GITHUB_WORKSPACE/source:/work:ro"', self.text)
         self.assertIn("SEARCHKERNEL_IN_CI_IMAGE=1", self.text)
         self.assertIn("PYTHONDONTWRITEBYTECODE=1", self.text)
+
+    def test_uses_current_action_versions_and_rerun_safe_artifacts(self):
+        self.assertGreaterEqual(self.text.count("actions/checkout@v7"), 2)
+        self.assertIn("actions/upload-artifact@v7", self.text)
+        self.assertIn("actions/download-artifact@v8", self.text)
+        self.assertIn("name: bookkeeping-patch-${{ github.run_id }}", self.text)
+        self.assertIn("overwrite: true", self.text)
+        self.assertNotIn("github.run_attempt", self.text)
+        self.assertGreaterEqual(self.text.count("path: source"), 2)
 
     def test_push_is_non_force_and_reuses_existing_autofix_credential(self):
         for text in (self.text, self.rustfmt_text):
