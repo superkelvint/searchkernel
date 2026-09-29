@@ -61,19 +61,6 @@ environment_id=$(docker image inspect --format '{{index .Config.Labels "io.searc
 [[ -n "$environment_id" && "$environment_id" != "<no value>" ]] ||
     die "$IMAGE is missing the io.searchkernel.environment-id label"
 
-# Serialize shared Docker-state selection/materialization/retirement. The
-# Vespa and sccache ensure helpers mutate shared named volumes/containers, so
-# they must be covered by the same lock as later cache retirement.
-lifecycle_lock=${SEARCHKERNEL_CI_LIFECYCLE_LOCK:-/tmp/searchkernel-ci-runtime-lifecycle.lock}
-exec 8>"$lifecycle_lock"
-flock 8
-
-# Recover resources left behind when a previous ./dev invocation, Actions runner,
-# or Docker client died before its EXIT trap could run. Labeled resources use a
-# short TTL; pre-label legacy job state gets a more conservative migration TTL.
-ci_runtime_prune_ephemeral_state
-ci_runtime_prune_legacy_ephemeral_state
-
 case "$PULL_MODE" in
     always)
         echo "==> dev: pulling external Vespa input $vespa_ref"
@@ -91,6 +78,17 @@ case "$PULL_MODE" in
         ;;
 esac
 [[ "$vespa_ref" == *@sha256:* ]] || die "could not resolve immutable Vespa image digest"
+
+# Serialize shared Docker-state selection/materialization/retirement. Image pulls
+# happen before this point so slow registry I/O does not serialize independent
+# runners. The Vespa and sccache ensure helpers mutate shared named state and
+# therefore share the same lock as stale cleanup and later cache retirement.
+lifecycle_lock=${SEARCHKERNEL_CI_LIFECYCLE_LOCK:-/tmp/searchkernel-ci-runtime-lifecycle.lock}
+exec 8>"$lifecycle_lock"
+flock 8
+
+ci_runtime_prune_ephemeral_state
+ci_runtime_prune_legacy_ephemeral_state
 
 native_volume=$(bash "$CONTROL_ROOT/tools/ensure-ci-vespa-volume.sh" "$IMAGE_ID" "$vespa_ref" "$label" "$vespa_bundle")
 read -r sccache_binary_volume sccache_socket_volume < <(bash "$CONTROL_ROOT/tools/ensure-ci-sccache.sh" "$IMAGE_ID")
