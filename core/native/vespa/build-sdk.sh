@@ -228,7 +228,7 @@ if [ -n "${SK_NATIVE_STAGING_SDK:-}" ]; then
     fi
     mkdir -p "$SDK_STAGING"
 else
-    # $ is only unique within one PID namespace. Canonical ./dev invocations
+    # $$ is only unique within one PID namespace. Canonical ./dev invocations
     # run in separate containers while sharing /cargo-target, so use mktemp's
     # random suffix to make the staging path unique across containers as well.
     SDK_STAGING=$(mktemp -d "${SDK_PACKAGE}.staging.XXXXXX")
@@ -402,7 +402,7 @@ PY
         --scope full \
         --output "$SDK/native-build-fingerprint-v2.txt"
 
-    SDK_BACKUP="${SDK_PACKAGE}.old.$"
+    SDK_BACKUP="${SDK_PACKAGE}.old.$$"
     if [ -e "$SDK_BACKUP" ]; then
         echo "adapter backup path already exists: $SDK_BACKUP" >&2
         exit 1
