@@ -37,7 +37,10 @@ pub fn lossless_integer_tags(value: serde_json::Value) -> serde_json::Value {
             if map.len() == 1 {
                 for tag in ["int64", "uint64"] {
                     if let Some(number) = map.get(tag).and_then(serde_json::Value::as_number) {
-                        map.insert(tag.to_string(), serde_json::Value::String(number.to_string()));
+                        map.insert(
+                            tag.to_string(),
+                            serde_json::Value::String(number.to_string()),
+                        );
                         return serde_json::Value::Object(map);
                     }
                 }
@@ -48,9 +51,9 @@ pub fn lossless_integer_tags(value: serde_json::Value) -> serde_json::Value {
                     .collect(),
             )
         }
-        serde_json::Value::Array(values) => serde_json::Value::Array(
-            values.into_iter().map(lossless_integer_tags).collect(),
-        ),
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.into_iter().map(lossless_integer_tags).collect())
+        }
         other => other,
     }
 }
