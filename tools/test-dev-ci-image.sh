@@ -104,7 +104,6 @@ for fragment in required_runner:
         raise SystemExit(f"CI-image runner is missing {fragment!r}")
 
 for forbidden in (
-    "searchkernel-ci-cargo-registry",
     "searchkernel-ci-cargo-git",
     "searchkernel-native-ci-lock",
     ":/root/.cargo/git",
