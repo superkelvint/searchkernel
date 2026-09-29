@@ -4,10 +4,13 @@ import os
 import unittest
 from pathlib import Path
 
-from SearchKernel.V2.SearchResult import SearchResultT
-from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation
 from searchkernel.ergonomic import Hit, ResultGroup, SearchResults
 from searchkernel.protocol import unpack_response
+
+# Importing searchkernel.protocol installs the packaged FlatBuffers generation
+# root on sys.path. Keep generated-wire imports after that production bootstrap.
+from SearchKernel.V2.SearchResult import SearchResultT
+from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation
 
 
 def _value(value):
