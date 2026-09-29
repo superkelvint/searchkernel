@@ -660,6 +660,8 @@ def _semantic_exercised(partition: str, envelope: dict[str, Any], envelopes: dic
     if partition.startswith("malformed."):
         return True  # Each referenced malformed case is required in all clients.
     return False
+
+
 def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, Any]]) -> list[str]:
     errors: list[str] = []
     closure = result_closure()
@@ -680,7 +682,6 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
             f"missing={sorted(actual_malformed_classes - set(declared_malformed))}, "
             f"stale={sorted(set(declared_malformed) - actual_malformed_classes)}"
         )
-    closure = closure
     for table, fields in manifest.get("partitions", {}).get("fields", {}).items():
         for field, scenarios in fields.items():
             if isinstance(scenarios, dict) and "unsupported" in scenarios:
