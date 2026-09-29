@@ -6,11 +6,13 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "bookkeeping-autofix.yml"
+RUSTFMT_WORKFLOW = ROOT / ".github" / "workflows" / "rustfmt-autofix.yml"
 
 
 class BookkeepingAutofixWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.text = WORKFLOW.read_text(encoding="utf-8")
+        self.rustfmt_text = RUSTFMT_WORKFLOW.read_text(encoding="utf-8")
 
     def test_uses_pull_request_target_but_only_for_same_repo_heads(self):
         self.assertIn("pull_request_target:", self.text)
@@ -53,9 +55,17 @@ class BookkeepingAutofixWorkflowTests(unittest.TestCase):
         self.assertIn("PYTHONDONTWRITEBYTECODE=1", self.text)
 
     def test_push_is_non_force_and_reuses_existing_autofix_credential(self):
-        self.assertIn("secrets.RUSTFMT_AUTOFIX_TOKEN", self.text)
-        self.assertNotIn("--force", self.text)
-        self.assertIn("HEAD:refs/heads/${HEAD_REF}", self.text)
+        for text in (self.text, self.rustfmt_text):
+            self.assertIn("secrets.RUSTFMT_AUTOFIX_TOKEN", text)
+            self.assertNotIn("--force", text)
+            self.assertIn("HEAD:refs/heads/${HEAD_REF}", text)
+
+    def test_parallel_autofix_pushes_converge_when_head_advances(self):
+        for text in (self.text, self.rustfmt_text):
+            self.assertIn('git -c credential.helper= ls-remote', text)
+            self.assertIn('"${remote_head,,}" != "${EXPECTED_HEAD,,}"', text)
+            self.assertIn("autofix superseded by newer PR head", text)
+            self.assertIn('exit "$push_status"', text)
 
 
 if __name__ == "__main__":
