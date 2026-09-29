@@ -68,6 +68,7 @@ class DevTargetsTest(unittest.TestCase):
                 "check-fast",
                 "check-protocol",
                 "explain",
+                "bookkeeping",
             },
         )
 
