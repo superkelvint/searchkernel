@@ -34,12 +34,18 @@ esac
 # SDK path with a filesystem lock that is shared through that target volume.
 SDK_LOCK="${SDK_PACKAGE}.build.lock"
 mkdir -p "$(dirname -- "$SDK_LOCK")"
-if ! command -v flock >/dev/null 2>&1; then
-    echo "native SDK build requires flock for package publication locking" >&2
-    exit 1
+if [ "${SK_NATIVE_SDK_PACKAGE_LOCK_HELD:-}" != "$SDK_PACKAGE" ]; then
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "native SDK build requires flock for package publication locking" >&2
+        exit 1
+    fi
+    # Re-exec under flock instead of taking a fixed descriptor in this shell.
+    # Callers such as resolve-native-sdk.sh already hold their own inherited
+    # lock descriptors; replacing one here would silently release that lock.
+    SK_NATIVE_SDK_PACKAGE_LOCK_HELD="$SDK_PACKAGE"
+    export SK_NATIVE_SDK_PACKAGE_LOCK_HELD
+    exec flock "$SDK_LOCK" "$0" "$@"
 fi
-exec 9>"$SDK_LOCK"
-flock 9
 
 # Assemble the package away from the published path. The private staging path
 # is allocated immediately before the build so failed prerequisite checks do
