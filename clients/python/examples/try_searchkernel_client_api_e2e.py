@@ -1599,7 +1599,7 @@ with Index.create(
     upsert_spec = PARITY_INTENTS["upsert_replacement"]
     replacement = dict(upsert_spec["replacement"])
     vector_document_id = replacement.pop("vector_document_id")
-    index.upsert({"_id": upsert_spec["document_id"], **replacement, "embedding": embedding(*corpus_vector(vector_document_id))})
+    index.upsert(document_input({"_id": upsert_spec["document_id"], **replacement, "embedding": corpus_vector(vector_document_id)}))
 
     doc = index.get(upsert_spec["document_id"])
     print(doc)
