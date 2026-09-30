@@ -154,6 +154,7 @@ Search Kernel development commands
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
   ./dev test client-real-e2e-parity Compare first-party real-engine showcases
+  ./dev test native-crud      Test native Vespa engine CRUD
   ./dev test python           Test the Python client, including real E2E
   ./dev test typescript       Test the TypeScript client, package, and real E2E
   ./dev test php              Test the PHP client, package, and real E2E
@@ -688,6 +689,8 @@ test_target() {
             ;;
         client-real-e2e-parity)
             "$PYTHON" "$ROOT/tools/check-client-real-e2e-parity.py"
+        native-crud)
+            "$CARGO" test -p searchkernel-vespa-engine --test native_crud
             ;;
         python)
             run_python_tests
