@@ -144,10 +144,11 @@ export class ManagedLocalHost {
     let entry = this.pool.get(key);
     if (entry === undefined) {
       const promise = this.startUnpooled(key);
-      entry = { promise, refs: 0 };
-      this.pool.set(key, entry);
+      const newEntry = { promise, refs: 0 };
+      entry = newEntry;
+      this.pool.set(key, newEntry);
       promise.catch(() => {
-        if (this.pool.get(key) === entry) this.pool.delete(key);
+        if (this.pool.get(key) === newEntry) this.pool.delete(key);
       });
     }
 
