@@ -22,8 +22,6 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", source)
         self.assertNotIn("pull_request:", source)
         self.assertNotIn("push:", source)
-        self.assertNotIn("python3 verification/dag.py", source)
-        self.assertNotIn("./verification/dag.py", source)
 
     def test_runs_requested_exact_revision_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
@@ -168,9 +166,9 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertNotIn("native-full-rust-real-engine", native_full)
         self.assertNotIn("./dev verify product.rust-real-engine", native_full)
 
-    def test_native_full_prepares_verifier_sdk_once_without_token_exposure(self) -> None:
+    def test_native_full_prepares_native_probe_sdk_once_without_token_exposure(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
-        helper = source.split("          prepare_native_full_verifier_sdk() {", 1)[1].split(
+        helper = source.split("          prepare_native_full_probe_sdk() {", 1)[1].split(
             "\n          }", 1
         )[0]
         native_full = source.split("            native-full)", 1)[1].split(
@@ -178,27 +176,27 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         )[0]
 
         self.assertIn(
-            "run_phase native-full-prepare-verifier-sdk env", helper
+            "run_phase native-full-prepare-native-probe-sdk env", helper
         )
         self.assertIn("-u HEAD_CHECK_TOKEN", helper)
         self.assertIn("-u AUTOFIX_TOKEN", helper)
         self.assertIn(
             "source reference/vespa/common/verify-common.sh", helper
         )
-        self.assertEqual(1, helper.count("prepare_verifier_sdk"))
+        self.assertEqual(1, helper.count("prepare_native_probe_sdk"))
         self.assertIn(
-            'export SEARCHKERNEL_VERIFIER_SDK_PREPARED=1', helper
+            'export SEARCHKERNEL_NATIVE_PROBE_SDK_PREPARED=1', helper
         )
         self.assertNotIn("$HEAD_CHECK_TOKEN", helper)
         self.assertNotIn("HEAD_CHECK_TOKEN=", helper)
         self.assertNotIn("$GH_TOKEN", helper)
         self.assertNotIn("GH_TOKEN=", helper)
 
-        prepare_pos = native_full.index("prepare_native_full_verifier_sdk")
+        prepare_pos = native_full.index("prepare_native_full_probe_sdk")
         hnsw_pos = native_full.index(
             "run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw"
         )
-        self.assertEqual(1, native_full.count("prepare_native_full_verifier_sdk"))
+        self.assertEqual(1, native_full.count("prepare_native_full_probe_sdk"))
         self.assertNotIn(
             "source reference/vespa/common/verify-common.sh", native_full
         )

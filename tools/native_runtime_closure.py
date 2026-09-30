@@ -34,6 +34,22 @@ def is_elf(path: pathlib.Path) -> bool:
         return False
 
 
+def resolve_origin_dependency(payload: pathlib.Path, needed: str) -> pathlib.Path | None:
+    """Resolve an ELF DT_NEEDED entry expressed relative to its executable origin."""
+    for prefix in ("$ORIGIN/", "${ORIGIN}/"):
+        if needed.startswith(prefix):
+            relative = needed[len(prefix):]
+            candidate = payload.parent / relative
+            try:
+                resolved = candidate.resolve(strict=True)
+            except OSError:
+                return None
+            if resolved.is_file() and is_elf(resolved):
+                return resolved
+            return None
+    return None
+
+
 def needed_libraries(path: pathlib.Path, readelf: str) -> set[str]:
     completed = subprocess.run(
         [readelf, "-d", str(path)],

@@ -44,7 +44,7 @@ through these schemas merely to reach the local engine.
   / `invalid_index_target` at `target.name`; strict create collision is
   `AlreadyExists` / `index_already_exists`; strict open miss is `NotFound`
   / `index_not_found`. The corresponding detail/path strings are exported by
-  `searchkernel_protocol::target` so the router does not invent
+  `searchkernel_ir::control_plane` so the router does not invent
   transport-local spellings. Transport layers must preserve these domain errors
   rather than replacing them with HTTP/gRPC-only semantics.
 - #848 is the wire-compatibility baseline for this multi-index contract. Earlier

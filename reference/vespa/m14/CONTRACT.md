@@ -50,7 +50,7 @@ M13 remains cumulative and unchanged.
 The compile-only API contract is:
 
 ```text
-reference/vespa/api-contract/src/bin/m14.rs
+core/crates/searchkernel-vespa-engine/examples/api-contract-m14.rs
 ```
 
 M14 adds these low-level schema concepts:

@@ -53,7 +53,6 @@ class NativeVerifierRequiredTests(unittest.TestCase):
             "core/crates/searchkernel-dispatch/src/lib.rs",
             "docs/architecture.md",
             "README.md",
-            "verification/dag.toml",
         ]
         for path in paths:
             with self.subTest(path=path):
@@ -99,7 +98,6 @@ class NativeVerifierRequiredTests(unittest.TestCase):
             'git show "$BASE_SHA:.github/ci/native_verifier_required.py"',
             source,
         )
-        self.assertNotIn("verification/dag.toml", source)
 
 
 if __name__ == "__main__":

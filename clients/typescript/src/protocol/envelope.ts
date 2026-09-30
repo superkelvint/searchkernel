@@ -9,16 +9,19 @@ import { DescribeRequestT } from "../generated/flatbuffers/search-kernel/v2/desc
 import { GetRequestT } from "../generated/flatbuffers/search-kernel/v2/get-request.js";
 import { InsertRequestT } from "../generated/flatbuffers/search-kernel/v2/insert-request.js";
 import { InspectQueryRequestT } from "../generated/flatbuffers/search-kernel/v2/inspect-query-request.js";
+import { IndexTargetT } from "../generated/flatbuffers/search-kernel/v2/index-target.js";
 import { PatchRequestT } from "../generated/flatbuffers/search-kernel/v2/patch-request.js";
 import { SearchRequestT } from "../generated/flatbuffers/search-kernel/v2/search-request.js";
 import { UpdateRequestT } from "../generated/flatbuffers/search-kernel/v2/update-request.js";
 import { UpsertRequestT } from "../generated/flatbuffers/search-kernel/v2/upsert-request.js";
+import { CreateIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/create-index-request.js";
+import { OpenIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/open-index-request.js";
 
 export const PROTOCOL_VERSION = 2;
 export const REQUEST_IDENTIFIER = "SKRQ";
 export const RESPONSE_IDENTIFIER = "SKRS";
 
-export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery";
+export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex";
 
 export interface OperationRequestMap {
   insert: InsertRequestT;
@@ -31,6 +34,8 @@ export interface OperationRequestMap {
   analyze: AnalyzeRequestT;
   describe: DescribeRequestT;
   inspectQuery: InspectQueryRequestT;
+  createIndex: CreateIndexRequestT;
+  openIndex: OpenIndexRequestT;
 }
 
 const requestTypes: Record<Operation, RequestPayload> = {
@@ -44,6 +49,8 @@ const requestTypes: Record<Operation, RequestPayload> = {
   analyze: RequestPayload.SearchKernel_V2_AnalyzeRequest,
   describe: RequestPayload.SearchKernel_V2_DescribeRequest,
   inspectQuery: RequestPayload.SearchKernel_V2_InspectQueryRequest,
+  createIndex: RequestPayload.SearchKernel_V2_CreateIndexRequest,
+  openIndex: RequestPayload.SearchKernel_V2_OpenIndexRequest,
 };
 
 const responseTypes: Record<Operation, ResponsePayload> = {
@@ -57,6 +64,8 @@ const responseTypes: Record<Operation, ResponsePayload> = {
   analyze: ResponsePayload.SearchKernel_V2_AnalyzeResult,
   describe: ResponsePayload.SearchKernel_V2_DescribeResult,
   inspectQuery: ResponsePayload.SearchKernel_V2_InspectQueryResult,
+  createIndex: ResponsePayload.SearchKernel_V2_CreateIndexResult,
+  openIndex: ResponsePayload.SearchKernel_V2_OpenIndexResult,
 };
 
 export class ProtocolError extends Error { override name = "ProtocolError"; }
@@ -68,8 +77,21 @@ export function packObject(object: IGeneratedObject, identifier?: string): Uint8
   return builder.asUint8Array();
 }
 
-export function packRequest<K extends Operation>(operation: K, payload: OperationRequestMap[K]): Uint8Array {
-  const envelope = new RequestEnvelopeT(PROTOCOL_VERSION, requestTypes[operation], payload as never);
+export function packRequest<K extends Operation>(
+  operation: K,
+  payload: OperationRequestMap[K],
+  target?: string,
+): Uint8Array {
+  let indexTarget: IndexTargetT | null = null;
+  if (target !== undefined) {
+    indexTarget = new IndexTargetT(target);
+  }
+  const envelope = new RequestEnvelopeT(
+    PROTOCOL_VERSION,
+    requestTypes[operation],
+    payload as never,
+    indexTarget,
+  );
   return packObject(envelope, REQUEST_IDENTIFIER);
 }
 

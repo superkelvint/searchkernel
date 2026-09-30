@@ -17,7 +17,7 @@ class M11StructureTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.m11 = self.root / "reference/vespa/m11"
         self._write("reference/vespa/m11/check-structure.sh", CHECKER.read_text())
-        self._write("reference/vespa/m11/rust-driver/src/main.rs", "fn main() {}\n")
+        self._write("core/crates/searchkernel/examples/searchkernel-m11-driver.rs", "fn main() {}\n")
         self._write("reference/vespa/m11/sanitizer/lsan.supp", "")
         self._write("reference/vespa/m11/sanitizer/tsan.supp", "")
         self._write("core/crates/searchkernel-vespa-engine/src/lib.rs", "")
@@ -113,7 +113,7 @@ class M11StructureTests(unittest.TestCase):
 
     def test_driver_json_oracle_is_rejected(self):
         self._write(
-            "reference/vespa/m11/rust-driver/src/main.rs",
+            "core/crates/searchkernel/examples/searchkernel-m11-driver.rs",
             'fn main() { let _ = serde_json::from_str::<serde_json::Value>("{}"); }\n',
         )
         result = self._check()
@@ -134,7 +134,7 @@ class M11StructureTests(unittest.TestCase):
             ("core/crates/searchkernel-vespa-engine/src/engine.rs", 'std::process::Command::new("java");\n'),
             ("core/crates/searchkernel-vespa-engine/src/native/mod.rs", 'Command::new("java");\n'),
             ("core/crates/searchkernel-vespa-bindings/src/lib.rs", 'ProcessBuilder::new("java");\n'),
-            ("reference/vespa/m11/rust-driver/src/main.rs", 'JNI_CreateJavaVM();\n'),
+            ("core/crates/searchkernel/examples/searchkernel-m11-driver.rs", 'JNI_CreateJavaVM();\n'),
         ):
             with self.subTest(path=path):
                 previous = (self.root / path).read_text()

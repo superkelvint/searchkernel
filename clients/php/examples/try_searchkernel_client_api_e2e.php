@@ -26,14 +26,94 @@ use SearchKernel\Tensor;
 
 require __DIR__ . '/searchkernel_client_api_e2e_schema.php';
 
-const VECTOR_TYPE = 'tensor<float>(x[8])';
+$corpusPath = dirname(__DIR__, 3) . '/reference/client-real-e2e-parity/corpus.json';
+$e2eCorpus = json_decode((string) file_get_contents($corpusPath), true, flags: JSON_THROW_ON_ERROR);
+$parityConsumedIntents = [];
 
-const SHOE_1_VECTOR = [0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78];
-const SHOE_2_VECTOR = [0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64];
-const SHOE_3_VECTOR = [0.10, 0.16, 0.78, 0.12, 0.24, 0.28, 0.92, 0.16];
-const SHOE_4_VECTOR = [0.82, 0.12, 0.06, 0.96, 0.72, 0.82, 0.10, 0.88];
-const SHOE_5_VECTOR = [0.64, 0.82, 0.07, 0.62, 0.34, 0.92, 0.16, 0.62];
-const BAG_1_VECTOR = [0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55];
+final class ConsumedIntent implements ArrayAccess
+{
+    public function __construct(private string $scenario, private array $source) {}
+
+    public function offsetExists(mixed $offset): bool
+    {
+        return is_string($offset) && array_key_exists($offset, $this->source);
+    }
+
+    public function offsetGet(mixed $offset): mixed
+    {
+        global $parityConsumedIntents;
+        if (!is_string($offset) || !array_key_exists($offset, $this->source)) {
+            throw new OutOfBoundsException('unknown parity intent field');
+        }
+        $value = $this->source[$offset];
+        $parityConsumedIntents[$this->scenario] ??= [];
+        $parityConsumedIntents[$this->scenario][$offset] = $value;
+        return $value;
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+        throw new LogicException('parity intents are immutable');
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+        throw new LogicException('parity intents are immutable');
+    }
+}
+
+final class ConsumedIntentMap implements ArrayAccess
+{
+    public function __construct(private array $source) {}
+
+    public function offsetExists(mixed $offset): bool
+    {
+        return is_string($offset) && array_key_exists($offset, $this->source);
+    }
+
+    public function offsetGet(mixed $offset): mixed
+    {
+        if (!is_string($offset) || !array_key_exists($offset, $this->source)) {
+            throw new OutOfBoundsException('unknown parity scenario intent');
+        }
+        $value = $this->source[$offset];
+        if (!is_array($value) || array_is_list($value)) {
+            throw new TypeError("parity scenario intent {$offset} must be an object");
+        }
+        return new ConsumedIntent($offset, $value);
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+        throw new LogicException('parity intents are immutable');
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+        throw new LogicException('parity intents are immutable');
+    }
+}
+
+$parityIntents = new ConsumedIntentMap($e2eCorpus['scenario_inputs']);
+$vectorType = $e2eCorpus['schema']['fields']['embedding']['type'];
+define('VECTOR_TYPE', $vectorType);
+function corpusVector(string $documentId): array
+{
+    global $e2eCorpus;
+    foreach ($e2eCorpus['documents'] as $document) {
+        if ($document['_id'] === $documentId && isset($document['embedding'])) {
+            return $document['embedding'];
+        }
+    }
+    throw new RuntimeException("missing corpus vector: {$documentId}");
+}
+
+define('SHOE_1_VECTOR', corpusVector('shoe-1'));
+define('SHOE_2_VECTOR', corpusVector('shoe-2'));
+define('SHOE_3_VECTOR', corpusVector('shoe-3'));
+define('SHOE_4_VECTOR', corpusVector('shoe-4'));
+define('SHOE_5_VECTOR', corpusVector('shoe-5'));
+define('BAG_1_VECTOR', corpusVector('bag-1'));
 
 function heading(string $title): void
 {
@@ -72,7 +152,7 @@ function embedding(array $values): Tensor
 /** @return list<string> */
 function ids($results): array
 {
-    return array_map(static fn ($hit): string => $hit->id, $results->hits);
+    return array_values(array_map(static fn ($hit): string => $hit->id, $results->hits));
 }
 
 /** @param list<string> $expected */
@@ -123,6 +203,364 @@ function detailCodes(SearchKernelException $error): array
     return array_map(static fn (array $detail): string => $detail['code'], $error->details);
 }
 
+/** @param array<string,mixed> $spec @return array<string,mixed> */
+function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
+{
+    $field = $intent['field'] ?? null;
+    return match ($scenario) {
+        'typed_query_term' => Query::term($field, $intent['value']),
+        'typed_query_contains' => Query::contains($field, $intent['value']),
+        'typed_query_phrase' => Query::contains($field, Query::phrase(...$intent['terms'])),
+        'typed_query_near' => Query::contains($field, Query::near(...$intent['terms'])),
+        'typed_query_ordered_near' => Query::contains($field, Query::onear(...$intent['terms'])),
+        'typed_query_range', 'typed_query_range_exclusive' => Query::range(
+            $field,
+            gte: $intent['include_lower'] ? $intent['lower'] : null,
+            gt: $intent['include_lower'] ? null : $intent['lower'],
+            lte: $intent['include_upper'] ? $intent['upper'] : null,
+            lt: $intent['include_upper'] ? null : $intent['upper'],
+        ),
+        'typed_query_boolean' => Query::allOf(
+            Query::anyOf(
+                Query::contains($intent['or_terms'][0]['field'], $intent['or_terms'][0]['value']),
+                Query::contains($intent['or_terms'][1]['field'], $intent['or_terms'][1]['value']),
+            ),
+            Query::negate(Query::contains($intent['not_term']['field'], $intent['not_term']['value'])),
+        ),
+        'typed_query_in' => Query::inValues($field, $intent['values']),
+        'typed_query_equals' => Query::eq($field, $intent['value']),
+        'typed_query_fuzzy' => Query::contains($field, Query::fuzzy($intent['value'])),
+        'typed_query_weak_and' => Query::weakAnd(...array_map(
+            static fn (array $term): array => Query::contains($term['field'], $term['value']),
+            $intent['terms'],
+        )),
+        'typed_query_wand' => Query::wand($field, $intent['items']),
+        'typed_query_weighted_set' => Query::weightedSet($field, $intent['items']),
+        'typed_query_dot_product' => Query::dotProduct($field, $intent['items']),
+        'typed_query_prefix' => Query::prefix($field, $intent['value']),
+        'typed_query_substring' => Query::substring($field, $intent['value']),
+        'typed_query_suffix' => Query::suffix($field, $intent['value']),
+        'typed_query_same_element' => Query::contains(
+            $field,
+            Query::sameElement(
+                Query::contains($intent['first_field'], $intent['first_value']),
+                Query::contains($intent['last_field'], $intent['last_value']),
+            ),
+        ),
+        'typed_query_geo_location' => Query::geoLocation($field, $intent['latitude'], $intent['longitude'], $intent['radius']),
+        'typed_query_geo_box' => Query::geoBox($field, $intent['south'], $intent['west'], $intent['north'], $intent['east']),
+        default => throw new InvalidArgumentException('unsupported typed parity scenario: ' . $scenario),
+    };
+}
+
+/** @param array<string,mixed> $spec */
+function parityAggregationExpression(array $spec): mixed
+{
+    return match ($spec['kind']) {
+        'count' => Agg::count(),
+        'sum' => Agg::sum($spec['field']),
+        'avg' => Agg::avg($spec['field']),
+        default => throw new InvalidArgumentException('unsupported parity aggregation kind: ' . $spec['kind']),
+    };
+}
+
+/** @param array<string,mixed> $spec */
+function parityAggregationOutput(array $spec): mixed
+{
+    if ($spec['kind'] === 'alias') {
+        return G::aliasRef($spec['name'])->as($spec['output_name']);
+    }
+    return parityAggregationExpression($spec)->as($spec['name']);
+}
+
+/** @return array<string,array<string,mixed>> */
+function sharedTypedQueryObservations(Index $index): array
+{
+    global $parityIntents, $parityConsumedIntents;
+    $corpus = searchkernelPhpClientApiE2eCorpus();
+    $observations = [];
+    foreach ($corpus['scenario_inputs'] as $scenario => $_rawInput) {
+        if (!str_starts_with($scenario, 'typed_query_')) continue;
+        $input = $parityIntents[$scenario];
+        $builder = $index->query(typedQueryForScenario($scenario, $input));
+        if (isset($input['ranking_profile'])) {
+            $builder = $builder->ranking($input['ranking_profile']);
+        }
+        $results = $builder->limit($input['limit'])->execute();
+        $queryResultOrder = (string) $input['result_order'];
+        if (isset($input['feature'])) {
+            $feature = $input['feature'];
+            $queryResult = array_map(
+                static fn ($hit): array => ['id' => $hit->id, 'feature' => $hit->matchFeatures[$feature] ?? null],
+                $results->hits,
+            );
+        } else {
+            $queryResult = ids($results);
+            if ($queryResultOrder === 'sorted_ids') sort($queryResult, SORT_STRING);
+        }
+        $observations[$scenario] = [
+            'observation' => ['intent' => $parityConsumedIntents[$scenario], 'query_result' => $queryResult],
+            'capabilities' => $corpus['client_scenario_contract'][$scenario]['php'],
+        ];
+    }
+    return $observations;
+}
+
+function captureRealEngineParity(Index $index): array
+{
+    global $parityIntents;
+    $corpus = searchkernelPhpClientApiE2eCorpus();
+    $typedObservations = sharedTypedQueryObservations($index);
+    $intents = $parityIntents;
+    $orderedSpec = $intents['pagination'];
+    $ordered = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit($orderedSpec['all_limit'])->execute();
+    $filteredSpec = $intents['filtered_facets'];
+    $filtered = $index->search($filteredSpec['query'])->filter($filteredSpec['filter'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit($filteredSpec['page_limit'])->execute();
+    $facetSpec = $intents['facets'];
+    $faceted = $index->search($facetSpec['query'])->facet($facetSpec['field'], name: $facetSpec['name'], limit: $facetSpec['limit'], sort: $facetSpec['sort'])->limit($facetSpec['page_limit'])->execute();
+    $rootSpec = $intents['root_aggregations'];
+    if ($rootSpec['kind'] !== 'browse') throw new RuntimeException('root_aggregations requires browse intent');
+    $rootBuilder = $index->browse()->filter($rootSpec['filter']);
+    foreach ($rootSpec['aggregations'] as $aggregationSpec) {
+        $rootBuilder = $rootBuilder->aggregate(parityAggregationOutput($aggregationSpec));
+    }
+    $root = $rootBuilder->limit($rootSpec['limit'])->execute();
+    $groupedSpec = $intents['grouping_aggregations'];
+    $groupOrder = array_map(static function (array $order): mixed {
+        $expression = $order['kind'] === 'count' ? Agg::count() : G::field($order['field']);
+        return $order['direction'] === 'desc' ? GroupingOrder::desc($expression) : GroupingOrder::asc($expression);
+    }, $groupedSpec['order']);
+    $grouped = $index->search($groupedSpec['query'])->group(
+        Group::by($groupedSpec['group_by'])->limit($groupedSpec['limit'])->precision($groupedSpec['precision'])
+            ->orderBy(...$groupOrder)
+            ->output(...array_map(parityAggregationOutput(...), $groupedSpec['outputs']))
+    )->execute();
+    $nearestIntent = $intents['nearest_neighbor'];
+    $nearest = $index->query(Query::nearestNeighbor($nearestIntent['field'], $nearestIntent['query_input']))
+        ->ranking($nearestIntent['ranking_profile'])
+        ->input($nearestIntent['query_input'], embedding(corpusVector($nearestIntent['query_input_document'])))
+        ->limit($nearestIntent['limit'])->execute();
+    $hybridIntent = $intents['hybrid_text_vector'];
+    $hybrid = $index->query(Query::anyOf(
+        Query::contains($hybridIntent['text_field'], $hybridIntent['text_value']),
+        Query::nearestNeighbor($hybridIntent['vector_field'], $hybridIntent['query_input'])
+    ))->ranking($hybridIntent['ranking_profile'])
+        ->input($hybridIntent['query_input'], embedding(corpusVector($hybridIntent['query_input_document'])))
+        ->limit($hybridIntent['limit'])->execute();
+    $rerankedSpec = $intents['two_phase_reranking'];
+    $reranked = $index->search($rerankedSpec['query'])->ranking($rerankedSpec['ranking_profile'])->limit($rerankedSpec['limit'])->execute();
+    try {
+        $errorSpec = $intents['structured_filter_error'];
+        $index->search($errorSpec['query'])->filter($errorSpec['filter'])->execute();
+        throw new RuntimeException('unknown field filter unexpectedly succeeded');
+    } catch (SearchKernelException $error) {
+        same('InvalidArgument', $error->errorCode, 'portable invalid-argument error code');
+        $errorCodes = detailCodes($error);
+        sort($errorCodes);
+    }
+
+    $document = $index->get($intents['document_crud']['document_id']);
+    $tensorSpec = $intents['tensor_readback'];
+    $tensorDocument = $index->get($tensorSpec['document_id']);
+    check($tensorDocument !== null, 'tensor readback document is missing');
+    $tensorValue = $tensorDocument[$tensorSpec['field']];
+    $fullSpec = $intents['full_text_search'];
+    $fullText = $index->search($fullSpec['query'])->limit($fullSpec['limit'])->execute();
+    $stemmingSpec = $intents['stemming'];
+    $stemming = $index->search($stemmingSpec['query'])->limit($stemmingSpec['limit'])->execute();
+    $bindingSpec = $intents['text_filter_binding'];
+    $textBinding = $index->search($bindingSpec['query'])->filter($bindingSpec['filter'], $bindingSpec['bindings'])->sort($bindingSpec['sort'][0]['field'], $bindingSpec['sort'][0]['direction'])->limit($bindingSpec['limit'])->execute();
+    $repeatedSpec = $intents['repeated_filters'];
+    $repeatedBuilder = $index->search($repeatedSpec['query']);
+    foreach ($repeatedSpec['filters'] as $filterSpec) $repeatedBuilder = $repeatedBuilder->filter($filterSpec['source'], $filterSpec['bindings']);
+    $repeated = $repeatedBuilder->sort($repeatedSpec['sort'][0]['field'], $repeatedSpec['sort'][0]['direction'])->limit($repeatedSpec['limit'])->execute();
+    $booleanSpec = $intents['boolean_filter_grammar'];
+    $booleanFilter = $index->search($booleanSpec['query'])->filter($booleanSpec['filter'], $booleanSpec['bindings'])->sort($booleanSpec['sort'][0]['field'], $booleanSpec['sort'][0]['direction'])->limit($booleanSpec['limit'])->execute();
+    $projectionSpec = $intents['sorting_projection'];
+    $projection = $index->search($projectionSpec['query'])->sort($projectionSpec['sort'][0]['field'], $projectionSpec['sort'][0]['direction'])->fields(...$projectionSpec['projection'])->limit($projectionSpec['limit'])->execute();
+    $allSorted = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit($orderedSpec['all_limit'])->execute();
+    $page = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->offset($orderedSpec['offset'])->limit($orderedSpec['limit'])->execute();
+    $filteredFacet = $index->search($filteredSpec['query'])->filter($filteredSpec['filter'])->facet($filteredSpec['field'], limit: $filteredSpec['limit'], sort: $filteredSpec['sort'])->limit($filteredSpec['page_limit'])->execute();
+    $nestedSpec = $intents['nested_grouping'];
+    if ($nestedSpec['kind'] !== 'browse') throw new RuntimeException('nested_grouping requires browse intent');
+    $nested = $index->browse()->filter($nestedSpec['filter']['source'], $nestedSpec['filter']['bindings'])->group(
+        Group::by($nestedSpec['group_by'])->limit($nestedSpec['limit'])->output(...array_map(parityAggregationOutput(...), $nestedSpec['outputs']))
+            ->subgroup(Group::by($nestedSpec['nested']['group_by'])->limit($nestedSpec['nested']['limit'])->output(...array_map(parityAggregationOutput(...), $nestedSpec['nested']['outputs'])))
+    )->execute();
+    $aliasSpec = $intents['group_alias'];
+    $aliasExpression = G::aliasRef($aliasSpec['order_by_alias']['name']);
+    $aliasOrder = $aliasSpec['order_by_alias']['direction'] === 'desc' ? GroupingOrder::desc($aliasExpression) : GroupingOrder::asc($aliasExpression);
+    $aliasGroup = Group::by($aliasSpec['group_by'])->limit($aliasSpec['limit']);
+    foreach ($aliasSpec['aliases'] as $aliasSpecification) {
+        $aliasGroup = $aliasGroup->alias($aliasSpecification['name'], parityAggregationExpression($aliasSpecification));
+    }
+    $aliased = $index->search($aliasSpec['query'])->group(
+        $aliasGroup->orderBy($aliasOrder)
+            ->output(...array_map(parityAggregationOutput(...), $aliasSpec['outputs']))
+    )->execute();
+    $keepSpec = $intents['group_keep_filter'];
+    $kept = $index->search($keepSpec['query'])->group(
+        Group::by($keepSpec['group_by'])->limit($keepSpec['limit'])->keep(Gf::regex(G::field($keepSpec['keep_regex']['field']), $keepSpec['keep_regex']['pattern']))->output(...array_map(parityAggregationOutput(...), $keepSpec['outputs']))
+    )->execute();
+    $typed = $index->query(typedQueryForScenario('typed_query_contains', $intents['typed_query_contains']))->ranking('default')->limit($fullSpec['limit'])->execute();
+    $rankInputSpec = $intents['rank_inputs'];
+    $rankInputBuilder = $index->search($rankInputSpec['query'])->ranking($rankInputSpec['ranking_profile']);
+    foreach ($rankInputSpec['inputs'] as $key => $value) {
+        if (($rankInputSpec['input_types'][$key] ?? null) === 'float64') $value = (float) $value;
+        $rankInputBuilder = $rankInputBuilder->input($key, $value);
+    }
+    $rankInput = $rankInputBuilder->limit($rankInputSpec['limit'])->execute();
+    $rankPropertySpec = $intents['rank_properties'];
+    $rankPropertyBuilder = $index->search($rankPropertySpec['query'])->ranking($rankPropertySpec['ranking_profile']);
+    foreach ($rankPropertySpec['rank_properties'] as $key => $value) $rankPropertyBuilder = $rankPropertyBuilder->rankProperty($key, $value);
+    $rankProperty = $rankPropertyBuilder->limit($rankPropertySpec['limit'])->execute();
+    $degradedSpec = $intents['coverage_degradation'];
+    if ($degradedSpec['kind'] !== 'browse') throw new RuntimeException('coverage_degradation requires browse intent');
+    $degradedBuilder = $index->browse()->filter($degradedSpec['filter']['source'], $degradedSpec['filter']['bindings'])->sort($degradedSpec['sort'][0]['field'], $degradedSpec['sort'][0]['direction']);
+    foreach ($degradedSpec['rank_properties'] as $key => $value) $degradedBuilder = $degradedBuilder->rankProperty($key, $value);
+    $degraded = $degradedBuilder->limit($degradedSpec['limit'])->execute();
+    $yqlSpec = $intents['yql'];
+    $yqlBuilder = $index->yql($yqlSpec['source']);
+    foreach ($yqlSpec['bindings'] as $key => $value) $yqlBuilder = $yqlBuilder->property($key, $value);
+    $yql = $yqlBuilder->ranking($yqlSpec['ranking_profile'])->page($yqlSpec['page'], $yqlSpec['page_size'])->execute();
+    try {
+        $syntaxSpec = $intents['text_filter_syntax_error'];
+        $index->search($syntaxSpec['query'])->filter($syntaxSpec['filter'])->execute();
+        throw new RuntimeException('malformed textual filter unexpectedly succeeded');
+    } catch (SearchKernelException $error) {
+        $syntaxError = ['code' => strtolower($error->errorCode), 'details' => detailCodes($error)];
+        sort($syntaxError['details']);
+    }
+
+    $groups = groupingGroups($grouped);
+    $updateSpec = $intents['advanced_update'];
+    $index->insert(['_id' => $updateSpec['document_id'], ...$updateSpec['initial']]);
+    $updateBuilder = $index->update($updateSpec['document_id']);
+    foreach ($updateSpec['set'] as $field => $value) $updateBuilder = $updateBuilder->set($field, $value);
+    foreach ($updateSpec['unset'] as $field) $updateBuilder = $updateBuilder->unset($field);
+    foreach ($updateSpec['increments'] as $field => $value) $updateBuilder = $updateBuilder->increment($field, $value);
+    $updateBuilder->execute();
+    foreach ($updateSpec['decrements'] as $field => $value) $index->update($updateSpec['document_id'])->decrement($field, $value)->execute();
+    foreach ($updateSpec['multipliers'] as $field => $value) $index->update($updateSpec['document_id'])->multiply($field, $value)->execute();
+    foreach ($updateSpec['divisors'] as $field => $value) $index->update($updateSpec['document_id'])->divide($field, $value)->execute();
+    $advancedUpdate = $index->get($updateSpec['document_id']);
+    $misuseSpec = $intents['builder_misuse'];
+    $observations = [
+        'document_crud' => ['id' => $document['_id'], 'title' => $document['title'], 'brand' => $document['brand'], 'price' => $document['price']],
+        'full_text_search' => ['ids' => ids($fullText), 'total' => $fullText->totalHits],
+        'stemming' => ['ids' => ids($stemming)],
+        'text_filter_binding' => ['ids' => ids($textBinding)],
+        'repeated_filters' => ['ids' => ids($repeated)],
+        'boolean_filter_grammar' => ['ids' => ids($booleanFilter)],
+        'sorting_projection' => ['hits' => array_map(static fn ($hit): array => ['id' => $hit->id, 'fields' => $hit->fields], $projection->hits)],
+        'pagination' => ['all_ids' => ids($allSorted), 'offset_ids' => ids($page), 'total' => $page->totalHits],
+        'sorted_search' => ['ids' => ids($ordered), 'total' => $ordered->totalHits],
+        'filtered_search' => ['ids' => ids($filtered), 'total' => $filtered->totalHits],
+        'facets' => array_values(array_map(
+            static fn (array $item): array => ['value' => (string) $item['value'], 'count' => (int) $item['count']],
+            $faceted->facets['brands'],
+        )),
+        'root_aggregations' => $root->aggregations,
+        'advanced_update' => ['title' => $advancedUpdate['title'], 'inventory' => $advancedUpdate['inventory'], 'sale_price_present' => array_key_exists('sale_price', $advancedUpdate)],
+        'builder_misuse' => (function () use ($index, $misuseSpec): array {
+            expectInvalid(static fn () => $index->search($misuseSpec['query'])->page($misuseSpec['page'], $misuseSpec['page_size'])->limit($misuseSpec['limit']), 'page plus limit rejected');
+            expectInvalid(static fn () => $index->search($misuseSpec['query'])->page($misuseSpec['page'], $misuseSpec['page_size'])->offset($misuseSpec['page_size']), 'page plus offset rejected');
+            expectInvalid(static fn () => $index->search($misuseSpec['query'])->limit($misuseSpec['negative_limit']), 'negative limit rejected');
+            expectInvalid(static fn () => $index->search($misuseSpec['query'])->offset($misuseSpec['negative_offset']), 'negative offset rejected');
+            return [
+                'observation' => [
+                    'page_and_limit_rejected' => true,
+                    'page_and_offset_rejected' => true,
+                    'negative_limit_rejected' => true,
+                    'negative_offset_rejected' => true,
+                ],
+                'capabilities' => [
+                    'negative_limit_rejected' => ['kind' => 'runtime_rejected'],
+                    'negative_offset_rejected' => ['kind' => 'runtime_rejected'],
+                ],
+            ];
+        })(),
+        'grouping_aggregations' => array_values(array_map(static fn ($group): array => [
+            'brand' => $group->value,
+            'products' => $group->fields['products'],
+            'avg_price' => $group->fields['avg_price'],
+        ], $groups)),
+        'filtered_facets' => array_values(array_map(
+            static fn (array $item): array => ['value' => (string) $item['value'], 'count' => (int) $item['count']],
+            $filteredFacet->facets['brand'],
+        )),
+        'nested_grouping' => array_values(array_map(static fn ($group): array => [
+            'category' => $group->value,
+            'products' => $group->fields['products'],
+            'ratings' => array_map(static fn ($rating): array => ['rating' => $rating->value, 'products' => $rating->fields['products'], 'avg_price' => $rating->fields['avg_price']], $group->groups),
+        ], groupingGroups($nested))),
+        'group_alias' => array_values(array_map(static fn ($group): array => ['value' => $group->value, 'fields' => $group->fields], groupingGroups($aliased))),
+        'group_keep_filter' => array_values(array_map(static fn ($group): array => ['value' => $group->value, 'fields' => $group->fields], groupingGroups($kept))),
+        ...$typedObservations,
+        'rank_inputs' => array_values(array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankInput->hits)),
+        'rank_properties' => array_values(array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankProperty->hits)),
+        'tensor_readback' => array_values($tensorValue->payload['values']),
+        'nearest_neighbor' => ['observation' => ['intent' => $parityConsumedIntents['nearest_neighbor'], 'ids' => ids($nearest), 'scores' => array_map(static fn ($hit): float => (float) $hit->relevance, $nearest->hits)], 'capabilities' => (object) []],
+        'hybrid_text_vector' => ['observation' => ['intent' => $parityConsumedIntents['hybrid_text_vector'], 'ids' => ids($hybrid), 'top_score' => $hybrid->hits[0]->score()], 'capabilities' => (object) []],
+        'hybrid' => ['top_id' => $hybrid->hits[0]->id, 'has_bag' => in_array('bag-1', ids($hybrid), true)],
+        'two_phase_reranking' => ['ids' => ids($reranked)],
+        'coverage_degradation' => ['ids' => ids($degraded), 'full' => $degraded->coverage->full, 'degraded' => $degraded->coverage->degraded !== null],
+        'yql' => ['ids' => ids($yql), 'total' => $yql->totalHits],
+        'unknown_field_error' => ['code' => 'invalid_argument', 'details' => $errorCodes],
+        'structured_filter_error' => ['code' => 'invalid_argument', 'details' => $errorCodes],
+        'text_filter_syntax_error' => ['code' => 'invalid_argument', 'details' => $syntaxError['details']],
+    ];
+    return $observations;
+}
+
+function preserveEmptyParityObjects(mixed &$value): void
+{
+    if (!is_array($value)) {
+        return;
+    }
+    foreach ($value as $key => &$child) {
+        if (in_array($key, ['bindings', 'capabilities'], true) && $child === []) {
+            $child = (object) [];
+        } else {
+            preserveEmptyParityObjects($child);
+        }
+    }
+    unset($child);
+}
+
+function writeRealEngineParity(array $scenarios): void
+{
+    $path = getenv('SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT');
+    if ($path === false || $path === '') {
+        return;
+    }
+    global $parityConsumedIntents;
+    foreach ($scenarios as $scenario => &$value) {
+        if (str_starts_with($scenario, 'typed_query_')) {
+            continue;
+        }
+        if (!array_key_exists($scenario, $parityConsumedIntents)) {
+            throw new RuntimeException("parity scenario {$scenario} emitted an observation without consuming its shared intent");
+        }
+        $intent = $parityConsumedIntents[$scenario];
+        if (isset($value['observation']) && is_array($value['observation'])) {
+            $value['observation']['intent'] ??= $intent;
+        } elseif (is_array($value) && !array_is_list($value)) {
+            $value['intent'] ??= $intent;
+        } else {
+            $value = ['intent' => $intent, 'result' => $value];
+        }
+    }
+    unset($value);
+    $observations = ['version' => 1, 'scenarios' => $scenarios];
+    if (is_file($path)) {
+        $previous = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+        $observations['scenarios'] = array_replace($previous['scenarios'] ?? [], $scenarios);
+    }
+    preserveEmptyParityObjects($observations['scenarios']);
+    file_put_contents($path, json_encode($observations, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
+}
+
 $url = getenv('SEARCHKERNEL_HTTP_URL') ?: 'http://127.0.0.1:50052';
 $target = getenv('SEARCHKERNEL_E2E_TARGET') ?: 'php-e2e';
 $phase = $argv[1] ?? 'initial';
@@ -130,13 +568,53 @@ if (!in_array($phase, ['initial', 'reopen'], true)) {
     throw new InvalidArgumentException('expected initial or reopen phase');
 }
 $index = $phase === 'initial'
-    ? Index::create($url, $target, searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE))
+    ? Index::create($url, $target, searchkernelPhpClientApiE2eDefinition($e2eCorpus))
     : Index::open($url, $target);
+
+if ($phase === 'initial') {
+    $firstHandle = Index::open($url, $target);
+    $secondHandle = Index::open($url, $target);
+    $firstHandle->close();
+    check(
+        $secondHandle->describe()['name'] === $index->describe()['name'],
+        'closing one PHP handle leaves an already-open sibling usable'
+    );
+    $secondHandle->close();
+
+    $otherTarget = $target . '-other';
+    $other = Index::create(
+        $url,
+        $otherTarget,
+        searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE),
+    );
+    $other->upsert([
+        '_id' => 'php-isolation',
+        'title' => 'Isolated PHP index',
+        'category' => 'other',
+        'price' => 1.0,
+        'rating' => 1,
+        'inventory' => 1,
+        'in_stock' => true,
+    ]);
+    check($other->get('php-isolation') !== null, 'second PHP logical index reads its document');
+    same(null, $index->get('php-isolation'), 'PHP logical indexes remain isolated on one daemon');
+    $other->close();
+}
 
 if ($phase === 'reopen') {
     heading('30. REOPEN PERSISTED INDEX');
 
     same(null, $index->get('shoe-3'), 'deleted document remains deleted');
+    $reopenSpec = $parityIntents['reopen_persistence'];
+    $upsertSpec = $parityIntents['upsert_replacement'];
+    $persisted = $index->get($reopenSpec['marker_id']);
+    check($persisted !== null, 'parity-reopen survives daemon and index reopen');
+    $persistedShoe2 = $index->get($upsertSpec['document_id']);
+    writeRealEngineParity(['reopen_persistence' => [
+        'marker' => ['title' => $persisted['title'], 'price' => $persisted['price'], 'inventory' => $persisted['inventory']],
+        'upserted' => ['updated_title_matches' => str_contains($persistedShoe2['title'], 'Updated'), 'price' => $persistedShoe2['price']],
+        'deleted_absent' => $index->get($parityIntents['delete']['document_id']) === null,
+    ]]);
 
     $shoe1 = $index->get('shoe-1');
     check($shoe1 !== null, 'shoe-1 survives reopen');
@@ -213,99 +691,41 @@ if ($phase === 'reopen') {
     exit(0);
 }
 
-heading('1. INDEX SCHEMA + RANK PROFILES CREATED THROUGH PHP');
-echo "PHP creates the logical daemon target and canonical schema through its public lifecycle API.\n";
+heading('1. INDEX SCHEMA + RANK PROFILES PREPARED BY CANONICAL HARNESS');
+echo "PHP executes the same product corpus through the HTTP/FlatBuffers-JSON edge.\n";
 
 heading('2. INSERT DOCUMENTS');
-$documents = [
-    [
-        '_id' => 'shoe-1',
-        'title' => 'Jumped Running Shoes for Daily Training',
-        'brand' => 'Acme',
-        'category' => 'shoes',
-        'price' => 89.0,
-        'sale_price' => 79.0,
-        'rating' => 5,
-        'inventory' => 10,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_1_VECTOR),
-    ],
-    [
-        '_id' => 'shoe-2',
-        'title' => 'Trail Running Shoes',
-        'brand' => 'TrailCo',
-        'category' => 'shoes',
-        'price' => 129.0,
-        'rating' => 5,
-        'inventory' => 4,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_2_VECTOR),
-    ],
-    [
-        '_id' => 'shoe-3',
-        'title' => 'Budget Walking Shoes',
-        'brand' => 'Budget',
-        'category' => 'shoes',
-        'price' => 49.0,
-        'rating' => 3,
-        'inventory' => 25,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_3_VECTOR),
-    ],
-    [
-        '_id' => 'shoe-4',
-        'title' => 'Acme Racing Shoes',
-        'brand' => 'Acme',
-        'category' => 'shoes',
-        'price' => 159.0,
-        'rating' => 4,
-        'inventory' => 0,
-        'in_stock' => false,
-        'embedding' => embedding(SHOE_4_VECTOR),
-    ],
-    [
-        '_id' => 'shoe-5',
-        'title' => 'TrailCo Hiking Shoes',
-        'brand' => 'TrailCo',
-        'category' => 'shoes',
-        'price' => 109.0,
-        'rating' => 4,
-        'inventory' => 8,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_5_VECTOR),
-    ],
-    [
-        '_id' => 'bag-1',
-        'title' => 'Lightweight Running Backpack',
-        'brand' => 'Acme',
-        'category' => 'bags',
-        'price' => 69.0,
-        'rating' => 4,
-        'inventory' => 12,
-        'in_stock' => true,
-        'embedding' => embedding(BAG_1_VECTOR),
-    ],
-    ['_id' => 'rerank-a', 'title' => 'Rerank Candidate A', 'category' => 'two-phase', 'rating' => 100, 'inventory' => 1],
-    ['_id' => 'rerank-b', 'title' => 'Rerank Candidate B', 'category' => 'two-phase', 'rating' => 90, 'inventory' => 100],
-    ['_id' => 'rerank-c', 'title' => 'Rerank Candidate C', 'category' => 'two-phase', 'rating' => 80, 'inventory' => 90],
-    ['_id' => 'rerank-d', 'title' => 'Rerank Candidate D', 'category' => 'two-phase', 'rating' => 70, 'inventory' => 1000],
-];
-
+$documents = array_map(static function (array $document): array {
+    if (isset($document['embedding']) && is_array($document['embedding'])) {
+        $document['embedding'] = embedding($document['embedding']);
+    }
+    return $document;
+}, $e2eCorpus['documents']);
 foreach ($documents as $document) {
     same($document['_id'], $index->insert($document), 'insert returns document id');
 }
-for ($probe = 0; $probe < 200; $probe++) {
-    $index->insert([
-        '_id' => "degraded-{$probe}",
-        'title' => 'Coverage Degradation Probe',
-        'category' => 'degradation',
-        'price' => 18.0,
-        'rating' => 1,
-        'inventory' => 18,
-        'in_stock' => true,
-        'embedding' => embedding(SHOE_3_VECTOR),
-    ]);
+$probeSpec = $e2eCorpus['coverage_probes'];
+for ($probe = 0; $probe < $probeSpec['count']; $probe++) {
+    $document = $probeSpec['document'];
+    $document['_id'] = "degraded-{$probe}";
+    $document['embedding'] = embedding($document['embedding']);
+    $index->insert($document);
 }
+
+$parity = captureRealEngineParity($index);
+$patchSpec = $parityIntents['patch'];
+$index->insert(['_id' => $patchSpec['document_id'], ...$patchSpec['initial']]);
+$patchBuilder = $index->patch($patchSpec['document_id']);
+foreach ($patchSpec['set'] as $field => $value) $patchBuilder = $patchBuilder->set($field, $value);
+foreach ($patchSpec['unset'] as $field) $patchBuilder = $patchBuilder->unset($field);
+$patchBuilder->execute();
+$mutated = $index->get($patchSpec['document_id']);
+$parity['patch'] = ['price' => $mutated['price'], 'sale_price_present' => array_key_exists('sale_price', $mutated)];
+$deleteSpec = $parityIntents['delete'];
+$parityMutationDeleted = $index->delete($deleteSpec['document_id']);
+$parity['delete'] = ['deleted' => $parityMutationDeleted, 'absent_after_delete' => $index->get($deleteSpec['document_id']) === null];
+$reopenSpec = $parityIntents['reopen_persistence'];
+$index->insert(['_id' => $reopenSpec['marker_id'], ...$reopenSpec['marker']]);
 
 heading('3. GET BY ID');
 $doc = $index->get('shoe-1');
@@ -554,98 +974,28 @@ $results = $index->query(Query::contains('title', 'shoes'))
 same(5, $results->totalHits, 'query input and rank-property namespaces');
 
 heading('21A. TYPED QUERY FAMILY PARITY');
-foreach ([
-    ['_id' => 'typed-d1', 'title' => 'quick brown fox', 'category' => 'fox'],
-    ['_id' => 'typed-d2', 'title' => 'brown quick fox', 'category' => 'fox'],
-    ['_id' => 'typed-d3', 'title' => 'quick fox', 'category' => 'fox'],
-    ['_id' => 'typed-d4', 'title' => 'fox', 'category' => 'fox'],
-    ['_id' => 'typed-d5', 'title' => 'cat', 'category' => 'cat'],
-    ['_id' => 'typed-d6', 'title' => 'quick agile brown fox', 'category' => 'fox'],
-    [
-        '_id' => 'people-1',
-        'people' => [
-            ['first' => 'Ada', 'last' => 'Lovelace'],
-            ['first' => 'Grace', 'last' => 'Hopper'],
-        ],
-    ],
-    [
-        '_id' => 'people-2',
-        'people' => [
-            ['first' => 'Ada', 'last' => 'Hopper'],
-            ['first' => 'Grace', 'last' => 'Lovelace'],
-        ],
-    ],
-    ['_id' => 'geo-inside', 'location' => ['latitude' => 37.3, 'longitude' => -121.9]],
-    ['_id' => 'geo-outside', 'location' => ['latitude' => 40.7, 'longitude' => -74.0]],
-] as $document) {
-    $index->upsert($document);
-}
-
-$phrase = $index->query(
-    Query::contains('title', Query::phrase('quick', 'brown'))
-)->limit(20)->execute();
+$phrase = $index->query(Query::contains('title', Query::phrase('quick', 'brown')))->limit(20)->execute();
 assertIds($phrase, ['typed-d1']);
-
-$nearIds = ids($index->query(
-    Query::contains('title', Query::near('quick', 'brown'))
-)->limit(20)->execute());
+$nearIds = ids($index->query(Query::contains('title', Query::near('quick', 'brown')))->limit(20)->execute());
 sort($nearIds);
 same(['typed-d1', 'typed-d2', 'typed-d6'], $nearIds, 'typed near accepts reverse order and one-gap proximity');
-
-$orderedNearIds = ids($index->query(
-    Query::contains('title', Query::onear('quick', 'brown'))
-)->limit(20)->execute());
+$orderedNearIds = ids($index->query(Query::contains('title', Query::onear('quick', 'brown')))->limit(20)->execute());
 sort($orderedNearIds);
 same(['typed-d1', 'typed-d6'], $orderedNearIds, 'typed ordered-near rejects reverse order');
-
-$fuzzyIds = ids($index->query(
-    Query::contains('category', Query::fuzzy('foxx'))
-)->limit(20)->execute());
+$fuzzyIds = ids($index->query(Query::contains('category', Query::fuzzy('foxx')))->limit(20)->execute());
 sort($fuzzyIds);
-same(
-    ['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'],
-    $fuzzyIds,
-    'typed fuzzy excludes unrelated terms',
-);
-
-$weakAndIds = ids($index->query(Query::weakAnd(
-    Query::contains('title', 'quick'),
-    Query::contains('title', 'fox'),
-))->limit(20)->execute());
+same(['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'], $fuzzyIds, 'typed fuzzy excludes unrelated terms');
+$weakAndIds = ids($index->query(Query::weakAnd(Query::contains('title', 'quick'), Query::contains('title', 'fox')))->limit(20)->execute());
 sort($weakAndIds);
-same(
-    ['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'],
-    $weakAndIds,
-    'typed weak-and keeps one-term-only matches',
-);
-
-$wandIds = ids($index->query(
-    Query::wand('title', ['quick' => 10, 'fox' => 1])
-)->limit(20)->execute());
+same(['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'], $weakAndIds, 'typed weak-and keeps one-term-only matches');
+$wandIds = ids($index->query(Query::wand('title', ['quick' => 10, 'fox' => 1]))->limit(20)->execute());
 sort($wandIds);
-same(
-    ['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'],
-    $wandIds,
-    'typed WAND keeps one-term-only matches',
-);
-
-$sameElement = $index->query(Query::contains(
-    'people',
-    Query::sameElement(
-        Query::contains('first', 'Ada'),
-        Query::contains('last', 'Lovelace'),
-    ),
-))->limit(20)->execute();
+same(['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'], $wandIds, 'typed WAND keeps one-term-only matches');
+$sameElement = $index->query(Query::contains('people', Query::sameElement(Query::contains('first', 'Ada'), Query::contains('last', 'Lovelace'))))->limit(20)->execute();
 assertIds($sameElement, ['people-1']);
-
-$geoLocation = $index->query(
-    Query::geoLocation('location', 37.3, -121.9, '10km')
-)->limit(10)->execute();
+$geoLocation = $index->query(Query::geoLocation('location', 37.3, -121.9, '10km'))->limit(10)->execute();
 assertIds($geoLocation, ['geo-inside']);
-
-$geoBox = $index->query(
-    Query::geoBox('location', 37.0, -122.2, 37.6, -121.5)
-)->limit(10)->execute();
+$geoBox = $index->query(Query::geoBox('location', 37.0, -122.2, 37.6, -121.5))->limit(10)->execute();
 assertIds($geoBox, ['geo-inside']);
 
 heading('RANKING, SCALAR FEATURES, AND OPAQUE FEATURES');
@@ -851,22 +1201,19 @@ check(!in_array('Budget', $brands, true), 'facet reflects delete');
 check(!$index->delete('shoe-3'), 'duplicate delete false');
 
 heading('28. UPSERT REPLACEMENT');
-$index->upsert([
-    '_id' => 'shoe-2',
-    'title' => 'Trail Running Shoes - Updated Edition',
-    'brand' => 'TrailCo',
-    'category' => 'shoes',
-    'price' => 119.0,
-    'rating' => 5,
-    'inventory' => 4,
-    'in_stock' => true,
-    'embedding' => embedding(SHOE_2_VECTOR),
-]);
-$doc = $index->get('shoe-2');
+$upsertSpec = $parityIntents['upsert_replacement'];
+$replacement = $upsertSpec['replacement'];
+$vectorDocumentId = $replacement['vector_document_id'];
+unset($replacement['vector_document_id']);
+$index->upsert(['_id' => $upsertSpec['document_id'], ...$replacement, 'embedding' => embedding(corpusVector($vectorDocumentId))]);
+$doc = $index->get($upsertSpec['document_id']);
 same(119.0, $doc['price'], 'upsert replacement price');
 check(str_contains($doc['title'], 'Updated Edition'), 'upsert replacement title');
-$updatedSearch = $index->search('updated')->limit(20)->execute();
-same(['shoe-2'], ids($updatedSearch), 'replacement searchable');
+$updatedSearch = $index->search($upsertSpec['search_query'])->limit(20)->execute();
+same([$upsertSpec['document_id']], ids($updatedSearch), 'replacement searchable');
+$parity['upsert_replacement'] = ['price' => $doc['price'], 'updated_title_matches' => str_contains($doc['title'], 'Updated'), 'search_ids' => ids($updatedSearch)];
+
+writeRealEngineParity($parity);
 
 heading('29. INITIAL PHP CLIENT API E2E CHECKS PASSED');
 echo "Real-engine PHP facade scenario complete; harness will restart searchkerneld for reopen checks.\n";
