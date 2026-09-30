@@ -32,10 +32,10 @@ describe("V2 protocol envelopes", () => {
     expect(RequestEnvelope.bufferHasIdentifier(new ByteBuffer(bytes))).toBe(true);
   });
 
-  it("routes a request to its canonical daemon target", () => {
-    const bytes = packRequest("insert", new InsertRequestT(new DocumentT("d", [])), "catalog-a");
+  it("packs logical index selection into the canonical request envelope", () => {
+    const bytes = packRequest("insert", new InsertRequestT(new DocumentT("d", [])), "products");
     const envelope = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(bytes));
-    expect(envelope.target(new IndexTarget())?.name()).toBe("catalog-a");
+    expect(envelope.target(new IndexTarget())?.name()).toBe("products");
   });
 
   it("verifies SKRS, version and discriminator", () => {

@@ -177,6 +177,18 @@ throws(
 // Portable value boundary.
 // --------------------------------------------------------------------------
 
+$handleTransport = new RecordingTransport();
+$firstHandle = new Index($handleTransport, 'products');
+$secondHandle = new Index($handleTransport, 'products');
+$firstHandle->close();
+throws(
+    SearchKernel\TransportException::class,
+    static fn () => $firstHandle->describe(),
+    'closed PHP handle rejects further operations',
+);
+same('test', $secondHandle->describe()['name'], 'closing one PHP handle leaves another selected handle usable');
+
+
 $document = Protocol::document([
     '_id' => 'doc-1',
     'title' => 'The quick brown fox',
@@ -201,7 +213,15 @@ $decoded = Protocol::decodeDocument($document);
 same('doc-1', $decoded['_id'], 'decode document id');
 same(PHP_INT_MAX, $decoded['count'], 'decode int');
 same(['one', 'two'], $decoded['tags'], 'decode list');
-same(['a' => 1, 'z' => 2], $decoded['meta'], 'decode object');
+truth($decoded['meta'] instanceof ValueObject, 'decode object preserves ValueObject identity');
+same(
+    [
+        ['key' => 'a', 'value' => 1],
+        ['key' => 'z', 'value' => 2],
+    ],
+    $decoded['meta']->entries,
+    'decode object preserves canonical key/value entries',
+);
 
 $bytes = new Bytes("\x00\xffA");
 $encodedBytes = Protocol::value($bytes);
@@ -1542,6 +1562,7 @@ truth(
 foreach ($lifecycleTransport->requests as $request) {
     same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
 }
+
 throws(
     InvalidArgumentException::class,
     static fn () => (new Client(new RecordingTransport(), '../escape'))->openIndex(),

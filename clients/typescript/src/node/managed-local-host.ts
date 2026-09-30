@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { SearchKernelError } from "../client/index.js";
 
 const activeProcessGroups = new Set<number>();
@@ -119,33 +119,122 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
 }
 
 export class ManagedLocalHost {
+  private static readonly pool = new Map<
+    string,
+    { promise: Promise<ManagedLocalHost>; refs: number }
+  >();
+
   readonly socketPath: string;
   readonly endpoint: string;
   private child: ChildProcess | null = null;
   private closed = false;
   private hostOutput = "";
+  private poolKey: string | null = null;
 
   private constructor(
-    readonly indexPath: string,
+    readonly dataRoot: string,
     private readonly temporaryDirectory: string,
-    private readonly definitionPath: string | null,
   ) {
     this.socketPath = join(temporaryDirectory, "searchkerneld.sock");
     this.endpoint = `unix://${this.socketPath}`;
   }
 
-  static async start(indexPath: string, definition: Uint8Array | null): Promise<ManagedLocalHost> {
+  static async start(dataRoot: string): Promise<ManagedLocalHost> {
+    const key = resolve(dataRoot);
+    for (;;) {
+      let entry = this.pool.get(key);
+      if (entry === undefined) {
+        const promise = this.startUnpooled(key);
+        const newEntry = { promise, refs: 0 };
+        entry = newEntry;
+        this.pool.set(key, newEntry);
+        promise.catch(() => {
+          if (this.pool.get(key) === newEntry) this.pool.delete(key);
+        });
+      }
+
+      let host: ManagedLocalHost;
+      try {
+        host = await entry.promise;
+      } catch (error) {
+        if (this.pool.get(key) === entry) this.pool.delete(key);
+        throw error;
+      }
+
+      if (!host.isAlive()) {
+        if (this.pool.get(key) === entry) this.pool.delete(key);
+        await host.close({ force: true });
+        continue;
+      }
+
+      entry.refs += 1;
+      host.poolKey = key;
+      return host;
+    }
+  }
+
+  static async migrateLegacy(
+    indexPath: string,
+    dataRoot: string,
+    target: string,
+  ): Promise<void> {
+    const destination = resolve(dataRoot, target);
+    const marker = resolve(indexPath, ".searchkernel-managed-target");
+    if (existsSync(destination) || existsSync(marker) || !existsSync(indexPath)) return;
+
+    const binary = resolveHostBinary();
+    if (!existsSync(binary)) {
+      throw new SearchKernelError(
+        `managed local host binary not found at ${binary}; set SEARCHKERNEL_LOCAL_HOST to an existing searchkerneld binary`,
+      );
+    }
+
+    await new Promise<void>((resolveMigration, rejectMigration) => {
+      const child = spawn(
+        binary,
+        [
+          "--migrate-index",
+          resolve(indexPath),
+          "--data-root",
+          resolve(dataRoot),
+          "--target",
+          target,
+        ],
+        {
+          env: environmentForHost(),
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let output = "";
+      const capture = (chunk: Buffer | string) => {
+        output = `${output}${chunk.toString()}`.slice(-MAX_HOST_OUTPUT_LENGTH);
+      };
+      child.stdout?.on("data", capture);
+      child.stderr?.on("data", capture);
+      child.once("error", (error) => rejectMigration(
+        new SearchKernelError(`managed-local legacy index migration failed: ${error.message}`),
+      ));
+      child.once("exit", (code, signal) => {
+        if (code === 0) {
+          resolveMigration();
+          return;
+        }
+        const suffix = output.trim()
+          ? `\nsearchkerneld output:\n${output.trim()}`
+          : "";
+        rejectMigration(new SearchKernelError(
+          `managed-local legacy index migration failed (code=${String(code)}, signal=${String(signal)})${suffix}`,
+        ));
+      });
+    });
+  }
+
+  private static async startUnpooled(dataRoot: string): Promise<ManagedLocalHost> {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), "searchkernel-socket-"));
-    const definitionPath = definition === null
-      ? null
-      : join(temporaryDirectory, "searchkernel-definition.fb");
-    const host = new ManagedLocalHost(indexPath, temporaryDirectory, definitionPath);
+    const host = new ManagedLocalHost(dataRoot, temporaryDirectory);
 
     try {
-      await mkdir(dirname(resolve(indexPath)), { recursive: true });
-      if (definitionPath !== null && definition !== null) {
-        await writeFile(definitionPath, definition);
-      }
+      await mkdir(resolve(dataRoot), { recursive: true });
       host.spawn();
       await host.waitUntilReady();
       return host;
@@ -164,14 +253,11 @@ export class ManagedLocalHost {
     }
 
     const args = [
-      "--index",
-      this.indexPath,
+      "--data-root",
+      this.dataRoot,
       "--listen",
       this.endpoint,
     ];
-    if (this.definitionPath !== null) {
-      args.push("--definition", this.definitionPath);
-    }
 
     this.child = spawn(binary, args, {
       env: environmentForHost(),
@@ -225,10 +311,30 @@ export class ManagedLocalHost {
     );
   }
 
+  private isAlive(): boolean {
+    return !this.closed
+      && this.child !== null
+      && this.child.exitCode === null
+      && this.child.signalCode === null;
+  }
+
   async close(options: { force?: boolean } = {}): Promise<void> {
     if (this.closed) return;
-    this.closed = true;
 
+    const poolKey = this.poolKey;
+    if (poolKey !== null) {
+      const entry = ManagedLocalHost.pool.get(poolKey);
+      if (entry !== undefined) {
+        if (!options.force && entry.refs > 1) {
+          entry.refs -= 1;
+          return;
+        }
+        ManagedLocalHost.pool.delete(poolKey);
+      }
+      this.poolKey = null;
+    }
+
+    this.closed = true;
     const child = this.child;
     this.child = null;
     if (child?.pid && child.exitCode === null && child.signalCode === null) {
