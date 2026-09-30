@@ -49,6 +49,18 @@ class VerifierBuildOwnershipTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "not registered"):
                 MODULE.check_example_routing(root, metadata(("owner", "real", "/tmp/real.rs")))
 
+    def test_second_cargo_command_on_same_line_is_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            script = root / "reference/vespa/m8/verify.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text(
+                "cargo run -p owner --example real && cargo run -p owner --example missing\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(SystemExit, "missing"):
+                MODULE.check_example_routing(root, metadata(("owner", "real", "/tmp/real.rs")))
+
     def test_existing_rs_file_without_registered_target_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
