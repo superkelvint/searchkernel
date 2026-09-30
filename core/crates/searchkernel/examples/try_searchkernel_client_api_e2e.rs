@@ -452,9 +452,7 @@ mod showcase {
                         .ok_or("facet limit missing")? as u32,
                 )
                 .sort(facet_sort_from_intent(
-                    facet_intent["sort"]
-                        .as_str()
-                        .ok_or("facet sort missing")?,
+                    facet_intent["sort"].as_str().ok_or("facet sort missing")?,
                 )?),
             )
             .limit(
