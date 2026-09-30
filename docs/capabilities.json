@@ -504,13 +504,12 @@
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/search.rs",
+        "core/crates/searchkernel/src/index/mod.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/tests/facade.test.ts",
         "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
       ],
-      "limitations": [
-        "Python additionally exposes page() as a convenience. Rust currently exposes limit/offset but no page() helper."
-      ]
+      "limitations": []
     },
     {
       "id": "search.search_fields",

@@ -2,6 +2,7 @@ use crate::analyze::{to_resolver_input, AnalyzeBuilder, AnalyzeResult, AnalyzedT
 use crate::document::{serialize, DocumentId};
 use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
+use crate::query::Query;
 use crate::result;
 use crate::schema::{
     Analyzer, ConstantDefinition, DocumentSummary, Field, FieldCapabilities, FieldSet,
@@ -232,6 +233,16 @@ impl Index {
         SearchBuilder::new(self.clone(), query)
     }
 
+    /// Start a typed query through the canonical query resolver.
+    pub fn query(&self, query: Query) -> SearchBuilder {
+        SearchBuilder::new(self.clone(), "").typed_query(query)
+    }
+
+    /// Start a YQL request through the canonical search resolver.
+    pub fn yql(&self, source: impl Into<String>) -> crate::search::YqlBuilder {
+        SearchBuilder::with_yql_source(self.clone(), source.into())
+    }
+
     /// Start a match-all search intended for browsing or administration.
     pub fn browse(&self) -> SearchBuilder {
         SearchBuilder::match_all(self.clone())
@@ -319,19 +330,17 @@ impl Index {
                                 "annotated sort expressions are not supported by the public search API",
                             ));
                         }
-                        let field = match sort.target() {
-                            searchkernel_ir::SortTargetIr::Field(field) => field,
-                            searchkernel_ir::SortTargetIr::Relevance
-                            | searchkernel_ir::SortTargetIr::RankFeature(_) => {
-                                return Err(Error::search(
-                                    crate::error::ErrorCode::Unsupported,
-                                    "the public search API supports only field sort targets",
-                                ));
-                            }
-                        };
-                        let value = match sort.direction() {
-                            searchkernel_ir::SortDirection::Asc => Sort::asc(field.as_str()),
-                            searchkernel_ir::SortDirection::Desc => Sort::desc(field.as_str()),
+                        let value = match (sort.target(), sort.direction()) {
+                            (searchkernel_ir::SortTargetIr::Field(field), searchkernel_ir::SortDirection::Asc) => Sort::asc(field.as_str()),
+                            (searchkernel_ir::SortTargetIr::Field(field), searchkernel_ir::SortDirection::Desc) => Sort::desc(field.as_str()),
+                            (searchkernel_ir::SortTargetIr::Relevance, direction) => Sort::relevance(match direction {
+                                searchkernel_ir::SortDirection::Asc => crate::search::SortDirection::Asc,
+                                searchkernel_ir::SortDirection::Desc => crate::search::SortDirection::Desc,
+                            }),
+                            (searchkernel_ir::SortTargetIr::RankFeature(feature), direction) => Sort::feature(feature.clone(), match direction {
+                                searchkernel_ir::SortDirection::Asc => crate::search::SortDirection::Asc,
+                                searchkernel_ir::SortDirection::Desc => crate::search::SortDirection::Desc,
+                            }),
                         };
                         match sort.missing() {
                             searchkernel_ir::MissingPlacement::First => Ok(value.missing_first()),

@@ -20,6 +20,13 @@ pub enum GroupingAggregation {
     Sum(GroupingExpression),
     Min(GroupingExpression),
     Max(GroupingExpression),
+    Xor(GroupingExpression),
+    StdDev(GroupingExpression),
+    Quantiles {
+        expression: GroupingExpression,
+        quantiles: Vec<f64>,
+    },
+    Summary(Option<String>),
 }
 
 impl GroupingAggregation {
@@ -29,6 +36,9 @@ impl GroupingAggregation {
     pub fn average(field: impl Into<String>) -> Self {
         Self::Average(GroupingExpression::attribute(field))
     }
+    pub fn avg(field: impl Into<String>) -> Self {
+        Self::average(field)
+    }
     pub fn sum(field: impl Into<String>) -> Self {
         Self::Sum(GroupingExpression::attribute(field))
     }
@@ -37,6 +47,27 @@ impl GroupingAggregation {
     }
     pub fn max(field: impl Into<String>) -> Self {
         Self::Max(GroupingExpression::attribute(field))
+    }
+    pub fn xor(field: impl Into<String>) -> Self {
+        Self::Xor(GroupingExpression::attribute(field))
+    }
+    pub fn stddev(field: impl Into<String>) -> Self {
+        Self::StdDev(GroupingExpression::attribute(field))
+    }
+    pub fn quantiles<I>(field: impl Into<String>, quantiles: I) -> Self
+    where
+        I: IntoIterator<Item = f64>,
+    {
+        Self::Quantiles {
+            expression: GroupingExpression::attribute(field),
+            quantiles: quantiles.into_iter().collect(),
+        }
+    }
+    pub fn summary() -> Self {
+        Self::Summary(None)
+    }
+    pub fn summary_named(name: impl Into<String>) -> Self {
+        Self::Summary(Some(name.into()))
     }
 }
 
@@ -158,10 +189,40 @@ fn output_to_ir(output: GroupingAggregation) -> Result<GroupingOutputIr> {
         GroupingAggregation::Max(expression) => {
             GroupingAggregationIr::Max(expression_to_ir(expression)?)
         }
+        GroupingAggregation::Xor(expression) => {
+            GroupingAggregationIr::Xor(expression_to_ir(expression)?)
+        }
+        GroupingAggregation::StdDev(expression) => {
+            GroupingAggregationIr::StdDev(expression_to_ir(expression)?)
+        }
+        GroupingAggregation::Quantiles {
+            expression,
+            quantiles,
+        } => GroupingAggregationIr::Quantiles {
+            quantiles,
+            expression: expression_to_ir(expression)?,
+        },
+        GroupingAggregation::Summary(name) => GroupingAggregationIr::Summary(name),
     };
     Ok(GroupingOutputIr {
         label: None,
         expression: GroupingExpressionIr::Aggregation(Box::new(aggregation)),
+    })
+}
+
+pub(crate) fn aggregate_request(outputs: &[GroupingAggregation]) -> Result<GroupingRequestIr> {
+    Ok(GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![GroupingOperationIr::Output(
+                outputs
+                    .iter()
+                    .cloned()
+                    .map(output_to_ir)
+                    .collect::<Result<Vec<_>>>()?,
+            )],
+            label: None,
+        },
+        continuations: Vec::new(),
     })
 }
 

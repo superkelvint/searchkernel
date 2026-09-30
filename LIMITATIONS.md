@@ -128,10 +128,6 @@ approximated.
 
 - Python and TypeScript high-level sort() helpers
 
-### Limit and offset pagination (`search.pagination`)
-
-- Python additionally exposes page() as a convenience. Rust currently exposes limit/offset but no page() helper.
-
 ### Text search-field selection (`search.search_fields`)
 
 - Field selection executes, but non-default per-field weights are rejected by the current native adapter. The Python high-level SearchBuilder does not yet expose search_field/search_fields.
