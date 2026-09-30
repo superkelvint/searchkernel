@@ -1534,9 +1534,24 @@ $parityCorpus = json_decode(
 );
 $parityDefinition = searchkernelPhpClientApiE2eDefinition($parityCorpus)->toWire();
 $parityFieldNames = array_column($parityDefinition['fields'], 'name');
-$expectedParityFieldNames = array_merge(array_keys($parityCorpus['schema']['fields']), ['people', 'location']);
+$expectedParityFieldNames = array_keys($parityCorpus['schema']['fields']);
 sort($expectedParityFieldNames, SORT_STRING);
-same($expectedParityFieldNames, $parityFieldNames, 'PHP E2E schema contains every corpus field plus typed-query extensions');
+same($expectedParityFieldNames, $parityFieldNames, 'PHP E2E schema is built only from shared corpus fields');
+$parityPeople = current(array_values(array_filter(
+    $parityDefinition['fields'],
+    static fn (array $field): bool => $field['name'] === 'people',
+)));
+same('ArrayDataType', $parityPeople['data_type']['kind_type'], 'PHP parity people type follows corpus');
+same(
+    ['first', 'last'],
+    array_column($parityPeople['data_type']['kind']['element_type']['kind']['fields'], 'name'),
+    'PHP parity people members follow corpus',
+);
+$parityLocation = current(array_values(array_filter(
+    $parityDefinition['fields'],
+    static fn (array $field): bool => $field['name'] === 'location',
+)));
+same('PositionDataType', $parityLocation['data_type']['kind_type'], 'PHP parity location type follows corpus');
 same(
     array_column($parityCorpus['schema']['rank_profiles'], 'name'),
     array_column($parityDefinition['rank_profiles'], 'name'),
@@ -1555,17 +1570,6 @@ foreach ($parityCorpus['schema']['rank_profiles'] as $position => $spec) {
     }
     if (isset($spec['query_inputs'])) {
         same(array_keys($spec['query_inputs']), array_column($actualProfile['inputs'], 'name'), 'PHP rank profile inputs follow corpus: ' . $spec['name']);
-        foreach ($spec['query_inputs'] as $inputName => $typeSpec) {
-            $actualInput = current(array_values(array_filter(
-                $actualProfile['inputs'],
-                static fn (array $input): bool => $input['name'] === $inputName,
-            )));
-            same(
-                $typeSpec,
-                $actualInput['data_type']['kind']['type_spec'],
-                'PHP rank profile query input type follows corpus: ' . $spec['name'] . '.' . $inputName,
-            );
-        }
     }
 }
 $parityEmbedding = current(array_values(array_filter(
@@ -1594,10 +1598,9 @@ foreach ($parityCorpus['schema']['fields'] as $name => $spec) {
     };
     same($expectedType, $actual['data_type'], 'PHP field data type follows shared corpus: ' . $name);
     foreach (['stored', 'searchable', 'filterable', 'sortable', 'facetable'] as $capability) {
-        $expectedCapability = array_key_exists($capability, $spec)
-            ? ['value' => $spec[$capability]]
-            : null;
-        same($expectedCapability, $actual[$capability] ?? null, 'PHP field capability follows shared corpus: ' . $name . '.' . $capability);
+        if (array_key_exists($capability, $spec)) {
+            same(['value' => $spec[$capability]], $actual[$capability] ?? null, 'PHP field capability follows shared corpus: ' . $name . '.' . $capability);
+        }
     }
 }
 

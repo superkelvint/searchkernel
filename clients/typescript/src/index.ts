@@ -66,4 +66,4 @@ export {
 } from "./ergonomic/grouping.js";
 export { q, type TypedQuery } from "./ergonomic/query.js";
 
-export { Text, Keyword, Integer, Float, Boolean, TensorField, RankProfile, type FieldOptions } from "./ergonomic/schema.js";
+export { Text, Keyword, Integer, Float, Boolean, TensorField, PositionField, ArrayOfStructField, RankProfile, type FieldOptions } from "./ergonomic/schema.js";

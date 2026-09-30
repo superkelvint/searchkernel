@@ -18,6 +18,8 @@ import {
   Index,
   Integer,
   Keyword,
+  PositionField,
+  ArrayOfStructField,
   RankProfile,
   SearchKernelError,
   Tensor,
@@ -77,15 +79,25 @@ const FIELD_TYPES: Record<string, new (options?: any) => CorpusFieldBuilder> = {
   int64: Integer,
   float64: Float,
   bool: Boolean,
+  position: PositionField,
 };
+
+function corpusField(spec: any): CorpusFieldBuilder {
+  const options = Object.fromEntries(Object.entries(spec).filter(([key]) => !["type", "element", "fields"].includes(key)));
+  if (spec.type === "array" && spec.element?.type === "struct") {
+    const members = Object.fromEntries(Object.entries<any>(spec.element.fields).map(([name, member]) => [name, corpusField(member)]));
+    return new ArrayOfStructField(members as any, options);
+  }
+  if (spec.type.startsWith("tensor<")) return new TensorField(spec.type, options);
+  const FieldType = FIELD_TYPES[spec.type];
+  if (!FieldType) throw new Error(`unsupported corpus field type: ${spec.type}`);
+  return new FieldType(options);
+}
 
 function fieldsFromCorpus(): CreateIndexOptions["fields"] {
   const fields: Record<string, CorpusFieldBuilder> = {};
   for (const [name, spec] of Object.entries<any>(E2E_CORPUS.schema.fields)) {
-    const options = Object.fromEntries(Object.entries(spec).filter(([key]) => key !== "type"));
-    fields[name] = spec.type.startsWith("tensor<")
-      ? new TensorField(spec.type, options)
-      : new FIELD_TYPES[spec.type]!(options);
+    fields[name] = corpusField(spec);
   }
   return fields;
 }
@@ -115,6 +127,46 @@ function documentInput(source: Record<string, unknown>): DocumentInput {
 
 const PARITY_OBSERVATIONS: Record<string, unknown> = {};
 
+function sharedTypedQuery(spec: any): any {
+  switch (spec.kind) {
+    case "contains": return q.contains(spec.field, spec.value);
+    case "phrase": return q.phrase(spec.field, ...spec.terms);
+    case "range": return q.range(spec.field, spec.lower, spec.upper);
+    case "and": return q.allOf(...spec.clauses.map(sharedTypedQuery));
+    case "or": return q.anyOf(...spec.clauses.map(sharedTypedQuery));
+    case "not": return q.not(sharedTypedQuery(spec.clause));
+    case "in": return q.inValues(spec.field, spec.values);
+    case "equals": return q.equals(spec.field, spec.value);
+    case "fuzzy": return q.fuzzy(spec.field, spec.value);
+    case "weak_and": return q.weakAnd(...spec.clauses.map(sharedTypedQuery));
+    case "wand": return q.wand(spec.field, spec.items);
+    case "weighted_set": return q.weightedSet(spec.field, spec.items);
+    case "dot_product": return q.dotProduct(spec.field, spec.items);
+    case "same_element": return q.sameElement(spec.field, ...spec.clauses.map(sharedTypedQuery));
+    case "geo_location": return q.geoLocation(spec.field, spec.latitude, spec.longitude, spec.radius);
+    case "geo_box": return q.geoBox(spec.field, spec.south, spec.west, spec.north, spec.east);
+    default: throw new Error(`unsupported shared typed query kind: ${spec.kind}`);
+  }
+}
+
+async function sharedTypedQueryObservations(index: Index): Promise<Record<string, unknown>> {
+  const observations: Record<string, unknown> = {};
+  for (const [scenario, input] of Object.entries<any>(E2E_CORPUS.scenario_inputs)) {
+    if (!scenario.startsWith("typed_query_")) continue;
+    const capabilities = E2E_CORPUS.client_scenario_contract[scenario].typescript;
+    const supported = capabilities.query_result.kind === "comparable";
+    const observation: Record<string, unknown> = { intent: input.query };
+    if (supported) {
+      const results = await index.query(sharedTypedQuery(input.query)).limit(100).execute();
+      const ids = results.hits.map((hit) => hit.id);
+      if (input.result_order === "sorted_ids") ids.sort();
+      observation.query_result = ids;
+    }
+    observations[scenario] = { observation, capabilities };
+  }
+  return observations;
+}
+
 function paritySafe(value: unknown): unknown {
   if (typeof value === "bigint") return Number(value);
   if (Array.isArray(value)) return value.map(paritySafe);
@@ -125,6 +177,7 @@ function paritySafe(value: unknown): unknown {
 }
 
 async function captureRealEngineParity(index: Index): Promise<Record<string, unknown>> {
+  const typedQueryObservations = await sharedTypedQueryObservations(index);
   const ordered = await index.search("shoes").sort("price", "asc").limit(20).execute();
   const filtered = await index.search("shoes").filter("in_stock = true").sort("price", "asc").limit(20).execute();
   const faceted = await index.search("shoes").facet("brand", { name: "brands", limit: 10, sort: "count_desc" }).limit(20).execute();
@@ -179,7 +232,6 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const kept = await index.search("shoes").group(
     Group.by("brand").limit(10).keep(gf.regex(g.field("brand"), "^A.*")).output(agg.count().as("products")),
   ).execute();
-  const typed = await index.query(q.contains("title", "shoes")).ranking("default").limit(20).execute();
   const rankInput = await index.search("shoes").ranking("boosted").input("boost", float64(3)).limit(20).execute();
   const rankProperty = await index.search("shoes").ranking("boosted").rankProperty("boost", "4.0").limit(20).execute();
   const degraded = await index.browse().filter("inventory = :value", { value: 18n }).sort("inventory", "asc")
@@ -256,7 +308,7 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
     nested_grouping: nestedGroups,
     group_alias: groupingGroups(aliased).map((group) => ({ value: group.value, fields: paritySafe(group.fields) })),
     group_keep_filter: groupingGroups(kept).map((group) => ({ value: group.value, fields: paritySafe(group.fields) })),
-    typed_query: { ids: scenarioIds(typed) },
+    ...typedQueryObservations,
     rank_inputs: rankInput.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
     rank_properties: rankProperty.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
     tensor_readback: paritySafe((document.embedding as { $searchkernel_tensor: { dense: number[] } }).$searchkernel_tensor.dense),

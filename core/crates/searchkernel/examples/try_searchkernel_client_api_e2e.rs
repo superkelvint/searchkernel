@@ -12,6 +12,8 @@
 //! reach into implementation internals to paper over missing product-API
 //! capabilities.
 
+#![recursion_limit = "256"]
+
 #[cfg(not(feature = "native"))]
 fn main() {
     eprintln!("this example requires `--features native`");
@@ -28,7 +30,7 @@ mod showcase {
     use searchkernel::{
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
         GroupingAggregation, GroupingPlan, Hit, Index, IndexDefinition, Patch, Query, QueryBound,
-        QueryValue, RankProfile, Ranking, ResultValue, SearchResult, Sort, Tensor,
+        QueryValue, RankProfile, Ranking, ResultValue, SchemaStructField, SearchResult, Sort, Tensor,
         TotalHitsRelation, Update, WandOptions, WeightedQueryItem,
     };
     use serde_json::{json, Value};
@@ -84,6 +86,74 @@ mod showcase {
             .collect::<Result<Vec<_>, _>>()?)
     }
 
+    fn corpus_typed_query(scenario: &str) -> Result<Query, Box<dyn std::error::Error>> {
+        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let query = &corpus["scenario_inputs"][scenario]["query"];
+        query_from_spec(query).map_err(Into::into)
+    }
+
+    fn query_from_spec(spec: &Value) -> Result<Query, String> {
+        let kind = spec["kind"].as_str().ok_or("typed query kind missing")?;
+        let field = || spec["field"].as_str().ok_or("typed query field missing");
+        let text = |name: &str| spec[name].as_str().ok_or("typed query value missing");
+        let children = || {
+            spec["clauses"]
+                .as_array()
+                .ok_or("typed query clauses missing")?
+                .iter()
+                .map(query_from_spec)
+                .collect::<Result<Vec<_>, _>>()
+        };
+        Ok(match kind {
+            "contains" => Query::contains(field()?, Query::term_value(text("value")?)),
+            "phrase" => Query::phrase(field()?, spec["terms"].as_array()
+                .ok_or("phrase terms missing")?.iter()
+                .map(|term| term.as_str().ok_or("phrase term must be a string"))
+                .collect::<Result<Vec<_>, _>>()?.join(" ")),
+            "range" => {
+                let lower = spec["lower"].as_f64().ok_or("range lower bound missing")?;
+                let upper = spec["upper"].as_f64().ok_or("range upper bound missing")?;
+                Query::range(field()?, QueryBound::Included(lower.into()), QueryBound::Included(upper.into()))
+            }
+            "and" => Query::and(children()?),
+            "or" => Query::or(children()?),
+            "not" => Query::not(query_from_spec(&spec["clause"])?),
+            "in" => Query::in_values(field()?, spec["values"].as_array()
+                .ok_or("IN values missing")?.iter()
+                .map(|value| value.as_str().map(QueryValue::from).ok_or("IN value must be a string"))
+                .collect::<Result<Vec<_>, _>>()?),
+            "equals" => Query::equals(field()?, text("value")?),
+            "fuzzy" => Query::fuzzy(field()?, text("value")?),
+            "weak_and" => Query::weak_and(children()?, 100),
+            "wand" | "weighted_set" | "dot_product" => {
+                let items = spec["items"].as_object().ok_or("weighted query items missing")?
+                    .iter().map(|(key, weight)| Ok(WeightedQueryItem::new(
+                        key.as_str(), weight.as_i64().ok_or("weighted query weight must be an integer")?,
+                    ))).collect::<Result<Vec<_>, String>>()?;
+                match kind {
+                    "wand" => Query::wand(field()?, items),
+                    "weighted_set" => Query::weighted_set(field()?, items),
+                    _ => Query::dot_product(field()?, items),
+                }
+            }
+            "same_element" => Query::same_element(field()?, children()?),
+            "geo_location" => Query::geo_location(
+                field()?,
+                spec["latitude"].as_f64().ok_or("geo latitude missing")?,
+                spec["longitude"].as_f64().ok_or("geo longitude missing")?,
+                spec["radius"].as_str().ok_or("geo radius missing")?,
+            ),
+            "geo_box" => Query::geo_bounding_box(
+                field()?,
+                spec["south"].as_f64().ok_or("geo south missing")?,
+                spec["west"].as_f64().ok_or("geo west missing")?,
+                spec["north"].as_f64().ok_or("geo north missing")?,
+                spec["east"].as_f64().ok_or("geo east missing")?,
+            ),
+            _ => return Err(format!("unsupported typed query intent: {kind}")),
+        })
+    }
+
     fn corpus_definition() -> Result<IndexDefinition, Box<dyn std::error::Error>> {
         let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
         let schema = &corpus["schema"];
@@ -99,6 +169,31 @@ mod showcase {
                 "float64" => Field::float64(name),
                 "int64" => Field::int64(name),
                 "bool" => Field::bool(name),
+                "position" => Field::position(name),
+                "array" => {
+                    let element = &spec["element"];
+                    if element["type"] != "struct" {
+                        return Err(format!("unsupported corpus array element for {name}").into());
+                    }
+                    let members = element["fields"]
+                        .as_object()
+                        .ok_or("corpus struct fields missing")?
+                        .iter()
+                        .map(|(member, member_spec)| {
+                            let data_type = match member_spec["type"].as_str() {
+                                Some("keyword" | "text") => searchkernel::DataType::Primitive(
+                                    searchkernel::PrimitiveDataType::String,
+                                ),
+                                Some("int64") => searchkernel::DataType::Primitive(
+                                    searchkernel::PrimitiveDataType::Int64,
+                                ),
+                                _ => return Err(format!("unsupported corpus struct field {member}").into()),
+                            };
+                            Ok(SchemaStructField { name: member.clone(), data_type })
+                        })
+                        .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+                    Field::array_of_struct(name, members)
+                }
                 tensor if tensor.starts_with("tensor<") => Field::tensor(name, tensor),
                 _ => return Err(format!("unknown corpus field type: {type_name}").into()),
             };
@@ -346,7 +441,10 @@ mod showcase {
                             "products",
                             GroupingAggregation::count(),
                         ))
-                        .output(GroupingAggregation::alias_reference("revenue")),
+                        .output(GroupingAggregation::named(
+                            "revenue",
+                            GroupingAggregation::sum("price"),
+                        )),
                 ),
             )
             .execute::<Value>()?;
@@ -380,11 +478,26 @@ mod showcase {
             .offset(20)
             .execute::<Value>()
             .is_err();
-        let parity_typed = index
-            .search("")
-            .typed_query(Query::contains("title", Query::term_value("shoes")))
-            .limit(20)
-            .execute::<Value>()?;
+        let typed_scenarios = [
+            "typed_query_contains", "typed_query_phrase", "typed_query_range",
+            "typed_query_boolean", "typed_query_in", "typed_query_equals",
+            "typed_query_fuzzy", "typed_query_weak_and", "typed_query_wand",
+            "typed_query_weighted_set", "typed_query_dot_product",
+            "typed_query_same_element", "typed_query_geo_location", "typed_query_geo_box",
+        ];
+        let mut typed_observations = serde_json::Map::new();
+        for scenario in typed_scenarios {
+            let mut results = index.search("").typed_query(corpus_typed_query(scenario)?).limit(100).execute::<Value>()?;
+            let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+            let input = corpus["scenario_inputs"][scenario].clone();
+            if input["result_order"] == "sorted_ids" {
+                results.hits.sort_by(|left, right| left.id.cmp(&right.id));
+            }
+            typed_observations.insert(scenario.to_owned(), json!({
+                "observation": {"intent": input["query"], "query_result": ids(&results)},
+                "capabilities": corpus["client_scenario_contract"][scenario]["rust"],
+            }));
+        }
         let parity_rank_input = index
             .search("shoes")
             .ranking(Ranking::named("boosted"))
@@ -450,7 +563,20 @@ mod showcase {
                 .map(|group| json!({"value": group.key.as_ref().map(parity_value), "fields": group.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>() })).collect::<Vec<_>>(),
             "group_keep_filter": direct_group_buckets(&parity_keep.groups).into_iter()
                 .map(|group| json!({"value": group.key.as_ref().map(parity_value), "fields": group.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>() })).collect::<Vec<_>>(),
-            "typed_query": {"ids": ids(&parity_typed)},
+            "typed_query_contains": typed_observations["typed_query_contains"],
+            "typed_query_phrase": typed_observations["typed_query_phrase"],
+            "typed_query_range": typed_observations["typed_query_range"],
+            "typed_query_boolean": typed_observations["typed_query_boolean"],
+            "typed_query_in": typed_observations["typed_query_in"],
+            "typed_query_equals": typed_observations["typed_query_equals"],
+            "typed_query_fuzzy": typed_observations["typed_query_fuzzy"],
+            "typed_query_weak_and": typed_observations["typed_query_weak_and"],
+            "typed_query_wand": typed_observations["typed_query_wand"],
+            "typed_query_weighted_set": typed_observations["typed_query_weighted_set"],
+            "typed_query_dot_product": typed_observations["typed_query_dot_product"],
+            "typed_query_same_element": typed_observations["typed_query_same_element"],
+            "typed_query_geo_location": typed_observations["typed_query_geo_location"],
+            "typed_query_geo_box": typed_observations["typed_query_geo_box"],
             "yql": {"ids": ids(&parity_yql), "total": parity_yql.total_hits.value},
             "rank_inputs": parity_rank_input.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
             "rank_properties": parity_rank_property.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),

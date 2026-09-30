@@ -20,7 +20,6 @@ pub enum GroupingAggregation {
     Sum(GroupingExpression),
     Min(GroupingExpression),
     Max(GroupingExpression),
-    AliasReference(String),
     Named(String, Box<GroupingAggregation>),
 }
 
@@ -39,9 +38,6 @@ impl GroupingAggregation {
     }
     pub fn max(field: impl Into<String>) -> Self {
         Self::Max(GroupingExpression::attribute(field))
-    }
-    pub fn alias_reference(name: impl Into<String>) -> Self {
-        Self::AliasReference(name.into())
     }
     pub fn named(name: impl Into<String>, aggregation: GroupingAggregation) -> Self {
         Self::Named(name.into(), Box::new(aggregation))
@@ -236,9 +232,6 @@ fn expression_to_ir(expression: GroupingExpression) -> Result<GroupingExpression
 
 fn output_to_ir(output: GroupingAggregation) -> Result<GroupingOutputIr> {
     let (label, expression) = match output {
-        GroupingAggregation::AliasReference(name) => {
-            (Some(name.clone()), GroupingExpressionIr::Alias(name))
-        }
         GroupingAggregation::Named(name, aggregation) => {
             (Some(name), aggregation_expression(*aggregation)?)
         }
@@ -262,7 +255,7 @@ fn aggregation_expression(output: GroupingAggregation) -> Result<GroupingExpress
         GroupingAggregation::Max(expression) => {
             GroupingAggregationIr::Max(expression_to_ir(expression)?)
         }
-        GroupingAggregation::AliasReference(_) | GroupingAggregation::Named(_, _) => {
+        GroupingAggregation::Named(_, _) => {
             return Err(Error::search(
                 crate::ErrorCode::InvalidArgument,
                 "grouping aliases cannot be nested as aggregations",
@@ -348,5 +341,51 @@ mod tests {
             continuations: Vec::new(),
         };
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn grouping_alias_defines_orders_and_emits_a_named_aggregate() {
+        let request = GroupingPlan::new()
+            .level(
+                GroupingPlan::by("brand")
+                    .alias("revenue", GroupingAggregation::sum("price"))
+                    .order_by_alias("revenue", true)
+                    .output(GroupingAggregation::named(
+                        "products",
+                        GroupingAggregation::count(),
+                    ))
+                    .output(GroupingAggregation::named(
+                        "revenue",
+                        GroupingAggregation::sum("price"),
+                    )),
+            )
+            .into_ir()
+            .expect("alias grouping should lower");
+
+        let [GroupingOperationIr::Group(GroupingExpressionIr::Attribute(field)),
+        GroupingOperationIr::Each(each)] = request.root.operations.as_slice() else {
+            panic!("grouping level should lower to group and each operations");
+        };
+        assert_eq!(field, "brand");
+        assert!(matches!(
+            each.operations.as_slice(),
+            [
+                GroupingOperationIr::Alias { name, expression: GroupingExpressionIr::Aggregation(aggregation) },
+                GroupingOperationIr::Order(order),
+                GroupingOperationIr::Output(outputs),
+            ] if name == "revenue"
+                && **aggregation == GroupingAggregationIr::Sum(GroupingExpressionIr::Attribute("price".to_owned()))
+                && order == &vec![GroupingExpressionIr::Negative(Box::new(GroupingExpressionIr::Alias("revenue".to_owned())))]
+                && outputs == &vec![
+                    GroupingOutputIr {
+                        label: Some("products".to_owned()),
+                        expression: GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count)),
+                    },
+                    GroupingOutputIr {
+                        label: Some("revenue".to_owned()),
+                        expression: GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Sum(GroupingExpressionIr::Attribute("price".to_owned())))),
+                    },
+                ]
+        ));
     }
 }

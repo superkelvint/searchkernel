@@ -53,7 +53,45 @@ end
 
 PARITY_OBSERVATIONS = {}
 
+def shared_typed_query(spec)
+  field = spec["field"]
+  children = -> { spec.fetch("clauses", []).map { |clause| shared_typed_query(clause) } }
+  case spec.fetch("kind")
+  when "contains" then SearchKernel::Query.contains(field, spec.fetch("value"))
+  when "phrase" then SearchKernel::Query.contains(field, SearchKernel::Query.phrase(*spec.fetch("terms")))
+  when "range" then SearchKernel::Query.range(field, gte: spec.fetch("lower"), lte: spec.fetch("upper"))
+  when "and" then SearchKernel::Query.all_of(*children.call)
+  when "or" then SearchKernel::Query.any_of(*children.call)
+  when "not" then SearchKernel::Query.negate(shared_typed_query(spec.fetch("clause")))
+  when "in" then SearchKernel::Query.in_values(field, spec.fetch("values"))
+  when "equals" then SearchKernel::Query.eq(field, spec.fetch("value"))
+  when "fuzzy" then SearchKernel::Query.contains(field, SearchKernel::Query.fuzzy(spec.fetch("value")))
+  when "weak_and" then SearchKernel::Query.weak_and(*children.call)
+  when "wand" then SearchKernel::Query.wand(field, spec.fetch("items"))
+  when "weighted_set" then SearchKernel::Query.weighted_set(field, spec.fetch("items"))
+  when "dot_product" then SearchKernel::Query.dot_product(field, spec.fetch("items"))
+  when "same_element" then SearchKernel::Query.contains(field, SearchKernel::Query.same_element(*children.call))
+  when "geo_location" then SearchKernel::Query.geo_location(field, lat: spec.fetch("latitude"), lon: spec.fetch("longitude"), radius: spec.fetch("radius"))
+  when "geo_box" then SearchKernel::Query.geo_box(field, south: spec.fetch("south"), west: spec.fetch("west"), north: spec.fetch("north"), east: spec.fetch("east"))
+  else raise ArgumentError, "unsupported shared typed query kind: #{spec.fetch('kind')}"
+  end
+end
+
+def shared_typed_query_observations(index)
+  E2E_CORPUS.fetch("scenario_inputs").filter_map do |scenario, intent|
+    next unless scenario.start_with?("typed_query_")
+    result = index.query(shared_typed_query(intent.fetch("query"))).limit(100).execute
+    result_ids = ids(result)
+    result_ids.sort! if intent.fetch("result_order") == "sorted_ids"
+    [scenario, {
+      "observation" => {"intent" => intent.fetch("query"), "query_result" => result_ids},
+      "capabilities" => E2E_CORPUS.fetch("client_scenario_contract").fetch(scenario).fetch("ruby")
+    }]
+  end.to_h
+end
+
 def capture_real_engine_parity(index)
+  typed_observations = shared_typed_query_observations(index)
   ordered = index.search("shoes").sort("price", "asc").limit(20).execute
   filtered = index.search("shoes").filter("in_stock = true").sort("price", "asc").limit(20).execute
   faceted = index.search("shoes").facet("brand", name: "brands", limit: 10).limit(20).execute
@@ -189,7 +227,7 @@ def capture_real_engine_parity(index)
     },
     "group_alias" => grouping_buckets(aliased).map { |group| {"value" => group.value, "fields" => group.fields} },
     "group_keep_filter" => grouping_buckets(kept).map { |group| {"value" => group.value, "fields" => group.fields} },
-    "typed_query" => {"ids" => ids(typed)},
+    **typed_observations,
     "rank_inputs" => rank_input.hits.map { |hit| {"id" => hit.id, "score" => hit.score, "feature" => hit.features["query(boost)"]} },
     "rank_properties" => rank_property.hits.map { |hit| {"id" => hit.id, "score" => hit.score, "feature" => hit.features["query(boost)"]} },
     "tensor_readback" => document.fetch("embedding").fetch("$searchkernel_tensor").fetch("dense"),
@@ -227,17 +265,26 @@ field_types = {
   "keyword" => SearchKernel::Keyword,
   "int64" => SearchKernel::IntegerField,
   "float64" => SearchKernel::FloatField,
-  "bool" => SearchKernel::BooleanField
+  "bool" => SearchKernel::BooleanField,
+  "position" => SearchKernel::PositionField
 }
-fields = E2E_CORPUS.fetch("schema").fetch("fields").to_h do |name, spec|
+field_from_corpus = lambda do |spec|
   type = spec.fetch("type")
-  options = spec.reject { |key, _value| key == "type" }.transform_keys(&:to_sym)
-  field = if type.start_with?("tensor<")
-            SearchKernel::TensorField.new(type, **options)
+  options = spec.reject { |key, _value| %w[type element fields].include?(key) }.transform_keys(&:to_sym)
+  field = case type
+          when "array"
+            element = spec.fetch("element")
+            members = element.fetch("fields").transform_values { |member| field_from_corpus.call(member) }
+            SearchKernel::ArrayField.new(SearchKernel::StructField.new(members), **options)
+          when "struct"
+            SearchKernel::StructField.new(spec.fetch("fields").transform_values { |member| field_from_corpus.call(member) }, **options)
           else
-            field_types.fetch(type).new(**options)
+            type.start_with?("tensor<") ? SearchKernel::TensorField.new(type, **options) : field_types.fetch(type).new(**options)
           end
-  [name, field]
+  field
+end
+fields = E2E_CORPUS.fetch("schema").fetch("fields").to_h do |name, spec|
+  [name, field_from_corpus.call(spec)]
 end
 rank_profiles = E2E_CORPUS.fetch("schema").fetch("rank_profiles").map do |spec|
   profile = SearchKernel::RankProfile.new(spec.fetch("name")).first_phase(spec.fetch("first_phase"))

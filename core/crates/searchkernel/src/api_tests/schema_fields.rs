@@ -620,3 +620,30 @@ fn derived_default_search_fields_include_schema_only_fields() {
         ["title", "derived"]
     );
 }
+
+#[test]
+fn public_array_of_struct_field_lowers_to_shared_array_schema() {
+    let people = Field::array_of_struct(
+        "people",
+        [
+            SchemaStructField {
+                name: "first".to_owned(),
+                data_type: DataType::Primitive(PrimitiveDataType::String),
+            },
+            SchemaStructField {
+                name: "last".to_owned(),
+                data_type: DataType::Primitive(PrimitiveDataType::String),
+            },
+        ],
+    )
+    .stored(false)
+    .searchable(false);
+    let resolved = definition_to_ir(&IndexDefinition::new().field(people))
+        .expect("public array-of-struct schema should resolve");
+    assert!(matches!(
+        resolved.fields()[0].data_type(),
+        searchkernel_ir::DataTypeIr::Array(inner)
+            if matches!(inner.as_ref(), searchkernel_ir::DataTypeIr::Struct(fields)
+                if fields.iter().map(|field| field.name().as_str()).collect::<Vec<_>>() == ["first", "last"])
+    ));
+}

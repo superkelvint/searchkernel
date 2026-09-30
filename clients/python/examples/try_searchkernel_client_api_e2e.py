@@ -15,6 +15,9 @@ from searchkernel import (
     Integer,
     Float,
     Boolean,
+    PositionField,
+    StructField,
+    ArrayField,
     RankProfile,
     Tensor,
     TensorField,
@@ -37,15 +40,27 @@ E2E_CORPUS = json.loads(E2E_CORPUS_PATH.read_text())
 VECTOR_TYPE = E2E_CORPUS["schema"]["fields"]["embedding"]["type"]
 
 
-FIELD_TYPES = {"text": Text, "keyword": Keyword, "int64": Integer, "float64": Float, "bool": Boolean}
+FIELD_TYPES = {"text": Text, "keyword": Keyword, "int64": Integer, "float64": Float, "bool": Boolean, "position": PositionField}
+
+
+def corpus_field(spec):
+    field_type = spec["type"]
+    options = {key: value for key, value in spec.items() if key not in {"type", "element"}}
+    if field_type == "array":
+        element = spec["element"]
+        if element["type"] != "struct":
+            raise ValueError(f"unsupported corpus array element: {element['type']}")
+        members = {name: corpus_field(member) for name, member in element["fields"].items()}
+        return ArrayField(StructField(members), **options)
+    if field_type.startswith("tensor<"):
+        return TensorField(field_type, **options)
+    return FIELD_TYPES[field_type](**options)
 
 
 def fields_from_corpus():
     fields = {}
     for name, spec in E2E_CORPUS["schema"]["fields"].items():
-        field_type = spec["type"]
-        options = {key: value for key, value in spec.items() if key != "type"}
-        fields[name] = TensorField(field_type, **options) if field_type.startswith("tensor<") else FIELD_TYPES[field_type](**options)
+        fields[name] = corpus_field(spec)
     return fields
 
 
@@ -200,7 +215,46 @@ def grouping_groups(results):
 PARITY_OBSERVATIONS: dict[str, object] = {}
 
 
+def shared_typed_query(spec):
+    kind = spec["kind"]
+    field = spec.get("field")
+    clauses = lambda: [shared_typed_query(clause) for clause in spec.get("clauses", [])]
+    if kind == "contains": return q.contains(field, spec["value"])
+    if kind == "phrase": return q.contains(field, q.phrase(*spec["terms"]))
+    if kind == "range": return q.range(field, spec["lower"], spec["upper"])
+    if kind == "and": return q.all_of(*clauses())
+    if kind == "or": return q.any_of(*clauses())
+    if kind == "not": return q.negate(shared_typed_query(spec["clause"]))
+    if kind == "in": return q.in_values(field, spec["values"])
+    if kind == "equals": return q.equals(field, spec["value"])
+    if kind == "fuzzy": return q.contains(field, q.fuzzy(spec["value"]))
+    if kind == "weak_and": return q.weak_and(*clauses())
+    if kind == "wand": return q.wand(field, spec["items"])
+    if kind == "weighted_set": return q.weighted_set(field, spec["items"])
+    if kind == "dot_product": return q.dot_product(field, spec["items"])
+    if kind == "same_element": return q.contains(field, q.same_element(*clauses()))
+    if kind == "geo_location": return q.geo_location(field, lat=spec["latitude"], lon=spec["longitude"], radius=spec["radius"])
+    if kind == "geo_box": return q.geo_box(field, south=spec["south"], west=spec["west"], north=spec["north"], east=spec["east"])
+    raise ValueError(f"unsupported shared typed query kind: {kind}")
+
+
+def shared_typed_query_observations(index):
+    observations = {}
+    for scenario, intent in E2E_CORPUS["scenario_inputs"].items():
+        if not scenario.startswith("typed_query_"):
+            continue
+        results = index.query(shared_typed_query(intent["query"])).limit(100).execute()
+        ids = [hit.id for hit in results.hits]
+        if intent["result_order"] == "sorted_ids": ids.sort()
+        observations[scenario] = {
+            "observation": {"intent": intent["query"], "query_result": ids},
+            "capabilities": E2E_CORPUS["client_scenario_contract"][scenario]["python"],
+        }
+    return observations
+
+
 def capture_real_engine_parity(index) -> dict[str, object]:
+    typed_observations = shared_typed_query_observations(index)
     ordered = index.search("shoes").sort("price", "asc").limit(20).execute()
     filtered = index.search("shoes").filter("in_stock = true").sort("price", "asc").limit(20).execute()
     faceted = index.search("shoes").facet("brand", name="brands", limit=10, sort="count_desc").limit(20).execute()
@@ -328,7 +382,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         } for group in grouping_groups(nested)],
         "group_alias": [{"value": group.value, "fields": dict(group.fields)} for group in grouping_groups(aliased)],
         "group_keep_filter": [{"value": group.value, "fields": dict(group.fields)} for group in grouping_groups(kept)],
-        "typed_query": {"ids": [hit.id for hit in typed.hits]},
+        **typed_observations,
         "rank_inputs": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_input.hits],
         "rank_properties": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_property.hits],
         "tensor_readback": document["embedding"]["$searchkernel_tensor"]["dense"],

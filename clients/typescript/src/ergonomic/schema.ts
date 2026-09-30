@@ -12,6 +12,10 @@ import { RankPhaseDefinitionT } from "../generated/flatbuffers/search-kernel/v2/
 import { RankProfileDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-definition.js";
 import { RankProfileInputT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-input.js";
 import { TensorDataTypeT } from "../generated/flatbuffers/search-kernel/v2/tensor-data-type.js";
+import { ArrayDataTypeT } from "../generated/flatbuffers/search-kernel/v2/array-data-type.js";
+import { StructDataTypeT } from "../generated/flatbuffers/search-kernel/v2/struct-data-type.js";
+import { StructFieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/struct-field-definition.js";
+import { PositionDataTypeT } from "../generated/flatbuffers/search-kernel/v2/position-data-type.js";
 import { Tensor, value } from "../client/values.js";
 
 export interface FieldOptions {
@@ -70,6 +74,33 @@ export class Float extends FieldSpec {
 
 export class Boolean extends FieldSpec {
   protected readonly primitive = PrimitiveDataTypeKind.Bool;
+}
+
+export class PositionField extends FieldSpec {
+  protected readonly primitive = PrimitiveDataTypeKind.String;
+
+  override definition(name: string): FieldDefinitionT {
+    if (!name) throw new TypeError("field name must not be empty");
+    return new FieldDefinitionT(name, new DataTypeT(DataTypeKind.PositionDataType, new PositionDataTypeT()),
+      optionalBool(this.options.stored), optionalBool(this.options.searchable),
+      optionalBool(this.options.filterable), optionalBool(this.options.sortable), optionalBool(this.options.facetable));
+  }
+}
+
+export class ArrayOfStructField {
+  constructor(readonly members: Record<string, FieldSpec>, readonly options: FieldOptions = {}) {}
+
+  definition(name: string): FieldDefinitionT {
+    if (!name || Object.keys(this.members).length === 0) throw new TypeError("array struct field requires a name and members");
+    const fields = Object.keys(this.members).sort().map((member) => {
+      const type = this.members[member]!.definition(member).dataType;
+      return new StructFieldDefinitionT(member, type);
+    });
+    const struct = new DataTypeT(DataTypeKind.StructDataType, new StructDataTypeT(fields));
+    const array = new DataTypeT(DataTypeKind.ArrayDataType, new ArrayDataTypeT(struct));
+    return new FieldDefinitionT(name, array, optionalBool(this.options.stored), optionalBool(this.options.searchable),
+      optionalBool(this.options.filterable), optionalBool(this.options.sortable), optionalBool(this.options.facetable));
+  }
 }
 
 export class TensorField {

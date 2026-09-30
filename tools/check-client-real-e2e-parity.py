@@ -15,35 +15,18 @@ ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "reference/client-real-e2e-parity/corpus.json"
 CLIENTS = ("rust", "python", "typescript", "php", "ruby")
 FLOAT_TOLERANCE = 1e-6
-FLOAT_SEMANTIC_KEYS = {
-    # Portable schema fields and named aggregation outputs whose domain type is
-    # float64. Some clients serialize integral-valued floats as JSON integers.
-    "price", "sale_price", "avg_price", "sum_price", "min_price", "max_price",
-    "revenue", "score", "scores", "top_score", "feature", "relevance",
-    "percent", "sum", "avg", "min", "max", "stddev",
+INTEGER_FIELDS = {
+    "total", "total_hits", "count", "products", "rating", "inventory",
+    "rerank_count", "hits", "limit", "offset", "integer_value", "value",
+    "documents", "results", "results_full", "nodes",
 }
-CAPABILITY_CONTRACT = {
-    "builder_misuse": {
-        client: {
-            case: (
-                {
-                    "kind": "not_expressible",
-                    "reason": (
-                        f"SearchBuilder::{method} accepts u32, so a negative {name} "
-                        "cannot be represented."
-                    ),
-                }
-                if client == "rust"
-                else {"kind": "runtime_rejected"}
-            )
-            for case, method, name in (
-                ("negative_limit_rejected", "limit", "limit"),
-                ("negative_offset_rejected", "offset", "offset"),
-            )
-        }
-        for client in CLIENTS
-    }
-}
+REQUIRED_TYPED_SCENARIOS = (
+    "typed_query_contains", "typed_query_phrase", "typed_query_range",
+    "typed_query_boolean", "typed_query_in", "typed_query_equals",
+    "typed_query_fuzzy", "typed_query_weak_and", "typed_query_wand",
+    "typed_query_weighted_set", "typed_query_dot_product",
+    "typed_query_same_element", "typed_query_geo_location", "typed_query_geo_box",
+)
 
 
 def compare(expected: Any, actual: Any, path: str = "$", differences: list[str] | None = None) -> list[str]:
@@ -69,22 +52,11 @@ def compare(expected: Any, actual: Any, path: str = "$", differences: list[str] 
             differences.append(f"{path}: {expected!r} != {actual!r}")
         return differences
     if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-        # For untyped paths, JSON integer and floating forms are distinct and
-        # never share tolerance. These named paths are explicitly float64 in
-        # the portable schema/result contract; clients may serialize 3.0 as 3.
-        semantic_key = path.rsplit(".", 1)[-1].split("[", 1)[0]
-        float_semantic = semantic_key in FLOAT_SEMANTIC_KEYS
-        if type(expected) is not type(actual):
-            if not float_semantic:
-                differences.append(f"{path}: numeric kinds differ: {type(expected).__name__} != {type(actual).__name__}")
-                return differences
-            left, right = float(expected), float(actual)
-            if not (math.isfinite(left) and math.isfinite(right)) or not math.isclose(
-                left, right, rel_tol=FLOAT_TOLERANCE, abs_tol=FLOAT_TOLERANCE
-            ):
-                differences.append(f"{path}: {expected!r} != {actual!r} (float tolerance {FLOAT_TOLERANCE:g})")
+        if path.rsplit(".", 1)[-1] in INTEGER_FIELDS:
+            if type(expected) is not int or type(actual) is not int or expected != actual:
+                differences.append(f"{path}: integer semantics require exact integers, got {expected!r} != {actual!r}")
             return differences
-        if isinstance(expected, int):
+        if isinstance(expected, int) and isinstance(actual, int):
             if expected != actual:
                 differences.append(f"{path}: {expected!r} != {actual!r}")
         elif not (math.isfinite(expected) and math.isfinite(actual)) or not math.isclose(
@@ -144,11 +116,34 @@ def scenario_contract(corpus: dict[str, Any]) -> tuple[list[str], dict[str, dict
                 if kind == "not_expressible":
                     if not isinstance(classification.get("reason"), str) or not classification["reason"].strip():
                         raise SystemExit(f"{scenario}.{client}.{case}: not_expressible requires a concrete reason")
-                elif kind != "runtime_rejected":
+                elif kind not in {"runtime_rejected", "comparable"}:
                     raise SystemExit(f"{scenario}.{client}.{case}: unsupported case classification")
-    if capabilities != CAPABILITY_CONTRACT:
-        raise SystemExit("client_scenario_contract does not match the checked capability contract")
     return scenarios, capabilities
+
+
+def validate_shared_typed_inputs(corpus: dict[str, Any], scenarios: list[str]) -> dict[str, Any]:
+    missing = sorted(set(REQUIRED_TYPED_SCENARIOS) - set(scenarios))
+    if missing:
+        raise SystemExit(f"shared corpus omits required typed-query scenarios: {', '.join(missing)}")
+    inputs = corpus.get("scenario_inputs")
+    if not isinstance(inputs, dict):
+        raise SystemExit("shared corpus scenario_inputs must be an object")
+    missing_inputs = sorted(set(REQUIRED_TYPED_SCENARIOS) - inputs.keys())
+    if missing_inputs:
+        raise SystemExit(f"shared corpus omits typed-query intents: {', '.join(missing_inputs)}")
+    for scenario in REQUIRED_TYPED_SCENARIOS:
+        entry = inputs[scenario]
+        if not isinstance(entry, dict) or not isinstance(entry.get("query"), dict) or entry.get("result_order") not in {"sorted_ids", "ranked"}:
+            raise SystemExit(f"{scenario}: shared query intent or result ordering is invalid")
+    return inputs
+
+
+def validate_observed_intents(client: str, observations: dict[str, Any], inputs: dict[str, Any]) -> None:
+    for scenario in REQUIRED_TYPED_SCENARIOS:
+        value = observations.get(scenario)
+        payload = value.get("observation", value) if isinstance(value, dict) else None
+        if not isinstance(payload, dict) or payload.get("intent") != inputs[scenario]["query"]:
+            raise SystemExit(f"{client}.{scenario} did not consume the shared query intent")
 
 
 def scenario_observations(
@@ -177,7 +172,10 @@ def scenario_observations(
                     if not observed_case or value["observation"][case] is not True:
                         raise SystemExit(f"{client}.{scenario}.{case} runtime rejection was not observed")
                 elif observed_case:
-                    raise SystemExit(f"{client}.{scenario}.{case} is marked not_expressible but has a runtime observation")
+                    if classification["kind"] == "not_expressible":
+                        raise SystemExit(f"{client}.{scenario}.{case} is marked not_expressible but has a runtime observation")
+                elif classification["kind"] == "comparable":
+                    raise SystemExit(f"{client}.{scenario}.{case} is marked comparable but has no observation")
         elif entry is not None:
             raise SystemExit(f"{client}.{scenario} must include an observation and its explicit capability classification")
         elif isinstance(value, dict) and value.get("kind") == "not_expressible":
@@ -185,14 +183,20 @@ def scenario_observations(
     return observed
 
 
-def comparable_observation(value: Any, contract: dict[str, dict[str, dict[str, dict[str, str]]]], scenario: str) -> Any:
+def comparable_observation(
+    value: Any,
+    contract: dict[str, dict[str, dict[str, dict[str, str]]]],
+    scenario: str,
+    client: str,
+    other_client: str,
+) -> Any:
     if isinstance(value, dict) and set(value) == {"observation", "capabilities"}:
         observation = dict(value["observation"])
         client_contract = contract.get(scenario, {})
         for case in set().union(*(set(classifications) for classifications in client_contract.values())) if client_contract else ():
-            if any(
-                client_contract[client][case]["kind"] == "not_expressible"
-                for client in client_contract
+            if (
+                client_contract[client][case]["kind"] != "comparable"
+                or client_contract[other_client][case]["kind"] != "comparable"
             ):
                 observation.pop(case, None)
         return observation
@@ -202,6 +206,7 @@ def comparable_observation(value: Any, contract: dict[str, dict[str, dict[str, d
 def main() -> int:
     corpus = json.loads(CORPUS.read_text())
     scenarios, capabilities = scenario_contract(corpus)
+    scenario_inputs = validate_shared_typed_inputs(corpus, scenarios)
 
     with tempfile.TemporaryDirectory(prefix="searchkernel-real-e2e-parity-") as temporary:
         output_dir = Path(temporary)
@@ -223,14 +228,16 @@ def main() -> int:
                 trace = json.loads(output.read_text())
             except (OSError, json.JSONDecodeError) as error:
                 raise SystemExit(f"{client} did not produce a valid real-engine parity snapshot: {error}") from error
-            traces[client] = scenario_observations(client, trace, scenarios, capabilities)
+            observations = scenario_observations(client, trace, scenarios, capabilities)
+            validate_observed_intents(client, observations, scenario_inputs)
+            traces[client] = observations
 
         failed = False
         for scenario in scenarios:
             baseline_client = CLIENTS[0]
-            baseline = comparable_observation(traces[baseline_client][scenario], capabilities, scenario)
             for client in CLIENTS[1:]:
-                actual = comparable_observation(traces[client][scenario], capabilities, scenario)
+                baseline = comparable_observation(traces[baseline_client][scenario], capabilities, scenario, baseline_client, client)
+                actual = comparable_observation(traces[client][scenario], capabilities, scenario, client, baseline_client)
                 differences = compare(baseline, actual)
                 if differences:
                     failed = True

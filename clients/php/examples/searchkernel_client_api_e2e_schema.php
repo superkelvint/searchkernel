@@ -16,25 +16,8 @@ function searchkernelPhpClientApiE2eDefinition(array $corpus): IndexDefinition
 {
     $fields = [];
     foreach ($corpus['schema']['fields'] as $name => $field) {
-        $capabilities = array_intersect_key($field, array_flip(['stored', 'searchable', 'filterable', 'sortable', 'facetable']));
-        $fields[$name] = match (true) {
-            $field['type'] === 'text' => Field::text(...$capabilities),
-            $field['type'] === 'keyword' => Field::keyword(...$capabilities),
-            $field['type'] === 'float64' => Field::float64(...$capabilities),
-            $field['type'] === 'int64' => Field::int64(...$capabilities),
-            $field['type'] === 'bool' => Field::boolean(...$capabilities),
-            str_starts_with($field['type'], 'tensor<') => Field::tensor($field['type'], ...$capabilities),
-            default => throw new InvalidArgumentException("unsupported parity corpus field type: {$field['type']}"),
-        };
+        $fields[$name] = searchkernelPhpClientApiE2eField($field);
     }
-    // These fields extend the shared parity schema for the legacy PHP-only
-    // typed-query showcase. They are deliberately added after corpus fields.
-    $fields['people'] = Field::arrayOf(
-        Field::structOf(['first' => Field::keyword(), 'last' => Field::keyword()]),
-        stored: false,
-        searchable: false,
-    );
-    $fields['location'] = Field::position(stored: false);
 
     $profiles = [];
     foreach ($corpus['schema']['rank_profiles'] as $spec) {
@@ -50,4 +33,28 @@ function searchkernelPhpClientApiE2eDefinition(array $corpus): IndexDefinition
         fields: $fields,
         rankProfiles: $profiles,
     );
+}
+
+function searchkernelPhpClientApiE2eField(array $spec): Field
+{
+    $capabilities = array_intersect_key($spec, array_flip(['stored', 'searchable', 'filterable', 'sortable', 'facetable']));
+    return match ($spec['type']) {
+        'text' => Field::text(...$capabilities),
+        'keyword' => Field::keyword(...$capabilities),
+        'float64' => Field::float64(...$capabilities),
+        'int64' => Field::int64(...$capabilities),
+        'bool' => Field::boolean(...$capabilities),
+        'position' => Field::position(...$capabilities),
+        'array' => Field::arrayOf(
+            searchkernelPhpClientApiE2eField($spec['element']),
+            ...$capabilities,
+        ),
+        'struct' => Field::structOf(array_map(
+            static fn (array $member): Field => searchkernelPhpClientApiE2eField($member),
+            $spec['fields'],
+        )),
+        default => str_starts_with($spec['type'], 'tensor<')
+            ? Field::tensor($spec['type'], ...$capabilities)
+            : throw new InvalidArgumentException("unsupported parity corpus field type: {$spec['type']}"),
+    };
 }
