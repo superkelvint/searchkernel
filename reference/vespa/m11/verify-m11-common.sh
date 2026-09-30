@@ -30,7 +30,7 @@ stage_m11_driver_adapter() {
   [[ -f "$runtime" ]] || fail_verification "missing M11 runtime adapter: $runtime"
   mkdir -p "$staged_dir"
   rm -f "$staged"
-  ln -s "$runtime" "$staged"
+  cp "$runtime" "$staged"
 }
 
 prepare_hardening_sdk() {
