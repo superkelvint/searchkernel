@@ -57,6 +57,7 @@ RUN dnf install -y epel-release dnf-plugins-core \
         ncurses-devel \
         openssl-devel \
         patch \
+        patchelf \
         perl \
         procps-ng \
         python3-clang \

@@ -22,6 +22,10 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ConsumerReleaseTests(unittest.TestCase):
+    def test_ci_toolchain_provides_patchelf(self) -> None:
+        dockerfile = (ROOT / "docker/searchkernel-ci-toolchain/Dockerfile").read_text(encoding="utf-8")
+        self.assertRegex(dockerfile, r"(?m)^\s*patchelf \\$")
+
     def test_packaged_build_sdk_reexecs_through_bash_under_flock(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
