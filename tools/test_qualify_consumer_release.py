@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-import json
 import ast
+import json
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -16,6 +18,7 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertIn('-v "$ARTIFACT_DIR/consumer-release:/release:ro"', section)
         self.assertIn('-v "$ARTIFACT_DIR/consumer-release-tools:/qualification:ro"', section)
         self.assertIn("python3 /qualification/qualify-consumer-release.py /release", section)
+        self.assertNotIn('GH_TOKEN="$GH_TOKEN"', section)
         for forbidden in (
             "$SOURCE_VOLUME",
             "$TARGET_VOLUME",
@@ -40,6 +43,18 @@ class QualificationPolicyTests(unittest.TestCase):
             "cp tools/qualify-consumer-release.py /artifacts/consumer-release-tools/",
             runner,
         )
+        self.assertIn(
+            "cp -R examples/release-quickstart /artifacts/consumer-release-tools/quickstarts",
+            runner,
+        )
+        self.assertIn(
+            'run_phase client-e2e-qualification-policy "$PYTHON" tools/test_qualify_consumer_release.py',
+            runner,
+        )
+        self.assertIn(
+            'run_phase client-e2e-quickstart-docs "$PYTHON" tools/render-release-quickstarts.py --check',
+            runner,
+        )
 
     def test_gate_scrubs_repository_and_native_runtime_overrides(self):
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
@@ -54,6 +69,8 @@ class QualificationPolicyTests(unittest.TestCase):
         ):
             self.assertIn(variable, gate)
         self.assertNotIn('"--no-index"', gate)
+        self.assertNotIn('os.environ.get("GH_TOKEN")', gate)
+        self.assertNotIn('os.environ.get("GITHUB_TOKEN")', gate)
 
     def test_packaged_supported_rows_own_clean_consumer_gate(self):
         authority = json.loads((ROOT / "docs/release-support.json").read_text())
@@ -110,6 +127,49 @@ class QualificationPolicyTests(unittest.TestCase):
             and node.func.value.id == "runners"
             for node in ast.walk(main)
         ), "registry entries must resolve through the runtime probe dispatch map")
+
+    def test_packaged_daemon_primary_probe_uses_multi_index_registry(self):
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        self.assertIn('"--data-root"', gate)
+        self.assertIn("multi_index_registry_probe", gate)
+        self.assertIn('target: "release-a"', gate)
+        self.assertIn('target: "release-b"', gate)
+        self.assertIn('SearchKernel::Index.create(endpoint, fields: fields, target: "release-a")', gate)
+        self.assertIn('SearchKernel::Index.open(endpoint, target: "release-a")', gate)
+        self.assertIn("closing A disrupted B", gate)
+        self.assertIn("did not persist across daemon restart", gate)
+
+    def test_public_quickstarts_are_canonical_and_rendered(self):
+        quickstarts = ROOT / "examples" / "release-quickstart"
+        required = [
+            quickstarts / "python.py",
+            quickstarts / "typescript.mjs",
+            quickstarts / "ruby.rb",
+            quickstarts / "rust" / "Cargo.toml",
+            quickstarts / "rust" / "src" / "main.rs",
+        ]
+        for path in required:
+            self.assertTrue(path.is_file(), f"missing canonical release quickstart: {path}")
+
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        self.assertIn('QUICKSTARTS = Path(__file__).resolve().parent / "quickstarts"', gate)
+        self.assertIn("run_python_quickstart", gate)
+        self.assertIn("run_node_quickstart", gate)
+        self.assertIn("run_ruby_quickstart", gate)
+        self.assertIn("run_rust_quickstart", gate)
+
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "render-release-quickstarts.py"), "--check"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"canonical release quickstart docs are stale:\n{result.stdout}{result.stderr}",
+        )
 
     def test_release_packager_builds_the_real_ruby_gem(self):
         source = ast.parse((ROOT / "tools/package-consumer-release.py").read_text())
