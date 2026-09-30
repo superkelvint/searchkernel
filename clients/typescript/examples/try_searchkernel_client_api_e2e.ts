@@ -238,6 +238,7 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const facetSpec = intents.facets;
   const faceted = await index.search(facetSpec.query).facet(facetSpec.field, { name: facetSpec.name, limit: facetSpec.limit, sort: facetSpec.sort }).limit(facetSpec.page_limit).execute();
   const rootSpec = intents.root_aggregations;
+  if (rootSpec.kind !== "browse") throw new Error("root_aggregations requires browse intent");
   const root = await index.browse().filter(rootSpec.filter)
     .aggregate(agg.count().as(rootSpec.aggregations[0].name))
     .aggregate(agg.sum(rootSpec.aggregations[1].field).as(rootSpec.aggregations[1].name))
@@ -304,6 +305,7 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const filteredFacet = await index.search(filteredSpec.query).filter(filteredSpec.filter)
     .facet(filteredSpec.field, { limit: filteredSpec.limit, sort: filteredSpec.sort }).limit(filteredSpec.page_limit).execute();
   const nestedSpec = intents.nested_grouping;
+  if (nestedSpec.kind !== "browse") throw new Error("nested_grouping requires browse intent");
   const nested = await index.browse().filter(nestedSpec.filter.source, sharedFilterBindings(nestedSpec.filter.source, nestedSpec.filter.bindings)).group(
     Group.by(nestedSpec.group_by).limit(nestedSpec.limit).output(agg.count().as(nestedSpec.outputs[0].name)).subgroup(
       Group.by(nestedSpec.nested.group_by).limit(nestedSpec.nested.limit).output(agg.count().as(nestedSpec.nested.outputs[0].name), agg.avg(nestedSpec.nested.outputs[1].field).as(nestedSpec.nested.outputs[1].name)),
@@ -330,6 +332,7 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   for (const [key, value] of Object.entries<string>(rankPropertySpec.rank_properties)) rankPropertyBuilder = rankPropertyBuilder.rankProperty(key, value);
   const rankProperty = await rankPropertyBuilder.limit(rankPropertySpec.limit).execute();
   const degradedSpec = intents.coverage_degradation;
+  if (degradedSpec.kind !== "browse") throw new Error("coverage_degradation requires browse intent");
   let degradedBuilder = index.browse().filter(degradedSpec.filter.source, sharedFilterBindings(degradedSpec.filter.source, degradedSpec.filter.bindings)).sort(degradedSpec.sort[0].field, degradedSpec.sort[0].direction);
   for (const [key, value] of Object.entries<string>(degradedSpec.rank_properties)) degradedBuilder = degradedBuilder.rankProperty(key, value);
   const degraded = await degradedBuilder.limit(degradedSpec.limit).execute();
