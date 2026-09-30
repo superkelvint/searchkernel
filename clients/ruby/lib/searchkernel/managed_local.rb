@@ -96,7 +96,10 @@ module SearchKernel
           created = true
           File.write(marker, "searchkernel-managed-v1\n", mode: "wx")
         rescue StandardError
-          FileUtils.remove_entry_secure(data_root) if created && File.directory?(data_root)
+          if created && File.directory?(data_root)
+            File.delete(marker) if File.file?(marker)
+            Dir.rmdir(data_root) if Dir.empty?(data_root)
+          end
           raise
         end
       end
@@ -109,7 +112,11 @@ module SearchKernel
           created = true
           File.write(marker_path(index_path), "#{target}\n", mode: "wx")
         rescue StandardError
-          FileUtils.remove_entry_secure(index_path) if created && File.directory?(index_path)
+          if created && File.directory?(index_path)
+            marker = marker_path(index_path)
+            File.delete(marker) if File.file?(marker)
+            Dir.rmdir(index_path) if Dir.empty?(index_path)
+          end
           raise
         end
       rescue Errno::EEXIST => error
