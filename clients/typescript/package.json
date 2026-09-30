@@ -26,6 +26,7 @@
     "dist",
     "bin",
     "lib",
+    "manifest.json",
     "src/generated",
     "examples"
   ],
