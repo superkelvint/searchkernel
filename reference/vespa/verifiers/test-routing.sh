@@ -248,32 +248,25 @@ phase9_line="$(grep -nF 'run_phase native-full-phase9 reference/vespa/phase9/ver
         exit 1
     }
 
-# M3 must execute its owning workspace example from Cargo's active target directory.
+# M3 must execute its owning workspace example through normal Cargo runtime setup.
 M3_RUN="$ROOT/reference/vespa/m3/run-rust.sh"
 mkdir -p "$SOURCE_TEST/m3-bin" "$SOURCE_TEST/m3-target"
 cat > "$SOURCE_TEST/m3-bin/cargo" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "${1:-}" == build ]] || {
+[[ "${1:-}" == run && " $* " == *" -p searchkernel-vespa-engine "* && " $* " == *" --example searchkernel-m3-conformance-driver "* ]] || {
     echo "unexpected cargo invocation: $*" >&2
     exit 96
 }
-mkdir -p "$CARGO_TARGET_DIR/debug/examples"
-cat > "$CARGO_TARGET_DIR/debug/examples/searchkernel-m3-conformance-driver" <<'DRIVER'
-#!/usr/bin/env bash
-exit 0
-DRIVER
-chmod +x "$CARGO_TARGET_DIR/debug/examples/searchkernel-m3-conformance-driver"
+while IFS=$'\t' read -r id _; do
+    [[ -n "$id" ]] || continue
+    printf '{"id":"%s","terms":[]}\n' "$id"
+done
 SH
 cat > "$SOURCE_TEST/m3-bin/python3" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-expected="$CARGO_TARGET_DIR/debug/examples/searchkernel-m3-conformance-driver"
-actual="${@: -2:1}"
-[[ "$actual" == "$expected" ]] || {
-    echo "M3 run-rust used $actual instead of Cargo target driver $expected" >&2
-    exit 95
-}
+exec /usr/bin/python3 "$@"
 SH
 chmod +x "$SOURCE_TEST/m3-bin/cargo" "$SOURCE_TEST/m3-bin/python3"
 PATH="$SOURCE_TEST/m3-bin:$PATH" \

@@ -13,5 +13,4 @@ M3="$ROOT/reference/vespa/m3"
 python3 "$M3/run_cases.py" \
   --cases "$M3/scenarios/cases.jsonl" \
   --output "$OUTPUT" \
-  -- \
   cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m3-conformance-driver -- "$MODE"

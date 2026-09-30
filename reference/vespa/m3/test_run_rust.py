@@ -26,6 +26,7 @@ def main() -> int:
         fake_cargo.write_text(
             "#!/usr/bin/env python3\n"
             "import json, os, sys\n"
+            "import subprocess\n"
             "from pathlib import Path\n"
             "args = sys.argv[1:]\n"
             "Path(os.environ['FAKE_CARGO_LOG']).write_text(' '.join(args) + '\\n', encoding='utf-8')\n"
@@ -44,7 +45,10 @@ def main() -> int:
             "    encoding='utf-8',\n"
             ")\n"
             "binary.chmod(0o755)\n"
-            "print('normal example build')\n",
+            "if args[:1] != ['run'] or '-p' not in args or '--example' not in args:\n"
+            "    raise SystemExit('run-rust did not invoke a normal Cargo example: ' + ' '.join(args))\n"
+            "proc = subprocess.run([str(binary)], input=sys.stdin.buffer.read(), check=False)\n"
+            "raise SystemExit(proc.returncode)\n",
             encoding="utf-8",
         )
         fake_cargo.chmod(0o755)
@@ -75,7 +79,7 @@ def main() -> int:
         runtime_path = runtime_log.read_text(encoding="utf-8").strip()
 
         checks = (
-            (cargo_args.startswith("build --quiet "), cargo_args),
+            (cargo_args.startswith("run --quiet "), cargo_args),
             ("-p searchkernel-vespa-engine --example searchkernel-m3-conformance-driver" in cargo_args, cargo_args),
             ("--manifest-path" not in cargo_args and "--target-dir" not in cargo_args, cargo_args),
             (runtime_path == str(existing_runtime), runtime_path),
