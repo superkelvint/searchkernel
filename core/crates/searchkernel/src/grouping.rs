@@ -54,7 +54,7 @@ impl GroupingExpression {
         Self(GroupingExpressionNode::Negative(Box::new(self)))
     }
 
-    pub fn add(self, right: impl Into<GroupingExpression>) -> Self {
+    pub fn plus(self, right: impl Into<GroupingExpression>) -> Self {
         self.binary(GroupingBinaryOperatorIr::Add, right)
     }
     pub fn subtract(self, right: impl Into<GroupingExpression>) -> Self {
