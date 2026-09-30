@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
+require "digest"
 require "fileutils"
+require "open3"
 require "socket"
 require "tmpdir"
 
@@ -11,6 +13,8 @@ module SearchKernel
     STARTUP_TIMEOUT = 60.0
     SHUTDOWN_TIMEOUT = 15.0
     KILL_TIMEOUT = 5.0
+    MANAGED_DATA_ROOT_NAME = ".searchkernel-managed"
+    MANAGED_MARKER_NAME = ".searchkernel-managed-target"
 
     attr_reader :base_url
 
@@ -37,9 +41,23 @@ module SearchKernel
 
       def acquire(data_root)
         key = File.expand_path(data_root.to_s)
+        stale = nil
         pool_mutex.synchronize do
           entry = pool[key]
+          if entry && entry[:host].alive?
+            entry[:refs] += 1
+            return entry[:host]
+          end
           if entry
+            pool.delete(key)
+            stale = entry[:host]
+          end
+        end
+        stale&.close(force: true)
+
+        pool_mutex.synchronize do
+          entry = pool[key]
+          if entry && entry[:host].alive?
             entry[:refs] += 1
             return entry[:host]
           end
@@ -49,6 +67,94 @@ module SearchKernel
           pool[key] = { host: host, refs: 1 }
           host
         end
+      end
+
+      def location(index_path)
+        path = File.expand_path(index_path.to_s)
+        target = "local-#{Digest::SHA256.hexdigest(path)[0, 32]}"
+        [path, File.join(File.dirname(path), MANAGED_DATA_ROOT_NAME), target]
+      end
+
+      def marker_path(index_path)
+        File.join(index_path, MANAGED_MARKER_NAME)
+      end
+
+      def reserve_path(index_path, target)
+        FileUtils.mkdir_p(File.dirname(index_path))
+        created = false
+        begin
+          Dir.mkdir(index_path)
+          created = true
+          File.write(marker_path(index_path), "#{target}\n", mode: "wx")
+        rescue StandardError
+          FileUtils.remove_entry_secure(index_path) if created && File.directory?(index_path)
+          raise
+        end
+      rescue Errno::EEXIST => error
+        raise ClientError, "managed-local index path already exists: #{index_path}"
+      end
+
+      def cleanup_reservation(index_path, target)
+        marker = marker_path(index_path)
+        return unless File.file?(marker)
+        return unless File.read(marker).strip == target
+        return unless Dir.children(index_path) == [MANAGED_MARKER_NAME]
+
+        File.delete(marker)
+        Dir.rmdir(index_path)
+      rescue StandardError
+        nil
+      end
+
+      def ensure_marker(index_path, target)
+        return if File.exist?(index_path)
+
+        Dir.mkdir(index_path)
+        File.write(marker_path(index_path), "#{target}\n", mode: "wx")
+      end
+
+      def migrate_legacy(index_path, data_root, target)
+        destination = File.join(data_root, target)
+        return if File.directory?(destination)
+        return if File.file?(marker_path(index_path))
+        return unless File.exist?(index_path)
+
+        env = {}
+        sdk_lib = ENV["SEARCHKERNEL_SDK_LIB"]
+        if sdk_lib && !sdk_lib.empty?
+          existing = ENV["LD_LIBRARY_PATH"]
+          env["LD_LIBRARY_PATH"] = existing && !existing.empty? ? "#{sdk_lib}:#{existing}" : sdk_lib
+        end
+        stdout, stderr, status = Open3.capture3(
+          env,
+          host_binary,
+          "--migrate-index", index_path,
+          "--data-root", data_root,
+          "--target", target
+        )
+        unless status.success?
+          output = [stdout, stderr].reject(&:empty?).join("\n").strip
+          suffix = output.empty? ? "" : "\nsearchkerneld output:\n#{output}"
+          raise ClientError, "managed-local legacy index migration failed for #{index_path}#{suffix}"
+        end
+        ensure_marker(index_path, target)
+      end
+
+      def host_binary
+        configured = ENV["SEARCHKERNEL_LOCAL_HOST"]
+        return File.expand_path(configured) if configured && !configured.empty?
+
+        packaged = File.expand_path("bin/searchkerneld", __dir__)
+        return packaged if File.file?(packaged)
+
+        root = File.expand_path("../../../..", __dir__)
+        target_dir = ENV["CARGO_TARGET_DIR"]
+        if target_dir && !target_dir.empty?
+          target_dir = File.expand_path(target_dir, root) unless target_dir.start_with?("/")
+          candidate = File.join(target_dir, "debug", "searchkerneld")
+          return candidate if File.file?(candidate)
+        end
+        File.join(root, "target", "debug", "searchkerneld")
       end
 
       def release(host, force:)
@@ -96,6 +202,11 @@ module SearchKernel
     rescue StandardError
       close(force: true)
       raise
+    end
+
+    def alive?
+      return false if @closed || !@pid
+      process_alive?(@pid)
     end
 
     def close(force: false)
@@ -147,20 +258,7 @@ module SearchKernel
     end
 
     def host_binary
-      configured = ENV["SEARCHKERNEL_LOCAL_HOST"]
-      return File.expand_path(configured) if configured && !configured.empty?
-
-      packaged = File.expand_path("bin/searchkerneld", __dir__)
-      return packaged if File.file?(packaged)
-
-      root = File.expand_path("../../../..", __dir__)
-      target_dir = ENV["CARGO_TARGET_DIR"]
-      if target_dir && !target_dir.empty?
-        target_dir = File.expand_path(target_dir, root) unless target_dir.start_with?("/")
-        candidate = File.join(target_dir, "debug", "searchkerneld")
-        return candidate if File.file?(candidate)
-      end
-      File.join(root, "target", "debug", "searchkerneld")
+      self.class.host_binary
     end
 
     def free_port
