@@ -82,11 +82,11 @@ end
 def shared_typed_query_observations(index)
   E2E_CORPUS.fetch("scenario_inputs").filter_map do |scenario, intent|
     next unless scenario.start_with?("typed_query_")
-    result = index.query(shared_typed_query(intent.fetch("query"))).limit(100).execute
+    result = index.query(shared_typed_query(intent.fetch("query"))).limit(intent.fetch("limit")).execute
     result_ids = ids(result)
     result_ids.sort! if intent.fetch("result_order") == "sorted_ids"
     [scenario, {
-      "observation" => {"intent" => intent.fetch("query"), "query_result" => result_ids},
+      "observation" => {"intent" => intent, "query_result" => result_ids},
       "capabilities" => E2E_CORPUS.fetch("client_scenario_contract").fetch(scenario).fetch("ruby")
     }]
   end.to_h
@@ -94,18 +94,28 @@ end
 
 def capture_real_engine_parity(index)
   typed_observations = shared_typed_query_observations(index)
-  ordered = index.search("shoes").sort("price", "asc").limit(20).execute
-  filtered = index.search("shoes").filter("in_stock = true").sort("price", "asc").limit(20).execute
-  faceted = index.search("shoes").facet("brand", name: "brands", limit: 10).limit(20).execute
-  root = index.browse.filter("category = 'shoes'")
-    .aggregate(SearchKernel::Agg.count.as("products"))
-    .aggregate(SearchKernel::Agg.sum("price").as("sum_price"))
-    .aggregate(SearchKernel::Agg.avg("price").as("avg_price"))
-    .limit(0).execute
-  grouped = index.search("shoes").group(
-    SearchKernel::Group.by("brand").limit(10).precision(100)
-      .order_by(SearchKernel::Grouping.desc(SearchKernel::Agg.count), SearchKernel::Grouping.asc(SearchKernel::Grouping.field("brand")))
-      .output(SearchKernel::Agg.count.as("products"), SearchKernel::Agg.avg("price").as("avg_price"))
+  intents = E2E_CORPUS.fetch("scenario_inputs")
+  ordered_spec = intents.fetch("pagination")
+  ordered = index.search(ordered_spec.fetch("query")).sort(ordered_spec.fetch("sort")[0].fetch("field"), ordered_spec.fetch("sort")[0].fetch("direction")).limit(ordered_spec.fetch("all_limit")).execute
+  filtered_spec = intents.fetch("filtered_facets")
+  filtered = index.search(filtered_spec.fetch("query")).filter(filtered_spec.fetch("filter")).sort(ordered_spec.fetch("sort")[0].fetch("field"), ordered_spec.fetch("sort")[0].fetch("direction")).limit(filtered_spec.fetch("page_limit")).execute
+  facet_spec = intents.fetch("facets")
+  faceted = index.search(facet_spec.fetch("query")).facet(facet_spec.fetch("field"), name: facet_spec.fetch("name"), limit: facet_spec.fetch("limit"), sort: facet_spec.fetch("sort")).limit(facet_spec.fetch("page_limit")).execute
+  root_spec = intents.fetch("root_aggregations")
+  root = index.browse.filter(root_spec.fetch("filter"))
+    .aggregate(SearchKernel::Agg.count.as(root_spec.fetch("aggregations")[0].fetch("name")))
+    .aggregate(SearchKernel::Agg.sum(root_spec.fetch("aggregations")[1].fetch("field")).as(root_spec.fetch("aggregations")[1].fetch("name")))
+    .aggregate(SearchKernel::Agg.avg(root_spec.fetch("aggregations")[2].fetch("field")).as(root_spec.fetch("aggregations")[2].fetch("name")))
+    .limit(root_spec.fetch("limit")).execute
+  grouped_spec = intents.fetch("grouping_aggregations")
+  group_order = grouped_spec.fetch("order").map do |order_spec|
+    expression = order_spec.fetch("kind") == "count" ? SearchKernel::Agg.count : SearchKernel::Grouping.field(order_spec.fetch("field"))
+    order_spec.fetch("direction") == "desc" ? SearchKernel::Grouping.desc(expression) : SearchKernel::Grouping.asc(expression)
+  end
+  grouped = index.search(grouped_spec.fetch("query")).group(
+    SearchKernel::Group.by(grouped_spec.fetch("group_by")).limit(grouped_spec.fetch("limit")).precision(grouped_spec.fetch("precision"))
+      .order_by(*group_order)
+      .output(SearchKernel::Agg.count.as(grouped_spec.fetch("outputs")[0].fetch("name")), SearchKernel::Agg.avg(grouped_spec.fetch("outputs")[1].fetch("field")).as(grouped_spec.fetch("outputs")[1].fetch("name")))
   ).execute
   nearest_intent = E2E_CORPUS.fetch("scenario_inputs").fetch("nearest_neighbor")
   nearest_spec = nearest_intent.fetch("query")
@@ -121,89 +131,118 @@ def capture_real_engine_parity(index)
   )).ranking(hybrid_intent.fetch("ranking_profile"))
     .input(hybrid_vector.fetch("query_input"), embedding(*corpus_vector(hybrid_intent.fetch("query_input_document"))))
     .limit(hybrid_intent.fetch("limit")).execute
-  reranked = index.search("candidate").ranking("two_phase").limit(4).execute
+  reranked_spec = intents.fetch("two_phase_reranking")
+  reranked = index.search(reranked_spec.fetch("query")).ranking(reranked_spec.fetch("ranking_profile")).limit(reranked_spec.fetch("limit")).execute
   begin
-    index.search("shoes").filter("prcie = 1").execute
+    error_spec = intents.fetch("structured_filter_error")
+    index.search(error_spec.fetch("query")).filter(error_spec.fetch("filter")).execute
     raise "unknown field filter unexpectedly succeeded"
   rescue SearchKernel::SearchKernelError => error
     check(error.code == "InvalidArgument", "portable invalid-argument error code")
     error_codes = error.details.map { |detail| detail["code"] }.sort
   end
-  document = index.get("shoe-1")
-  full_text = index.search("shoes").limit(20).execute
-  stemming = index.search("jump").limit(20).execute
-  text_binding = index.search("shoes").filter("price <= :max", "max" => 100.0).sort("price", "asc").limit(20).execute
-  repeated = index.search("shoes").filter("price <= :value", "value" => 120.0)
-    .filter("rating >= :value", "value" => 4).filter("in_stock = true").sort("price", "asc").limit(20).execute
-  boolean_filter = index.search("shoes").filter("(brand IN (:brands) OR rating = :rating) AND NOT (in_stock = false)",
-    "brands" => ["Acme", "TrailCo"], "rating" => 3).sort("price", "asc").limit(20).execute
-  projection = index.search("shoes").sort("price", "desc").fields("title", "brand", "price").limit(2).execute
-  all_sorted = index.search("shoes").sort("price", "asc").limit(20).execute
-  page = index.search("shoes").sort("price", "asc").offset(1).limit(2).execute
-  filtered_facet = index.search("shoes").filter("in_stock = true").facet("brand", limit: 10, sort: "count_desc").limit(20).execute
-  nested = index.browse.filter("category IN (:categories)", "categories" => ["shoes", "bags"]).group(
-    SearchKernel::Group.by("category").limit(10).output(SearchKernel::Agg.count.as("products"))
-      .subgroup(SearchKernel::Group.by("rating").limit(10).output(SearchKernel::Agg.count.as("products"), SearchKernel::Agg.avg("price").as("avg_price")))
+  document = index.get(intents.fetch("document_crud").fetch("document_id"))
+  full_spec = intents.fetch("full_text_search")
+  full_text = index.search(full_spec.fetch("query")).limit(full_spec.fetch("limit")).execute
+  stemming_spec = intents.fetch("stemming")
+  stemming = index.search(stemming_spec.fetch("query")).limit(stemming_spec.fetch("limit")).execute
+  binding_spec = intents.fetch("text_filter_binding")
+  text_binding = index.search(binding_spec.fetch("query")).filter(binding_spec.fetch("filter"), binding_spec.fetch("bindings")).sort(binding_spec.fetch("sort")[0].fetch("field"), binding_spec.fetch("sort")[0].fetch("direction")).limit(binding_spec.fetch("limit")).execute
+  repeated_spec = intents.fetch("repeated_filters")
+  repeated_builder = index.search(repeated_spec.fetch("query"))
+  repeated_spec.fetch("filters").each { |filter_spec| repeated_builder = repeated_builder.filter(filter_spec.fetch("source"), filter_spec.fetch("bindings")) }
+  repeated = repeated_builder.sort(repeated_spec.fetch("sort")[0].fetch("field"), repeated_spec.fetch("sort")[0].fetch("direction")).limit(repeated_spec.fetch("limit")).execute
+  boolean_spec = intents.fetch("boolean_filter_grammar")
+  boolean_filter = index.search(boolean_spec.fetch("query")).filter(boolean_spec.fetch("filter"), boolean_spec.fetch("bindings")).sort(boolean_spec.fetch("sort")[0].fetch("field"), boolean_spec.fetch("sort")[0].fetch("direction")).limit(boolean_spec.fetch("limit")).execute
+  projection_spec = intents.fetch("sorting_projection")
+  projection = index.search(projection_spec.fetch("query")).sort(projection_spec.fetch("sort")[0].fetch("field"), projection_spec.fetch("sort")[0].fetch("direction")).fields(*projection_spec.fetch("projection")).limit(projection_spec.fetch("limit")).execute
+  all_sorted = index.search(ordered_spec.fetch("query")).sort(ordered_spec.fetch("sort")[0].fetch("field"), ordered_spec.fetch("sort")[0].fetch("direction")).limit(ordered_spec.fetch("all_limit")).execute
+  page = index.search(ordered_spec.fetch("query")).sort(ordered_spec.fetch("sort")[0].fetch("field"), ordered_spec.fetch("sort")[0].fetch("direction")).offset(ordered_spec.fetch("offset")).limit(ordered_spec.fetch("limit")).execute
+  filtered_facet = index.search(filtered_spec.fetch("query")).filter(filtered_spec.fetch("filter")).facet(filtered_spec.fetch("field"), limit: filtered_spec.fetch("limit"), sort: filtered_spec.fetch("sort")).limit(filtered_spec.fetch("page_limit")).execute
+  nested_spec = intents.fetch("nested_grouping")
+  nested = index.browse.filter(nested_spec.fetch("filter").fetch("source"), nested_spec.fetch("filter").fetch("bindings")).group(
+    SearchKernel::Group.by(nested_spec.fetch("group_by")).limit(nested_spec.fetch("limit")).output(SearchKernel::Agg.count.as(nested_spec.fetch("outputs")[0].fetch("name")))
+      .subgroup(SearchKernel::Group.by(nested_spec.fetch("nested").fetch("group_by")).limit(nested_spec.fetch("nested").fetch("limit")).output(SearchKernel::Agg.count.as(nested_spec.fetch("nested").fetch("outputs")[0].fetch("name")), SearchKernel::Agg.avg(nested_spec.fetch("nested").fetch("outputs")[1].fetch("field")).as(nested_spec.fetch("nested").fetch("outputs")[1].fetch("name"))))
   ).execute
-  aliased = index.search("shoes").group(
-    SearchKernel::Group.by("brand").limit(10).alias("revenue", SearchKernel::Agg.sum("price"))
-      .order_by(SearchKernel::Grouping.desc(SearchKernel::Grouping.alias_ref("revenue")))
-      .output(SearchKernel::Agg.count.as("products"), SearchKernel::Grouping.alias_ref("revenue").as("revenue"))
+  alias_spec = intents.fetch("group_alias")
+  alias_expression = SearchKernel::Grouping.alias_ref(alias_spec.fetch("order_by_alias").fetch("name"))
+  alias_order = alias_spec.fetch("order_by_alias").fetch("direction") == "desc" ? SearchKernel::Grouping.desc(alias_expression) : SearchKernel::Grouping.asc(alias_expression)
+  aliased = index.search(alias_spec.fetch("query")).group(
+    SearchKernel::Group.by(alias_spec.fetch("group_by")).limit(alias_spec.fetch("limit")).alias(alias_spec.fetch("aliases")[0].fetch("name"), SearchKernel::Agg.sum(alias_spec.fetch("aliases")[0].fetch("field")))
+      .order_by(alias_order)
+      .output(SearchKernel::Agg.count.as(alias_spec.fetch("outputs")[0].fetch("name")), SearchKernel::Grouping.alias_ref(alias_spec.fetch("outputs")[1].fetch("name")).as(alias_spec.fetch("outputs")[1].fetch("output_name")))
   ).execute
-  kept = index.search("shoes").group(
-    SearchKernel::Group.by("brand").limit(10)
-      .keep(SearchKernel::GroupingFilter.regex(SearchKernel::Grouping.field("brand"), "^A.*"))
-      .output(SearchKernel::Agg.count.as("products"))
+  keep_spec = intents.fetch("group_keep_filter")
+  kept = index.search(keep_spec.fetch("query")).group(
+    SearchKernel::Group.by(keep_spec.fetch("group_by")).limit(keep_spec.fetch("limit"))
+      .keep(SearchKernel::GroupingFilter.regex(SearchKernel::Grouping.field(keep_spec.fetch("keep_regex").fetch("field")), keep_spec.fetch("keep_regex").fetch("pattern")))
+      .output(SearchKernel::Agg.count.as(keep_spec.fetch("outputs")[0].fetch("name")))
   ).execute
-  typed = index.query(SearchKernel::Query.contains("title", "shoes")).ranking("default").limit(20).execute
-  rank_input = index.search("shoes").ranking("boosted").input("boost", 3.0).limit(20).execute
-  rank_property = index.search("shoes").ranking("boosted").rank_property("boost", "4.0").limit(20).execute
-  degraded = index.browse.filter("inventory = :value", "value" => 18).sort("inventory", "asc")
-    .rank_property("vespa.matchphase.degradation.maxfiltercoverage", "0.9")
-    .rank_property("vespa.matchphase.degradation.attribute", "inventory")
-    .rank_property("vespa.matchphase.degradation.maxhits", "10").limit(10).execute
-  yql = index.yql("select * from sources * where title contains text(@q) order by price asc")
-    .property("q", "shoes").ranking("default").page(1, 3).execute
+  typed = index.query(shared_typed_query(intents.fetch("typed_query_contains").fetch("query"))).ranking("default").limit(full_spec.fetch("limit")).execute
+  rank_input_spec = intents.fetch("rank_inputs")
+  rank_input_builder = index.search(rank_input_spec.fetch("query")).ranking(rank_input_spec.fetch("ranking_profile"))
+  rank_input_spec.fetch("inputs").each do |key, value|
+    value = Float(value) if rank_input_spec.fetch("input_types").fetch(key) == "float64"
+    rank_input_builder = rank_input_builder.input(key, value)
+  end
+  rank_input = rank_input_builder.limit(rank_input_spec.fetch("limit")).execute
+  rank_property_spec = intents.fetch("rank_properties")
+  rank_property_builder = index.search(rank_property_spec.fetch("query")).ranking(rank_property_spec.fetch("ranking_profile"))
+  rank_property_spec.fetch("rank_properties").each { |key, value| rank_property_builder = rank_property_builder.rank_property(key, value) }
+  rank_property = rank_property_builder.limit(rank_property_spec.fetch("limit")).execute
+  degraded_spec = intents.fetch("coverage_degradation")
+  degraded_builder = index.browse.filter(degraded_spec.fetch("filter").fetch("source"), degraded_spec.fetch("filter").fetch("bindings")).sort(degraded_spec.fetch("sort")[0].fetch("field"), degraded_spec.fetch("sort")[0].fetch("direction"))
+  degraded_spec.fetch("rank_properties").each { |key, value| degraded_builder = degraded_builder.rank_property(key, value) }
+  degraded = degraded_builder.limit(degraded_spec.fetch("limit")).execute
+  yql_spec = intents.fetch("yql")
+  yql = index.yql(yql_spec.fetch("source")).property("q", yql_spec.fetch("bindings").fetch("q")).ranking(yql_spec.fetch("ranking_profile")).page(yql_spec.fetch("page"), yql_spec.fetch("page_size")).execute
   begin
-    index.search("shoes").filter("price <=").execute
+    syntax_spec = intents.fetch("text_filter_syntax_error")
+    index.search(syntax_spec.fetch("query")).filter(syntax_spec.fetch("filter")).execute
     raise "malformed textual filter unexpectedly succeeded"
   rescue SearchKernel::SearchKernelError => error
     syntax_error = {"code" => error.code.downcase, "details" => error.details.map { |detail| detail["code"] }.sort}
   end
   groups = grouping_buckets(grouped)
+  misuse_spec = intents.fetch("builder_misuse")
   negative_limit_rejected = begin
-    index.search("shoes").limit(-1)
+    index.search(misuse_spec.fetch("query")).limit(misuse_spec.fetch("negative_limit"))
     false
   rescue ArgumentError, TypeError
     true
   end
   page_and_limit_rejected = begin
-    index.search("shoes").page(2, 20).limit(20)
+    index.search(misuse_spec.fetch("query")).page(misuse_spec.fetch("page"), misuse_spec.fetch("page_size")).limit(misuse_spec.fetch("limit"))
     false
   rescue ArgumentError, TypeError
     true
   end
   page_and_offset_rejected = begin
-    index.search("shoes").page(2, 20).offset(20)
+    index.search(misuse_spec.fetch("query")).page(misuse_spec.fetch("page"), misuse_spec.fetch("page_size")).offset(misuse_spec.fetch("page_size"))
     false
   rescue ArgumentError, TypeError
     true
   end
   negative_offset_rejected = begin
-    index.search("shoes").offset(-1)
+    index.search(misuse_spec.fetch("query")).offset(misuse_spec.fetch("negative_offset"))
     false
   rescue ArgumentError, TypeError
     true
   end
   check(negative_limit_rejected && negative_offset_rejected && page_and_limit_rejected && page_and_offset_rejected,
         "builder misuse inputs are rejected")
-  index.insert("_id" => "parity-advanced-update", "title" => "before", "inventory" => 10, "sale_price" => 1.0)
-  index.update("parity-advanced-update").set("title", "after").unset("sale_price").increment("inventory", 3).execute
-  index.update("parity-advanced-update").decrement("inventory", 1).execute
-  index.update("parity-advanced-update").multiply("inventory", 2).execute
-  index.update("parity-advanced-update").divide("inventory", 4).execute
-  advanced_update = index.get("parity-advanced-update")
-  {
+  update_spec = intents.fetch("advanced_update")
+  index.insert(update_spec.fetch("initial").merge("_id" => update_spec.fetch("document_id")))
+  update_builder = index.update(update_spec.fetch("document_id"))
+  update_spec.fetch("set").each { |key, value| update_builder = update_builder.set(key, value) }
+  update_spec.fetch("unset").each { |field| update_builder = update_builder.unset(field) }
+  update_spec.fetch("increments").each { |key, value| update_builder = update_builder.increment(key, value) }
+  update_builder.execute
+  update_spec.fetch("decrements").each { |key, value| index.update(update_spec.fetch("document_id")).decrement(key, value).execute }
+  update_spec.fetch("multipliers").each { |key, value| index.update(update_spec.fetch("document_id")).multiply(key, value).execute }
+  update_spec.fetch("divisors").each { |key, value| index.update(update_spec.fetch("document_id")).divide(key, value).execute }
+  advanced_update = index.get(update_spec.fetch("document_id"))
+  observations = {
     "document_crud" => {"id" => document.fetch("_id"), "title" => document.fetch("title"), "brand" => document.fetch("brand"), "price" => document.fetch("price")},
     "full_text_search" => {"ids" => ids(full_text), "total" => full_text.total_hits},
     "stemming" => {"ids" => ids(stemming)},
@@ -251,12 +290,21 @@ def capture_real_engine_parity(index)
     "structured_filter_error" => {"code" => "invalid_argument", "details" => error_codes},
     "text_filter_syntax_error" => {"code" => "invalid_argument", "details" => syntax_error.fetch("details")}
   }
+  observations
 end
 
 def write_real_engine_parity(observations)
   path = ENV["SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT"]
   return unless path
 
+  observations.each do |scenario, value|
+    intent = E2E_CORPUS.fetch("scenario_inputs")[scenario]
+    next unless intent && !scenario.start_with?("typed_query_")
+
+    payload = value.is_a?(Hash) && value.key?("observation") ? value.fetch("observation") : value
+    payload["intent"] = intent if payload.is_a?(Hash) && !payload.key?("intent")
+    observations[scenario] = {"intent" => intent, "result" => value} unless payload.is_a?(Hash)
+  end
   File.write(path, JSON.generate({"version" => 1, "scenarios" => observations}))
 end
 
@@ -322,13 +370,19 @@ begin
   end
 
   PARITY_OBSERVATIONS.merge!(capture_real_engine_parity(index))
-  index.insert("_id" => "parity-mutation", "title" => "Parity Mutation", "category" => "parity", "price" => 100.0, "sale_price" => 110.0, "rating" => 1, "inventory" => 1, "in_stock" => true)
-  index.patch("parity-mutation").set("price", 75.0).unset("sale_price").execute
-  mutated = index.get("parity-mutation")
+  patch_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("patch")
+  index.insert(patch_spec.fetch("initial").merge("_id" => patch_spec.fetch("document_id")))
+  patch_builder = index.patch(patch_spec.fetch("document_id"))
+  patch_spec.fetch("set").each { |key, value| patch_builder = patch_builder.set(key, value) }
+  patch_spec.fetch("unset").each { |field| patch_builder = patch_builder.unset(field) }
+  patch_builder.execute
+  mutated = index.get(patch_spec.fetch("document_id"))
   PARITY_OBSERVATIONS["patch"] = {"price" => mutated.fetch("price"), "sale_price_present" => mutated.key?("sale_price")}
-  parity_mutation_deleted = index.delete("parity-mutation")
-  PARITY_OBSERVATIONS["delete"] = {"deleted" => parity_mutation_deleted, "absent_after_delete" => index.get("parity-mutation").nil?}
-  index.insert("_id" => "parity-reopen", "title" => "Parity Reopen", "category" => "parity", "price" => 42.0, "inventory" => 7, "in_stock" => true)
+  delete_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("delete")
+  parity_mutation_deleted = index.delete(delete_spec.fetch("document_id"))
+  PARITY_OBSERVATIONS["delete"] = {"deleted" => parity_mutation_deleted, "absent_after_delete" => index.get(delete_spec.fetch("document_id")).nil?}
+  reopen_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("reopen_persistence")
+  index.insert(reopen_spec.fetch("marker").merge("_id" => reopen_spec.fetch("marker_id")))
 
   results = index.search("shoes")
     .filter("price <= :max", "max" => 100.0)
@@ -607,10 +661,13 @@ begin
   rescue SearchKernel::SearchKernelError => error
     same("Unsupported", error.code, "conditional mutation returns typed Unsupported")
   end
-  index.upsert("shoe-2", {"title" => "Trail Running Shoes Updated", "brand" => "TrailCo", "price" => 119.0, "inventory" => 4, "in_stock" => true})
-  upserted_shoe2 = index.get("shoe-2")
+  upsert_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("upsert_replacement")
+  replacement = upsert_spec.fetch("replacement").reject { |key, _value| key == "vector_document_id" }
+  replacement["embedding"] = embedding(*corpus_vector(upsert_spec.fetch("replacement").fetch("vector_document_id")))
+  index.upsert(upsert_spec.fetch("document_id"), replacement)
+  upserted_shoe2 = index.get(upsert_spec.fetch("document_id"))
   same(119.0, upserted_shoe2.fetch("price"), "upsert replacement")
-  PARITY_OBSERVATIONS["upsert_replacement"] = {"price" => upserted_shoe2.fetch("price"), "updated_title_matches" => upserted_shoe2.fetch("title").include?("Updated"), "search_ids" => ids(index.search("updated").execute)}
+  PARITY_OBSERVATIONS["upsert_replacement"] = {"price" => upserted_shoe2.fetch("price"), "updated_title_matches" => upserted_shoe2.fetch("title").include?("Updated"), "search_ids" => ids(index.search(upsert_spec.fetch("search_query")).execute)}
 
   tokens = index.analyze("Running shoes", field: "title")
   check(!tokens.empty? && tokens.first.fetch("term").is_a?(String), "analysis result")
@@ -644,13 +701,15 @@ begin
   same("shoe-1", reopened_nearest.hits.first.id, "nearest-neighbor survives reopen")
 
   same(%w[shoe-3 shoe-1 shoe-5 shoe-2 shoe-4], ids(reopened.search("shoes").sort("price", "asc").limit(10).execute), "reopen search")
-  persisted = reopened.get("parity-reopen")
+  reopen_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("reopen_persistence")
+  upsert_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("upsert_replacement")
+  persisted = reopened.get(reopen_spec.fetch("marker_id"))
   raise "parity-reopen document missing after reopen" unless persisted
-  persisted_shoe2 = reopened.get("shoe-2")
+  persisted_shoe2 = reopened.get(upsert_spec.fetch("document_id"))
   PARITY_OBSERVATIONS["reopen_persistence"] = {
     "marker" => {"title" => persisted.fetch("title"), "price" => persisted.fetch("price"), "inventory" => persisted.fetch("inventory")},
     "upserted" => {"updated_title_matches" => persisted_shoe2.fetch("title").include?("Updated"), "price" => persisted_shoe2.fetch("price")},
-    "deleted_absent" => reopened.get("parity-mutation").nil?
+    "deleted_absent" => reopened.get(E2E_CORPUS.fetch("scenario_inputs").fetch("delete").fetch("document_id")).nil?
   }
   check(reopened.delete("shoe-2"), "delete after reopen")
   same(false, reopened.delete("shoe-2"), "duplicate delete is false")

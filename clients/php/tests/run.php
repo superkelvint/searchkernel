@@ -1593,9 +1593,9 @@ foreach ($parityCorpus['schema']['fields'] as $name => $spec) {
         $spec['type'] === 'float64' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Float64']],
         $spec['type'] === 'int64' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Int64']],
         $spec['type'] === 'bool' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Bool']],
-        str_starts_with($spec['type'], 'tensor<') => ['kind_type' => 'TensorDataType', 'kind' => ['type_spec' => $spec['type']]],
         $spec['type'] === 'position' => ['kind_type' => 'PositionDataType'],
         $spec['type'] === 'array' => ['kind_type' => 'ArrayDataType'],
+        str_starts_with($spec['type'], 'tensor<') => ['kind_type' => 'TensorDataType', 'kind' => ['type_spec' => $spec['type']]],
         default => throw new RuntimeException('unhandled shared corpus field type'),
     };
     if (array_key_exists('kind', $expectedType)) {

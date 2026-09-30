@@ -875,6 +875,111 @@
     }
   },
   "scenario_inputs": {
+    "document_crud": {"document_id": "shoe-1"},
+    "full_text_search": {"query": "shoes", "limit": 20},
+    "stemming": {"query": "jump", "limit": 20},
+    "text_filter_binding": {
+      "query": "shoes", "filter": "price <= :max", "bindings": {"max": 100.0},
+      "sort": [{"field": "price", "direction": "asc"}], "limit": 20
+    },
+    "repeated_filters": {
+      "query": "shoes",
+      "filters": [
+        {"source": "price <= :value", "bindings": {"value": 120.0}},
+        {"source": "rating >= :value", "bindings": {"value": 4}},
+        {"source": "in_stock = true", "bindings": {}}
+      ],
+      "sort": [{"field": "price", "direction": "asc"}], "limit": 20
+    },
+    "boolean_filter_grammar": {
+      "query": "shoes",
+      "filter": "(brand IN (:brands) OR rating = :rating) AND NOT (in_stock = false)",
+      "bindings": {"brands": ["Acme", "TrailCo"], "rating": 3},
+      "sort": [{"field": "price", "direction": "asc"}], "limit": 20
+    },
+    "sorting_projection": {
+      "query": "shoes", "sort": [{"field": "price", "direction": "desc"}],
+      "projection": ["title", "brand", "price"], "limit": 2
+    },
+    "pagination": {
+      "query": "shoes", "sort": [{"field": "price", "direction": "asc"}],
+      "offset": 1, "limit": 2, "all_limit": 20
+    },
+    "builder_misuse": {
+      "query": "shoes", "page": 2, "page_size": 20, "limit": 20,
+      "negative_limit": -1, "negative_offset": -1
+    },
+    "facets": {"query": "shoes", "field": "brand", "name": "brands", "limit": 10, "sort": "count_desc", "page_limit": 20},
+    "filtered_facets": {
+      "query": "shoes", "filter": "in_stock = true", "field": "brand",
+      "limit": 10, "sort": "count_desc", "page_limit": 20
+    },
+    "root_aggregations": {
+      "kind": "browse", "filter": "category = 'shoes'", "limit": 0,
+      "aggregations": [
+        {"kind": "count", "name": "products"},
+        {"kind": "sum", "field": "price", "name": "sum_price"},
+        {"kind": "avg", "field": "price", "name": "avg_price"}
+      ]
+    },
+    "grouping_aggregations": {
+      "query": "shoes", "group_by": "brand", "limit": 10, "precision": 100,
+      "order": [{"kind": "count", "direction": "desc"}, {"kind": "field", "field": "brand", "direction": "asc"}],
+      "outputs": [{"kind": "count", "name": "products"}, {"kind": "avg", "field": "price", "name": "avg_price"}]
+    },
+    "nested_grouping": {
+      "kind": "browse", "filter": {"source": "category IN (:categories)", "bindings": {"categories": ["shoes", "bags"]}},
+      "group_by": "category", "limit": 10, "outputs": [{"kind": "count", "name": "products"}],
+      "nested": {"group_by": "rating", "limit": 10, "outputs": [{"kind": "count", "name": "products"}, {"kind": "avg", "field": "price", "name": "avg_price"}]}
+    },
+    "group_alias": {
+      "query": "shoes", "group_by": "brand", "limit": 10,
+      "aliases": [{"name": "revenue", "kind": "sum", "field": "price"}],
+      "order_by_alias": {"name": "revenue", "direction": "desc"},
+      "outputs": [{"kind": "count", "name": "products"}, {"kind": "alias", "name": "revenue", "output_name": "revenue"}]
+    },
+    "group_keep_filter": {
+      "query": "shoes", "group_by": "brand", "limit": 10,
+      "keep_regex": {"field": "brand", "pattern": "^A.*"},
+      "outputs": [{"kind": "count", "name": "products"}]
+    },
+    "rank_inputs": {"query": "shoes", "ranking_profile": "boosted", "inputs": {"boost": 3.0}, "input_types": {"boost": "float64"}, "limit": 20},
+    "rank_properties": {"query": "shoes", "ranking_profile": "boosted", "rank_properties": {"boost": "4.0"}, "limit": 20},
+    "two_phase_reranking": {"query": "candidate", "ranking_profile": "two_phase", "limit": 4},
+    "tensor_readback": {"document_id": "shoe-1", "field": "embedding"},
+    "coverage_degradation": {
+      "kind": "browse", "filter": {"source": "inventory = :value", "bindings": {"value": 18}},
+      "sort": [{"field": "inventory", "direction": "asc"}],
+      "rank_properties": {
+        "vespa.matchphase.degradation.maxfiltercoverage": "0.9",
+        "vespa.matchphase.degradation.attribute": "inventory",
+        "vespa.matchphase.degradation.maxhits": "10"
+      }, "limit": 10
+    },
+    "yql": {
+      "source": "select * from sources * where title contains text(@q) order by price asc",
+      "bindings": {"q": "shoes"}, "ranking_profile": "default", "page": 1, "page_size": 3
+    },
+    "structured_filter_error": {"query": "shoes", "filter": "prcie = 1"},
+    "text_filter_syntax_error": {"query": "shoes", "filter": "price <= "},
+    "patch": {
+      "document_id": "parity-mutation",
+      "initial": {"title": "Parity Mutation", "category": "parity", "price": 100.0, "sale_price": 110.0, "rating": 1, "inventory": 1, "in_stock": true},
+      "set": {"price": 75.0}, "unset": ["sale_price"]
+    },
+    "advanced_update": {
+      "document_id": "parity-advanced-update", "initial": {"title": "before", "inventory": 10, "sale_price": 1.0},
+      "set": {"title": "after"}, "unset": ["sale_price"],
+      "increments": {"inventory": 3}, "decrements": {"inventory": 1},
+      "multipliers": {"inventory": 2}, "divisors": {"inventory": 4}
+    },
+    "delete": {"document_id": "parity-mutation"},
+    "upsert_replacement": {
+      "document_id": "shoe-2",
+      "replacement": {"title": "Trail Running Shoes - Updated Edition", "brand": "TrailCo", "category": "shoes", "price": 119.0, "rating": 5, "inventory": 4, "in_stock": true, "vector_document_id": "shoe-3"},
+      "search_query": "updated"
+    },
+    "reopen_persistence": {"marker_id": "parity-reopen", "marker": {"title": "Parity Reopen", "category": "parity", "price": 42.0, "inventory": 7, "in_stock": true}},
     "nearest_neighbor": {
       "query": {"kind": "nearest_neighbor", "field": "embedding", "query_input": "query_embedding"},
       "ranking_profile": "semantic",
@@ -899,14 +1004,17 @@
         "field": "title",
         "value": "quick"
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_near": {
       "query": {"kind": "near", "field": "title", "terms": ["quick", "brown"]},
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_ordered_near": {
       "query": {"kind": "ordered_near", "field": "title", "terms": ["quick", "brown"]},
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_phrase": {
@@ -918,6 +1026,7 @@
           "brown"
         ]
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_range": {
@@ -928,6 +1037,7 @@
         "upper": 110.0,
         "inclusive": true
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_boolean": {
@@ -948,6 +1058,7 @@
           }
         ]
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
   "typed_query_in": {
@@ -959,6 +1070,7 @@
         "ParityTrail"
         ]
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_equals": {
@@ -967,6 +1079,7 @@
         "field": "category",
         "value": "fox"
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_fuzzy": {
@@ -975,6 +1088,7 @@
         "field": "category",
         "value": "foxx"
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_weak_and": {
@@ -993,6 +1107,7 @@
           }
         ]
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_wand": {
@@ -1004,6 +1119,7 @@
           "fox": 1
         }
       },
+      "limit": 100,
       "result_order": "ranked"
     },
   "typed_query_weighted_set": {
@@ -1015,6 +1131,7 @@
         "ParityTrail": 1
         }
       },
+      "limit": 100,
       "result_order": "ranked"
     },
   "typed_query_dot_product": {
@@ -1026,6 +1143,7 @@
         "ParityTrail": 1
         }
       },
+      "limit": 100,
       "result_order": "ranked"
     },
     "typed_query_same_element": {
@@ -1045,6 +1163,7 @@
           }
         ]
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_geo_location": {
@@ -1055,6 +1174,7 @@
         "longitude": -121.9,
         "radius": "10km"
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     },
     "typed_query_geo_box": {
@@ -1066,6 +1186,7 @@
         "north": 37.6,
         "east": -121.5
       },
+      "limit": 100,
       "result_order": "sorted_ids"
     }
   }

@@ -22,6 +22,10 @@ FLOAT_SEMANTIC_KEYS = {
     # the domain type that the wire representation no longer preserves.
     "price", "sale_price", "avg_price", "sum_price", "min_price", "max_price",
     "revenue", "score", "scores", "top_score", "feature", "relevance",
+    # The shared intent artifact stores language-neutral JSON operands. These
+    # names are float-valued filter/ranking, typed-query, and geo operands.
+    "boost", "max", "lower", "upper", "latitude", "longitude",
+    "south", "west", "north", "east",
 }
 REQUIRED_TYPED_SCENARIOS = (
     "typed_query_contains", "typed_query_phrase", "typed_query_near", "typed_query_ordered_near", "typed_query_range",
@@ -30,7 +34,7 @@ REQUIRED_TYPED_SCENARIOS = (
     "typed_query_weighted_set", "typed_query_dot_product",
     "typed_query_same_element", "typed_query_geo_location", "typed_query_geo_box",
 )
-REQUIRED_SHARED_INTENT_SCENARIOS = (*REQUIRED_TYPED_SCENARIOS, "nearest_neighbor", "hybrid_text_vector")
+REQUIRED_SHARED_INTENT_SCENARIOS = tuple(json.loads(CORPUS.read_text())["scenarios"])
 
 
 def compare(
@@ -133,18 +137,23 @@ def scenario_contract(corpus: dict[str, Any]) -> tuple[list[str], dict[str, dict
 
 
 def validate_shared_typed_inputs(corpus: dict[str, Any], scenarios: list[str]) -> dict[str, Any]:
-    missing = sorted(set(REQUIRED_SHARED_INTENT_SCENARIOS) - set(scenarios))
-    if missing:
-        raise SystemExit(f"shared corpus omits required shared-intent scenarios: {', '.join(missing)}")
+    missing_inventory = sorted(set(REQUIRED_SHARED_INTENT_SCENARIOS) - set(scenarios))
+    if missing_inventory:
+        raise SystemExit(f"scenario inventory omits required shared-intent scenarios: {', '.join(missing_inventory)}")
     inputs = corpus.get("scenario_inputs")
     if not isinstance(inputs, dict):
         raise SystemExit("shared corpus scenario_inputs must be an object")
-    missing_inputs = sorted(set(REQUIRED_SHARED_INTENT_SCENARIOS) - inputs.keys())
+    missing_inputs = sorted(set(scenarios) - inputs.keys())
     if missing_inputs:
         raise SystemExit(f"shared corpus omits required shared scenario intents: {', '.join(missing_inputs)}")
+    extra_inputs = sorted(inputs.keys() - set(scenarios))
+    if extra_inputs:
+        raise SystemExit(f"shared corpus defines intents for unknown scenarios: {', '.join(extra_inputs)}")
     for scenario in REQUIRED_TYPED_SCENARIOS:
         entry = inputs[scenario]
-        if not isinstance(entry, dict) or not isinstance(entry.get("query"), dict) or entry.get("result_order") not in {"sorted_ids", "ranked"}:
+        if (not isinstance(entry, dict) or not isinstance(entry.get("query"), dict)
+                or entry.get("result_order") not in {"sorted_ids", "ranked"}
+                or type(entry.get("limit")) is not int or entry["limit"] < 1):
             raise SystemExit(f"{scenario}: shared query intent or result ordering is invalid")
     for scenario in ("nearest_neighbor", "hybrid_text_vector"):
         entry = inputs[scenario]
@@ -157,12 +166,16 @@ def validate_shared_typed_inputs(corpus: dict[str, Any], scenarios: list[str]) -
 
 
 def validate_observed_intents(client: str, observations: dict[str, Any], inputs: dict[str, Any]) -> None:
-    for scenario in REQUIRED_SHARED_INTENT_SCENARIOS:
+    for scenario in inputs:
         value = observations.get(scenario)
         payload = value.get("observation", value) if isinstance(value, dict) else None
-        expected = inputs[scenario]["query"] if scenario in REQUIRED_TYPED_SCENARIOS else inputs[scenario]
-        if not isinstance(payload, dict) or payload.get("intent") != expected:
-            raise SystemExit(f"{client}.{scenario} did not consume the shared scenario intent")
+        expected = inputs[scenario]
+        actual = payload.get("intent") if isinstance(payload, dict) else None
+        if actual != expected:
+            raise SystemExit(
+                f"{client}.{scenario} did not consume the shared scenario intent: "
+                f"expected {expected!r}, got {actual!r}"
+            )
 
 
 def scenario_observations(
@@ -233,11 +246,11 @@ def float_semantic_paths_for_scenario(
     field = intent.get("field")
     field_type = schema.get("fields", {}).get(field, {}).get("type")
     if kind == "range" and field_type == "float64":
-        return frozenset({"$.intent.lower", "$.intent.upper"})
+        return frozenset({"$.intent.query.lower", "$.intent.query.upper"})
     if kind == "geo_location":
-        return frozenset({"$.intent.latitude", "$.intent.longitude"})
+        return frozenset({"$.intent.query.latitude", "$.intent.query.longitude"})
     if kind == "geo_box":
-        return frozenset({"$.intent.south", "$.intent.west", "$.intent.north", "$.intent.east"})
+        return frozenset({"$.intent.query.south", "$.intent.query.west", "$.intent.query.north", "$.intent.query.east"})
     return frozenset()
 
 

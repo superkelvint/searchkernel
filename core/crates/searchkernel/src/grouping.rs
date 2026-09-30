@@ -14,6 +14,27 @@ impl GroupingExpression {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum GroupingOrder {
+    Field(GroupingExpression, bool),
+    Aggregation(GroupingAggregation, bool),
+    Alias(String, bool),
+}
+
+impl GroupingOrder {
+    pub fn field(field: impl Into<String>, descending: bool) -> Self {
+        Self::Field(GroupingExpression::attribute(field), descending)
+    }
+
+    pub fn aggregation(aggregation: GroupingAggregation, descending: bool) -> Self {
+        Self::Aggregation(aggregation, descending)
+    }
+
+    pub fn alias(name: impl Into<String>, descending: bool) -> Self {
+        Self::Alias(name.into(), descending)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum GroupingAggregation {
     Count,
     Average(GroupingExpression),
@@ -50,9 +71,11 @@ pub struct GroupingLevel {
     outputs: Vec<GroupingAggregation>,
     nested: Option<Box<GroupingLevel>>,
     max_groups: Option<u32>,
+    precision: Option<u32>,
     aliases: Vec<(String, GroupingAggregation)>,
     keep_regex: Vec<(String, String)>,
     order_by_alias: Vec<(String, bool)>,
+    order: Vec<GroupingOrder>,
 }
 
 impl GroupingLevel {
@@ -62,9 +85,11 @@ impl GroupingLevel {
             outputs: Vec::new(),
             nested: None,
             max_groups: None,
+            precision: None,
             aliases: Vec::new(),
             keep_regex: Vec::new(),
             order_by_alias: Vec::new(),
+            order: Vec::new(),
         }
     }
 
@@ -80,6 +105,10 @@ impl GroupingLevel {
         self.max_groups = Some(value);
         self
     }
+    pub fn precision(mut self, value: u32) -> Self {
+        self.precision = Some(value);
+        self
+    }
     /// Define a named aggregation that can be referenced by an alias output.
     pub fn alias(mut self, name: impl Into<String>, aggregation: GroupingAggregation) -> Self {
         self.aliases.push((name.into(), aggregation));
@@ -93,6 +122,10 @@ impl GroupingLevel {
     /// Order groups by a declared aggregation alias.
     pub fn order_by_alias(mut self, name: impl Into<String>, descending: bool) -> Self {
         self.order_by_alias.push((name.into(), descending));
+        self
+    }
+    pub fn order_by(mut self, order: impl IntoIterator<Item = GroupingOrder>) -> Self {
+        self.order.extend(order);
         self
     }
 }
@@ -172,6 +205,9 @@ fn level_to_scope(level: GroupingLevel) -> Result<GroupingAllIr> {
     if let Some(max) = level.max_groups {
         each.push(GroupingOperationIr::Max(Some(max)));
     }
+    if let Some(precision) = level.precision {
+        each.push(GroupingOperationIr::Precision(precision));
+    }
     for (name, aggregation) in level.aliases {
         each.push(GroupingOperationIr::Alias {
             name,
@@ -200,6 +236,32 @@ fn level_to_scope(level: GroupingLevel) -> Result<GroupingAllIr> {
                     }
                 })
                 .collect(),
+        ));
+    }
+    if !level.order.is_empty() {
+        each.push(GroupingOperationIr::Order(
+            level
+                .order
+                .into_iter()
+                .map(|order| {
+                    let (expression, descending) = match order {
+                        GroupingOrder::Field(expression, descending) => {
+                            (expression_to_ir(expression)?, descending)
+                        }
+                        GroupingOrder::Aggregation(aggregation, descending) => {
+                            (aggregation_expression(aggregation)?, descending)
+                        }
+                        GroupingOrder::Alias(name, descending) => {
+                            (GroupingExpressionIr::Alias(name), descending)
+                        }
+                    };
+                    Ok(if descending {
+                        GroupingExpressionIr::Negative(Box::new(expression))
+                    } else {
+                        expression
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
         ));
     }
     if !level.outputs.is_empty() {
@@ -388,5 +450,43 @@ mod tests {
                     },
                 ]
         ));
+    }
+
+    #[test]
+    fn grouping_order_lowers_aggregation_then_field_order() {
+        let grouping = GroupingPlan::new().level(
+            GroupingPlan::by("brand")
+                .precision(17)
+                .order_by([
+                    GroupingOrder::aggregation(GroupingAggregation::count(), true),
+                    GroupingOrder::field("brand", false),
+                ])
+                .output(GroupingAggregation::count()),
+        );
+
+        let ir = grouping.into_ir().unwrap();
+        let GroupingOperationIr::All(level) = &ir.root.operations[1] else {
+            panic!("group plan should contain its level");
+        };
+        assert!(level
+            .operations
+            .contains(&GroupingOperationIr::Precision(17)));
+        let order = level
+            .operations
+            .iter()
+            .find_map(|operation| match operation {
+                GroupingOperationIr::Order(expressions) => Some(expressions),
+                _ => None,
+            })
+            .expect("order operation should be present");
+        assert_eq!(
+            order,
+            &[
+                GroupingExpressionIr::Negative(Box::new(GroupingExpressionIr::Aggregation(
+                    Box::new(GroupingAggregationIr::Count),
+                ))),
+                GroupingExpressionIr::Attribute("brand".to_owned()),
+            ]
+        );
     }
 }

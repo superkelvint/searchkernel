@@ -5,16 +5,21 @@ vectors, and coverage probe used by each full public-client E2E showcase. The
 showcases keep their language-specific examples, but their primary index now
 starts from this common corpus.
 
-The corpus also defines language-neutral inputs for each shared typed-query,
-nearest-neighbor, and hybrid text/vector case. Rust, Python, TypeScript, PHP,
-and Ruby build those requests through their public query facades and emit the
-consumed intent beside the ordered result IDs. The checker rejects missing
-query IDs or an emitted intent that differs from the shared definition. The
-typed-query inventory includes contains, phrase, near, ordered-near, range,
+The corpus also defines a language-neutral request intent for every shared
+scenario. This includes query text, typed-query trees and operands, filter
+sources and bindings, sort and projection fields, pagination, facets and
+grouping, ranking profiles and inputs, YQL and bindings, mutation payloads, and
+reopen markers. Rust, Python, TypeScript, PHP, and Ruby read these specifications
+and construct requests with their public facades on their supported real
+runtime paths. Each snapshot includes the intent used for that scenario; the
+checker requires it to match the fixture before comparing the result.
+
+The typed-query inventory includes contains, phrase, near, ordered-near, range,
 AND/OR/NOT composition, IN, equality, fuzzy, WeakAnd, WAND, weighted set, dot
-product, SameElement, geo location, and geo box. `people` and `location`, plus
-the deterministic documents needed by SameElement and geo queries, are part of
-the shared schema and corpus.
+product, SameElement, geo location, and geo box. The shared nearest-neighbor and
+hybrid text/vector scenarios use the same corpus-defined query intent.
+`people` and `location`, plus deterministic documents needed by SameElement
+and geo queries, are part of the shared schema and corpus.
 
 `scenarios` is the required inventory for all five public-client showcases and
 `tools/check-client-real-e2e-parity.py`. Every client must emit an observation

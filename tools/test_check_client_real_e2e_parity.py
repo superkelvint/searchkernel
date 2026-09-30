@@ -35,25 +35,35 @@ MISUSE_CONTRACT = {
 class RealE2EParityComparatorTests(unittest.TestCase):
     def test_shared_typed_query_scenarios_are_required_and_have_intents(self):
         scenarios = list(PARITY.REQUIRED_SHARED_INTENT_SCENARIOS)
-        inputs = {scenario: {"query": {"kind": "contains"}, "result_order": "sorted_ids"} for scenario in scenarios}
+        inputs = {scenario: {"query": {"kind": "contains"}, "result_order": "sorted_ids", "limit": 100} for scenario in scenarios}
         for scenario in ("nearest_neighbor", "hybrid_text_vector"):
             inputs[scenario] = {"query": {"kind": "nearest_neighbor"}, "ranking_profile": "semantic", "query_input_document": "shoe-1", "limit": 3}
         self.assertEqual(inputs, validate_shared_typed_inputs({"scenario_inputs": inputs}, scenarios))
-        with self.assertRaisesRegex(SystemExit, "omits required shared-intent scenarios"):
+        with self.assertRaisesRegex(SystemExit, "scenario inventory omits required shared-intent scenarios"):
             validate_shared_typed_inputs({"scenario_inputs": inputs}, scenarios[:-1])
         with self.assertRaisesRegex(SystemExit, "omits required shared scenario intents"):
             validate_shared_typed_inputs({"scenario_inputs": {key: value for key, value in inputs.items() if key != "typed_query_geo_box"}}, scenarios)
 
-    def test_client_snapshot_must_echo_the_query_intent_it_builds(self):
-        inputs = {scenario: {"query": {"kind": "contains", "value": scenario}} for scenario in PARITY.REQUIRED_TYPED_SCENARIOS}
+    def test_client_snapshot_must_echo_the_shared_scenario_intent(self):
+        inputs = {scenario: {"query": {"kind": "contains", "value": scenario}, "result_order": "sorted_ids", "limit": 100} for scenario in PARITY.REQUIRED_TYPED_SCENARIOS}
+        for scenario in set(PARITY.REQUIRED_SHARED_INTENT_SCENARIOS) - set(inputs):
+            inputs[scenario] = {"query": {"kind": "search", "value": scenario}}
         for scenario in ("nearest_neighbor", "hybrid_text_vector"):
             inputs[scenario] = {"query": {"kind": "nearest_neighbor"}, "ranking_profile": "semantic", "query_input_document": "shoe-1", "limit": 3}
-        observations = {scenario: {"observation": {"intent": entry["query"] if scenario in PARITY.REQUIRED_TYPED_SCENARIOS else entry, "query_result": ["a"]}}
+        observations = {scenario: {"observation": {"intent": entry, "query_result": ["a"]}}
                        for scenario, entry in inputs.items()}
         validate_observed_intents("rust", observations, inputs)
         observations[PARITY.REQUIRED_TYPED_SCENARIOS[0]]["observation"]["intent"] = {"value": "hard-coded"}
         with self.assertRaisesRegex(SystemExit, "did not consume the shared scenario intent"):
             validate_observed_intents("rust", observations, inputs)
+
+    def test_every_inventory_scenario_needs_a_shared_intent(self):
+        corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
+        scenarios = list(corpus["scenarios"])
+        inputs = dict(corpus["scenario_inputs"])
+        del inputs["pagination"]
+        with self.assertRaisesRegex(SystemExit, "omits required shared scenario intents: pagination"):
+            validate_shared_typed_inputs({"scenario_inputs": inputs}, scenarios)
 
     def test_checker_uses_the_shared_scenario_list(self):
         self.assertEqual(
@@ -187,8 +197,8 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         self.assertEqual(
             [],
             compare(
-                {"intent": {"lower": 50.0}},
-                {"intent": {"lower": 50}},
+                {"intent": {"query": {"lower": 50.0}}},
+                {"intent": {"query": {"lower": 50}}},
                 float_semantic_paths=paths,
             ),
         )

@@ -21,7 +21,9 @@ pub use analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 pub use document::DocumentId;
 pub use error::{Error, ErrorCode, ErrorDetail, Result};
 pub use filter::{field, FieldRef, Filter, FilterBindings, Range, SearchFilterInput};
-pub use grouping::{GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan};
+pub use grouping::{
+    GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOrder, GroupingPlan,
+};
 pub use index::{Index, IndexRuntime};
 pub use patch::Patch;
 pub use query::{

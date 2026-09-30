@@ -170,10 +170,10 @@ function sharedTypedQueryObservations(Index $index): array
     $observations = [];
     foreach ($corpus['scenario_inputs'] as $scenario => $input) {
         if (!str_starts_with($scenario, 'typed_query_')) continue;
-        $ids = ids($index->query(sharedTypedQuery($input['query']))->limit(100)->execute());
+        $ids = ids($index->query(sharedTypedQuery($input['query']))->limit($input['limit'])->execute());
         if ($input['result_order'] === 'sorted_ids') sort($ids, SORT_STRING);
         $observations[$scenario] = [
-            'observation' => ['intent' => $input['query'], 'query_result' => $ids],
+            'observation' => ['intent' => $input, 'query_result' => $ids],
             'capabilities' => $corpus['client_scenario_contract'][$scenario]['php'],
         ];
     }
@@ -184,18 +184,28 @@ function captureRealEngineParity(Index $index): array
 {
     $corpus = searchkernelPhpClientApiE2eCorpus();
     $typedObservations = sharedTypedQueryObservations($index);
-    $ordered = $index->search('shoes')->sort('price', 'asc')->limit(20)->execute();
-    $filtered = $index->search('shoes')->filter('in_stock = true')->sort('price', 'asc')->limit(20)->execute();
-    $faceted = $index->search('shoes')->facet('brand', name: 'brands', limit: 10, sort: 'count_desc')->limit(20)->execute();
-    $root = $index->browse()->filter("category = 'shoes'")
-        ->aggregate(Agg::count()->as('products'))
-        ->aggregate(Agg::sum('price')->as('sum_price'))
-        ->aggregate(Agg::avg('price')->as('avg_price'))
-        ->limit(0)->execute();
-    $grouped = $index->search('shoes')->group(
-        Group::by('brand')->limit(10)->precision(100)
-            ->orderBy(GroupingOrder::desc(Agg::count()), GroupingOrder::asc(G::field('brand')))
-            ->output(Agg::count()->as('products'), Agg::avg('price')->as('avg_price'))
+    $intents = $corpus['scenario_inputs'];
+    $orderedSpec = $intents['pagination'];
+    $ordered = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit(20)->execute();
+    $filteredSpec = $intents['filtered_facets'];
+    $filtered = $index->search($filteredSpec['query'])->filter($filteredSpec['filter'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit($filteredSpec['page_limit'])->execute();
+    $facetSpec = $intents['facets'];
+    $faceted = $index->search($facetSpec['query'])->facet($facetSpec['field'], name: $facetSpec['name'], limit: $facetSpec['limit'], sort: $facetSpec['sort'])->limit($facetSpec['page_limit'])->execute();
+    $rootSpec = $intents['root_aggregations'];
+    $root = $index->browse()->filter($rootSpec['filter'])
+        ->aggregate(Agg::count()->as($rootSpec['aggregations'][0]['name']))
+        ->aggregate(Agg::sum($rootSpec['aggregations'][1]['field'])->as($rootSpec['aggregations'][1]['name']))
+        ->aggregate(Agg::avg($rootSpec['aggregations'][2]['field'])->as($rootSpec['aggregations'][2]['name']))
+        ->limit($rootSpec['limit'])->execute();
+    $groupedSpec = $intents['grouping_aggregations'];
+    $groupOrder = array_map(static function (array $order): mixed {
+        $expression = $order['kind'] === 'count' ? Agg::count() : G::field($order['field']);
+        return $order['direction'] === 'desc' ? GroupingOrder::desc($expression) : GroupingOrder::asc($expression);
+    }, $groupedSpec['order']);
+    $grouped = $index->search($groupedSpec['query'])->group(
+        Group::by($groupedSpec['group_by'])->limit($groupedSpec['limit'])->precision($groupedSpec['precision'])
+            ->orderBy(...$groupOrder)
+            ->output(Agg::count()->as($groupedSpec['outputs'][0]['name']), Agg::avg($groupedSpec['outputs'][1]['field'])->as($groupedSpec['outputs'][1]['name']))
     )->execute();
     $nearestIntent = $corpus['scenario_inputs']['nearest_neighbor'];
     $nearestSpec = $nearestIntent['query'];
@@ -211,9 +221,11 @@ function captureRealEngineParity(Index $index): array
     ))->ranking($hybridIntent['ranking_profile'])
         ->input($hybridVector['query_input'], embedding(corpusVector($hybridIntent['query_input_document'])))
         ->limit($hybridIntent['limit'])->execute();
-    $reranked = $index->search('candidate')->ranking('two_phase')->limit(4)->execute();
+    $rerankedSpec = $intents['two_phase_reranking'];
+    $reranked = $index->search($rerankedSpec['query'])->ranking($rerankedSpec['ranking_profile'])->limit($rerankedSpec['limit'])->execute();
     try {
-        $index->search('shoes')->filter('prcie = 1')->execute();
+        $errorSpec = $intents['structured_filter_error'];
+        $index->search($errorSpec['query'])->filter($errorSpec['filter'])->execute();
         throw new RuntimeException('unknown field filter unexpectedly succeeded');
     } catch (SearchKernelException $error) {
         same('InvalidArgument', $error->errorCode, 'portable invalid-argument error code');
@@ -221,41 +233,62 @@ function captureRealEngineParity(Index $index): array
         sort($errorCodes);
     }
 
-    $document = $index->get('shoe-1');
-    $fullText = $index->search('shoes')->limit(20)->execute();
-    $stemming = $index->search('jump')->limit(20)->execute();
-    $textBinding = $index->search('shoes')->filter('price <= :max', ['max' => 100.0])->sort('price', 'asc')->limit(20)->execute();
-    $repeated = $index->search('shoes')->filter('price <= :value', ['value' => 120.0])
-        ->filter('rating >= :value', ['value' => 4])->filter('in_stock = true')->sort('price', 'asc')->limit(20)->execute();
-    $booleanFilter = $index->search('shoes')->filter('(brand IN (:brands) OR rating = :rating) AND NOT (in_stock = false)',
-        ['brands' => ['Acme', 'TrailCo'], 'rating' => 3])->sort('price', 'asc')->limit(20)->execute();
-    $projection = $index->search('shoes')->sort('price', 'desc')->fields('title', 'brand', 'price')->limit(2)->execute();
-    $allSorted = $index->search('shoes')->sort('price', 'asc')->limit(20)->execute();
-    $page = $index->search('shoes')->sort('price', 'asc')->offset(1)->limit(2)->execute();
-    $filteredFacet = $index->search('shoes')->filter('in_stock = true')->facet('brand', limit: 10, sort: 'count_desc')->limit(20)->execute();
-    $nested = $index->browse()->filter('category IN (:categories)', ['categories' => ['shoes', 'bags']])->group(
-        Group::by('category')->limit(10)->output(Agg::count()->as('products'))
-            ->subgroup(Group::by('rating')->limit(10)->output(Agg::count()->as('products'), Agg::avg('price')->as('avg_price')))
+    $document = $index->get($intents['document_crud']['document_id']);
+    $fullSpec = $intents['full_text_search'];
+    $fullText = $index->search($fullSpec['query'])->limit($fullSpec['limit'])->execute();
+    $stemmingSpec = $intents['stemming'];
+    $stemming = $index->search($stemmingSpec['query'])->limit($stemmingSpec['limit'])->execute();
+    $bindingSpec = $intents['text_filter_binding'];
+    $textBinding = $index->search($bindingSpec['query'])->filter($bindingSpec['filter'], $bindingSpec['bindings'])->sort($bindingSpec['sort'][0]['field'], $bindingSpec['sort'][0]['direction'])->limit($bindingSpec['limit'])->execute();
+    $repeatedSpec = $intents['repeated_filters'];
+    $repeatedBuilder = $index->search($repeatedSpec['query']);
+    foreach ($repeatedSpec['filters'] as $filterSpec) $repeatedBuilder = $repeatedBuilder->filter($filterSpec['source'], $filterSpec['bindings']);
+    $repeated = $repeatedBuilder->sort($repeatedSpec['sort'][0]['field'], $repeatedSpec['sort'][0]['direction'])->limit($repeatedSpec['limit'])->execute();
+    $booleanSpec = $intents['boolean_filter_grammar'];
+    $booleanFilter = $index->search($booleanSpec['query'])->filter($booleanSpec['filter'], $booleanSpec['bindings'])->sort($booleanSpec['sort'][0]['field'], $booleanSpec['sort'][0]['direction'])->limit($booleanSpec['limit'])->execute();
+    $projectionSpec = $intents['sorting_projection'];
+    $projection = $index->search($projectionSpec['query'])->sort($projectionSpec['sort'][0]['field'], $projectionSpec['sort'][0]['direction'])->fields(...$projectionSpec['projection'])->limit($projectionSpec['limit'])->execute();
+    $allSorted = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit($orderedSpec['all_limit'])->execute();
+    $page = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->offset($orderedSpec['offset'])->limit($orderedSpec['limit'])->execute();
+    $filteredFacet = $index->search($filteredSpec['query'])->filter($filteredSpec['filter'])->facet($filteredSpec['field'], limit: $filteredSpec['limit'], sort: $filteredSpec['sort'])->limit($filteredSpec['page_limit'])->execute();
+    $nestedSpec = $intents['nested_grouping'];
+    $nested = $index->browse()->filter($nestedSpec['filter']['source'], $nestedSpec['filter']['bindings'])->group(
+        Group::by($nestedSpec['group_by'])->limit($nestedSpec['limit'])->output(Agg::count()->as($nestedSpec['outputs'][0]['name']))
+            ->subgroup(Group::by($nestedSpec['nested']['group_by'])->limit($nestedSpec['nested']['limit'])->output(Agg::count()->as($nestedSpec['nested']['outputs'][0]['name']), Agg::avg($nestedSpec['nested']['outputs'][1]['field'])->as($nestedSpec['nested']['outputs'][1]['name']))
     )->execute();
-    $aliased = $index->search('shoes')->group(
-        Group::by('brand')->limit(10)->alias('revenue', Agg::sum('price'))
-            ->orderBy(GroupingOrder::desc(G::aliasRef('revenue')))
-            ->output(Agg::count()->as('products'), G::aliasRef('revenue')->as('revenue'))
+    $aliasSpec = $intents['group_alias'];
+    $aliasExpression = G::aliasRef($aliasSpec['order_by_alias']['name']);
+    $aliasOrder = $aliasSpec['order_by_alias']['direction'] === 'desc' ? GroupingOrder::desc($aliasExpression) : GroupingOrder::asc($aliasExpression);
+    $aliased = $index->search($aliasSpec['query'])->group(
+        Group::by($aliasSpec['group_by'])->limit($aliasSpec['limit'])->alias($aliasSpec['aliases'][0]['name'], Agg::sum($aliasSpec['aliases'][0]['field']))
+            ->orderBy($aliasOrder)
+            ->output(Agg::count()->as($aliasSpec['outputs'][0]['name']), G::aliasRef($aliasSpec['outputs'][1]['name'])->as($aliasSpec['outputs'][1]['output_name']))
     )->execute();
-    $kept = $index->search('shoes')->group(
-        Group::by('brand')->limit(10)->keep(Gf::regex(G::field('brand'), '^A.*'))->output(Agg::count()->as('products'))
+    $keepSpec = $intents['group_keep_filter'];
+    $kept = $index->search($keepSpec['query'])->group(
+        Group::by($keepSpec['group_by'])->limit($keepSpec['limit'])->keep(Gf::regex(G::field($keepSpec['keep_regex']['field']), $keepSpec['keep_regex']['pattern']))->output(Agg::count()->as($keepSpec['outputs'][0]['name']))
     )->execute();
-    $typed = $index->query(Query::contains('title', 'shoes'))->ranking('default')->limit(20)->execute();
-    $rankInput = $index->search('shoes')->ranking('boosted')->input('boost', 3.0)->limit(20)->execute();
-    $rankProperty = $index->search('shoes')->ranking('boosted')->rankProperty('boost', '4.0')->limit(20)->execute();
-    $degraded = $index->browse()->filter('inventory = :value', ['value' => 18])->sort('inventory', 'asc')
-        ->rankProperty('vespa.matchphase.degradation.maxfiltercoverage', '0.9')
-        ->rankProperty('vespa.matchphase.degradation.attribute', 'inventory')
-        ->rankProperty('vespa.matchphase.degradation.maxhits', '10')->limit(10)->execute();
-    $yql = $index->yql('select * from sources * where title contains text(@q) order by price asc')
-        ->property('q', 'shoes')->ranking('default')->page(1, 3)->execute();
+    $typed = $index->query(sharedTypedQuery($intents['typed_query_contains']['query']))->ranking('default')->limit($fullSpec['limit'])->execute();
+    $rankInputSpec = $intents['rank_inputs'];
+    $rankInputBuilder = $index->search($rankInputSpec['query'])->ranking($rankInputSpec['ranking_profile']);
+    foreach ($rankInputSpec['inputs'] as $key => $value) {
+        if (($rankInputSpec['input_types'][$key] ?? null) === 'float64') $value = (float) $value;
+        $rankInputBuilder = $rankInputBuilder->input($key, $value);
+    }
+    $rankInput = $rankInputBuilder->limit($rankInputSpec['limit'])->execute();
+    $rankPropertySpec = $intents['rank_properties'];
+    $rankPropertyBuilder = $index->search($rankPropertySpec['query'])->ranking($rankPropertySpec['ranking_profile']);
+    foreach ($rankPropertySpec['rank_properties'] as $key => $value) $rankPropertyBuilder = $rankPropertyBuilder->rankProperty($key, $value);
+    $rankProperty = $rankPropertyBuilder->limit($rankPropertySpec['limit'])->execute();
+    $degradedSpec = $intents['coverage_degradation'];
+    $degradedBuilder = $index->browse()->filter($degradedSpec['filter']['source'], $degradedSpec['filter']['bindings'])->sort($degradedSpec['sort'][0]['field'], $degradedSpec['sort'][0]['direction']);
+    foreach ($degradedSpec['rank_properties'] as $key => $value) $degradedBuilder = $degradedBuilder->rankProperty($key, $value);
+    $degraded = $degradedBuilder->limit($degradedSpec['limit'])->execute();
+    $yqlSpec = $intents['yql'];
+    $yql = $index->yql($yqlSpec['source'])->property('q', $yqlSpec['bindings']['q'])->ranking($yqlSpec['ranking_profile'])->page($yqlSpec['page'], $yqlSpec['page_size'])->execute();
     try {
-        $index->search('shoes')->filter('price <=')->execute();
+        $syntaxSpec = $intents['text_filter_syntax_error'];
+        $index->search($syntaxSpec['query'])->filter($syntaxSpec['filter'])->execute();
         throw new RuntimeException('malformed textual filter unexpectedly succeeded');
     } catch (SearchKernelException $error) {
         $syntaxError = ['code' => strtolower($error->errorCode), 'details' => detailCodes($error)];
@@ -263,13 +296,19 @@ function captureRealEngineParity(Index $index): array
     }
 
     $groups = groupingGroups($grouped);
-    $index->insert(['_id' => 'parity-advanced-update', 'title' => 'before', 'inventory' => 10, 'sale_price' => 1.0]);
-    $index->update('parity-advanced-update')->set('title', 'after')->unset('sale_price')->increment('inventory', 3)->execute();
-    $index->update('parity-advanced-update')->decrement('inventory', 1)->execute();
-    $index->update('parity-advanced-update')->multiply('inventory', 2)->execute();
-    $index->update('parity-advanced-update')->divide('inventory', 4)->execute();
-    $advancedUpdate = $index->get('parity-advanced-update');
-    return [
+    $updateSpec = $intents['advanced_update'];
+    $index->insert(['_id' => $updateSpec['document_id'], ...$updateSpec['initial']]);
+    $updateBuilder = $index->update($updateSpec['document_id']);
+    foreach ($updateSpec['set'] as $field => $value) $updateBuilder = $updateBuilder->set($field, $value);
+    foreach ($updateSpec['unset'] as $field) $updateBuilder = $updateBuilder->unset($field);
+    foreach ($updateSpec['increments'] as $field => $value) $updateBuilder = $updateBuilder->increment($field, $value);
+    $updateBuilder->execute();
+    foreach ($updateSpec['decrements'] as $field => $value) $index->update($updateSpec['document_id'])->decrement($field, $value)->execute();
+    foreach ($updateSpec['multipliers'] as $field => $value) $index->update($updateSpec['document_id'])->multiply($field, $value)->execute();
+    foreach ($updateSpec['divisors'] as $field => $value) $index->update($updateSpec['document_id'])->divide($field, $value)->execute();
+    $advancedUpdate = $index->get($updateSpec['document_id']);
+    $misuseSpec = $intents['builder_misuse'];
+    $observations = [
         'document_crud' => ['id' => $document['_id'], 'title' => $document['title'], 'brand' => $document['brand'], 'price' => $document['price']],
         'full_text_search' => ['ids' => ids($fullText), 'total' => $fullText->totalHits],
         'stemming' => ['ids' => ids($stemming)],
@@ -283,11 +322,11 @@ function captureRealEngineParity(Index $index): array
         'facets' => array_column($faceted->facets['brands'], 'count', 'value'),
         'root_aggregations' => $root->aggregations,
         'advanced_update' => ['title' => $advancedUpdate['title'], 'inventory' => $advancedUpdate['inventory'], 'sale_price_present' => array_key_exists('sale_price', $advancedUpdate)],
-        'builder_misuse' => (function () use ($index): array {
-            expectInvalid(static fn () => $index->search('shoes')->page(2, 20)->limit(20), 'page plus limit rejected');
-            expectInvalid(static fn () => $index->search('shoes')->page(2, 20)->offset(20), 'page plus offset rejected');
-            expectInvalid(static fn () => $index->search('shoes')->limit(-1), 'negative limit rejected');
-            expectInvalid(static fn () => $index->search('shoes')->offset(-1), 'negative offset rejected');
+        'builder_misuse' => (function () use ($index, $misuseSpec): array {
+            expectInvalid(static fn () => $index->search($misuseSpec['query'])->page($misuseSpec['page'], $misuseSpec['page_size'])->limit($misuseSpec['limit']), 'page plus limit rejected');
+            expectInvalid(static fn () => $index->search($misuseSpec['query'])->page($misuseSpec['page'], $misuseSpec['page_size'])->offset($misuseSpec['page_size']), 'page plus offset rejected');
+            expectInvalid(static fn () => $index->search($misuseSpec['query'])->limit($misuseSpec['negative_limit']), 'negative limit rejected');
+            expectInvalid(static fn () => $index->search($misuseSpec['query'])->offset($misuseSpec['negative_offset']), 'negative offset rejected');
             return [
                 'observation' => [
                     'page_and_limit_rejected' => true,
@@ -318,8 +357,8 @@ function captureRealEngineParity(Index $index): array
         'rank_inputs' => array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankInput->hits),
         'rank_properties' => array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankProperty->hits),
         'tensor_readback' => $document['embedding']->payload['values'],
-        'nearest_neighbor' => ['observation' => ['intent' => $nearestIntent, 'ids' => ids($nearest), 'scores' => array_map(static fn ($hit): float => (float) $hit->relevance, $nearest->hits)], 'capabilities' => (object) []],
-        'hybrid_text_vector' => ['observation' => ['intent' => $hybridIntent, 'ids' => ids($hybrid), 'top_score' => $hybrid->hits[0]->score()], 'capabilities' => (object) []],
+        'nearest_neighbor' => ['observation' => ['intent' => $nearestIntent, 'ids' => ids($nearest), 'scores' => array_map(static fn ($hit): float => (float) $hit->relevance, $nearest->hits)], 'capabilities' => []],
+        'hybrid_text_vector' => ['observation' => ['intent' => $hybridIntent, 'ids' => ids($hybrid), 'top_score' => $hybrid->hits[0]->score()], 'capabilities' => []],
         'hybrid' => ['top_id' => $hybrid->hits[0]->id, 'has_bag' => in_array('bag-1', ids($hybrid), true)],
         'two_phase_reranking' => ['ids' => ids($reranked)],
         'coverage_degradation' => ['ids' => ids($degraded), 'full' => $degraded->coverage->full, 'degraded' => $degraded->coverage->degraded !== null],
@@ -328,6 +367,7 @@ function captureRealEngineParity(Index $index): array
         'structured_filter_error' => ['code' => 'invalid_argument', 'details' => $errorCodes],
         'text_filter_syntax_error' => ['code' => 'invalid_argument', 'details' => $syntaxError['details']],
     ];
+    return $observations;
 }
 
 function writeRealEngineParity(array $scenarios): void
@@ -336,17 +376,25 @@ function writeRealEngineParity(array $scenarios): void
     if ($path === false || $path === '') {
         return;
     }
+    $inputs = searchkernelPhpClientApiE2eCorpus()['scenario_inputs'];
+    foreach ($scenarios as $scenario => &$value) {
+        if (!isset($inputs[$scenario]) || str_starts_with($scenario, 'typed_query_')) {
+            continue;
+        }
+        if (isset($value['observation']) && is_array($value['observation'])) {
+            $value['observation']['intent'] ??= $inputs[$scenario];
+        } elseif (is_array($value)) {
+            $value['intent'] ??= $inputs[$scenario];
+        } else {
+            $value = ['intent' => $inputs[$scenario], 'result' => $value];
+        }
+    }
+    unset($value);
     $observations = ['version' => 1, 'scenarios' => $scenarios];
     if (is_file($path)) {
         $previous = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
         $observations['scenarios'] = array_replace($previous['scenarios'] ?? [], $scenarios);
     }
-    foreach ($observations['scenarios'] as &$scenario) {
-        if (isset($scenario['capabilities']) && $scenario['capabilities'] === []) {
-            $scenario['capabilities'] = (object) [];
-        }
-    }
-    unset($scenario);
     file_put_contents($path, json_encode($observations, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
 }
 
@@ -364,13 +412,15 @@ if ($phase === 'reopen') {
     heading('30. REOPEN PERSISTED INDEX');
 
     same(null, $index->get('shoe-3'), 'deleted document remains deleted');
-    $persisted = $index->get('parity-reopen');
+    $reopenSpec = $e2eCorpus['scenario_inputs']['reopen_persistence'];
+    $upsertSpec = $e2eCorpus['scenario_inputs']['upsert_replacement'];
+    $persisted = $index->get($reopenSpec['marker_id']);
     check($persisted !== null, 'parity-reopen survives daemon and index reopen');
-    $persistedShoe2 = $index->get('shoe-2');
+    $persistedShoe2 = $index->get($upsertSpec['document_id']);
     writeRealEngineParity(['reopen_persistence' => [
         'marker' => ['title' => $persisted['title'], 'price' => $persisted['price'], 'inventory' => $persisted['inventory']],
         'upserted' => ['updated_title_matches' => str_contains($persistedShoe2['title'], 'Updated'), 'price' => $persistedShoe2['price']],
-        'deleted_absent' => $index->get('parity-mutation') === null,
+        'deleted_absent' => $index->get($e2eCorpus['scenario_inputs']['delete']['document_id']) === null,
     ]]);
 
     $shoe1 = $index->get('shoe-1');
@@ -470,13 +520,19 @@ for ($probe = 0; $probe < $probeSpec['count']; $probe++) {
 }
 
 $parity = captureRealEngineParity($index);
-$index->insert(['_id' => 'parity-mutation', 'title' => 'Parity Mutation', 'category' => 'parity', 'price' => 100.0, 'sale_price' => 110.0, 'rating' => 1, 'inventory' => 1, 'in_stock' => true]);
-$index->patch('parity-mutation')->set('price', 75.0)->unset('sale_price')->execute();
-$mutated = $index->get('parity-mutation');
+$patchSpec = $e2eCorpus['scenario_inputs']['patch'];
+$index->insert(['_id' => $patchSpec['document_id'], ...$patchSpec['initial']]);
+$patchBuilder = $index->patch($patchSpec['document_id']);
+foreach ($patchSpec['set'] as $field => $value) $patchBuilder = $patchBuilder->set($field, $value);
+foreach ($patchSpec['unset'] as $field) $patchBuilder = $patchBuilder->unset($field);
+$patchBuilder->execute();
+$mutated = $index->get($patchSpec['document_id']);
 $parity['patch'] = ['price' => $mutated['price'], 'sale_price_present' => array_key_exists('sale_price', $mutated)];
-$parityMutationDeleted = $index->delete('parity-mutation');
-$parity['delete'] = ['deleted' => $parityMutationDeleted, 'absent_after_delete' => $index->get('parity-mutation') === null];
-$index->insert(['_id' => 'parity-reopen', 'title' => 'Parity Reopen', 'category' => 'parity', 'price' => 42.0, 'inventory' => 7, 'in_stock' => true]);
+$deleteSpec = $e2eCorpus['scenario_inputs']['delete'];
+$parityMutationDeleted = $index->delete($deleteSpec['document_id']);
+$parity['delete'] = ['deleted' => $parityMutationDeleted, 'absent_after_delete' => $index->get($deleteSpec['document_id']) === null];
+$reopenSpec = $e2eCorpus['scenario_inputs']['reopen_persistence'];
+$index->insert(['_id' => $reopenSpec['marker_id'], ...$reopenSpec['marker']]);
 
 heading('3. GET BY ID');
 $doc = $index->get('shoe-1');
@@ -952,22 +1008,16 @@ check(!in_array('Budget', $brands, true), 'facet reflects delete');
 check(!$index->delete('shoe-3'), 'duplicate delete false');
 
 heading('28. UPSERT REPLACEMENT');
-$index->upsert([
-    '_id' => 'shoe-2',
-    'title' => 'Trail Running Shoes - Updated Edition',
-    'brand' => 'TrailCo',
-    'category' => 'shoes',
-    'price' => 119.0,
-    'rating' => 5,
-    'inventory' => 4,
-    'in_stock' => true,
-    'embedding' => embedding(SHOE_2_VECTOR),
-]);
-$doc = $index->get('shoe-2');
+$upsertSpec = $e2eCorpus['scenario_inputs']['upsert_replacement'];
+$replacement = $upsertSpec['replacement'];
+$vectorDocumentId = $replacement['vector_document_id'];
+unset($replacement['vector_document_id']);
+$index->upsert(['_id' => $upsertSpec['document_id'], ...$replacement, 'embedding' => embedding(corpusVector($vectorDocumentId))]);
+$doc = $index->get($upsertSpec['document_id']);
 same(119.0, $doc['price'], 'upsert replacement price');
 check(str_contains($doc['title'], 'Updated Edition'), 'upsert replacement title');
-$updatedSearch = $index->search('updated')->limit(20)->execute();
-same(['shoe-2'], ids($updatedSearch), 'replacement searchable');
+$updatedSearch = $index->search($upsertSpec['search_query'])->limit(20)->execute();
+same([$upsertSpec['document_id']], ids($updatedSearch), 'replacement searchable');
 $parity['upsert_replacement'] = ['price' => $doc['price'], 'updated_title_matches' => str_contains($doc['title'], 'Updated'), 'search_ids' => ids($updatedSearch)];
 
 writeRealEngineParity($parity);

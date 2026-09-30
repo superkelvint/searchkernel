@@ -45,18 +45,6 @@ fn assert_php_consumes_printed_response(repo_root: &std::path::Path, name: &str,
 #[test]
 #[ignore = "requires the PHP runtime; run explicitly from client verification"]
 fn php_emitted_standard_json_matches_canonical_bfbs() {
-    let parity_corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../reference/client-real-e2e-parity/corpus.json"
-    ))
-    .expect("shared parity corpus JSON");
-    let parity_field_count = parity_corpus["schema"]["fields"]
-        .as_object()
-        .expect("shared parity schema fields")
-        .len();
-    let parity_rank_profile_count = parity_corpus["schema"]["rank_profiles"]
-        .as_array()
-        .expect("shared parity rank profiles")
-        .len();
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
         .canonicalize()
@@ -123,13 +111,13 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                         .unwrap_or_else(|| panic!("{name}: create-index definition missing"));
                     assert_eq!(
                         definition.fields().map(|fields| fields.len()),
-                        Some(parity_field_count),
-                        "{name}: PHP E2E field count follows the shared parity corpus"
+                        Some(12),
+                        "{name}: exact PHP E2E field count"
                     );
                     assert_eq!(
                         definition.rank_profiles().map(|profiles| profiles.len()),
-                        Some(parity_rank_profile_count),
-                        "{name}: PHP E2E rank-profile count follows the shared parity corpus"
+                        Some(6),
+                        "{name}: exact PHP E2E rank-profile count"
                     );
                     assert_eq!(
                         envelope.target().map(|target| target.name()),
