@@ -58,6 +58,15 @@ function throws(string $class, callable $operation, string $message): void
     throw new RuntimeException($message . ': no exception');
 }
 
+/** @param array<string, mixed> $overrides @return array<string, mixed> */
+function canonicalResultPayload(array $overrides = []): array
+{
+    return array_replace([
+        'root' => ['node_type' => 'ResultGroup', 'node' => ['children' => []]],
+        'total_hits' => ['value' => 0, 'relation' => 'Exact'],
+    ], $overrides);
+}
+
 final class FixedResponseTransport implements Transport
 {
     /** @param array<string,mixed> $response */
@@ -841,8 +850,21 @@ $malformedHit = [
 ];
 throws(
     \UnexpectedValueException::class,
-    static fn () => SearchResult::fromPayload(['root' => $malformedHit]),
+    static fn () => SearchResult::fromPayload(canonicalResultPayload(['root' => $malformedHit])),
     'malformed hit scalar fields fail closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload([]),
+    'missing SearchResult root fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload([
+        'root' => ['node_type' => 'ResultGroup', 'node' => ['children' => []]],
+        'total_hits' => null,
+    ]),
+    'null SearchResult total_hits fails closed',
 );
 
 $encodedEmptyObject = Protocol::value(ValueObject::fromPairs([]));
@@ -851,6 +873,12 @@ same([], $encodedEmptyObject['kind']['fields'], 'empty object encodes with an em
 $decodedEmptyObject = Protocol::decodeValue($encodedEmptyObject);
 truth($decodedEmptyObject instanceof ValueObject, 'decoded ValueObject retains its object type when empty');
 same([], $decodedEmptyObject->entries, 'empty decoded ValueObject has no entries');
+$decodedObject = Protocol::decodeValue(Protocol::value(ValueObject::fromPairs([
+    ['key' => 'name', 'value' => 'searchkernel'],
+])));
+truth($decodedObject instanceof ValueObject, 'decoded non-empty ValueObject retains its object type');
+same('name', $decodedObject->entries[0]['key'], 'decoded ValueObject preserves entry keys');
+same('searchkernel', $decodedObject->entries[0]['value'], 'decoded ValueObject preserves entry values');
 $decodedEmptyList = Protocol::decodeValue(['kind_type' => 'ValueList', 'kind' => ['values' => []]]);
 same([], $decodedEmptyList, 'decoded empty ValueList remains a PHP list');
 truth(!$decodedEmptyList instanceof ValueObject, 'decoded empty ValueList stays distinct from ValueObject');
@@ -1043,14 +1071,14 @@ throws(
 );
 throws(
     SearchKernel\ProtocolException::class,
-    static fn () => SearchKernel\SearchResult::fromPayload([
+    static fn () => SearchKernel\SearchResult::fromPayload(canonicalResultPayload([
         'errors' => ['only' => ['code' => 1]],
-    ]),
+    ])),
     'SearchResult errors reject object-shaped vectors',
 );
 throws(
     SearchKernel\ProtocolException::class,
-    static fn () => SearchKernel\SearchResult::fromPayload([
+    static fn () => SearchKernel\SearchResult::fromPayload(canonicalResultPayload([
         'root' => [
             'node_type' => 'ResultGroup',
             'node' => [
@@ -1058,7 +1086,7 @@ throws(
                 'children' => [],
             ],
         ],
-    ]),
+    ])),
     'present malformed group limits fail closed instead of becoming null',
 );
 throws(
@@ -1598,7 +1626,7 @@ throws(
 );
 throws(
     ProtocolException::class,
-    static fn () => SearchResult::fromPayload(['errors' => null]),
+    static fn () => SearchResult::fromPayload(canonicalResultPayload(['errors' => null])),
     'present-null SearchResult errors vector fails closed',
 );
 throws(
@@ -1662,16 +1690,16 @@ throws(
 );
 same(
     'Unspecified',
-    SearchResult::fromPayload([
+    SearchResult::fromPayload(canonicalResultPayload([
         'total_hits' => ['value' => 0],
-    ])->totalHitsRelation,
+    ]))->totalHitsRelation,
     'present TotalHits with omitted relation preserves the schema default',
 );
 throws(
     ProtocolException::class,
-    static fn () => SearchResult::fromPayload([
+    static fn () => SearchResult::fromPayload(canonicalResultPayload([
         'total_hits' => ['value' => 0, 'relation' => 'FutureRelation'],
-    ]),
+    ])),
     'unknown TotalHits relation fails closed',
 );
 

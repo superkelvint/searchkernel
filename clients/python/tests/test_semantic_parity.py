@@ -3,6 +3,11 @@ from pathlib import Path
 from searchkernel.ergonomic import SearchBuilder
 from searchkernel import uint64
 from searchkernel.protocol import pack_object
+from SearchKernel.V2.ResultGroup import ResultGroupT
+from SearchKernel.V2.ResultNode import ResultNodeT
+from SearchKernel.V2.ResultNodeKind import ResultNodeKind
+from SearchKernel.V2.TotalHits import TotalHitsT
+from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation
 def corpus_value(item):
     if 'int64' in item:
         return int(item['int64'])
@@ -20,7 +25,21 @@ class CaptureClient:
         return type(
             "R",
             (),
-            {"root": None, "totalHits": None, "hits": [], "groups": [], "facets": [], "total": 0, "issues": []},
+            {
+                "root": ResultNodeT(
+                    ResultNodeKind.ResultGroup,
+                    ResultGroupT(children=[]),
+                ),
+                "totalHits": TotalHitsT(
+                    value=0,
+                    relation=TotalHitsRelation.Exact,
+                ),
+                "hits": [],
+                "groups": [],
+                "facets": [],
+                "total": 0,
+                "issues": [],
+            },
         )()
 class CaptureIndex:
     def __init__(self): self.client=CaptureClient()
