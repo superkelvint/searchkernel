@@ -55,8 +55,15 @@ fi
 
 mkdir -p "$OUT_DIR"
 STAGE=$(mktemp -d "$OUT_DIR/.native-base.XXXXXX")
-cleanup() { rm -rf "$STAGE"; }
-trap cleanup EXIT INT TERM
+cleanup() {
+    local status=$?
+    trap - EXIT INT TERM
+    if ! bash "$ROOT/tools/remove-readonly-tree.sh" "$STAGE" && (( status == 0 )); then
+        status=1
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
 BUNDLE=$STAGE/searchkernel-vespa-base
 mkdir -p "$BUNDLE/base" "$BUNDLE/toolchain/upstream/vespa" "$BUNDLE/toolchain/vespa-deps/include" "$BUNDLE/toolchain/vespa-deps/lib64"
 cp -aL "$BASE/." "$BUNDLE/base/"
