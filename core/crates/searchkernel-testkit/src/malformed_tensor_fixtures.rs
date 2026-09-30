@@ -152,10 +152,18 @@ fn encode(name: &'static str) -> Vec<u8> {
             node: Some(group.as_union_value()),
         },
     );
+    let total_hits = wire::TotalHits::create(
+        &mut builder,
+        &wire::TotalHitsArgs {
+            value: 1,
+            relation: wire::TotalHitsRelation::Exact,
+        },
+    );
     let result = wire::SearchResult::create(
         &mut builder,
         &wire::SearchResultArgs {
             root: Some(root),
+            total_hits: Some(total_hits),
             ..Default::default()
         },
     );
