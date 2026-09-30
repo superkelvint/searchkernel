@@ -164,6 +164,7 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         self.assertTrue(compare(7, 7.0000005))
         self.assertTrue(compare({"integer_value": 7}, {"integer_value": 7.0}))
         self.assertTrue(compare({"integer_value": 7}, {"integer_value": 7.0000005}))
+        self.assertTrue(compare({"sum": 7}, {"sum": 7.0}))
         self.assertEqual([], compare({"count": 7}, {"count": 7}))
 
     def test_close_float_values_pass_and_material_drift_fails(self):

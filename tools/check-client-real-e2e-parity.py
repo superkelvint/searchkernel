@@ -21,7 +21,6 @@ FLOAT_SEMANTIC_KEYS = {
     # the domain type that the wire representation no longer preserves.
     "price", "sale_price", "avg_price", "sum_price", "min_price", "max_price",
     "revenue", "score", "scores", "top_score", "feature", "relevance",
-    "percent", "sum", "avg", "min", "max", "stddev",
 }
 REQUIRED_TYPED_SCENARIOS = (
     "typed_query_contains", "typed_query_phrase", "typed_query_range",
