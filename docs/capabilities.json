@@ -927,6 +927,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
+        "core/crates/searchkernel/src/index/mod.rs",
         "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
