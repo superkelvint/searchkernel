@@ -39,26 +39,45 @@ E2E_CORPUS_PATH = File.expand_path("../../../reference/client-real-e2e-parity/co
 E2E_CORPUS = JSON.parse(File.read(E2E_CORPUS_PATH))
 PARITY_CONSUMED_INTENTS = {}
 
-class ConsumedIntentMap
-  include Enumerable
+class ConsumedIntent
+  def initialize(scenario, source)
+    @scenario = scenario
+    @source = source
+  end
 
+  def fetch(key, *defaults)
+    if @source.key?(key)
+      value = @source.fetch(key)
+      (PARITY_CONSUMED_INTENTS[@scenario] ||= {})[key] = JSON.parse(JSON.generate(value))
+      value
+    elsif block_given?
+      yield key
+    elsif defaults.empty?
+      raise KeyError, "key not found: #{key}"
+    else
+      defaults.first
+    end
+  end
+
+  def [](key)
+    return nil unless @source.key?(key)
+    fetch(key)
+  end
+end
+
+class ConsumedIntentMap
   def initialize(source)
     @source = source
   end
 
   def fetch(key)
     value = @source.fetch(key)
-    PARITY_CONSUMED_INTENTS[key] = JSON.parse(JSON.generate(value))
-    value
+    raise TypeError, "parity scenario intent #{key} must be an object" unless value.is_a?(Hash)
+    ConsumedIntent.new(key, value)
   end
 
   def [](key)
     fetch(key)
-  end
-
-  def each
-    return enum_for(:each) unless block_given?
-    @source.each_key { |key| yield key, fetch(key) }
   end
 end
 
@@ -113,7 +132,7 @@ def shared_typed_query_observations(index)
     result_ids = ids(result)
     result_ids.sort! if intent.fetch("result_order") == "sorted_ids"
     [scenario, {
-      "observation" => {"intent" => intent, "query_result" => result_ids},
+      "observation" => {"intent" => PARITY_CONSUMED_INTENTS.fetch(scenario), "query_result" => result_ids},
       "capabilities" => E2E_CORPUS.fetch("client_scenario_contract").fetch(scenario).fetch("ruby")
     }]
   end.to_h
