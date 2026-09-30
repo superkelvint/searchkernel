@@ -79,6 +79,18 @@ mod showcase {
         consumed: &'a RefCell<BTreeMap<String, serde_json::Map<String, Value>>>,
     }
 
+    impl TrackedIntent<'_> {
+        fn get(&self, key: &str) -> Option<&Value> {
+            let value = self.source.get(key)?;
+            self.consumed
+                .borrow_mut()
+                .entry(self.scenario.clone())
+                .or_default()
+                .insert(key.to_owned(), value.clone());
+            Some(value)
+        }
+    }
+
     impl std::ops::Index<&str> for TrackedIntent<'_> {
         type Output = Value;
 
@@ -149,63 +161,103 @@ mod showcase {
             .collect::<Result<Vec<_>, _>>()?)
     }
 
-    fn query_from_spec(spec: &Value) -> Result<Query, String> {
-        let kind = spec["kind"].as_str().ok_or("typed query kind missing")?;
-        let field = || spec["field"].as_str().ok_or("typed query field missing");
-        let text = |name: &str| spec[name].as_str().ok_or("typed query value missing");
-        let children = || {
-            spec["clauses"]
+    fn typed_query_for_scenario(
+        scenario: &str,
+        input: &TrackedIntent<'_>,
+    ) -> Result<Query, String> {
+        let field = || input["field"].as_str().ok_or("typed query field missing");
+        let text = |name: &str| input[name].as_str().ok_or("typed query value missing");
+        let text_terms = || {
+            input["terms"]
                 .as_array()
-                .ok_or("typed query clauses missing")?
+                .ok_or("typed query terms missing")?
                 .iter()
-                .map(query_from_spec)
+                .map(|term| term.as_str().ok_or("typed query term must be text"))
                 .collect::<Result<Vec<_>, _>>()
         };
-        Ok(match kind {
-            "contains" => Query::contains(field()?, Query::term_value(text("value")?)),
-            "phrase" => Query::phrase(
+        let weighted = || {
+            input["items"]
+                .as_object()
+                .ok_or("weighted query items missing")?
+                .iter()
+                .map(|(key, weight)| {
+                    Ok(WeightedQueryItem::new(
+                        key.as_str(),
+                        weight
+                            .as_i64()
+                            .ok_or("weighted query weight must be an integer")?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()
+        };
+
+        Ok(match scenario {
+            "typed_query_term" => Query::term(field()?, text("value")?),
+            "typed_query_contains" => Query::contains(field()?, Query::term_value(text("value")?)),
+            "typed_query_phrase" => Query::phrase(field()?, text_terms()?.join(" ")),
+            "typed_query_near" => Query::near(
                 field()?,
-                spec["terms"]
-                    .as_array()
-                    .ok_or("phrase terms missing")?
-                    .iter()
-                    .map(|term| term.as_str().ok_or("phrase term must be a string"))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .join(" "),
+                text_terms()?.into_iter().map(Query::term_value),
             ),
-            "near" | "ordered_near" => {
-                let field = field()?;
-                let terms = spec["terms"]
-                    .as_array()
-                    .ok_or("proximity terms missing")?
-                    .iter()
-                    .map(|term| {
-                        term.as_str()
-                            .ok_or("proximity term must be text")
-                            .map(|term| Query::term(field, term))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                if kind == "near" {
-                    Query::near(field, terms)
-                } else {
-                    Query::onear(field, terms)
-                }
-            }
-            "range" => {
-                let lower = spec["lower"].as_f64().ok_or("range lower bound missing")?;
-                let upper = spec["upper"].as_f64().ok_or("range upper bound missing")?;
-                Query::range(
-                    field()?,
-                    QueryBound::Included(lower.into()),
-                    QueryBound::Included(upper.into()),
-                )
-            }
-            "and" => Query::and(children()?),
-            "or" => Query::or(children()?),
-            "not" => Query::not(query_from_spec(&spec["clause"])?),
-            "in" => Query::in_values(
+            "typed_query_ordered_near" => Query::onear(
                 field()?,
-                spec["values"]
+                text_terms()?.into_iter().map(Query::term_value),
+            ),
+            "typed_query_range" | "typed_query_range_exclusive" => {
+                let lower = input["lower"].as_f64().ok_or("range lower bound missing")?;
+                let upper = input["upper"].as_f64().ok_or("range upper bound missing")?;
+                let lower = if input["include_lower"]
+                    .as_bool()
+                    .ok_or("range include_lower missing")?
+                {
+                    QueryBound::Included(lower.into())
+                } else {
+                    QueryBound::Excluded(lower.into())
+                };
+                let upper = if input["include_upper"]
+                    .as_bool()
+                    .ok_or("range include_upper missing")?
+                {
+                    QueryBound::Included(upper.into())
+                } else {
+                    QueryBound::Excluded(upper.into())
+                };
+                Query::range(field()?, lower, upper)
+            }
+            "typed_query_boolean" => {
+                let terms = input["or_terms"]
+                    .as_array()
+                    .ok_or("boolean or_terms missing")?;
+                if terms.len() != 2 {
+                    return Err("boolean parity scenario requires exactly two OR terms".to_owned());
+                }
+                let left = &terms[0];
+                let right = &terms[1];
+                let negative = &input["not_term"];
+                Query::and([
+                    Query::or([
+                        Query::term(
+                            left["field"].as_str().ok_or("boolean left field missing")?,
+                            left["value"].as_str().ok_or("boolean left value missing")?,
+                        ),
+                        Query::term(
+                            right["field"].as_str().ok_or("boolean right field missing")?,
+                            right["value"].as_str().ok_or("boolean right value missing")?,
+                        ),
+                    ]),
+                    Query::not(Query::term(
+                        negative["field"]
+                            .as_str()
+                            .ok_or("boolean negative field missing")?,
+                        negative["value"]
+                            .as_str()
+                            .ok_or("boolean negative value missing")?,
+                    )),
+                ])
+            }
+            "typed_query_in" => Query::in_values(
+                field()?,
+                input["values"]
                     .as_array()
                     .ok_or("IN values missing")?
                     .iter()
@@ -213,48 +265,67 @@ mod showcase {
                         value
                             .as_str()
                             .map(QueryValue::from)
-                            .ok_or("IN value must be a string")
+                            .ok_or("IN value must be text")
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             ),
-            "equals" => Query::equals(field()?, text("value")?),
-            "fuzzy" => Query::fuzzy(field()?, text("value")?),
-            "weak_and" => Query::weak_and(children()?, 100),
-            "wand" | "weighted_set" | "dot_product" => {
-                let items = spec["items"]
-                    .as_object()
-                    .ok_or("weighted query items missing")?
+            "typed_query_equals" => Query::equals(field()?, text("value")?),
+            "typed_query_fuzzy" => Query::fuzzy(field()?, text("value")?),
+            "typed_query_weak_and" => Query::weak_and(
+                input["terms"]
+                    .as_array()
+                    .ok_or("weak-and terms missing")?
                     .iter()
-                    .map(|(key, weight)| {
-                        Ok(WeightedQueryItem::new(
-                            key.as_str(),
-                            weight
-                                .as_i64()
-                                .ok_or("weighted query weight must be an integer")?,
+                    .map(|term| {
+                        Ok(Query::term(
+                            term["field"].as_str().ok_or("weak-and field missing")?,
+                            term["value"].as_str().ok_or("weak-and value missing")?,
                         ))
                     })
-                    .collect::<Result<Vec<_>, String>>()?;
-                match kind {
-                    "wand" => Query::wand(field()?, items),
-                    "weighted_set" => Query::weighted_set(field()?, items),
-                    _ => Query::dot_product(field()?, items),
-                }
-            }
-            "same_element" => Query::same_element(field()?, children()?),
-            "geo_location" => Query::geo_location(
-                field()?,
-                spec["latitude"].as_f64().ok_or("geo latitude missing")?,
-                spec["longitude"].as_f64().ok_or("geo longitude missing")?,
-                spec["radius"].as_str().ok_or("geo radius missing")?,
+                    .collect::<Result<Vec<_>, String>>()?,
+                100,
             ),
-            "geo_box" => Query::geo_bounding_box(
+            "typed_query_wand" => Query::wand(field()?, weighted()?),
+            "typed_query_weighted_set" => Query::weighted_set(field()?, weighted()?),
+            "typed_query_dot_product" => Query::dot_product(field()?, weighted()?),
+            "typed_query_prefix" => Query::prefix(field()?, text("value")?),
+            "typed_query_substring" => Query::substring(field()?, text("value")?),
+            "typed_query_suffix" => Query::suffix(field()?, text("value")?),
+            "typed_query_same_element" => Query::same_element(
                 field()?,
-                spec["south"].as_f64().ok_or("geo south missing")?,
-                spec["west"].as_f64().ok_or("geo west missing")?,
-                spec["north"].as_f64().ok_or("geo north missing")?,
-                spec["east"].as_f64().ok_or("geo east missing")?,
+                [
+                    Query::term(
+                        input["first_field"]
+                            .as_str()
+                            .ok_or("same-element first field missing")?,
+                        input["first_value"]
+                            .as_str()
+                            .ok_or("same-element first value missing")?,
+                    ),
+                    Query::term(
+                        input["last_field"]
+                            .as_str()
+                            .ok_or("same-element last field missing")?,
+                        input["last_value"]
+                            .as_str()
+                            .ok_or("same-element last value missing")?,
+                    ),
+                ],
             ),
-            _ => return Err(format!("unsupported typed query intent: {kind}")),
+            "typed_query_geo_location" => Query::geo_location(
+                field()?,
+                input["latitude"].as_f64().ok_or("geo latitude missing")?,
+                input["longitude"].as_f64().ok_or("geo longitude missing")?,
+                input["radius"].as_str().ok_or("geo radius missing")?,
+            ),
+            "typed_query_geo_box" => Query::geo_bounding_box(
+                field()?,
+                input["south"].as_f64().ok_or("geo south missing")?,
+                input["west"].as_f64().ok_or("geo west missing")?,
+                input["north"].as_f64().ok_or("geo north missing")?,
+                input["east"].as_f64().ok_or("geo east missing")?,
+            ),
+            _ => return Err(format!("unsupported typed parity scenario: {scenario}")),
         })
     }
 
