@@ -357,7 +357,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 49
+              "line": 50
             },
             {
               "capability": "query.phrase",
@@ -367,7 +367,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 49
+              "line": 50
             }
           ],
           "overrides": []
@@ -481,7 +481,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 50
+              "line": 51
             },
             {
               "capability": "query.proximity",
@@ -491,7 +491,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 50
+              "line": 51
             }
           ],
           "overrides": []
@@ -789,7 +789,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 48
+              "line": 49
             },
             {
               "capability": "query.nearest_neighbor",
@@ -799,7 +799,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 48
+              "line": 49
             },
             {
               "capability": "query.nearest_neighbor",
@@ -1214,7 +1214,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 44
+              "line": 45
             },
             {
               "capability": "filter.textual",
@@ -1224,7 +1224,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 44
+              "line": 45
             },
             {
               "capability": "filter.textual",
@@ -1318,7 +1318,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 45
+              "line": 46
             },
             {
               "capability": "search.sorting",
@@ -1328,7 +1328,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 45
+              "line": 46
             },
             {
               "capability": "search.sorting",
@@ -1435,7 +1435,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 46
+              "line": 47
             },
             {
               "capability": "search.pagination",
@@ -1445,7 +1445,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 46
+              "line": 47
             },
             {
               "capability": "search.pagination",
@@ -1593,7 +1593,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 47
+              "line": 48
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1603,7 +1603,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 47
+              "line": 48
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1971,7 +1971,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 51
+              "line": 52
             },
             {
               "capability": "grouping.structured",
@@ -1981,7 +1981,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 51
+              "line": 52
             },
             {
               "capability": "grouping.structured",
@@ -2089,7 +2089,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 52
+              "line": 53
             },
             {
               "capability": "grouping.aggregations",
@@ -2099,7 +2099,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 52
+              "line": 53
             },
             {
               "capability": "grouping.aggregations",
@@ -2315,7 +2315,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 43
+              "line": 44
             },
             {
               "capability": "update.document_crud",
@@ -2325,7 +2325,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
-              "line": 43
+              "line": 44
             }
           ],
           "overrides": []
