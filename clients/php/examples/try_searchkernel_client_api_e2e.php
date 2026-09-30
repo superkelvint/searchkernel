@@ -85,7 +85,7 @@ function embedding(array $values): Tensor
 /** @return list<string> */
 function ids($results): array
 {
-    return array_map(static fn ($hit): string => $hit->id, $results->hits);
+    return array_values(array_map(static fn ($hit): string => $hit->id, $results->hits));
 }
 
 /** @param list<string> $expected */
@@ -340,23 +340,23 @@ function captureRealEngineParity(Index $index): array
                 ],
             ];
         })(),
-        'grouping_aggregations' => array_map(static fn ($group): array => [
+        'grouping_aggregations' => array_values(array_map(static fn ($group): array => [
             'brand' => $group->value,
             'products' => $group->fields['products'],
             'avg_price' => $group->fields['avg_price'],
-        ], $groups),
+        ], $groups)),
         'filtered_facets' => array_column($filteredFacet->facets['brand'], 'count', 'value'),
-        'nested_grouping' => array_map(static fn ($group): array => [
+        'nested_grouping' => array_values(array_map(static fn ($group): array => [
             'category' => $group->value,
             'products' => $group->fields['products'],
             'ratings' => array_map(static fn ($rating): array => ['rating' => $rating->value, 'products' => $rating->fields['products'], 'avg_price' => $rating->fields['avg_price']], $group->groups),
-        ], groupingGroups($nested)),
-        'group_alias' => array_map(static fn ($group): array => ['value' => $group->value, 'fields' => $group->fields], groupingGroups($aliased)),
-        'group_keep_filter' => array_map(static fn ($group): array => ['value' => $group->value, 'fields' => $group->fields], groupingGroups($kept)),
+        ], groupingGroups($nested))),
+        'group_alias' => array_values(array_map(static fn ($group): array => ['value' => $group->value, 'fields' => $group->fields], groupingGroups($aliased))),
+        'group_keep_filter' => array_values(array_map(static fn ($group): array => ['value' => $group->value, 'fields' => $group->fields], groupingGroups($kept))),
         ...$typedObservations,
-        'rank_inputs' => array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankInput->hits),
-        'rank_properties' => array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankProperty->hits),
-        'tensor_readback' => $document['embedding']->payload['values'],
+        'rank_inputs' => array_values(array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankInput->hits)),
+        'rank_properties' => array_values(array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankProperty->hits)),
+        'tensor_readback' => array_values($document['embedding']->payload['values']),
         'nearest_neighbor' => ['observation' => ['intent' => $nearestIntent, 'ids' => ids($nearest), 'scores' => array_map(static fn ($hit): float => (float) $hit->relevance, $nearest->hits)], 'capabilities' => (object) []],
         'hybrid_text_vector' => ['observation' => ['intent' => $hybridIntent, 'ids' => ids($hybrid), 'top_score' => $hybrid->hits[0]->score()], 'capabilities' => (object) []],
         'hybrid' => ['top_id' => $hybrid->hits[0]->id, 'has_bag' => in_array('bag-1', ids($hybrid), true)],
