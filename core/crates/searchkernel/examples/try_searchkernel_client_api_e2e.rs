@@ -1096,12 +1096,10 @@ mod showcase {
         let mut typed_observations = serde_json::Map::new();
         for scenario in typed_scenarios {
             let input = tracked_intent(scenario, shared_inputs, &consumed_intents);
-            let mut builder = index
-                .search("")
-                .typed_query(
-                    typed_query_for_scenario(scenario, &input)
-                        .map_err(|error| format!("{scenario}: {error}"))?,
-                );
+            let mut builder = index.search("").typed_query(
+                typed_query_for_scenario(scenario, &input)
+                    .map_err(|error| format!("{scenario}: {error}"))?,
+            );
             if let Some(profile) = input.get("ranking_profile").and_then(Value::as_str) {
                 builder = builder.ranking(Ranking::named(profile));
             }
