@@ -664,7 +664,7 @@ with Index.create(
     parity_mutation_deleted = index.delete(delete_spec["document_id"])
     PARITY_OBSERVATIONS["delete"] = {"deleted": parity_mutation_deleted, "absent_after_delete": index.get(delete_spec["document_id"]) is None}
     reopen_spec = PARITY_INTENTS["reopen_persistence"]
-    index.insert({"_id": reopen_spec["marker_id"], **reopen_spec["marker"]})
+    index.insert(document_input({"_id": reopen_spec["marker_id"], **reopen_spec["marker"]}))
 
     # -----------------------------------------------------------------------
     # GET
