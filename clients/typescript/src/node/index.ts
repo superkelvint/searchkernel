@@ -1,6 +1,8 @@
 import { Index as RemoteIndex, Client } from "../client/index.js";
-import { realpathSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
 import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
 import { FieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/field-definition.js";
 import { RankProfileDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-definition.js";
@@ -39,20 +41,38 @@ function indexDefinition(options: CreateIndexOptions): IndexDefinitionT {
   return definition;
 }
 
-function localLocation(path: string): { dataRoot: string; target: string } {
-  let canonicalPath: string;
+const MANAGED_DATA_ROOT_NAME = ".searchkernel-managed";
+const MANAGED_MARKER_NAME = ".searchkernel-managed-target";
+
+function localLocation(path: string): { indexPath: string; dataRoot: string; target: string } {
+  const indexPath = resolve(path);
+  const target = `local-${createHash("sha256").update(indexPath).digest("hex").slice(0, 32)}`;
+  return {
+    indexPath,
+    dataRoot: join(dirname(indexPath), MANAGED_DATA_ROOT_NAME),
+    target,
+  };
+}
+
+async function reserveManagedPath(indexPath: string, target: string): Promise<void> {
+  await mkdir(dirname(indexPath), { recursive: true });
   try {
-    canonicalPath = realpathSync(path);
-  } catch {
-    canonicalPath = resolve(path);
+    await mkdir(indexPath);
+    await writeFile(join(indexPath, MANAGED_MARKER_NAME), `${target}\n`, { flag: "wx" });
+  } catch (error) {
+    await rm(indexPath, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
   }
-  const target = basename(canonicalPath);
-  if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(target)) {
-    throw new TypeError(
-      "managed-local index directory name must match [a-z0-9][a-z0-9_-]{0,127}",
-    );
-  }
-  return { dataRoot: dirname(canonicalPath), target };
+}
+
+async function ensureManagedMarker(indexPath: string, target: string): Promise<void> {
+  if (existsSync(indexPath)) return;
+  await mkdir(indexPath);
+  await writeFile(join(indexPath, MANAGED_MARKER_NAME), `${target}\n`, { flag: "wx" });
+}
+
+async function cleanupManagedReservation(indexPath: string): Promise<void> {
+  await rm(indexPath, { recursive: true, force: true }).catch(() => undefined);
 }
 
 /** Node-specific Index that can own a local searchkerneld process. */
@@ -94,16 +114,20 @@ export class Index extends RemoteIndex {
       }
     }
 
-    const { dataRoot, target } = localLocation(location);
-    const owner = await ManagedLocalHost.start(dataRoot);
-    const client = new Client(new NodeGrpcTransport(owner.endpoint), target);
+    const { indexPath, dataRoot, target } = localLocation(location);
+    await reserveManagedPath(indexPath, target);
+    let owner: ManagedLocalHost | null = null;
+    let client: Client | null = null;
     try {
+      owner = await ManagedLocalHost.start(dataRoot);
+      client = new Client(new NodeGrpcTransport(owner.endpoint), target);
       const result = await client.createIndex(indexDefinition(targetOrOptions));
       if (result.index === null) throw new Error("CreateIndexResult.index is missing");
       return new Index(client, owner);
     } catch (error) {
-      await client.close();
-      await owner.close();
+      await client?.close();
+      await owner?.close();
+      await cleanupManagedReservation(indexPath);
       throw error;
     }
   }
@@ -121,7 +145,11 @@ export class Index extends RemoteIndex {
       }
     }
 
-    const { dataRoot, target } = localLocation(location);
+    const { indexPath, dataRoot, target } = localLocation(location);
+    await ManagedLocalHost.migrateLegacy(indexPath, dataRoot, target);
+    if (existsSync(join(dataRoot, target)) && !existsSync(indexPath)) {
+      await ensureManagedMarker(indexPath, target);
+    }
     const owner = await ManagedLocalHost.start(dataRoot);
     const client = new Client(new NodeGrpcTransport(owner.endpoint), target);
     try {
