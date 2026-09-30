@@ -696,6 +696,33 @@ extern "C" SK_API int32_t sk_document_update_assign_string_array(
     });
 }
 
+extern "C" SK_API int32_t sk_document_update_assign_struct_array(
+    sk_document_update *update, const char *field, const sk_struct_array *array,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!array) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                 "update struct array must not be null");
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_STRUCT_ARRAY;
+        result.struct_elements.reserve(array->elements.size());
+        for (const auto &element : array->elements) {
+            std::vector<std::pair<std::string, OwnedValue>> converted;
+            converted.reserve(element.size());
+            for (const auto &[name, value] : element) {
+                OwnedValue owned;
+                owned.kind = value.kind;
+                owned.string = value.string;
+                owned.integer = value.integer;
+                owned.floating = value.floating;
+                owned.boolean = value.boolean;
+                converted.emplace_back(name, std::move(owned));
+            }
+            result.struct_elements.push_back(std::move(converted));
+        }
+        return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
 extern "C" SK_API int32_t sk_document_update_assign_position(
     sk_document_update *update, const char *field, double latitude, double longitude,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
