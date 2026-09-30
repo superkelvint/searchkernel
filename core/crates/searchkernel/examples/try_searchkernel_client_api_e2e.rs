@@ -1106,6 +1106,9 @@ mod showcase {
             let mut results = builder
                 .limit(input["limit"].as_u64().ok_or("typed query limit missing")? as u32)
                 .execute::<Value>()?;
+            let result_order = input["result_order"]
+                .as_str()
+                .ok_or("typed query result_order missing")?;
             let query_result = if let Some(feature) = input.get("feature").and_then(Value::as_str) {
                 json!(results
                     .hits
@@ -1116,7 +1119,7 @@ mod showcase {
                     }))
                     .collect::<Vec<_>>())
             } else {
-                if input["result_order"] == "sorted_ids" {
+                if result_order == "sorted_ids" {
                     results.hits.sort_by(|left, right| left.id.cmp(&right.id));
                 }
                 json!(ids(&results))
