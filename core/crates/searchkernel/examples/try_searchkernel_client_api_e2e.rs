@@ -28,8 +28,8 @@ mod showcase {
     use searchkernel::{
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
         GroupingAggregation, GroupingPlan, Hit, Index, IndexDefinition, Patch, Query, QueryBound,
-        QueryValue, RankProfile, Ranking, ResultValue, SearchResult, Sort, Tensor, TotalHitsRelation,
-        WandOptions, WeightedQueryItem,
+        QueryValue, RankProfile, Ranking, ResultValue, SearchResult, Sort, Tensor,
+        TotalHitsRelation, WandOptions, WeightedQueryItem,
     };
     use serde_json::{json, Value};
     use std::collections::{BTreeMap, BTreeSet};
@@ -818,7 +818,10 @@ mod showcase {
             .find(|group| group.key == Some(ResultValue::String("shoes".to_owned())))
             .expect("shoes category group");
         assert_eq!(shoes_group.aggregations["count"], ResultValue::UInt64(5));
-        assert_eq!(shoes_group.aggregations["average(price)"], ResultValue::Float64(107.0));
+        assert_eq!(
+            shoes_group.aggregations["average(price)"],
+            ResultValue::Float64(107.0)
+        );
         assert_eq!(shoes_group.groups.len(), 3);
         for (rating, count, average) in [(3, 1, 49.0), (4, 2, 134.0), (5, 2, 109.0)] {
             let rating_group = shoes_group
@@ -826,8 +829,14 @@ mod showcase {
                 .iter()
                 .find(|group| group.key == Some(ResultValue::Int64(rating)))
                 .unwrap_or_else(|| panic!("missing rating group {rating}"));
-            assert_eq!(rating_group.aggregations["count"], ResultValue::UInt64(count));
-            assert_eq!(rating_group.aggregations["average(price)"], ResultValue::Float64(average));
+            assert_eq!(
+                rating_group.aggregations["count"],
+                ResultValue::UInt64(count)
+            );
+            assert_eq!(
+                rating_group.aggregations["average(price)"],
+                ResultValue::Float64(average)
+            );
         }
         println!("nested grouping keys, count, and average values PASS");
 
@@ -1205,7 +1214,10 @@ mod showcase {
             .iter()
             .find(|group| group.key == Some(ResultValue::String("shoes".to_owned())))
             .expect("reopened shoes category group");
-        assert_eq!(reopened_shoes_group.aggregations["count"], ResultValue::UInt64(4));
+        assert_eq!(
+            reopened_shoes_group.aggregations["count"],
+            ResultValue::UInt64(4)
+        );
         assert_eq!(
             reopened_shoes_group.aggregations["average(price)"],
             ResultValue::Float64(116.5)
@@ -1216,7 +1228,10 @@ mod showcase {
                 .iter()
                 .find(|group| group.key == Some(ResultValue::Int64(rating)))
                 .unwrap_or_else(|| panic!("missing reopened rating group {rating}"));
-            assert_eq!(rating_group.aggregations["count"], ResultValue::UInt64(count));
+            assert_eq!(
+                rating_group.aggregations["count"],
+                ResultValue::UInt64(count)
+            );
             let actual_average = match rating_group.aggregations["average(price)"] {
                 ResultValue::Float64(value) => value,
                 ref other => panic!("reopened average should be numeric, got {other:?}"),
