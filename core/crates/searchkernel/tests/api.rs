@@ -33,6 +33,15 @@ fn public_schema_signatures_use_searchkernel_owned_types() {
 }
 
 #[test]
+fn query_model_and_yql_types_remain_public_at_the_crate_root() {
+    use searchkernel::{QueryModelType, YqlBuilder};
+
+    let _ = QueryModelType::default();
+    fn accepts_yql_builder(_: Option<YqlBuilder>) {}
+    accepts_yql_builder(None);
+}
+
+#[test]
 fn canonical_result_tree_types_are_public_to_downstream_crates() {
     use searchkernel::{ResultGroup, ResultHit, ResultLimits, ResultNode, ResultValue};
 
