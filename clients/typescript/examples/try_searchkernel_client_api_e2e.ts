@@ -116,16 +116,16 @@ function rankProfilesFromCorpus(): RankProfile[] {
   });
 }
 
+function corpusValue(field: string, input: unknown): ValueInput {
+  const type = E2E_CORPUS.schema.fields[field]?.type;
+  if (type === "float64" && typeof input === "number") return float64(input);
+  if (type === "int64" && (typeof input === "number" || typeof input === "string")) return BigInt(input);
+  if (type?.startsWith("tensor<") && Array.isArray(input)) return embedding(...input as number[]);
+  return input as ValueInput;
+}
+
 function documentInput(source: Record<string, unknown>): DocumentInput {
-  const document: Record<string, unknown> = { ...source };
-  for (const key of ["price", "sale_price"] as const) {
-    if (typeof document[key] === "number") document[key] = float64(document[key]);
-  }
-  for (const key of ["rating", "inventory"] as const) {
-    if (typeof document[key] === "number") document[key] = BigInt(document[key]);
-  }
-  if (Array.isArray(document.embedding)) document.embedding = embedding(...document.embedding as number[]);
-  return document as DocumentInput;
+  return Object.fromEntries(Object.entries(source).map(([field, input]) => [field, corpusValue(field, input)])) as DocumentInput;
 }
 
 function sharedFilterBindings(source: string, bindings: Record<string, unknown>): Record<string, ValueInput> {
@@ -133,10 +133,7 @@ function sharedFilterBindings(source: string, bindings: Record<string, unknown>)
   for (const [name, input] of Object.entries(bindings)) {
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const field = new RegExp(`([A-Za-z_][\\w.]*)\\s*(?:(?:<=|>=|=|<|>)\\s*|IN\\s*\\(\\s*):${escapedName}\\b`, "i").exec(source)?.[1];
-    const fieldType = field ? E2E_CORPUS.schema.fields[field]?.type : undefined;
-    converted[name] = fieldType === "float64" ? float64(input as number)
-      : fieldType === "int64" ? BigInt(input as number | string)
-        : input as ValueInput;
+    converted[name] = field ? corpusValue(field, input) : input as ValueInput;
   }
   return converted;
 }
@@ -343,13 +340,13 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const updateSpec = intents.advanced_update;
   await index.insert(documentInput({ _id: updateSpec.document_id, ...updateSpec.initial }));
   let updateBuilder = index.update(updateSpec.document_id);
-  for (const [key, value] of Object.entries<any>(updateSpec.set)) updateBuilder = updateBuilder.set(key, value);
+  for (const [key, value] of Object.entries<any>(updateSpec.set)) updateBuilder = updateBuilder.set(key, corpusValue(key, value));
   for (const field of updateSpec.unset) updateBuilder = updateBuilder.unset(field);
-  for (const [key, value] of Object.entries<any>(updateSpec.increments)) updateBuilder = updateBuilder.increment(key, BigInt(value));
+  for (const [key, value] of Object.entries<any>(updateSpec.increments)) updateBuilder = updateBuilder.increment(key, corpusValue(key, value));
   await updateBuilder.execute();
-  for (const [key, value] of Object.entries<any>(updateSpec.decrements)) await index.update(updateSpec.document_id).decrement(key, BigInt(value)).execute();
-  for (const [key, value] of Object.entries<any>(updateSpec.multipliers)) await index.update(updateSpec.document_id).multiply(key, BigInt(value)).execute();
-  for (const [key, value] of Object.entries<any>(updateSpec.divisors)) await index.update(updateSpec.document_id).divide(key, BigInt(value)).execute();
+  for (const [key, value] of Object.entries<any>(updateSpec.decrements)) await index.update(updateSpec.document_id).decrement(key, corpusValue(key, value)).execute();
+  for (const [key, value] of Object.entries<any>(updateSpec.multipliers)) await index.update(updateSpec.document_id).multiply(key, corpusValue(key, value)).execute();
+  for (const [key, value] of Object.entries<any>(updateSpec.divisors)) await index.update(updateSpec.document_id).divide(key, corpusValue(key, value)).execute();
   const advancedUpdate = await index.get(updateSpec.document_id);
   const observations: Record<string, any> = {
     document_crud: { id: document._id, title: document.title, brand: document.brand, price: document.price },
@@ -562,7 +559,7 @@ async function main(): Promise<void> {
       const patchSpec = E2E_CORPUS.scenario_inputs.patch;
       await index.insert(documentInput({ _id: patchSpec.document_id, ...patchSpec.initial }));
       let patchBuilder = index.patch(patchSpec.document_id);
-      for (const [key, value] of Object.entries<any>(patchSpec.set)) patchBuilder = patchBuilder.set(key, value);
+      for (const [key, value] of Object.entries<any>(patchSpec.set)) patchBuilder = patchBuilder.set(key, corpusValue(key, value));
       for (const field of patchSpec.unset) patchBuilder = patchBuilder.unset(field);
       await patchBuilder.execute();
       const mutated = await index.get(patchSpec.document_id);
