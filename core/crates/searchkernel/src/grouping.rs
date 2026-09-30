@@ -589,7 +589,7 @@ fn order_to_ir(order: GroupingOrder) -> Result<GroupingExpressionIr> {
     Ok(if descending {
         GroupingExpressionIr::Negative(Box::new(expression))
     } else {
-        GroupingExpressionIr::Positive(Box::new(expression))
+        expression
     })
 }
 
