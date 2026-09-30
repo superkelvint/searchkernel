@@ -398,7 +398,7 @@ function writeRealEngineParity(array $scenarios): void
         }
         if (isset($value['observation']) && is_array($value['observation'])) {
             $value['observation']['intent'] ??= $inputs[$scenario];
-        } elseif (is_array($value)) {
+        } elseif (is_array($value) && !array_is_list($value)) {
             $value['intent'] ??= $inputs[$scenario];
         } else {
             $value = ['intent' => $inputs[$scenario], 'result' => $value];
