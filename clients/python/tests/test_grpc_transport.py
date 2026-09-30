@@ -15,6 +15,9 @@ from searchkernel.grpc_transport import (  # noqa: E402
     MAX_GRPC_MESSAGE_SIZE,
     GrpcTransport,
 )
+from searchkernel.protocol import pack_request  # noqa: E402
+from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelope  # noqa: E402
+from SearchKernel.V2.InsertRequest import InsertRequestT  # noqa: E402
 
 
 class _Stub:
@@ -27,6 +30,12 @@ class _Stub:
 
 
 class GrpcTransportTest(unittest.TestCase):
+    def test_ordinary_request_envelope_carries_logical_index_target(self):
+        payload = pack_request("insert", InsertRequestT(), target="products")
+        self.assertTrue(RequestEnvelope.RequestEnvelopeBufferHasIdentifier(payload, 0))
+        request = RequestEnvelope.GetRootAs(payload)
+        self.assertEqual(request.Target().Name().decode(), "products")
+
     def test_channel_uses_symmetric_large_message_limits(self):
         channel = object()
         stub = _Stub(channel)

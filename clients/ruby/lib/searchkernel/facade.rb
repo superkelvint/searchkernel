@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 require_relative "client"
 require_relative "grouping"
 require_relative "http_transport"
@@ -500,7 +502,7 @@ module SearchKernel
   class Index
     attr_reader :client
 
-    def self.connect(base_url, target: nil, timeout: 30.0)
+    def self.connect(base_url, target:, timeout: 30.0)
       new(Client.new(HttpTransport.new(base_url, timeout: timeout), target: target))
     end
 
@@ -514,8 +516,15 @@ module SearchKernel
         return new(client)
       end
 
-      owner = ManagedLocalHost.new(location, definition_json: definition)
-      new(Client.new(HttpTransport.new(owner.base_url)), owner: owner)
+      owner = ManagedLocalHost.new(location)
+      client = Client.new(
+        HttpTransport.new(owner.base_url, timeout: timeout),
+        target: local_target(location)
+      )
+      payload = client.create_index("definition" => definition)
+      index = payload["index"]
+      raise ProtocolError, "CreateIndexResult.index must be an object" unless index.is_a?(Hash)
+      new(client, owner: owner)
     rescue StandardError
       client&.close
       owner&.close(force: true)
@@ -532,7 +541,14 @@ module SearchKernel
       end
 
       owner = ManagedLocalHost.new(location)
-      new(Client.new(HttpTransport.new(owner.base_url)), owner: owner)
+      client = Client.new(
+        HttpTransport.new(owner.base_url, timeout: timeout),
+        target: local_target(location)
+      )
+      payload = client.open_index({})
+      index = payload["index"]
+      raise ProtocolError, "OpenIndexResult.index must be an object" unless index.is_a?(Hash)
+      new(client, owner: owner)
     rescue StandardError
       client&.close
       owner&.close(force: true)
@@ -546,6 +562,16 @@ module SearchKernel
     ensure
       client&.close
     end
+
+    def self.local_target(location)
+      path = begin
+        File.realpath(location.to_s)
+      rescue Errno::ENOENT
+        File.expand_path(location.to_s)
+      end
+      "local-#{Digest::SHA256.hexdigest(path)[0, 32]}"
+    end
+    private_class_method :local_target
 
     def initialize(client, owner: nil)
       @client = client

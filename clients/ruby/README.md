@@ -64,7 +64,7 @@ Set `SEARCHKERNEL_LOCAL_HOST` to override the daemon binary and
 `SEARCHKERNEL_SDK_LIB` to prepend its native library directory. Startup uses a
 private Unix gRPC socket plus loopback HTTP listener, probes readiness instead of
 sleeping blindly, and closes the daemon process group gracefully with a hard
-fallback. `Index.connect(url)` uses an already-running HTTP endpoint without
+fallback. `Index.connect(url, target: "products")` uses an already-running HTTP endpoint without
 owning its lifecycle.
 
 Index definitions are emitted as the **standard FlatBuffers JSON representation**

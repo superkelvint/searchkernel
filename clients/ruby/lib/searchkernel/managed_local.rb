@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
-require "json"
 require "socket"
-require "tempfile"
 require "tmpdir"
 
 require_relative "errors"
@@ -42,16 +40,14 @@ module SearchKernel
 
     at_exit { close_all }
 
-    def initialize(path, definition_json: nil)
-      @path = File.expand_path(path.to_s)
+    def initialize(data_root)
+      @data_root = File.expand_path(data_root.to_s)
       @closed = false
       @pid = nil
-      @definition_file = nil
       @tmpdir = Dir.mktmpdir("searchkernel-ruby-")
       @socket_path = File.join(@tmpdir, "searchkerneld.sock")
       @stderr_path = File.join(@tmpdir, "searchkerneld.stderr")
       @stderr_file = File.open(@stderr_path, "wb")
-      @definition_file = write_definition(definition_json) unless definition_json.nil?
       start
       self.class.register(self)
     rescue StandardError
@@ -66,7 +62,6 @@ module SearchKernel
       self.class.unregister(self)
       stop_process(force: force)
       close_stderr
-      cleanup_definition
       cleanup_tmpdir
       nil
     end
@@ -89,11 +84,10 @@ module SearchKernel
 
       command = [
         binary,
-        "--index", @path,
+        "--data-root", @data_root,
         "--listen", "unix://#{@socket_path}",
         "--web-listen", "127.0.0.1:#{port}"
       ]
-      command.concat(["--definition-json", @definition_file.path]) if @definition_file
 
       @pid = Process.spawn(
         env,
@@ -104,7 +98,6 @@ module SearchKernel
       )
       wait_until_ready(port)
       @base_url = "http://127.0.0.1:#{port}"
-      cleanup_definition
     rescue SystemCallError => error
       raise ClientError, "failed to start managed local host: #{error.message}"
     end
@@ -124,18 +117,6 @@ module SearchKernel
         return candidate if File.file?(candidate)
       end
       File.join(root, "target", "debug", "searchkerneld")
-    end
-
-    def write_definition(definition)
-      raise ArgumentError, "index definition must be a Hash" unless definition.is_a?(Hash)
-
-      file = Tempfile.new(["searchkernel-definition-", ".json"])
-      file.binmode
-      file.write(JSON.generate(definition, allow_nan: false))
-      file.flush
-      file
-    rescue JSON::GeneratorError => error
-      raise ArgumentError, "index definition is not valid canonical JSON: #{error.message}"
     end
 
     def free_port
@@ -226,18 +207,6 @@ module SearchKernel
       text.empty? ? "" : ": #{text}"
     rescue StandardError
       ""
-    end
-
-    def cleanup_definition
-      file = @definition_file
-      @definition_file = nil
-      return unless file
-
-      path = file.path
-      file.close
-      File.unlink(path) if File.exist?(path)
-    rescue StandardError
-      nil
     end
 
     def close_stderr

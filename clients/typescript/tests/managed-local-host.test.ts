@@ -63,14 +63,13 @@ describe("managed-local host binary resolution", () => {
   it("includes captured daemon output in startup errors", async () => {
     const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");
     const Host = ManagedLocalHost as unknown as new (
-      indexPath: string,
+      dataRoot: string,
       temporaryDirectory: string,
-      definitionPath: string | null,
     ) => {
       captureHostOutput(stream: "stdout" | "stderr", chunk: string): void;
       startupError(message: string): Error;
     };
-    const host = new Host("index", "/tmp/searchkernel-test", null);
+    const host = new Host("index", "/tmp/searchkernel-test");
     host.captureHostOutput("stderr", "native index open failed");
 
     expect(host.startupError("managed local host exited during startup").message).toContain(
@@ -100,15 +99,14 @@ describe("managed-local host binary resolution", () => {
 
     const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");
     const Host = ManagedLocalHost as unknown as new (
-      indexPath: string,
+      dataRoot: string,
       temporaryDirectory: string,
-      definitionPath: string | null,
     ) => {
       child: { exitCode: number | null; signalCode: NodeJS.Signals | null } | null;
       socketPath: string;
       waitUntilReady(): Promise<void>;
     };
-    const host = new Host("index", "/tmp/searchkernel-test", null);
+    const host = new Host("index", "/tmp/searchkernel-test");
     host.child = { exitCode: null, signalCode: null };
     host.socketPath = "/tmp/searchkernel-test/searchkerneld.sock";
 
@@ -182,14 +180,17 @@ describe("managed-local host binary resolution", () => {
 
     const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");
     const Host = ManagedLocalHost as unknown as new (
-      indexPath: string,
+      dataRoot: string,
       temporaryDirectory: string,
-      definitionPath: string | null,
     ) => { spawn(): void };
-    const host = new Host("relative-index", "/tmp/searchkernel-test", null);
+    const host = new Host("relative-index", "/tmp/searchkernel-test");
     host.spawn();
 
     expect(spawnMock).toHaveBeenCalledOnce();
+    const args = spawnMock.mock.calls[0]?.[1];
+    expect(args).toContain("--data-root");
+    expect(args).not.toContain("--index");
+    expect(args).not.toContain("--definition");
     const options = spawnMock.mock.calls[0]?.[2];
     expect(options).not.toHaveProperty("cwd");
   });

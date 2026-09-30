@@ -82,7 +82,7 @@ function canonicalSnapshot(request: SearchRequestT): unknown {
 }
 
 function index(): Index {
-  return Index.connect("unused", { execute: async () => new Uint8Array() } as unknown as GrpcWebTransport);
+  return Index.connect("unused", "test", { execute: async () => new Uint8Array() } as unknown as GrpcWebTransport);
 }
 
 describe("ergonomic facade", () => {

@@ -177,6 +177,18 @@ throws(
 // Portable value boundary.
 // --------------------------------------------------------------------------
 
+$handleTransport = new RecordingTransport();
+$firstHandle = new Index($handleTransport, 'products');
+$secondHandle = new Index($handleTransport, 'products');
+$firstHandle->close();
+throws(
+    SearchKernel\TransportException::class,
+    static fn () => $firstHandle->describe(),
+    'closed PHP handle rejects further operations',
+);
+same('test', $secondHandle->describe()['name'], 'closing one PHP handle leaves another selected handle usable');
+
+
 $document = Protocol::document([
     '_id' => 'doc-1',
     'title' => 'The quick brown fox',
@@ -1542,6 +1554,7 @@ truth(
 foreach ($lifecycleTransport->requests as $request) {
     same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
 }
+
 throws(
     InvalidArgumentException::class,
     static fn () => (new Client(new RecordingTransport(), '../escape'))->openIndex(),

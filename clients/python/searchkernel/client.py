@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import signal
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from .grpc_transport import GrpcTransport, GrpcTransportError
-from .protocol import ERROR_TYPE, pack_object, pack_request, unpack_response
+from .protocol import ERROR_TYPE, pack_request, unpack_response
 from .scalars import check_int64
 
 from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT
@@ -35,6 +36,8 @@ from SearchKernel.V2.FieldDefinition import FieldDefinitionT
 from SearchKernel.V2.FieldProjection import FieldProjectionT
 from SearchKernel.V2.Float64Value import Float64ValueT
 from SearchKernel.V2.GetRequest import GetRequestT
+from SearchKernel.V2.CreateIndexRequest import CreateIndexRequestT
+from SearchKernel.V2.OpenIndexRequest import OpenIndexRequestT
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT
 from SearchKernel.V2.InsertRequest import InsertRequestT
 from SearchKernel.V2.Int64Value import Int64ValueT
@@ -327,6 +330,11 @@ _MANAGED_HOST_OUTPUT_TAIL_BYTES = 16 * 1024
 _MANAGED_HOST_STARTUP_TIMEOUT_SECONDS = 60.0
 
 
+def _managed_target(path: Path) -> str:
+    canonical_path = str(path.expanduser().resolve(strict=False)).encode("utf-8")
+    return "local-" + hashlib.sha256(canonical_path).hexdigest()[:32]
+
+
 def _host_binary() -> Path:
     configured = os.environ.get("SEARCHKERNEL_LOCAL_HOST")
     if configured:
@@ -403,7 +411,6 @@ class _ManagedHostOutputCapture:
 
 def _cleanup_managed_local_host(
     process: subprocess.Popen[bytes] | None,
-    definition_path: Path | None,
     socket_dir: tempfile.TemporaryDirectory,
     output_capture: _ManagedHostOutputCapture | None,
     force: bool,
@@ -425,8 +432,6 @@ def _cleanup_managed_local_host(
             process.stderr.close()
     if output_capture is not None:
         output_capture.close()
-    if definition_path is not None:
-        definition_path.unlink(missing_ok=True)
     socket_dir.cleanup()
 
 
@@ -438,9 +443,8 @@ class _ManagedLocalHost:
     callers are not required to explicitly close every managed Index.
     """
 
-    def __init__(self, path: Path, definition: bytes | None):
+    def __init__(self, path: Path):
         self.path = path
-        self.definition_path: Path | None = None
         self.process: subprocess.Popen[bytes] | None = None
         self._output_capture: _ManagedHostOutputCapture | None = None
         self._finalizer: weakref.finalize | None = None
@@ -453,15 +457,6 @@ class _ManagedLocalHost:
             raise ClientError(
                 f"managed local host binary not found at {binary}; build searchkerneld first"
             )
-        if definition is not None:
-            temporary = tempfile.NamedTemporaryFile(
-                prefix="searchkernel-definition-", suffix=".fb", delete=False
-            )
-            self.definition_path = Path(temporary.name)
-            try:
-                temporary.write(definition)
-            finally:
-                temporary.close()
         environment = os.environ.copy()
         sdk_lib = os.environ.get("SEARCHKERNEL_SDK_LIB")
         if sdk_lib:
@@ -469,13 +464,11 @@ class _ManagedLocalHost:
             environment["LD_LIBRARY_PATH"] = f"{sdk_lib}:{previous}" if previous else sdk_lib
         command = [
             str(binary),
-            "--index",
+            "--data-root",
             str(path),
             "--listen",
             self.endpoint,
         ]
-        if self.definition_path is not None:
-            command.extend(["--definition", str(self.definition_path)])
         try:
             self.process = subprocess.Popen(
                 command,
@@ -492,7 +485,6 @@ class _ManagedLocalHost:
                 self,
                 _cleanup_managed_local_host,
                 self.process,
-                self.definition_path,
                 self.socket_dir,
                 self._output_capture,
                 False,
@@ -544,13 +536,11 @@ class _ManagedLocalHost:
             finalizer.detach()
         _cleanup_managed_local_host(
             self.process,
-            self.definition_path,
             self.socket_dir,
             self._output_capture,
             force,
         )
         self.process = None
-        self.definition_path = None
         self._output_capture = None
         self._finalizer = None
 
@@ -558,12 +548,15 @@ class _ManagedLocalHost:
 class Client:
     """Synchronous request/response client over a real gRPC channel."""
 
-    def __init__(self, transport: GrpcTransport):
+    def __init__(self, transport: GrpcTransport, target: str | None = None):
         self.transport = transport
+        self.target = target
 
     def execute(self, operation: str, request: Any) -> Any:
         try:
-            envelope = unpack_response(self.transport.call(pack_request(operation, request)), operation)
+            envelope = unpack_response(
+                self.transport.call(pack_request(operation, request, target=self.target)), operation
+            )
             if envelope.payloadType == ERROR_TYPE:
                 error = envelope.payload
                 raise ClientError(error.message or "Search Kernel request failed", error=error)
@@ -609,6 +602,12 @@ class Client:
     def inspect_query(self, request: Any) -> Any:
         return self.execute("inspect_query", InspectQueryRequestT(request=request))
 
+    def create_index(self, definition: IndexDefinitionT) -> Any:
+        return self.execute("create_index", CreateIndexRequestT(definition=definition))
+
+    def open_index(self) -> Any:
+        return self.execute("open_index", OpenIndexRequestT())
+
     def close(self) -> None:
         self.transport.close()
 
@@ -628,8 +627,8 @@ class Index:
         self._ergonomic = ergonomic
 
     @classmethod
-    def connect(cls, endpoint: str) -> "Index":
-        return cls(Client(GrpcTransport(endpoint)), ergonomic=True)
+    def connect(cls, endpoint: str, target: str) -> "Index":
+        return cls(Client(GrpcTransport(endpoint), target=target), ergonomic=True)
 
     @classmethod
     def create(
@@ -638,16 +637,46 @@ class Index:
         *,
         fields: Mapping[str, Any] | IndexDefinitionT,
         rank_profiles: Sequence[Any] | None = None,
+        target: str | None = None,
     ) -> "Index":
-        owner = _ManagedLocalHost(
-            Path(path), pack_object(_index_definition(fields, rank_profiles))
-        )
-        return cls(Client(GrpcTransport(owner.endpoint)), owner, ergonomic=True)
+        if target is not None:
+            client = Client(GrpcTransport(os.fspath(path)), target=target)
+            try:
+                client.create_index(_index_definition(fields, rank_profiles))
+            except Exception:
+                client.close()
+                raise
+            return cls(client, ergonomic=True)
+        owner = _ManagedLocalHost(Path(path))
+        target = _managed_target(Path(path))
+        client = Client(GrpcTransport(owner.endpoint), target=target)
+        try:
+            client.create_index(_index_definition(fields, rank_profiles))
+        except Exception:
+            client.close()
+            owner.close(force=True)
+            raise
+        return cls(client, owner, ergonomic=True)
 
     @classmethod
-    def open(cls, path: str | os.PathLike[str]) -> "Index":
-        owner = _ManagedLocalHost(Path(path), None)
-        return cls(Client(GrpcTransport(owner.endpoint)), owner, ergonomic=True)
+    def open(cls, path: str | os.PathLike[str], *, target: str | None = None) -> "Index":
+        if target is not None:
+            client = Client(GrpcTransport(os.fspath(path)), target=target)
+            try:
+                client.open_index()
+            except Exception:
+                client.close()
+                raise
+            return cls(client, ergonomic=True)
+        owner = _ManagedLocalHost(Path(path))
+        client = Client(GrpcTransport(owner.endpoint), target=_managed_target(Path(path)))
+        try:
+            client.open_index()
+        except Exception:
+            client.close()
+            owner.close(force=True)
+            raise
+        return cls(client, owner, ergonomic=True)
 
     def insert(self, identifier: str | Mapping[str, Any], fields: Mapping[str, Any] | None = None) -> Any:
         if self._ergonomic and isinstance(identifier, Mapping):

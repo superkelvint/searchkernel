@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -126,26 +126,19 @@ export class ManagedLocalHost {
   private hostOutput = "";
 
   private constructor(
-    readonly indexPath: string,
+    readonly dataRoot: string,
     private readonly temporaryDirectory: string,
-    private readonly definitionPath: string | null,
   ) {
     this.socketPath = join(temporaryDirectory, "searchkerneld.sock");
     this.endpoint = `unix://${this.socketPath}`;
   }
 
-  static async start(indexPath: string, definition: Uint8Array | null): Promise<ManagedLocalHost> {
+  static async start(dataRoot: string): Promise<ManagedLocalHost> {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), "searchkernel-socket-"));
-    const definitionPath = definition === null
-      ? null
-      : join(temporaryDirectory, "searchkernel-definition.fb");
-    const host = new ManagedLocalHost(indexPath, temporaryDirectory, definitionPath);
+    const host = new ManagedLocalHost(dataRoot, temporaryDirectory);
 
     try {
-      await mkdir(dirname(resolve(indexPath)), { recursive: true });
-      if (definitionPath !== null && definition !== null) {
-        await writeFile(definitionPath, definition);
-      }
+      await mkdir(resolve(dataRoot), { recursive: true });
       host.spawn();
       await host.waitUntilReady();
       return host;
@@ -164,14 +157,11 @@ export class ManagedLocalHost {
     }
 
     const args = [
-      "--index",
-      this.indexPath,
+      "--data-root",
+      this.dataRoot,
       "--listen",
       this.endpoint,
     ];
-    if (this.definitionPath !== null) {
-      args.push("--definition", this.definitionPath);
-    }
 
     this.child = spawn(binary, args, {
       env: environmentForHost(),
