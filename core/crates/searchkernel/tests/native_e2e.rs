@@ -199,7 +199,7 @@ fn native_update_builder_executes_arithmetic_create_and_persists() {
         )
         .expect("seed update document");
     index
-        .update("sku-42")
+        .update_builder("sku-42")
         .assign("title", "Updated")
         .clear("brand")
         .increment("inventory", 5_i64)
@@ -207,18 +207,18 @@ fn native_update_builder_executes_arithmetic_create_and_persists() {
         .execute()
         .expect("execute mixed advanced update");
     index
-        .update("sku-42")
+        .update_builder("sku-42")
         .decrement("inventory", 3_i64)
         .execute()
         .expect("decrement inventory");
     index
-        .update("sku-42")
+        .update_builder("sku-42")
         .divide("ratio", 4.0)
         .execute()
         .expect("divide ratio");
 
     index
-        .update("created-by-update")
+        .update_builder("created-by-update")
         .set("title", "Created")
         .set("inventory", 7_i64)
         .set("ratio", 1.5)
