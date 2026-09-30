@@ -88,7 +88,7 @@ pub(super) fn remove_published_root(root: &std::path::Path) -> std::io::Result<(
     std::fs::remove_dir_all(root)
 }
 
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", feature = "internal-api"))]
 fn delete_tombstone_path(root: &std::path::Path) -> Result<std::path::PathBuf> {
     use std::sync::atomic::{AtomicU64, Ordering};
 

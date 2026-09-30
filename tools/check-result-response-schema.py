@@ -3,49 +3,19 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
-import flatbuffers.encode
-import flatbuffers.packer
-from flatbuffers import number_types as fb_types
-from flatbuffers.table import Table
-
 ROOT = Path(__file__).resolve().parents[1]
 BFBS = ROOT / "core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs"
+REFLECTION_FBS = ROOT / "tools/flatbuffers/reflection.fbs"
 MANIFEST = ROOT / "reference/result-response-conformance/coverage.json"
 CORPUS = ROOT / "reference/result-response-conformance/corpus.json"
-RESULT_ROOT = "SearchKernel.V2.SearchResult"
-
-# reflection.BaseType values from the pinned FlatBuffers reflection schema.
-_BASE_TYPES = {
-    0: "None",
-    1: "UType",
-    2: "Bool",
-    3: "Byte",
-    4: "UByte",
-    5: "Short",
-    6: "UShort",
-    7: "Int",
-    8: "UInt",
-    9: "Long",
-    10: "ULong",
-    11: "Float",
-    12: "Double",
-    13: "String",
-    14: "Vector",
-    15: "Obj",
-    16: "Union",
-    17: "Array",
-    18: "Vector64",
-    19: "MaxBaseType",
-}
-_UTYPE = 1
-_OBJ = 15
-_UNION = 16
-_SEQUENCES = {14, 17, 18}
-
 CLASSIFIED_FIELDS = {
     "SearchResult": {"root", "total_hits", "coverage", "timing", "errors", "trace", "metadata"},
     "Hit": {"id", "relevance", "fields", "highlights", "source", "types", "match_features", "summary_features", "rank_features", "sort_values"},
@@ -53,240 +23,233 @@ CLASSIFIED_FIELDS = {
 }
 
 
-class _BfbsReflection:
-    """Read reflection.Schema metadata using the pinned FlatBuffers runtime."""
+_REFLECTION_TEMP: tempfile.TemporaryDirectory[str] | None = None
+_REFLECTION_MODULES: dict[str, Any] | None = None
+
+
+def _reflection_modules() -> dict[str, Any]:
+    """Generate official reflection table accessors with the pinned flatc."""
+    global _REFLECTION_TEMP, _REFLECTION_MODULES
+    if _REFLECTION_MODULES is None:
+        flatc = subprocess.check_output(
+            ["bash", str(ROOT / "tools/resolve-flatbuffers.sh"), "flatc"],
+            text=True,
+        ).strip()
+        _REFLECTION_TEMP = tempfile.TemporaryDirectory(prefix="searchkernel-bfbs-reflection-")
+        subprocess.run(
+            [flatc, "--python", "-o", _REFLECTION_TEMP.name, str(REFLECTION_FBS)],
+            cwd=ROOT,
+            check=True,
+        )
+        sys.path.insert(0, _REFLECTION_TEMP.name)
+        _REFLECTION_MODULES = {
+            name: importlib.import_module(f"reflection.{name}")
+            for name in ("Schema", "BaseType")
+        }
+    return _REFLECTION_MODULES
+
+
+class ReflectedSchema:
+    """Logical result closure over the official FlatBuffers reflection tables."""
 
     def __init__(self, data: bytes):
-        if len(data) < 8 or data[4:8] != b"BFBS":
-            raise ValueError("response schema is not a BFBS reflection buffer")
-        root = flatbuffers.encode.Get(flatbuffers.packer.uoffset, data, 0)
-        self.root = Table(data, root)
+        modules = _reflection_modules()
+        schema_type = modules["Schema"].Schema
+        try:
+            if not schema_type.SchemaBufferHasIdentifier(data, 0):
+                raise ValueError("response schema is not a BFBS reflection schema")
+            self.schema = schema_type.GetRootAs(data, 0)
+            self.objects = [self.schema.Objects(i) for i in range(self.schema.ObjectsLength())]
+            self.enums = [self.schema.Enums(i) for i in range(self.schema.EnumsLength())]
+            self.object_names = {self._name(value): i for i, value in enumerate(self.objects)}
+            self.object_indices = {
+                self._name(value).rsplit(".", 1)[-1]: i for i, value in enumerate(self.objects)
+            }
+            if any(not name for name in self.object_names):
+                raise ValueError("BFBS contains a declaration without a name")
+            self.base = modules["BaseType"]
+            self.closure = self._result_closure()
+        except Exception as error:
+            raise ValueError(f"invalid BFBS reflection metadata: {error}") from error
 
     @staticmethod
-    def _slot(slot: int) -> int:
-        # Generated FlatBuffers accessors use vtable offsets 4, 6, 8, ...
-        return 4 + slot * 2
+    def _name(table: Any) -> str:
+        raw = table.Name()
+        return raw.decode("utf-8") if raw else ""
 
-    def field(self, table: Table, slot: int) -> int:
-        return int(table.Offset(self._slot(slot)))
-
-    def table_field(self, table: Table, slot: int) -> Table | None:
-        offset = self.field(table, slot)
-        if offset == 0:
-            return None
-        return Table(table.Bytes, table.Indirect(table.Pos + offset))
-
-    def string_field(self, table: Table, slot: int) -> str | None:
-        offset = self.field(table, slot)
-        if offset == 0:
-            return None
-        try:
-            return table.String(table.Pos + offset).decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise ValueError("BFBS reflection string is not UTF-8") from error
-
-    def vector_tables(self, table: Table, slot: int) -> list[Table]:
-        offset = self.field(table, slot)
-        if offset == 0:
+    def _references(self, reflected_type: Any) -> list[tuple[str, int]]:
+        """Return object/enum indices for a scalar, vector, array, or union."""
+        base = reflected_type.BaseType()
+        element = reflected_type.Element()
+        index = reflected_type.Index()
+        bt = self.base
+        if index < 0:
             return []
-        start = table.Vector(offset)
-        length = table.VectorLen(offset)
-        return [
-            Table(table.Bytes, table.Indirect(start + index * 4))
-            for index in range(length)
-        ]
+        if base in (bt.BaseType().Obj, bt.BaseType().Union):
+            return [("object" if base == bt.BaseType().Obj else "enum", index)]
+        if base in (bt.BaseType().Vector, bt.BaseType().Vector64, bt.BaseType().Array):
+            return [("object" if element == bt.BaseType().Obj else "enum", index)]
+        # Enum-valued scalars use their primitive storage BaseType and carry an
+        # enum index; UType is the synthetic union discriminator storage type.
+        return [("enum", index)]
 
-    def i8_field(self, table: Table, slot: int, default: int = 0) -> int:
-        offset = self.field(table, slot)
-        if offset == 0:
-            return default
-        return int(table.Get(fb_types.Int8Flags, table.Pos + offset))
-
-    def i32_field(self, table: Table, slot: int, default: int = -1) -> int:
-        offset = self.field(table, slot)
-        if offset == 0:
-            return default
-        return int(table.Get(fb_types.Int32Flags, table.Pos + offset))
-
-    def bool_field(self, table: Table, slot: int) -> bool:
-        offset = self.field(table, slot)
-        if offset == 0:
+    def _is_synthetic_union_discriminator(
+        self,
+        field_name: str,
+        field_type: Any,
+        by_name: dict[str, Any],
+    ) -> bool:
+        """Return whether a reflected field is FlatBuffers union tag metadata."""
+        if not field_name.endswith("_type"):
             return False
-        return bool(table.Get(fb_types.BoolFlags, table.Pos + offset))
+        payload = by_name.get(field_name.removesuffix("_type"))
+        payload_type = payload.Type() if payload is not None else None
+        if payload_type is None or payload_type.Index() != field_type.Index():
+            return False
 
+        bt = self.base.BaseType()
+        if (
+            field_type.BaseType() == bt.UType
+            and payload_type.BaseType() == bt.Union
+        ):
+            return True
 
-def _bfbs_declarations(
-    path: Path = BFBS,
-) -> dict[str, tuple[str, dict[str, str]]]:
-    """Load logical schema declarations from checked-in BFBS reflection data."""
-    reflection = _BfbsReflection(path.read_bytes())
-    schema = reflection.root
-
-    objects: list[dict[str, Any]] = []
-    for table in reflection.vector_tables(schema, 0):
-        name = reflection.string_field(table, 0)
-        if not name:
-            raise ValueError("BFBS reflection object has no name")
-        fields: list[tuple[str, int, int, int]] = []
-        for field_table in reflection.vector_tables(table, 1):
-            field_name = reflection.string_field(field_table, 0)
-            type_table = reflection.table_field(field_table, 1)
-            if not field_name or type_table is None:
-                raise ValueError(f"BFBS reflection field is incomplete: {name}")
-            fields.append(
-                (
-                    field_name,
-                    reflection.i8_field(type_table, 0),
-                    reflection.i8_field(type_table, 1),
-                    reflection.i32_field(type_table, 2),
-                )
-            )
-        objects.append(
-            {
-                "name": name,
-                "kind": "struct" if reflection.bool_field(table, 2) else "table",
-                "fields": fields,
-            }
+        sequence_types = (bt.Vector, bt.Vector64, bt.Array)
+        return (
+            field_type.BaseType() in sequence_types
+            and payload_type.BaseType() == field_type.BaseType()
+            and field_type.Element() == bt.UType
+            and payload_type.Element() == bt.Union
         )
 
-    enums: list[dict[str, Any]] = []
-    for table in reflection.vector_tables(schema, 1):
-        name = reflection.string_field(table, 0)
-        if not name:
-            raise ValueError("BFBS reflection enum has no name")
-        values: list[tuple[str, tuple[int, int] | None]] = []
-        for value_table in reflection.vector_tables(table, 1):
-            value_name = reflection.string_field(value_table, 0)
-            if not value_name:
-                raise ValueError(f"BFBS reflection enum value is unnamed: {name}")
-            union_type = reflection.table_field(value_table, 3)
-            values.append(
-                (
-                    value_name,
-                    None
-                    if union_type is None
-                    else (
-                        reflection.i8_field(union_type, 0),
-                        reflection.i32_field(union_type, 2),
-                    ),
-                )
-            )
-        enums.append(
-            {
-                "name": name,
-                "kind": "union" if reflection.bool_field(table, 2) else "enum",
-                "values": values,
-            }
-        )
-
-    def indexed_name(values: list[dict[str, Any]], index: int, what: str) -> str:
-        if index < 0 or index >= len(values):
-            raise ValueError(f"BFBS reflection {what} index is invalid: {index}")
-        return str(values[index]["name"])
-
-    def type_name(base: int, element: int, index: int) -> str:
-        if base == _OBJ:
-            return indexed_name(objects, index, "object")
-        if base in {_UNION, _UTYPE}:
-            return indexed_name(enums, index, "enum")
-        if base in _SEQUENCES:
-            if element == _OBJ:
-                inner = indexed_name(objects, index, "object")
-            elif element in {_UNION, _UTYPE}:
-                inner = indexed_name(enums, index, "enum")
-            elif index >= 0:
-                inner = indexed_name(enums, index, "enum")
-            else:
-                inner = _BASE_TYPES.get(element, f"BaseType({element})")
-            return f"[{inner}]"
-        if index >= 0:
-            return indexed_name(enums, index, "enum")
-        return _BASE_TYPES.get(base, f"BaseType({base})")
-
-    declarations: dict[str, tuple[str, dict[str, str]]] = {}
-    for obj in objects:
-        fields: dict[str, str] = {}
-        for field_name, base, element, index in obj["fields"]:
-            # BFBS materializes a synthetic <union>_type UType field beside
-            # every logical union payload. The .fbs contract has one field;
-            # omit the implementation discriminator from the logical schema.
-            if base == _UTYPE or (base in _SEQUENCES and element == _UTYPE):
+    def _result_closure(self) -> dict[str, tuple[str, dict[str, Any]]]:
+        bt = self.base.BaseType()
+        start = self.object_names.get("SearchKernel.V2.SearchResult")
+        if start is None:
+            raise ValueError("BFBS has no SearchKernel.V2.SearchResult root type")
+        pending: list[tuple[str, int]] = [("object", start)]
+        found: dict[str, tuple[str, dict[str, Any]]] = {}
+        while pending:
+            category, index = pending.pop()
+            entries = self.objects if category == "object" else self.enums
+            if index < 0 or index >= len(entries):
+                raise ValueError(f"BFBS {category} reference is out of range: {index}")
+            reflected = entries[index]
+            name = self._name(reflected).rsplit(".", 1)[-1]
+            if name in found:
                 continue
-            fields[field_name] = type_name(base, element, index)
-        declarations[str(obj["name"])] = (str(obj["kind"]), fields)
+            if category == "enum":
+                is_union = reflected.IsUnion()
+                kind = "union" if is_union else "enum"
+                values: dict[str, Any] = {}
+                for i in range(reflected.ValuesLength()):
+                    value = reflected.Values(i)
+                    member = self._name(value)
+                    if is_union and member == "NONE":
+                        continue
+                    values[member] = value.Value()
+                    if is_union:
+                        union_type = value.UnionType()
+                        if union_type is None:
+                            raise ValueError(f"union arm has no payload type: {name}.{member}")
+                        pending.extend(self._references(union_type))
+                found[name] = (kind, values)
+                continue
 
-    for enum in enums:
-        members: dict[str, str] = {}
-        if enum["kind"] == "union":
-            for member, union_type in enum["values"]:
-                # Reflection unions contain a synthetic NONE=0 member with no
-                # payload type. It is absence, not a logical union arm.
-                if union_type is None or union_type[0] == 0:
+            kind = "struct" if reflected.IsStruct() else "table"
+            reflected_fields = [reflected.Fields(i) for i in range(reflected.FieldsLength())]
+            by_name = {self._name(field): field for field in reflected_fields}
+            values = {}
+            for field in reflected_fields:
+                field_name = self._name(field)
+                field_type = field.Type()
+                if field_type is None:
+                    raise ValueError(f"field has no type metadata: {name}.{field_name}")
+                # FlatBuffers emits an adjacent union discriminator for scalar
+                # unions and a parallel discriminator vector for union vectors.
+                # Both are implementation metadata; only the payload field is
+                # part of the logical schema exposed to coverage.
+                if self._is_synthetic_union_discriminator(
+                    field_name, field_type, by_name
+                ):
                     continue
-                base, index = union_type
-                members[member] = type_name(base, 0, index)
-        else:
-            members = {member: member for member, _ in enum["values"]}
-        declarations[str(enum["name"])] = (str(enum["kind"]), members)
+                values[field_name] = field_name
+                pending.extend(self._references(field_type))
+            found[name] = (kind, values)
+        return found
 
-    return declarations
+    def typed_instances(self, result_payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        """Collect JSON table instances by following reflected field types."""
+        bt = self.base.BaseType()
+        found: dict[str, list[dict[str, Any]]] = {}
+        visited: set[tuple[int, int]] = set()
+
+        def visit_object(index: int, value: Any) -> None:
+            if not isinstance(value, dict) or index < 0 or index >= len(self.objects):
+                return
+            marker = (index, id(value))
+            if marker in visited:
+                return
+            visited.add(marker)
+            reflected = self.objects[index]
+            name = self._name(reflected).rsplit(".", 1)[-1]
+            found.setdefault(name, []).append(value)
+            fields = [reflected.Fields(i) for i in range(reflected.FieldsLength())]
+            for field in fields:
+                field_name = self._name(field)
+                field_type = field.Type()
+                base = field_type.BaseType()
+                element = field_type.Element()
+                type_index = field_type.Index()
+                payload = value.get(field_name)
+                if base == bt.Union:
+                    enum = self.enums[type_index]
+                    discriminator = value.get(f"{field_name}_type")
+                    arms = self._union_arm_indices(enum)
+                    arm_index = arms.get(discriminator)
+                    if arm_index is not None:
+                        visit_object(arm_index, payload)
+                elif base == bt.Obj:
+                    visit_object(type_index, payload)
+                elif base in (bt.Vector, bt.Vector64, bt.Array):
+                    items = payload if isinstance(payload, list) else []
+                    if element == bt.Obj:
+                        for item in items:
+                            visit_object(type_index, item)
+                    elif element == bt.Union:
+                        enum = self.enums[type_index]
+                        discriminator_values = value.get(f"{field_name}_type", [])
+                        arms = self._union_arm_indices(enum)
+                        if isinstance(discriminator_values, list):
+                            for discriminator, item in zip(discriminator_values, items):
+                                arm_index = arms.get(discriminator)
+                                if arm_index is not None:
+                                    visit_object(arm_index, item)
+
+        root = self.object_names.get("SearchKernel.V2.SearchResult")
+        if root is not None:
+            visit_object(root, result_payload)
+        return found
+
+    def _union_arm_indices(self, enum: Any) -> dict[str, int]:
+        arms: dict[str, int] = {}
+        for i in range(enum.ValuesLength()):
+            value = enum.Values(i)
+            name = self._name(value)
+            if name == "NONE":
+                continue
+            union_type = value.UnionType()
+            if union_type is not None and union_type.BaseType() == self.base.BaseType().Obj:
+                arms[name] = union_type.Index()
+        return arms
 
 
-def _referenced_type(type_name: str) -> str:
-    return type_name[1:-1] if type_name.startswith("[") and type_name.endswith("]") else type_name
-
-
-def result_closure(
-    path: Path = BFBS,
-) -> dict[str, tuple[str, dict[str, str]]]:
-    """Return the SearchResult transitive closure from BFBS reflection data."""
-    declarations = _bfbs_declarations(path)
-    pending = [RESULT_ROOT]
-    found: dict[str, tuple[str, dict[str, str]]] = {}
-
-    while pending:
-        name = pending.pop()
-        if name in found:
-            continue
-        if name not in declarations:
-            raise ValueError(f"result BFBS references missing declaration: {name}")
-        kind, values = declarations[name]
-        found[name] = (kind, values)
-        for value in values.values():
-            referenced = _referenced_type(value)
-            if referenced in declarations and referenced not in found:
-                pending.append(referenced)
-
-    short_names: dict[str, str] = {}
-    used: dict[str, str] = {}
-    for full_name in found:
-        short = full_name.rsplit(".", 1)[-1]
-        previous = used.get(short)
-        if previous is not None and previous != full_name:
-            raise ValueError(
-                f"result BFBS short-name collision: {previous} and {full_name}"
-            )
-        used[short] = full_name
-        short_names[full_name] = short
-
-    def shorten(value: str) -> str:
-        sequence = value.startswith("[") and value.endswith("]")
-        inner = value[1:-1] if sequence else value
-        logical = short_names.get(inner, inner)
-        return f"[{logical}]" if sequence else logical
-
-    return {
-        short_names[full_name]: (
-            kind,
-            {member: shorten(value) for member, value in values.items()},
-        )
-        for full_name, (kind, values) in found.items()
-    }
+def result_closure(bfbs: bytes) -> dict[str, tuple[str, dict[str, Any]]]:
+    return ReflectedSchema(bfbs).closure
 
 
 def verify_schema(
-    closure: dict[str, tuple[str, dict[str, str]]],
-    manifest: dict[str, Any],
+    closure: dict[str, tuple[str, dict[str, Any]]], manifest: dict[str, Any]
 ) -> list[str]:
     errors: list[str] = []
     declared_types = manifest.get("schema", {})
@@ -329,8 +292,8 @@ def verify_schema(
     return errors
 
 
-def verify(path: Path = BFBS) -> list[str]:
-    return verify_schema(result_closure(path), json.loads(MANIFEST.read_text()))
+def verify(bfbs: bytes) -> list[str]:
+    return verify_schema(result_closure(bfbs), json.loads(MANIFEST.read_text()))
 
 
 def trace_shape_errors(trace: Any) -> list[str]:
@@ -463,50 +426,9 @@ def walk_json(value: Any):
 
 
 def typed_instances(
-    closure: dict[str, tuple[str, dict[str, str]]],
-    result_payload: dict[str, Any],
+    reflection: ReflectedSchema, result_payload: dict[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
-    """Walk only BFBS-typed tables reachable from the SearchResult payload."""
-    found: dict[str, list[dict[str, Any]]] = {}
-    visited: set[tuple[str, int]] = set()
-
-    def visit(type_name: str, value: Any) -> None:
-        if not isinstance(value, dict) or type_name not in closure:
-            return
-        kind, fields = closure[type_name]
-        marker = (type_name, id(value))
-        if marker in visited:
-            return
-        visited.add(marker)
-        if kind not in {"table", "struct"}:
-            return
-
-        found.setdefault(type_name, []).append(value)
-        for field, declared_type in fields.items():
-            sequence = declared_type.startswith("[") and declared_type.endswith("]")
-            referenced = declared_type[1:-1] if sequence else declared_type
-            if referenced not in closure:
-                continue
-
-            referenced_kind, union_members = closure[referenced]
-            if referenced_kind == "union":
-                variant = value.get(f"{field}_type")
-                target = union_members.get(str(variant))
-                payload = value.get(field)
-                if target in closure:
-                    visit(target, payload)
-            elif sequence:
-                items = value.get(field, [])
-                if isinstance(items, list):
-                    for item in items:
-                        visit(referenced, item)
-            else:
-                visit(referenced, value.get(field))
-
-    visit("SearchResult", result_payload)
-    return found
-
-
+    return reflection.typed_instances(result_payload)
 def _contains_node(node: Any, kind: str) -> bool:
     if not isinstance(node, dict):
         return False
@@ -630,11 +552,8 @@ def _semantic_exercised(partition: str, envelope: dict[str, Any], envelopes: dic
     if partition.startswith("malformed."):
         return True  # Each referenced malformed case is required in all clients.
     return False
-
-
 def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, Any]]) -> list[str]:
     errors: list[str] = []
-    closure = result_closure()
     corpus = json.loads(CORPUS.read_text())
     cases = {case["id"] for case in corpus["valid"] + corpus["malformed"]}
     malformed = {case["id"]: case for case in corpus["malformed"]}
@@ -652,6 +571,9 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
             f"missing={sorted(actual_malformed_classes - set(declared_malformed))}, "
             f"stale={sorted(set(declared_malformed) - actual_malformed_classes)}"
         )
+    bfbs = BFBS.read_bytes()
+    reflection = ReflectedSchema(bfbs)
+    closure = reflection.closure
     for table, fields in manifest.get("partitions", {}).get("fields", {}).items():
         for field, scenarios in fields.items():
             if isinstance(scenarios, dict) and "unsupported" in scenarios:
@@ -671,7 +593,7 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
                     errors.append(f"{table}.{field} scenario projection missing: {scenario}")
                     continue
                 payload = envelope.get("payload")
-                instances = typed_instances(closure, payload) if isinstance(payload, dict) else {}
+                instances = typed_instances(reflection, payload) if isinstance(payload, dict) else {}
                 present |= any(field in obj for obj in instances.get(table, []))
             if not present and table == "HighlightSpan" and field == "start_byte":
                 present = any(
@@ -679,15 +601,14 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
                     for scenario in scenarios
                 )
             if not present:
-                _, table_members = closure[table]
-                raw_type = table_members[field].split("(", 1)[0].strip().strip("[]")
-                if raw_type not in closure:
+                member_refers_to_type = _field_refers_to_closure(reflection, table, field, closure)
+                if not member_refers_to_type:
                     # FlatBuffers omits default scalar and enum slots from
                     # JSON. A typed table instance proves their default value
                     # is decoded by the production clients.
                     present = any(
                         scenario in envelopes
-                        and bool(typed_instances(closure, envelopes[scenario].get("payload", {})).get(table))
+                        and bool(typed_instances(reflection, envelopes[scenario].get("payload", {})).get(table))
                         for scenario in scenarios
                     )
             if not present:
@@ -819,9 +740,37 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
     return errors
 
 
+def _field_refers_to_closure(
+    reflection: ReflectedSchema,
+    table_name: str,
+    field_name: str,
+    closure: dict[str, tuple[str, dict[str, Any]]],
+) -> bool:
+    index = reflection.object_indices.get(table_name)
+    if index is None:
+        return False
+    reflected = reflection.objects[index]
+    for i in range(reflected.FieldsLength()):
+        field = reflected.Fields(i)
+        if ReflectedSchema._name(field) != field_name:
+            continue
+        field_type = field.Type()
+        return any(
+            (
+                reflection._name(reflection.objects[ref]).rsplit(".", 1)[-1]
+                if category == "object" and 0 <= ref < len(reflection.objects)
+                else reflection._name(reflection.enums[ref]).rsplit(".", 1)[-1]
+                if category == "enum" and 0 <= ref < len(reflection.enums)
+                else ""
+            ) in closure
+            for category, ref in reflection._references(field_type)
+        )
+    return False
+
+
 def main() -> int:
     manifest = json.loads(MANIFEST.read_text())
-    errors = verify_schema(result_closure(), manifest)
+    errors = verify(BFBS.read_bytes())
     if errors:
         print("\n".join(errors))
         return 1

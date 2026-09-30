@@ -492,7 +492,7 @@ final class Query
         usort(
             $weighted,
             static fn (array $a, array $b): int =>
-                JsonEncoder::encode($a['key']) <=> JsonEncoder::encode($b['key']),
+                Protocol::encodeJson($a['key']) <=> Protocol::encodeJson($b['key']),
         );
         return self::typed([
             'expr_type' => $type,

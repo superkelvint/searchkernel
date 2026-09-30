@@ -10,14 +10,33 @@ final class Index
 {
     private readonly Client $client;
 
-    public function __construct(Transport $transport)
+    public function __construct(Transport $transport, ?string $target = null)
     {
-        $this->client = new Client($transport);
+        $this->client = new Client($transport, $target);
     }
 
-    public static function connect(string $baseUrl): self
+    public static function connect(string $baseUrl, ?string $target = null): self
     {
-        return new self(new HttpTransport($baseUrl));
+        return new self(new HttpTransport($baseUrl), $target);
+    }
+
+    public static function create(
+        string $baseUrl,
+        string $target,
+        IndexDefinition $definition,
+    ): self {
+        $index = self::connect($baseUrl, $target);
+        $payload = $index->client->createIndex(['definition' => $definition->toWire()]);
+        self::lifecycleIndex($payload, 'CreateIndexResult');
+        return $index;
+    }
+
+    public static function open(string $baseUrl, string $target): self
+    {
+        $index = self::connect($baseUrl, $target);
+        $payload = $index->client->openIndex();
+        self::lifecycleIndex($payload, 'OpenIndexResult');
+        return $index;
     }
 
     /** @param array<string, mixed> $document */
@@ -208,6 +227,16 @@ final class Index
     {
         $payload = $this->client->search($request);
         return SearchResult::fromPayload($payload);
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function lifecycleIndex(array $payload, string $resultType): array
+    {
+        $index = $payload['index'] ?? null;
+        if (!is_array($index)) {
+            throw new ProtocolException($resultType . '.index must be an object');
+        }
+        return $index;
     }
 
     /** @param array<string,mixed> $payload */

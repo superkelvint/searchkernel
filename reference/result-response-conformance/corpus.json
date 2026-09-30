@@ -139,6 +139,21 @@
       "id": "unknown-response-payload-union",
       "file": "result-malformed-unknown-response-payload-union.skrs",
       "failure_class": "response_payload_union"
+    },
+    {
+      "id": "tensor-dense-nan",
+      "file": "invalid-tensor-dense-nan.skrs",
+      "failure_class": "non_finite_tensor_cell"
+    },
+    {
+      "id": "tensor-sparse-positive-infinity",
+      "file": "invalid-tensor-sparse-positive-infinity.skrs",
+      "failure_class": "non_finite_tensor_cell"
+    },
+    {
+      "id": "tensor-mixed-negative-infinity",
+      "file": "invalid-tensor-mixed-negative-infinity.skrs",
+      "failure_class": "non_finite_tensor_cell"
     }
   ]
 }
