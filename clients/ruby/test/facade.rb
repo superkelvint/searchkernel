@@ -579,6 +579,17 @@ Dir.mktmpdir("searchkernel-ruby-managed-root-race-") do |root|
   )
 end
 
+Dir.mktmpdir("searchkernel-ruby-unowned-empty-root-") do |root|
+  data_root = File.join(root, ".searchkernel-managed")
+  Dir.mkdir(data_root)
+  inode = File.stat(data_root).ino
+  raises(SearchKernel::ClientError, "pre-existing empty unowned managed root rejects") do
+    SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  end
+  same(inode, File.stat(data_root).ino, "unowned managed root is never replaced")
+  same([], Dir.children(data_root), "unowned managed root remains empty")
+end
+
 Dir.mktmpdir("searchkernel-ruby-managed-root-marker-") do |root|
   data_root = File.join(root, ".searchkernel-managed")
   Dir.mkdir(data_root)
