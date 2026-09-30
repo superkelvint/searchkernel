@@ -682,3 +682,4 @@ puts "Ruby protocol/transport tests PASS"
 # SKC: result.summary_features/basic kinds=conformance runtime=http
 
 require_relative "facade"
+require_relative "consumer_runtime"
