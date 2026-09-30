@@ -1757,10 +1757,7 @@ mod tests {
             .inspect()
             .expect_err("overlapping generic property must fail canonically");
         assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
-        assert_eq!(
-            error.details()[0].code,
-            "property_overlaps_typed_field"
-        );
+        assert_eq!(error.details()[0].code, "property_overlaps_typed_field");
     }
 
     #[test]

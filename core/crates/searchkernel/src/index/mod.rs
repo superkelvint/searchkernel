@@ -406,9 +406,7 @@ impl Index {
     }
 }
 
-fn ensure_inspected_query_can_represent(
-    request: &searchkernel_ir::SearchRequestIr,
-) -> Result<()> {
+fn ensure_inspected_query_can_represent(request: &searchkernel_ir::SearchRequestIr) -> Result<()> {
     let unsupported = |path: &'static str| {
         Err(Error::search(
             crate::error::ErrorCode::Unsupported,
