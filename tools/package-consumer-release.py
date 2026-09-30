@@ -278,7 +278,6 @@ def main() -> None:
                 "pip",
                 "wheel",
                 "--no-deps",
-                "--no-build-isolation",
                 "--wheel-dir",
                 str(out),
                 str(ROOT / "clients/python"),

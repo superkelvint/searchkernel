@@ -5,6 +5,7 @@ import os
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -20,6 +21,16 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ConsumerReleaseTests(unittest.TestCase):
+    def test_python_wheel_build_uses_declared_isolated_build_requirements(self) -> None:
+        project = tomllib.loads(
+            (ROOT / "clients/python/pyproject.toml").read_text(encoding="utf-8")
+        )
+        self.assertIn("wheel", project["build-system"]["requires"])
+        self.assertNotIn(
+            "--no-build-isolation",
+            (ROOT / "tools/package-consumer-release.py").read_text(encoding="utf-8"),
+        )
+
     def test_target_dir_uses_cargo_target_dir_override(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             target = Path(tempdir) / "cargo-target"
@@ -145,8 +156,8 @@ class ConsumerReleaseTests(unittest.TestCase):
             )
         )
         self.assertIn('"CARGO_TARGET_DIR"', verifier)
-        self.assertIn('"SK_NATIVE_ABI_HEADER"', verifier)
-        self.assertIn('"SEARCHKERNEL_PACKAGED_SUPPORT_ROOT"', verifier)
+        self.assertIn('"SK_NATIVE_CACHE_DIR"', verifier)
+        self.assertIn('"SEARCHKERNEL_BUILD_ENV"', verifier)
 
 
 
