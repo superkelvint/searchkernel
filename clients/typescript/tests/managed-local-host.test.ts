@@ -119,6 +119,60 @@ describe("managed-local host binary resolution", () => {
     await expect(readiness).resolves.toBeUndefined();
   });
 
+  it("reuses one daemon for the same data root until the last lease closes", async () => {
+    const spawnMock = vi.fn(() => {
+      const child = new EventEmitter() as EventEmitter & {
+        pid: number;
+        exitCode: number | null;
+        signalCode: NodeJS.Signals | null;
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+      child.pid = 999999;
+      child.exitCode = null;
+      child.signalCode = null;
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      return child;
+    });
+    vi.doMock("node:child_process", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:child_process")>();
+      return { ...actual, spawn: spawnMock };
+    });
+    vi.doMock("node:net", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:net")>();
+      return {
+        ...actual,
+        createConnection: () => {
+          const socket = new EventEmitter() as unknown as import("node:net").Socket;
+          socket.setTimeout = vi.fn(() => socket);
+          socket.destroy = vi.fn(() => socket);
+          queueMicrotask(() => socket.emit("connect"));
+          return socket;
+        },
+      };
+    });
+    vi.doMock("node:fs", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs")>();
+      return { ...actual, existsSync: vi.fn(() => true) };
+    });
+    process.env.SEARCHKERNEL_LOCAL_HOST = "/tmp/searchkerneld";
+
+    const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");
+    const first = await ManagedLocalHost.start("/tmp/searchkernel-shared-root");
+    const second = await ManagedLocalHost.start("/tmp/searchkernel-shared-root");
+
+    expect(first).toBe(second);
+    expect(spawnMock).toHaveBeenCalledOnce();
+    await first.close();
+    expect((second as unknown as { closed: boolean }).closed).toBe(false);
+
+    const child = (second as unknown as { child: { exitCode: number | null } }).child;
+    child.exitCode = 0;
+    await second.close();
+    expect((second as unknown as { closed: boolean }).closed).toBe(true);
+  });
+
   it("fails closed outside a Search Kernel source checkout when no host is configured or bundled", async () => {
     vi.doMock("node:fs", async (importOriginal) => {
       const actual = await importOriginal<typeof import("node:fs")>();
