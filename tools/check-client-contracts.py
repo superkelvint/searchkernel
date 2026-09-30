@@ -25,7 +25,7 @@ STRENGTH_RANK = {"builder": 0, "conformance": 1, "runtime": 2}
 SOURCE_SUFFIXES = {
     ".rs", ".py", ".php", ".rb", ".ts", ".tsx", ".js", ".mjs", ".c", ".cc", ".cpp", ".h", ".sh"
 }
-CLIENT_SOURCE_SUFFIXES = {".py", ".php", ".rb", ".ts", ".tsx", ".js", ".mjs"}
+LIFECYCLE_EVIDENCE_KINDS = {"public", "wire"}
 ANNOTATION_RE = re.compile(
     r"SKC:\s*(?P<capability>[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+)/"
     r"(?P<scenario>[a-z0-9_.-]+)\s+"
@@ -153,8 +153,15 @@ def canonical_lifecycle_operations(root: Path = ROOT) -> tuple[str, ...]:
     bfbs_root = root / "core" / "crates" / "searchkernel-protocol" / "bfbs"
     request_bfbs = bfbs_root / "searchkernel_request.bfbs"
     response_bfbs = bfbs_root / "searchkernel_response.bfbs"
-    if not request_bfbs.is_file() or not response_bfbs.is_file():
-        return ()
+    missing = [
+        path.relative_to(root).as_posix()
+        for path in (request_bfbs, response_bfbs)
+        if not path.is_file()
+    ]
+    if missing:
+        raise RegistryError(
+            "canonical BFBS lifecycle metadata is missing: " + ", ".join(missing)
+        )
 
     def lifecycle_names(payloads: tuple[str, ...], suffix: str) -> tuple[str, ...]:
         result: list[str] = []
@@ -170,83 +177,131 @@ def canonical_lifecycle_operations(root: Path = ROOT) -> tuple[str, ...]:
         ),
         "Request",
     )
-    response_operations = set(
-        lifecycle_names(
-            _reflected_union_payloads(
-                response_bfbs, "SearchKernel.Protocol.V2.ResponsePayload"
-            ),
-            "Result",
-        )
+    response_operations = lifecycle_names(
+        _reflected_union_payloads(
+            response_bfbs, "SearchKernel.Protocol.V2.ResponsePayload"
+        ),
+        "Result",
     )
-    operations = tuple(
-        operation for operation in request_operations if operation in response_operations
-    )
-    required = {"CreateIndex", "OpenIndex", "DeleteIndex"}
-    missing = sorted(required - set(operations))
-    if missing:
+    request_set = set(request_operations)
+    response_set = set(response_operations)
+    if request_set != response_set:
+        details = []
+        missing_results = sorted(request_set - response_set)
+        missing_requests = sorted(response_set - request_set)
+        if missing_results:
+            details.append("missing result(s): " + ", ".join(missing_results))
+        if missing_requests:
+            details.append("missing request(s): " + ", ".join(missing_requests))
         raise RegistryError(
-            "canonical lifecycle unions are missing required operation(s): "
-            + ", ".join(missing)
+            "canonical BFBS lifecycle request/result unions disagree: "
+            + "; ".join(details)
         )
-    return operations
+    if not request_operations:
+        raise RegistryError("canonical BFBS lifecycle unions contain no index operations")
+    return request_operations
 
 
-def validate_client_lifecycle_parity(root: Path = ROOT) -> None:
-    """Reject client source drift when create/open lifecycle support is advertised."""
-    operations = set(canonical_lifecycle_operations(root))
-    if not operations:
-        return
+def validate_client_lifecycle_parity(
+    catalog: dict[str, Any],
+    root: Path = ROOT,
+) -> None:
+    """Require public API and wire evidence for every canonical lifecycle operation."""
+    operations = canonical_lifecycle_operations(root)
+    raw_surfaces = catalog.get("surfaces")
+    if not isinstance(raw_surfaces, dict):
+        raise RegistryError("client contract catalog must define surfaces")
 
-    clients_root = root / "clients"
-    if not clients_root.is_dir():
-        return
-
-    excluded_parts = {
-        "dist",
-        "examples",
-        "generated",
-        "_wire_generated",
-        "node_modules",
-        "test",
-        "tests",
-        "vendor",
-    }
-
-    def source_for(client_root: Path) -> str:
-        chunks = []
-        for path in sorted(client_root.rglob("*")):
-            if not path.is_file() or path.suffix not in CLIENT_SOURCE_SUFFIXES:
-                continue
-            relative_parts = set(path.relative_to(client_root).parts[:-1])
-            if excluded_parts.intersection(relative_parts):
-                continue
-            chunks.append(path.read_text(encoding="utf-8"))
-        return "\n".join(chunks)
-
-    def supports(source: str, operation: str) -> bool:
-        snake = re.sub(r"(?<!^)([A-Z])", r"_\1", operation).lower()
-        camel = operation[0].lower() + operation[1:]
-        request = f"{operation}Request" in source
-        result = f"{operation}Result" in source
-        operation_key = re.search(
-            rf"(?<![A-Za-z0-9])(?:{re.escape(snake)}|{re.escape(camel)})(?![A-Za-z0-9])",
-            source,
+    lifecycle_surfaces = catalog.get("lifecycle_surfaces")
+    if (
+        not isinstance(lifecycle_surfaces, list)
+        or not lifecycle_surfaces
+        or not all(isinstance(item, str) and item for item in lifecycle_surfaces)
+    ):
+        raise RegistryError(
+            "client contract catalog lifecycle_surfaces must be a non-empty string list"
         )
-        return request and result and operation_key is not None
+    if len(set(lifecycle_surfaces)) != len(lifecycle_surfaces):
+        raise RegistryError("client contract catalog lifecycle_surfaces contains duplicates")
 
-    for client_root in sorted(path for path in clients_root.iterdir() if path.is_dir()):
-        source = source_for(client_root)
-        if not source:
-            continue
-        if (
-            supports(source, "CreateIndex")
-            and supports(source, "OpenIndex")
-            and not supports(source, "DeleteIndex")
-        ):
+    canonical_set = set(operations)
+    source_cache: dict[Path, str] = {}
+    for surface_name in lifecycle_surfaces:
+        surface = raw_surfaces.get(surface_name)
+        if not isinstance(surface, dict):
             raise RegistryError(
-                f"client {client_root.name} exposes CreateIndex/OpenIndex lifecycle "
-                "support but does not represent canonical DeleteIndex"
+                f"lifecycle surface {surface_name} is not a configured client surface"
             )
+        contract = surface.get("lifecycle_contract")
+        if not isinstance(contract, dict) or not contract:
+            raise RegistryError(f"surface {surface_name} must define lifecycle_contract")
+
+        contract_set = set(contract)
+        if contract_set != canonical_set:
+            details = []
+            missing_operations = sorted(canonical_set - contract_set)
+            unknown_operations = sorted(contract_set - canonical_set)
+            if missing_operations:
+                details.append("missing operation(s): " + ", ".join(missing_operations))
+            if unknown_operations:
+                details.append("unknown operation(s): " + ", ".join(unknown_operations))
+            raise RegistryError(
+                f"surface {surface_name} lifecycle contract does not match canonical operations: "
+                + "; ".join(details)
+            )
+
+        for operation in operations:
+            evidence = contract.get(operation)
+            if not isinstance(evidence, list) or not evidence:
+                raise RegistryError(
+                    f"surface {surface_name} lifecycle {operation} must define evidence"
+                )
+            kinds: set[str] = set()
+            for evidence_index, item in enumerate(evidence):
+                label = (
+                    f"surface {surface_name} lifecycle {operation} "
+                    f"evidence[{evidence_index}]"
+                )
+                if not isinstance(item, dict):
+                    raise RegistryError(f"{label} must be a table")
+                kind = item.get("kind")
+                relative = item.get("path")
+                needle = item.get("contains")
+                if kind not in LIFECYCLE_EVIDENCE_KINDS:
+                    raise RegistryError(
+                        f"{label}.kind must be one of: "
+                        + ", ".join(sorted(LIFECYCLE_EVIDENCE_KINDS))
+                    )
+                if not isinstance(relative, str) or not relative:
+                    raise RegistryError(f"{label}.path must be a non-empty string")
+                path = Path(relative)
+                if path.is_absolute() or ".." in path.parts:
+                    raise RegistryError(f"{label}.path must be repository-relative")
+                if not isinstance(needle, str) or not needle:
+                    raise RegistryError(f"{label}.contains must be a non-empty string")
+
+                absolute = root / path
+                if absolute not in source_cache:
+                    try:
+                        source_cache[absolute] = absolute.read_text(encoding="utf-8")
+                    except OSError as error:
+                        raise RegistryError(
+                            f"cannot read {label}.path {relative}: {error}"
+                        ) from error
+                if needle not in source_cache[absolute]:
+                    raise RegistryError(
+                        f"{label} is missing required source evidence "
+                        f"{needle!r} in {relative}"
+                    )
+                kinds.add(kind)
+
+            missing_kinds = LIFECYCLE_EVIDENCE_KINDS - kinds
+            if missing_kinds:
+                raise RegistryError(
+                    f"surface {surface_name} lifecycle {operation} "
+                    "is missing evidence kind(s): "
+                    + ", ".join(sorted(missing_kinds))
+                )
 
 
 def validate_catalog(
@@ -916,9 +971,9 @@ def check_documents(documents: dict[Path, str]) -> list[str]:
 
 
 def build_current_report(root: Path = ROOT) -> dict[str, Any]:
-    validate_client_lifecycle_parity(root)
     global_capabilities = load_global_capabilities(root / "docs" / "capabilities.json")
     catalog = load_catalog(root / "reference" / "client-contracts" / "catalog.json")
+    validate_client_lifecycle_parity(catalog, root)
     surfaces, scenarios, overrides = validate_catalog(catalog, global_capabilities, root)
     evidence = collect_evidence(surfaces, scenarios, root)
     validate_facade_support(global_capabilities, surfaces, evidence)
@@ -936,9 +991,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.run_e2e or args.run_e2e_surface:
-            validate_client_lifecycle_parity()
             global_capabilities = load_global_capabilities()
             catalog = load_catalog()
+            validate_client_lifecycle_parity(catalog)
             surfaces, scenarios, _overrides = validate_catalog(
                 catalog, global_capabilities
             )
