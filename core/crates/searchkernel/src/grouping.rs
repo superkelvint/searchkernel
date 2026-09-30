@@ -465,8 +465,8 @@ mod tests {
         );
 
         let ir = grouping.into_ir().unwrap();
-        let GroupingOperationIr::All(level) = &ir.root.operations[1] else {
-            panic!("group plan should contain its level");
+        let GroupingOperationIr::Each(level) = &ir.root.operations[1] else {
+            panic!("group plan should contain its level operations");
         };
         assert!(level
             .operations
