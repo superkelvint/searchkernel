@@ -88,6 +88,11 @@ class SearchBuilderFacadeCoverageTest(unittest.TestCase):
         }
         self.assertEqual(partial, {"search_field", "input", "property", "properties"})
 
+    def test_explicit_empty_search_fields_preserves_presence(self):
+        request = SearchBuilder(SimpleNamespace(), "wireless").search_fields()._request()
+        self.assertIsNotNone(request.searchFields)
+        self.assertEqual(request.searchFields.fields, [])
+
     def test_added_controls_lower_mechanically_to_generated_request(self):
         class EmptyResult:
             root = None
