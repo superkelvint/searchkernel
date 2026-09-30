@@ -209,20 +209,16 @@ impl From<GroupingAggregation> for GroupingOutput {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum GroupingOrder {
-    /// Compatibility variant retained from the original Rust grouping facade.
     Field(GroupingExpression, bool),
-    /// Compatibility variant retained from the original Rust grouping facade.
     Aggregation(GroupingAggregation, bool),
-    Expression(GroupingExpression, bool),
-    Alias(String, bool),
 }
 
 impl GroupingOrder {
     pub fn ascending(expression: impl Into<GroupingExpression>) -> Self {
-        Self::Expression(expression.into(), false)
+        Self::Field(expression.into(), false)
     }
     pub fn descending(expression: impl Into<GroupingExpression>) -> Self {
-        Self::Expression(expression.into(), true)
+        Self::Field(expression.into(), true)
     }
     pub fn ascending_aggregation(aggregation: GroupingAggregation) -> Self {
         Self::Aggregation(aggregation, false)
@@ -231,10 +227,10 @@ impl GroupingOrder {
         Self::Aggregation(aggregation, true)
     }
     pub fn ascending_alias(name: impl Into<String>) -> Self {
-        Self::Alias(name.into(), false)
+        Self::Aggregation(GroupingAggregation::AliasRef(name.into()), false)
     }
     pub fn descending_alias(name: impl Into<String>) -> Self {
-        Self::Alias(name.into(), true)
+        Self::Aggregation(GroupingAggregation::AliasRef(name.into()), true)
     }
     pub fn field(field: impl Into<String>, descending: bool) -> Self {
         Self::Field(GroupingExpression::attribute(field), descending)
@@ -585,14 +581,10 @@ fn expression_to_ir(expression: GroupingExpression) -> Result<GroupingExpression
 
 fn order_to_ir(order: GroupingOrder) -> Result<GroupingExpressionIr> {
     let (expression, descending) = match order {
-        GroupingOrder::Field(expression, descending)
-        | GroupingOrder::Expression(expression, descending) => {
-            (expression_to_ir(expression)?, descending)
-        }
+        GroupingOrder::Field(expression, descending) => (expression_to_ir(expression)?, descending),
         GroupingOrder::Aggregation(aggregation, descending) => {
             (aggregation_to_expression_ir(aggregation)?, descending)
         }
-        GroupingOrder::Alias(name, descending) => (GroupingExpressionIr::Alias(name), descending),
     };
     Ok(if descending {
         GroupingExpressionIr::Negative(Box::new(expression))
