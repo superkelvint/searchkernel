@@ -514,7 +514,10 @@ module SearchKernel
         return new(client)
       end
 
-      data_root, local_target = local_location(location)
+      index_path, data_root, local_target = ManagedLocalHost.location(location)
+      reserved = false
+      ManagedLocalHost.reserve_path(index_path, local_target)
+      reserved = true
       owner = ManagedLocalHost.acquire(data_root)
       client = Client.new(
         HttpTransport.new(owner.base_url, timeout: timeout),
@@ -527,6 +530,7 @@ module SearchKernel
     rescue StandardError
       client&.close
       owner&.close
+      ManagedLocalHost.cleanup_reservation(index_path, local_target) if reserved
       raise
     end
 
@@ -539,7 +543,10 @@ module SearchKernel
         return new(client)
       end
 
-      data_root, local_target = local_location(location)
+      index_path, data_root, local_target = ManagedLocalHost.location(location)
+      ManagedLocalHost.migrate_legacy(index_path, data_root, local_target)
+      ManagedLocalHost.ensure_marker(index_path, local_target) if
+        File.directory?(File.join(data_root, local_target)) && !File.exist?(index_path)
       owner = ManagedLocalHost.acquire(data_root)
       client = Client.new(
         HttpTransport.new(owner.base_url, timeout: timeout),
@@ -562,21 +569,6 @@ module SearchKernel
     ensure
       client&.close
     end
-
-    def self.local_location(location)
-      path = begin
-        File.realpath(location.to_s)
-      rescue Errno::ENOENT
-        File.expand_path(location.to_s)
-      end
-      target = File.basename(path)
-      unless target.match?(/\A[a-z0-9][a-z0-9_-]{0,127}\z/)
-        raise ArgumentError,
-              "managed-local index directory name must match [a-z0-9][a-z0-9_-]{0,127}"
-      end
-      [File.dirname(path), target]
-    end
-    private_class_method :local_location
 
     def initialize(client, owner: nil)
       @client = client
