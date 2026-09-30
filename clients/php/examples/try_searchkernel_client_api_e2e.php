@@ -28,6 +28,47 @@ require __DIR__ . '/searchkernel_client_api_e2e_schema.php';
 
 $corpusPath = dirname(__DIR__, 3) . '/reference/client-real-e2e-parity/corpus.json';
 $e2eCorpus = json_decode((string) file_get_contents($corpusPath), true, flags: JSON_THROW_ON_ERROR);
+$parityConsumedIntents = [];
+
+final class ConsumedIntentMap implements ArrayAccess, IteratorAggregate
+{
+    public function __construct(private array $source) {}
+
+    public function offsetExists(mixed $offset): bool
+    {
+        return is_string($offset) && array_key_exists($offset, $this->source);
+    }
+
+    public function offsetGet(mixed $offset): mixed
+    {
+        global $parityConsumedIntents;
+        if (!is_string($offset) || !array_key_exists($offset, $this->source)) {
+            throw new OutOfBoundsException('unknown parity scenario intent');
+        }
+        $value = $this->source[$offset];
+        $parityConsumedIntents[$offset] = $value;
+        return $value;
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+        throw new LogicException('parity intents are immutable');
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+        throw new LogicException('parity intents are immutable');
+    }
+
+    public function getIterator(): Traversable
+    {
+        foreach (array_keys($this->source) as $key) {
+            yield $key => $this[$key];
+        }
+    }
+}
+
+$parityIntents = new ConsumedIntentMap($e2eCorpus['scenario_inputs']);
 $vectorType = $e2eCorpus['schema']['fields']['embedding']['type'];
 define('VECTOR_TYPE', $vectorType);
 function corpusVector(string $documentId): array
@@ -166,9 +207,10 @@ function sharedTypedQuery(array $spec): array
 /** @return array<string,array{ids:list<string>}> */
 function sharedTypedQueryObservations(Index $index): array
 {
+    global $parityIntents;
     $corpus = searchkernelPhpClientApiE2eCorpus();
     $observations = [];
-    foreach ($corpus['scenario_inputs'] as $scenario => $input) {
+    foreach ($parityIntents as $scenario => $input) {
         if (!str_starts_with($scenario, 'typed_query_')) continue;
         $ids = ids($index->query(sharedTypedQuery($input['query']))->limit($input['limit'])->execute());
         if ($input['result_order'] === 'sorted_ids') sort($ids, SORT_STRING);
@@ -182,9 +224,10 @@ function sharedTypedQueryObservations(Index $index): array
 
 function captureRealEngineParity(Index $index): array
 {
+    global $parityIntents;
     $corpus = searchkernelPhpClientApiE2eCorpus();
     $typedObservations = sharedTypedQueryObservations($index);
-    $intents = $corpus['scenario_inputs'];
+    $intents = $parityIntents;
     $orderedSpec = $intents['pagination'];
     $ordered = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit(20)->execute();
     $filteredSpec = $intents['filtered_facets'];
@@ -207,13 +250,13 @@ function captureRealEngineParity(Index $index): array
             ->orderBy(...$groupOrder)
             ->output(Agg::count()->as($groupedSpec['outputs'][0]['name']), Agg::avg($groupedSpec['outputs'][1]['field'])->as($groupedSpec['outputs'][1]['name']))
     )->execute();
-    $nearestIntent = $corpus['scenario_inputs']['nearest_neighbor'];
+    $nearestIntent = $intents['nearest_neighbor'];
     $nearestSpec = $nearestIntent['query'];
     $nearest = $index->query(Query::nearestNeighbor($nearestSpec['field'], $nearestSpec['query_input']))
         ->ranking($nearestIntent['ranking_profile'])
         ->input($nearestSpec['query_input'], embedding(corpusVector($nearestIntent['query_input_document'])))
         ->limit($nearestIntent['limit'])->execute();
-    $hybridIntent = $corpus['scenario_inputs']['hybrid_text_vector'];
+    $hybridIntent = $intents['hybrid_text_vector'];
     [$hybridText, $hybridVector] = $hybridIntent['query']['clauses'];
     $hybrid = $index->query(Query::anyOf(
         Query::contains($hybridText['field'], $hybridText['value']),
@@ -391,17 +434,21 @@ function writeRealEngineParity(array $scenarios): void
     if ($path === false || $path === '') {
         return;
     }
-    $inputs = searchkernelPhpClientApiE2eCorpus()['scenario_inputs'];
+    global $parityConsumedIntents;
     foreach ($scenarios as $scenario => &$value) {
-        if (!isset($inputs[$scenario]) || str_starts_with($scenario, 'typed_query_')) {
+        if (str_starts_with($scenario, 'typed_query_')) {
             continue;
         }
+        if (!array_key_exists($scenario, $parityConsumedIntents)) {
+            throw new RuntimeException("parity scenario {$scenario} emitted an observation without consuming its shared intent");
+        }
+        $intent = $parityConsumedIntents[$scenario];
         if (isset($value['observation']) && is_array($value['observation'])) {
-            $value['observation']['intent'] ??= $inputs[$scenario];
+            $value['observation']['intent'] ??= $intent;
         } elseif (is_array($value) && !array_is_list($value)) {
-            $value['intent'] ??= $inputs[$scenario];
+            $value['intent'] ??= $intent;
         } else {
-            $value = ['intent' => $inputs[$scenario], 'result' => $value];
+            $value = ['intent' => $intent, 'result' => $value];
         }
     }
     unset($value);
@@ -428,15 +475,15 @@ if ($phase === 'reopen') {
     heading('30. REOPEN PERSISTED INDEX');
 
     same(null, $index->get('shoe-3'), 'deleted document remains deleted');
-    $reopenSpec = $e2eCorpus['scenario_inputs']['reopen_persistence'];
-    $upsertSpec = $e2eCorpus['scenario_inputs']['upsert_replacement'];
+    $reopenSpec = $parityIntents['reopen_persistence'];
+    $upsertSpec = $parityIntents['upsert_replacement'];
     $persisted = $index->get($reopenSpec['marker_id']);
     check($persisted !== null, 'parity-reopen survives daemon and index reopen');
     $persistedShoe2 = $index->get($upsertSpec['document_id']);
     writeRealEngineParity(['reopen_persistence' => [
         'marker' => ['title' => $persisted['title'], 'price' => $persisted['price'], 'inventory' => $persisted['inventory']],
         'upserted' => ['updated_title_matches' => str_contains($persistedShoe2['title'], 'Updated'), 'price' => $persistedShoe2['price']],
-        'deleted_absent' => $index->get($e2eCorpus['scenario_inputs']['delete']['document_id']) === null,
+        'deleted_absent' => $index->get($parityIntents['delete']['document_id']) === null,
     ]]);
 
     $shoe1 = $index->get('shoe-1');
@@ -536,7 +583,7 @@ for ($probe = 0; $probe < $probeSpec['count']; $probe++) {
 }
 
 $parity = captureRealEngineParity($index);
-$patchSpec = $e2eCorpus['scenario_inputs']['patch'];
+$patchSpec = $parityIntents['patch'];
 $index->insert(['_id' => $patchSpec['document_id'], ...$patchSpec['initial']]);
 $patchBuilder = $index->patch($patchSpec['document_id']);
 foreach ($patchSpec['set'] as $field => $value) $patchBuilder = $patchBuilder->set($field, $value);
@@ -544,10 +591,10 @@ foreach ($patchSpec['unset'] as $field) $patchBuilder = $patchBuilder->unset($fi
 $patchBuilder->execute();
 $mutated = $index->get($patchSpec['document_id']);
 $parity['patch'] = ['price' => $mutated['price'], 'sale_price_present' => array_key_exists('sale_price', $mutated)];
-$deleteSpec = $e2eCorpus['scenario_inputs']['delete'];
+$deleteSpec = $parityIntents['delete'];
 $parityMutationDeleted = $index->delete($deleteSpec['document_id']);
 $parity['delete'] = ['deleted' => $parityMutationDeleted, 'absent_after_delete' => $index->get($deleteSpec['document_id']) === null];
-$reopenSpec = $e2eCorpus['scenario_inputs']['reopen_persistence'];
+$reopenSpec = $parityIntents['reopen_persistence'];
 $index->insert(['_id' => $reopenSpec['marker_id'], ...$reopenSpec['marker']]);
 
 heading('3. GET BY ID');
@@ -1024,7 +1071,7 @@ check(!in_array('Budget', $brands, true), 'facet reflects delete');
 check(!$index->delete('shoe-3'), 'duplicate delete false');
 
 heading('28. UPSERT REPLACEMENT');
-$upsertSpec = $e2eCorpus['scenario_inputs']['upsert_replacement'];
+$upsertSpec = $parityIntents['upsert_replacement'];
 $replacement = $upsertSpec['replacement'];
 $vectorDocumentId = $replacement['vector_document_id'];
 unset($replacement['vector_document_id']);
