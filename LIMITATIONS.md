@@ -83,7 +83,7 @@ approximated.
 
 ### YQL query source (`query.yql`)
 
-- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. Rust exposes YQL source and scalar/tensor parameter bindings through Index::yql().
+- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. Rust exposes YQL source with scalar and tensor parameter bindings.
 
 ### Analyzed text search with default WeakAnd semantics (`query.text_weak_and`)
 
@@ -130,7 +130,7 @@ approximated.
 
 ### Limit and offset pagination (`search.pagination`)
 
-- Python additionally exposes page() as a convenience. Rust currently exposes limit/offset but no page() helper.
+- Python and Rust expose page() as a convenience over limit/offset.
 
 ### Text search-field selection (`search.search_fields`)
 
@@ -185,15 +185,15 @@ approximated.
 
 ### Structured grouping and faceting (`grouping.structured`)
 
-- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. The Rust facade exposes root outputs, nested grouping, aggregation aliases, and regex keep filters.
+- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, and regex keep filters.
 
 ### Executable grouping expression/function subset (`grouping.functions`)
 
-- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust exposes attribute classifiers, named aggregation aliases, and regex keep filters; Python exposes the richer expression facade.
+- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust exposes named aggregation aliases and regex keep filters; Python exposes the richer expression facade.
 
 ### Grouping aggregations (`grouping.aggregations`)
 
-- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust's high-level GroupingAggregation exposes count/average/sum/min/max, named outputs, and root-scope outputs; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete.
+- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust exposes count/average/sum/min/max, named outputs, and root-scope outputs; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete.
 
 ### Summary aggregation (`grouping.summary_aggregation`)
 
@@ -220,7 +220,7 @@ approximated.
 
 ### Create-if-nonexistent document updates (`update.create_if_nonexistent`)
 
-- Python UpdateBuilder.create() is proven through the real native path. Create-if-missing remains unavailable through the high-level Rust Update facade.
+- Python UpdateBuilder.create() is proven through the real native path. Rust exposes set, unset, and arithmetic updates but not create-if-nonexistent.
 
 ### Conditional document mutations (`update.conditional`)
 
