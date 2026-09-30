@@ -6,7 +6,10 @@ use searchkernel_ir::{index_definition_to_ir, ErrorCode, PortableError};
 use searchkernel_vespa_engine::{
     ConfigCompiler, DistanceMetric, Field, FieldType, HnswIndexConfig, Schema,
 };
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 fn main() {
     if let Err(error) = run() {
@@ -159,11 +162,7 @@ fn run_portable_ir(path: &Path, id: &str) -> Result<(), Box<dyn std::error::Erro
     }
 }
 
-fn run_adapter(
-    path: &Path,
-    config: &Path,
-    id: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn run_adapter(path: &Path, config: &Path, id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let ir = parse(path)?;
     let error = match searchkernel_ir_adapter::compile_index_definition(&ir, config) {
         Ok(_) => return Err("negative adapter schema unexpectedly succeeded".into()),

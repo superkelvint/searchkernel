@@ -9,7 +9,11 @@ use searchkernel_ir::{index_definition_to_ir, IndexContext};
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use searchkernel_vespa_engine::{Engine, Error as EngineError};
 use serde_json::{json, Value as Json};
-use std::{env, fs, path::{Path, PathBuf}, sync::Arc};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 fn main() {
     if let Err(error) = run() {

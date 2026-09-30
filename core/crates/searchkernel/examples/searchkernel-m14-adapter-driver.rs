@@ -7,7 +7,11 @@ use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexCont
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use serde_json::{json, Value as Json};
-use std::{fs, path::{Path, PathBuf}, sync::Arc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 fn definition_ir(path: &Path) -> searchkernel_ir::IndexDefinitionIr {
     let bytes = fs::read(path).expect("read M14 definition");
