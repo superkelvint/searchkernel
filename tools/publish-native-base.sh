@@ -117,8 +117,17 @@ print(max(versions, default=0) + 1)
 echo "Publishing generation v${ARTIFACT_GENERATION}"
 
 TMP="$(mktemp -d "/tmp/searchkernel-native-base-v${ARTIFACT_GENERATION}.XXXXXX")"
-cleanup() { [[ "${KEEP_NATIVE_BASE_TMP:-0}" == 1 ]] && echo "Keeping $TMP" || rm -rf "$TMP"; }
-trap cleanup EXIT INT TERM
+cleanup() {
+    local status=$?
+    trap - EXIT INT TERM
+    if [[ "${KEEP_NATIVE_BASE_TMP:-0}" == 1 ]]; then
+        echo "Keeping $TMP"
+    elif ! bash "$ROOT/tools/remove-readonly-tree.sh" "$TMP" && (( status == 0 )); then
+        status=1
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
 
 declare -A ARCHIVES CHECKSUMS TAGS ASSETS
 
