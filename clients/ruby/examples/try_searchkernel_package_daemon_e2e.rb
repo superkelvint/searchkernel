@@ -159,11 +159,27 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
     wait_until_ready(pid, port, stderr_path)
     base_url = "http://127.0.0.1:#{port}"
 
+    begin
+      SearchKernel::Index.open(base_url, target: "Products")
+      raise "domain-invalid target unexpectedly opened"
+    rescue SearchKernel::SearchKernelError => error
+      same("InvalidArgument", error.code, "invalid target reaches canonical portable validation")
+      same("invalid_index_target", error.details.first.fetch("code"), "invalid target canonical detail code")
+      same("target.name", error.details.first.fetch("path"), "invalid target canonical semantic path")
+    end
+
     index = SearchKernel::Index.create(
       base_url,
       target: "products",
       fields: fields
     )
+    begin
+      SearchKernel::Index.create(base_url, target: "products", fields: fields)
+      raise "duplicate logical index unexpectedly created"
+    rescue SearchKernel::SearchKernelError => error
+      same("AlreadyExists", error.code, "duplicate create has canonical AlreadyExists semantics")
+      same("index_already_exists", error.details.first.fetch("code"), "duplicate create canonical detail")
+    end
     begin
       described = index.describe
       same(%w[inventory title], described.fetch("fields").map { |field| field.fetch("name") }.sort,
@@ -217,6 +233,14 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
       raise "deleted logical index unexpectedly reopened"
     rescue SearchKernel::SearchKernelError => error
       same("NotFound", error.code, "deleted logical index returns canonical NotFound")
+      same("index_not_found", error.details.first.fetch("code"), "deleted logical index canonical detail")
+    end
+    begin
+      SearchKernel::Index.delete(base_url, target: "products")
+      raise "missing logical index unexpectedly deleted"
+    rescue SearchKernel::SearchKernelError => error
+      same("NotFound", error.code, "missing delete has canonical NotFound semantics")
+      same("index_not_found", error.details.first.fetch("code"), "missing delete canonical detail")
     end
 
     stop_daemon(pid)

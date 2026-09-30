@@ -5,6 +5,7 @@ ROOT="$(cd "$DIR/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 
+prepare_native_probe_sdk
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
 if live_oracle_enabled; then
@@ -29,7 +30,7 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
   python3 "$ROOT/reference/vespa/common/compare_json.py" "$EXPECTED" "$TMP/oracle.json"
 fi
 
-# Compile a plain C consumer against the verifier SDK prepared by verify-common.
+# Compile a plain C consumer against the explicitly prepared native-probe SDK.
 cc -std=c11 -Wall -Wextra -Werror \
   -I"$SDK/include" \
   "$DIR/native-probe/probe.c" \

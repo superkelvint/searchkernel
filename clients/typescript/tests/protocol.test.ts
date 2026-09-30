@@ -38,6 +38,12 @@ describe("V2 protocol envelopes", () => {
     expect(envelope.target(new IndexTarget())?.name()).toBe("products");
   });
 
+  it("encodes domain-invalid targets for canonical server validation", () => {
+    const bytes = packRequest("insert", new InsertRequestT(new DocumentT("d", [])), "Products");
+    const envelope = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(bytes));
+    expect(envelope.target(new IndexTarget())?.name()).toBe("Products");
+  });
+
   it("verifies SKRS, version and discriminator", () => {
     expect(ResponseEnvelope.bufferHasIdentifier(new ByteBuffer(response()))).toBe(true);
     expect(unpackResponse(response(), "insert").payloadType).toBe(

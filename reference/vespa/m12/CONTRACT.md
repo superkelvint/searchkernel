@@ -66,7 +66,7 @@ M12 v1 does not add sparse or mixed query tensors.
 The compile-only API contract is:
 
 ```text
-reference/vespa/api-contract/src/bin/m12.rs
+core/crates/searchkernel-vespa-engine/examples/api-contract-m12.rs
 ```
 
 M12 requires these low-level operations:

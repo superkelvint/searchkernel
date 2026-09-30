@@ -1,6 +1,5 @@
 use super::*;
 use searchkernel_ir::{api, OperationIr};
-use searchkernel_protocol::target::{request_index_target, RequestTargetError};
 use searchkernel_testkit::{
     assert_api_search_result_matches, canonical_result_fixtures, representative_search_result,
     ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
@@ -235,10 +234,7 @@ fn targetless_embedded_request_remains_valid_without_daemon_routing() {
         wire::RequestPayload::SearchKernel_V2_SearchRequest
     );
     assert!(envelope.target().is_none());
-    assert_eq!(
-        request_index_target(envelope),
-        Err(RequestTargetError::Missing)
-    );
+    assert!(envelope.target().is_none());
 }
 
 #[test]

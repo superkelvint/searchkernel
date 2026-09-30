@@ -45,6 +45,12 @@ final class Index
         return $index;
     }
 
+    public static function deleteTarget(string $baseUrl, string $target): bool
+    {
+        Client::connect($baseUrl, target: $target)->deleteIndex();
+        return true;
+    }
+
     /** @param array<string, mixed> $document */
     public function insert(array $document): string
     {

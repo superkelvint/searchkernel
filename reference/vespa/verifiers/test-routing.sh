@@ -35,19 +35,33 @@ exec /bin/bash "$@"
 SH
 chmod +x "$SOURCE_TEST/bin/bash"
 SEARCHKERNEL_BUILD_SDK_MARKER="$SOURCE_TEST/build-sdk-called" \
-SEARCHKERNEL_VERIFIER_BASE_SDK="$SOURCE_TEST/base" \
-SEARCHKERNEL_VERIFIER_VESPA_ROOT="$SOURCE_TEST/vespa" \
-SEARCHKERNEL_VERIFIER_SDK="$SOURCE_TEST/sdk" \
+SEARCHKERNEL_NATIVE_PROBE_BASE_SDK="$SOURCE_TEST/base" \
+SEARCHKERNEL_NATIVE_PROBE_VESPA_ROOT="$SOURCE_TEST/vespa" \
+SEARCHKERNEL_NATIVE_PROBE_SDK="$SOURCE_TEST/sdk" \
 PATH="$SOURCE_TEST/bin:$PATH" \
     /bin/bash -euo pipefail -c 'unset SK_NATIVE_SDK; source "$1"' _ "$COMMON"
 [[ ! -e "$SOURCE_TEST/build-sdk-called" ]] || {
     echo "verify-common.sh ran build-sdk.sh while being sourced" >&2
     exit 1
 }
-grep -F 'prepare_verifier_sdk' "$VERIFY" >/dev/null || {
-    echo "verify-through does not explicitly prepare the verifier SDK" >&2
+if grep -F 'prepare_native_probe_sdk' "$VERIFY" >/dev/null; then
+    echo "verify-through must not prepare a native-probe SDK for every Rust verifier" >&2
+    exit 1
+fi
+if grep -F 'prepare_native_probe_sdk' "$ROOT/reference/vespa/i/verify-i.sh" >/dev/null; then
+    echo "I-series Rust verifier must not synthesize the native-probe SDK" >&2
+    exit 1
+fi
+grep -F 'prepare_native_probe_sdk' "$ROOT/reference/vespa/m0/verify-m0.sh" >/dev/null || {
+    echo "M0 direct native probe does not explicitly prepare its native-probe SDK" >&2
     exit 1
 }
+for normal_rust_verifier in m13 m14; do
+    if grep -F 'require_sdk_manifest' "$ROOT/reference/vespa/$normal_rust_verifier/verify-$normal_rust_verifier.sh" >/dev/null; then
+        echo "$normal_rust_verifier Rust verifier still requires a private SDK manifest" >&2
+        exit 1
+    fi
+done
 
 
 # Verifier SDK caching must prove the real lifecycle: a clean first invocation
@@ -88,12 +102,12 @@ run_cache_prepare() {
     local base=$1
     SEARCHKERNEL_BUILD_SDK_MARKER="$CACHE_TEST/build-sdk-called" \
     SEARCHKERNEL_TEST_REPO_ROOT="$ROOT" \
-    SEARCHKERNEL_VERIFIER_BASE_SDK="$base" \
-    SEARCHKERNEL_VERIFIER_VESPA_ROOT="$CACHE_TEST/vespa" \
-    SEARCHKERNEL_VERIFIER_SDK="$CACHE_TEST/sdk" \
-    SEARCHKERNEL_VERIFIER_SDK_BUILD="$CACHE_TEST/build" \
+    SEARCHKERNEL_NATIVE_PROBE_BASE_SDK="$base" \
+    SEARCHKERNEL_NATIVE_PROBE_VESPA_ROOT="$CACHE_TEST/vespa" \
+    SEARCHKERNEL_NATIVE_PROBE_SDK="$CACHE_TEST/sdk" \
+    SEARCHKERNEL_NATIVE_PROBE_SDK_BUILD="$CACHE_TEST/build" \
     PATH="$CACHE_TEST/bin:$PATH" \
-        /bin/bash -euo pipefail -c 'unset SK_NATIVE_SDK SEARCHKERNEL_VERIFIER_SDK_PREPARED; source "$1"; prepare_verifier_sdk' _ "$COMMON"
+        /bin/bash -euo pipefail -c 'unset SK_NATIVE_SDK SEARCHKERNEL_NATIVE_PROBE_SDK_PREPARED; source "$1"; prepare_native_probe_sdk' _ "$COMMON"
 }
 build_count() {
     if [[ -f "$CACHE_TEST/build-sdk-called" ]]; then
@@ -105,30 +119,30 @@ build_count() {
 
 run_cache_prepare "$CACHE_TEST/base"
 [[ "$(build_count)" == 1 ]] || {
-    echo "clean verifier SDK did not build exactly once" >&2
+    echo "clean native-probe SDK did not build exactly once" >&2
     exit 1
 }
 [[ -f "$CACHE_TEST/sdk/native-build-fingerprint-v2.txt" ]] || {
-    echo "verifier adapter build did not publish its fingerprint" >&2
+    echo "native-probe adapter build did not publish its fingerprint" >&2
     exit 1
 }
 
 run_cache_prepare "$CACHE_TEST/base"
 [[ "$(build_count)" == 1 ]] || {
-    echo "matching verifier SDK fingerprint did not reuse the built adapter" >&2
+    echo "matching native-probe SDK fingerprint did not reuse the built adapter" >&2
     exit 1
 }
 
 run_cache_prepare "$CACHE_TEST/base-moved"
 [[ "$(build_count)" == 2 ]] || {
-    echo "changed verifier base SDK location did not rebuild the adapter" >&2
+    echo "changed native base SDK location did not rebuild the adapter" >&2
     exit 1
 }
 
 printf 'fingerprint-version=3\nsha256=stale\n' > "$CACHE_TEST/sdk/native-build-fingerprint-v2.txt"
 run_cache_prepare "$CACHE_TEST/base-moved"
 [[ "$(build_count)" == 3 ]] || {
-    echo "stale verifier SDK fingerprint did not rebuild the adapter" >&2
+    echo "stale native-probe SDK fingerprint did not rebuild the adapter" >&2
     exit 1
 }
 
@@ -248,41 +262,41 @@ phase9_line="$(grep -nF 'run_phase native-full-phase9 reference/vespa/phase9/ver
         exit 1
     }
 
-# M3 must execute the driver from Cargo's active target directory. The verifier
-# exports a shared CARGO_TARGET_DIR, so crate-local target/debug is not reliable.
+# M3 must execute its owning workspace example through normal Cargo runtime setup.
 M3_RUN="$ROOT/reference/vespa/m3/run-rust.sh"
 mkdir -p "$SOURCE_TEST/m3-bin" "$SOURCE_TEST/m3-target"
 cat > "$SOURCE_TEST/m3-bin/cargo" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "${1:-}" == build ]] || {
+[[ "${1:-}" == run && " $* " == *" -p searchkernel-vespa-engine "* && " $* " == *" --example searchkernel-m3-conformance-driver "* ]] || {
     echo "unexpected cargo invocation: $*" >&2
     exit 96
 }
-mkdir -p "$CARGO_TARGET_DIR/debug"
-cat > "$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver" <<'DRIVER'
-#!/usr/bin/env bash
-exit 0
-DRIVER
-chmod +x "$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver"
+while IFS=$'\t' read -r id _; do
+    [[ -n "$id" ]] || continue
+    printf '{"id":"%s","terms":[]}\n' "$id"
+done
 SH
 cat > "$SOURCE_TEST/m3-bin/python3" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1:-}" == */.github/ci/resolve-native-adapter-lib.py ]]; then
-    printf '%s\n' "$CARGO_TARGET_DIR/fake-native-adapter"
-    exit 0
-fi
-expected="$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver"
-actual="${@: -2:1}"
-[[ "$actual" == "$expected" ]] || {
-    echo "M3 run-rust used $actual instead of Cargo target driver $expected" >&2
-    exit 95
-}
+exec /usr/bin/python3 "$@"
 SH
 chmod +x "$SOURCE_TEST/m3-bin/cargo" "$SOURCE_TEST/m3-bin/python3"
 PATH="$SOURCE_TEST/m3-bin:$PATH" \
 CARGO_TARGET_DIR="$SOURCE_TEST/m3-target" \
     "$M3_RUN" document "$SOURCE_TEST/m3-output.jsonl"
+
+# An ordinary migrated Rust runner must use Cargo's native runtime path and
+# must not synthesize the direct-probe SDK just because it is a verifier.
+NORMAL_RUST_SDK="$SOURCE_TEST/normal-rust/native-probe-sdk"
+PATH="$SOURCE_TEST/m3-bin:$PATH" \
+SEARCHKERNEL_NATIVE_PROBE_SDK="$NORMAL_RUST_SDK" \
+CARGO_TARGET_DIR="$SOURCE_TEST/normal-rust-target" \
+    "$M3_RUN" document "$SOURCE_TEST/normal-rust-output.jsonl"
+[[ ! -e "$NORMAL_RUST_SDK" ]] || {
+    echo "ordinary Rust verifier synthesized a native-probe SDK" >&2
+    exit 1
+}
 
 echo "semantic verifier routing PASS"

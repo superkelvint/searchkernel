@@ -63,7 +63,7 @@ if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
     exit 1
 fi
 mkdir -p "${CARGO_TARGET_DIR:?}/debug"
-cat > "$CARGO_TARGET_DIR/debug/searchkernel-m11-driver" <<'DRIVER'
+cat > "$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver" <<'DRIVER'
 #!/usr/bin/env bash
 case "${LD_LIBRARY_PATH:-}" in
     */sanitizer/asan-ubsan/sdk/lib*) ;;
@@ -71,7 +71,7 @@ case "${LD_LIBRARY_PATH:-}" in
 esac
 exit 0
 DRIVER
-chmod +x "$CARGO_TARGET_DIR/debug/searchkernel-m11-driver"
+chmod +x "$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver"
 SH
 
 real_cc=$(command -v cc)
