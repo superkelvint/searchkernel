@@ -210,8 +210,9 @@ function sharedTypedQueryObservations(Index $index): array
     global $parityIntents;
     $corpus = searchkernelPhpClientApiE2eCorpus();
     $observations = [];
-    foreach ($parityIntents as $scenario => $input) {
+    foreach ($corpus['scenario_inputs'] as $scenario => $_rawInput) {
         if (!str_starts_with($scenario, 'typed_query_')) continue;
+        $input = $parityIntents[$scenario];
         $ids = ids($index->query(sharedTypedQuery($input['query']))->limit($input['limit'])->execute());
         if ($input['result_order'] === 'sorted_ids') sort($ids, SORT_STRING);
         $observations[$scenario] = [
