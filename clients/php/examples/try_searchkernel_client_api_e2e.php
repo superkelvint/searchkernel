@@ -370,6 +370,21 @@ function captureRealEngineParity(Index $index): array
     return $observations;
 }
 
+function preserveEmptyParityObjects(mixed &$value): void
+{
+    if (!is_array($value)) {
+        return;
+    }
+    foreach ($value as $key => &$child) {
+        if (in_array($key, ['bindings', 'capabilities'], true) && $child === []) {
+            $child = (object) [];
+        } else {
+            preserveEmptyParityObjects($child);
+        }
+    }
+    unset($child);
+}
+
 function writeRealEngineParity(array $scenarios): void
 {
     $path = getenv('SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT');
@@ -395,12 +410,7 @@ function writeRealEngineParity(array $scenarios): void
         $previous = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
         $observations['scenarios'] = array_replace($previous['scenarios'] ?? [], $scenarios);
     }
-    foreach ($observations['scenarios'] as &$scenario) {
-        if (is_array($scenario) && ($scenario['capabilities'] ?? null) === []) {
-            $scenario['capabilities'] = (object) [];
-        }
-    }
-    unset($scenario);
+    preserveEmptyParityObjects($observations['scenarios']);
     file_put_contents($path, json_encode($observations, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
 }
 
