@@ -419,7 +419,10 @@ def main() -> None:
             rust_root.mkdir()
             with tarfile.open(rust) as archive:
                 archive.extractall(rust_root, filter="data")
-            native_release_env = {}
+            # The packaged release is produced from the CI native-base
+            # generation. Resolve that same published generation in this
+            # pristine consumer, without mounting the producer's SDK cache.
+            native_release_env = {"SEARCHKERNEL_BUILD_ENV": "ci"}
             token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
             if token:
                 native_release_env["GH_TOKEN"] = token
