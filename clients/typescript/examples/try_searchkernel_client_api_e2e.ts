@@ -33,6 +33,7 @@ import {
   gf,
   q,
   type DocumentInput,
+  type ValueInput,
   type ResultGroup,
   type SearchResults,
   type CreateIndexOptions,
@@ -127,8 +128,8 @@ function documentInput(source: Record<string, unknown>): DocumentInput {
   return document as DocumentInput;
 }
 
-function sharedFilterBindings(source: string, bindings: Record<string, unknown>): Record<string, unknown> {
-  const converted: Record<string, unknown> = {};
+function sharedFilterBindings(source: string, bindings: Record<string, ValueInput>): Record<string, ValueInput> {
+  const converted: Record<string, ValueInput> = {};
   for (const [name, input] of Object.entries(bindings)) {
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const field = new RegExp(`([A-Za-z_][\\w.]*)\\s*(?:(?:<=|>=|=|<|>)\\s*|IN\\s*\\(\\s*):${escapedName}\\b`, "i").exec(source)?.[1];
