@@ -226,13 +226,14 @@ async function sharedTypedQueryObservations(index: Index): Promise<Record<string
     const rankingProfile = input.ranking_profile;
     if (rankingProfile) builder = builder.ranking(rankingProfile);
     const results = await builder.limit(input.limit).execute();
+    const resultOrder = input.result_order;
     const feature = input.feature;
     let queryResult: unknown;
     if (feature) {
       queryResult = results.hits.map((hit) => ({ id: hit.id, feature: paritySafe(hit.features[feature]) }));
     } else {
       const ids = results.hits.map((hit) => hit.id);
-      if (input.result_order === "sorted_ids") ids.sort();
+      if (resultOrder === "sorted_ids") ids.sort();
       queryResult = ids;
     }
     observations[scenario] = {
