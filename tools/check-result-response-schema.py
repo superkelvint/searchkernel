@@ -65,10 +65,14 @@ class ReflectedSchema:
             self.object_indices = {
                 self._name(value).rsplit(".", 1)[-1]: i for i, value in enumerate(self.objects)
             }
+            self.enum_indices = {
+                self._name(value).rsplit(".", 1)[-1]: i for i, value in enumerate(self.enums)
+            }
             if any(not name for name in self.object_names):
                 raise ValueError("BFBS contains a declaration without a name")
             self.base = modules["BaseType"]
             self.closure = self._result_closure()
+            self.wire = self._wire_schema()
         except Exception as error:
             raise ValueError(f"invalid BFBS reflection metadata: {error}") from error
 
@@ -76,6 +80,163 @@ class ReflectedSchema:
     def _name(table: Any) -> str:
         raw = table.Name()
         return raw.decode("utf-8") if raw else ""
+
+
+    def _base_type_token(self, value: int) -> str:
+        bt = self.base.BaseType()
+        names = {
+            bt.None_: "none",
+            bt.UType: "utype",
+            bt.Bool: "bool",
+            bt.Byte: "byte",
+            bt.UByte: "ubyte",
+            bt.Short: "short",
+            bt.UShort: "ushort",
+            bt.Int: "int",
+            bt.UInt: "uint",
+            bt.Long: "long",
+            bt.ULong: "ulong",
+            bt.Float: "float",
+            bt.Double: "double",
+            bt.String: "string",
+        }
+        token = names.get(value)
+        if token is None:
+            raise ValueError(f"unsupported reflected scalar base type: {value}")
+        return token
+
+    def _type_signature(self, reflected_type: Any) -> str:
+        bt = self.base.BaseType()
+        base = reflected_type.BaseType()
+        element = reflected_type.Element()
+        index = reflected_type.Index()
+        if base in (bt.Vector, bt.Vector64, bt.Array):
+            if element == bt.Obj:
+                item = self._name(self.objects[index]).rsplit(".", 1)[-1]
+            elif element in (bt.Union, bt.UType):
+                item = self._name(self.enums[index]).rsplit(".", 1)[-1]
+            elif index >= 0:
+                item = self._name(self.enums[index]).rsplit(".", 1)[-1]
+            else:
+                item = self._base_type_token(element)
+            if base == bt.Array:
+                return f"array<{item};{reflected_type.FixedLength()}>"
+            if base == bt.Vector64:
+                return f"vector64<{item}>"
+            return f"vector<{item}>"
+        if base == bt.Obj:
+            return self._name(self.objects[index]).rsplit(".", 1)[-1]
+        if base == bt.Union:
+            return self._name(self.enums[index]).rsplit(".", 1)[-1]
+        if index >= 0:
+            return self._name(self.enums[index]).rsplit(".", 1)[-1]
+        return self._base_type_token(base)
+
+    def _enum_default_name(self, enum_index: int, value: int) -> str:
+        enum = self.enums[enum_index]
+        for i in range(enum.ValuesLength()):
+            member = enum.Values(i)
+            if member.Value() == value:
+                return self._name(member)
+        return str(value)
+
+    def _scalar_default(self, field: Any, field_type: Any) -> str | None:
+        """Return the reflected default for an enum or primitive scalar field."""
+        bt = self.base.BaseType()
+        base = field_type.BaseType()
+        enum_index = field_type.Index()
+        if field.Optional():
+            return "null"
+        if (
+            enum_index >= 0
+            and base not in (bt.Obj, bt.Union)
+            and enum_index < len(self.enums)
+            and not self.enums[enum_index].IsUnion()
+        ):
+            return self._enum_default_name(enum_index, field.DefaultInteger())
+        if enum_index >= 0 or base in (
+            bt.Obj,
+            bt.Union,
+            bt.Vector,
+            bt.Vector64,
+            bt.Array,
+            bt.String,
+        ):
+            return None
+        if base == bt.Bool:
+            return "true" if field.DefaultInteger() else "false"
+        if base in (bt.Float, bt.Double):
+            return repr(float(field.DefaultReal()))
+        scalar_types = {
+            bt.Byte,
+            bt.UByte,
+            bt.Short,
+            bt.UShort,
+            bt.Int,
+            bt.UInt,
+            bt.Long,
+            bt.ULong,
+        }
+        if base in scalar_types:
+            return str(field.DefaultInteger())
+        return None
+
+    def _wire_schema(self) -> dict[str, dict[str, Any]]:
+        """Pin declaration headers and ordered wire members from BFBS reflection."""
+        bt = self.base.BaseType()
+        result: dict[str, dict[str, Any]] = {}
+        for name, (kind, _) in self.closure.items():
+            if kind in {"enum", "union"}:
+                enum = self.enums[self.enum_indices[name]]
+                if kind == "union":
+                    members = [
+                        f"{self._name(enum.Values(i))}={enum.Values(i).Value()}"
+                        for i in range(enum.ValuesLength())
+                        if self._name(enum.Values(i)) != "NONE"
+                    ]
+                    header = "union"
+                else:
+                    members = [
+                        f"{self._name(enum.Values(i))}={enum.Values(i).Value()}"
+                        for i in range(enum.ValuesLength())
+                    ]
+                    underlying = enum.UnderlyingType()
+                    if underlying is None:
+                        raise ValueError(f"enum has no underlying type: {name}")
+                    header = f"enum:{self._base_type_token(underlying.BaseType())}"
+                result[name] = {"wire_header": header, "wire_members": members}
+                continue
+            reflected = self.objects[self.object_indices[name]]
+            fields = [reflected.Fields(i) for i in range(reflected.FieldsLength())]
+            header = kind
+            if kind == "struct":
+                header = f"struct:size={reflected.Bytesize()},align={reflected.Minalign()}"
+            by_name = {self._name(field): field for field in fields}
+            members: list[str] = []
+            for field in sorted(fields, key=lambda value: value.Id()):
+                field_name = self._name(field)
+                field_type = field.Type()
+                if field_type is None:
+                    raise ValueError(f"field has no type metadata: {name}.{field_name}")
+                if self._is_synthetic_union_discriminator(field_name, field_type, by_name):
+                    continue
+                signature = f"{field_name}:{self._type_signature(field_type)}"
+                default = self._scalar_default(field, field_type)
+                if default is not None:
+                    signature += f"={default}"
+                if field.Key():
+                    signature += "(key)"
+                if field.Required():
+                    signature += "(required)"
+                if field.Optional():
+                    signature += "(optional)"
+                if field.Offset64():
+                    signature += "(offset64)"
+                if kind == "struct":
+                    signature += f"(offset={field.Offset()},padding={field.Padding()})"
+                members.append(signature)
+            result[name] = {"wire_header": header, "wire_members": members}
+        return result
 
     def _references(self, reflected_type: Any) -> list[tuple[str, int]]:
         """Return object/enum indices for a scalar, vector, array, or union."""
@@ -248,8 +409,35 @@ def result_closure(bfbs: bytes) -> dict[str, tuple[str, dict[str, Any]]]:
     return ReflectedSchema(bfbs).closure
 
 
+def result_wire_schema(bfbs: bytes) -> dict[str, dict[str, Any]]:
+    return ReflectedSchema(bfbs).wire
+
+
+def schema_manifest(
+    reflection: ReflectedSchema,
+    prior_schema: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Build the checked-in schema signatures directly from official BFBS metadata."""
+    existing_order = [
+        name for name in (prior_schema or {}) if name in reflection.closure
+    ]
+    added_names = sorted(set(reflection.closure) - set(existing_order))
+    return {
+        name: {
+            "kind": kind,
+            "members": sorted(members),
+            "wire_members": reflection.wire[name]["wire_members"],
+            "wire_header": reflection.wire[name]["wire_header"],
+        }
+        for name in existing_order + added_names
+        for kind, members in (reflection.closure[name],)
+    }
+
+
 def verify_schema(
-    closure: dict[str, tuple[str, dict[str, Any]]], manifest: dict[str, Any]
+    closure: dict[str, tuple[str, dict[str, Any]]],
+    manifest: dict[str, Any],
+    wire: dict[str, dict[str, Any]] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     declared_types = manifest.get("schema", {})
@@ -273,6 +461,23 @@ def verify_schema(
                 f"missing={sorted(set(actual_members) - classified_names)}, "
                 f"stale={sorted(classified_names - set(actual_members))}"
             )
+        if wire is not None:
+            actual_wire = wire.get(name)
+            if not isinstance(actual_wire, dict):
+                errors.append(f"{name} wire signature is missing")
+            else:
+                declared_header = declared.get("wire_header")
+                actual_header = actual_wire.get("wire_header")
+                if declared_header != actual_header:
+                    errors.append(
+                        f"{name} wire header mismatch: expected={declared_header!r}, actual={actual_header!r}"
+                    )
+                declared_wire = declared.get("wire_members")
+                actual_wire_members = actual_wire.get("wire_members")
+                if declared_wire != actual_wire_members:
+                    errors.append(
+                        f"{name} wire members mismatch: expected={declared_wire!r}, actual={actual_wire_members!r}"
+                    )
     fields = manifest.get("partitions", {}).get("fields", {})
     table_names = {name for name, (kind, _) in closure.items() if kind in {"table", "struct"}}
     if set(fields) != table_names:
@@ -293,7 +498,8 @@ def verify_schema(
 
 
 def verify(bfbs: bytes) -> list[str]:
-    return verify_schema(result_closure(bfbs), json.loads(MANIFEST.read_text()))
+    reflection = ReflectedSchema(bfbs)
+    return verify_schema(reflection.closure, json.loads(MANIFEST.read_text()), reflection.wire)
 
 
 def trace_shape_errors(trace: Any) -> list[str]:
@@ -480,7 +686,7 @@ def _semantic_exercised(partition: str, envelope: dict[str, Any], envelopes: dic
     if partition.endswith("sibling_groups"):
         return len(children) >= 2 and all(child.get("node_type") == "ResultGroup" for child in children)
     if partition.endswith("group_without_children"):
-        return root_kind == "ResultGroup" and _leaves_are_empty(root)
+        return root_kind == "ResultGroup" and not children
     if partition.endswith("group_with_multiple_children"):
         return root_kind == "ResultGroup" and len(children) > 1
     if partition.endswith("keyed_continuations"):
@@ -501,12 +707,12 @@ def _semantic_exercised(partition: str, envelope: dict[str, Any], envelopes: dic
             obj.get("kind_type") == "ValueList" and not obj.get("kind", {}).get("values")
             for obj in walk_json(payload)
         ) and any(obj.get("kind_type") == "ValueObject" for obj in walk_json(payload))
-    if partition.endswith("populated_multi_key_maps") or partition.endswith("multiple_keys"):
+    if partition.endswith("populated_multi_key_maps"):
         return any(
-            len(obj.get("fields", [])) > 1
+            len(obj.get("kind", {}).get("fields", [])) > 1
             for obj in walk_json(payload)
             if obj.get("kind_type") == "ValueObject"
-        ) or any(len(obj) > 1 for obj in walk_json(payload) if "key" not in obj and "value" not in obj)
+        )
     if partition.endswith("supported_variants_and_integer_boundaries"):
         kinds = {obj.get("kind_type") for obj in walk_json(payload)}
         required = {"NullValueValue", "BoolValue", "Int64Value", "UInt64Value", "Float64Value", "StringValue", "BytesValue", "ValueList", "ValueObject"}
@@ -725,6 +931,37 @@ def verify_partitions(manifest: dict[str, Any], envelopes: dict[str, dict[str, A
                 for obj in walk_json(envelope)
             }
             exercised = {"FiniteRelevance", "PositiveInfinityRelevance", "NegativeInfinityRelevance"} <= relevance_kinds
+        if partition.endswith("empty_populated_and_multiple_keys"):
+            object_field_counts = [
+                len(obj.get("kind", {}).get("fields", []))
+                for envelope in projected
+                for obj in walk_json(envelope)
+                if obj.get("kind_type") == "ValueObject"
+            ]
+            exercised = (
+                any(count == 0 for count in object_field_counts)
+                and any(count > 0 for count in object_field_counts)
+                and any(count > 1 for count in object_field_counts)
+            )
+        if partition.endswith("empty_and_populated_maps_lists"):
+            list_counts = [
+                len(obj.get("kind", {}).get("values", []))
+                for envelope in projected
+                for obj in walk_json(envelope)
+                if obj.get("kind_type") == "ValueList"
+            ]
+            map_counts = [
+                len(obj.get("kind", {}).get("fields", []))
+                for envelope in projected
+                for obj in walk_json(envelope)
+                if obj.get("kind_type") == "ValueObject"
+            ]
+            exercised = (
+                any(count == 0 for count in list_counts)
+                and any(count > 0 for count in list_counts)
+                and any(count == 0 for count in map_counts)
+                and any(count > 0 for count in map_counts)
+            )
         if partition.endswith("limits_sides_independently_optional"):
             limit_values = [
                 obj["limits"]
@@ -770,7 +1007,19 @@ def _field_refers_to_closure(
 
 def main() -> int:
     manifest = json.loads(MANIFEST.read_text())
-    errors = verify(BFBS.read_bytes())
+    reflection = ReflectedSchema(BFBS.read_bytes())
+    if sys.argv[1:] == ["--write-signatures"]:
+        manifest["schema"] = schema_manifest(reflection, manifest.get("schema"))
+        MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
+        print("updated result response schema signatures from BFBS")
+        return 0
+    if sys.argv[1:]:
+        print(
+            "usage: check-result-response-schema.py [--write-signatures]",
+            file=sys.stderr,
+        )
+        return 2
+    errors = verify_schema(reflection.closure, manifest, reflection.wire)
     if errors:
         print("\n".join(errors))
         return 1

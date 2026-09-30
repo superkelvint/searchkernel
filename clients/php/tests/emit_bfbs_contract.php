@@ -131,7 +131,7 @@ emitCase('request', 'inspect-query', Protocol::envelope('InspectQueryRequest', [
     'request' => $search,
 ]));
 
-$createDefinition = searchkernelPhpClientApiE2eDefinition('tensor<float>(x[8])');
+$createDefinition = searchkernelPhpClientApiE2eDefinition(searchkernelPhpClientApiE2eCorpus());
 emitCase(
     'request',
     'create-index-e2e-schema',
@@ -211,6 +211,7 @@ emitCase('response', 'default-analyze-zero', Protocol::envelope('AnalyzeResult',
 ]));
 
 emitCase('response', 'default-highlight-zero', Protocol::envelope('SearchResult', [
+    'total_hits' => ['value' => '1', 'relation' => 'Exact'],
     'root' => [
         'node_type' => 'Hit',
         'node' => [
@@ -230,6 +231,7 @@ emitCase('response', 'default-highlight-zero', Protocol::envelope('SearchResult'
 ]));
 
 emitCase('response', 'default-relevance-zero', Protocol::envelope('SearchResult', [
+    'total_hits' => ['value' => '1', 'relation' => 'Exact'],
     'root' => [
         'node_type' => 'Hit',
         'node' => [
@@ -265,6 +267,7 @@ emitCase('request', 'insert-empty-string-bytes', Protocol::envelope('InsertReque
 ]));
 
 emitCase('response', 'portable-zero-values', Protocol::envelope('SearchResult', [
+    'total_hits' => ['value' => '1', 'relation' => 'Exact'],
     'root' => [
         'node_type' => 'Hit',
         'node' => [

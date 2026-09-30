@@ -358,6 +358,164 @@ impl Index {
         )
     }
 
+    /// Move one validated path-owned index into a daemon-owned storage path.
+    ///
+    /// This is local control-plane plumbing for the managed-local transition
+    /// from legacy `--index PATH` ownership to canonical logical targets.
+    /// Both lifecycle locks are held across validation and rename.
+    #[doc(hidden)]
+    #[cfg(feature = "internal-api")]
+    pub fn migrate_storage(
+        source: impl AsRef<std::path::Path>,
+        destination: impl AsRef<std::path::Path>,
+    ) -> Result<()> {
+        use std::time::{Duration, Instant};
+
+        const LOCK_WAIT: Duration = Duration::from_secs(5);
+        const LOCK_RETRY: Duration = Duration::from_millis(10);
+
+        fn unsafe_path(label: &str, path: &std::path::Path) -> Error {
+            Error::search(
+                crate::error::ErrorCode::FailedPrecondition,
+                format!("unsafe {label} path: {}", path.display()),
+            )
+        }
+
+        fn metadata_no_follow(
+            label: &str,
+            path: &std::path::Path,
+        ) -> Result<Option<std::fs::Metadata>> {
+            match std::fs::symlink_metadata(path) {
+                Ok(metadata) if metadata.file_type().is_symlink() => Err(unsafe_path(label, path)),
+                Ok(metadata) => Ok(Some(metadata)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(error) => Err(Error::Infrastructure(format!(
+                    "inspect {label} path '{}': {error}",
+                    path.display()
+                ))),
+            }
+        }
+
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+
+        if let Some(metadata) = metadata_no_follow("managed migration destination", destination)? {
+            if !metadata.is_dir() {
+                return Err(unsafe_path("managed migration destination", destination));
+            }
+            if metadata_no_follow("legacy migration source", source)?.is_none() {
+                return Ok(());
+            }
+            return Err(Error::already_exists(destination.display().to_string()));
+        }
+        if let Some(metadata) = metadata_no_follow("legacy migration source", source)? {
+            if !metadata.is_dir() {
+                return Err(unsafe_path("legacy migration source", source));
+            }
+        } else {
+            return Err(Error::not_found(source.display().to_string()));
+        }
+
+        let source_deadline = Instant::now() + LOCK_WAIT;
+        let _source_lock = loop {
+            match LifecycleLock::acquire(source) {
+                Ok(lock) => break lock,
+                Err(error) if error.code() == crate::error::ErrorCode::AlreadyExists => {
+                    if Instant::now() >= source_deadline {
+                        return Err(Error::from_ir(searchkernel_ir::index_in_use_error()));
+                    }
+                    std::thread::sleep(LOCK_RETRY);
+                }
+                Err(error) => return Err(error),
+            }
+        };
+
+        match metadata_no_follow("legacy migration source", source)? {
+            Some(metadata) if metadata.is_dir() => {}
+            Some(_) => return Err(unsafe_path("legacy migration source", source)),
+            None => {
+                if let Some(metadata) =
+                    metadata_no_follow("managed migration destination", destination)?
+                {
+                    if metadata.is_dir() {
+                        return Ok(());
+                    }
+                }
+                return Err(Error::not_found(source.display().to_string()));
+            }
+        }
+
+        let manifest = super::manifest::IndexManifest::read(source)?;
+        let config = source.join("config");
+        if !source.join("data").is_dir() || !config.is_dir() {
+            return Err(Error::corrupt_index(
+                "index data/config directories are missing",
+            ));
+        }
+        manifest.validate_config(&config)?;
+
+        let destination_parent = destination
+            .parent()
+            .ok_or_else(|| Error::infrastructure("managed index path has no parent directory"))?;
+        std::fs::create_dir_all(destination_parent)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+
+        let destination_deadline = Instant::now() + LOCK_WAIT;
+        let _destination_lock = loop {
+            match LifecycleLock::acquire(destination) {
+                Ok(lock) => break lock,
+                Err(error) if error.code() == crate::error::ErrorCode::AlreadyExists => {
+                    if Instant::now() >= destination_deadline {
+                        return Err(Error::from_ir(searchkernel_ir::index_in_use_error()));
+                    }
+                    std::thread::sleep(LOCK_RETRY);
+                }
+                Err(error) => return Err(error),
+            }
+        };
+
+        match metadata_no_follow("managed migration destination", destination)? {
+            None => {}
+            Some(metadata) => {
+                if !metadata.is_dir() {
+                    return Err(unsafe_path("managed migration destination", destination));
+                }
+                if metadata_no_follow("legacy migration source", source)?.is_none() {
+                    return Ok(());
+                }
+                return Err(Error::already_exists(destination.display().to_string()));
+            }
+        }
+
+        std::fs::rename(source, destination).map_err(|error| {
+            Error::Infrastructure(format!(
+                "migrate legacy index '{}' to '{}': {error}",
+                source.display(),
+                destination.display()
+            ))
+        })?;
+
+        let source_parent = source.parent().unwrap_or_else(|| std::path::Path::new("."));
+        if let Err(error) = sync_published_parent(source_parent)
+            .and_then(|_| sync_published_parent(destination_parent))
+        {
+            return Err(Error::search(
+                crate::error::ErrorCode::Unavailable,
+                format!(
+                    "legacy index migrated to '{}' but parent directory sync failed: {error}",
+                    destination.display()
+                ),
+            )
+            .with_detail(
+                "index_migration_durability_uncertain",
+                None::<String>,
+                "legacy index was moved but crash durability is uncertain",
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Delete a persisted index after proving that no other process owns its
     /// lifecycle lock. This is daemon control-plane plumbing, not part of the
     /// ergonomic document API.
@@ -367,15 +525,7 @@ impl Index {
         let root = path.as_ref();
         let _lifecycle_lock = LifecycleLock::acquire(root).map_err(|error| {
             if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::search(
-                    crate::error::ErrorCode::Conflict,
-                    format!("index storage is in use: {}", root.display()),
-                )
-                .with_detail(
-                    "index_in_use",
-                    None::<String>,
-                    "index storage is owned by another active runtime",
-                )
+                Error::from_ir(searchkernel_ir::index_in_use_error())
             } else {
                 error
             }

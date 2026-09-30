@@ -553,6 +553,9 @@ Raw YQL is an explicit expert escape hatch.
 .fields(...)
 .summary(...)
 .highlight(...)
+.format(...)
+.bolding(...)
+.timing(...)
 
 .offset(...)
 .limit(...)
@@ -564,8 +567,15 @@ Raw YQL is an explicit expert escape hatch.
 .default_index(...)
 .sources(...)
 .restrict(...)
+.search_path(...)
+.search_group(...)
+.query_string(...)
+.query_model_type(...)
 
 .property(...)
+.properties(...)
+.query_profile(...)
+.search_chain(...)
 
 .execute()
 .inspect()

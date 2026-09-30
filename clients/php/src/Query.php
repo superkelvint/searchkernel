@@ -9,9 +9,15 @@ use InvalidArgumentException;
 final class Query
 {
     /** @return array<string,mixed> */
-    public static function term(mixed $value): array
+    public static function term(mixed $fieldOrValue, mixed $value = null): array
     {
-        return self::typed(self::termExpr($value));
+        if (func_num_args() === 1) {
+            return self::typed(self::termExpr($fieldOrValue));
+        }
+        if (!is_string($fieldOrValue)) {
+            throw new InvalidArgumentException("fielded term field must be a string");
+        }
+        return self::contains($fieldOrValue, self::typed(self::termExpr($value)));
     }
 
     /** @return array<string,mixed> */
@@ -212,6 +218,24 @@ final class Query
             'expr_type' => 'QueryMatches',
             'expr' => ['field' => ['path' => $field], 'pattern' => $pattern],
         ]);
+    }
+
+    /** @return array<string,mixed> */
+    public static function prefix(string $field, string $value): array
+    {
+        return self::matches($field, self::literalRegex($value) . '.*');
+    }
+
+    /** @return array<string,mixed> */
+    public static function substring(string $field, string $value): array
+    {
+        return self::matches($field, '.*' . self::literalRegex($value) . '.*');
+    }
+
+    /** @return array<string,mixed> */
+    public static function suffix(string $field, string $value): array
+    {
+        return self::matches($field, '.*' . self::literalRegex($value));
     }
 
     /** @return array<string,mixed> */
@@ -550,6 +574,16 @@ final class Query
             throw new InvalidArgumentException('typed query clauses must come from Query helpers');
         }
         return $source['source']['query'];
+    }
+
+    private static function literalRegex(string $value): string
+    {
+        $specials = array_fill_keys(str_split('.^$*+?()[]{}|\\'), true);
+        $escaped = '';
+        foreach (str_split($value) as $character) {
+            $escaped .= isset($specials[$character]) ? '\\' . $character : $character;
+        }
+        return $escaped;
     }
 
     private static function name(string $value, string $label): void

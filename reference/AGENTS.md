@@ -26,7 +26,7 @@ Verifier-first material may include:
 
 ```text
 reference/vespa/API_CONTRACT.md
-reference/vespa/api-contract/
+Historical API compile-contract assertions now live in the owning core crate examples.
 reference/vespa/mN/CONTRACT.md
 reference/vespa/mN/scenarios/
 reference/vespa/mN/expected/

@@ -63,9 +63,11 @@ so M0–M13 are still relevant even though they are not the current feature
 frontier. Read the latest contract for the capability being changed, then use
 earlier contracts to understand compatibility obligations.
 
-The shared public API compile fixtures live in
-[`api-contract/`](api-contract/), and shell/comparison helpers live in
-[`common/`](common/). The root-level documents are also important:
+The shared public API compile targets are owned by
+`core/crates/searchkernel-vespa-engine/examples/`; active current-implementation
+Rust drivers live with their owning crate under `core/crates/`. This tree keeps
+the frozen API requirements, scenarios, outputs, and shell/comparison helpers
+in [`common/`](common/). The root-level documents are also important:
 
 - [`API_CONTRACT.md`](API_CONTRACT.md) — frozen public Rust API requirements.
 - [`NATIVE_ABI_CONTRACT.h`](NATIVE_ABI_CONTRACT.h) — public native ABI boundary.

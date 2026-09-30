@@ -17,6 +17,7 @@ mod filter_parameter_expansion;
 
 pub mod api_to_ir;
 pub mod backend;
+pub mod control_plane;
 pub mod error;
 pub mod filter_expression;
 pub mod ir_to_api;
@@ -42,6 +43,7 @@ pub use api_to_ir::{
     UnresolvedRankProfileInput, UpdateOperationInput, WriteRequestRef, DEFAULT_SEARCH_LIMIT,
 };
 pub use backend::Backend;
+pub use control_plane::*;
 pub use error::{ErrorCode, ErrorDetail, PortableError, Result};
 pub use filter_expression::{
     bind_filter_expression, bind_filter_expression_with_references, BoundFilter, FilterBindings,

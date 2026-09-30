@@ -44,7 +44,9 @@ if [ "${SK_NATIVE_SDK_PACKAGE_LOCK_HELD:-}" != "$SDK_PACKAGE" ]; then
     # lock descriptors; replacing one here would silently release that lock.
     SK_NATIVE_SDK_PACKAGE_LOCK_HELD="$SDK_PACKAGE"
     export SK_NATIVE_SDK_PACKAGE_LOCK_HELD
-    exec flock "$SDK_LOCK" "$0" "$@"
+    # Packaged consumer support materializes embedded files with ordinary
+    # permissions, so re-enter this script through bash under flock.
+    exec flock "$SDK_LOCK" bash "$0" "$@"
 fi
 
 # Assemble the package away from the published path. The private staging path

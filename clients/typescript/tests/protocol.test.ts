@@ -6,6 +6,7 @@ import { ErrorT } from "../src/generated/flatbuffers/search-kernel/v2/error.js";
 import { GetResultT } from "../src/generated/flatbuffers/search-kernel/v2/get-result.js";
 import { InsertRequestT } from "../src/generated/flatbuffers/search-kernel/v2/insert-request.js";
 import { InsertResultT } from "../src/generated/flatbuffers/search-kernel/v2/insert-result.js";
+import { IndexTarget } from "../src/generated/flatbuffers/search-kernel/v2/index-target.js";
 import { RequestEnvelope } from "../src/generated/flatbuffers/search-kernel/protocol/v2/request-envelope.js";
 import { ResponseEnvelope, ResponseEnvelopeT } from "../src/generated/flatbuffers/search-kernel/protocol/v2/response-envelope.js";
 import { ResponsePayload } from "../src/generated/flatbuffers/search-kernel/protocol/v2/response-payload.js";
@@ -29,6 +30,18 @@ describe("V2 protocol envelopes", () => {
   it("packs a canonical SKRQ request envelope", () => {
     const bytes = packRequest("insert", new InsertRequestT(new DocumentT("d", [])));
     expect(RequestEnvelope.bufferHasIdentifier(new ByteBuffer(bytes))).toBe(true);
+  });
+
+  it("packs logical index selection into the canonical request envelope", () => {
+    const bytes = packRequest("insert", new InsertRequestT(new DocumentT("d", [])), "products");
+    const envelope = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(bytes));
+    expect(envelope.target(new IndexTarget())?.name()).toBe("products");
+  });
+
+  it("encodes domain-invalid targets for canonical server validation", () => {
+    const bytes = packRequest("insert", new InsertRequestT(new DocumentT("d", [])), "Products");
+    const envelope = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(bytes));
+    expect(envelope.target(new IndexTarget())?.name()).toBe("Products");
   });
 
   it("verifies SKRS, version and discriminator", () => {

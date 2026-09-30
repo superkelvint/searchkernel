@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -32,14 +33,24 @@ class BookkeepingAutofixWorkflowTests(unittest.TestCase):
         self.assertIn('if [[ "${actual,,}" != "${EXPECTED_HEAD,,}" ]]', self.text)
 
     def test_patch_scope_is_fail_closed(self):
-        for path in (
+        expected_paths = {
             "build/targets.json",
             "LIMITATIONS.md",
             "docs/CAPABILITIES.md",
             "docs/client-capabilities.json",
             "docs/CLIENT_CAPABILITIES.md",
-        ):
-            self.assertIn(path, self.text)
+        }
+        match = re.search(
+            r'case "\$path" in\s*\n\s*(?P<paths>[^\n)]+)\)\s*\n\s*;;',
+            self.text,
+        )
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(
+            set(match.group("paths").strip().split("|")),
+            expected_paths,
+            "bookkeeping autofix allowlist must contain only deterministic outputs",
+        )
         self.assertIn("unauthorized path", self.text)
         self.assertIn("non-modification status", self.text)
         self.assertIn("git apply --check --whitespace=error-all", self.text)
