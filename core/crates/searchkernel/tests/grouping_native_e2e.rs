@@ -19,14 +19,14 @@ fn native_public_grouping_executes_nested_and_root_aggregations_after_reopen() {
     let definition = IndexDefinition::new()
         .field(Field::keyword("category").stored(true).facetable(true))
         .field(Field::int64("qty").stored(true).facetable(true))
-        .field(Field::float64("price").stored(true).facetable(true));
+        .field(Field::float64("price").stored(true));
     let index = IndexRuntime::create(&path, definition)
         .expect("create native grouping index")
         .index();
     for (id, category, qty, price) in [
         ("audio-1", "Audio", 1_i64, 20.0),
         ("audio-2", "Audio", 2_i64, 5.0),
-        ("book-1", "Books", 1_i64, 12.0),
+        ("book-1", "Book", 1_i64, 12.0),
     ] {
         index
             .upsert(
@@ -59,7 +59,7 @@ fn run_grouping(
         .grouping(
             GroupingPlan::new().level(
                 GroupingPlan::by_expression(GroupingExpression::function(
-                    "lowercase",
+                    "strlen",
                     [GroupingExpression::attribute("category")],
                 ))
                 .alias("revenue", GroupingAggregation::sum("price"))
@@ -90,8 +90,8 @@ fn assert_grouping_result(result: &searchkernel::SearchResult<serde_json::Value>
     let audio = grouping
         .groups
         .iter()
-        .find(|group| group.key == Some(ResultValue::String("audio".into())))
-        .expect("lowercase audio group");
+        .find(|group| group.key == Some(ResultValue::Int64(5)))
+        .expect("strlen audio group");
     assert_eq!(
         audio.aggregations.get("revenue"),
         Some(&ResultValue::Float64(25.0))

@@ -177,7 +177,7 @@ approximated.
 
 ### Executable grouping expression/function subset (`grouping.functions`)
 
-- The native adapter and Rust facade support attributes, scalar literals, unary/binary arithmetic, aggregation/alias references in executable positions, and the verified function subset. Member, MapLookup, and Bucket remain rejected by native lowering and are intentionally not exposed as Rust grouping classifiers.
+- The native adapter and Rust facade support attributes, scalar literals, unary/binary arithmetic, aggregation/alias references in executable positions, and the pinned native function subset: cat, reverse, normalize, strlen, and xor. Other functions accepted by the portable grouping grammar remain represented/resolved but return Unsupported at the current native ABI. Member, MapLookup, and Bucket remain rejected by native lowering and are intentionally not exposed as Rust grouping classifiers.
 
 ### Grouping aggregations (`grouping.aggregations`)
 
