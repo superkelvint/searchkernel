@@ -188,31 +188,59 @@ class ClientContractTests(unittest.TestCase):
             [],
         )
 
-    def test_schema_derived_lifecycle_parity_rejects_create_open_without_delete(self) -> None:
-        (self.root / "api").mkdir()
-        (self.root / "api" / "searchkernel_request.fbs").write_text(
-            "union RequestPayload { SearchKernel.V2.CreateIndexRequest, "
-            "SearchKernel.V2.OpenIndexRequest, SearchKernel.V2.DeleteIndexRequest }",
-            encoding="utf-8",
+    def test_bfbs_derived_lifecycle_parity_rejects_every_client_layout_without_delete(self) -> None:
+        bfbs = (
+            self.root
+            / "core"
+            / "crates"
+            / "searchkernel-protocol"
+            / "bfbs"
         )
-        (self.root / "api" / "searchkernel_response.fbs").write_text(
-            "union ResponsePayload { SearchKernel.V2.CreateIndexResult, "
-            "SearchKernel.V2.OpenIndexResult, SearchKernel.V2.DeleteIndexResult }",
-            encoding="utf-8",
+        bfbs.mkdir(parents=True)
+        (bfbs / "searchkernel_request.bfbs").write_bytes(b"request")
+        (bfbs / "searchkernel_response.bfbs").write_bytes(b"response")
+
+        request_payloads = (
+            "SearchKernel.V2.CreateIndexRequest",
+            "SearchKernel.V2.OpenIndexRequest",
+            "SearchKernel.V2.DeleteIndexRequest",
         )
-        source = self.root / "clients" / "typescript" / "src"
-        source.mkdir(parents=True)
-        (source / "lifecycle.ts").write_text(
-            "CreateIndexRequestT CreateIndexResultT createIndex "
-            "OpenIndexRequestT OpenIndexResultT openIndex",
-            encoding="utf-8",
+        response_payloads = (
+            "SearchKernel.V2.CreateIndexResult",
+            "SearchKernel.V2.OpenIndexResult",
+            "SearchKernel.V2.DeleteIndexResult",
         )
 
-        with self.assertRaisesRegex(
-            MODULE.RegistryError,
-            "typescript.*CreateIndex/OpenIndex.*DeleteIndex",
-        ):
-            MODULE.validate_client_lifecycle_parity(self.root)
+        layouts = {
+            "typescript": self.root / "clients" / "typescript" / "src" / "lifecycle.ts",
+            "php": self.root / "clients" / "php" / "src" / "Lifecycle.php",
+            "python": self.root / "clients" / "python" / "searchkernel" / "lifecycle.py",
+            "ruby": self.root / "clients" / "ruby" / "lib" / "searchkernel" / "lifecycle.rb",
+        }
+
+        def reflected(path: Path, _union_name: str) -> tuple[str, ...]:
+            return request_payloads if path.name == "searchkernel_request.bfbs" else response_payloads
+
+        for client, source in layouts.items():
+            with self.subTest(client=client):
+                clients = self.root / "clients"
+                if clients.exists():
+                    for child in clients.iterdir():
+                        if child.is_dir():
+                            import shutil
+                            shutil.rmtree(child)
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text(
+                    "CreateIndexRequestT CreateIndexResultT createIndex "
+                    "OpenIndexRequestT OpenIndexResultT openIndex",
+                    encoding="utf-8",
+                )
+                with mock.patch.object(MODULE, "_reflected_union_payloads", side_effect=reflected):
+                    with self.assertRaisesRegex(
+                        MODULE.RegistryError,
+                        rf"{client}.*CreateIndex/OpenIndex.*DeleteIndex",
+                    ):
+                        MODULE.validate_client_lifecycle_parity(self.root)
 
     def test_evidence_is_discovered_and_rendered(self) -> None:
         (self.root / "rust-tests" / "e2e.rs").write_text(
