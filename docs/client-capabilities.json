@@ -297,7 +297,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 483
+              "line": 492
             },
             {
               "capability": "query.phrase",
@@ -307,7 +307,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 483
+              "line": 492
             },
             {
               "capability": "query.phrase",
@@ -327,7 +327,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 523
+              "line": 541
             },
             {
               "capability": "query.phrase",
@@ -401,7 +401,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 484
+              "line": 493
             },
             {
               "capability": "query.proximity",
@@ -411,7 +411,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 484
+              "line": 493
             },
             {
               "capability": "query.proximity",
@@ -431,7 +431,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 524
+              "line": 542
             },
             {
               "capability": "query.proximity",
@@ -505,7 +505,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 513
+              "line": 522
             },
             {
               "capability": "query.same_element",
@@ -515,7 +515,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 513
+              "line": 522
             },
             {
               "capability": "query.same_element",
@@ -535,7 +535,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 525
+              "line": 543
             },
             {
               "capability": "query.same_element",
@@ -599,7 +599,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 485
+              "line": 494
             },
             {
               "capability": "query.fuzzy",
@@ -609,7 +609,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 485
+              "line": 494
             },
             {
               "capability": "query.fuzzy",
@@ -629,7 +629,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 526
+              "line": 544
             },
             {
               "capability": "query.fuzzy",
@@ -823,7 +823,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 578
+              "line": 587
             },
             {
               "capability": "query.geo",
@@ -833,7 +833,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 578
+              "line": 587
             },
             {
               "capability": "query.geo",
@@ -853,7 +853,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 527
+              "line": 545
             },
             {
               "capability": "query.geo",
@@ -941,7 +941,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 486
+              "line": 495
             },
             {
               "capability": "query.weighted_and_wand",
@@ -951,7 +951,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 486
+              "line": 495
             },
             {
               "capability": "query.weighted_and_wand",
@@ -971,7 +971,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 528
+              "line": 546
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1503,7 +1503,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 618
+              "line": 627
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1513,7 +1513,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 618
+              "line": 627
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1728,7 +1728,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 619
+              "line": 628
             },
             {
               "capability": "result.highlighting",
@@ -1738,7 +1738,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 619
+              "line": 628
             },
             {
               "capability": "result.highlighting",
