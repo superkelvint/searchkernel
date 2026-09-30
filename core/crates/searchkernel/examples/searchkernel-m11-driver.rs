@@ -1000,6 +1000,7 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     visibility_put
         .join()
         .map_err(|_| "visibility put panicked")??;
+    drop(visibility_gate);
     if !search_ids(&engine, 9, 10)?
         .iter()
         .any(|id| id == "visibility")
@@ -1040,6 +1041,7 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     overlap_b
         .join()
         .map_err(|_| "publication overlap B panicked")??;
+    drop(publication_wait_gate);
     if !search_ids(&engine, 22, 10)?
         .iter()
         .any(|id| id == "publication-overlap-b")
@@ -1050,6 +1052,7 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     overlap_a
         .join()
         .map_err(|_| "publication overlap A panicked")??;
+    drop(publication_start_gate);
 
     // HNSW/tensor publication has its own real-engine adverse-ordering proof.
     run_tensor_publication_regression(config, data)?;
@@ -1235,6 +1238,7 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     blocked_search
         .join()
         .map_err(|_| "blocked search panicked")??;
+    drop(search_gate);
     hardening::set(&engine, "destroy_before_native_release", 1, Action::Error)?;
     drop(Arc::try_unwrap(engine).map_err(|_| "engine owners remain")?);
     println!("failures exception_barrier=true cleanup=true attrs=true grouping=true docsums=true");
