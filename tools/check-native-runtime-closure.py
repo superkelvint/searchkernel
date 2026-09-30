@@ -7,7 +7,12 @@ import pathlib
 import shutil
 import sys
 
-from native_runtime_closure import SYSTEM_BASELINE, is_elf, needed_libraries
+from native_runtime_closure import (
+    SYSTEM_BASELINE,
+    is_elf,
+    needed_libraries,
+    resolve_origin_dependency,
+)
 
 def die(message: str) -> "NoReturn":
     raise SystemExit(message)
@@ -67,6 +72,9 @@ def validate(libdir: pathlib.Path, extra_elfs: list[pathlib.Path]) -> None:
         for needed in sorted(needed_names):
             if needed in SYSTEM_BASELINE or needed in available:
                 continue
+            if needed.startswith(("$ORIGIN/", "${ORIGIN}/")):
+                if resolve_origin_dependency(payload, needed) is not None:
+                    continue
             missing.append((payload, needed))
 
     if missing:

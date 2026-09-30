@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$ROOT/common/verify-common.sh"
 
+prepare_native_probe_sdk
 require_pinned_vespa
 
 TARGET=$REPO_ROOT/target/vespa-verifier/m0
@@ -24,6 +25,20 @@ fi
 for path in "$HEADER" "$LIB" "$CONFIG" "$MANIFEST"; do
     if [ ! -e "$path" ]; then
         echo "M0 missing required SDK artifact: $path" >&2
+        exit 1
+    fi
+done
+
+# Proton requests these configs even when the corresponding feature is unused.
+# Keep explicit empty placeholders in the packaged config bundle so Vespa does
+# not flood verifier logs with benign filesourcefactory warnings.
+for config_name in \
+    imported-fields.cfg \
+    onnx-models.cfg \
+    ranking-constants.cfg \
+    ranking-expressions.cfg; do
+    if [ ! -f "$CONFIG/$config_name" ]; then
+        echo "M0 missing required config placeholder: $CONFIG/$config_name" >&2
         exit 1
     fi
 done

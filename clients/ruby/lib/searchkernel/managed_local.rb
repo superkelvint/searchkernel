@@ -5,8 +5,8 @@ require "fileutils"
 require "json"
 require "open-uri"
 require "uri"
+require "open3"
 require "socket"
-require "tempfile"
 require "tmpdir"
 
 require_relative "errors"
@@ -16,6 +16,15 @@ module SearchKernel
     STARTUP_TIMEOUT = 60.0
     SHUTDOWN_TIMEOUT = 15.0
     KILL_TIMEOUT = 5.0
+    MANAGED_DATA_ROOT_NAME = ".searchkernel-managed"
+    MANAGED_MARKER_NAME = ".searchkernel-managed-target"
+    MANAGED_ROOT_MARKER_NAME = ".searchkernel-data-root"
+    MANAGED_ROOT_MARKER_VALUE = "searchkernel-managed-v1"
+    LEGACY_HOST_ENV_KEYS = %w[
+      SEARCHKERNEL_INDEX_PATH
+      SEARCHKERNEL_INDEX_DEFINITION
+      SEARCHKERNEL_INDEX_DEFINITION_JSON
+    ].freeze
 
     attr_reader :base_url
 
@@ -32,10 +41,344 @@ module SearchKernel
         registry.delete(host.object_id)
       end
 
+      def pool
+        @pool ||= {}
+      end
+
+      def pool_mutex
+        @pool_mutex ||= Mutex.new
+      end
+
+      def acquire(data_root)
+        key = File.expand_path(data_root.to_s)
+        stale = nil
+        pool_mutex.synchronize do
+          entry = pool[key]
+          if entry && entry[:host].alive?
+            entry[:refs] += 1
+            return entry[:host]
+          end
+          if entry
+            pool.delete(key)
+            stale = entry[:host]
+          end
+        end
+        stale&.close(force: true)
+
+        pool_mutex.synchronize do
+          entry = pool[key]
+          if entry && entry[:host].alive?
+            entry[:refs] += 1
+            return entry[:host]
+          end
+
+          host = new(key)
+          host.instance_variable_set(:@pool_key, key)
+          pool[key] = { host: host, refs: 1 }
+          host
+        end
+      end
+
+      def location(index_path)
+        path = File.expand_path(index_path.to_s)
+        target = "local-#{Digest::SHA256.hexdigest(path)[0, 32]}"
+        [path, File.join(File.dirname(path), MANAGED_DATA_ROOT_NAME), target]
+      end
+
+      def marker_path(index_path)
+        File.join(index_path, MANAGED_MARKER_NAME)
+      end
+
+      def lstat_or_nil(path)
+        File.lstat(path)
+      rescue Errno::ENOENT
+        nil
+      end
+
+      def validate_data_root(data_root)
+        marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
+        root_stat = lstat_or_nil(data_root)
+        marker_stat = lstat_or_nil(marker)
+        unless root_stat&.directory? && !root_stat.symlink? && marker_stat&.file? && !marker_stat.symlink?
+          raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+        end
+        value = File.read(marker)
+        unless [
+          MANAGED_ROOT_MARKER_VALUE,
+          "#{MANAGED_ROOT_MARKER_VALUE}\n",
+          "#{MANAGED_ROOT_MARKER_VALUE}\r\n"
+        ].include?(value)
+          raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+        end
+      rescue SystemCallError => error
+        raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}: #{error.message}"
+      end
+
+      def prepare_data_root(data_root)
+        parent = File.dirname(data_root)
+        FileUtils.mkdir_p(parent)
+        marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
+        created = false
+        begin
+          Dir.mkdir(data_root)
+          created = true
+        rescue Errno::EEXIST
+          nil
+        end
+
+        if created
+          begin
+            File.write(marker, "#{MANAGED_ROOT_MARKER_VALUE}\n", mode: "wx")
+            validate_data_root(data_root)
+            return
+          rescue StandardError
+            File.delete(marker) if File.file?(marker)
+            Dir.rmdir(data_root) if File.directory?(data_root) && Dir.empty?(data_root)
+            raise
+          end
+        end
+
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2.0
+        loop do
+          root_stat = lstat_or_nil(data_root)
+          unless root_stat&.directory? && !root_stat.symlink?
+            raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+          end
+          marker_stat = lstat_or_nil(marker)
+          if marker_stat.nil?
+            if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+              raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+            end
+            sleep 0.025
+            next
+          end
+          validate_data_root(data_root)
+          return
+        end
+      end
+
+      def reserve_path(index_path, target)
+        FileUtils.mkdir_p(File.dirname(index_path))
+        created = false
+        begin
+          Dir.mkdir(index_path)
+          created = true
+          File.write(marker_path(index_path), "#{target}\n", mode: "wx")
+        rescue StandardError
+          if created && File.directory?(index_path)
+            marker = marker_path(index_path)
+            File.delete(marker) if File.file?(marker)
+            Dir.rmdir(index_path) if Dir.empty?(index_path)
+          end
+          raise
+        end
+      rescue Errno::EEXIST => error
+        raise ClientError, "managed-local index path already exists: #{index_path}"
+      end
+
+      def cleanup_reservation(index_path, target)
+        marker = marker_path(index_path)
+        return unless File.file?(marker)
+        return unless File.read(marker).strip == target
+        return unless Dir.children(index_path) == [MANAGED_MARKER_NAME]
+
+        File.delete(marker)
+        Dir.rmdir(index_path)
+      rescue StandardError
+        nil
+      end
+
+      def marker_matches?(index_path, target)
+        marker = marker_path(index_path)
+        marker_stat = lstat_or_nil(marker)
+        return false unless marker_stat
+        if marker_stat.symlink? || !marker_stat.file?
+          raise ClientError, "unsafe managed-local marker: #{marker}"
+        end
+        value = File.read(marker).strip
+        raise ClientError, "managed-local marker target mismatch at #{marker}" unless value == target
+        true
+      end
+
+      def ensure_marker(index_path, target)
+        begin
+          Dir.mkdir(index_path)
+        rescue Errno::EEXIST
+          path_stat = lstat_or_nil(index_path)
+          if !path_stat || path_stat.symlink? || !path_stat.directory?
+            raise ClientError, "managed-local identity path is not a real directory: #{index_path}"
+          end
+        end
+
+        marker = marker_path(index_path)
+        begin
+          File.write(marker, "#{target}\n", mode: "wx")
+        rescue Errno::EEXIST
+          nil
+        end
+        unless marker_matches?(index_path, target)
+          raise ClientError, "managed-local identity path is not owned by Search Kernel: #{index_path}"
+        end
+      end
+
+      def host_environment
+        env = LEGACY_HOST_ENV_KEYS.to_h { |key| [key, nil] }
+        sdk_lib = ENV["SEARCHKERNEL_SDK_LIB"]
+        if sdk_lib && !sdk_lib.empty?
+          existing = ENV["LD_LIBRARY_PATH"]
+          env["LD_LIBRARY_PATH"] = existing && !existing.empty? ? "#{sdk_lib}:#{existing}" : sdk_lib
+        end
+        env
+      end
+
+      def migrate_legacy(index_path, data_root, target)
+        destination = File.join(data_root, target)
+        source_stat = lstat_or_nil(index_path)
+        if source_stat && (source_stat.symlink? || !source_stat.directory?)
+          raise ClientError, "legacy managed-local index must be a real directory: #{index_path}"
+        end
+
+        marker_matches = source_stat ? marker_matches?(index_path, target) : false
+        destination_stat = lstat_or_nil(destination)
+        if destination_stat
+          if destination_stat.symlink? || !destination_stat.directory?
+            raise ClientError, "unsafe managed-local destination: #{destination}"
+          end
+          return if source_stat.nil? || marker_matches
+          raise ClientError, "managed-local destination already exists while legacy source remains: #{destination}"
+        end
+        return if marker_matches || source_stat.nil?
+
+        env = host_environment
+        stdout, stderr, status = Open3.capture3(
+          env,
+          host_binary,
+          "--migrate-index", index_path,
+          "--data-root", data_root,
+          "--target", target
+        )
+        unless status.success?
+          final_destination = lstat_or_nil(destination)
+          final_source = lstat_or_nil(index_path)
+          if final_destination&.directory? && !final_destination.symlink? && final_source.nil?
+            ensure_marker(index_path, target)
+            return
+          end
+          output = [stdout, stderr].reject(&:empty?).join("\n").strip
+          suffix = output.empty? ? "" : "\nsearchkerneld output:\n#{output}"
+          raise ClientError, "managed-local legacy index migration failed for #{index_path}#{suffix}"
+        end
+        ensure_marker(index_path, target)
+      end
+
+      def host_binary
+        configured = ENV["SEARCHKERNEL_LOCAL_HOST"]
+        return File.expand_path(configured) if configured && !configured.empty?
+
+        descriptor_path = File.expand_path("runtime.json", __dir__)
+        return File.join(resolve_runtime(descriptor_path), "bin", "searchkerneld") if File.file?(descriptor_path)
+
+        root = File.expand_path("../../../..", __dir__)
+        target_dir = ENV["CARGO_TARGET_DIR"]
+        if target_dir && !target_dir.empty?
+          target_dir = File.expand_path(target_dir, root) unless target_dir.start_with?("/")
+          candidate = File.join(target_dir, "debug", "searchkerneld")
+          return candidate if File.file?(candidate)
+        end
+        File.join(root, "target", "debug", "searchkerneld")
+      end
+
+      def resolve_runtime(descriptor_path)
+        descriptor = JSON.parse(File.read(descriptor_path))
+        identity_keys = %w[searchkernel_version searchkernel_revision runtime_package_generation platform native_target build_environment native_abi_version vespa_commit]
+        material = identity_keys.sort.to_h { |key| [key, descriptor.fetch(key)] }
+        derived = "skrt-v1-#{Digest::SHA256.hexdigest(JSON.generate(material))}"
+        raise ClientError, "runtime descriptor identity mismatch" unless descriptor["runtime_identity"] == derived
+        unless RUBY_PLATFORM.include?("linux") && RUBY_PLATFORM.match?(/x86_64|amd64/) && descriptor["platform"] == "linux-x86_64-glibc" && descriptor["native_target"] == "x86_64-unknown-linux-gnu"
+          raise ClientError, "runtime descriptor platform is unsupported on this host"
+        end
+        artifact_uri = URI.parse(descriptor.fetch("artifact_url"))
+        expected_artifact = "searchkernel-runtime-#{descriptor.fetch('runtime_identity')}-#{descriptor.fetch('platform')}.tar.gz"
+        unless %w[https file].include?(artifact_uri.scheme) && File.basename(artifact_uri.path) == expected_artifact
+          raise ClientError, "runtime descriptor artifact URL is not immutable or supported"
+        end
+        override = ENV["SEARCHKERNEL_RUNTIME_DIR"]
+        return validate_runtime(override, descriptor) if override && !override.empty?
+        cache = ENV["SEARCHKERNEL_RUNTIME_CACHE"] || File.join(ENV["XDG_CACHE_HOME"] || File.join(Dir.home, ".cache"), "searchkernel", "runtime")
+        final = File.join(cache, "objects", descriptor.fetch("runtime_identity"))
+        begin; return validate_runtime(final, descriptor); rescue ClientError; end
+        FileUtils.mkdir_p(File.dirname(final)); FileUtils.mkdir_p(File.join(cache, "locks"))
+        File.open(File.join(cache, "locks", "#{descriptor.fetch('runtime_identity')}.lock"), "w") do |lock|
+          lock.flock(File::LOCK_EX)
+          begin; return validate_runtime(final, descriptor); rescue ClientError; FileUtils.rm_rf(final); end
+          Dir.mktmpdir("searchkernel-runtime-", cache) do |tmp|
+            archive = File.join(tmp, "runtime.tar.gz")
+            url = descriptor.fetch("artifact_url")
+            if (origin = ENV["SEARCHKERNEL_RUNTIME_ORIGIN"]) && !origin.empty?
+              url = origin.sub(%r{/+$}, "") + "/" + File.basename(URI.parse(url).path)
+            end
+            parsed_url = URI.parse(url)
+            if parsed_url.scheme == "file"
+              File.binwrite(archive, File.binread(parsed_url.path))
+            else
+              URI.open(url) { |input| File.binwrite(archive, input.read) }
+            end
+            raise ClientError, "runtime artifact digest mismatch" unless Digest::SHA256.file(archive).hexdigest == descriptor.fetch("artifact_sha256")
+            unpack = File.join(tmp, "unpack"); Dir.mkdir(unpack)
+            system("tar", "-xzf", archive, "-C", unpack, "--no-same-owner", "--no-same-permissions", exception: true)
+            validate_runtime(unpack, descriptor); File.rename(unpack, final)
+          end
+        end
+        validate_runtime(final, descriptor)
+      rescue StandardError => error
+        raise error if error.is_a?(ClientError)
+        raise ClientError, "managed-local runtime resolution failed: #{error.message}"
+      end
+
+      def validate_runtime(root, descriptor)
+        root = File.expand_path(root)
+        manifest = JSON.parse(File.read(File.join(root, "manifest.json")))
+        %w[searchkernel_version searchkernel_revision runtime_package_generation platform native_target build_environment native_abi_version vespa_commit runtime_identity].each do |key|
+          raise ClientError, "runtime identity mismatch for #{key}" unless manifest[key] == descriptor[key]
+        end
+        %w[bin/searchkerneld bin/searchkerneld.real lib/libsearchkernel_vespa.so.2].each do |member|
+          raise ClientError, "runtime required member missing: #{member}" unless File.file?(File.join(root, member))
+        end
+        digest = Digest::SHA256.new
+        Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).select { |path| File.file?(path) && File.basename(path) != "manifest.json" }.sort.each do |path|
+          relative = path.delete_prefix(File.expand_path(root) + "/")
+          data = File.binread(path)
+          digest.update([relative.bytesize].pack("Q>")); digest.update(relative); digest.update([data.bytesize].pack("Q>")); digest.update(data)
+        end
+        raise ClientError, "runtime payload digest mismatch" unless manifest["payload_sha256"] == digest.hexdigest
+        File.expand_path(root)
+      rescue Errno::ENOENT, JSON::ParserError => error
+        raise ClientError, "runtime invalid: #{error.message}"
+      end
+
+      def release(host, force:)
+        key = host.instance_variable_get(:@pool_key)
+        return true unless key
+
+        pool_mutex.synchronize do
+          entry = pool[key]
+          return true unless entry && entry[:host].equal?(host)
+
+          if !force && entry[:refs] > 1
+            entry[:refs] -= 1
+            return false
+          end
+
+          pool.delete(key)
+          host.instance_variable_set(:@pool_key, nil)
+          true
+        end
+      end
+
       def close_all
         registry.values.each do |host|
           begin
-            host.close
+            host.close(force: true)
           rescue StandardError
             nil
           end
@@ -45,16 +388,14 @@ module SearchKernel
 
     at_exit { close_all }
 
-    def initialize(path, definition_json: nil)
-      @path = File.expand_path(path.to_s)
+    def initialize(data_root)
+      @data_root = File.expand_path(data_root.to_s)
       @closed = false
       @pid = nil
-      @definition_file = nil
       @tmpdir = Dir.mktmpdir("searchkernel-ruby-")
       @socket_path = File.join(@tmpdir, "searchkerneld.sock")
       @stderr_path = File.join(@tmpdir, "searchkerneld.stderr")
       @stderr_file = File.open(@stderr_path, "wb")
-      @definition_file = write_definition(definition_json) unless definition_json.nil?
       start
       self.class.register(self)
     rescue StandardError
@@ -62,14 +403,19 @@ module SearchKernel
       raise
     end
 
+    def alive?
+      return false if @closed || !@pid
+      process_alive?(@pid)
+    end
+
     def close(force: false)
       return if @closed
+      return nil unless self.class.release(self, force: force)
 
       @closed = true
       self.class.unregister(self)
       stop_process(force: force)
       close_stderr
-      cleanup_definition
       cleanup_tmpdir
       nil
     end
@@ -83,20 +429,14 @@ module SearchKernel
       end
 
       port = free_port
-      env = {}
-      sdk_lib = ENV["SEARCHKERNEL_SDK_LIB"]
-      if sdk_lib && !sdk_lib.empty?
-        existing = ENV["LD_LIBRARY_PATH"]
-        env["LD_LIBRARY_PATH"] = existing && !existing.empty? ? "#{sdk_lib}:#{existing}" : sdk_lib
-      end
+      env = self.class.host_environment
 
       command = [
         binary,
-        "--index", @path,
+        "--data-root", @data_root,
         "--listen", "unix://#{@socket_path}",
         "--web-listen", "127.0.0.1:#{port}"
       ]
-      command.concat(["--definition-json", @definition_file.path]) if @definition_file
 
       @pid = Process.spawn(
         env,
@@ -107,107 +447,12 @@ module SearchKernel
       )
       wait_until_ready(port)
       @base_url = "http://127.0.0.1:#{port}"
-      cleanup_definition
     rescue SystemCallError => error
       raise ClientError, "failed to start managed local host: #{error.message}"
     end
 
     def host_binary
-      configured = ENV["SEARCHKERNEL_LOCAL_HOST"]
-      return File.expand_path(configured) if configured && !configured.empty?
-
-      descriptor_path = File.expand_path("runtime.json", __dir__)
-      return File.join(resolve_runtime(descriptor_path), "bin", "searchkerneld") if File.file?(descriptor_path)
-
-      root = File.expand_path("../../../..", __dir__)
-      target_dir = ENV["CARGO_TARGET_DIR"]
-      if target_dir && !target_dir.empty?
-        target_dir = File.expand_path(target_dir, root) unless target_dir.start_with?("/")
-        candidate = File.join(target_dir, "debug", "searchkerneld")
-        return candidate if File.file?(candidate)
-      end
-      File.join(root, "target", "debug", "searchkerneld")
-    end
-
-    def resolve_runtime(descriptor_path)
-      descriptor = JSON.parse(File.read(descriptor_path))
-      identity_keys = %w[searchkernel_version searchkernel_revision runtime_package_generation platform native_target build_environment native_abi_version vespa_commit]
-      material = identity_keys.sort.to_h { |key| [key, descriptor.fetch(key)] }
-      derived = "skrt-v1-#{Digest::SHA256.hexdigest(JSON.generate(material))}"
-      raise ClientError, "runtime descriptor identity mismatch" unless descriptor["runtime_identity"] == derived
-      unless RUBY_PLATFORM.include?("linux") && RUBY_PLATFORM.match?(/x86_64|amd64/) && descriptor["platform"] == "linux-x86_64-glibc" && descriptor["native_target"] == "x86_64-unknown-linux-gnu"
-        raise ClientError, "runtime descriptor platform is unsupported on this host"
-      end
-      artifact_uri = URI.parse(descriptor.fetch("artifact_url"))
-      expected_artifact = "searchkernel-runtime-#{descriptor.fetch('runtime_identity')}-#{descriptor.fetch('platform')}.tar.gz"
-      unless %w[https file].include?(artifact_uri.scheme) && File.basename(artifact_uri.path) == expected_artifact
-        raise ClientError, "runtime descriptor artifact URL is not immutable or supported"
-      end
-      override = ENV["SEARCHKERNEL_RUNTIME_DIR"]
-      return validate_runtime(override, descriptor) if override && !override.empty?
-      cache = ENV["SEARCHKERNEL_RUNTIME_CACHE"] || File.join(ENV["XDG_CACHE_HOME"] || File.join(Dir.home, ".cache"), "searchkernel", "runtime")
-      final = File.join(cache, "objects", descriptor.fetch("runtime_identity"))
-      begin; return validate_runtime(final, descriptor); rescue ClientError; end
-      FileUtils.mkdir_p(File.dirname(final)); FileUtils.mkdir_p(File.join(cache, "locks"))
-      File.open(File.join(cache, "locks", "#{descriptor.fetch('runtime_identity')}.lock"), "w") do |lock|
-        lock.flock(File::LOCK_EX)
-        begin; return validate_runtime(final, descriptor); rescue ClientError; FileUtils.rm_rf(final); end
-        Dir.mktmpdir("searchkernel-runtime-", cache) do |tmp|
-          archive = File.join(tmp, "runtime.tar.gz")
-          url = descriptor.fetch("artifact_url")
-          if (origin = ENV["SEARCHKERNEL_RUNTIME_ORIGIN"]) && !origin.empty?
-            url = origin.sub(%r{/+$}, "") + "/" + File.basename(URI.parse(url).path)
-          end
-          parsed_url = URI.parse(url)
-          if parsed_url.scheme == "file"
-            File.binwrite(archive, File.binread(parsed_url.path))
-          else
-            URI.open(url) { |input| File.binwrite(archive, input.read) }
-          end
-          raise ClientError, "runtime artifact digest mismatch" unless Digest::SHA256.file(archive).hexdigest == descriptor.fetch("artifact_sha256")
-          unpack = File.join(tmp, "unpack"); Dir.mkdir(unpack)
-          system("tar", "-xzf", archive, "-C", unpack, "--no-same-owner", "--no-same-permissions", exception: true)
-          validate_runtime(unpack, descriptor); File.rename(unpack, final)
-        end
-      end
-      validate_runtime(final, descriptor)
-      rescue StandardError => error
-      raise error if error.is_a?(ClientError)
-      raise ClientError, "managed-local runtime resolution failed: #{error.message}"
-    end
-
-    def validate_runtime(root, descriptor)
-      root = File.expand_path(root)
-      manifest = JSON.parse(File.read(File.join(root, "manifest.json")))
-      %w[searchkernel_version searchkernel_revision runtime_package_generation platform native_target build_environment native_abi_version vespa_commit runtime_identity].each do |key|
-        raise ClientError, "runtime identity mismatch for #{key}" unless manifest[key] == descriptor[key]
-      end
-      %w[bin/searchkerneld bin/searchkerneld.real lib/libsearchkernel_vespa.so.2].each do |member|
-        raise ClientError, "runtime required member missing: #{member}" unless File.file?(File.join(root, member))
-      end
-      digest = Digest::SHA256.new
-      Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).select { |path| File.file?(path) && File.basename(path) != "manifest.json" }.sort.each do |path|
-        relative = path.delete_prefix(File.expand_path(root) + "/")
-        data = File.binread(path)
-        digest.update([relative.bytesize].pack("Q>")); digest.update(relative); digest.update([data.bytesize].pack("Q>")); digest.update(data)
-      end
-      raise ClientError, "runtime payload digest mismatch" unless manifest["payload_sha256"] == digest.hexdigest
-      File.expand_path(root)
-      rescue Errno::ENOENT, JSON::ParserError => error
-      raise ClientError, "runtime invalid: #{error.message}"
-    end
-
-
-    def write_definition(definition)
-      raise ArgumentError, "index definition must be a Hash" unless definition.is_a?(Hash)
-
-      file = Tempfile.new(["searchkernel-definition-", ".json"])
-      file.binmode
-      file.write(JSON.generate(definition, allow_nan: false))
-      file.flush
-      file
-    rescue JSON::GeneratorError => error
-      raise ArgumentError, "index definition is not valid canonical JSON: #{error.message}"
+      self.class.host_binary
     end
 
     def free_port
@@ -298,18 +543,6 @@ module SearchKernel
       text.empty? ? "" : ": #{text}"
     rescue StandardError
       ""
-    end
-
-    def cleanup_definition
-      file = @definition_file
-      @definition_file = nil
-      return unless file
-
-      path = file.path
-      file.close
-      File.unlink(path) if File.exist?(path)
-    rescue StandardError
-      nil
     end
 
     def close_stderr

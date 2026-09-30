@@ -116,13 +116,15 @@ grep -Fq 'tools/resolve-native-sdk.sh" path' "$verify_common"
 grep -Fq 'tools/resolve-native-sdk.sh" vespa-root' "$verify_common"
 grep -Fq 'SK_NATIVE_SDK_WAS_EXPLICIT=0' "$verify_common"
 grep -Fq 'unset SK_NATIVE_SDK' "$verify_common"
-grep -Fq 'SK_NATIVE_ABI_HEADER="$SDK/include/searchkernel_vespa.h"' "$verify_common"
-# The synthesized verifier adapter must remain a shell-local view. Ordinary
+# Workspace binding checks use the source header; probe SDK paths must not leak
+# into normal Cargo builds.
+grep -Fq 'SK_NATIVE_ABI_HEADER="$REPO_ROOT/core/native/vespa/searchkernel_vespa.h"' "$verify_common"
+# The synthesized native-probe adapter must remain a shell-local view. Ordinary
 # SearchReply probes consume $SDK; exporting it through SK_NATIVE_SDK would
 # make Cargo mistake it for a full explicit SDK.
 searchreply_verify="$source_root/reference/vespa/searchreply/verify-searchreply.sh"
 if grep -Fq 'SK_NATIVE_SDK="$SDK"' "$searchreply_verify"; then
-    echo 'SearchReply must not export the synthesized verifier SDK to Cargo' >&2
+    echo 'SearchReply must not export the synthesized native-probe SDK to Cargo' >&2
     exit 1
 fi
 grep -Fq -- '-I"$SDK/include"' "$searchreply_verify"

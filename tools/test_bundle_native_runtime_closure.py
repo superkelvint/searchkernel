@@ -211,6 +211,65 @@ def main() -> int:
                 + extra_complete.stderr
             )
 
+        # Cargo's adapter may carry a DT_NEEDED path relative to its own
+        # executable origin. Follow that path from the adapter's directory,
+        # including package-hidden directories such as bin/.searchkernel-native.
+        origin_bin = root / "origin-bin"
+        origin_private = origin_bin / ".searchkernel-native"
+        origin_private.mkdir(parents=True)
+        origin_name = "libsearchkernel_fixture_origin.so.1"
+        origin_source = root / "origin.c"
+        origin_source.write_text(
+            "int searchkernel_fixture_origin(void) { return 13; }\n",
+            encoding="utf-8",
+        )
+        origin_library = origin_private / origin_name
+        compile_shared(
+            cc,
+            origin_source,
+            origin_library,
+            "$ORIGIN/.searchkernel-native/" + origin_name,
+        )
+        (origin_private / "libsearchkernel_fixture_origin.so").symlink_to(origin_name)
+        (root / "origin-adapter.c").write_text(
+            "extern int searchkernel_fixture_origin(void);\n"
+            "int searchkernel_fixture_origin_adapter(void) { "
+            "return searchkernel_fixture_origin(); }\n",
+            encoding="utf-8",
+        )
+        origin_adapter = origin_bin / "libsearchkernel_fixture_origin_adapter.so.2"
+        compile_shared(
+            cc,
+            root / "origin-adapter.c",
+            origin_adapter,
+            "libsearchkernel_fixture_origin_adapter.so.2",
+            "-L",
+            str(origin_private),
+            "-Wl,--no-as-needed",
+            "-lsearchkernel_fixture_origin",
+        )
+        origin_complete = subprocess.run(
+            [sys.executable, str(CHECKER), str(bundle), str(origin_adapter)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if origin_complete.returncode != 0:
+            raise SystemExit(
+                "closure checker rejected a resolvable origin-relative adapter dependency:\n"
+                + origin_complete.stderr
+            )
+        run(
+            sys.executable,
+            str(BUNDLER),
+            str(bundle),
+            "--extra-elf",
+            str(origin_adapter),
+            "--search-dir",
+            str(producer),
+            env=env,
+        )
+
     print("native runtime bundling regression: PASS")
     return 0
 
