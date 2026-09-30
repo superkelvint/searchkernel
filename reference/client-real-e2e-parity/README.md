@@ -27,6 +27,11 @@ alongside its observations. The checker validates runtime results, compares
 the remaining shared observations, and fails on absent clients, absent
 scenarios, uncontracted skips, or differing comparable observations.
 
+In the current corpus, the only `not_expressible` cases are Rust's negative
+limit and offset inputs: the public `SearchBuilder` methods take `u32`. The
+other four clients must show that those inputs are rejected at runtime. All
+typed-query result cases are declared comparable for all five clients.
+
 Numeric comparison preserves JSON integer and float kinds: integers require
 exact equality, and an integer never compares equal to a float. Booleans remain
 distinct from both. Finite floats use relative and absolute tolerance `1e-6`;
