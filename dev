@@ -348,7 +348,7 @@ run_ruby_tests() {
               v = SearchKernel::Value; abort unless v.decode(v.encode(v.uint64(2**64 - 1))) == 2**64 - 1;
               root = {"node_type" => "ResultGroup", "node" => {"children" => [
                 {"node_type" => "Hit", "node" => {"id" => "from-installed-gem"}}]}};
-              results = SearchKernel::Results::SearchResults.new({"root" => root});
+              results = SearchKernel::Results::SearchResults.new({"root" => root, "total_hits" => {"value" => "1", "relation" => "Exact"}});
               abort unless results.hits.map(&:id) == ["from-installed-gem"]'
         GEM_HOME="$gem_home" GEM_PATH="$gem_home" SEARCHKERNEL_RUBY_USE_INSTALLED_GEM=1 \
             run_client_e2e ruby
@@ -424,6 +424,7 @@ bookkeeping_command() {
             "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
             "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
+            "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
             ;;
         sync)
@@ -435,6 +436,7 @@ bookkeeping_command() {
             "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
             "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
+            "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
             ;;
         *)

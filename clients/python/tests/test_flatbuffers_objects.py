@@ -309,6 +309,15 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         nested = envelope.payload.document.fields[0].value.kind.fields[0].value.kind.values
         self.assertEqual([item.kind.value for item in nested], [1, True])
 
+    def test_request_target_round_trip(self):
+        raw = pack_request(
+            "insert",
+            InsertRequestT(document=DocumentT(id="doc:1", fields=[])),
+            target="catalog-a",
+        )
+        envelope = RequestEnvelopeT.InitFromPackedBuf(raw)
+        self.assertEqual(envelope.target.name, "catalog-a")
+
     def test_semantic_maps_use_canonical_key_order(self):
         self.assertEqual(
             [entry.key for entry in value({"zeta": 1, "alpha": 2}).kind.fields],
@@ -564,40 +573,67 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(sparse["$searchkernel_tensor"]["sparse"][0]["value"], 0.5)
         self.assertEqual(mixed["$searchkernel_tensor"]["mixed"][0]["values"], [0.25, 0.75])
 
-    def test_result_value_decoder_rejects_nonfinite_tensor_cells(self):
-        address = [TensorAddressEntryT(dimension="category", label="books")]
-        malformed = [
-            TensorValueT(
-                typeSpec="tensor<float>(x[1])",
-                payloadType=TensorPayloadKind.DenseTensorValues,
-                payload=DenseTensorValuesT(values=[math.nan]),
+    def test_result_value_decoder_rejects_malformed_tensor_state(self):
+        malformed_addresses = [
+            TensorAddressEntryT(dimension=None, label="a"),
+            TensorAddressEntryT(dimension="x", label=None),
+        ]
+        for address in malformed_addresses:
+            with self.subTest(address=address):
+                with self.assertRaisesRegex(ValueError, "malformed tensor address"):
+                    _python_value(
+                        ValueT(
+                            kindType=ValueKind.TensorValue,
+                            kind=TensorValueT(
+                                typeSpec="tensor<float>(x{})",
+                                payloadType=TensorPayloadKind.SparseTensorCells,
+                                payload=SparseTensorCellsT(
+                                    cells=[TensorCellT(address=[address], value=0.5)]
+                                ),
+                            ),
+                        )
+                    )
+
+        for payload_type, payload in (
+            (
+                TensorPayloadKind.DenseTensorValues,
+                DenseTensorValuesT(values=[math.nan]),
             ),
-            TensorValueT(
-                typeSpec="tensor<float>(category{})",
-                payloadType=TensorPayloadKind.SparseTensorCells,
-                payload=SparseTensorCellsT(
-                    cells=[TensorCellT(address=address, value=math.inf)]
+            (
+                TensorPayloadKind.SparseTensorCells,
+                SparseTensorCellsT(
+                    cells=[
+                        TensorCellT(
+                            address=[TensorAddressEntryT(dimension="x", label="a")],
+                            value=math.inf,
+                        )
+                    ]
                 ),
             ),
-            TensorValueT(
-                typeSpec="tensor<float>(category{},x[1])",
-                payloadType=TensorPayloadKind.MixedTensorBlocks,
-                payload=MixedTensorBlocksT(
+            (
+                TensorPayloadKind.MixedTensorBlocks,
+                MixedTensorBlocksT(
                     blocks=[
                         TensorBlockT(
-                            address=address,
+                            address=[TensorAddressEntryT(dimension="x", label="a")],
                             values=[-math.inf],
                         )
                     ]
                 ),
             ),
-        ]
-
-        for tensor in malformed:
-            with self.subTest(payloadType=tensor.payloadType):
-                encoded = ValueT(kindType=ValueKind.TensorValue, kind=tensor)
-                with self.assertRaisesRegex(ValueError, "finite"):
-                    _python_value(encoded)
+        ):
+            with self.subTest(payload_type=payload_type):
+                with self.assertRaisesRegex(ValueError, "tensor cells must be finite"):
+                    _python_value(
+                        ValueT(
+                            kindType=ValueKind.TensorValue,
+                            kind=TensorValueT(
+                                typeSpec="tensor<float>(x{})",
+                                payloadType=payload_type,
+                                payload=payload,
+                            ),
+                        )
+                    )
 
     def test_result_decoding_rejects_ambiguous_and_unknown_unions(self):
         entries = [

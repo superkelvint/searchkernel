@@ -56,7 +56,7 @@ class ManagedLocalHostTest(unittest.TestCase):
                 item.stop()
 
         self.addCleanup(stop_patches)
-        host = client_module._ManagedLocalHost(root / "index", b"definition")
+        host = client_module._ManagedLocalHost(root / "data-root")
         self.addCleanup(temporary.cleanup)
         return host, process
 
@@ -65,6 +65,10 @@ class ManagedLocalHostTest(unittest.TestCase):
         popen = client_module.subprocess.Popen
 
         popen.assert_called_once()
+        command = popen.call_args.args[0]
+        self.assertIn("--data-root", command)
+        self.assertNotIn("--index", command)
+        self.assertNotIn("--definition", command)
         self.assertEqual(popen.call_args.kwargs["stdout"], client_module.subprocess.PIPE)
         self.assertEqual(popen.call_args.kwargs["stderr"], client_module.subprocess.STDOUT)
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
@@ -177,7 +181,7 @@ class ManagedLocalHostTest(unittest.TestCase):
             patch.object(client_module.subprocess, "Popen", side_effect=popen),
             self.assertRaises(client_module.ClientError) as raised,
         ):
-            client_module._ManagedLocalHost(root / "index", b"definition")
+            client_module._ManagedLocalHost(root / "data-root")
 
         message = str(raised.exception)
         self.assertIn("exit code 127", message)
@@ -222,7 +226,6 @@ class ManagedLocalHostTest(unittest.TestCase):
 
     def test_finalizer_stops_daemon_and_removes_owned_resources(self):
         host, process = self._host()
-        definition_path = host.definition_path
         socket_directory = Path(host.socket_dir.name)
         output = process.stdout
         finalizer = host._finalizer
@@ -234,7 +237,6 @@ class ManagedLocalHostTest(unittest.TestCase):
             gc.collect()
 
         killpg.assert_called_once_with(process.pid, signal.SIGINT)
-        self.assertFalse(definition_path.exists())
         self.assertFalse(socket_directory.exists())
         self.assertTrue(output.closed)
         self.assertFalse(finalizer.alive)

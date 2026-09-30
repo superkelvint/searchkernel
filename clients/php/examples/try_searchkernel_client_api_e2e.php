@@ -571,6 +571,36 @@ $index = $phase === 'initial'
     ? Index::create($url, $target, searchkernelPhpClientApiE2eDefinition($e2eCorpus))
     : Index::open($url, $target);
 
+if ($phase === 'initial') {
+    $firstHandle = Index::open($url, $target);
+    $secondHandle = Index::open($url, $target);
+    $firstHandle->close();
+    check(
+        $secondHandle->describe()['name'] === $index->describe()['name'],
+        'closing one PHP handle leaves an already-open sibling usable'
+    );
+    $secondHandle->close();
+
+    $otherTarget = $target . '-other';
+    $other = Index::create(
+        $url,
+        $otherTarget,
+        searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE),
+    );
+    $other->upsert([
+        '_id' => 'php-isolation',
+        'title' => 'Isolated PHP index',
+        'category' => 'other',
+        'price' => 1.0,
+        'rating' => 1,
+        'inventory' => 1,
+        'in_stock' => true,
+    ]);
+    check($other->get('php-isolation') !== null, 'second PHP logical index reads its document');
+    same(null, $index->get('php-isolation'), 'PHP logical indexes remain isolated on one daemon');
+    $other->close();
+}
+
 if ($phase === 'reopen') {
     heading('30. REOPEN PERSISTED INDEX');
 

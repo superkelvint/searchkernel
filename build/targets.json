@@ -852,6 +852,26 @@
       "focused_check": "command:check-fast",
       "strong_check": "command:check-fast"
     },
+    "examples/": {
+      "owner": "release",
+      "area": "Release consumer examples",
+      "read": [
+        "docs/release-support.md",
+        "docs/release-quickstart.md"
+      ],
+      "architecture": "docs/architecture.md#non-rust-client-apis",
+      "test": [],
+      "verify": [
+        "verify:contracts"
+      ],
+      "generated": false,
+      "rules": [
+        "Executable release quickstarts are the source for public docs and clean-consumer qualification."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:contracts",
+      "strong_check": "verify:contracts"
+    },
     "integrations/instantsearch/": {
       "owner": "instantsearch",
       "area": "InstantSearch integration",

@@ -67,3 +67,5 @@ export {
 export { q, type TypedQuery } from "./ergonomic/query.js";
 
 export { Text, Keyword, Integer, Float, Boolean, TensorField, PositionField, ArrayOfStructField, RankProfile, type FieldOptions } from "./ergonomic/schema.js";
+export { IndexDefinitionT } from "./generated/flatbuffers/search-kernel/v2/index-definition.js";
+export { FieldDefinitionT } from "./generated/flatbuffers/search-kernel/v2/field-definition.js";
