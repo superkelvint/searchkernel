@@ -1,5 +1,5 @@
 import { Index as RemoteIndex, Client, SearchKernelError } from "../client/index.js";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
@@ -59,7 +59,7 @@ async function prepareManagedDataRoot(dataRoot: string): Promise<void> {
   await mkdir(dirname(dataRoot), { recursive: true });
   const marker = join(dataRoot, MANAGED_ROOT_MARKER_NAME);
   if (existsSync(dataRoot)) {
-    if (!existsSync(marker)) {
+    if (lstatSync(dataRoot).isSymbolicLink() || !existsSync(marker)) {
       throw new SearchKernelError(
         `managed-local data root is not owned by Search Kernel: ${dataRoot}`,
       );
