@@ -1688,7 +1688,13 @@ mod tests {
             assert_eq!(error.details()[0].code, "pagination_conflict");
         }
 
-        for (page, size) in [(0, 20), (1, -1), (i64::MAX, 2)] {
+        let max = i64::from(u32::MAX);
+        let input = to_resolver_input(&index.browse().page(1, max))
+            .expect("the last portable page-end value is valid");
+        assert_eq!(input.limit, Some(u32::MAX));
+        assert_eq!(input.offset, Some(0));
+
+        for (page, size) in [(0, 20), (1, -1), (i64::MAX, 2), (2, max)] {
             let error = to_resolver_input(&index.browse().page(page, size))
                 .expect_err("invalid/overflowing page must fail");
             assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
@@ -1723,6 +1729,54 @@ mod tests {
             yql.properties["q"],
             searchkernel_ir::RequestValueIr::String("boots".into())
         );
+    }
+
+    #[test]
+    fn aggregate_preserves_explicit_output_labels() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::float64("price").facetable(true)),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+        let input = to_resolver_input(
+            &runtime
+                .index()
+                .browse()
+                .aggregate(crate::GroupingAggregation::avg("price").as_("avg_price")),
+        )
+        .expect("aggregate intent");
+        let searchkernel_ir::GroupingInput::Structured(grouping) = &input.grouping[0] else {
+            panic!("root aggregate must lower to structured grouping");
+        };
+        let searchkernel_ir::GroupingOperationIr::Output(outputs) = &grouping.root.operations[0]
+        else {
+            panic!("root aggregate must lower to output operation");
+        };
+        assert_eq!(outputs[0].label.as_deref(), Some("avg_price"));
+    }
+
+    #[test]
+    fn inspect_rejects_unrepresentable_intent_instead_of_dropping_it() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::text("title")),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+        let index = runtime.index();
+
+        for request in [
+            index.browse().input("boost", 1.0),
+            index.browse().summary("compact"),
+            index.browse().locale("en-US"),
+            index.browse().property("trace.level", 1),
+            index.browse().query_profile("profile"),
+        ] {
+            let error = request
+                .inspect()
+                .expect_err("inspection must not silently erase request intent");
+            assert_eq!(error.code(), crate::ErrorCode::Unsupported);
+            assert_eq!(error.details()[0].code, "inspect_not_representable");
+        }
     }
 
     #[test]
