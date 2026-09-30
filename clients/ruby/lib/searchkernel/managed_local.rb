@@ -114,31 +114,44 @@ module SearchKernel
       def prepare_data_root(data_root)
         parent = File.dirname(data_root)
         FileUtils.mkdir_p(parent)
-        if lstat_or_nil(data_root)
+        marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
+        created = false
+        begin
+          Dir.mkdir(data_root)
+          created = true
+        rescue Errno::EEXIST
+          nil
+        end
+
+        if created
+          begin
+            File.write(marker, "#{MANAGED_ROOT_MARKER_VALUE}\n", mode: "wx")
+            validate_data_root(data_root)
+            return
+          rescue StandardError
+            File.delete(marker) if File.file?(marker)
+            Dir.rmdir(data_root) if File.directory?(data_root) && Dir.empty?(data_root)
+            raise
+          end
+        end
+
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2.0
+        loop do
+          root_stat = lstat_or_nil(data_root)
+          unless root_stat&.directory? && !root_stat.symlink?
+            raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+          end
+          marker_stat = lstat_or_nil(marker)
+          if marker_stat.nil?
+            if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+              raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+            end
+            sleep 0.025
+            next
+          end
           validate_data_root(data_root)
           return
         end
-
-        staging = Dir.mktmpdir(".#{File.basename(data_root)}.bootstrap-", parent)
-        begin
-          File.write(
-            File.join(staging, MANAGED_ROOT_MARKER_NAME),
-            "#{MANAGED_ROOT_MARKER_VALUE}\n",
-            mode: "wx"
-          )
-          begin
-            File.rename(staging, data_root)
-          rescue StandardError => error
-            if lstat_or_nil(data_root)
-              validate_data_root(data_root)
-              return
-            end
-            raise error
-          end
-        ensure
-          FileUtils.remove_entry(staging) if File.exist?(staging)
-        end
-        validate_data_root(data_root)
       end
 
       def reserve_path(index_path, target)
