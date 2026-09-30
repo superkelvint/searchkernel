@@ -24,7 +24,7 @@ if (!is_string($url) || $url === '') {
     exit(2);
 }
 
-$definition = searchkernelPhpClientApiE2eDefinition('tensor<float>(x[8])');
+$definition = searchkernelPhpClientApiE2eDefinition(searchkernelPhpClientApiE2eCorpus());
 
 $expectPortable = static function (
     callable $operation,

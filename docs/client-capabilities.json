@@ -77,7 +77,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1224
+              "line": 1254
             },
             {
               "capability": "query.term",
@@ -87,7 +87,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1224
+              "line": 1254
             },
             {
               "capability": "query.term",
@@ -97,7 +97,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 950
+              "line": 971
             },
             {
               "capability": "query.term",
@@ -107,7 +107,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 950
+              "line": 971
             }
           ],
           "overrides": []
@@ -213,7 +213,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1231
+              "line": 1261
             },
             {
               "capability": "query.boolean",
@@ -223,7 +223,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1231
+              "line": 1261
             },
             {
               "capability": "query.boolean",
@@ -233,7 +233,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 957
+              "line": 978
             },
             {
               "capability": "query.boolean",
@@ -243,7 +243,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 957
+              "line": 978
             }
           ],
           "overrides": []
@@ -277,7 +277,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1225
+              "line": 1255
             },
             {
               "capability": "query.phrase",
@@ -287,7 +287,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1225
+              "line": 1255
             },
             {
               "capability": "query.phrase",
@@ -317,7 +317,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 951
+              "line": 972
             },
             {
               "capability": "query.phrase",
@@ -337,7 +337,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 951
+              "line": 972
             },
             {
               "capability": "query.phrase",
@@ -401,7 +401,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1226
+              "line": 1256
             },
             {
               "capability": "query.proximity",
@@ -411,7 +411,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1226
+              "line": 1256
             },
             {
               "capability": "query.proximity",
@@ -441,7 +441,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 952
+              "line": 973
             },
             {
               "capability": "query.proximity",
@@ -461,7 +461,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 952
+              "line": 973
             },
             {
               "capability": "query.proximity",
@@ -525,7 +525,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1228
+              "line": 1258
             },
             {
               "capability": "query.same_element",
@@ -535,7 +535,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1228
+              "line": 1258
             },
             {
               "capability": "query.same_element",
@@ -565,7 +565,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 953
+              "line": 974
             },
             {
               "capability": "query.same_element",
@@ -585,7 +585,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 953
+              "line": 974
             }
           ],
           "overrides": []
@@ -619,7 +619,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1227
+              "line": 1257
             },
             {
               "capability": "query.fuzzy",
@@ -629,7 +629,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1227
+              "line": 1257
             },
             {
               "capability": "query.fuzzy",
@@ -659,7 +659,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 954
+              "line": 975
             },
             {
               "capability": "query.fuzzy",
@@ -679,7 +679,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 954
+              "line": 975
             },
             {
               "capability": "query.fuzzy",
@@ -723,7 +723,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 770
+              "line": 769
             },
             {
               "capability": "query.prefix_suffix_substring",
@@ -800,7 +800,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1232
+              "line": 1262
             },
             {
               "capability": "query.nearest_neighbor",
@@ -810,7 +810,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1232
+              "line": 1262
             },
             {
               "capability": "query.nearest_neighbor",
@@ -820,7 +820,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 958
+              "line": 979
             },
             {
               "capability": "query.nearest_neighbor",
@@ -830,7 +830,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 958
+              "line": 979
             },
             {
               "capability": "query.nearest_neighbor",
@@ -894,7 +894,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1229
+              "line": 1259
             },
             {
               "capability": "query.geo",
@@ -904,7 +904,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1229
+              "line": 1259
             },
             {
               "capability": "query.geo",
@@ -934,7 +934,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 955
+              "line": 976
             },
             {
               "capability": "query.geo",
@@ -954,7 +954,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 955
+              "line": 976
             }
           ],
           "overrides": []
@@ -1012,7 +1012,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1230
+              "line": 1260
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1022,7 +1022,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1230
+              "line": 1260
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1052,7 +1052,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 956
+              "line": 977
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1072,7 +1072,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 956
+              "line": 977
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1225,7 +1225,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1233
+              "line": 1263
             },
             {
               "capability": "filter.textual",
@@ -1235,7 +1235,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1233
+              "line": 1263
             },
             {
               "capability": "filter.textual",
@@ -1245,7 +1245,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 959
+              "line": 980
             },
             {
               "capability": "filter.textual",
@@ -1255,7 +1255,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 959
+              "line": 980
             },
             {
               "capability": "filter.textual",
@@ -1319,7 +1319,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1234
+              "line": 1264
             },
             {
               "capability": "search.sorting",
@@ -1329,7 +1329,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1234
+              "line": 1264
             },
             {
               "capability": "search.sorting",
@@ -1339,7 +1339,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 960
+              "line": 981
             },
             {
               "capability": "search.sorting",
@@ -1349,7 +1349,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 960
+              "line": 981
             },
             {
               "capability": "search.sorting",
@@ -1436,7 +1436,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1236
+              "line": 1266
             },
             {
               "capability": "search.pagination",
@@ -1446,7 +1446,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1236
+              "line": 1266
             },
             {
               "capability": "search.pagination",
@@ -1456,7 +1456,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 961
+              "line": 982
             },
             {
               "capability": "search.pagination",
@@ -1466,7 +1466,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 961
+              "line": 982
             },
             {
               "capability": "search.pagination",
@@ -1540,7 +1540,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1235
+              "line": 1265
             },
             {
               "capability": "search.search_fields",
@@ -1550,7 +1550,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1235
+              "line": 1265
             }
           ],
           "overrides": []
@@ -1574,7 +1574,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1237
+              "line": 1267
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1584,7 +1584,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1237
+              "line": 1267
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1614,7 +1614,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 962
+              "line": 983
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1624,7 +1624,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 962
+              "line": 983
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1688,7 +1688,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1238
+              "line": 1268
             },
             {
               "capability": "result.named_summary_class",
@@ -1698,7 +1698,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1238
+              "line": 1268
             },
             {
               "capability": "result.named_summary_class",
@@ -1708,7 +1708,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 963
+              "line": 984
             },
             {
               "capability": "result.named_summary_class",
@@ -1718,7 +1718,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 963
+              "line": 984
             }
           ],
           "overrides": []
@@ -1789,7 +1789,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1239
+              "line": 1269
             },
             {
               "capability": "result.highlighting",
@@ -1799,7 +1799,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1239
+              "line": 1269
             },
             {
               "capability": "result.highlighting",
@@ -1839,7 +1839,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 964
+              "line": 985
             },
             {
               "capability": "result.highlighting",
@@ -1849,7 +1849,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 964
+              "line": 985
             },
             {
               "capability": "result.highlighting",
@@ -1905,7 +1905,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1240
+              "line": 1270
             },
             {
               "capability": "result.tensor_document_readback",
@@ -1915,7 +1915,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1240
+              "line": 1270
             },
             {
               "capability": "result.tensor_document_readback",
@@ -1925,7 +1925,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 966
+              "line": 987
             },
             {
               "capability": "result.tensor_document_readback",
@@ -1935,7 +1935,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 966
+              "line": 987
             }
           ],
           "overrides": []
@@ -1982,7 +1982,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1241
+              "line": 1271
             },
             {
               "capability": "grouping.structured",
@@ -1992,7 +1992,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1241
+              "line": 1271
             },
             {
               "capability": "grouping.structured",
@@ -2002,7 +2002,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 969
+              "line": 990
             },
             {
               "capability": "grouping.structured",
@@ -2012,7 +2012,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 969
+              "line": 990
             },
             {
               "capability": "grouping.structured",
@@ -2100,7 +2100,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1242
+              "line": 1272
             },
             {
               "capability": "grouping.aggregations",
@@ -2110,7 +2110,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1242
+              "line": 1272
             },
             {
               "capability": "grouping.aggregations",
@@ -2120,7 +2120,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 970
+              "line": 991
             },
             {
               "capability": "grouping.aggregations",
@@ -2130,7 +2130,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 970
+              "line": 991
             },
             {
               "capability": "grouping.aggregations",
@@ -2184,7 +2184,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1243
+              "line": 1273
             },
             {
               "capability": "grouping.summary_aggregation",
@@ -2194,7 +2194,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1243
+              "line": 1273
             }
           ],
           "overrides": []
@@ -2276,7 +2276,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1244
+              "line": 1274
             },
             {
               "capability": "update.document_crud",
@@ -2286,7 +2286,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1244
+              "line": 1274
             },
             {
               "capability": "update.document_crud",
@@ -2326,7 +2326,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 971
+              "line": 992
             },
             {
               "capability": "update.document_crud",
@@ -2346,7 +2346,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 971
+              "line": 992
             },
             {
               "capability": "update.document_crud",
@@ -2410,7 +2410,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1245
+              "line": 1275
             },
             {
               "capability": "update.arithmetic",
@@ -2420,7 +2420,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1245
+              "line": 1275
             },
             {
               "capability": "update.arithmetic",
@@ -2430,7 +2430,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 972
+              "line": 993
             },
             {
               "capability": "update.arithmetic",
@@ -2440,7 +2440,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 972
+              "line": 993
             }
           ],
           "overrides": []
@@ -2474,7 +2474,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1246
+              "line": 1276
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -2484,7 +2484,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1246
+              "line": 1276
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -2494,7 +2494,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 973
+              "line": 994
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -2504,7 +2504,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 973
+              "line": 994
             }
           ],
           "overrides": []
@@ -2602,7 +2602,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1247
+              "line": 1277
             },
             {
               "capability": "tensor.dense_document_crud",
@@ -2612,7 +2612,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1247
+              "line": 1277
             },
             {
               "capability": "tensor.dense_document_crud",
@@ -2622,7 +2622,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 974
+              "line": 995
             },
             {
               "capability": "tensor.dense_document_crud",
@@ -2632,7 +2632,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 974
+              "line": 995
             }
           ],
           "overrides": []
@@ -2666,7 +2666,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1248
+              "line": 1278
             },
             {
               "capability": "query.yql",
@@ -2676,7 +2676,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1248
+              "line": 1278
             },
             {
               "capability": "query.yql",
@@ -2686,7 +2686,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 979
+              "line": 1000
             },
             {
               "capability": "query.yql",
@@ -2696,7 +2696,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 979
+              "line": 1000
             }
           ],
           "overrides": []
@@ -2720,7 +2720,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1249
+              "line": 1279
             },
             {
               "capability": "query.text_weak_and",
@@ -2730,7 +2730,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1249
+              "line": 1279
             },
             {
               "capability": "query.text_weak_and",
@@ -2919,7 +2919,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1250
+              "line": 1280
             },
             {
               "capability": "ranking.profile_selection",
@@ -2929,7 +2929,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1250
+              "line": 1280
             },
             {
               "capability": "ranking.profile_selection",
@@ -2939,7 +2939,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 975
+              "line": 996
             },
             {
               "capability": "ranking.profile_selection",
@@ -2949,7 +2949,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 975
+              "line": 996
             }
           ],
           "overrides": []
@@ -2973,7 +2973,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1251
+              "line": 1281
             },
             {
               "capability": "ranking.numeric_query_inputs",
@@ -2983,7 +2983,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1251
+              "line": 1281
             },
             {
               "capability": "ranking.numeric_query_inputs",
@@ -2993,7 +2993,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 976
+              "line": 997
             },
             {
               "capability": "ranking.numeric_query_inputs",
@@ -3003,7 +3003,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 976
+              "line": 997
             }
           ],
           "overrides": []
@@ -3037,7 +3037,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1252
+              "line": 1282
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -3047,7 +3047,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1252
+              "line": 1282
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -3057,7 +3057,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 978
+              "line": 999
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -3067,7 +3067,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 978
+              "line": 999
             }
           ],
           "overrides": []
@@ -3101,7 +3101,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1253
+              "line": 1283
             },
             {
               "capability": "ranking.rank_properties",
@@ -3111,7 +3111,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1253
+              "line": 1283
             },
             {
               "capability": "ranking.rank_properties",
@@ -3121,7 +3121,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 977
+              "line": 998
             },
             {
               "capability": "ranking.rank_properties",
@@ -3131,7 +3131,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 977
+              "line": 998
             }
           ],
           "overrides": []
@@ -3155,7 +3155,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1254
+              "line": 1284
             },
             {
               "capability": "result.match_features",
@@ -3165,7 +3165,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1254
+              "line": 1284
             },
             {
               "capability": "result.match_features",
@@ -3175,7 +3175,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 967
+              "line": 988
             },
             {
               "capability": "result.match_features",
@@ -3185,7 +3185,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 967
+              "line": 988
             }
           ],
           "overrides": []
@@ -3219,7 +3219,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1255
+              "line": 1285
             },
             {
               "capability": "result.grouping_tree",
@@ -3229,7 +3229,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1255
+              "line": 1285
             },
             {
               "capability": "result.grouping_tree",
@@ -3239,7 +3239,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 968
+              "line": 989
             },
             {
               "capability": "result.grouping_tree",
@@ -3249,7 +3249,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 968
+              "line": 989
             }
           ],
           "overrides": []
@@ -3283,7 +3283,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1256
+              "line": 1286
             },
             {
               "capability": "result.degradation_metadata",
@@ -3293,7 +3293,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
-              "line": 1256
+              "line": 1286
             },
             {
               "capability": "result.degradation_metadata",
@@ -3303,7 +3303,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 965
+              "line": 986
             },
             {
               "capability": "result.degradation_metadata",
@@ -3313,7 +3313,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
-              "line": 965
+              "line": 986
             }
           ],
           "overrides": []

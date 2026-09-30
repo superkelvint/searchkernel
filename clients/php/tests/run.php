@@ -1714,10 +1714,15 @@ foreach ($lifecycleTransport->requests as $request) {
     same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
 }
 
-throws(
-    InvalidArgumentException::class,
-    static fn () => (new Client(new RecordingTransport(), '../escape'))->openIndex(),
-    'unsafe logical target fails closed',
+$unsafeButRepresentable = Protocol::envelope(
+    'OpenIndexRequest',
+    SearchKernel\JsonObject::empty(),
+    '../escape',
+);
+same(
+    ['name' => '../escape'],
+    $unsafeButRepresentable['target'],
+    'path-like target reaches canonical semantic validation',
 );
 
 throws(
