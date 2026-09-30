@@ -2646,7 +2646,7 @@ lifecycle boundary and MUST NOT claim managed-local capability support.
 - [ ] Client participates in `./dev test client-real-e2e-parity` using the shared corpus.
 - [ ] `./dev test <client>` passes.
 - [ ] `./dev check-fast` and `./dev check` pass.
-- [ ] `./dev universe` passes for final first-class qualification, locally or through supported exact-HEAD remote execution where applicable.
+- [ ] `./dev universe` passes in an environment capable of full qualification. Focused `test`/`verify` lanes may use their supported exact-HEAD remote forms when local execution is unavailable; this does not imply a remote `universe` command.
 - [ ] Independent adversarial review completed.
 
 A green mandatory PR gate alone is not sufficient evidence for this checklist.
