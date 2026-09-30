@@ -464,7 +464,15 @@ fn configure_packaged_consumer_runtime(
         env::var_os("OUT_DIR").ok_or_else(|| "Cargo did not provide OUT_DIR".to_owned())?,
     );
     stage_consumer_runtime_for_cargo_outputs(&out_dir, &lib_dir)?;
-    println!("cargo:rustc-link-search=native={}", lib_dir.display());
+    // The immutable runtime intentionally carries the ABI library by SONAME only
+    // (`.so.2`). Give the linker its conventional unversioned filename without
+    // mutating the validated runtime object.
+    let link_dir = out_dir.join("consumer-runtime-link");
+    fs::create_dir_all(&link_dir)
+        .map_err(|error| format!("create consumer runtime link directory: {error}"))?;
+    fs::copy(&adapter, link_dir.join("libsearchkernel_vespa.so"))
+        .map_err(|error| format!("stage consumer runtime linker input: {error}"))?;
+    println!("cargo:rustc-link-search=native={}", link_dir.display());
     println!("cargo:rustc-link-lib=dylib=searchkernel_vespa");
     println!("cargo:rerun-if-changed={}", descriptor.display());
     println!("cargo:rerun-if-env-changed=SEARCHKERNEL_RUNTIME_DIR");
