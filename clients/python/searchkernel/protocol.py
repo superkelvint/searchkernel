@@ -14,6 +14,7 @@ if str(_generated_root) not in sys.path:
 
 from SearchKernel.Protocol.V2 import RequestEnvelope, RequestPayload  # noqa: E402
 from SearchKernel.Protocol.V2 import ResponseEnvelope, ResponsePayload  # noqa: E402
+from SearchKernel.V2.IndexTarget import IndexTargetT  # noqa: E402
 
 
 PROTOCOL_VERSION = 2
@@ -31,6 +32,8 @@ _REQUEST_TYPES = {
     "analyze": RequestPayload.RequestPayload.SearchKernel_V2_AnalyzeRequest,
     "describe": RequestPayload.RequestPayload.SearchKernel_V2_DescribeRequest,
     "inspect_query": RequestPayload.RequestPayload.SearchKernel_V2_InspectQueryRequest,
+    "create_index": RequestPayload.RequestPayload.SearchKernel_V2_CreateIndexRequest,
+    "open_index": RequestPayload.RequestPayload.SearchKernel_V2_OpenIndexRequest,
 }
 _RESPONSE_TYPES = {
     "insert": ResponsePayload.ResponsePayload.SearchKernel_V2_InsertResult,
@@ -43,6 +46,8 @@ _RESPONSE_TYPES = {
     "analyze": ResponsePayload.ResponsePayload.SearchKernel_V2_AnalyzeResult,
     "describe": ResponsePayload.ResponsePayload.SearchKernel_V2_DescribeResult,
     "inspect_query": ResponsePayload.ResponsePayload.SearchKernel_V2_InspectQueryResult,
+    "create_index": ResponsePayload.ResponsePayload.SearchKernel_V2_CreateIndexResult,
+    "open_index": ResponsePayload.ResponsePayload.SearchKernel_V2_OpenIndexResult,
 }
 ERROR_TYPE = ResponsePayload.ResponsePayload.SearchKernel_V2_Error
 
@@ -64,16 +69,18 @@ def pack_request(operation: str, payload: Any, *, target: str | None = None) -> 
         payload_type = _REQUEST_TYPES[operation]
     except KeyError as exc:
         raise ValueError(f"unsupported V2 request operation: {operation}") from exc
-    target_table = None
+    index_target = None
     if target is not None:
-        from SearchKernel.V2.IndexTarget import IndexTargetT
-
-        if not isinstance(target, str) or not target:
-            raise ValueError("index target must be a non-empty string")
-        target_table = IndexTargetT(name=target)
-    envelope = RequestEnvelope.RequestEnvelopeT(
-        PROTOCOL_VERSION, payload_type, payload, target_table
-    )
+        if (
+            not isinstance(target, str)
+            or len(target.encode("utf-8")) > 128
+            or not target
+            or target[0] not in "abcdefghijklmnopqrstuvwxyz0123456789"
+            or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in target)
+        ):
+            raise ValueError("index target must match [a-z0-9][a-z0-9_-]{0,127}")
+        index_target = IndexTargetT(target)
+    envelope = RequestEnvelope.RequestEnvelopeT(PROTOCOL_VERSION, payload_type, payload, index_target)
     return pack_object(envelope, file_identifier=REQUEST_IDENTIFIER)
 
 

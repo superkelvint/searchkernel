@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Index, SearchKernelError } from "../src/client/index.js";
@@ -33,38 +33,46 @@ import { packObject, packRequest } from "../src/protocol/envelope.js";
 
 let semanticSnapshotBinary: string | undefined;
 
+function prepareSemanticSnapshotBinary(): void {
+  const repository = resolve(process.cwd(), "../..");
+  const metadata = execFileSync(
+    "cargo",
+    ["metadata", "--no-deps", "--format-version", "1"],
+    { cwd: repository, encoding: "utf8" },
+  );
+  const binary = join(
+    JSON.parse(metadata).target_directory as string,
+    "debug",
+    "searchkernel-semantic-snapshot",
+  );
+  if (!existsSync(binary)) {
+    execFileSync(
+      "cargo",
+      [
+        "build",
+        "--quiet",
+        "--no-default-features",
+        "-p",
+        "searchkernel-testkit",
+        "--bin",
+        "searchkernel-semantic-snapshot",
+      ],
+      { cwd: repository, stdio: "ignore" },
+    );
+  }
+  semanticSnapshotBinary = binary;
+}
+
 function canonicalSnapshot(request: SearchRequestT): unknown {
+  if (semanticSnapshotBinary === undefined) {
+    throw new Error("semantic snapshot oracle was not prepared");
+  }
   const repository = resolve(process.cwd(), "../..");
   const fixture = join(repository, "reference/api-conformance/fixtures/indexes/product-v2.json");
   const directory = mkdtempSync(join(tmpdir(), "searchkernel-ir-"));
   const requestPath = join(directory, "request.bfbs");
   try {
     writeFileSync(requestPath, packObject(request));
-    if (semanticSnapshotBinary === undefined) {
-      execFileSync(
-        "cargo",
-        [
-          "build",
-          "--quiet",
-          "--no-default-features",
-          "-p",
-          "searchkernel-testkit",
-          "--bin",
-          "searchkernel-semantic-snapshot",
-        ],
-        { cwd: repository, stdio: "ignore" },
-      );
-      const metadata = execFileSync(
-        "cargo",
-        ["metadata", "--no-deps", "--format-version", "1"],
-        { cwd: repository, encoding: "utf8" },
-      );
-      semanticSnapshotBinary = join(
-        JSON.parse(metadata).target_directory as string,
-        "debug",
-        "searchkernel-semantic-snapshot",
-      );
-    }
     const output = execFileSync(
       semanticSnapshotBinary,
       [
@@ -82,10 +90,14 @@ function canonicalSnapshot(request: SearchRequestT): unknown {
 }
 
 function index(): Index {
-  return Index.connect("unused", { execute: async () => new Uint8Array() } as unknown as GrpcWebTransport);
+  return Index.connect("unused", "test", { execute: async () => new Uint8Array() } as unknown as GrpcWebTransport);
 }
 
 describe("ergonomic facade", () => {
+  beforeAll(() => {
+    prepareSemanticSnapshotBinary();
+  }, 300_000);
+
   // SKC: filter.textual/basic kinds=ergonomic runtime=shared
   // SKC: search.sorting/basic kinds=ergonomic runtime=shared
   // SKC: search.pagination/basic kinds=ergonomic runtime=shared
@@ -127,7 +139,7 @@ describe("ergonomic facade", () => {
     expect(descending.sort?.[0]?.direction).toBe(2);
     expect(canonicalSnapshot(ascending)).toMatchObject({ sort: [{ direction: "asc" }] });
     expect(canonicalSnapshot(descending)).toMatchObject({ sort: [{ direction: "desc" }] });
-  }, 120_000);
+  });
 
   it("rejects non-string rank properties and preserves string values", () => {
     const builder = index().search("running shoes");

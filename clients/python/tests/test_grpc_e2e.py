@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel import Client, GrpcTransport, Index, q  # noqa: E402
+from searchkernel import Client, ClientError, GrpcTransport, Index, q  # noqa: E402
 from searchkernel.client import value  # noqa: E402
 from searchkernel.protocol import pack_object, pack_request  # noqa: E402
 from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT  # noqa: E402
@@ -81,7 +81,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory(prefix="searchkernel-python-e2e-")
         root = Path(self.tempdir.name)
         self.index_path = root / "index"
-        self.definition_path = root / "definition.fb"
+        self.target = "python-e2e"
         self.definition = IndexDefinitionT(
             name="python_e2e",
             fields=[
@@ -90,7 +90,6 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                 _field("price", 5),
             ],
         )
-        self.definition_path.write_bytes(pack_object(self.definition))
         self.process = None
         self.client = None
 
@@ -111,13 +110,11 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         })
         command = [
             str(DAEMON),
-            "--index",
+            "--data-root",
             str(self.index_path),
             "--listen",
             f"unix://{socket_path}",
         ]
-        if definition:
-            command.extend(["--definition", str(self.definition_path)])
         self.process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
@@ -128,10 +125,59 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                 sock.settimeout(0.1)
                 try:
                     sock.connect(str(socket_path))
-                    return f"unix://{socket_path}"
+                    endpoint = f"unix://{socket_path}"
+                    if definition:
+                        index = Index.create(
+                            endpoint,
+                            fields=self.definition,
+                            target=self.target,
+                        )
+                        index.close()
+                    return endpoint
                 except OSError:
                     time.sleep(0.05)
         self.fail("searchkerneld did not open its gRPC socket")
+
+    def _start_legacy_server(self):
+        socket_path = Path(self.tempdir.name) / "legacy-searchkerneld.sock"
+        definition_path = Path(self.tempdir.name) / "legacy-definition.fb"
+        definition_path.write_bytes(pack_object(self.definition))
+        environment = os.environ.copy()
+        environment.update({
+            "LD_LIBRARY_PATH": os.pathsep.join(
+                path for path in (str(SDK_LIB), str(VESPA_DEPS_LIB), environment.get("LD_LIBRARY_PATH"))
+                if path
+            ),
+        })
+        command = [
+            str(DAEMON),
+            "--index",
+            str(self.index_path),
+            "--definition",
+            str(definition_path),
+            "--listen",
+            f"unix://{socket_path}",
+        ]
+        self.process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                output = self.process.stderr.read().decode(errors="replace")
+                self.fail(f"legacy searchkerneld exited during startup: {output}")
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.1)
+                try:
+                    sock.connect(str(socket_path))
+                    return f"unix://{socket_path}"
+                except OSError:
+                    time.sleep(0.05)
+        self.fail("legacy searchkerneld did not open its gRPC socket")
 
     def _stop_server(self):
         if self.process is None:
@@ -153,7 +199,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
     # SKC-unverified: filter.textual/basic kinds=e2e runtime=grpc
     def test_generated_objects_reach_persisted_native_backend(self):
         endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
         index = Index(self.client)
         index.upsert("doc:1", {"title": "hello world", "category": "a", "price": 5})
         index.upsert("doc:2", {"title": "hello again", "category": "b", "price": 2})
@@ -202,13 +248,10 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self._stop_server()
 
         endpoint = self._start_server(definition=False)
-        self.client = Client(GrpcTransport(endpoint))
-        reopened = Index(self.client)
-        surviving = reopened.search(SearchRequestT(
-            query=QuerySourceT(sourceType=QuerySourceKind.MatchAllQuery, source=MatchAllQueryT()),
-            limit=OptionalUInt32T(value=10),
-        ))
-        self.assertEqual(surviving.totalHits.value, 1)
+        reopened = Index.open(endpoint, target=self.target)
+        self.assertEqual(reopened.get("doc:1")["_id"], "doc:1")
+        self.assertEqual({hit.id for hit in reopened.search("hello").execute().hits}, {"doc:1"})
+        reopened.close()
 
     def test_search_builder_inspect_returns_canonical_resolved_request(self):
         endpoint = self._start_server(definition=True)
@@ -234,7 +277,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
 
     def test_focused_updates_survive_restart_and_change_search_visibility(self):
         endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
         index = Index(self.client, ergonomic=True)
         index.upsert("doc:1", {"title": "quick fox", "price": 10})
 
@@ -253,7 +296,8 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self._stop_server()
 
         endpoint = self._start_server(definition=False)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
+        self.client.open_index()
         reopened = Index(self.client, ergonomic=True)
         self.assertEqual(reopened.get("doc:1")["price"], 15)
         self.assertEqual(
@@ -264,14 +308,14 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
 
     def test_python_grpc_handles_frames_larger_than_default_limit(self):
         endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
         large_text = "alpha " * (5 * 1024 * 1024 // 6)
         analyze = AnalyzeRequestT(
             targetType=AnalyzeTarget.AnalyzeFieldTarget,
             target=AnalyzeFieldTargetT(field="title"),
             text=large_text,
         )
-        request_frame = pack_request("analyze", analyze)
+        request_frame = pack_request("analyze", analyze, target=self.target)
         self.assertGreater(len(request_frame), 4 * 1024 * 1024)
         response_frame = self.client.transport.call(request_frame)
         self.assertGreater(len(response_frame), 4 * 1024 * 1024)
@@ -284,6 +328,97 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             self.assertEqual(index.get("doc:1")["_id"], "doc:1")
         finally:
             index.close()
+
+    def test_managed_local_refuses_preexisting_unowned_data_root(self):
+        root = Path(self.tempdir.name)
+        managed_root = root / ".searchkernel-managed"
+        managed_root.mkdir()
+        sentinel = managed_root / "user-data.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+
+        with self.assertRaisesRegex(ClientError, "not owned by Search Kernel"):
+            Index.create(root / "index", fields=self.definition)
+
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+        self.assertFalse((root / "index").exists())
+
+    def test_managed_local_sibling_indexes_share_one_daemon_and_survive_handle_close(self):
+        root = Path(self.tempdir.name)
+        alpha = Index.create(root / "managed-a", fields=self.definition)
+        beta_definition = IndexDefinitionT(
+            name="managed_b",
+            fields=[_field("payload_text", 1, matching=MatchingMode.Text)],
+        )
+        beta = Index.create(root / "managed-b", fields=beta_definition)
+        try:
+            self.assertIs(alpha._owner, beta._owner)
+            alpha.upsert("doc-a", {"title": "alpha item", "category": "a", "price": 1})
+            beta.upsert("doc-b", {"payload_text": "beta item"})
+            alpha.close()
+            self.assertIsNotNone(beta.get("doc-b"))
+            beta.upsert("doc-c", {"payload_text": "still alive"})
+            self.assertIsNotNone(beta.get("doc-c"))
+        finally:
+            alpha.close()
+            beta.close()
+
+    def test_managed_local_migrates_arbitrary_legacy_path_into_safe_data_root(self):
+        root = Path(self.tempdir.name)
+        self.index_path = root / "Search Index.v1"
+        unrelated = root / "projects"
+        unrelated.mkdir()
+        (unrelated / "keep.txt").write_text("untouched", encoding="utf-8")
+
+        endpoint = self._start_legacy_server()
+        legacy = Index(Client(GrpcTransport(endpoint)), ergonomic=True)
+        legacy.upsert("legacy-doc", {"title": "legacy layout", "category": "a", "price": 7})
+        legacy.close()
+        self._stop_server()
+
+        reopened = Index.open(self.index_path)
+        try:
+            self.assertEqual(reopened.get("legacy-doc")["title"], "legacy layout")
+            self.assertEqual(reopened._owner.path, root / ".searchkernel-managed")
+            self.assertTrue((self.index_path / ".searchkernel-managed-target").is_file())
+            self.assertEqual((unrelated / "keep.txt").read_text(encoding="utf-8"), "untouched")
+            self.assertFalse((root / ".searchkernel-managed" / "projects").exists())
+        finally:
+            reopened.close()
+
+    def test_shared_daemon_lifecycle_isolates_indexes_and_handle_close(self):
+        endpoint = self._start_server(definition=False)
+        alpha = Index.create(endpoint, target="products-a", fields=self.definition)
+        beta_definition = IndexDefinitionT(
+            name="products_b",
+            fields=[_field("payload_text", 1, matching=MatchingMode.Text)],
+        )
+        beta = Index.create(endpoint, target="products-b", fields=beta_definition)
+        try:
+            alpha.upsert("doc-a", {"title": "alpha item", "category": "a", "price": 1})
+            beta.upsert("doc-b", {"payload_text": "beta item"})
+            self.assertIsNotNone(alpha.get("doc-a"))
+            self.assertIsNone(alpha.get("doc-b"))
+            self.assertIsNotNone(beta.get("doc-b"))
+            self.assertIsNone(beta.get("doc-a"))
+
+            with self.assertRaises(ClientError) as collision:
+                Index.create(endpoint, target="products-a", fields=self.definition)
+            self.assertEqual(collision.exception.code, "already_exists")
+            with self.assertRaises(ClientError) as missing:
+                Index.open(endpoint, target="missing-index")
+            self.assertEqual(missing.exception.code, "not_found")
+
+            first = Index.open(endpoint, target="products-a")
+            second = Index.open(endpoint, target="products-a")
+            first.close()
+            self.assertIsNotNone(second.get("doc-a"))
+            self.assertEqual({hit.id for hit in second.search("alpha").execute().hits}, {"doc-a"})
+            second.upsert("doc-c", {"title": "another alpha", "category": "a", "price": 2})
+            self.assertIsNotNone(second.get("doc-c"))
+            second.close()
+        finally:
+            alpha.close()
+            beta.close()
 
     def test_ranking_profile_reaches_vespa_and_survives_reopen(self):
         self.definition = IndexDefinitionT(
@@ -306,9 +441,8 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                 ),
             ],
         )
-        self.definition_path.write_bytes(pack_object(self.definition))
         endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
         index = Index(self.client)
         index.upsert("d1", {"title": "fox", "popularity": 10})
         index.upsert("d2", {"title": "fox fox", "popularity": 5})
@@ -372,7 +506,8 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self.client = None
         self._stop_server()
         endpoint = self._start_server(definition=False)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
+        self.client.open_index()
         reopened = Index(self.client)
         surviving = reopened.search(
             SearchRequestT(
@@ -395,7 +530,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
     # SKC: query.weighted_and_wand/basic kinds=ergonomic,e2e runtime=grpc
     def test_typed_query_families_reach_vespa(self):
         endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
         index = Index(self.client)
         index.upsert("d1", {"title": "quick brown fox", "category": "fox", "price": 5})
         index.upsert("d2", {"title": "brown quick fox", "category": "fox", "price": 2})
@@ -457,9 +592,8 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                 )
             ],
         )
-        self.definition_path.write_bytes(pack_object(self.definition))
         endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
         index = Index(self.client)
         index.upsert(
             "d1",
@@ -500,9 +634,8 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                 )
             ],
         )
-        self.definition_path.write_bytes(pack_object(self.definition))
         endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
         index = Index(self.client)
         index.upsert("inside", {"location": {"latitude": 37.3, "longitude": -121.9}})
         index.upsert("outside", {"location": {"latitude": 40.7, "longitude": -74.0}})
@@ -530,7 +663,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
     # SKC: result.highlighting/basic kinds=ergonomic,e2e runtime=grpc
     def test_ergonomic_summary_projection_and_highlighting_reach_native_docsums(self):
         endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
         index = Index(self.client, ergonomic=True)
         index.upsert("d1", {"title": "highlight me", "category": "a", "price": 5})
         result = (

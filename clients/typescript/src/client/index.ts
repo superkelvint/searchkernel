@@ -24,6 +24,11 @@ import { UpdateRequestT } from "../generated/flatbuffers/search-kernel/v2/update
 import { UpdateResultT } from "../generated/flatbuffers/search-kernel/v2/update-result.js";
 import { UpsertRequestT } from "../generated/flatbuffers/search-kernel/v2/upsert-request.js";
 import { UpsertResultT } from "../generated/flatbuffers/search-kernel/v2/upsert-result.js";
+import { CreateIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/create-index-request.js";
+import { OpenIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/open-index-request.js";
+import { CreateIndexResultT } from "../generated/flatbuffers/search-kernel/v2/create-index-result.js";
+import { OpenIndexResultT } from "../generated/flatbuffers/search-kernel/v2/open-index-result.js";
+import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
 import { ValueEntryT } from "../generated/flatbuffers/search-kernel/v2/value-entry.js";
 import { ResponsePayload } from "../generated/flatbuffers/search-kernel/protocol/v2/response-payload.js";
 import { packRequest, unpackResponse, type Operation, type OperationRequestMap, ProtocolError } from "../protocol/envelope.js";
@@ -92,6 +97,8 @@ export interface OperationResponseMap {
   analyze: AnalyzeResultT;
   describe: DescribeResultT;
   inspectQuery: InspectQueryResultT;
+  createIndex: CreateIndexResultT;
+  openIndex: OpenIndexResultT;
 }
 
 export interface ClientTransport {
@@ -183,6 +190,14 @@ export class Client {
     return this.execute("inspectQuery", new InspectQueryRequestT(request), options);
   }
 
+  createIndex(definition: IndexDefinitionT, options?: ExecuteOptions): Promise<CreateIndexResultT> {
+    return this.execute("createIndex", new CreateIndexRequestT(definition), options);
+  }
+
+  openIndex(options?: ExecuteOptions): Promise<OpenIndexResultT> {
+    return this.execute("openIndex", new OpenIndexRequestT(), options);
+  }
+
   async close(): Promise<void> {
     await this.transport.close?.();
   }
@@ -196,10 +211,49 @@ export class Index {
     this.client = client;
   }
 
-  static connect(endpoint: string, transportOrTarget?: ClientTransport | string): Index {
-    const target = typeof transportOrTarget === "string" ? transportOrTarget : undefined;
-    const transport = typeof transportOrTarget === "string" ? undefined : transportOrTarget;
+  static connect(endpoint: string, target: string, transport?: ClientTransport): Index;
+  static connect(endpoint: string, transport?: ClientTransport): Index;
+  static connect(
+    endpoint: string,
+    targetOrTransport?: string | ClientTransport,
+    selectedTransport?: ClientTransport,
+  ): Index {
+    const target = typeof targetOrTransport === "string" ? targetOrTransport : undefined;
+    const transport = typeof targetOrTransport === "string" ? selectedTransport : targetOrTransport;
     return new Index(new Client(transport ?? new GrpcWebTransport(endpoint), target));
+  }
+
+  static async create(
+    endpoint: string,
+    target: string,
+    definition: IndexDefinitionT,
+    transport?: ClientTransport,
+  ): Promise<Index> {
+    const client = new Client(transport ?? new GrpcWebTransport(endpoint), target);
+    try {
+      const result = await client.createIndex(definition);
+      if (result.index === null) throw new ProtocolError("CreateIndexResult.index is missing");
+      return new Index(client);
+    } catch (error) {
+      await client.close();
+      throw error;
+    }
+  }
+
+  static async open(
+    endpoint: string,
+    target: string,
+    transport?: ClientTransport,
+  ): Promise<Index> {
+    const client = new Client(transport ?? new GrpcWebTransport(endpoint), target);
+    try {
+      const result = await client.openIndex();
+      if (result.index === null) throw new ProtocolError("OpenIndexResult.index is missing");
+      return new Index(client);
+    } catch (error) {
+      await client.close();
+      throw error;
+    }
   }
 
   insert(id: string, fields: Record<string, ValueInput>, options?: ExecuteOptions): Promise<InsertResultT>;
