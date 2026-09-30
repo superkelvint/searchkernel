@@ -195,14 +195,12 @@ mod showcase {
             "typed_query_term" => Query::term(field()?, text("value")?),
             "typed_query_contains" => Query::contains(field()?, Query::term_value(text("value")?)),
             "typed_query_phrase" => Query::phrase(field()?, text_terms()?.join(" ")),
-            "typed_query_near" => Query::near(
-                field()?,
-                text_terms()?.into_iter().map(Query::term_value),
-            ),
-            "typed_query_ordered_near" => Query::onear(
-                field()?,
-                text_terms()?.into_iter().map(Query::term_value),
-            ),
+            "typed_query_near" => {
+                Query::near(field()?, text_terms()?.into_iter().map(Query::term_value))
+            }
+            "typed_query_ordered_near" => {
+                Query::onear(field()?, text_terms()?.into_iter().map(Query::term_value))
+            }
             "typed_query_range" | "typed_query_range_exclusive" => {
                 let lower = input["lower"].as_f64().ok_or("range lower bound missing")?;
                 let upper = input["upper"].as_f64().ok_or("range upper bound missing")?;
@@ -241,8 +239,12 @@ mod showcase {
                             left["value"].as_str().ok_or("boolean left value missing")?,
                         ),
                         Query::term(
-                            right["field"].as_str().ok_or("boolean right field missing")?,
-                            right["value"].as_str().ok_or("boolean right value missing")?,
+                            right["field"]
+                                .as_str()
+                                .ok_or("boolean right field missing")?,
+                            right["value"]
+                                .as_str()
+                                .ok_or("boolean right value missing")?,
                         ),
                     ]),
                     Query::not(Query::term(
