@@ -327,7 +327,13 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             alpha.close()
             beta.close()
 
-    def test_managed_local_reopens_pre_multi_index_directory_without_nesting(self):
+    def test_managed_local_migrates_arbitrary_legacy_path_into_safe_data_root(self):
+        root = Path(self.tempdir.name)
+        self.index_path = root / "Search Index.v1"
+        unrelated = root / "projects"
+        unrelated.mkdir()
+        (unrelated / "keep.txt").write_text("untouched", encoding="utf-8")
+
         endpoint = self._start_legacy_server()
         legacy = Index(Client(GrpcTransport(endpoint)), ergonomic=True)
         legacy.upsert("legacy-doc", {"title": "legacy layout", "category": "a", "price": 7})
@@ -337,7 +343,10 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         reopened = Index.open(self.index_path)
         try:
             self.assertEqual(reopened.get("legacy-doc")["title"], "legacy layout")
-            self.assertFalse((self.index_path / self.index_path.name).exists())
+            self.assertEqual(reopened._owner.path, root / ".searchkernel-managed")
+            self.assertTrue((self.index_path / ".searchkernel-managed-target").is_file())
+            self.assertEqual((unrelated / "keep.txt").read_text(encoding="utf-8"), "untouched")
+            self.assertFalse((root / ".searchkernel-managed" / "projects").exists())
         finally:
             reopened.close()
 
