@@ -13,7 +13,6 @@ if live_oracle_enabled; then
 else
   announce_frozen_oracle_replay
 fi
-require_sdk_manifest "$SDK/manifest.json"
 "$M14/validate_scenarios.py"
 "$M14/validate_expected.py"
 python3 "$M14/test_execution_evidence.py"
@@ -32,7 +31,9 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     'M14 direct oracle is not built; review oracle/AUTHOR_ORACLE.md and run oracle/build-cpp-oracle.sh'
 fi
 
-cargo build --quiet -p searchkernel --features native --examples
+cargo build --quiet -p searchkernel --features native --example searchkernel-m14-driver
+cargo build --quiet -p searchkernel --features native --example searchkernel-m14-adapter-driver
+cargo build --quiet -p searchkernel --features native --example searchkernel-m14-error
 LOW="$CARGO_TARGET_DIR/debug/examples/searchkernel-m14-driver"
 ADAPTER="$CARGO_TARGET_DIR/debug/examples/searchkernel-m14-adapter-driver"
 ERROR="$CARGO_TARGET_DIR/debug/examples/searchkernel-m14-error"

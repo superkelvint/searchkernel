@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+prepare_native_probe_sdk
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
 if live_oracle_enabled; then

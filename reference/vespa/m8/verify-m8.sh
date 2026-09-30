@@ -21,7 +21,7 @@ run_workspace_quality
 cargo check -p searchkernel-vespa-engine --example api-contract-m8
 "$SCRIPT_DIR/check-structure.sh"
 
-cargo build --quiet -p searchkernel-vespa-engine --examples
+cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-m8-driver
 require_native_driver "$CARGO_TARGET_DIR/debug/examples/searchkernel-m8-driver" \
   sk_engine_open \
   sk_engine_search_generic

@@ -26,7 +26,8 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "M12 direct oracle is not built; author/review it per oracle/AUTHOR_ORACLE.md and run oracle/build-cpp-oracle.sh"
 fi
 
-cargo build --quiet -p searchkernel --features native --examples
+cargo build --quiet -p searchkernel --features native --example searchkernel-m12-driver
+cargo build --quiet -p searchkernel --features native --example searchkernel-m12-prepare-fixture
 LOW="$CARGO_TARGET_DIR/debug/examples/searchkernel-m12-driver"
 ADAPTER="$CARGO_TARGET_DIR/debug/examples/searchkernel-m12-adapter-driver"
 PREPARE="$CARGO_TARGET_DIR/debug/examples/searchkernel-m12-prepare-fixture"

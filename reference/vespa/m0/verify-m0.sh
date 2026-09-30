@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$ROOT/common/verify-common.sh"
 
+prepare_native_probe_sdk
 require_pinned_vespa
 
 TARGET=$REPO_ROOT/target/vespa-verifier/m0

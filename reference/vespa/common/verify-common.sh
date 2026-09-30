@@ -20,36 +20,34 @@ if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
   export SK_NATIVE_SDK="$SDK"
 else
   # Sourcing this helper must never compile, link, or mutate verifier state.
-  # Resolve the immutable inputs and verifier-owned output paths only. The
-  # supported top-level verifier entry point calls prepare_verifier_sdk once
-  # before dispatch; nested verifier processes inherit and reuse that result.
+  # Resolve the immutable inputs and native-probe output paths only. Normal Rust
+  # examples use Cargo's shared native-base resolver. Direct native
+  # probes opt into prepare_native_probe_sdk explicitly below.
   unset SK_NATIVE_SDK
-  BASE_SDK="${SEARCHKERNEL_VERIFIER_BASE_SDK:-$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" path)}"
-  VESPA_ROOT="${SEARCHKERNEL_VERIFIER_VESPA_ROOT:-$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)}"
-  SDK="${SEARCHKERNEL_VERIFIER_SDK:-$CARGO_TARGET_DIR/native-verifier-sdk}"
-  SDK_BUILD="${SEARCHKERNEL_VERIFIER_SDK_BUILD:-$CARGO_TARGET_DIR/native-verifier-sdk-build}"
+  BASE_SDK="${SEARCHKERNEL_NATIVE_PROBE_BASE_SDK:-$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" path)}"
+  VESPA_ROOT="${SEARCHKERNEL_NATIVE_PROBE_VESPA_ROOT:-$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)}"
+  SDK="${SEARCHKERNEL_NATIVE_PROBE_SDK:-$CARGO_TARGET_DIR/native-probe-sdk}"
+  SDK_BUILD="${SEARCHKERNEL_NATIVE_PROBE_SDK_BUILD:-$CARGO_TARGET_DIR/native-probe-sdk-build}"
 fi
 if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
   SK_NATIVE_SDK="$SDK"
   export SK_NATIVE_SDK
 else
-  # The verifier-owned SDK is for direct probes and fixtures. Cargo must stay
+  # The native-probe SDK is for direct probes and fixtures. Cargo must stay
   # on the shared-base path so build.rs creates its revision-local adapter and
   # never mistakes this adapter-only verifier view for a full explicit SDK.
   unset SK_NATIVE_SDK
 fi
-# Verifier subprocesses that validate generated native bindings still need the
-# Search Kernel ABI header from the synthesized adapter SDK. Export only the
-# header override; exporting SK_NATIVE_SDK here would incorrectly turn the
-# adapter-only verifier view into an explicitly managed full SDK for Cargo.
-export SK_NATIVE_ABI_HEADER="$SDK/include/searchkernel_vespa.h"
+# Normal Cargo builds validate the checked-in source header and create their
+# adapter in Cargo's target output. Probe-only SDK paths must not leak into
+# ordinary Rust verifier builds through SK_NATIVE_ABI_HEADER.
 if [[ -z "${VESPA_ROOT:-}" ]]; then
   VESPA_ROOT=$(bash "$REPO_ROOT/tools/resolve-native-sdk.sh" vespa-root)
 fi
 export VESPA_ROOT
 export CARGO_TARGET_DIR
 
-verifier_sdk_cache_valid() {
+native_probe_sdk_cache_valid() {
   [[ -f "$SDK/manifest.json" ]] || return 1
   [[ -f "$SDK/include/searchkernel_vespa.h" ]] || return 1
   [[ -f "$SDK/lib/libsearchkernel_vespa.so" ]] || return 1
@@ -60,7 +58,7 @@ verifier_sdk_cache_valid() {
   rustc_bin="$(bash "$REPO_ROOT/tools/resolve-rust.sh" rustc)" || return 1
   native_target="${SK_NATIVE_TARGET:-$("$rustc_bin" -vV | sed -n 's/^host: //p')}"
   [[ -n "$native_target" ]] || return 1
-  expected="$(mktemp "${TMPDIR:-/tmp}/searchkernel-verifier-fingerprint.XXXXXX")"
+  expected="$(mktemp "${TMPDIR:-/tmp}/searchkernel-native-probe-fingerprint.XXXXXX")"
   if ! RUSTC="$rustc_bin" "$python_bin" "$REPO_ROOT/tools/native-build-fingerprint.py" \
       --root "$REPO_ROOT" \
       --vespa-root "$VESPA_ROOT" \
@@ -79,27 +77,27 @@ verifier_sdk_cache_valid() {
   return 1
 }
 
-prepare_verifier_sdk() {
+prepare_native_probe_sdk() {
   if [[ "$SK_NATIVE_SDK_WAS_EXPLICIT" == 1 ]]; then
     return 0
   fi
 
-  if [[ "${SEARCHKERNEL_VERIFIER_SDK_PREPARED:-0}" == 1 ]]; then
+  if [[ "${SEARCHKERNEL_NATIVE_PROBE_SDK_PREPARED:-0}" == 1 ]]; then
     [[ -f "$SDK/manifest.json" ]] || {
-      echo "verification error: prepared verifier SDK manifest is missing: $SDK/manifest.json" >&2
+      echo "verification error: prepared native-probe SDK manifest is missing: $SDK/manifest.json" >&2
       return 1
     }
     [[ -f "$SDK/include/searchkernel_vespa.h" ]] || {
-      echo "verification error: prepared verifier SDK header is missing: $SDK/include/searchkernel_vespa.h" >&2
+      echo "verification error: prepared native-probe SDK header is missing: $SDK/include/searchkernel_vespa.h" >&2
       return 1
     }
     return 0
   fi
 
-  if verifier_sdk_cache_valid; then
-    echo "reusing Search Kernel verifier adapter SDK: $SDK" >&2
+  if native_probe_sdk_cache_valid; then
+    echo "reusing Search Kernel native-probe SDK: $SDK" >&2
   else
-    echo "preparing Search Kernel verifier adapter SDK: $SDK" >&2
+    echo "preparing Search Kernel native-probe SDK: $SDK" >&2
     SK_NATIVE_SDK="$SDK" \
     SK_NATIVE_BUILD_DIR="$SDK_BUILD" \
     SK_NATIVE_BASE_SDK="$BASE_SDK" \
@@ -110,16 +108,16 @@ prepare_verifier_sdk() {
       bash "$REPO_ROOT/core/native/vespa/build-sdk.sh" >/dev/null
   fi
 
-  SEARCHKERNEL_VERIFIER_SDK="$SDK"
-  SEARCHKERNEL_VERIFIER_SDK_BUILD="$SDK_BUILD"
-  SEARCHKERNEL_VERIFIER_BASE_SDK="$BASE_SDK"
-  SEARCHKERNEL_VERIFIER_VESPA_ROOT="$VESPA_ROOT"
-  SEARCHKERNEL_VERIFIER_SDK_PREPARED=1
-  export SEARCHKERNEL_VERIFIER_SDK
-  export SEARCHKERNEL_VERIFIER_SDK_BUILD
-  export SEARCHKERNEL_VERIFIER_BASE_SDK
-  export SEARCHKERNEL_VERIFIER_VESPA_ROOT
-  export SEARCHKERNEL_VERIFIER_SDK_PREPARED
+  SEARCHKERNEL_NATIVE_PROBE_SDK="$SDK"
+  SEARCHKERNEL_NATIVE_PROBE_SDK_BUILD="$SDK_BUILD"
+  SEARCHKERNEL_NATIVE_PROBE_BASE_SDK="$BASE_SDK"
+  SEARCHKERNEL_NATIVE_PROBE_VESPA_ROOT="$VESPA_ROOT"
+  SEARCHKERNEL_NATIVE_PROBE_SDK_PREPARED=1
+  export SEARCHKERNEL_NATIVE_PROBE_SDK
+  export SEARCHKERNEL_NATIVE_PROBE_SDK_BUILD
+  export SEARCHKERNEL_NATIVE_PROBE_BASE_SDK
+  export SEARCHKERNEL_NATIVE_PROBE_VESPA_ROOT
+  export SEARCHKERNEL_NATIVE_PROBE_SDK_PREPARED
 }
 
 published_vespa_marker_path() {
@@ -352,7 +350,8 @@ run_workspace_quality() {
     echo "workspace quality skipped for nested cumulative verifier"
     return
   fi
-  SK_NATIVE_ABI_HEADER="$SDK/include/searchkernel_vespa.h"     "$REPO_ROOT/tools/check-vespa-bindings.sh"
+  SK_NATIVE_ABI_HEADER="$REPO_ROOT/core/native/vespa/searchkernel_vespa.h" \
+    "$REPO_ROOT/tools/check-vespa-bindings.sh"
   cargo fmt --all --check
   cargo clippy --workspace --all-targets --all-features -- -D warnings
   cargo test --workspace --all-targets --all-features

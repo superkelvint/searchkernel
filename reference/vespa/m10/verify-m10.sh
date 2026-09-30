@@ -34,7 +34,7 @@ cargo check -p searchkernel-vespa-engine --example api-contract-m10
 # Additive Phase 5 coverage of the real Vespa double | opaque-data value path.
 "$SCRIPT_DIR/feature-values/verify-feature-values.sh"
 
-cargo build --quiet -p searchkernel-vespa-engine --examples
+cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-m10-driver
 require_native_driver "$CARGO_TARGET_DIR/debug/examples/searchkernel-m10-driver" \
   sk_engine_open \
   sk_engine_search_generic \

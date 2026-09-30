@@ -14,8 +14,6 @@ if live_oracle_enabled; then
 else
   announce_frozen_oracle_replay
 fi
-require_sdk_manifest "$SDK/manifest.json"
-
 # M13 is cumulative: the previous dense-query milestone must remain green.
 "$ROOT/reference/vespa/m12/verify-m12.sh" --skip-workspace-quality
 run_workspace_quality
@@ -49,7 +47,9 @@ if rg -n 'serde_json.*tensor.*(store|database)|sort_by.*document_id|fake.*NN' \
   fail_verification 'M13 verifier contains a tensor storage or fake-NN shortcut'
 fi
 
-cargo build --quiet -p searchkernel --features native --examples
+cargo build --quiet -p searchkernel --features native --example searchkernel-m13-driver
+cargo build --quiet -p searchkernel --features native --example searchkernel-m13-adapter-driver
+cargo build --quiet -p searchkernel --features native --example searchkernel-m13-error
 LOW="$CARGO_TARGET_DIR/debug/examples/searchkernel-m13-driver"
 ADAPTER="$CARGO_TARGET_DIR/debug/examples/searchkernel-m13-adapter-driver"
 ERROR="$CARGO_TARGET_DIR/debug/examples/searchkernel-m13-error"
