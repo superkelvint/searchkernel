@@ -258,6 +258,89 @@ fn update_builder_crosses_the_same_canonical_ir_boundary() {
 }
 
 #[test]
+fn update_builder_matches_portable_dispatcher_ir() {
+    let direct_backend = Arc::new(RecordingBackend::new());
+    let index = index_with(direct_backend.clone());
+    assert!(index
+        .update("sku-42")
+        .assign("brand", "Sony")
+        .increment("price", 2.5_f64)
+        .create(true)
+        .execute()
+        .is_err());
+    let direct = direct_backend.last_call().expect("direct Rust update IR");
+
+    let field = |name: &str, kind| searchkernel_ir::RustFieldInput {
+        name: name.to_owned(),
+        kind,
+        multi: false,
+        stored: None,
+        searchable: None,
+        filterable: None,
+        sortable: None,
+        facetable: None,
+        analyzer: None,
+        distance_metric: None,
+        hnsw: None,
+    };
+    let definition =
+        searchkernel_ir::resolve_rust_index_definition(searchkernel_ir::RustIndexDefinitionInput {
+            name: Some("products".to_owned()),
+            fields: vec![
+                field("title", searchkernel_ir::RustFieldKind::Text),
+                field("brand", searchkernel_ir::RustFieldKind::Keyword),
+                field("price", searchkernel_ir::RustFieldKind::Float64),
+                field("in_stock", searchkernel_ir::RustFieldKind::Bool),
+            ],
+            default_search_fields: None,
+        })
+        .expect("portable parity schema");
+    let portable_backend = Arc::new(RecordingBackend::new());
+    let dispatcher = searchkernel_dispatch::Dispatcher::from_backend(
+        Arc::new(searchkernel_ir::IndexContext::from_definition_ir(
+            definition,
+        )),
+        portable_backend.clone(),
+    );
+    let request = searchkernel_protocol::json::request_json_to_flatbuffer(
+        br#"{
+          "protocol_version": 2,
+          "payload_type": "SearchKernel_V2_UpdateRequest",
+          "payload": {
+            "id": "sku-42",
+            "operations": [
+              {
+                "target": {"path": "brand"},
+                "operation_type": "AssignUpdate",
+                "operation": {
+                  "value": {"kind_type": "StringValue", "kind": {"value": "Sony"}}
+                }
+              },
+              {
+                "target": {"path": "price"},
+                "operation_type": "ArithmeticUpdate",
+                "operation": {
+                  "operator": "Increment",
+                  "operand": {"kind_type": "Float64Value", "kind": {"value": 2.5}}
+                }
+              }
+            ],
+            "create": {"value": true}
+          }
+        }"#,
+    )
+    .expect("canonical portable update request");
+    dispatcher
+        .dispatch(&request)
+        .expect("recording backend error is encoded as a portable response");
+    let portable = portable_backend
+        .last_call()
+        .expect("portable dispatcher update IR");
+
+    assert_eq!(direct, portable);
+}
+
+#[test]
 fn update_builder_defers_semantic_validation_to_the_canonical_resolver() {
     let backend = Arc::new(RecordingBackend::new());
     let index = index_with(backend.clone());
