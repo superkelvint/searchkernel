@@ -169,6 +169,10 @@ def capture_real_engine_parity(index)
     error_codes = error.details.map { |detail| detail["code"] }.sort
   end
   document = index.get(intents.fetch("document_crud").fetch("document_id"))
+  tensor_spec = intents.fetch("tensor_readback")
+  tensor_document = index.get(tensor_spec.fetch("document_id"))
+  raise "tensor readback document is missing" unless tensor_document
+  tensor_value = tensor_document.fetch(tensor_spec.fetch("field"))
   full_spec = intents.fetch("full_text_search")
   full_text = index.search(full_spec.fetch("query")).limit(full_spec.fetch("limit")).execute
   stemming_spec = intents.fetch("stemming")
@@ -306,7 +310,7 @@ def capture_real_engine_parity(index)
     **typed_observations,
     "rank_inputs" => rank_input.hits.map { |hit| {"id" => hit.id, "score" => hit.score, "feature" => hit.features["query(boost)"]} },
     "rank_properties" => rank_property.hits.map { |hit| {"id" => hit.id, "score" => hit.score, "feature" => hit.features["query(boost)"]} },
-    "tensor_readback" => document.fetch("embedding").fetch("$searchkernel_tensor").fetch("dense"),
+    "tensor_readback" => tensor_value.fetch("$searchkernel_tensor").fetch("dense"),
     "nearest_neighbor" => {"observation" => {"intent" => nearest_intent, "ids" => ids(nearest), "scores" => nearest.hits.map(&:relevance)}, "capabilities" => {}},
     "hybrid_text_vector" => {"observation" => {"intent" => hybrid_intent, "ids" => ids(hybrid), "top_score" => hybrid.hits.first.score}, "capabilities" => {}},
     "hybrid" => {"top_id" => hybrid.hits.first.id, "has_bag" => ids(hybrid).include?("bag-1")},
