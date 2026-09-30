@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import shutil
@@ -12,8 +13,12 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+import tomllib
 
 DIST = Path(sys.argv[1]).resolve()
 MANIFEST = json.loads((DIST / "manifest.json").read_text(encoding="utf-8"))
@@ -158,25 +163,183 @@ def run_ruby_quickstart(
     run("ruby", str(QUICKSTARTS / "ruby.rb"), cwd=root, env=env)
 
 
-def run_rust_quickstart(rust_root: Path, root: Path) -> None:
-    quickstart = rust_root / "release-quickstart"
-    shutil.copytree(QUICKSTARTS / "rust", quickstart)
-    environment = {
-        "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
-        # Qualification uses the exact just-built immutable artifact through the
-        # normal origin override; no producer SDK/repository path is exposed.
-        "SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri(),
-        "SEARCHKERNEL_RUNTIME_CACHE": str(root / "rust-runtime-cache"),
+def crate_index_path(name: str) -> str:
+    lower = name.lower()
+    if len(lower) == 1:
+        return f"1/{lower}"
+    if len(lower) == 2:
+        return f"2/{lower}"
+    if len(lower) == 3:
+        return f"3/{lower[0]}/{lower}"
+    return f"{lower[:2]}/{lower[2:4]}/{lower}"
+
+
+def cargo_index_record(crate: Path) -> tuple[str, bytes, str, str]:
+    with tarfile.open(crate, "r:gz") as archive:
+        manifest_member = next(
+            member for member in archive.getmembers()
+            if member.isfile() and member.name.endswith("/Cargo.toml")
+        )
+        manifest_stream = archive.extractfile(manifest_member)
+        if manifest_stream is None:
+            raise RuntimeError(f"missing Cargo.toml in packaged crate {crate.name}")
+        manifest = tomllib.loads(manifest_stream.read().decode("utf-8"))
+    package = manifest["package"]
+    name, version = package["name"], package["version"]
+    dependencies: list[dict[str, object]] = []
+    for kind in ("dependencies", "build-dependencies", "dev-dependencies"):
+        for alias, value in manifest.get(kind, {}).items():
+            dependency = {"version": value} if isinstance(value, str) else value
+            dependencies.append({
+                "name": dependency.get("package", alias),
+                "req": dependency.get("version", "*"),
+                "features": dependency.get("features", []),
+                "optional": dependency.get("optional", False),
+                "default_features": dependency.get("default-features", True),
+                "target": None,
+                "kind": {"dependencies": "normal", "build-dependencies": "build", "dev-dependencies": "dev"}[kind],
+                "registry": None,
+                "package": dependency.get("package"),
+            })
+    for target, sections in manifest.get("target", {}).items():
+        for kind in ("dependencies", "build-dependencies", "dev-dependencies"):
+            for alias, value in sections.get(kind, {}).items():
+                dependency = {"version": value} if isinstance(value, str) else value
+                dependencies.append({
+                    "name": dependency.get("package", alias),
+                    "req": dependency.get("version", "*"),
+                    "features": dependency.get("features", []),
+                    "optional": dependency.get("optional", False),
+                    "default_features": dependency.get("default-features", True),
+                    "target": target,
+                    "kind": {"dependencies": "normal", "build-dependencies": "build", "dev-dependencies": "dev"}[kind],
+                    "registry": None,
+                    "package": dependency.get("package"),
+                })
+    features = manifest.get("features", {})
+    record: dict[str, object] = {
+        "name": name,
+        "vers": version,
+        "deps": dependencies,
+        "cksum": hashlib.sha256(crate.read_bytes()).hexdigest(),
+        "features": features,
+        "yanked": False,
     }
-    run(
-        "cargo",
-        "run",
-        "--quiet",
-        "--manifest-path",
-        str(quickstart / "Cargo.toml"),
-        cwd=quickstart,
-        env=environment,
-    )
+    if package.get("links"):
+        record["links"] = package["links"]
+    if package.get("rust-version"):
+        record["rust_version"] = package["rust-version"]
+    if any(any(token.startswith("dep:") for token in values) for values in features.values()):
+        record["features"] = {}
+        record["features2"] = features
+        record["v"] = 2
+    index = (json.dumps(record, separators=(",", ":")) + "\n").encode()
+    return name, index, version, crate.name
+
+
+class LocalCargoRegistry:
+    """Expose generated .crate artifacts while proxying normal crates.io reads."""
+
+    def __init__(self, crates: list[Path]):
+        self.packages: dict[tuple[str, str], Path] = {}
+        self.index: dict[str, bytes] = {}
+        for crate in crates:
+            name, record, version, _ = cargo_index_record(crate)
+            self.packages[(name.lower(), version)] = crate
+            path = crate_index_path(name)
+            self.index[path] = self.index.get(path, b"") + record
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                path = self.path.split("?", 1)[0].lstrip("/")
+                if path == "config.json":
+                    body = json.dumps({"dl": f"http://127.0.0.1:{server.server_port}/crates/{{crate}}/{{version}}/download"}).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if path.startswith("crates/") and path.endswith("/download"):
+                    parts = path.split("/")
+                    key = (parts[1].lower(), parts[2])
+                    local = owner.packages.get(key)
+                    if local is not None:
+                        self._send(local.read_bytes())
+                        return
+                    self._proxy(f"https://static.crates.io/crates/{parts[1]}/{parts[1]}-{parts[2]}.crate")
+                    return
+                local_index = owner.index.get(path)
+                if local_index is not None:
+                    self._send(local_index)
+                    return
+                self._proxy(f"https://index.crates.io/{path}")
+
+            def _send(self, body: bytes) -> None:
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _proxy(self, url: str) -> None:
+                try:
+                    with urlopen(Request(url, headers={"User-Agent": "searchkernel-consumer-qualifier"}), timeout=60) as response:
+                        self._send(response.read())
+                except HTTPError as error:
+                    self.send_error(error.code)
+                except (OSError, URLError):
+                    self.send_error(502, "crates.io proxy request failed")
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = server
+        self.thread = threading.Thread(target=server.serve_forever, daemon=True)
+
+    def __enter__(self) -> "LocalCargoRegistry":
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+
+def run_rust_quickstart(root: Path) -> None:
+    crates = [DIST / item["file"] for item in MANIFEST["artifacts"] if item["file"].endswith(".crate")]
+    if not crates:
+        raise RuntimeError("release does not contain publishable Cargo .crate artifacts")
+    project = root / "external-rust-consumer"
+    project.mkdir()
+    cargo_home = root / "external-cargo-home"
+    cargo_home.mkdir()
+    quickstart = QUICKSTARTS / "rust"
+    with LocalCargoRegistry(crates) as registry:
+        port = registry.server.server_port
+        (cargo_home / "config.toml").write_text(
+            "[source.crates-io]\nreplace-with = \"consumer-artifacts\"\n\n"
+            "[source.consumer-artifacts]\n"
+            f"registry = \"sparse+http://127.0.0.1:{port}/\"\n",
+            encoding="utf-8",
+        )
+        run("cargo", "init", "--bin", "--name", "searchkernel_release_consumer", "--vcs", "none", cwd=project)
+        shutil.copy2(quickstart / "Cargo.toml", project / "Cargo.toml")
+        shutil.copy2(quickstart / "src/main.rs", project / "src/main.rs")
+        environment = {
+            "CARGO_HOME": str(cargo_home),
+            "CARGO_TARGET_DIR": str(root / "external-cargo-target"),
+            "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
+            # The test registry supplies the exact .crate files; the runtime
+            # origin supplies the matching immutable native artifact.
+            "SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri(),
+            "SEARCHKERNEL_RUNTIME_CACHE": str(root / "rust-runtime-cache"),
+        }
+        run("cargo", "add", "searchkernel", cwd=project, env=environment)
+        run("cargo", "add", "serde_json", cwd=project, env=environment)
+        run("cargo", "build", cwd=project, env=environment)
+        run("cargo", "run", "--quiet", cwd=project, env=environment)
 
 
 def python_managed_local(venv: Path, index: Path) -> None:
@@ -597,19 +760,10 @@ def main() -> None:
         context = {"daemon": None}
 
         def rust_embedded_probe() -> None:
-            rust = artifact("searchkernel-rust-", ".tar.gz")
-            rust_root = root / "rust"
-            rust_root.mkdir()
-            with tarfile.open(rust) as archive:
-                archive.extractall(rust_root, filter="data")
-            # Resolve the public host native-base generation exactly as an
-            # ordinary unauthenticated consumer would. The clean container has
-            # no GitHub token, build-environment override, or producer SDK cache.
-            run_rust_quickstart(rust_root, root)
-            run(
-                "cargo", "run", "--quiet", "-p", "searchkernel", "--features", "native",
-                "--example", "try_searchkernel_client_api_e2e", cwd=rust_root,
-            )
+            # Build from Cargo's real .crate artifacts in a clean external
+            # project. This is the consumer distribution contract: no checkout
+            # or workspace path dependency reaches Cargo.
+            run_rust_quickstart(root)
 
         def searchkerneld_runtime_probe() -> None:
             context["daemon"] = extract_daemon(root)

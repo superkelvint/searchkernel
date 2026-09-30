@@ -78,6 +78,10 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertIn('"SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri()', rust_runner)
         self.assertNotIn('os.environ.get("GH_TOKEN")', rust_runner)
         self.assertNotIn('os.environ.get("GITHUB_TOKEN")', rust_runner)
+        self.assertIn('"cargo", "add", "searchkernel"', rust_runner)
+        self.assertIn('run("cargo", "build", cwd=project, env=environment)', rust_runner)
+        self.assertIn('item["file"].endswith(".crate")', rust_runner)
+        self.assertNotIn('"path": "../core/crates/searchkernel"', gate)
         self.assertNotIn("SEARCHKERNEL_BUILD_ENV", gate)
 
     def test_packaged_supported_rows_own_clean_consumer_gate(self):

@@ -6,6 +6,8 @@ These are the exact executable quickstarts used by clean-consumer release qualif
 
 Python managed-local and Rust embedded create their own local indexes. The TypeScript and Ruby connect examples expect a compatible packaged `searchkerneld` endpoint in `SEARCHKERNEL_ENDPOINT` (default `http://127.0.0.1:8080`) and a logical index name in `SEARCHKERNEL_TARGET`.
 
+For the Rust embedded quickstart, create a project, run `cargo add searchkernel`, copy the program below into `src/main.rs`, and run `cargo build` followed by `cargo run`. This uses the published Cargo package and its default native feature.
+
 Rust embedded builds provision the pinned native runtime from the release service; use an authenticated GitHub CLI session or set `GH_TOKEN` when downloading from a private repository.
 
 ## Python managed-local
@@ -111,7 +113,6 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-searchkernel = { path = "../core/crates/searchkernel" }
 serde_json = "1"
 ```
 
