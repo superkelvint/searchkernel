@@ -383,7 +383,7 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
   script = File.join(root, "fake-searchkerneld")
   log = File.join(root, "args.json")
   request_log = File.join(root, "requests.jsonl")
-  index_path = File.join(root, "index")
+  index_path = File.join(root, "Search Index.v1")
   File.write(
     script,
     <<~'RUBY'
@@ -448,7 +448,11 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
     assert(!args.include?("--definition-json"), "managed create provisions through canonical lifecycle requests")
     create_request = JSON.parse(File.readlines(request_log).fetch(0))
     assert(create_request.fetch("payload_type").end_with?("CreateIndexRequest"), "managed create sends lifecycle request")
-    same("index", create_request.fetch("target").fetch("name"), "managed path basename is the logical target")
+    managed_path, managed_root, managed_target = SearchKernel::ManagedLocalHost.location(index_path)
+    same(managed_target, create_request.fetch("target").fetch("name"), "managed path hashes to a canonical logical target")
+    data_root_index = args.index("--data-root")
+    same(managed_root, args.fetch(data_root_index + 1), "managed daemon authority is confined to the dedicated data root")
+    assert(File.file?(SearchKernel::ManagedLocalHost.marker_path(managed_path)), "managed path keeps a local marker")
     sibling_path = File.join(root, "sibling")
     sibling = SearchKernel::Index.create(
       sibling_path,
@@ -457,6 +461,20 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
     same(1, SearchKernel::ManagedLocalHost.pool.length, "sibling managed indexes share one daemon data root")
     managed.close
     same(1, SearchKernel::ManagedLocalHost.pool.length, "closing one managed handle keeps the shared daemon alive")
+
+    data_root = SearchKernel::ManagedLocalHost.location(sibling_path)[1]
+    stale_owner = sibling.instance_variable_get(:@owner)
+    stale_pid = stale_owner.instance_variable_get(:@pid)
+    Process.kill("KILL", -stale_pid)
+    begin
+      Process.waitpid(stale_pid)
+    rescue Errno::ECHILD
+      nil
+    end
+    replacement_owner = SearchKernel::ManagedLocalHost.acquire(data_root)
+    assert(!replacement_owner.equal?(stale_owner), "dead pooled daemon is replaced on the next acquire")
+    replacement_owner.close
+
     sibling.close
     assert(managed.closed?, "managed close is idempotent state")
     managed.close
