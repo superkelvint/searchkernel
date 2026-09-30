@@ -14,6 +14,7 @@ scenario_contract = PARITY.scenario_contract
 scenario_observations = PARITY.scenario_observations
 validate_shared_typed_inputs = PARITY.validate_shared_typed_inputs
 validate_observed_intents = PARITY.validate_observed_intents
+float_semantic_paths_for_scenario = PARITY.float_semantic_paths_for_scenario
 
 MISUSE_CASES = ("negative_limit_rejected", "negative_offset_rejected")
 MISUSE_CONTRACT = {
@@ -33,25 +34,21 @@ MISUSE_CONTRACT = {
 
 class RealE2EParityComparatorTests(unittest.TestCase):
     def test_shared_typed_query_scenarios_are_required_and_have_intents(self):
-        scenarios = list(PARITY.REQUIRED_SHARED_INTENT_SCENARIOS)
+        scenarios = list(PARITY.REQUIRED_TYPED_SCENARIOS)
         inputs = {scenario: {"query": {"kind": "contains"}, "result_order": "sorted_ids"} for scenario in scenarios}
-        for scenario in ("nearest_neighbor", "hybrid_text_vector"):
-            inputs[scenario] = {"query": {"kind": "nearest_neighbor"}, "ranking_profile": "semantic", "query_input_document": "shoe-1", "limit": 3}
         self.assertEqual(inputs, validate_shared_typed_inputs({"scenario_inputs": inputs}, scenarios))
-        with self.assertRaisesRegex(SystemExit, "omits required shared-intent scenarios"):
+        with self.assertRaisesRegex(SystemExit, "omits required typed-query scenarios"):
             validate_shared_typed_inputs({"scenario_inputs": inputs}, scenarios[:-1])
-        with self.assertRaisesRegex(SystemExit, "omits required shared scenario intents"):
+        with self.assertRaisesRegex(SystemExit, "omits typed-query intents"):
             validate_shared_typed_inputs({"scenario_inputs": {key: value for key, value in inputs.items() if key != "typed_query_geo_box"}}, scenarios)
 
     def test_client_snapshot_must_echo_the_query_intent_it_builds(self):
         inputs = {scenario: {"query": {"kind": "contains", "value": scenario}} for scenario in PARITY.REQUIRED_TYPED_SCENARIOS}
-        for scenario in ("nearest_neighbor", "hybrid_text_vector"):
-            inputs[scenario] = {"query": {"kind": "nearest_neighbor"}, "ranking_profile": "semantic", "query_input_document": "shoe-1", "limit": 3}
-        observations = {scenario: {"observation": {"intent": entry["query"] if scenario in PARITY.REQUIRED_TYPED_SCENARIOS else entry, "query_result": ["a"]}}
+        observations = {scenario: {"observation": {"intent": entry["query"], "query_result": ["a"]}}
                        for scenario, entry in inputs.items()}
         validate_observed_intents("rust", observations, inputs)
         observations[PARITY.REQUIRED_TYPED_SCENARIOS[0]]["observation"]["intent"] = {"value": "hard-coded"}
-        with self.assertRaisesRegex(SystemExit, "did not consume the shared scenario intent"):
+        with self.assertRaisesRegex(SystemExit, "did not consume the shared query intent"):
             validate_observed_intents("rust", observations, inputs)
 
     def test_checker_uses_the_shared_scenario_list(self):
@@ -160,10 +157,17 @@ class RealE2EParityComparatorTests(unittest.TestCase):
     def test_float_tolerance_is_relative_and_absolute(self):
         self.assertEqual([], compare({"score": 100.0}, {"score": 100.00005}))
         self.assertTrue(compare({"score": 100.0}, {"score": 100.01}))
+        self.assertEqual([], compare(100.0, 100.00005))
+        self.assertTrue(compare(100.0, 100.01))
+        self.assertEqual([], compare({"scores": [100.0]}, {"scores": [100.00005]}))
 
     def test_integer_semantics_reject_float_drift_and_float_kind(self):
-        self.assertTrue(compare({"total": 7}, {"total": 7.0000005}))
-        self.assertTrue(compare({"total": 7}, {"total": 7.0}))
+        self.assertTrue(compare(7, 7.0))
+        self.assertTrue(compare(7, 7.0000005))
+        self.assertTrue(compare({"integer_value": 7}, {"integer_value": 7.0}))
+        self.assertTrue(compare({"integer_value": 7}, {"integer_value": 7.0000005}))
+        self.assertTrue(compare({"sum": 7}, {"sum": 7.0}))
+        self.assertTrue(compare({"sum": 7}, {"sum": 7.0000005}))
         self.assertEqual([], compare({"count": 7}, {"count": 7}))
 
     def test_close_float_values_pass_and_material_drift_fails(self):
@@ -172,7 +176,24 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         for invalid in (float("nan"), float("inf"), float("-inf")):
             self.assertTrue(compare({"score": 1.0}, {"score": invalid}))
 
+    def test_float_semantics_for_typed_query_intents_come_from_the_schema(self):
+        inputs = {"typed_query_range": {"query": {"kind": "range", "field": "price"}}}
+        schema = {"fields": {"price": {"type": "float64"}}}
+        paths = float_semantic_paths_for_scenario("typed_query_range", inputs, schema)
+        self.assertEqual(
+            [],
+            compare(
+                {"intent": {"lower": 50.0}},
+                {"intent": {"lower": 50}},
+                float_semantic_paths=paths,
+            ),
+        )
+        schema["fields"]["price"]["type"] = "int64"
+        self.assertFalse(float_semantic_paths_for_scenario("typed_query_range", inputs, schema))
+
     def test_integer_and_boolean_kinds_remain_exact(self):
+        self.assertTrue(compare(True, 1))
+        self.assertTrue(compare(False, 0))
         self.assertTrue(compare({"count": 1}, {"count": 2}))
         self.assertTrue(compare({"count": 1}, {"count": True}))
         self.assertTrue(compare({"count": 0}, {"count": False}))

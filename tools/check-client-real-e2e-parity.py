@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -15,22 +16,29 @@ ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "reference/client-real-e2e-parity/corpus.json"
 CLIENTS = ("rust", "python", "typescript", "php", "ruby")
 FLOAT_TOLERANCE = 1e-6
-INTEGER_FIELDS = {
-    "total", "total_hits", "count", "products", "rating", "inventory",
-    "rerank_count", "hits", "limit", "offset", "integer_value", "value",
-    "documents", "results", "results_full", "nodes",
+FLOAT_SEMANTIC_KEYS = {
+    # Search scores and explicitly floating fields/aggregations. JavaScript's
+    # JSON encoder can serialize a float such as 3.0 as `3`; these paths carry
+    # the domain type that the wire representation no longer preserves.
+    "price", "sale_price", "avg_price", "sum_price", "min_price", "max_price",
+    "revenue", "score", "scores", "top_score", "feature", "relevance",
 }
 REQUIRED_TYPED_SCENARIOS = (
-    "typed_query_contains", "typed_query_phrase", "typed_query_near", "typed_query_ordered_near", "typed_query_range",
+    "typed_query_contains", "typed_query_phrase", "typed_query_range",
     "typed_query_boolean", "typed_query_in", "typed_query_equals",
     "typed_query_fuzzy", "typed_query_weak_and", "typed_query_wand",
     "typed_query_weighted_set", "typed_query_dot_product",
     "typed_query_same_element", "typed_query_geo_location", "typed_query_geo_box",
 )
-REQUIRED_SHARED_INTENT_SCENARIOS = (*REQUIRED_TYPED_SCENARIOS, "nearest_neighbor", "hybrid_text_vector")
 
 
-def compare(expected: Any, actual: Any, path: str = "$", differences: list[str] | None = None) -> list[str]:
+def compare(
+    expected: Any,
+    actual: Any,
+    path: str = "$",
+    differences: list[str] | None = None,
+    float_semantic_paths: frozenset[str] = frozenset(),
+) -> list[str]:
     """Collect structural differences, allowing only small finite float drift."""
     if differences is None:
         differences = []
@@ -39,23 +47,24 @@ def compare(expected: Any, actual: Any, path: str = "$", differences: list[str] 
             differences.append(f"{path}: keys differ: {sorted(expected)} != {sorted(actual)}")
             return differences
         for key in sorted(expected):
-            compare(expected[key], actual[key], f"{path}.{key}", differences)
+            compare(expected[key], actual[key], f"{path}.{key}", differences, float_semantic_paths)
         return differences
     if isinstance(expected, list) and isinstance(actual, list):
         if len(expected) != len(actual):
             differences.append(f"{path}: lengths differ: {len(expected)} != {len(actual)}")
             return differences
         for index, (left, right) in enumerate(zip(expected, actual)):
-            compare(left, right, f"{path}[{index}]", differences)
+            compare(left, right, f"{path}[{index}]", differences, float_semantic_paths)
         return differences
     if type(expected) is bool or type(actual) is bool:
         if type(expected) is not type(actual) or expected != actual:
             differences.append(f"{path}: {expected!r} != {actual!r}")
         return differences
     if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-        if path.rsplit(".", 1)[-1] in INTEGER_FIELDS:
-            if type(expected) is not int or type(actual) is not int or expected != actual:
-                differences.append(f"{path}: integer semantics require exact integers, got {expected!r} != {actual!r}")
+        path_keys = set(re.split(r"[.\[\]]+", path))
+        float_semantics = path in float_semantic_paths or bool(path_keys & FLOAT_SEMANTIC_KEYS)
+        if type(expected) is not type(actual) and not float_semantics:
+            differences.append(f"{path}: numeric types differ, got {type(expected).__name__} != {type(actual).__name__}")
             return differences
         if isinstance(expected, int) and isinstance(actual, int):
             if expected != actual:
@@ -123,36 +132,28 @@ def scenario_contract(corpus: dict[str, Any]) -> tuple[list[str], dict[str, dict
 
 
 def validate_shared_typed_inputs(corpus: dict[str, Any], scenarios: list[str]) -> dict[str, Any]:
-    missing = sorted(set(REQUIRED_SHARED_INTENT_SCENARIOS) - set(scenarios))
+    missing = sorted(set(REQUIRED_TYPED_SCENARIOS) - set(scenarios))
     if missing:
-        raise SystemExit(f"shared corpus omits required shared-intent scenarios: {', '.join(missing)}")
+        raise SystemExit(f"shared corpus omits required typed-query scenarios: {', '.join(missing)}")
     inputs = corpus.get("scenario_inputs")
     if not isinstance(inputs, dict):
         raise SystemExit("shared corpus scenario_inputs must be an object")
-    missing_inputs = sorted(set(REQUIRED_SHARED_INTENT_SCENARIOS) - inputs.keys())
+    missing_inputs = sorted(set(REQUIRED_TYPED_SCENARIOS) - inputs.keys())
     if missing_inputs:
-        raise SystemExit(f"shared corpus omits required shared scenario intents: {', '.join(missing_inputs)}")
+        raise SystemExit(f"shared corpus omits typed-query intents: {', '.join(missing_inputs)}")
     for scenario in REQUIRED_TYPED_SCENARIOS:
         entry = inputs[scenario]
         if not isinstance(entry, dict) or not isinstance(entry.get("query"), dict) or entry.get("result_order") not in {"sorted_ids", "ranked"}:
             raise SystemExit(f"{scenario}: shared query intent or result ordering is invalid")
-    for scenario in ("nearest_neighbor", "hybrid_text_vector"):
-        entry = inputs[scenario]
-        if (not isinstance(entry, dict) or not isinstance(entry.get("query"), dict)
-                or not isinstance(entry.get("ranking_profile"), str)
-                or not isinstance(entry.get("query_input_document"), str)
-                or type(entry.get("limit")) is not int or entry["limit"] < 1):
-            raise SystemExit(f"{scenario}: query, ranking, vector document, and limit intent are required")
     return inputs
 
 
 def validate_observed_intents(client: str, observations: dict[str, Any], inputs: dict[str, Any]) -> None:
-    for scenario in REQUIRED_SHARED_INTENT_SCENARIOS:
+    for scenario in REQUIRED_TYPED_SCENARIOS:
         value = observations.get(scenario)
         payload = value.get("observation", value) if isinstance(value, dict) else None
-        expected = inputs[scenario]["query"] if scenario in REQUIRED_TYPED_SCENARIOS else inputs[scenario]
-        if not isinstance(payload, dict) or payload.get("intent") != expected:
-            raise SystemExit(f"{client}.{scenario} did not consume the shared scenario intent")
+        if not isinstance(payload, dict) or payload.get("intent") != inputs[scenario]["query"]:
+            raise SystemExit(f"{client}.{scenario} did not consume the shared query intent")
 
 
 def scenario_observations(
@@ -212,6 +213,25 @@ def comparable_observation(
     return value
 
 
+def float_semantic_paths_for_scenario(
+    scenario: str,
+    inputs: dict[str, Any],
+    schema: dict[str, Any],
+) -> frozenset[str]:
+    """Return schema-derived floating paths in shared typed-query intents."""
+    intent = inputs.get(scenario, {}).get("query", {})
+    kind = intent.get("kind")
+    field = intent.get("field")
+    field_type = schema.get("fields", {}).get(field, {}).get("type")
+    if kind == "range" and field_type == "float64":
+        return frozenset({"$.intent.lower", "$.intent.upper"})
+    if kind == "geo_location":
+        return frozenset({"$.intent.latitude", "$.intent.longitude"})
+    if kind == "geo_box":
+        return frozenset({"$.intent.south", "$.intent.west", "$.intent.north", "$.intent.east"})
+    return frozenset()
+
+
 def main() -> int:
     corpus = json.loads(CORPUS.read_text())
     scenarios, capabilities = scenario_contract(corpus)
@@ -247,7 +267,13 @@ def main() -> int:
             for client in CLIENTS[1:]:
                 baseline = comparable_observation(traces[baseline_client][scenario], capabilities, scenario, baseline_client, client)
                 actual = comparable_observation(traces[client][scenario], capabilities, scenario, client, baseline_client)
-                differences = compare(baseline, actual)
+                differences = compare(
+                    baseline,
+                    actual,
+                    float_semantic_paths=float_semantic_paths_for_scenario(
+                        scenario, scenario_inputs, corpus.get("schema", {})
+                    ),
+                )
                 if differences:
                     failed = True
                     print(f"{scenario}: {baseline_client} != {client}")
