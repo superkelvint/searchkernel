@@ -1003,26 +1003,6 @@
       "focused_check": "command:check-fast",
       "strong_check": "command:check-fast"
     },
-    "verification/": {
-      "owner": "verification",
-      "area": "Verification entrypoints",
-      "read": [
-        "BUILDING.md",
-        "docs/architecture.md"
-      ],
-      "architecture": "docs/architecture.md#development-model",
-      "test": [],
-      "verify": [
-        "verify:product.integration"
-      ],
-      "generated": false,
-      "rules": [
-        "Keep acceptance behavior aligned with frozen contracts and real Vespa where required."
-      ],
-      "native_base_rebuild": false,
-      "focused_check": "command:check-fast",
-      "strong_check": "command:check-fast"
-    },
     "clients/python/searchkernel/rpc/searchkernel_pb2.py": {
       "owner": "python-rpc-generated",
       "area": "Generated Python protobuf bindings",
