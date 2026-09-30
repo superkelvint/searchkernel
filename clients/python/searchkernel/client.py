@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import math
 import os
 import signal
@@ -328,11 +327,24 @@ SearchKernelError = ClientError
 
 _MANAGED_HOST_OUTPUT_TAIL_BYTES = 16 * 1024
 _MANAGED_HOST_STARTUP_TIMEOUT_SECONDS = 60.0
+_MANAGED_HOST_POOL_LOCK = threading.Lock()
+_MANAGED_HOST_POOL: dict[str, "_ManagedLocalHost"] = {}
 
 
-def _managed_target(path: Path) -> str:
-    canonical_path = str(path.expanduser().resolve(strict=False)).encode("utf-8")
-    return "local-" + hashlib.sha256(canonical_path).hexdigest()[:32]
+def _managed_location(path: Path) -> tuple[Path, str]:
+    canonical = path.expanduser().resolve(strict=False)
+    target = canonical.name
+    if (
+        not target
+        or len(target.encode("utf-8")) > 128
+        or target[0] not in "abcdefghijklmnopqrstuvwxyz0123456789"
+        or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in target)
+    ):
+        raise ClientError(
+            "managed-local index directory name must match "
+            "[a-z0-9][a-z0-9_-]{0,127}; rename the directory to a canonical logical target"
+        )
+    return canonical.parent, target
 
 
 def _host_binary() -> Path:
@@ -445,6 +457,8 @@ class _ManagedLocalHost:
 
     def __init__(self, path: Path):
         self.path = path
+        self._pool_key: str | None = None
+        self._lease_count = 0
         self.process: subprocess.Popen[bytes] | None = None
         self._output_capture: _ManagedHostOutputCapture | None = None
         self._finalizer: weakref.finalize | None = None
@@ -494,6 +508,20 @@ class _ManagedLocalHost:
             self.close(force=True)
             raise
 
+    @classmethod
+    def acquire(cls, data_root: Path) -> "_ManagedLocalHost":
+        key = str(data_root.expanduser().resolve(strict=False))
+        with _MANAGED_HOST_POOL_LOCK:
+            existing = _MANAGED_HOST_POOL.get(key)
+            if existing is not None and existing.process is not None:
+                existing._lease_count += 1
+                return existing
+            host = cls(Path(key))
+            host._pool_key = key
+            host._lease_count = 1
+            _MANAGED_HOST_POOL[key] = host
+            return host
+
     def _wait_until_ready(self) -> None:
         assert self.process is not None
         deadline = time.monotonic() + _MANAGED_HOST_STARTUP_TIMEOUT_SECONDS
@@ -529,6 +557,17 @@ class _ManagedLocalHost:
         raise ClientError(message)
 
     def close(self, *, force: bool = False) -> None:
+        pool_key = self._pool_key
+        if pool_key is not None:
+            with _MANAGED_HOST_POOL_LOCK:
+                if _MANAGED_HOST_POOL.get(pool_key) is self:
+                    if not force and self._lease_count > 1:
+                        self._lease_count -= 1
+                        return
+                    _MANAGED_HOST_POOL.pop(pool_key, None)
+                self._lease_count = 0
+                self._pool_key = None
+
         finalizer = self._finalizer
         if finalizer is not None and not finalizer.alive:
             return
@@ -603,10 +642,16 @@ class Client:
         return self.execute("inspect_query", InspectQueryRequestT(request=request))
 
     def create_index(self, definition: IndexDefinitionT) -> Any:
-        return self.execute("create_index", CreateIndexRequestT(definition=definition))
+        result = self.execute("create_index", CreateIndexRequestT(definition=definition))
+        if getattr(result, "index", None) is None:
+            raise ClientError("CreateIndexResult.index is missing")
+        return result
 
     def open_index(self) -> Any:
-        return self.execute("open_index", OpenIndexRequestT())
+        result = self.execute("open_index", OpenIndexRequestT())
+        if getattr(result, "index", None) is None:
+            raise ClientError("OpenIndexResult.index is missing")
+        return result
 
     def close(self) -> None:
         self.transport.close()
@@ -647,14 +692,14 @@ class Index:
                 client.close()
                 raise
             return cls(client, ergonomic=True)
-        owner = _ManagedLocalHost(Path(path))
-        target = _managed_target(Path(path))
+        data_root, target = _managed_location(Path(path))
+        owner = _ManagedLocalHost.acquire(data_root)
         client = Client(GrpcTransport(owner.endpoint), target=target)
         try:
             client.create_index(_index_definition(fields, rank_profiles))
         except Exception:
             client.close()
-            owner.close(force=True)
+            owner.close()
             raise
         return cls(client, owner, ergonomic=True)
 
@@ -668,13 +713,14 @@ class Index:
                 client.close()
                 raise
             return cls(client, ergonomic=True)
-        owner = _ManagedLocalHost(Path(path))
-        client = Client(GrpcTransport(owner.endpoint), target=_managed_target(Path(path)))
+        data_root, target = _managed_location(Path(path))
+        owner = _ManagedLocalHost.acquire(data_root)
+        client = Client(GrpcTransport(owner.endpoint), target=target)
         try:
             client.open_index()
         except Exception:
             client.close()
-            owner.close(force=True)
+            owner.close()
             raise
         return cls(client, owner, ergonomic=True)
 
