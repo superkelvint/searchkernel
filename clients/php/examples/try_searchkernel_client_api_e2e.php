@@ -267,6 +267,7 @@ function sharedTypedQueryObservations(Index $index): array
             $builder = $builder->ranking($input['ranking_profile']);
         }
         $results = $builder->limit($input['limit'])->execute();
+        $queryResultOrder = (string) $input['result_order'];
         if (isset($input['feature'])) {
             $feature = $input['feature'];
             $queryResult = array_map(
@@ -275,7 +276,7 @@ function sharedTypedQueryObservations(Index $index): array
             );
         } else {
             $queryResult = ids($results);
-            if ($input['result_order'] === 'sorted_ids') sort($queryResult, SORT_STRING);
+            if ($queryResultOrder === 'sorted_ids') sort($queryResult, SORT_STRING);
         }
         $observations[$scenario] = [
             'observation' => ['intent' => $parityConsumedIntents[$scenario], 'query_result' => $queryResult],
