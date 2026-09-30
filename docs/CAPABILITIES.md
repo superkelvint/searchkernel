@@ -126,7 +126,7 @@ Capabilities with known constraints are collected in the generated
 - `update.matched_element` — MatchUpdate is represented in FlatBuffers, but the current UpdateOperationIr has no matched-element variant and update_to_ir rejects it before canonical IR.
 - `update.tensor_modify` — TensorModifyUpdate is represented in FlatBuffers, but there is no tensor-modify UpdateOperationIr and update_to_ir rejects it before canonical IR.
 - `tensor.dense_document_crud` — Sparse and mixed tensors remain unsupported in the current high-level document and query-input paths.
-- `query.yql` — Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. The public Rust Index has search()/browse() but no yql() entry point.
+- `query.yql` — Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. Rust now exposes Index::yql() through the same canonical search resolver.
 - `query.text_weak_and` — Primary search(text) is analyzed text retrieval with Vespa WeakAnd-style default matching; it is not a phrase query. The low-level QueryText node is broader than the current facade helpers.
 - `query.typed_text` — The typed QueryText node executes through the adapter, but no high-level Rust, Python, or TypeScript q facade helper constructs it.
 - `query.in_term` — The Python and TypeScript q facades do not yet expose
@@ -136,7 +136,7 @@ Capabilities with known constraints are collected in the generated
 - `schema.array_struct_fields` — The portable/native path supports the existing array<object> shape used by SameElement. The high-level Rust Field, Python field-spec, and TypeScript schema facades expose only primitive/tensor kinds today; nested structs, maps, and heterogeneous object members remain unsupported.
 - `schema.position_geo_fields` — The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Position is not exposed by the high-level Rust, Python, or TypeScript schema builders.
 - `ranking.profile_selection` — The profile must exist in the compiled index schema; Search Kernel does not introduce a second ranking language.
-- `ranking.numeric_query_inputs` — The public Rust QueryInputValue currently exposes integer, unsigned integer, float, and tensor values; the proven scalar real-engine path is numeric. Expression query inputs are not exposed by the high-level facades.
+- `ranking.numeric_query_inputs` — The Rust facade now represents bool, integer, unsigned integer, float, string, JSON, tensor, and expression query inputs. The embedded native query-feature seam executes finite lossless numeric scalars (and dense tensors through the tensor path); expression inputs are preserved canonically but return query_input_expression_not_supported.
 - `ranking.tensor_query_inputs` — Only literal dense tensors are executable by the current native query-input seam; sparse/mixed tensors and expression inputs are rejected.
 - `ranking.rank_properties` — Adapter-owned vespa.label.* properties are reserved for labeled queries and cannot be supplied by callers.
 - `result.match_features` — Scalar native match features are decoded. Rust, Python, and TypeScript preserve typed canonical match, summary, and rank feature maps when those values are present in a portable Hit. Tensor-backed native match-feature output remains opaque bytes, and the native adapter currently leaves summary_features and rank_features unpopulated.
