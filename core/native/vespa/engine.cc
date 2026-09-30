@@ -3049,9 +3049,44 @@ public:
         _failpoints->set(name, hit, action);
     }
 
-    void clear_failpoint(const char *name) { _failpoints->clear(name); }
+    void control_publication_failpoint(const char *name, bool release) {
+        std::exception_ptr failure;
+        vespalib::Gate gate;
+        _db->getWriteService().blocking_master_execute(
+            vespalib::makeLambdaTask([this, name, release, &failure, &gate]() {
+                try {
+                    if (release) {
+                        _failpoints->release(name);
+                    } else {
+                        _failpoints->clear(name);
+                    }
+                    _hardening_feed_view->release_pending_commits();
+                } catch (...) {
+                    failure = std::current_exception();
+                }
+                gate.countDown();
+            }));
+        gate.await();
+        if (failure) std::rethrow_exception(failure);
+    }
 
-    void release_failpoint(const char *name) { _failpoints->release(name); }
+    void clear_failpoint(const char *name) {
+        if (name && std::string_view(name) ==
+                        "matcher_publication_before_feedview_force_commit") {
+            control_publication_failpoint(name, false);
+        } else {
+            _failpoints->clear(name);
+        }
+    }
+
+    void release_failpoint(const char *name) {
+        if (name && std::string_view(name) ==
+                        "matcher_publication_before_feedview_force_commit") {
+            control_publication_failpoint(name, true);
+        } else {
+            _failpoints->release(name);
+        }
+    }
 
     bool failpoint_is_blocked(const char *name) const { return _failpoints->is_blocked(name); }
 
