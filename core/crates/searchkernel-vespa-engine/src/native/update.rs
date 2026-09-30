@@ -169,9 +169,21 @@ pub(crate) fn add_update_field(
                 )
             }
         }
+        FieldUpdate::Assign(FieldValue::Array(ArrayValue::Structs(values))) => {
+            let array = super::document::NativeStructArray::from_values(values, &mut error)?;
+            unsafe {
+                sys::sk_document_update_assign_struct_array(
+                    update,
+                    field.as_ptr(),
+                    array.0.as_ptr(),
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
+        }
         FieldUpdate::Assign(FieldValue::Array(_)) => {
             return Err(Error::unsupported(
-                "only array<string> document updates are supported",
+                "only string and struct array document updates are supported",
             ))
         }
         FieldUpdate::Assign(FieldValue::Position(PositionValue {

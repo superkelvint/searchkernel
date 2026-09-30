@@ -145,7 +145,7 @@ jobs:
               exit 1
             }
             case "$path" in
-              build/targets.json|docs/client-capabilities.json|docs/CLIENT_CAPABILITIES.md)
+              build/targets.json|LIMITATIONS.md|docs/CAPABILITIES.md|docs/client-capabilities.json|docs/CLIENT_CAPABILITIES.md)
                 ;;
               *)
                 echo "::error::bookkeeping patch changes unauthorized path '$path'" >&2

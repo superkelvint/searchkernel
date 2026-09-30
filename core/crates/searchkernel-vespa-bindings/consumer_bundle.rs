@@ -1872,11 +1872,32 @@ case "$SDK_PACKAGE" in
     /*) ;;
     *) SDK_PACKAGE=$ROOT/$SDK_PACKAGE ;;
 esac
-# Assemble the package away from the published path. This prevents a failed
-# compile or a concurrent Cargo build from observing a half-updated SDK and,
-# importantly, means stale files cannot survive from an older package layout.
-SDK_STAGING=${SK_NATIVE_STAGING_SDK:-${SDK_PACKAGE}.staging.$$}
-SDK=$SDK_STAGING
+
+# Multiple canonical ./dev containers intentionally share one writable Cargo
+# target volume for warm builds. Container PIDs are not globally unique, so
+# PID-derived staging paths alone cannot protect an SDK package from concurrent
+# builders in different containers. Serialize every mutation of one published
+# SDK path with a filesystem lock that is shared through that target volume.
+SDK_LOCK="${SDK_PACKAGE}.build.lock"
+mkdir -p "$(dirname -- "$SDK_LOCK")"
+if [ "${SK_NATIVE_SDK_PACKAGE_LOCK_HELD:-}" != "$SDK_PACKAGE" ]; then
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "native SDK build requires flock for package publication locking" >&2
+        exit 1
+    fi
+    # Re-exec under flock instead of taking a fixed descriptor in this shell.
+    # Callers such as resolve-native-sdk.sh already hold their own inherited
+    # lock descriptors; replacing one here would silently release that lock.
+    SK_NATIVE_SDK_PACKAGE_LOCK_HELD="$SDK_PACKAGE"
+    export SK_NATIVE_SDK_PACKAGE_LOCK_HELD
+    exec flock "$SDK_LOCK" "$0" "$@"
+fi
+
+# Assemble the package away from the published path. The private staging path
+# is allocated immediately before the build so failed prerequisite checks do
+# not leave empty staging directories behind.
+SDK_STAGING=
+SDK=
 BUILD=${SK_NATIVE_BUILD_DIR:-$TARGET_ROOT/native-sdk-build}
 case "$BUILD" in
     /*) ;;
@@ -2051,16 +2072,27 @@ if [ -f "$VESPA_EXTRA_LIB_DIR/libxxhash.so" ]; then
     EXTRA_LINK_FLAGS="$EXTRA_LINK_FLAGS -L$VESPA_EXTRA_LIB_DIR"
 fi
 
+if [ -n "${SK_NATIVE_STAGING_SDK:-}" ]; then
+    SDK_STAGING=$SK_NATIVE_STAGING_SDK
+    if [ -e "$SDK_STAGING" ]; then
+        echo "SDK staging directory already exists: $SDK_STAGING" >&2
+        exit 1
+    fi
+    mkdir -p "$SDK_STAGING"
+else
+    # $$ is only unique within one PID namespace. Canonical ./dev invocations
+    # run in separate containers while sharing /cargo-target, so use mktemp's
+    # random suffix to make the staging path unique across containers as well.
+    SDK_STAGING=$(mktemp -d "${SDK_PACKAGE}.staging.XXXXXX")
+fi
+SDK=$SDK_STAGING
+
 cleanup_staging() {
     if [ -d "$SDK_STAGING" ]; then
         rm -rf "$SDK_STAGING"
     fi
 }
 trap cleanup_staging EXIT
-if [ -e "$SDK_STAGING" ]; then
-    echo "SDK staging directory already exists: $SDK_STAGING" >&2
-    exit 1
-fi
 
 mkdir -p "$BUILD" "$SDK/include" "$SDK/lib" "$SDK/share/embedded_crud_cfg"
 rm -f "$BUILD/searchkernel_vespa.o" \
@@ -2222,7 +2254,8 @@ PY
         --scope full \
         --output "$SDK/native-build-fingerprint-v2.txt"
 
-    SDK_BACKUP="${SDK_PACKAGE}.old.$"
+    SDK_BACKUP=$(mktemp -d "${SDK_PACKAGE}.old.XXXXXX")
+    rmdir "$SDK_BACKUP"
     if [ -e "$SDK_BACKUP" ]; then
         echo "adapter backup path already exists: $SDK_BACKUP" >&2
         exit 1
@@ -2425,7 +2458,8 @@ fi
 # Publish only after every build, ABI, binding, and package check succeeded.
 # A uniquely named backup keeps the replacement recoverable until the new
 # directory is in place; the old generated package is then removed explicitly.
-SDK_BACKUP="${SDK_PACKAGE}.old.$$"
+SDK_BACKUP=$(mktemp -d "${SDK_PACKAGE}.old.XXXXXX")
+rmdir "$SDK_BACKUP"
 if [ -e "$SDK_BACKUP" ]; then
     echo "SDK backup path already exists: $SDK_BACKUP" >&2
     exit 1
@@ -2442,7 +2476,7 @@ trap - EXIT
 echo "built SDK at $SDK_PACKAGE"
 "########),
     ("core/native/vespa/manifest.json", br########"{
-  "native_abi_version": 15,
+  "native_abi_version": 16,
   "vespa_commit": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
 }
 "########),
@@ -3140,6 +3174,33 @@ extern "C" SK_API int32_t sk_document_update_assign_string_array(
         OwnedValue result;
         result.kind = SK_VALUE_STRING_ARRAY;
         result.strings = copy_string_array(value_bytes, value_lengths, value_count, value_bytes_length, "string array");
+        return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
+extern "C" SK_API int32_t sk_document_update_assign_struct_array(
+    sk_document_update *update, const char *field, const sk_struct_array *array,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!array) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                 "update struct array must not be null");
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_STRUCT_ARRAY;
+        result.struct_elements.reserve(array->elements.size());
+        for (const auto &element : array->elements) {
+            std::vector<std::pair<std::string, OwnedValue>> converted;
+            converted.reserve(element.size());
+            for (const auto &[name, value] : element) {
+                OwnedValue owned;
+                owned.kind = value.kind;
+                owned.string = value.string;
+                owned.integer = value.integer;
+                owned.floating = value.floating;
+                owned.boolean = value.boolean;
+                converted.emplace_back(name, std::move(owned));
+            }
+            result.struct_elements.push_back(std::move(converted));
+        }
         return std::optional<OwnedValue>(std::move(result));
     });
 }
@@ -7858,6 +7919,11 @@ class EmbeddedEngine {
     const unsigned int _tls_port;
     TransLogServer _tls;
     proton::matching::QueryLimiter _query_limiter;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    // Declared before _db so the DocumentDB is destroyed before its active
+    // hardening-only forwarding view.
+    std::shared_ptr<PublicationGateFeedView> _hardening_feed_view;
+#endif
     DocumentDB::SP _db;
     // Non-owning while _db owns the config store. DocumentDB performs the
     // normal snapshot pruning before it closes the store.
@@ -9116,6 +9182,59 @@ class EmbeddedEngine {
         }
     }
 
+    void wait_for_search_publication() {
+        // Source/document-retriever visibility is not the same thing as the
+        // generation consumed by matching. Initiate the canonical feed-view
+        // force-commit on Vespa's master write thread, but never wait for its
+        // completion there. The caller waits on the completion callback so the
+        // master executor remains available to concurrent feed operations.
+        //
+        // Sample the serial on the master thread immediately before initiating
+        // the commit. This defines the fence by master ordering: it covers this
+        // mutation and any feed operations already processed ahead of the fence,
+        // but does not make the caller wait for operations still queued behind it.
+        failpoint("mutation_before_search_publication_wait");
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) {
+            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        }
+        auto feed_view = ready_sub_db->getFeedView();
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        // The hardening view forwards to this same real Vespa view and also
+        // gates FeedHandler's independently scheduled automatic forceCommit.
+        // Using it here makes the regression control both publication paths.
+        if (_hardening_feed_view) feed_view = _hardening_feed_view;
+#endif
+        if (!feed_view) {
+            throw std::runtime_error("Vespa DocumentDB has no ready feed view");
+        }
+
+        vespalib::Gate gate;
+        std::exception_ptr failure;
+        auto on_done = std::make_shared<vespalib::GateCallback>(gate);
+        _db->getWriteService().blocking_master_execute(
+            vespalib::makeLambdaTask(
+                [this, feed_view = std::move(feed_view), on_done, &failure]() mutable {
+                    try {
+                        const auto serial = _db->getFeedHandler().getSerialNum();
+                        feed_view->forceCommit(
+                            search::CommitParam(serial, search::CommitParam::UpdateStats::SKIP),
+                            on_done);
+                    } catch (...) {
+                        failure = std::current_exception();
+                    }
+                }));
+        // The lambda and this local reference are the only non-Vespa owners.
+        // Dropping our copy makes GateCallback completion track only commit work.
+        on_done.reset();
+        if (failure) {
+            gate.await();
+            std::rethrow_exception(failure);
+        }
+        failpoint("mutation_after_search_publication_start");
+        gate.await();
+    }
+
     void wait_for_source_state(
         const DocumentId &id, bool expected_present,
         const std::vector<std::pair<std::string, std::optional<OwnedValue>>> &expected_fields,
@@ -9186,6 +9305,25 @@ class EmbeddedEngine {
                 const bool observed_has_value = observed_value &&
                     (observed->hasValue(schema_field) || manifest_field.type == "tensor");
                 if (!observed_has_value) {
+                    // Boolean attributes have no undefined sentinel in Vespa:
+                    // an unset field reads as false. GET exposes that default
+                    // so callers can distinguish a known boolean field from
+                    // a missing schema field.
+                    if (observed_value &&
+                        observed_value->type() == document::FieldValue::Type::BOOL &&
+                        observed_value->getAsLong() == 0) {
+                        DocumentFieldState state{
+                            manifest_field.name,
+                            owned_value(*observed_value, manifest_field.name),
+                            {},
+                            {}};
+                        if (existing != result.fields.end()) {
+                            *existing = std::move(state);
+                        } else {
+                            result.fields.push_back(std::move(state));
+                        }
+                        continue;
+                    }
                     if (manifest_field.attribute && existing != result.fields.end() &&
                         existing->value.kind == SK_VALUE_STRING &&
                         existing->value.string.empty()) {
@@ -9213,13 +9351,6 @@ class EmbeddedEngine {
                         continue;
                     }
                     if (existing != result.fields.end()) result.fields.erase(existing);
-                    continue;
-                }
-                // Vespa's boolean attribute has no undefined sentinel and reads as false for
-                // every document. Do not turn that storage default into a document field when
-                // the source document never contained the field.
-                if (existing == result.fields.end() && observed_value->type() == document::FieldValue::Type::BOOL &&
-                    observed_value->getAsLong() == 0) {
                     continue;
                 }
                 DocumentFieldState state{manifest_field.name, owned_value(*observed_value, manifest_field.name), {}, {}};
@@ -10228,6 +10359,30 @@ public:
     void release_failpoint(const char *name) { _failpoints->release(name); }
 
     bool failpoint_is_blocked(const char *name) const { return _failpoints->is_blocked(name); }
+
+    void install_hardening_feed_view() {
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) {
+            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        }
+        auto feed_view = ready_sub_db->getFeedView();
+        if (!feed_view) {
+            throw std::runtime_error("Vespa DocumentDB has no ready feed view");
+        }
+        _hardening_feed_view = std::make_shared<PublicationGateFeedView>(
+            std::move(feed_view), _failpoints);
+
+        // FeedHandler owns a non-owning active-view pointer and updates its
+        // document repo from that view, so install on Vespa's master executor
+        // and retain the forwarding view for the DocumentDB's full lifetime.
+        vespalib::Gate gate;
+        _db->getWriteService().blocking_master_execute(
+            vespalib::makeLambdaTask([this, &gate]() {
+                _db->getFeedHandler().setActiveFeedView(_hardening_feed_view.get());
+                gate.countDown();
+            }));
+        gate.await();
+    }
 #endif
 
     void initialize(const std::string &data_dir, const std::string &config_dir) {
@@ -10310,6 +10465,9 @@ public:
             _db->waitForOnlineState();
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         }
+#endif
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        install_hardening_feed_view();
 #endif
         const auto replay_serial = _db->getFeedHandler().getSerialNum();
         if (replay_serial == std::numeric_limits<uint64_t>::max()) {
@@ -10496,6 +10654,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(document_id, true, {{field, integer_value(value)}}, true);
+        wait_for_search_publication();
     }
 
     void update(const std::string &id, const std::string &field, int64_t value) {
@@ -10512,6 +10671,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(document_id, was_present, {{field, integer_value(value)}}, false);
+        wait_for_search_publication();
     }
 
     bool remove(const std::string &id) {
@@ -10527,6 +10687,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(document_id, false, {}, false);
+        wait_for_search_publication();
         return result.wasFound();
     }
 
@@ -10650,6 +10811,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(id, true, {{text.field, string_value(text.text)}}, true);
+        wait_for_search_publication();
     }
 
     void update_text(const TextUpdate &text) {
@@ -10665,6 +10827,7 @@ public:
             throw std::runtime_error(result.getErrorMessage());
         }
         wait_for_source_state(id, was_present, {{text.field, string_value(text.text)}}, false);
+        wait_for_search_publication();
     }
 
     std::vector<TextHit> search_text(const TextRequest &text) const {
@@ -11565,6 +11728,7 @@ public:
         failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
         wait_for_source_state(id, true, expected_fields(document), true);
+        wait_for_search_publication();
     }
 
     void update_attributes(const AttributeUpdateState &update) {
@@ -11577,6 +11741,7 @@ public:
         failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
         wait_for_source_state(id, was_present, expected_fields(update), false);
+        wait_for_search_publication();
     }
 
     void put_document(const ValueDocument &document) {
@@ -11603,15 +11768,16 @@ public:
         const bool has_position = std::any_of(
             document.fields.begin(), document.fields.end(),
             [](const auto &field) { return field.value.kind == SK_VALUE_POSITION; });
-        // A successful put is the synchronization point for immediate GET and
-        // search. TensorFieldValue presence is intentionally a valid match in
-        // value_matches(), so tensors must not bypass this publication barrier.
-        // Struct-array/position values retain their presence-only contract.
+        // This source-state wait closes the document-store/retriever window.
+        // Search publication is fenced separately below through Vespa's
+        // force-commit path. TensorFieldValue presence remains a valid source
+        // visibility signal; it is not treated as proof of matcher publication.
         if (has_struct_array || has_position) {
             wait_for_source_state(id, true, {}, true);
         } else {
             wait_for_source_state(id, true, expected_fields(document), true);
         }
+        wait_for_search_publication();
     }
 
     void update_document(const ValueUpdate &update) {
@@ -11642,6 +11808,7 @@ public:
                 failpoint("mutation_after_native_call");
                 if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
                 wait_for_source_state(id, true, update.fields, false);
+                wait_for_search_publication();
                 return;
             }
         }
@@ -11654,6 +11821,7 @@ public:
         failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
         wait_for_source_state(id, was_present || update.create_if_nonexistent, update.fields, false);
+        wait_for_search_publication();
     }
 
     LocalSearchResultState search_local_result(const NativeQueryState &query,
@@ -12090,6 +12258,7 @@ std::unique_ptr<sk_grouping_expression> make_grouping_binary_expression(
 "########),
     ("core/native/vespa/hardening.cc", br########"// Search Kernel native adapter: hardening and timing support.
 #include <thread>
+#include <type_traits>
 // This file is included by abi.cc so the private adapter remains one native
 // boundary while responsibilities stay physically searchable by subsystem.
 
@@ -12148,7 +12317,7 @@ class FailpointController {
     std::map<std::string, Entry> _entries;
 
     static bool known(std::string_view name) noexcept {
-        static constexpr std::array<std::string_view, 19> names = {
+        static constexpr std::array<std::string_view, 22> names = {
             "open_before_native_create", "open_after_native_create",
             "open_constructor", "open_initialize",
             "mutation_before_native_call", "mutation_after_native_call",
@@ -12157,7 +12326,9 @@ class FailpointController {
             "attribute_mutation_before_native_call",
             "attribute_mutation_after_native_call", "group_before_match",
             "group_after_match", "search_after_id_resolution", "search_after_docsums",
-            "mutation_before_visibility_wait"};
+            "mutation_before_visibility_wait", "mutation_before_search_publication_wait",
+            "mutation_after_search_publication_start",
+            "matcher_publication_before_feedview_force_commit"};
         return std::find(names.begin(), names.end(), name) != names.end();
     }
 
@@ -12255,6 +12426,72 @@ public:
         }
     }
 };
+
+// Hardening builds install this forwarding view as FeedHandler's active view.
+// Automatic FeedHandler commits and Search Kernel's explicit publication fence
+// therefore pass through the same gate. The delegate remains Vespa's real
+// ready feed view; only forceCommit scheduling is held by the failpoint.
+class PublicationGateFeedView final : public proton::IFeedView {
+    proton::IFeedView::SP _delegate;
+    std::shared_ptr<FailpointController> _failpoints;
+
+public:
+    PublicationGateFeedView(proton::IFeedView::SP delegate,
+                             std::shared_ptr<FailpointController> failpoints) noexcept
+        : _delegate(std::move(delegate)), _failpoints(std::move(failpoints)) {}
+
+    const std::shared_ptr<const document::DocumentTypeRepo>& getDocumentTypeRepo() const override {
+        return _delegate->getDocumentTypeRepo();
+    }
+    const proton::ISimpleDocumentMetaStore* getDocumentMetaStorePtr() const override {
+        return _delegate->getDocumentMetaStorePtr();
+    }
+    void preparePut(proton::PutOperation& op) override { _delegate->preparePut(op); }
+    void handlePut(proton::FeedToken token, const proton::PutOperation& op) override {
+        _delegate->handlePut(std::move(token), op);
+    }
+    void prepareUpdate(proton::UpdateOperation& op) override { _delegate->prepareUpdate(op); }
+    void handleUpdate(proton::FeedToken token, const proton::UpdateOperation& op) override {
+        _delegate->handleUpdate(std::move(token), op);
+    }
+    void prepareRemove(proton::RemoveOperation& op) override { _delegate->prepareRemove(op); }
+    void handleRemove(proton::FeedToken token, const proton::RemoveOperation& op) override {
+        _delegate->handleRemove(std::move(token), op);
+    }
+    void prepareDeleteBucket(proton::DeleteBucketOperation& op) override {
+        _delegate->prepareDeleteBucket(op);
+    }
+    bool isMoveStillValid(const proton::MoveOperation& op) const override {
+        return _delegate->isMoveStillValid(op);
+    }
+    void prepareMove(proton::MoveOperation& op) override { _delegate->prepareMove(op); }
+    void handleDeleteBucket(const proton::DeleteBucketOperation& op,
+                            const DoneCallback& on_done) override {
+        _delegate->handleDeleteBucket(op, on_done);
+    }
+    void handleMove(const proton::MoveOperation& op, const DoneCallback& on_done) override {
+        _delegate->handleMove(op, on_done);
+    }
+    void heartBeat(search::SerialNum serial, const DoneCallback& on_done) override {
+        _delegate->heartBeat(serial, on_done);
+    }
+    void forceCommit(const CommitParam& param, const DoneCallback& on_done) override {
+        _failpoints->hit("matcher_publication_before_feedview_force_commit");
+        _delegate->forceCommit(param, on_done);
+    }
+    void handlePruneRemovedDocuments(const proton::PruneRemovedDocumentsOperation& op,
+                                     const DoneCallback& on_done) override {
+        _delegate->handlePruneRemovedDocuments(op, on_done);
+    }
+    void handleCompactLidSpace(const proton::CompactLidSpaceOperation& op,
+                               const DoneCallback& on_done) override {
+        _delegate->handleCompactLidSpace(op, on_done);
+    }
+};
+
+static_assert(std::is_nothrow_constructible_v<PublicationGateFeedView,
+                                              proton::IFeedView::SP,
+                                              std::shared_ptr<FailpointController>>);
 
 // Open failpoints are process-global because no Engine exists yet. Make them
 // thread-affine so parallel tests cannot consume a failpoint armed by another
@@ -13280,9 +13517,8 @@ typedef struct sk_grouping_filter sk_grouping_filter;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* ABI revision 15 makes predicate-query packed byte descriptors self-bounding
-   by carrying exact totals for feature keys, feature values, and range keys. */
-#define SK_NATIVE_ABI_VERSION 15U
+/* ABI revision 16 adds typed assignment of struct arrays to document updates. */
+#define SK_NATIVE_ABI_VERSION 16U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -13412,6 +13648,10 @@ SK_API int32_t sk_document_update_assign_string_array(
     const uint32_t *value_lengths, uint32_t value_count, uint32_t value_bytes_length,
     uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Copies the array contents; the caller retains and may destroy the array handle. */
+SK_API int32_t sk_document_update_assign_struct_array(
+    sk_document_update *update, const char *field, const sk_struct_array *array,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_position(
     sk_document_update *update, const char *field, double latitude, double longitude,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
@@ -14461,7 +14701,10 @@ SK_API void sk_generic_grouping_result_destroy(sk_generic_grouping_result *resul
 #include <vespa/vespalib/objects/nbostream.h>
 #include <vespa/vespalib/objects/nboserializer.h>
 #include <vespa/vespalib/objects/objectvisitor.h>
+#include <vespa/vespalib/util/destructor_callbacks.h>
 #include <vespa/vespalib/util/host_name.h>
+#include <vespa/vespalib/util/gate.h>
+#include <vespa/vespalib/util/lambdatask.h>
 #include <vespa/vespalib/util/invokeserviceimpl.h>
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
 #include <vespa/eval/eval/fast_value.h>
@@ -14483,6 +14726,7 @@ SK_API void sk_generic_grouping_result_destroy(sk_generic_grouping_result *resul
 #include <condition_variable>
 #include <cmath>
 #include <filesystem>
+#include <exception>
 #include <fcntl.h>
 #include <fstream>
 #include <iomanip>
@@ -15260,6 +15504,7 @@ public:
         sk_document_update_assign_boolean;
         sk_document_update_assign_tensor_dense;
         sk_document_update_assign_string_array;
+        sk_document_update_assign_struct_array;
         sk_document_update_assign_position;
         sk_document_update_assign_predicate;
         sk_document_update_assign_predicate_json;
