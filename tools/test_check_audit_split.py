@@ -16,6 +16,12 @@ SPEC.loader.exec_module(audit_split)
 
 
 class AuditSplitTests(unittest.TestCase):
+    def baseline(self, *ids: str) -> dict:
+        return {
+            "source_item_count": len(ids),
+            "source_item_ids_sha256": audit_split._ids_digest(set(ids)),
+        }
+
     def test_generated_manifest_passes_with_unique_ids_and_ranges(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             audit_dir = Path(temp)
@@ -26,6 +32,7 @@ class AuditSplitTests(unittest.TestCase):
             manifest = audit_split.update_manifest(
                 audit_dir,
                 {
+                    **self.baseline(),
                     "live_extensions": [
                         {
                             "trigger": "test extension",
@@ -42,7 +49,7 @@ class AuditSplitTests(unittest.TestCase):
             audit_dir = Path(temp)
             (audit_dir / "a.md").write_text("- [ ] **SK-01-001** one\n", encoding="utf-8")
             (audit_dir / "b.md").write_text("- [ ] **SK-01-001** duplicate\n", encoding="utf-8")
-            manifest = audit_split.update_manifest(audit_dir, {"live_extensions": []})
+            manifest = audit_split.update_manifest(audit_dir, {**self.baseline("SK-01-001"), "live_extensions": []})
             errors = audit_split.validate_manifest(audit_dir, manifest)
             self.assertTrue(any("duplicate checklist IDs" in error for error in errors))
 
@@ -50,7 +57,7 @@ class AuditSplitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             audit_dir = Path(temp)
             (audit_dir / "a.md").write_text("- [ ] **SK-01-001** one\n", encoding="utf-8")
-            manifest = audit_split.update_manifest(audit_dir, {"live_extensions": []})
+            manifest = audit_split.update_manifest(audit_dir, {**self.baseline("SK-01-001"), "live_extensions": []})
             manifest["files"][0]["sha256"] = "stale"
             errors = audit_split.validate_manifest(audit_dir, manifest)
             self.assertTrue(any("manifest inventory stale" in error for error in errors))
@@ -64,6 +71,7 @@ class AuditSplitTests(unittest.TestCase):
             manifest = audit_split.update_manifest(
                 audit_dir,
                 {
+                    **self.baseline(),
                     "live_extensions": [
                         {"trigger": "first", "item_ranges": ["SK-01-001..SK-01-001"], "added_item_count": 1},
                         {"trigger": "second", "item_ranges": ["SK-01-001..SK-01-002"], "added_item_count": 2},
@@ -72,6 +80,32 @@ class AuditSplitTests(unittest.TestCase):
             )
             errors = audit_split.validate_manifest(audit_dir, manifest)
             self.assertTrue(any("declared by multiple extensions" in error for error in errors))
+
+
+    def test_undeclared_new_id_fails_source_identity_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            audit_dir = Path(temp)
+            (audit_dir / "a.md").write_text(
+                "- [ ] **SK-01-001** original\n- [ ] **SK-01-002** undeclared\n",
+                encoding="utf-8",
+            )
+            manifest = audit_split.update_manifest(
+                audit_dir, {**self.baseline("SK-01-001"), "live_extensions": []}
+            )
+            errors = audit_split.validate_manifest(audit_dir, manifest)
+            self.assertTrue(any("baseline checklist contains" in error for error in errors))
+
+    def test_replacing_baseline_id_with_undeclared_id_fails_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            audit_dir = Path(temp)
+            (audit_dir / "a.md").write_text(
+                "- [ ] **SK-01-002** replacement\n", encoding="utf-8"
+            )
+            manifest = audit_split.update_manifest(
+                audit_dir, {**self.baseline("SK-01-001"), "live_extensions": []}
+            )
+            errors = audit_split.validate_manifest(audit_dir, manifest)
+            self.assertTrue(any("differs from the frozen source split" in error for error in errors))
 
 
 if __name__ == "__main__":

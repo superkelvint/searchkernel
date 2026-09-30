@@ -85,5 +85,17 @@ class ClientAuditCoverageTests(unittest.TestCase):
         self.assertTrue(any("E2E lane is outside its package root" in error for error in errors))
 
 
+    def test_production_and_support_roots_are_both_required(self) -> None:
+        catalog, manifest, files, readme = fixture()
+        manifest["client_audit_modules"]["php"]["production_roots"] = []
+        _, errors = client_coverage.derive_inventory(catalog, manifest, files, readme)
+        self.assertTrue(any("non-empty production_roots" in error for error in errors))
+
+    def test_declared_inventory_root_must_cover_a_tracked_file(self) -> None:
+        catalog, manifest, files, readme = fixture()
+        manifest["client_audit_modules"]["php"]["production_roots"].append("clients/php/src-unused")
+        _, errors = client_coverage.derive_inventory(catalog, manifest, files, readme)
+        self.assertTrue(any("root has no tracked files" in error for error in errors))
+
 if __name__ == "__main__":
     unittest.main()

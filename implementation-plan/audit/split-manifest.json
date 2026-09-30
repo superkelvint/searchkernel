@@ -2,6 +2,8 @@
   "source_file": "searchkernel-adversarial-audit-checklist-evidence-based.md",
   "source_sha256": "164b85f4687d25ce2449cac88644d032cdf6fdcf60c2c7a3b1b5f5e1a3a29848",
   "snapshot_archive_sha256": "bc439271338dc2f13945de9a34fbc9e63930a953556f49c5cda7cea416add3c1",
+  "source_item_count": 908,
+  "source_item_ids_sha256": "7b3c34c7fd99e40c09b93f5d65ec11d4ad527f3ae04ba4e7a7cc9615b21db5a2",
   "stable_item_count": 1040,
   "stable_item_unique_count": 1040,
   "files": [
@@ -117,11 +119,24 @@
     },
     {
       "file": "README.md",
-      "sha256": "124d6c6066db95a698cfa42d0f82f831a08f2ba98d97f1d2ee8b388b5e5a7ac2",
+      "sha256": "8cfce9ecdf076c5dc76697b677ec6aee888b602da749fccd0a33077d892ab0d2",
       "item_count": 0
     }
   ],
   "live_extensions": [
+    {
+      "date": "2026-09-24",
+      "files": [
+        "00-audit-method.md",
+        "16-tools.md"
+      ],
+      "trigger": "CODE_SCOPE_CHANGE: first-party transport contract reconciliation in issue #596 / PR #596",
+      "item_ranges": [
+        "SK-00-019..SK-00-019",
+        "SK-16-030..SK-16-030"
+      ],
+      "added_item_count": 2
+    },
     {
       "date": "2026-09-23",
       "file": "13-searchkerneld.md",
@@ -154,7 +169,6 @@
       "support_roots": [
         "clients/python/tests",
         "clients/python/examples",
-        "clients/python/README.md",
         "clients/python/pyproject.toml",
         "clients/python/setup.py"
       ]

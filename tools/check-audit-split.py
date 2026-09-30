@@ -37,6 +37,11 @@ def inventory(audit_dir: Path) -> list[dict[str, Any]]:
     return files
 
 
+def _ids_digest(ids: list[str] | set[str]) -> str:
+    payload = "".join(f"{item}\n" for item in sorted(set(ids)))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _extension_ids(extension: dict[str, Any]) -> list[str]:
     ranges = extension.get("item_ranges")
     if ranges is None:
@@ -107,6 +112,21 @@ def validate_manifest(audit_dir: Path, manifest: dict[str, Any]) -> list[str]:
         missing = sorted(set(extension_ids) - set(all_ids))
         if missing:
             errors.append("extension IDs missing from checklist: " + ", ".join(missing))
+
+    source_item_count = manifest.get("source_item_count")
+    source_item_ids_sha256 = manifest.get("source_item_ids_sha256")
+    if not isinstance(source_item_count, int) or source_item_count < 0:
+        errors.append("source_item_count must be a non-negative integer")
+    if not isinstance(source_item_ids_sha256, str) or not source_item_ids_sha256:
+        errors.append("source_item_ids_sha256 must be a non-empty string")
+    if isinstance(source_item_count, int) and isinstance(source_item_ids_sha256, str):
+        baseline_ids = set(all_ids) - declared_extension_ids
+        if len(baseline_ids) != source_item_count:
+            errors.append(
+                f"baseline checklist contains {len(baseline_ids)} IDs, expected {source_item_count}"
+            )
+        if _ids_digest(baseline_ids) != source_item_ids_sha256:
+            errors.append("baseline checklist ID set differs from the frozen source split")
     return errors
 
 

@@ -54,14 +54,28 @@ def derive_inventory(
             continue
         if f"]({module})" not in readme:
             errors.append(f"{client} audit module is not indexed in audit README: {module}")
-        roots = mapping.get("production_roots", []) + mapping.get("support_roots", [])
-        if not roots or not all(isinstance(root, str) and root.startswith(f"clients/{client}/") for root in roots):
-            errors.append(f"{client} must declare production_roots and support_roots under clients/{client}/")
+        production_roots = mapping.get("production_roots")
+        support_roots = mapping.get("support_roots")
+        declared_root_sets = (("production_roots", production_roots), ("support_roots", support_roots))
+        invalid_roots = False
+        for label, declared in declared_root_sets:
+            if (
+                not isinstance(declared, list)
+                or not declared
+                or not all(isinstance(root, str) and root.startswith(f"clients/{client}/") for root in declared)
+            ):
+                errors.append(f"{client} must declare non-empty {label} under clients/{client}/")
+                invalid_roots = True
+        if invalid_roots:
             continue
+        roots = production_roots + support_roots
         client_files = [path for path in tracked_files if _under_root(path, f"clients/{client}")]
         if not client_files:
             errors.append(f"registered first-party client has no tracked package files: {client}")
             continue
+        for root in roots:
+            if not any(_under_root(path, root) for path in client_files):
+                errors.append(f"{client} audit inventory root has no tracked files: {root}")
         for path in client_files:
             matches = [root for root in roots if _under_root(path, root)]
             if len(matches) != 1:
