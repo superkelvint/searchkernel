@@ -428,7 +428,7 @@ def render_limitations(
     release_support: dict[str, Any],
 ) -> str:
     lines = [
-        "# Vespa compatibility limitations",
+        "# Search Kernel limitations",
         "",
         "This file is generated from [`docs/capabilities.json`](docs/capabilities.json).",
         "Search Kernel is a thin wrapper around the pinned Vespa engine, but its",
