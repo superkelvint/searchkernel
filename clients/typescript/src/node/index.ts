@@ -213,12 +213,44 @@ export class Index extends RemoteIndex {
     }
   }
 
+  static delete(endpoint: string, target: string, transport?: ClientTransport): Promise<void>;
+  static delete(path: string): Promise<void>;
   static async delete(
-    endpoint: string,
-    target: string,
+    location: string,
+    remoteTarget?: string,
     transport?: ClientTransport,
   ): Promise<void> {
-    return RemoteIndex.delete(endpoint, target, transport ?? new NodeGrpcTransport(endpoint));
+    if (remoteTarget !== undefined) {
+      return RemoteIndex.delete(
+        location,
+        remoteTarget,
+        transport ?? new NodeGrpcTransport(location),
+      );
+    }
+
+    const { indexPath, dataRoot, target } = localLocation(location);
+    await prepareManagedDataRoot(dataRoot);
+    await ManagedLocalHost.migrateLegacy(indexPath, dataRoot, target);
+    if (existsSync(join(dataRoot, target)) && !existsSync(indexPath)) {
+      await ensureManagedMarker(indexPath, target);
+    }
+
+    const owner = await ManagedLocalHost.start(dataRoot);
+    let deleted = false;
+    try {
+      await RemoteIndex.delete(
+        owner.endpoint,
+        target,
+        new NodeGrpcTransport(owner.endpoint),
+      );
+      deleted = true;
+    } finally {
+      try {
+        await owner.close();
+      } finally {
+        if (deleted) await cleanupManagedReservation(indexPath, target);
+      }
+    }
   }
 
   override async close(): Promise<void> {
