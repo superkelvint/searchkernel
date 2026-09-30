@@ -201,7 +201,15 @@ $decoded = Protocol::decodeDocument($document);
 same('doc-1', $decoded['_id'], 'decode document id');
 same(PHP_INT_MAX, $decoded['count'], 'decode int');
 same(['one', 'two'], $decoded['tags'], 'decode list');
-same(['a' => 1, 'z' => 2], $decoded['meta'], 'decode object');
+truth($decoded['meta'] instanceof ValueObject, 'decode object preserves ValueObject identity');
+same(
+    [
+        ['key' => 'a', 'value' => 1],
+        ['key' => 'z', 'value' => 2],
+    ],
+    $decoded['meta']->entries,
+    'decode object preserves canonical key/value entries',
+);
 
 $bytes = new Bytes("\x00\xffA");
 $encodedBytes = Protocol::value($bytes);
