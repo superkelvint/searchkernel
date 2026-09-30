@@ -957,7 +957,7 @@ class SearchBuilder:
     def __init__(self, index, query):
         self.index, self.query = index, query
         self._filters, self._sort, self._fields, self._groups = [], [], None, []
-        self._search_fields = []
+        self._search_fields = None
         self._summary = None
         self._highlighting = None
         self._presentation_format = None
@@ -978,6 +978,8 @@ class SearchBuilder:
     def search_field(self, field, *, weight=None):
         if not isinstance(field, str) or not field:
             raise ValueError("search field must not be empty")
+        if self._search_fields is None:
+            self._search_fields = []
         if any(existing.field == field for existing in self._search_fields):
             raise ValueError(f"duplicate search field: {field}")
         encoded_weight = None
@@ -989,6 +991,8 @@ class SearchBuilder:
         return self
 
     def search_fields(self, *fields):
+        if self._search_fields is None:
+            self._search_fields = []
         for field in fields:
             self.search_field(field)
         return self
@@ -1347,7 +1351,7 @@ class SearchBuilder:
         return SearchRequestT(
             query=query,
             searchFields=SearchFieldSelectionT(fields=self._search_fields)
-            if self._search_fields
+            if self._search_fields is not None
             else None,
             filters=filters,
             sort=self._sort,
