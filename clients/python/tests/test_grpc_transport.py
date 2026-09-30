@@ -10,12 +10,18 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
+from searchkernel import Client, ClientError  # noqa: E402
 from searchkernel.grpc_transport import (  # noqa: E402
     DEFAULT_GRPC_TIMEOUT_SECONDS,
     MAX_GRPC_MESSAGE_SIZE,
     GrpcTransport,
 )
-from searchkernel.protocol import pack_request  # noqa: E402
+from searchkernel.protocol import pack_object, pack_request  # noqa: E402
+from SearchKernel.Protocol.V2.ResponseEnvelope import ResponseEnvelopeT  # noqa: E402
+from SearchKernel.Protocol.V2.ResponsePayload import ResponsePayload  # noqa: E402
+from SearchKernel.V2.CreateIndexResult import CreateIndexResultT  # noqa: E402
+from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
+from SearchKernel.V2.OpenIndexResult import OpenIndexResultT  # noqa: E402
 from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelope  # noqa: E402
 from SearchKernel.V2.InsertRequest import InsertRequestT  # noqa: E402
 
@@ -29,12 +35,47 @@ class _Stub:
         return SimpleNamespace(payload=b"response")
 
 
+class _FrameTransport:
+    def __init__(self, frames):
+        self.frames = list(frames)
+        self.closed = False
+
+    def call(self, _payload):
+        return self.frames.pop(0)
+
+    def close(self):
+        self.closed = True
+
+
+def _response(payload_type, payload):
+    return pack_object(
+        ResponseEnvelopeT(2, payload_type, payload),
+        file_identifier=b"SKRS",
+    )
+
+
 class GrpcTransportTest(unittest.TestCase):
     def test_ordinary_request_envelope_carries_logical_index_target(self):
         payload = pack_request("insert", InsertRequestT(), target="products")
         self.assertTrue(RequestEnvelope.RequestEnvelopeBufferHasIdentifier(payload, 0))
         request = RequestEnvelope.GetRootAs(payload)
         self.assertEqual(request.Target().Name().decode(), "products")
+
+    def test_lifecycle_success_requires_index_definition(self):
+        malformed_create = _response(
+            ResponsePayload.SearchKernel_V2_CreateIndexResult,
+            CreateIndexResultT(),
+        )
+        malformed_open = _response(
+            ResponsePayload.SearchKernel_V2_OpenIndexResult,
+            OpenIndexResultT(),
+        )
+        client = Client(_FrameTransport([malformed_create, malformed_open]), target="products")
+
+        with self.assertRaisesRegex(ClientError, "CreateIndexResult.index is missing"):
+            client.create_index(IndexDefinitionT(name="products"))
+        with self.assertRaisesRegex(ClientError, "OpenIndexResult.index is missing"):
+            client.open_index()
 
     def test_channel_uses_symmetric_large_message_limits(self):
         channel = object()
