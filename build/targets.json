@@ -798,7 +798,8 @@
       ],
       "architecture": "docs/architecture.md#rust-api",
       "test": [
-        "test:rust-api"
+        "test:rust-api",
+        "test:rust-native-e2e"
       ],
       "verify": [
         "verify:product.integration",
