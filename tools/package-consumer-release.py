@@ -396,6 +396,9 @@ def main() -> None:
             ts_descriptor = ROOT / "clients/typescript/runtime.json"
             ts_descriptor.write_text(json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             created.append(ts_descriptor)
+            ruby_descriptor = ROOT / "clients/ruby/lib/searchkernel/runtime.json"
+            ruby_descriptor.write_text(json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            created.append(ruby_descriptor)
             run(
                 sys.executable,
                 "-m",

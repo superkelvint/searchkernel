@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
+require "digest"
 require "fileutils"
 require "json"
+require "open-uri"
+require "uri"
 require "socket"
 require "tempfile"
 require "tmpdir"
@@ -113,8 +116,8 @@ module SearchKernel
       configured = ENV["SEARCHKERNEL_LOCAL_HOST"]
       return File.expand_path(configured) if configured && !configured.empty?
 
-      packaged = File.expand_path("bin/searchkerneld", __dir__)
-      return packaged if File.file?(packaged)
+      descriptor_path = File.expand_path("runtime.json", __dir__)
+      return File.join(resolve_runtime(descriptor_path), "bin", "searchkerneld") if File.file?(descriptor_path)
 
       root = File.expand_path("../../../..", __dir__)
       target_dir = ENV["CARGO_TARGET_DIR"]
@@ -125,6 +128,75 @@ module SearchKernel
       end
       File.join(root, "target", "debug", "searchkerneld")
     end
+
+    def resolve_runtime(descriptor_path)
+      descriptor = JSON.parse(File.read(descriptor_path))
+      identity_keys = %w[searchkernel_version searchkernel_revision runtime_package_generation platform native_target build_environment native_abi_version vespa_commit]
+      material = identity_keys.sort.to_h { |key| [key, descriptor.fetch(key)] }
+      derived = "skrt-v1-#{Digest::SHA256.hexdigest(JSON.generate(material))}"
+      raise ClientError, "runtime descriptor identity mismatch" unless descriptor["runtime_identity"] == derived
+      unless RUBY_PLATFORM.include?("linux") && RUBY_PLATFORM.match?(/x86_64|amd64/) && descriptor["platform"] == "linux-x86_64-glibc" && descriptor["native_target"] == "x86_64-unknown-linux-gnu"
+        raise ClientError, "runtime descriptor platform is unsupported on this host"
+      end
+      artifact_uri = URI.parse(descriptor.fetch("artifact_url"))
+      expected_artifact = "searchkernel-runtime-#{descriptor.fetch('runtime_identity')}-#{descriptor.fetch('platform')}.tar.gz"
+      unless %w[https file].include?(artifact_uri.scheme) && File.basename(artifact_uri.path) == expected_artifact
+        raise ClientError, "runtime descriptor artifact URL is not immutable or supported"
+      end
+      override = ENV["SEARCHKERNEL_RUNTIME_DIR"]
+      return validate_runtime(override, descriptor) if override && !override.empty?
+      cache = ENV["SEARCHKERNEL_RUNTIME_CACHE"] || File.join(ENV["XDG_CACHE_HOME"] || File.join(Dir.home, ".cache"), "searchkernel", "runtime")
+      final = File.join(cache, "objects", descriptor.fetch("runtime_identity"))
+      begin; return validate_runtime(final, descriptor); rescue ClientError; end
+      FileUtils.mkdir_p(File.dirname(final)); FileUtils.mkdir_p(File.join(cache, "locks"))
+      File.open(File.join(cache, "locks", "#{descriptor.fetch('runtime_identity')}.lock"), "w") do |lock|
+        lock.flock(File::LOCK_EX)
+        begin; return validate_runtime(final, descriptor); rescue ClientError; FileUtils.rm_rf(final); end
+        Dir.mktmpdir("searchkernel-runtime-", cache) do |tmp|
+          archive = File.join(tmp, "runtime.tar.gz")
+          url = descriptor.fetch("artifact_url")
+          if (origin = ENV["SEARCHKERNEL_RUNTIME_ORIGIN"]) && !origin.empty?
+            url = origin.sub(%r{/+$}, "") + "/" + File.basename(URI.parse(url).path)
+          end
+          parsed_url = URI.parse(url)
+          if parsed_url.scheme == "file"
+            File.binwrite(archive, File.binread(parsed_url.path))
+          else
+            URI.open(url) { |input| File.binwrite(archive, input.read) }
+          end
+          raise ClientError, "runtime artifact digest mismatch" unless Digest::SHA256.file(archive).hexdigest == descriptor.fetch("artifact_sha256")
+          unpack = File.join(tmp, "unpack"); Dir.mkdir(unpack)
+          system("tar", "-xzf", archive, "-C", unpack, "--no-same-owner", "--no-same-permissions", exception: true)
+          validate_runtime(unpack, descriptor); File.rename(unpack, final)
+        end
+      end
+      validate_runtime(final, descriptor)
+      rescue StandardError => error
+      raise error if error.is_a?(ClientError)
+      raise ClientError, "managed-local runtime resolution failed: #{error.message}"
+    end
+
+    def validate_runtime(root, descriptor)
+      root = File.expand_path(root)
+      manifest = JSON.parse(File.read(File.join(root, "manifest.json")))
+      %w[searchkernel_version searchkernel_revision runtime_package_generation platform native_target build_environment native_abi_version vespa_commit runtime_identity].each do |key|
+        raise ClientError, "runtime identity mismatch for #{key}" unless manifest[key] == descriptor[key]
+      end
+      %w[bin/searchkerneld bin/searchkerneld.real lib/libsearchkernel_vespa.so.2].each do |member|
+        raise ClientError, "runtime required member missing: #{member}" unless File.file?(File.join(root, member))
+      end
+      digest = Digest::SHA256.new
+      Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).select { |path| File.file?(path) && File.basename(path) != "manifest.json" }.sort.each do |path|
+        relative = path.delete_prefix(File.expand_path(root) + "/")
+        data = File.binread(path)
+        digest.update([relative.bytesize].pack("Q>")); digest.update(relative); digest.update([data.bytesize].pack("Q>")); digest.update(data)
+      end
+      raise ClientError, "runtime payload digest mismatch" unless manifest["payload_sha256"] == digest.hexdigest
+      File.expand_path(root)
+      rescue Errno::ENOENT, JSON::ParserError => error
+      raise ClientError, "runtime invalid: #{error.message}"
+    end
+
 
     def write_definition(definition)
       raise ArgumentError, "index definition must be a Hash" unless definition.is_a?(Hash)
