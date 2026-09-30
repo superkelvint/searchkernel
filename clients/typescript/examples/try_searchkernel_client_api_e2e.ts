@@ -180,8 +180,9 @@ function sharedTypedQuery(spec: any): any {
 
 async function sharedTypedQueryObservations(index: Index): Promise<Record<string, unknown>> {
   const observations: Record<string, unknown> = {};
-  for (const [scenario, input] of Object.entries<any>(PARITY_INTENTS)) {
+  for (const scenario of Object.keys(E2E_CORPUS.scenario_inputs)) {
     if (!scenario.startsWith("typed_query_")) continue;
+    const input = PARITY_INTENTS[scenario];
     const capabilities = E2E_CORPUS.client_scenario_contract[scenario].typescript;
     const supported = capabilities.query_result.kind === "comparable";
     const observation: Record<string, unknown> = { intent: input };
