@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -117,6 +118,35 @@ def check_manifests_and_runners() -> None:
         fail("root Cargo workspace still excludes or names a reference verifier tree")
 
 
+def check_example_routing() -> None:
+    packages: dict[str, set[str]] = {}
+    for manifest in (ROOT / "core/crates").glob("*/Cargo.toml"):
+        text = manifest.read_text(encoding="utf-8")
+        package = re.search(r'(?m)^name\s*=\s*"([^"]+)"', text)
+        if not package:
+            continue
+        examples = {path.stem for path in manifest.parent.glob("examples/*.rs")}
+        examples.update(re.findall(r'(?m)^name\s*=\s*"([^"]+)"', "\n".join(
+            block for block in re.findall(r'(?ms)^\[\[example\]\]\s*\n(.*?)(?=^\[|\Z)', text)
+        )))
+        packages[package.group(1)] = examples
+
+    command_pattern = re.compile(
+        r"\bcargo\b.*(?:^|\s)-p\s+([\w-]+).*--example\s+([\w-]+)"
+    )
+    for script in REFERENCE.rglob("*.sh"):
+        for line_number, line in enumerate(script.read_text(encoding="utf-8").splitlines(), 1):
+            match = command_pattern.search(line)
+            if not match:
+                continue
+            package, example = match.groups()
+            if package in packages and example not in packages[package]:
+                fail(
+                    f"{script.relative_to(ROOT)}:{line_number} invokes missing Cargo example "
+                    f"{example!r} in package {package!r}"
+                )
+
+
 def check_targets() -> None:
     missing = [path.relative_to(ROOT).as_posix() for path in MIGRATED_SOURCES if not path.is_file()]
     if missing:
@@ -192,6 +222,7 @@ def check_dead_fixture_disposition() -> None:
 
 def main() -> int:
     check_manifests_and_runners()
+    check_example_routing()
     check_targets()
     check_reference_and_oracle_preservation()
     check_dead_fixture_disposition()
