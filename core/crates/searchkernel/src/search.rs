@@ -763,62 +763,8 @@ impl SearchBuilder {
     }
 
     /// Inspect the normalized request without executing a search.
-    ///
-    /// InspectedQuery is intentionally smaller than the full portable request.
-    /// Reject intent that it cannot faithfully represent rather than silently
-    /// dropping it from the inspection result.
     pub fn inspect(self) -> crate::Result<InspectedQuery> {
-        if let Some(path) = self.unrepresentable_inspection_field() {
-            return Err(crate::Error::search(
-                crate::ErrorCode::Unsupported,
-                "inspect cannot faithfully represent the complete search request",
-            )
-            .with_detail(
-                "inspect_not_representable",
-                Some(path),
-                "this request control is not represented by InspectedQuery",
-            ));
-        }
         self.index.inspect_search(&self)
-    }
-
-    fn unrepresentable_inspection_field(&self) -> Option<&'static str> {
-        if !self.query_inputs.is_empty() {
-            return Some("inputs");
-        }
-        if !self.rank_properties.is_empty() {
-            return Some("ranking.properties");
-        }
-        if !self.groupings.is_empty() || !self.aggregations.is_empty() {
-            return Some("grouping");
-        }
-        if self.summary.is_some() {
-            return Some("presentation.summary");
-        }
-        if self.query_string.is_some()
-            || self.default_index.is_some()
-            || self.locale.is_some()
-            || !self.sources.is_empty()
-            || !self.restrict.is_empty()
-            || self.search_path.is_some()
-            || self.search_group.is_some()
-            || self.query_model_type.is_some()
-        {
-            return Some("query_model");
-        }
-        if self.format.is_some() || self.bolding.is_some() || self.timing.is_some() {
-            return Some("presentation");
-        }
-        if !self.properties.is_empty() {
-            return Some("properties");
-        }
-        if self.query_profile.is_some() {
-            return Some("query_profile");
-        }
-        if self.search_chain.is_some() {
-            return Some("search_chain");
-        }
-        None
     }
 }
 
