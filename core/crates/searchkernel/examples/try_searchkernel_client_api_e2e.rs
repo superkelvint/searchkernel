@@ -34,6 +34,7 @@ mod showcase {
         SearchResult, Sort, Tensor, TotalHitsRelation, Update, WandOptions, WeightedQueryItem,
     };
     use serde_json::{json, Value};
+    use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -69,6 +70,38 @@ mod showcase {
             "value_asc" => Ok(FacetSort::ValueAsc),
             "value_desc" => Ok(FacetSort::ValueDesc),
             other => Err(format!("unsupported facet sort: {other}").into()),
+        }
+    }
+
+    struct TrackedIntent<'a> {
+        scenario: String,
+        source: &'a Value,
+        consumed: &'a RefCell<BTreeMap<String, serde_json::Map<String, Value>>>,
+    }
+
+    impl std::ops::Index<&str> for TrackedIntent<'_> {
+        type Output = Value;
+
+        fn index(&self, key: &str) -> &Self::Output {
+            let value = &self.source[key];
+            self.consumed
+                .borrow_mut()
+                .entry(self.scenario.clone())
+                .or_default()
+                .insert(key.to_owned(), value.clone());
+            value
+        }
+    }
+
+    fn tracked_intent<'a>(
+        scenario: &str,
+        shared_inputs: &'a Value,
+        consumed: &'a RefCell<BTreeMap<String, serde_json::Map<String, Value>>>,
+    ) -> TrackedIntent<'a> {
+        TrackedIntent {
+            scenario: scenario.to_owned(),
+            source: &shared_inputs[scenario],
+            consumed,
         }
     }
 
@@ -114,12 +147,6 @@ mod showcase {
                     .ok_or("embedding cell must be numeric")
             })
             .collect::<Result<Vec<_>, _>>()?)
-    }
-
-    fn corpus_typed_query(scenario: &str) -> Result<Query, Box<dyn std::error::Error>> {
-        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
-        let query = &corpus["scenario_inputs"][scenario]["query"];
-        query_from_spec(query).map_err(Into::into)
     }
 
     fn query_from_spec(spec: &Value) -> Result<Query, String> {
@@ -383,12 +410,11 @@ mod showcase {
 
         let scenario_inputs: Value = serde_json::from_str(E2E_CORPUS)?;
         let shared_inputs = &scenario_inputs["scenario_inputs"];
-        let mut consumed_intents = serde_json::Map::new();
+        let consumed_intents: RefCell<BTreeMap<String, serde_json::Map<String, Value>>> =
+            RefCell::new(BTreeMap::new());
         macro_rules! intent {
             ($name:literal) => {{
-                let value = &shared_inputs[$name];
-                consumed_intents.insert($name.to_owned(), value.clone());
-                value
+                tracked_intent($name, shared_inputs, &consumed_intents)
             }};
         }
         let pagination_intent = intent!("pagination");
@@ -973,21 +999,25 @@ mod showcase {
         ];
         let mut typed_observations = serde_json::Map::new();
         for scenario in typed_scenarios {
-            let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
-            let input = corpus["scenario_inputs"][scenario].clone();
+            let input = tracked_intent(scenario, shared_inputs, &consumed_intents);
             let mut results = index
                 .search("")
-                .typed_query(corpus_typed_query(scenario)?)
+                .typed_query(query_from_spec(&input["query"]).map_err(|error| format!("{scenario}: {error}"))?)
                 .limit(input["limit"].as_u64().ok_or("typed query limit missing")? as u32)
                 .execute::<Value>()?;
             if input["result_order"] == "sorted_ids" {
                 results.hits.sort_by(|left, right| left.id.cmp(&right.id));
             }
+            let consumed = consumed_intents
+                .borrow()
+                .get(scenario)
+                .cloned()
+                .ok_or_else(|| format!("typed parity scenario {scenario} consumed no intent fields"))?;
             typed_observations.insert(
                 scenario.to_owned(),
                 json!({
-                    "observation": {"intent": input, "query_result": ids(&results)},
-                    "capabilities": corpus["client_scenario_contract"][scenario]["rust"],
+                    "observation": {"intent": consumed, "query_result": ids(&results)},
+                    "capabilities": scenario_inputs["client_scenario_contract"][scenario]["rust"],
                 }),
             );
         }
@@ -2316,8 +2346,8 @@ mod showcase {
             if scenario.starts_with("typed_query_") {
                 continue;
             }
-            let intent = consumed_intents.get(scenario).ok_or_else(|| {
-                format!("parity scenario {scenario} emitted an observation without consuming its shared intent")
+            let intent = consumed_intents.borrow().get(scenario).cloned().ok_or_else(|| {
+                format!("parity scenario {scenario} emitted an observation without consuming its shared intent fields")
             })?;
             let value = parity_observations
                 .get_mut(scenario)
