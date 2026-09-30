@@ -172,9 +172,9 @@ export class Index extends RemoteIndex {
     }
   }
 
-  static async open(location: string, target?: string): Promise<Index> {
-    if (target !== undefined) {
-      const client = new Client(new NodeGrpcTransport(location), target);
+  static async open(location: string, remoteTarget?: string): Promise<Index> {
+    if (remoteTarget !== undefined) {
+      const client = new Client(new NodeGrpcTransport(location), remoteTarget);
       try {
         const result = await client.openIndex();
         if (result.index === null) throw new Error("OpenIndexResult.index is missing");
