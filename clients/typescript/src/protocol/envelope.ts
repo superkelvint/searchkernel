@@ -16,7 +16,6 @@ import { UpdateRequestT } from "../generated/flatbuffers/search-kernel/v2/update
 import { UpsertRequestT } from "../generated/flatbuffers/search-kernel/v2/upsert-request.js";
 import { CreateIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/create-index-request.js";
 import { OpenIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/open-index-request.js";
-import { IndexTargetT } from "../generated/flatbuffers/search-kernel/v2/index-target.js";
 
 export const PROTOCOL_VERSION = 2;
 export const REQUEST_IDENTIFIER = "SKRQ";
