@@ -513,7 +513,11 @@ class _ManagedLocalHost:
         key = str(data_root.expanduser().resolve(strict=False))
         with _MANAGED_HOST_POOL_LOCK:
             existing = _MANAGED_HOST_POOL.get(key)
-            if existing is not None and existing.process is not None:
+            if (
+                existing is not None
+                and existing.process is not None
+                and existing.process.poll() is None
+            ):
                 existing._lease_count += 1
                 return existing
             host = cls(Path(key))
