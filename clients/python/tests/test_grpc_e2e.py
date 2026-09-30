@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel import Client, ClientError, GrpcTransport, Index, q  # noqa: E402
 from searchkernel.client import value  # noqa: E402
-from searchkernel.protocol import pack_request  # noqa: E402
+from searchkernel.protocol import pack_object, pack_request  # noqa: E402
 from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT  # noqa: E402
 from SearchKernel.V2.AnalyzeRequest import AnalyzeRequestT  # noqa: E402
 from SearchKernel.V2.AnalyzeTarget import AnalyzeTarget  # noqa: E402
@@ -137,6 +137,47 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                 except OSError:
                     time.sleep(0.05)
         self.fail("searchkerneld did not open its gRPC socket")
+
+    def _start_legacy_server(self):
+        socket_path = Path(self.tempdir.name) / "legacy-searchkerneld.sock"
+        definition_path = Path(self.tempdir.name) / "legacy-definition.fb"
+        definition_path.write_bytes(pack_object(self.definition))
+        environment = os.environ.copy()
+        environment.update({
+            "LD_LIBRARY_PATH": os.pathsep.join(
+                path for path in (str(SDK_LIB), str(VESPA_DEPS_LIB), environment.get("LD_LIBRARY_PATH"))
+                if path
+            ),
+        })
+        command = [
+            str(DAEMON),
+            "--index",
+            str(self.index_path),
+            "--definition",
+            str(definition_path),
+            "--listen",
+            f"unix://{socket_path}",
+        ]
+        self.process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                output = self.process.stderr.read().decode(errors="replace")
+                self.fail(f"legacy searchkerneld exited during startup: {output}")
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.1)
+                try:
+                    sock.connect(str(socket_path))
+                    return f"unix://{socket_path}"
+                except OSError:
+                    time.sleep(0.05)
+        self.fail("legacy searchkerneld did not open its gRPC socket")
 
     def _stop_server(self):
         if self.process is None:
@@ -265,6 +306,40 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             self.assertEqual(index.get("doc:1")["_id"], "doc:1")
         finally:
             index.close()
+
+    def test_managed_local_sibling_indexes_share_one_daemon_and_survive_handle_close(self):
+        root = Path(self.tempdir.name)
+        alpha = Index.create(root / "managed-a", fields=self.definition)
+        beta_definition = IndexDefinitionT(
+            name="managed_b",
+            fields=[_field("payload_text", 1, matching=MatchingMode.Text)],
+        )
+        beta = Index.create(root / "managed-b", fields=beta_definition)
+        try:
+            self.assertIs(alpha._owner, beta._owner)
+            alpha.upsert("doc-a", {"title": "alpha item", "category": "a", "price": 1})
+            beta.upsert("doc-b", {"payload_text": "beta item"})
+            alpha.close()
+            self.assertIsNotNone(beta.get("doc-b"))
+            beta.upsert("doc-c", {"payload_text": "still alive"})
+            self.assertIsNotNone(beta.get("doc-c"))
+        finally:
+            alpha.close()
+            beta.close()
+
+    def test_managed_local_reopens_pre_multi_index_directory_without_nesting(self):
+        endpoint = self._start_legacy_server()
+        legacy = Index(Client(GrpcTransport(endpoint)), ergonomic=True)
+        legacy.upsert("legacy-doc", {"title": "legacy layout", "category": "a", "price": 7})
+        legacy.close()
+        self._stop_server()
+
+        reopened = Index.open(self.index_path)
+        try:
+            self.assertEqual(reopened.get("legacy-doc")["title"], "legacy layout")
+            self.assertFalse((self.index_path / self.index_path.name).exists())
+        finally:
+            reopened.close()
 
     def test_shared_daemon_lifecycle_isolates_indexes_and_handle_close(self):
         endpoint = self._start_server(definition=False)
