@@ -388,8 +388,8 @@ if ($phase === 'reopen') {
     exit(0);
 }
 
-heading('1. INDEX SCHEMA + RANK PROFILES CREATED THROUGH PHP');
-echo "PHP creates the logical daemon target and canonical schema through its public lifecycle API.\n";
+heading('1. INDEX SCHEMA + RANK PROFILES PREPARED BY CANONICAL HARNESS');
+echo "PHP executes the same product corpus through the HTTP/FlatBuffers-JSON edge.\n";
 
 heading('2. INSERT DOCUMENTS');
 $documents = array_map(static function (array $document): array {
@@ -672,91 +672,34 @@ foreach ([
     ['_id' => 'typed-d4', 'title' => 'fox', 'category' => 'fox'],
     ['_id' => 'typed-d5', 'title' => 'cat', 'category' => 'cat'],
     ['_id' => 'typed-d6', 'title' => 'quick agile brown fox', 'category' => 'fox'],
-    [
-        '_id' => 'people-1',
-        'people' => [
-            ['first' => 'Ada', 'last' => 'Lovelace'],
-            ['first' => 'Grace', 'last' => 'Hopper'],
-        ],
-    ],
-    [
-        '_id' => 'people-2',
-        'people' => [
-            ['first' => 'Ada', 'last' => 'Hopper'],
-            ['first' => 'Grace', 'last' => 'Lovelace'],
-        ],
-    ],
+    ['_id' => 'people-1', 'people' => [['first' => 'Ada', 'last' => 'Lovelace'], ['first' => 'Grace', 'last' => 'Hopper']]],
+    ['_id' => 'people-2', 'people' => [['first' => 'Ada', 'last' => 'Hopper'], ['first' => 'Grace', 'last' => 'Lovelace']]],
     ['_id' => 'geo-inside', 'location' => ['latitude' => 37.3, 'longitude' => -121.9]],
     ['_id' => 'geo-outside', 'location' => ['latitude' => 40.7, 'longitude' => -74.0]],
-] as $document) {
-    $index->upsert($document);
-}
+] as $document) $index->upsert($document);
 
-$phrase = $index->query(
-    Query::contains('title', Query::phrase('quick', 'brown'))
-)->limit(20)->execute();
+$phrase = $index->query(Query::contains('title', Query::phrase('quick', 'brown')))->limit(20)->execute();
 assertIds($phrase, ['typed-d1']);
-
-$nearIds = ids($index->query(
-    Query::contains('title', Query::near('quick', 'brown'))
-)->limit(20)->execute());
+$nearIds = ids($index->query(Query::contains('title', Query::near('quick', 'brown')))->limit(20)->execute());
 sort($nearIds);
 same(['typed-d1', 'typed-d2', 'typed-d6'], $nearIds, 'typed near accepts reverse order and one-gap proximity');
-
-$orderedNearIds = ids($index->query(
-    Query::contains('title', Query::onear('quick', 'brown'))
-)->limit(20)->execute());
+$orderedNearIds = ids($index->query(Query::contains('title', Query::onear('quick', 'brown')))->limit(20)->execute());
 sort($orderedNearIds);
 same(['typed-d1', 'typed-d6'], $orderedNearIds, 'typed ordered-near rejects reverse order');
-
-$fuzzyIds = ids($index->query(
-    Query::contains('category', Query::fuzzy('foxx'))
-)->limit(20)->execute());
+$fuzzyIds = ids($index->query(Query::contains('category', Query::fuzzy('foxx')))->limit(20)->execute());
 sort($fuzzyIds);
-same(
-    ['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'],
-    $fuzzyIds,
-    'typed fuzzy excludes unrelated terms',
-);
-
-$weakAndIds = ids($index->query(Query::weakAnd(
-    Query::contains('title', 'quick'),
-    Query::contains('title', 'fox'),
-))->limit(20)->execute());
+same(['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'], $fuzzyIds, 'typed fuzzy excludes unrelated terms');
+$weakAndIds = ids($index->query(Query::weakAnd(Query::contains('title', 'quick'), Query::contains('title', 'fox')))->limit(20)->execute());
 sort($weakAndIds);
-same(
-    ['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'],
-    $weakAndIds,
-    'typed weak-and keeps one-term-only matches',
-);
-
-$wandIds = ids($index->query(
-    Query::wand('title', ['quick' => 10, 'fox' => 1])
-)->limit(20)->execute());
+same(['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'], $weakAndIds, 'typed weak-and keeps one-term-only matches');
+$wandIds = ids($index->query(Query::wand('title', ['quick' => 10, 'fox' => 1]))->limit(20)->execute());
 sort($wandIds);
-same(
-    ['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'],
-    $wandIds,
-    'typed WAND keeps one-term-only matches',
-);
-
-$sameElement = $index->query(Query::contains(
-    'people',
-    Query::sameElement(
-        Query::contains('first', 'Ada'),
-        Query::contains('last', 'Lovelace'),
-    ),
-))->limit(20)->execute();
+same(['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'], $wandIds, 'typed WAND keeps one-term-only matches');
+$sameElement = $index->query(Query::contains('people', Query::sameElement(Query::contains('first', 'Ada'), Query::contains('last', 'Lovelace'))))->limit(20)->execute();
 assertIds($sameElement, ['people-1']);
-
-$geoLocation = $index->query(
-    Query::geoLocation('location', 37.3, -121.9, '10km')
-)->limit(10)->execute();
+$geoLocation = $index->query(Query::geoLocation('location', 37.3, -121.9, '10km'))->limit(10)->execute();
 assertIds($geoLocation, ['geo-inside']);
-
-$geoBox = $index->query(
-    Query::geoBox('location', 37.0, -122.2, 37.6, -121.5)
-)->limit(10)->execute();
+$geoBox = $index->query(Query::geoBox('location', 37.0, -122.2, 37.6, -121.5))->limit(10)->execute();
 assertIds($geoBox, ['geo-inside']);
 
 heading('RANKING, SCALAR FEATURES, AND OPAQUE FEATURES');
