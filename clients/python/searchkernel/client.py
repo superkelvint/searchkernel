@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import signal
@@ -331,20 +332,98 @@ _MANAGED_HOST_POOL_LOCK = threading.Lock()
 _MANAGED_HOST_POOL: dict[str, "_ManagedLocalHost"] = {}
 
 
-def _managed_location(path: Path) -> tuple[Path, str]:
-    canonical = path.expanduser().resolve(strict=False)
-    target = canonical.name
-    if (
-        not target
-        or len(target.encode("utf-8")) > 128
-        or target[0] not in "abcdefghijklmnopqrstuvwxyz0123456789"
-        or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in target)
-    ):
+_MANAGED_DATA_ROOT_NAME = ".searchkernel-managed"
+_MANAGED_MARKER_NAME = ".searchkernel-managed-target"
+
+
+def _managed_location(path: Path) -> tuple[Path, Path, str]:
+    # Keep the caller's lexical path identity stable even after a legacy index
+    # is migrated out of that directory. Never realpath through a marker or
+    # symlink when deriving the logical target.
+    canonical = Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
+    target = "local-" + hashlib.sha256(str(canonical).encode("utf-8")).hexdigest()[:32]
+    return canonical, canonical.parent / _MANAGED_DATA_ROOT_NAME, target
+
+
+def _managed_marker(path: Path) -> Path:
+    return path / _MANAGED_MARKER_NAME
+
+
+def _write_managed_marker(path: Path, target: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.mkdir(exist_ok=True)
+    marker = _managed_marker(path)
+    marker.write_text(target + "\n", encoding="utf-8")
+
+
+def _reserve_managed_path(path: Path, target: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.mkdir()
+    except FileExistsError as exc:
+        raise ClientError(f"managed-local index path already exists: {path}") from exc
+    try:
+        _managed_marker(path).write_text(target + "\n", encoding="utf-8")
+    except Exception:
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+        raise
+
+
+def _cleanup_managed_reservation(path: Path, target: str) -> None:
+    marker = _managed_marker(path)
+    try:
+        if marker.is_file() and marker.read_text(encoding="utf-8").strip() == target:
+            marker.unlink()
+            path.rmdir()
+    except OSError:
+        pass
+
+
+def _managed_host_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    sdk_lib = os.environ.get("SEARCHKERNEL_SDK_LIB")
+    if sdk_lib:
+        previous = environment.get("LD_LIBRARY_PATH")
+        environment["LD_LIBRARY_PATH"] = f"{sdk_lib}:{previous}" if previous else sdk_lib
+    return environment
+
+
+def _migrate_legacy_managed_path(path: Path, data_root: Path, target: str) -> None:
+    destination = data_root / target
+    if destination.is_dir() or _managed_marker(path).is_file() or not path.exists():
+        return
+
+    binary = _host_binary()
+    if not binary.is_file():
         raise ClientError(
-            "managed-local index directory name must match "
-            "[a-z0-9][a-z0-9_-]{0,127}; rename the directory to a canonical logical target"
+            f"managed local host binary not found at {binary}; build searchkerneld first"
         )
-    return canonical.parent, target
+    completed = subprocess.run(
+        [
+            str(binary),
+            "--migrate-index",
+            str(path),
+            "--data-root",
+            str(data_root),
+            "--target",
+            target,
+        ],
+        cwd=Path(__file__).resolve().parents[3],
+        env=_managed_host_environment(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if completed.returncode != 0:
+        output = completed.stdout.decode("utf-8", errors="replace").strip()
+        suffix = f"\nsearchkerneld output:\n{output}" if output else ""
+        raise ClientError(
+            f"managed-local legacy index migration failed for {path}{suffix}"
+        )
+    _write_managed_marker(path, target)
 
 
 def _host_binary() -> Path:
@@ -471,11 +550,7 @@ class _ManagedLocalHost:
             raise ClientError(
                 f"managed local host binary not found at {binary}; build searchkerneld first"
             )
-        environment = os.environ.copy()
-        sdk_lib = os.environ.get("SEARCHKERNEL_SDK_LIB")
-        if sdk_lib:
-            previous = environment.get("LD_LIBRARY_PATH")
-            environment["LD_LIBRARY_PATH"] = f"{sdk_lib}:{previous}" if previous else sdk_lib
+        environment = _managed_host_environment()
         command = [
             str(binary),
             "--data-root",
@@ -696,14 +771,20 @@ class Index:
                 client.close()
                 raise
             return cls(client, ergonomic=True)
-        data_root, target = _managed_location(Path(path))
-        owner = _ManagedLocalHost.acquire(data_root)
-        client = Client(GrpcTransport(owner.endpoint), target=target)
+        canonical_path, data_root, target = _managed_location(Path(path))
+        _reserve_managed_path(canonical_path, target)
+        owner = None
+        client = None
         try:
+            owner = _ManagedLocalHost.acquire(data_root)
+            client = Client(GrpcTransport(owner.endpoint), target=target)
             client.create_index(_index_definition(fields, rank_profiles))
         except Exception:
-            client.close()
-            owner.close()
+            if client is not None:
+                client.close()
+            if owner is not None:
+                owner.close()
+            _cleanup_managed_reservation(canonical_path, target)
             raise
         return cls(client, owner, ergonomic=True)
 
@@ -717,7 +798,10 @@ class Index:
                 client.close()
                 raise
             return cls(client, ergonomic=True)
-        data_root, target = _managed_location(Path(path))
+        canonical_path, data_root, target = _managed_location(Path(path))
+        _migrate_legacy_managed_path(canonical_path, data_root, target)
+        if (data_root / target).is_dir() and not canonical_path.exists():
+            _write_managed_marker(canonical_path, target)
         owner = _ManagedLocalHost.acquire(data_root)
         client = Client(GrpcTransport(owner.endpoint), target=target)
         try:
