@@ -44,7 +44,11 @@ class QualificationPolicyTests(unittest.TestCase):
             runner,
         )
         self.assertIn(
-            "cp -R examples/release-quickstart /artifacts/consumer-release-tools/quickstarts",
+            "mkdir -p /artifacts/consumer-release-tools/quickstarts",
+            runner,
+        )
+        self.assertIn(
+            "cp -R examples/release-quickstart/. /artifacts/consumer-release-tools/quickstarts/",
             runner,
         )
         self.assertIn(
