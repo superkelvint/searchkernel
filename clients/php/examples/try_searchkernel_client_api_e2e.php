@@ -262,6 +262,7 @@ function captureRealEngineParity(Index $index): array
     $facetSpec = $intents['facets'];
     $faceted = $index->search($facetSpec['query'])->facet($facetSpec['field'], name: $facetSpec['name'], limit: $facetSpec['limit'], sort: $facetSpec['sort'])->limit($facetSpec['page_limit'])->execute();
     $rootSpec = $intents['root_aggregations'];
+    if ($rootSpec['kind'] !== 'browse') throw new RuntimeException('root_aggregations requires browse intent');
     $root = $index->browse()->filter($rootSpec['filter'])
         ->aggregate(Agg::count()->as($rootSpec['aggregations'][0]['name']))
         ->aggregate(Agg::sum($rootSpec['aggregations'][1]['field'])->as($rootSpec['aggregations'][1]['name']))
@@ -326,6 +327,7 @@ function captureRealEngineParity(Index $index): array
     $page = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->offset($orderedSpec['offset'])->limit($orderedSpec['limit'])->execute();
     $filteredFacet = $index->search($filteredSpec['query'])->filter($filteredSpec['filter'])->facet($filteredSpec['field'], limit: $filteredSpec['limit'], sort: $filteredSpec['sort'])->limit($filteredSpec['page_limit'])->execute();
     $nestedSpec = $intents['nested_grouping'];
+    if ($nestedSpec['kind'] !== 'browse') throw new RuntimeException('nested_grouping requires browse intent');
     $nested = $index->browse()->filter($nestedSpec['filter']['source'], $nestedSpec['filter']['bindings'])->group(
         Group::by($nestedSpec['group_by'])->limit($nestedSpec['limit'])->output(Agg::count()->as($nestedSpec['outputs'][0]['name']))
             ->subgroup(Group::by($nestedSpec['nested']['group_by'])->limit($nestedSpec['nested']['limit'])->output(Agg::count()->as($nestedSpec['nested']['outputs'][0]['name']), Agg::avg($nestedSpec['nested']['outputs'][1]['field'])->as($nestedSpec['nested']['outputs'][1]['name'])))
@@ -355,6 +357,7 @@ function captureRealEngineParity(Index $index): array
     foreach ($rankPropertySpec['rank_properties'] as $key => $value) $rankPropertyBuilder = $rankPropertyBuilder->rankProperty($key, $value);
     $rankProperty = $rankPropertyBuilder->limit($rankPropertySpec['limit'])->execute();
     $degradedSpec = $intents['coverage_degradation'];
+    if ($degradedSpec['kind'] !== 'browse') throw new RuntimeException('coverage_degradation requires browse intent');
     $degradedBuilder = $index->browse()->filter($degradedSpec['filter']['source'], $degradedSpec['filter']['bindings'])->sort($degradedSpec['sort'][0]['field'], $degradedSpec['sort'][0]['direction']);
     foreach ($degradedSpec['rank_properties'] as $key => $value) $degradedBuilder = $degradedBuilder->rankProperty($key, $value);
     $degraded = $degradedBuilder->limit($degradedSpec['limit'])->execute();
