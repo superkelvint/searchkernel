@@ -37,6 +37,17 @@ end
 
 E2E_CORPUS_PATH = File.expand_path("../../../reference/client-real-e2e-parity/corpus.json", __dir__)
 E2E_CORPUS = JSON.parse(File.read(E2E_CORPUS_PATH))
+
+def normalize_corpus_field_value(name, value)
+  field = E2E_CORPUS.fetch("schema").fetch("fields").fetch(name, {})
+  field["type"] == "float64" && !value.nil? ? Float(value) : value
+end
+
+def normalize_corpus_document(document)
+  document.to_h do |name, value|
+    [name, normalize_corpus_field_value(name, value)]
+  end
+end
 PARITY_CONSUMED_INTENTS = {}
 
 class ConsumedIntent
@@ -109,10 +120,10 @@ def typed_query_for_scenario(scenario, intent)
   when "typed_query_range", "typed_query_range_exclusive"
     SearchKernel::Query.range(
       field,
-      gte: intent.fetch("include_lower") ? intent.fetch("lower") : nil,
-      gt: intent.fetch("include_lower") ? nil : intent.fetch("lower"),
-      lte: intent.fetch("include_upper") ? intent.fetch("upper") : nil,
-      lt: intent.fetch("include_upper") ? nil : intent.fetch("upper")
+      gte: intent.fetch("include_lower") ? normalize_corpus_field_value(field, intent.fetch("lower")) : nil,
+      gt: intent.fetch("include_lower") ? nil : normalize_corpus_field_value(field, intent.fetch("lower")),
+      lte: intent.fetch("include_upper") ? normalize_corpus_field_value(field, intent.fetch("upper")) : nil,
+      lt: intent.fetch("include_upper") ? nil : normalize_corpus_field_value(field, intent.fetch("upper"))
     )
   when "typed_query_boolean"
     left, right = intent.fetch("or_terms")
@@ -126,8 +137,8 @@ def typed_query_for_scenario(scenario, intent)
         SearchKernel::Query.contains(negative.fetch("field"), negative.fetch("value"))
       )
     )
-  when "typed_query_in" then SearchKernel::Query.in_values(field, intent.fetch("values"))
-  when "typed_query_equals" then SearchKernel::Query.eq(field, intent.fetch("value"))
+  when "typed_query_in" then SearchKernel::Query.in_values(field, intent.fetch("values").map { |value| normalize_corpus_field_value(field, value) })
+  when "typed_query_equals" then SearchKernel::Query.eq(field, normalize_corpus_field_value(field, intent.fetch("value")))
   when "typed_query_fuzzy" then SearchKernel::Query.contains(field, SearchKernel::Query.fuzzy(intent.fetch("value")))
   when "typed_query_weak_and"
     SearchKernel::Query.weak_and(*intent.fetch("terms").map { |term| SearchKernel::Query.contains(term.fetch("field"), term.fetch("value")) })
@@ -339,15 +350,15 @@ def capture_real_engine_parity(index)
   check(negative_limit_rejected && negative_offset_rejected && page_and_limit_rejected && page_and_offset_rejected,
         "builder misuse inputs are rejected")
   update_spec = intents.fetch("advanced_update")
-  index.insert(update_spec.fetch("initial").merge("_id" => update_spec.fetch("document_id")))
+  index.insert(normalize_corpus_document(update_spec.fetch("initial")).merge("_id" => update_spec.fetch("document_id")))
   update_builder = index.update(update_spec.fetch("document_id"))
-  update_spec.fetch("set").each { |key, value| update_builder = update_builder.set(key, value) }
+  update_spec.fetch("set").each { |key, value| update_builder = update_builder.set(key, normalize_corpus_field_value(key, value)) }
   update_spec.fetch("unset").each { |field| update_builder = update_builder.unset(field) }
-  update_spec.fetch("increments").each { |key, value| update_builder = update_builder.increment(key, value) }
+  update_spec.fetch("increments").each { |key, value| update_builder = update_builder.increment(key, normalize_corpus_field_value(key, value)) }
   update_builder.execute
-  update_spec.fetch("decrements").each { |key, value| index.update(update_spec.fetch("document_id")).decrement(key, value).execute }
-  update_spec.fetch("multipliers").each { |key, value| index.update(update_spec.fetch("document_id")).multiply(key, value).execute }
-  update_spec.fetch("divisors").each { |key, value| index.update(update_spec.fetch("document_id")).divide(key, value).execute }
+  update_spec.fetch("decrements").each { |key, value| index.update(update_spec.fetch("document_id")).decrement(key, normalize_corpus_field_value(key, value)).execute }
+  update_spec.fetch("multipliers").each { |key, value| index.update(update_spec.fetch("document_id")).multiply(key, normalize_corpus_field_value(key, value)).execute }
+  update_spec.fetch("divisors").each { |key, value| index.update(update_spec.fetch("document_id")).divide(key, normalize_corpus_field_value(key, value)).execute }
   advanced_update = index.get(update_spec.fetch("document_id"))
   observations = {
     "document_crud" => {"id" => document.fetch("_id"), "title" => document.fetch("title"), "brand" => document.fetch("brand"), "price" => document.fetch("price")},
@@ -406,9 +417,15 @@ def write_real_engine_parity(observations)
 
   # SDK result maps can be frozen; the parity writer adds intent metadata.
   observations = JSON.parse(JSON.generate(observations))
+  intent_aliases = {
+    "sorted_search" => "pagination",
+    "filtered_search" => "filtered_facets",
+    "hybrid" => "hybrid_text_vector",
+    "unknown_field_error" => "structured_filter_error",
+  }
   observations.each do |scenario, value|
     next if scenario.start_with?("typed_query_")
-    intent = PARITY_CONSUMED_INTENTS[scenario]
+    intent = PARITY_CONSUMED_INTENTS[intent_aliases.fetch(scenario, scenario)]
     raise "parity scenario #{scenario} emitted an observation without consuming its shared intent" unless intent
 
     payload = value.is_a?(Hash) && value.key?("observation") ? value.fetch("observation") : value
@@ -466,14 +483,14 @@ end
 index = SearchKernel::Index.create(index_path, fields: fields, rank_profiles: rank_profiles)
 begin
   E2E_CORPUS.fetch("documents").each do |source|
-    document = source.dup
+    document = normalize_corpus_document(source)
     document["embedding"] = embedding(*document.fetch("embedding")) if document["embedding"]
     index.insert(document)
   end
 
   probe_spec = E2E_CORPUS.fetch("coverage_probes")
   probe_spec.fetch("count").times do |probe|
-    document = probe_spec.fetch("document").dup
+    document = normalize_corpus_document(probe_spec.fetch("document"))
     document["_id"] = "degraded-#{probe}"
     document["embedding"] = embedding(*document.fetch("embedding"))
     index.insert(document)
@@ -481,9 +498,9 @@ begin
 
   PARITY_OBSERVATIONS.merge!(capture_real_engine_parity(index))
   patch_spec = PARITY_INTENTS.fetch("patch")
-  index.insert(patch_spec.fetch("initial").merge("_id" => patch_spec.fetch("document_id")))
+  index.insert(normalize_corpus_document(patch_spec.fetch("initial")).merge("_id" => patch_spec.fetch("document_id")))
   patch_builder = index.patch(patch_spec.fetch("document_id"))
-  patch_spec.fetch("set").each { |key, value| patch_builder = patch_builder.set(key, value) }
+  patch_spec.fetch("set").each { |key, value| patch_builder = patch_builder.set(key, normalize_corpus_field_value(key, value)) }
   patch_spec.fetch("unset").each { |field| patch_builder = patch_builder.unset(field) }
   patch_builder.execute
   mutated = index.get(patch_spec.fetch("document_id"))
@@ -492,7 +509,7 @@ begin
   parity_mutation_deleted = index.delete(delete_spec.fetch("document_id"))
   PARITY_OBSERVATIONS["delete"] = {"deleted" => parity_mutation_deleted, "absent_after_delete" => index.get(delete_spec.fetch("document_id")).nil?}
   reopen_spec = PARITY_INTENTS.fetch("reopen_persistence")
-  index.insert(reopen_spec.fetch("marker").merge("_id" => reopen_spec.fetch("marker_id")))
+  index.insert(normalize_corpus_document(reopen_spec.fetch("marker")).merge("_id" => reopen_spec.fetch("marker_id")))
 
   results = index.search("shoes")
     .filter("price <= :max", "max" => 100.0)
@@ -773,6 +790,7 @@ begin
   end
   upsert_spec = PARITY_INTENTS.fetch("upsert_replacement")
   replacement = upsert_spec.fetch("replacement").reject { |key, _value| key == "vector_document_id" }
+  replacement = normalize_corpus_document(replacement)
   replacement["embedding"] = embedding(*corpus_vector(upsert_spec.fetch("replacement").fetch("vector_document_id")))
   index.upsert(upsert_spec.fetch("document_id"), replacement)
   upserted_shoe2 = index.get(upsert_spec.fetch("document_id"))

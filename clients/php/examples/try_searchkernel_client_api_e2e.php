@@ -97,6 +97,25 @@ final class ConsumedIntentMap implements ArrayAccess
 $parityIntents = new ConsumedIntentMap($e2eCorpus['scenario_inputs']);
 $vectorType = $e2eCorpus['schema']['fields']['embedding']['type'];
 define('VECTOR_TYPE', $vectorType);
+function normalizeCorpusFieldValue(string $name, mixed $value): mixed
+{
+    global $e2eCorpus;
+    if (($e2eCorpus['schema']['fields'][$name]['type'] ?? null) === 'float64' && $value !== null) {
+        return (float) $value;
+    }
+    return $value;
+}
+
+function normalizeCorpusDocument(array $document): array
+{
+    foreach ($document as $name => $value) {
+        if (is_string($name)) {
+            $document[$name] = normalizeCorpusFieldValue($name, $value);
+        }
+    }
+    return $document;
+}
+
 function corpusVector(string $documentId): array
 {
     global $e2eCorpus;
@@ -215,10 +234,10 @@ function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
         'typed_query_ordered_near' => Query::contains($field, Query::onear(...$intent['terms'])),
         'typed_query_range', 'typed_query_range_exclusive' => Query::range(
             $field,
-            gte: $intent['include_lower'] ? $intent['lower'] : null,
-            gt: $intent['include_lower'] ? null : $intent['lower'],
-            lte: $intent['include_upper'] ? $intent['upper'] : null,
-            lt: $intent['include_upper'] ? null : $intent['upper'],
+            gte: $intent['include_lower'] ? normalizeCorpusFieldValue($field, $intent['lower']) : null,
+            gt: $intent['include_lower'] ? null : normalizeCorpusFieldValue($field, $intent['lower']),
+            lte: $intent['include_upper'] ? normalizeCorpusFieldValue($field, $intent['upper']) : null,
+            lt: $intent['include_upper'] ? null : normalizeCorpusFieldValue($field, $intent['upper']),
         ),
         'typed_query_boolean' => Query::allOf(
             Query::anyOf(
@@ -227,8 +246,11 @@ function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
             ),
             Query::negate(Query::contains($intent['not_term']['field'], $intent['not_term']['value'])),
         ),
-        'typed_query_in' => Query::inValues($field, $intent['values']),
-        'typed_query_equals' => Query::eq($field, $intent['value']),
+        'typed_query_in' => Query::inValues($field, array_map(
+            static fn (mixed $value): mixed => normalizeCorpusFieldValue($field, $value),
+            $intent['values'],
+        )),
+        'typed_query_equals' => Query::eq($field, normalizeCorpusFieldValue($field, $intent['value'])),
         'typed_query_fuzzy' => Query::contains($field, Query::fuzzy($intent['value'])),
         'typed_query_weak_and' => Query::weakAnd(...array_map(
             static fn (array $term): array => Query::contains($term['field'], $term['value']),
@@ -308,7 +330,7 @@ function sharedTypedQueryObservations(Index $index): array
 
 function captureRealEngineParity(Index $index): array
 {
-    global $parityIntents;
+    global $parityIntents, $parityConsumedIntents;
     $corpus = searchkernelPhpClientApiE2eCorpus();
     $typedObservations = sharedTypedQueryObservations($index);
     $intents = $parityIntents;
@@ -380,7 +402,8 @@ function captureRealEngineParity(Index $index): array
     $projection = $index->search($projectionSpec['query'])->sort($projectionSpec['sort'][0]['field'], $projectionSpec['sort'][0]['direction'])->fields(...$projectionSpec['projection'])->limit($projectionSpec['limit'])->execute();
     $allSorted = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit($orderedSpec['all_limit'])->execute();
     $page = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->offset($orderedSpec['offset'])->limit($orderedSpec['limit'])->execute();
-    $filteredFacet = $index->search($filteredSpec['query'])->filter($filteredSpec['filter'])->facet($filteredSpec['field'], limit: $filteredSpec['limit'], sort: $filteredSpec['sort'])->limit($filteredSpec['page_limit'])->execute();
+    $filteredFacetBuilder = $index->search($filteredSpec['query'])->filter($filteredSpec['filter'])->facet($filteredSpec['field'], limit: $filteredSpec['limit'], sort: $filteredSpec['sort'])->limit($filteredSpec['page_limit']);
+    $filteredFacet = $filteredFacetBuilder->execute();
     $nestedSpec = $intents['nested_grouping'];
     if ($nestedSpec['kind'] !== 'browse') throw new RuntimeException('nested_grouping requires browse intent');
     $nested = $index->browse()->filter($nestedSpec['filter']['source'], $nestedSpec['filter']['bindings'])->group(
@@ -434,15 +457,15 @@ function captureRealEngineParity(Index $index): array
 
     $groups = groupingGroups($grouped);
     $updateSpec = $intents['advanced_update'];
-    $index->insert(['_id' => $updateSpec['document_id'], ...$updateSpec['initial']]);
+    $index->insert(['_id' => $updateSpec['document_id'], ...normalizeCorpusDocument($updateSpec['initial'])]);
     $updateBuilder = $index->update($updateSpec['document_id']);
-    foreach ($updateSpec['set'] as $field => $value) $updateBuilder = $updateBuilder->set($field, $value);
+    foreach ($updateSpec['set'] as $field => $value) $updateBuilder = $updateBuilder->set($field, normalizeCorpusFieldValue($field, $value));
     foreach ($updateSpec['unset'] as $field) $updateBuilder = $updateBuilder->unset($field);
-    foreach ($updateSpec['increments'] as $field => $value) $updateBuilder = $updateBuilder->increment($field, $value);
+    foreach ($updateSpec['increments'] as $field => $value) $updateBuilder = $updateBuilder->increment($field, normalizeCorpusFieldValue($field, $value));
     $updateBuilder->execute();
-    foreach ($updateSpec['decrements'] as $field => $value) $index->update($updateSpec['document_id'])->decrement($field, $value)->execute();
-    foreach ($updateSpec['multipliers'] as $field => $value) $index->update($updateSpec['document_id'])->multiply($field, $value)->execute();
-    foreach ($updateSpec['divisors'] as $field => $value) $index->update($updateSpec['document_id'])->divide($field, $value)->execute();
+    foreach ($updateSpec['decrements'] as $field => $value) $index->update($updateSpec['document_id'])->decrement($field, normalizeCorpusFieldValue($field, $value))->execute();
+    foreach ($updateSpec['multipliers'] as $field => $value) $index->update($updateSpec['document_id'])->multiply($field, normalizeCorpusFieldValue($field, $value))->execute();
+    foreach ($updateSpec['divisors'] as $field => $value) $index->update($updateSpec['document_id'])->divide($field, normalizeCorpusFieldValue($field, $value))->execute();
     $advancedUpdate = $index->get($updateSpec['document_id']);
     $misuseSpec = $intents['builder_misuse'];
     $observations = [
@@ -535,14 +558,21 @@ function writeRealEngineParity(array $scenarios): void
         return;
     }
     global $parityConsumedIntents;
+    $intentAliases = [
+        'sorted_search' => 'pagination',
+        'filtered_search' => 'filtered_facets',
+        'hybrid' => 'hybrid_text_vector',
+        'unknown_field_error' => 'structured_filter_error',
+    ];
     foreach ($scenarios as $scenario => &$value) {
         if (str_starts_with($scenario, 'typed_query_')) {
             continue;
         }
-        if (!array_key_exists($scenario, $parityConsumedIntents)) {
+        $intentName = $intentAliases[$scenario] ?? $scenario;
+        if (!array_key_exists($intentName, $parityConsumedIntents)) {
             throw new RuntimeException("parity scenario {$scenario} emitted an observation without consuming its shared intent");
         }
-        $intent = $parityConsumedIntents[$scenario];
+        $intent = $parityConsumedIntents[$intentName];
         if (isset($value['observation']) && is_array($value['observation'])) {
             $value['observation']['intent'] ??= $intent;
         } elseif (is_array($value) && !array_is_list($value)) {
@@ -576,7 +606,7 @@ if ($phase === 'initial') {
     $secondHandle = Index::open($url, $target);
     $firstHandle->close();
     check(
-        $secondHandle->describe()['name'] === $index->describe()['name'],
+        $secondHandle->describe() === $index->describe(),
         'closing one PHP handle leaves an already-open sibling usable'
     );
     $secondHandle->close();
@@ -585,7 +615,7 @@ if ($phase === 'initial') {
     $other = Index::create(
         $url,
         $otherTarget,
-        searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE),
+        searchkernelPhpClientApiE2eDefinition($e2eCorpus),
     );
     $other->upsert([
         '_id' => 'php-isolation',
@@ -606,9 +636,11 @@ if ($phase === 'reopen') {
 
     same(null, $index->get('shoe-3'), 'deleted document remains deleted');
     $reopenSpec = $parityIntents['reopen_persistence'];
+    $reopenMarkerIntent = $reopenSpec['marker'];
     $upsertSpec = $parityIntents['upsert_replacement'];
     $persisted = $index->get($reopenSpec['marker_id']);
     check($persisted !== null, 'parity-reopen survives daemon and index reopen');
+    same($reopenMarkerIntent['title'], $persisted['title'], 'reopen marker title matches the shared scenario intent');
     $persistedShoe2 = $index->get($upsertSpec['document_id']);
     writeRealEngineParity(['reopen_persistence' => [
         'marker' => ['title' => $persisted['title'], 'price' => $persisted['price'], 'inventory' => $persisted['inventory']],
@@ -696,6 +728,7 @@ echo "PHP executes the same product corpus through the HTTP/FlatBuffers-JSON edg
 
 heading('2. INSERT DOCUMENTS');
 $documents = array_map(static function (array $document): array {
+    $document = normalizeCorpusDocument($document);
     if (isset($document['embedding']) && is_array($document['embedding'])) {
         $document['embedding'] = embedding($document['embedding']);
     }
@@ -707,6 +740,7 @@ foreach ($documents as $document) {
 $probeSpec = $e2eCorpus['coverage_probes'];
 for ($probe = 0; $probe < $probeSpec['count']; $probe++) {
     $document = $probeSpec['document'];
+    $document = normalizeCorpusDocument($document);
     $document['_id'] = "degraded-{$probe}";
     $document['embedding'] = embedding($document['embedding']);
     $index->insert($document);
@@ -714,9 +748,9 @@ for ($probe = 0; $probe < $probeSpec['count']; $probe++) {
 
 $parity = captureRealEngineParity($index);
 $patchSpec = $parityIntents['patch'];
-$index->insert(['_id' => $patchSpec['document_id'], ...$patchSpec['initial']]);
+$index->insert(['_id' => $patchSpec['document_id'], ...normalizeCorpusDocument($patchSpec['initial'])]);
 $patchBuilder = $index->patch($patchSpec['document_id']);
-foreach ($patchSpec['set'] as $field => $value) $patchBuilder = $patchBuilder->set($field, $value);
+foreach ($patchSpec['set'] as $field => $value) $patchBuilder = $patchBuilder->set($field, normalizeCorpusFieldValue($field, $value));
 foreach ($patchSpec['unset'] as $field) $patchBuilder = $patchBuilder->unset($field);
 $patchBuilder->execute();
 $mutated = $index->get($patchSpec['document_id']);
@@ -725,7 +759,7 @@ $deleteSpec = $parityIntents['delete'];
 $parityMutationDeleted = $index->delete($deleteSpec['document_id']);
 $parity['delete'] = ['deleted' => $parityMutationDeleted, 'absent_after_delete' => $index->get($deleteSpec['document_id']) === null];
 $reopenSpec = $parityIntents['reopen_persistence'];
-$index->insert(['_id' => $reopenSpec['marker_id'], ...$reopenSpec['marker']]);
+$index->insert(['_id' => $reopenSpec['marker_id'], ...normalizeCorpusDocument($reopenSpec['marker'])]);
 
 heading('3. GET BY ID');
 $doc = $index->get('shoe-1');
@@ -1203,6 +1237,7 @@ check(!$index->delete('shoe-3'), 'duplicate delete false');
 heading('28. UPSERT REPLACEMENT');
 $upsertSpec = $parityIntents['upsert_replacement'];
 $replacement = $upsertSpec['replacement'];
+$replacement = normalizeCorpusDocument($replacement);
 $vectorDocumentId = $replacement['vector_document_id'];
 unset($replacement['vector_document_id']);
 $index->upsert(['_id' => $upsertSpec['document_id'], ...$replacement, 'embedding' => embedding(corpusVector($vectorDocumentId))]);

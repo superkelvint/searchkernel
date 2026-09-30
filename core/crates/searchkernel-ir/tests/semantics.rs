@@ -1602,11 +1602,15 @@ fn v2_result_direct_hit_and_nonfinite_value_variants_are_encoded() {
         .expect("direct hit root");
     assert_eq!(hit.id(), Some("direct-hit"));
     let fields = hit.fields().expect("hit fields");
-    assert_eq!(
+    let value = |name| {
         fields
-            .get(0)
-            .value()
-            .unwrap()
+            .iter()
+            .find(|field| field.key() == name)
+            .and_then(|field| field.value())
+            .unwrap_or_else(|| panic!("missing result field {name}"))
+    };
+    assert_eq!(
+        value("bytes")
             .kind_as_bytes_value()
             .unwrap()
             .value()
@@ -1616,45 +1620,30 @@ fn v2_result_direct_hit_and_nonfinite_value_variants_are_encoded() {
         [1, 2, 255].into_iter().collect::<Vec<_>>()
     );
     assert_eq!(
-        fields
-            .get(1)
-            .value()
-            .unwrap()
+        value("infinity")
             .kind_as_non_finite_float_value()
             .unwrap()
             .kind(),
         api::NonFiniteFloatKind::PositiveInfinity
     );
-    assert!(fields
-        .get(2)
-        .value()
-        .unwrap()
-        .kind_as_value_list()
-        .is_some());
+    assert!(value("list").kind_as_value_list().is_some());
     assert_eq!(
-        fields
-            .get(3)
-            .value()
-            .unwrap()
+        value("nan")
             .kind_as_non_finite_float_value()
             .unwrap()
             .kind(),
         api::NonFiniteFloatKind::NaN
     );
-    assert!(fields
-        .get(4)
-        .value()
-        .unwrap()
-        .kind_as_value_object()
-        .is_some());
     assert_eq!(
-        fields
-            .get(5)
-            .value()
+        value("negative_infinity")
+            .kind_as_non_finite_float_value()
             .unwrap()
-            .kind_as_tensor_value()
-            .unwrap()
-            .type_spec(),
+            .kind(),
+        api::NonFiniteFloatKind::NegativeInfinity
+    );
+    assert!(value("object").kind_as_value_object().is_some());
+    assert_eq!(
+        value("tensor").kind_as_tensor_value().unwrap().type_spec(),
         Some("tensor(x[2])")
     );
 }

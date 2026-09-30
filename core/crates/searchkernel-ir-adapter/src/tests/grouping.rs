@@ -21,11 +21,40 @@ fn canonical_facet_labels_preserve_fast_path_or_named_grouping_semantics() {
     );
     named.root.label = Some("brands".to_owned());
     let lowered = lower_groupings(&[named]).expect("custom-named facet should lower");
-    let [crate::search::GroupingLowering::Native(native)] = lowered.as_slice() else {
-        panic!("custom-named facet must use grouping plan to preserve its label");
+    let [crate::search::GroupingLowering::Facet(facet)] = lowered.as_slice() else {
+        panic!("custom-named facet should preserve the native facet fast path");
     };
-    assert_eq!(native.plan.root_label.as_deref(), Some("brands"));
-    assert_eq!(native.plan.levels[0].label.as_deref(), Some("brands"));
+    assert_eq!(facet.name, "brands");
+    assert_eq!(facet.field, "brand");
+}
+
+#[test]
+fn explicit_positive_value_order_preserves_facet_limit_lowering() {
+    let mut request = facet_grouping(
+        "brand",
+        2,
+        searchkernel_vespa_engine::GroupingOrder::ValueAscending,
+    );
+    let GroupingOperationIr::Each(each) = &mut request.root.operations[1] else {
+        panic!("facet request must contain each operations");
+    };
+    let GroupingOperationIr::Order(order) = &mut each.operations[1] else {
+        panic!("facet request must contain an order operation");
+    };
+    order[0] = GroupingExpressionIr::Positive(Box::new(GroupingExpressionIr::Attribute(
+        "brand".to_owned(),
+    )));
+
+    let lowered = lower_groupings(&[request]).expect("equivalent ascending order should lower");
+    let [crate::search::GroupingLowering::Facet(facet)] = lowered.as_slice() else {
+        panic!("explicit positive field order must preserve native facet lowering");
+    };
+    assert_eq!(facet.field, "brand");
+    assert_eq!(facet.limit, 2);
+    assert_eq!(
+        facet.order,
+        searchkernel_vespa_engine::GroupingOrder::ValueAscending
+    );
 }
 
 #[test]

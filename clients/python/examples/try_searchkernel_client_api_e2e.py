@@ -130,6 +130,20 @@ def corpus_vector(document_id: str) -> tuple[float, ...]:
     return tuple(document["embedding"])
 
 
+def normalize_corpus_document(document: dict) -> dict:
+    normalized = dict(document)
+    for name, spec in E2E_CORPUS["schema"]["fields"].items():
+        if spec["type"] == "float64" and name in normalized and normalized[name] is not None:
+            normalized[name] = float(normalized[name])
+    return normalized
+
+
+def normalize_corpus_field_value(name: str, value):
+    if E2E_CORPUS["schema"]["fields"].get(name, {}).get("type") == "float64" and value is not None:
+        return float(value)
+    return value
+
+
 SHOE_1_VECTOR = corpus_vector("shoe-1")
 SHOE_2_VECTOR = corpus_vector("shoe-2")
 SHOE_3_VECTOR = corpus_vector("shoe-3")
@@ -256,6 +270,11 @@ PARITY_OBSERVATIONS: dict[str, object] = {}
 
 def typed_query_for_scenario(scenario, intent):
     field = intent.get("field")
+    def typed_value(field_name, value):
+        if E2E_CORPUS["schema"]["fields"].get(field_name, {}).get("type") == "float64":
+            return float(value)
+        return value
+
     if scenario == "typed_query_term":
         return q.term(field, intent["value"])
     if scenario == "typed_query_contains":
@@ -268,7 +287,7 @@ def typed_query_for_scenario(scenario, intent):
         return q.contains(field, q.onear(*intent["terms"]))
     if scenario in {"typed_query_range", "typed_query_range_exclusive"}:
         return q.range(
-            field, intent["lower"], intent["upper"],
+            field, typed_value(field, intent["lower"]), typed_value(field, intent["upper"]),
             include_lower=intent["include_lower"],
             include_upper=intent["include_upper"],
         )
@@ -280,9 +299,9 @@ def typed_query_for_scenario(scenario, intent):
             q.negate(q.contains(negative["field"], negative["value"])),
         )
     if scenario == "typed_query_in":
-        return q.in_values(field, intent["values"])
+        return q.in_values(field, [typed_value(field, value) for value in intent["values"]])
     if scenario == "typed_query_equals":
-        return q.equals(field, intent["value"])
+        return q.equals(field, typed_value(field, intent["value"]))
     if scenario == "typed_query_fuzzy":
         return q.contains(field, q.fuzzy(intent["value"]))
     if scenario == "typed_query_weak_and":
@@ -489,15 +508,15 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     assert_raises((TypeError, ValueError), lambda: index.search(misuse_spec["query"]).limit(misuse_spec["negative_limit"]), "negative limit rejected")
     assert_raises((TypeError, ValueError), lambda: index.search(misuse_spec["query"]).offset(misuse_spec["negative_offset"]), "negative offset rejected")
     update_spec = intents["advanced_update"]
-    index.insert(update_spec["document_id"], update_spec["initial"])
+    index.insert(update_spec["document_id"], normalize_corpus_document(update_spec["initial"]))
     update_builder = index.update(update_spec["document_id"])
-    for key, value in update_spec["set"].items(): update_builder = update_builder.set(key, value)
+    for key, value in update_spec["set"].items(): update_builder = update_builder.set(key, normalize_corpus_field_value(key, value))
     for key in update_spec["unset"]: update_builder = update_builder.unset(key)
-    for key, value in update_spec["increments"].items(): update_builder = update_builder.increment(key, value)
+    for key, value in update_spec["increments"].items(): update_builder = update_builder.increment(key, normalize_corpus_field_value(key, value))
     update_builder.execute()
-    for key, value in update_spec["decrements"].items(): index.update(update_spec["document_id"]).decrement(key, value).execute()
-    for key, value in update_spec["multipliers"].items(): index.update(update_spec["document_id"]).multiply(key, value).execute()
-    for key, value in update_spec["divisors"].items(): index.update(update_spec["document_id"]).divide(key, value).execute()
+    for key, value in update_spec["decrements"].items(): index.update(update_spec["document_id"]).decrement(key, normalize_corpus_field_value(key, value)).execute()
+    for key, value in update_spec["multipliers"].items(): index.update(update_spec["document_id"]).multiply(key, normalize_corpus_field_value(key, value)).execute()
+    for key, value in update_spec["divisors"].items(): index.update(update_spec["document_id"]).divide(key, normalize_corpus_field_value(key, value)).execute()
     advanced_update = index.get(update_spec["document_id"])
     group_values = [
         {"brand": group.value, "products": group.get("products"), "avg_price": group.get("avg_price")}
@@ -558,10 +577,17 @@ def capture_real_engine_parity(index) -> dict[str, object]:
 def write_real_engine_parity(observations: dict[str, object]) -> None:
     output = os.getenv("SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT")
     if output:
+        intent_aliases = {
+            "sorted_search": "pagination",
+            "filtered_search": "filtered_facets",
+            "hybrid": "hybrid_text_vector",
+            "unknown_field_error": "structured_filter_error",
+        }
         for scenario, value in observations.items():
             if scenario.startswith("typed_query_"):
                 continue
-            intent = PARITY_CONSUMED_INTENTS.get(scenario)
+            intent_name = intent_aliases.get(scenario, scenario)
+            intent = PARITY_CONSUMED_INTENTS.get(intent_name)
             if intent is None:
                 raise RuntimeError(f"parity scenario {scenario} emitted an observation without consuming its shared intent")
             payload = value.get("observation", value) if isinstance(value, dict) else None
@@ -614,7 +640,7 @@ with Index.create(
 
     documents = []
     for source in E2E_CORPUS["documents"]:
-        document = dict(source)
+        document = normalize_corpus_document(source)
         if "embedding" in document:
             document["embedding"] = embedding(*document["embedding"])
         documents.append(document)
@@ -625,7 +651,7 @@ with Index.create(
 
     probe_spec = E2E_CORPUS["coverage_probes"]
     for probe in range(probe_spec["count"]):
-        document = dict(probe_spec["document"])
+        document = normalize_corpus_document(probe_spec["document"])
         document["_id"] = f"degraded-{probe}"
         document["embedding"] = embedding(*document["embedding"])
         index.insert(document)
@@ -633,9 +659,9 @@ with Index.create(
 
     PARITY_OBSERVATIONS.update(capture_real_engine_parity(index))
     patch_spec = PARITY_INTENTS["patch"]
-    index.insert(patch_spec["document_id"], patch_spec["initial"])
+    index.insert(patch_spec["document_id"], normalize_corpus_document(patch_spec["initial"]))
     patch_builder = index.patch(patch_spec["document_id"])
-    for key, value in patch_spec["set"].items(): patch_builder = patch_builder.set(key, value)
+    for key, value in patch_spec["set"].items(): patch_builder = patch_builder.set(key, normalize_corpus_field_value(key, value))
     for key in patch_spec["unset"]: patch_builder = patch_builder.unset(key)
     patch_builder.execute()
     mutated = index.get(patch_spec["document_id"])
@@ -644,7 +670,7 @@ with Index.create(
     parity_mutation_deleted = index.delete(delete_spec["document_id"])
     PARITY_OBSERVATIONS["delete"] = {"deleted": parity_mutation_deleted, "absent_after_delete": index.get(delete_spec["document_id"]) is None}
     reopen_spec = PARITY_INTENTS["reopen_persistence"]
-    index.insert({"_id": reopen_spec["marker_id"], **reopen_spec["marker"]})
+    index.insert({"_id": reopen_spec["marker_id"], **normalize_corpus_document(reopen_spec["marker"])})
 
     # -----------------------------------------------------------------------
     # GET
@@ -1577,7 +1603,7 @@ with Index.create(
     heading("28. UPSERT REPLACEMENT")
 
     upsert_spec = PARITY_INTENTS["upsert_replacement"]
-    replacement = dict(upsert_spec["replacement"])
+    replacement = normalize_corpus_document(upsert_spec["replacement"])
     vector_document_id = replacement.pop("vector_document_id")
     index.upsert({"_id": upsert_spec["document_id"], **replacement, "embedding": embedding(*corpus_vector(vector_document_id))})
 

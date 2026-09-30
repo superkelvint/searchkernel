@@ -545,6 +545,9 @@ fn facet_from_grouping(grouping: &searchkernel_ir::GroupingRequestIr) -> Option<
             FacetSort::ValueDesc
         }
         Expr::Attribute(_) => FacetSort::ValueAsc,
+        Expr::Positive(value) if matches!(value.as_ref(), Expr::Attribute(_)) => {
+            FacetSort::ValueAsc
+        }
         _ => return None,
     };
     let facet = Facet::new(field).limit(limit).sort(sort);

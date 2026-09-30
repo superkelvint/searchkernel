@@ -592,6 +592,8 @@ fn convert_facet_group(
         if child.fields.len() != 1 {
             return Ok(None);
         }
+        // Keep signed grouping values in the generic result tree; facet counts
+        // are projected only from the canonical unsigned-count shape.
         let Some(core::Value::UInt64(count)) = child.fields.get("count") else {
             return Ok(None);
         };

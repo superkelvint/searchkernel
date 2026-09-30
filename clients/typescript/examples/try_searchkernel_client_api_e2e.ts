@@ -470,9 +470,15 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
 function writeRealEngineParity(observations: Record<string, unknown>): void {
   const path = process.env.SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT;
   if (path) {
+    const intentAliases: Record<string, string> = {
+      sorted_search: "pagination",
+      filtered_search: "filtered_facets",
+      hybrid: "hybrid_text_vector",
+      unknown_field_error: "structured_filter_error",
+    };
     for (const [scenario, value] of Object.entries<any>(observations)) {
       if (scenario.startsWith("typed_query_")) continue;
-      const intent = PARITY_CONSUMED_INTENTS.get(scenario);
+      const intent = PARITY_CONSUMED_INTENTS.get(intentAliases[scenario] ?? scenario);
       if (intent === undefined) throw new Error(`parity scenario ${scenario} emitted an observation without consuming its shared intent`);
       const payload = value && value.observation ? value.observation : value;
       if (Array.isArray(payload)) observations[scenario] = { intent, result: value };

@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FacetLowering {
     pub(crate) field: String,
+    pub(crate) name: String,
     pub(crate) limit: u32,
     pub(crate) order: searchkernel_vespa_engine::GroupingOrder,
 }
@@ -725,14 +726,6 @@ pub(crate) fn facet_lowering(value: &searchkernel_ir::GroupingRequestIr) -> Opti
     else {
         return None;
     };
-    if value
-        .root
-        .label
-        .as_deref()
-        .is_some_and(|label| label != field)
-    {
-        return None;
-    }
     if each.label.is_some() {
         return None;
     }
@@ -765,10 +758,14 @@ pub(crate) fn facet_lowering(value: &searchkernel_ir::GroupingRequestIr) -> Opti
         Expr::Attribute(value) if value == field => {
             searchkernel_vespa_engine::GroupingOrder::ValueAscending
         }
+        Expr::Positive(value) if matches!(value.as_ref(), Expr::Attribute(value) if value == field) => {
+            searchkernel_vespa_engine::GroupingOrder::ValueAscending
+        }
         _ => return None,
     };
     Some(FacetLowering {
         field: field.clone(),
+        name: value.root.label.clone().unwrap_or_else(|| field.clone()),
         limit: *limit,
         order,
     })
