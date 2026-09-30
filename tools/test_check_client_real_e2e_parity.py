@@ -156,10 +156,14 @@ class RealE2EParityComparatorTests(unittest.TestCase):
     def test_float_tolerance_is_relative_and_absolute(self):
         self.assertEqual([], compare({"score": 100.0}, {"score": 100.00005}))
         self.assertTrue(compare({"score": 100.0}, {"score": 100.01}))
+        self.assertEqual([], compare(100.0, 100.00005))
+        self.assertTrue(compare(100.0, 100.01))
 
     def test_integer_semantics_reject_float_drift_and_float_kind(self):
-        self.assertTrue(compare({"total": 7}, {"total": 7.0000005}))
-        self.assertTrue(compare({"total": 7}, {"total": 7.0}))
+        self.assertTrue(compare(7, 7.0))
+        self.assertTrue(compare(7, 7.0000005))
+        self.assertTrue(compare({"integer_value": 7}, {"integer_value": 7.0}))
+        self.assertTrue(compare({"integer_value": 7}, {"integer_value": 7.0000005}))
         self.assertEqual([], compare({"count": 7}, {"count": 7}))
 
     def test_close_float_values_pass_and_material_drift_fails(self):
@@ -169,6 +173,8 @@ class RealE2EParityComparatorTests(unittest.TestCase):
             self.assertTrue(compare({"score": 1.0}, {"score": invalid}))
 
     def test_integer_and_boolean_kinds_remain_exact(self):
+        self.assertTrue(compare(True, 1))
+        self.assertTrue(compare(False, 0))
         self.assertTrue(compare({"count": 1}, {"count": 2}))
         self.assertTrue(compare({"count": 1}, {"count": True}))
         self.assertTrue(compare({"count": 0}, {"count": False}))

@@ -15,10 +15,13 @@ ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "reference/client-real-e2e-parity/corpus.json"
 CLIENTS = ("rust", "python", "typescript", "php", "ruby")
 FLOAT_TOLERANCE = 1e-6
-INTEGER_FIELDS = {
-    "total", "total_hits", "count", "products", "rating", "inventory",
-    "rerank_count", "hits", "limit", "offset", "integer_value", "value",
-    "documents", "results", "results_full", "nodes",
+FLOAT_SEMANTIC_KEYS = {
+    # Search scores and explicitly floating fields/aggregations. JavaScript's
+    # JSON encoder can serialize a float such as 3.0 as `3`; these paths carry
+    # the domain type that the wire representation no longer preserves.
+    "price", "sale_price", "avg_price", "sum_price", "min_price", "max_price",
+    "revenue", "score", "scores", "top_score", "feature", "relevance",
+    "percent", "sum", "avg", "min", "max", "stddev",
 }
 REQUIRED_TYPED_SCENARIOS = (
     "typed_query_contains", "typed_query_phrase", "typed_query_range",
@@ -52,9 +55,9 @@ def compare(expected: Any, actual: Any, path: str = "$", differences: list[str] 
             differences.append(f"{path}: {expected!r} != {actual!r}")
         return differences
     if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-        if path.rsplit(".", 1)[-1] in INTEGER_FIELDS:
-            if type(expected) is not int or type(actual) is not int or expected != actual:
-                differences.append(f"{path}: integer semantics require exact integers, got {expected!r} != {actual!r}")
+        float_semantics = path.rsplit(".", 1)[-1] in FLOAT_SEMANTIC_KEYS
+        if type(expected) is not type(actual) and not float_semantics:
+            differences.append(f"{path}: numeric types differ, got {type(expected).__name__} != {type(actual).__name__}")
             return differences
         if isinstance(expected, int) and isinstance(actual, int):
             if expected != actual:

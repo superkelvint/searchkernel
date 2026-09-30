@@ -36,7 +36,7 @@ function term(item: string): QueryExprT { return new QueryExprT(QueryExprKind.Te
 function weightedItems(items: Record<string, number>): WeightedQueryItemT[] {
   return Object.entries(items).sort(([left], [right]) => left.localeCompare(right)).map(([key, weight]) => {
     if (!Number.isSafeInteger(weight)) throw new RangeError("weighted query weights must be safe integers");
-    return new WeightedQueryItemT(value(key), weight);
+    return new WeightedQueryItemT(value(key), BigInt(weight));
   });
 }
 export const q = {

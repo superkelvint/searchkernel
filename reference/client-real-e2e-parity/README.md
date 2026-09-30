@@ -27,10 +27,13 @@ alongside its observations. The checker validates runtime results, compares
 the remaining shared observations, and fails on absent clients, absent
 scenarios, uncontracted skips, or differing comparable observations.
 
-Integer-semantic fields (counts, totals, integer document fields, and related
-values) require an integer JSON representation and exact equality. Booleans are
-distinct. Other finite numeric fields use relative and absolute tolerance
-`1e-6`; NaN and infinity never compare successfully.
+Numeric comparison preserves JSON integer and float kinds: integers require
+exact equality, and an integer never compares equal to a float. Booleans remain
+distinct from both. Finite floats use relative and absolute tolerance `1e-6`;
+NaN and infinity never compare successfully. A small explicit set of result
+paths whose domain type is floating (prices, scores, and floating aggregation
+outputs) uses float semantics even when a client encoder writes an integral
+float such as `3.0` as the JSON token `3`.
 
 Snapshots contain observable results from the shared showcase scenarios,
 including search order and counts, document and tensor values, groups and
