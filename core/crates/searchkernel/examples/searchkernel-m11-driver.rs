@@ -975,6 +975,7 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     second.join().map_err(|_| "overlap mutation B panicked")??;
     native_gate.release()?;
     first.join().map_err(|_| "overlap mutation A panicked")??;
+    drop(native_gate);
     if !search_ids(&engine, 21, 10)?
         .iter()
         .any(|id| id == "overlap-a")
