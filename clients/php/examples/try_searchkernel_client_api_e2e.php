@@ -230,7 +230,7 @@ function captureRealEngineParity(Index $index): array
     $typedObservations = sharedTypedQueryObservations($index);
     $intents = $parityIntents;
     $orderedSpec = $intents['pagination'];
-    $ordered = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit(20)->execute();
+    $ordered = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit($orderedSpec['all_limit'])->execute();
     $filteredSpec = $intents['filtered_facets'];
     $filtered = $index->search($filteredSpec['query'])->filter($filteredSpec['filter'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit($filteredSpec['page_limit'])->execute();
     $facetSpec = $intents['facets'];
