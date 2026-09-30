@@ -1743,6 +1743,27 @@ mod tests {
     }
 
     #[test]
+    fn inspect_keeps_canonical_validation_errors_ahead_of_fidelity_errors() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::text("title")),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+        let error = runtime
+            .index()
+            .browse()
+            .limit(10)
+            .property("hits", 5)
+            .inspect()
+            .expect_err("overlapping generic property must fail canonically");
+        assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
+        assert_eq!(
+            error.details()[0].code,
+            "property_overlaps_typed_field"
+        );
+    }
+
+    #[test]
     fn raw_grouping_reports_canonical_unsupported_error() {
         let runtime = IndexRuntime::from_backend(
             IndexDefinition::new().field(Field::keyword("brand").facetable(true)),
