@@ -8,7 +8,7 @@ import { QueryNotT } from "../generated/flatbuffers/search-kernel/v2/query-not.j
 import { QueryOrT } from "../generated/flatbuffers/search-kernel/v2/query-or.js";
 import { QueryPhraseT } from "../generated/flatbuffers/search-kernel/v2/query-phrase.js";
 import { QueryNearT } from "../generated/flatbuffers/search-kernel/v2/query-near.js";
-import { QueryONearT } from "../generated/flatbuffers/search-kernel/v2/query-o-near.js";
+import { QueryONearT } from "../generated/flatbuffers/search-kernel/v2/query-onear.js";
 import { QueryComparisonT } from "../generated/flatbuffers/search-kernel/v2/query-comparison.js";
 import { ComparisonOp } from "../generated/flatbuffers/search-kernel/v2/comparison-op.js";
 import { QueryRangeT } from "../generated/flatbuffers/search-kernel/v2/query-range.js";
