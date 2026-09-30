@@ -798,6 +798,33 @@ mod tests {
     }
 
     #[test]
+    fn ascending_field_order_preserves_bare_canonical_expression() {
+        let request = GroupingPlan::new()
+            .level(
+                GroupingPlan::by("category")
+                    .order_by([GroupingOrder::field("brand", false)])
+                    .output(GroupingAggregation::count()),
+            )
+            .into_ir()
+            .expect("ascending grouping order should convert");
+        let GroupingOperationIr::Each(each) = &request.root.operations[1] else {
+            panic!("expected group/each grouping topology");
+        };
+        let order = each
+            .operations
+            .iter()
+            .find_map(|operation| match operation {
+                GroupingOperationIr::Order(expressions) => Some(expressions),
+                _ => None,
+            })
+            .expect("ascending order should be present");
+        assert_eq!(
+            order,
+            &[GroupingExpressionIr::Attribute("brand".to_owned())]
+        );
+    }
+
+    #[test]
     fn keep_unlimited_and_aggregation_order_reach_canonical_operations() {
         let request = GroupingPlan::new()
             .level(
