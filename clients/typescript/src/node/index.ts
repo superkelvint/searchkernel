@@ -1,4 +1,4 @@
-import { Index as RemoteIndex, Client } from "../client/index.js";
+import { Index as RemoteIndex, Client, SearchKernelError } from "../client/index.js";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -43,6 +43,7 @@ function indexDefinition(options: CreateIndexOptions): IndexDefinitionT {
 
 const MANAGED_DATA_ROOT_NAME = ".searchkernel-managed";
 const MANAGED_MARKER_NAME = ".searchkernel-managed-target";
+const MANAGED_ROOT_MARKER_NAME = ".searchkernel-data-root";
 
 function localLocation(path: string): { indexPath: string; dataRoot: string; target: string } {
   const indexPath = resolve(path);
@@ -52,6 +53,31 @@ function localLocation(path: string): { indexPath: string; dataRoot: string; tar
     dataRoot: join(dirname(indexPath), MANAGED_DATA_ROOT_NAME),
     target,
   };
+}
+
+async function prepareManagedDataRoot(dataRoot: string): Promise<void> {
+  await mkdir(dirname(dataRoot), { recursive: true });
+  const marker = join(dataRoot, MANAGED_ROOT_MARKER_NAME);
+  if (existsSync(dataRoot)) {
+    if (!existsSync(marker)) {
+      throw new SearchKernelError(
+        `managed-local data root is not owned by Search Kernel: ${dataRoot}`,
+      );
+    }
+    return;
+  }
+
+  let created = false;
+  try {
+    await mkdir(dataRoot);
+    created = true;
+    await writeFile(marker, "searchkernel-managed-v1\n", { flag: "wx" });
+  } catch (error) {
+    if (created) {
+      await rm(dataRoot, { recursive: true, force: true }).catch(() => undefined);
+    }
+    throw error;
+  }
 }
 
 async function reserveManagedPath(indexPath: string, target: string): Promise<void> {
@@ -119,6 +145,7 @@ export class Index extends RemoteIndex {
     }
 
     const { indexPath, dataRoot, target } = localLocation(location);
+    await prepareManagedDataRoot(dataRoot);
     await reserveManagedPath(indexPath, target);
     let owner: ManagedLocalHost | null = null;
     let client: Client | null = null;
@@ -150,6 +177,7 @@ export class Index extends RemoteIndex {
     }
 
     const { indexPath, dataRoot, target } = localLocation(location);
+    await prepareManagedDataRoot(dataRoot);
     await ManagedLocalHost.migrateLegacy(indexPath, dataRoot, target);
     if (existsSync(join(dataRoot, target)) && !existsSync(indexPath)) {
       await ensureManagedMarker(indexPath, target);
