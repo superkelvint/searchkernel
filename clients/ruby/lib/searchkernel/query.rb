@@ -8,8 +8,15 @@ module SearchKernel
   module Query
     module_function
 
-    def term(item)
-      typed(term_expr(item))
+    def term(*args)
+      case args.length
+      when 1
+        typed(term_expr(args[0]))
+      when 2
+        contains(args[0], typed(term_expr(args[1])))
+      else
+        raise ArgumentError, "term expects value or field, value"
+      end
     end
 
     def contains(field, item)
@@ -90,6 +97,18 @@ module SearchKernel
       Wire.name!(field, "matches field")
       Wire.name!(pattern, "matches pattern")
       typed("expr_type" => "QueryMatches", "expr" => { "field" => { "path" => field }, "pattern" => pattern })
+    end
+
+    def prefix(field, value)
+      matches(field, "#{literal_regex(value)}.*")
+    end
+
+    def substring(field, value)
+      matches(field, ".*#{literal_regex(value)}.*")
+    end
+
+    def suffix(field, value)
+      matches(field, ".*#{literal_regex(value)}")
     end
 
     def text(text)
@@ -229,6 +248,12 @@ module SearchKernel
       source.dig("source", "query")
     end
     private_class_method :expression
+
+    def literal_regex(value)
+      specials = ".^$*+?()[]{}|\\".chars.to_h { |character| [character, true] }
+      value.to_s.each_char.map { |character| specials[character] ? "\\#{character}" : character }.join
+    end
+    private_class_method :literal_regex
 
     def term_expr(item)
       { "expr_type" => "TermQuery", "expr" => { "value" => Value.encode(item) } }

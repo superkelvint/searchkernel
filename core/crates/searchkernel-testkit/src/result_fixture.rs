@@ -116,6 +116,7 @@ fn value_variants_result() -> searchkernel_ir::SearchResult {
         ("int64_min".into(), Value::Int64(i64::MIN)),
         ("list".into(), nested),
         ("empty_string".into(), Value::String(String::new())),
+        ("empty_object".into(), Value::Object(BTreeMap::new())),
         (
             "object".into(),
             Value::Object(BTreeMap::from([
@@ -1679,13 +1680,63 @@ mod expanded_canonical_corpus {
                     "result-malformed-unknown-response-payload-union.skrs",
                     "envelope",
                 ),
+                ("result-malformed-missing-search-result-root.skrs", "result"),
+                (
+                    "result-malformed-missing-search-result-total-hits.skrs",
+                    "result",
+                ),
+                (
+                    "result-malformed-missing-search-result-root-and-total-hits.skrs",
+                    "result",
+                ),
+                (
+                    "result-malformed-missing-continuation-key.skrs",
+                    "structural",
+                ),
+                ("result-malformed-missing-continuation-value.skrs", "result"),
+                (
+                    "result-malformed-missing-sparse-address-dimension.skrs",
+                    "structural",
+                ),
+                (
+                    "result-malformed-missing-sparse-address-label.skrs",
+                    "result",
+                ),
+                (
+                    "result-malformed-missing-mixed-address-dimension.skrs",
+                    "structural",
+                ),
+                (
+                    "result-malformed-missing-mixed-address-label.skrs",
+                    "result",
+                ),
+                ("result-malformed-missing-value-entry-value.skrs", "result"),
+                (
+                    "result-malformed-non-finite-dense-tensor-cell.skrs",
+                    "result",
+                ),
+                (
+                    "result-malformed-non-finite-sparse-tensor-cell.skrs",
+                    "result",
+                ),
+                (
+                    "result-malformed-non-finite-mixed-tensor-cell.skrs",
+                    "result",
+                ),
             ] {
                 let bytes = std::fs::read(directory.join(name)).unwrap();
-                let envelope =
-                    searchkernel_ir::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
-                        .unwrap_or_else(|error| {
-                            panic!("{name} envelope should be structurally valid: {error:?}")
-                        });
+                let decoded =
+                    searchkernel_ir::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes);
+                if class == "structural" {
+                    assert!(
+                        decoded.is_err(),
+                        "{name} should fail FlatBuffers verification"
+                    );
+                    continue;
+                }
+                let envelope = decoded.unwrap_or_else(|error| {
+                    panic!("{name} envelope should be structurally valid: {error:?}")
+                });
                 let Some(result) = envelope.payload_as_search_kernel_v2_search_result() else {
                     assert_eq!(class, "envelope", "{name} must retain SearchResult payload");
                     continue;
@@ -1696,6 +1747,21 @@ mod expanded_canonical_corpus {
                     "malformed result fixture was accepted: {name}"
                 );
             }
+        }
+
+        #[test]
+        fn missing_continuation_key_fixture_preserves_other_map_keys() {
+            let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../reference/result-response-conformance/fixtures");
+            let bytes =
+                std::fs::read(directory.join("result-malformed-missing-continuation-key.skrs"))
+                    .unwrap();
+            let error =
+                searchkernel_ir::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes).unwrap_err();
+            assert!(
+                format!("{error:?}").contains("field_name: \"continuations\""),
+                "only the continuation key should be missing: {error:?}"
+            );
         }
     }
 }

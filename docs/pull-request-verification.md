@@ -1,65 +1,74 @@
-# Pull request behavioral verification
+# Pull request verification
 
-Substantive pull requests are verified against the exact source head SHA that is
-being reviewed. Verification from an older SHA is stale after a rebase,
-force-push, conflict resolution, manual branch reconstruction, or any other
-head-changing operation.
+Search Kernel keeps mandatory pull-request CI intentionally small and runs
+specialist verification explicitly against exact revisions.
 
-The `Behavioral verification` workflow is the executable merge-verification
-surface. It runs on every pull request without a path filter. Its classifier
-selects only the behavioral lanes affected by the changed paths, while the
-final `Behavioral verification / Exact-head gate` job is always present.
+## Mandatory PR gate
 
-Every checkout in that workflow explicitly uses
-`github.event.pull_request.head.sha`, and every selected lane calls
-`.github/ci/exact_head.py assert-head` before testing. A run therefore cannot
-reuse behavioral evidence produced from a different checked-out revision.
-The workflow concurrency group also cancels an older run when the same pull
-request receives a new head.
-
-## Change-aware lanes
-
-The classifier intentionally separates behavior by implementation surface:
-
-| Changed surface | Required behavior |
-| --- | --- |
-| Rust workspace, API schemas, core crates, or `searchkerneld` | Workspace Rust tests with all targets and no native default features |
-| Python client or shared portable/client-contract inputs | Python client unit tests |
-| TypeScript client or shared portable/client-contract inputs | TypeScript typecheck and Vitest suite |
-| Native adapter, Vespa engine/bindings, IR adapter, or frozen Vespa verifier inputs | The authoritative I-series product gate, `./reference/vespa/verify-through.sh i` |
-
-API schema changes select Rust, Python, and TypeScript because the portable
-contract is shared by those surfaces. Documentation-only and CI-only changes do
-not run unrelated product suites, but the exact-head helper regression tests
-still run in the classifier job.
-
-The native job separates prerequisite bootstrap from product verification. A
-failure in `Bootstrap native prerequisites` is an environment/bootstrap failure;
-a failure in `Run authoritative native product gate` is a product acceptance
-failure. Native verification follows `reference/vespa/README.md`; it is not a
-hand-picked substitute for the active product gate.
-
-## Merge-readiness rule
-
-`Behavioral verification / Exact-head gate` is the one status that represents
-change-aware behavioral verification. ABI and capability-document workflows are
-additional evidence and must not be treated as substitutes for this gate.
-Repository protection/rules or the CTO merge process must require the exact-head
-gate for substantive pull requests.
-
-The workflow does not replace independent adversarial review. CI proves the
-selected executable behavior at one exact revision; review separately checks
-backward compatibility, malformed inputs, false greens, cross-language drift,
-architectural boundaries, and whether the selected lanes were appropriate.
-
-## Local regression
-
-The CI helper is backend-free and can be checked directly:
+The registered PR workflow is `.github/workflows/rust-ci.yml`. It checks out the
+GitHub event revision and delegates the entire mandatory gate to:
 
 ```sh
-python3 .github/ci/test_exact_head.py
+./dev ci
 ```
 
-The regression creates a temporary Git repository, verifies one commit, changes
-the head, and proves that the earlier SHA is rejected. It also freezes the
-path-to-lane classification used by the workflow.
+`./dev ci` is the semantic owner of the PR gate. GitHub Actions owns scheduling
+and checkout only; it must not duplicate compiler flags, toolchain setup,
+verification selection, or product semantics.
+
+A head-changing operation such as a rebase, force-push, or conflict resolution
+creates a new revision and therefore requires a new CI run for that revision.
+
+## Focused and specialist verification
+
+Checks beyond the mandatory PR gate are selected by the implementer/reviewer from
+the canonical registry in `build/targets.json`:
+
+```sh
+./dev test --list
+./dev test <scope>
+
+./dev verify --list
+./dev verify <lane>
+```
+
+The repository does not automatically expand ordinary PR CI into a heavy
+path-selected verification matrix. Reviewers choose the checks that can falsify
+the changed behavior, with stronger native, persistence, sanitizer, packaging,
+or cross-language evidence when the affected boundary requires it.
+
+## Exact-SHA remote verification
+
+When a check cannot be run locally, dispatch
+`.github/workflows/on-demand-verification.yml` with an exact commit SHA and one
+bounded operation:
+
+```text
+ci
+test <scope>
+verify <lane>
+```
+
+The trusted workflow validates `test` and `verify` targets directly from the
+requested revision's `build/targets.json`, checks out that revision separately as
+the subject under test, proves the checked-out SHA, and executes the matching
+canonical `./dev` command.
+
+Local-capable callers can use:
+
+```sh
+./dev test --remote <scope>
+./dev verify --remote <lane>
+```
+
+Evidence for one SHA is not evidence for another SHA.
+
+## Review rule
+
+CI is evidence, not the review. For substantive changes, reviewers still need to
+check architecture, compatibility, malformed/boundary inputs, false-green
+mechanisms, cross-language parity, and whether the chosen focused verification
+actually exercises the production path.
+
+The canonical build and verification architecture is documented in
+`implementation-plan/build-system.md` and `docs/ci.md`.

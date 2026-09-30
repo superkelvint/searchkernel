@@ -14,4 +14,4 @@ python3 "$M4/run_scenario.py" \
   --mode rust \
   --scenario "$M4/scenarios/cases.json" \
   --output "$OUT" \
-  cargo run --quiet --manifest-path "$M4/rust-driver/Cargo.toml" --
+  cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m4-driver --

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -25,16 +26,16 @@ for artifact in manifest["artifacts"]:
 
 def clean_runtime_env() -> dict[str, str]:
     env = os.environ.copy()
-    for key in (
-        "LD_LIBRARY_PATH",
-        "SEARCHKERNEL_LOCAL_HOST",
-        "SEARCHKERNEL_SDK_LIB",
-        "SK_NATIVE_SDK",
-        "SK_NATIVE_ABI_HEADER",
-        "SK_NATIVE_CACHE_DIR",
-        "SEARCHKERNEL_PACKAGED_SUPPORT_ROOT",
-    ):
-        env.pop(key, None)
+    for key in list(env):
+        if key.startswith(("SEARCHKERNEL_", "SK_NATIVE_", "VESPA_")) or key in {
+            "CARGO_MANIFEST_DIR",
+            "CARGO_TARGET_DIR",
+            "LD_LIBRARY_PATH",
+            "LIBRARY_PATH",
+            "NODE_PATH",
+            "PYTHONPATH",
+        }:
+            env.pop(key, None)
     return env
 
 def runtime_payload_digest(root: Path) -> str:
@@ -63,6 +64,9 @@ def verify_daemon_tree(root: Path, expected_runtime: dict[str, object]) -> None:
     libdir = root / "lib"
     assert daemon.is_file(), f"packaged daemon launcher missing: {daemon}"
     assert real_daemon.is_file(), f"packaged daemon ELF missing: {real_daemon}"
+    assert (root / "bin" / ".searchkernel-native" / "libsearchkernel_vespa.so.2").is_file(), (
+        "packaged daemon is missing its origin-relative native adapter dependency"
+    )
     assert (libdir / "libsearchkernel_vespa.so.2").is_file(), (
         f"packaged native adapter missing: {libdir / 'libsearchkernel_vespa.so.2'}"
     )
@@ -117,6 +121,17 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
     ).strip()
     environment = clean_runtime_env()
     environment["CARGO_TARGET_DIR"] = str(temp / "cargo-target")
+    # In the CI producer, validate the released Rust bundle against the
+    # immutable native-base cache already provisioned for packaging. This
+    # validation runs before the pristine consumer container; the qualification
+    # runner itself never receives this cache.
+    native_cache = Path("/opt/searchkernel/native-sdk-cache")
+    if (
+        native_cache.is_dir()
+        and Path("/opt/searchkernel/native-validation-pass").is_file()
+    ):
+        environment["SK_NATIVE_CACHE_DIR"] = str(native_cache)
+        environment["SEARCHKERNEL_BUILD_ENV"] = "ci"
     subprocess.run(
         [
             cargo,
@@ -202,5 +217,39 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
         archive.extractall(npm_root)
     assert (npm_root / "package" / "dist" / "node.js").is_file()
     verify_daemon_tree(npm_root / "package", manifest["runtime"])
+
+    ruby_gems = sorted(out.glob("searchkernel-*.gem"))
+    assert len(ruby_gems) == 1, f"expected exactly one packaged Ruby gem, found {ruby_gems}"
+    gem = ruby_gems[0]
+    ruby_files = sorted(
+        [path.relative_to(ROOT / "clients/ruby").as_posix()
+         for path in (ROOT / "clients/ruby/lib").rglob("*.rb")]
+        + ["README.md"]
+    )
+    inspect_gem = r'''require "rubygems/package"
+spec = Gem::Package.new(ARGV.fetch(0)).spec
+expected = JSON.parse(ARGV.fetch(1))
+abort "unexpected Ruby gem name/version" unless spec.name == "searchkernel" && spec.version.to_s == "0.1.0"
+abort "Ruby gem contents differ from release sources" unless spec.files.sort == expected.sort
+'''
+    subprocess.run(
+        ["ruby", "-rjson", "-e", inspect_gem, str(gem), json.dumps(ruby_files)],
+        check=True,
+        cwd=ROOT,
+        env=clean_runtime_env(),
+    )
+    with tarfile.open(gem, "r:*") as package:
+        data_member = package.extractfile("data.tar.gz")
+        assert data_member is not None, "Ruby gem is missing data.tar.gz"
+        with tarfile.open(fileobj=io.BytesIO(data_member.read()), mode="r:gz") as data:
+            packaged_files = sorted(
+                member.name.removeprefix("./")
+                for member in data.getmembers()
+                if member.isfile()
+            )
+        assert packaged_files == ruby_files, (
+            "Ruby gem release contents do not match gemspec: "
+            f"expected {ruby_files}, found {packaged_files}"
+        )
 
 print("consumer release artifacts PASS")

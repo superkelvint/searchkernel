@@ -6,6 +6,7 @@ ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 
+prepare_native_probe_sdk
 require_pinned_vespa
 require_sdk_manifest "$SDK/manifest.json"
 NATIVE_LIBRARY="$SDK/lib/libsearchkernel_vespa.so"

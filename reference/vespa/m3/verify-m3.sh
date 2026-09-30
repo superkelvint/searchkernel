@@ -27,9 +27,7 @@ python3 "$M3/test_run_rust.py"
 
 run_workspace_quality
 
-if [[ -f "$ROOT/reference/vespa/api-contract/Cargo.toml" ]]; then
-  cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m3
-fi
+cargo check --quiet -p searchkernel-vespa-engine --example api-contract-m3
 
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
   "$M3/oracle/run-java-oracle.sh" document "$WORK/java-document.jsonl"

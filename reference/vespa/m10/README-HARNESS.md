@@ -15,7 +15,7 @@ oracle/AUTHOR_ORACLE.md
 oracle/m10_ranking_oracle.cpp
 oracle/build-cpp-oracle.sh
 oracle/run-cpp-oracle.sh
-rust-driver/
+core/crates/searchkernel-vespa-engine/examples/
 validate_scenarios.py
 validate_expected.py
 config-regressions.json
@@ -31,7 +31,7 @@ feature-values/
 The public Rust shape is additionally frozen by:
 
 ```text
-reference/vespa/api-contract/src/bin/m10.rs
+core/crates/searchkernel-vespa-engine/examples/api-contract-m10.rs
 ```
 
 `config-regressions.json` contains focused engine-open checks for an

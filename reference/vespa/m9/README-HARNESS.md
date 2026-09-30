@@ -14,7 +14,7 @@ oracle/AUTHOR_ORACLE.md     exact authoring sequence
 oracle/build-cpp-oracle.sh  M4-style direct-C++ build/provenance wrapper
 oracle/run-cpp-oracle.sh    provenance-checked oracle runner
 expected/*.json             direct-oracle goldens; absent until freeze
-rust-driver/                implementation-side scenario driver
+core/crates/searchkernel-vespa-engine/examples/  implementation-side Cargo targets
 canonicalize.py             canonicalizes only non-contracted group order
 validate_scenarios.py       guards update/grouping anti-shortcut traps
 validate_expected.py        validates canonical output shape
@@ -26,7 +26,7 @@ check-immutable.sh          implementation-time immutability check
 verify-m9.sh                cumulative acceptance command
 ```
 
-The public API is frozen by `reference/vespa/api-contract/src/bin/m9.rs`.
+The public API is frozen by `core/crates/searchkernel-vespa-engine/examples/api-contract-m9.rs`.
 
 ## Authoring order
 
