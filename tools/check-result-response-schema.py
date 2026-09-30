@@ -120,8 +120,10 @@ class ReflectedSchema:
             else:
                 item = self._base_type_token(element)
             if base == bt.Array:
-                return f"[{item}:{reflected_type.FixedLength()}]"
-            return f"[{item}]"
+                return f"array<{item};{reflected_type.FixedLength()}>"
+            if base == bt.Vector64:
+                return f"vector64<{item}>"
+            return f"vector<{item}>"
         if base == bt.Obj:
             return self._name(self.objects[index]).rsplit(".", 1)[-1]
         if base == bt.Union:
@@ -138,13 +140,32 @@ class ReflectedSchema:
                 return self._name(member)
         return str(value)
 
-    def _scalar_default_signature(self, reflected_type: Any, field: Any) -> str | None:
-        """Return the reflected semantic default for ordinary scalar fields."""
+    def _scalar_default(self, field: Any, field_type: Any) -> str | None:
+        """Return the reflected default for an enum or primitive scalar field."""
         bt = self.base.BaseType()
-        base = reflected_type.BaseType()
+        base = field_type.BaseType()
+        enum_index = field_type.Index()
+        if (
+            enum_index >= 0
+            and base not in (bt.Obj, bt.Union)
+            and enum_index < len(self.enums)
+            and not self.enums[enum_index].IsUnion()
+        ):
+            return self._enum_default_name(enum_index, field.DefaultInteger())
+        if enum_index >= 0 or base in (
+            bt.Obj,
+            bt.Union,
+            bt.Vector,
+            bt.Vector64,
+            bt.Array,
+            bt.String,
+        ):
+            return None
         if base == bt.Bool:
             return "true" if field.DefaultInteger() else "false"
-        if base in (
+        if base in (bt.Float, bt.Double):
+            return repr(float(field.DefaultReal()))
+        scalar_types = {
             bt.Byte,
             bt.UByte,
             bt.Short,
@@ -153,10 +174,9 @@ class ReflectedSchema:
             bt.UInt,
             bt.Long,
             bt.ULong,
-        ):
+        }
+        if base in scalar_types:
             return str(field.DefaultInteger())
-        if base in (bt.Float, bt.Double):
-            return repr(field.DefaultReal())
         return None
 
     def _wire_schema(self) -> dict[str, dict[str, Any]]:
@@ -196,22 +216,17 @@ class ReflectedSchema:
                 if self._is_synthetic_union_discriminator(field_name, field_type, by_name):
                     continue
                 signature = f"{field_name}:{self._type_signature(field_type)}"
-                enum_index = field_type.Index()
-                if (
-                    enum_index >= 0
-                    and field_type.BaseType() not in (bt.Obj, bt.Union)
-                    and enum_index < len(self.enums)
-                    and not self.enums[enum_index].IsUnion()
-                ):
-                    signature += f"={self._enum_default_name(enum_index, field.DefaultInteger())}"
-                else:
-                    scalar_default = self._scalar_default_signature(field_type, field)
-                    if scalar_default is not None:
-                        signature += f"={scalar_default}"
+                default = self._scalar_default(field, field_type)
+                if default is not None:
+                    signature += f"={default}"
                 if field.Key():
                     signature += "(key)"
                 if field.Required():
                     signature += "(required)"
+                if field.Optional():
+                    signature += "(optional)"
+                if field.Offset64():
+                    signature += "(offset64)"
                 members.append(signature)
             result[name] = {"wire_header": kind, "wire_members": members}
         return result
@@ -389,6 +404,27 @@ def result_closure(bfbs: bytes) -> dict[str, tuple[str, dict[str, Any]]]:
 
 def result_wire_schema(bfbs: bytes) -> dict[str, dict[str, Any]]:
     return ReflectedSchema(bfbs).wire
+
+
+def schema_manifest(
+    reflection: ReflectedSchema,
+    prior_schema: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Build the checked-in schema signatures directly from official BFBS metadata."""
+    existing_order = [
+        name for name in (prior_schema or {}) if name in reflection.closure
+    ]
+    added_names = sorted(set(reflection.closure) - set(existing_order))
+    return {
+        name: {
+            "kind": kind,
+            "members": sorted(members),
+            "wire_members": reflection.wire[name]["wire_members"],
+            "wire_header": reflection.wire[name]["wire_header"],
+        }
+        for name in existing_order + added_names
+        for kind, members in (reflection.closure[name],)
+    }
 
 
 def verify_schema(
@@ -964,7 +1000,19 @@ def _field_refers_to_closure(
 
 def main() -> int:
     manifest = json.loads(MANIFEST.read_text())
-    errors = verify(BFBS.read_bytes())
+    reflection = ReflectedSchema(BFBS.read_bytes())
+    if sys.argv[1:] == ["--write-signatures"]:
+        manifest["schema"] = schema_manifest(reflection, manifest.get("schema"))
+        MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
+        print("updated result response schema signatures from BFBS")
+        return 0
+    if sys.argv[1:]:
+        print(
+            "usage: check-result-response-schema.py [--write-signatures]",
+            file=sys.stderr,
+        )
+        return 2
+    errors = verify_schema(reflection.closure, manifest, reflection.wire)
     if errors:
         print("\n".join(errors))
         return 1

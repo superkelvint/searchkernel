@@ -16,11 +16,219 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ResultResponseSchemaTest(unittest.TestCase):
+    MINIMAL_SCHEMA = """namespace SearchKernel.V2;
+
+enum Relation:ubyte {
+  Unspecified = 0,
+  Exact = 1
+}
+
+struct FixedValues {
+  values:[int:4];
+}
+
+table SearchResult {
+  bool_value:bool = false;
+  int_value:long = 0;
+  double_value:double = 0.0;
+  relation:Relation = Unspecified;
+  normal:[int];
+  wide:[int] (vector64);
+  offset:[int] (offset64);
+  fixed:FixedValues;
+  presence:bool = null;
+  required_text:string (required);
+  key_text:string (key);
+}
+
+root_type SearchResult;
+"""
+
+    @staticmethod
+    def compile_bfbs(schema: str, directory: Path, name: str) -> bytes:
+        flatc = subprocess.check_output(
+            ["bash", str(ROOT / "tools/resolve-flatbuffers.sh"), "flatc"],
+            text=True,
+        ).strip()
+        source = directory / f"{name}.fbs"
+        source.write_text(schema)
+        subprocess.run(
+            [flatc, "--binary", "--schema", "-o", str(directory), str(source)],
+            check=True,
+            cwd=ROOT,
+        )
+        return (directory / f"{name}.bfbs").read_bytes()
+
+    @staticmethod
+    def manifest_for(bfbs: bytes) -> dict:
+        reflection = MODULE.ReflectedSchema(bfbs)
+        schema = {
+            name: {
+                "kind": kind,
+                "members": list(members),
+                **reflection.wire[name],
+            }
+            for name, (kind, members) in reflection.closure.items()
+        }
+        tables = {
+            name: {field: [] for field in members}
+            for name, (kind, members) in reflection.closure.items()
+            if kind in {"table", "struct"}
+        }
+        return {"schema": schema, "partitions": {"fields": tables}}
+
+    def assert_extracted_drift(
+        self,
+        baseline: bytes,
+        changed: bytes,
+        expected: str,
+    ) -> None:
+        changed_reflection = MODULE.ReflectedSchema(changed)
+        changed_type = next(
+            name
+            for name, declaration in changed_reflection.wire.items()
+            if any(expected in signature for signature in declaration["wire_members"])
+        )
+        errors = MODULE.verify_schema(
+            changed_reflection.closure,
+            self.manifest_for(baseline),
+            changed_reflection.wire,
+        )
+        self.assertTrue(
+            any(
+                error.startswith(f"{changed_type} wire members mismatch:")
+                for error in errors
+            ),
+            errors,
+        )
+
+    def test_bfbs_extraction_pins_primitive_defaults(self) -> None:
+        cases = (
+            ("bool_value:bool = false;", "bool_value:bool = true;", "bool_value:bool=true"),
+            ("int_value:long = 0;", "int_value:long = 1;", "int_value:long=1"),
+            (
+                "double_value:double = 0.0;",
+                "double_value:double = 1.0;",
+                "double_value:double=1.0",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            baseline = self.compile_bfbs(self.MINIMAL_SCHEMA, directory, "defaults_base")
+            for index, (old, new, expected) in enumerate(cases):
+                with self.subTest(expected=expected):
+                    schema = self.MINIMAL_SCHEMA.replace(old, new)
+                    changed = self.compile_bfbs(
+                        schema, directory, f"defaults_changed_{index}"
+                    )
+                    self.assert_extracted_drift(baseline, changed, expected)
+
+    def test_bfbs_extraction_keeps_enum_default_symbolic_and_numeric_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            baseline = self.compile_bfbs(self.MINIMAL_SCHEMA, directory, "enum_base")
+            baseline_reflection = MODULE.ReflectedSchema(baseline)
+            self.assertIn(
+                "relation:Relation=Unspecified",
+                baseline_reflection.wire["SearchResult"]["wire_members"],
+            )
+            changed_schema = self.MINIMAL_SCHEMA.replace(
+                "Unspecified = 0,", "Unspecified = 4,"
+            )
+            changed = self.compile_bfbs(changed_schema, directory, "enum_changed")
+            changed_reflection = MODULE.ReflectedSchema(changed)
+            self.assertIn(
+                "Unspecified=4", changed_reflection.wire["Relation"]["wire_members"]
+            )
+            errors = MODULE.verify_schema(
+                changed_reflection.closure,
+                self.manifest_for(baseline),
+                changed_reflection.wire,
+            )
+            self.assertTrue(
+                any("Relation wire members mismatch" in error for error in errors)
+            )
+
+    def test_bfbs_extraction_distinguishes_vector_and_vector64(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            baseline = self.compile_bfbs(self.MINIMAL_SCHEMA, directory, "vector_base")
+            baseline_reflection = MODULE.ReflectedSchema(baseline)
+            self.assertIn(
+                "normal:vector<int>(optional)",
+                baseline_reflection.wire["SearchResult"]["wire_members"],
+            )
+            changed_schema = self.MINIMAL_SCHEMA.replace(
+                "normal:[int];", "normal:[int] (vector64);"
+            )
+            changed = self.compile_bfbs(changed_schema, directory, "vector64_changed")
+            self.assert_extracted_drift(
+                baseline,
+                changed,
+                "normal:vector64<int>(optional)(offset64)",
+            )
+
+    def test_bfbs_extraction_pins_fixed_array_element_and_length(self) -> None:
+        cases = (
+            ("values:[int:4];", "values:[int:5];", "values:array<int;5>"),
+            ("values:[int:4];", "values:[long:4];", "values:array<long;4>"),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            baseline = self.compile_bfbs(self.MINIMAL_SCHEMA, directory, "array_base")
+            for index, (old, new, expected) in enumerate(cases):
+                with self.subTest(expected=expected):
+                    changed_schema = self.MINIMAL_SCHEMA.replace(old, new)
+                    changed = self.compile_bfbs(
+                        changed_schema, directory, f"array_changed_{index}"
+                    )
+                    self.assert_extracted_drift(baseline, changed, expected)
+
+    def test_bfbs_extraction_pins_presence_and_offset_flags(self) -> None:
+        cases = (
+            ("presence:bool = null;", "presence:bool = false;", "presence:bool=false"),
+            ("offset:[int] (offset64);", "offset:[int];", "offset:vector<int>(optional)"),
+            (
+                "required_text:string (required);",
+                "required_text:string;",
+                "required_text:string(optional)",
+            ),
+            (
+                "key_text:string (key);",
+                "key_text:string;",
+                "key_text:string(optional)",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            baseline = self.compile_bfbs(self.MINIMAL_SCHEMA, directory, "flags_base")
+            baseline_members = MODULE.ReflectedSchema(baseline).wire[
+                "SearchResult"
+            ]["wire_members"]
+            self.assertIn("presence:bool=false(optional)", baseline_members)
+            self.assertIn("wide:vector64<int>(optional)(offset64)", baseline_members)
+            self.assertIn("offset:vector<int>(optional)(offset64)", baseline_members)
+            self.assertIn("required_text:string(required)", baseline_members)
+            self.assertIn("key_text:string(key)(required)", baseline_members)
+            for index, (old, new, expected) in enumerate(cases):
+                with self.subTest(expected=expected):
+                    changed_schema = self.MINIMAL_SCHEMA.replace(old, new)
+                    changed = self.compile_bfbs(
+                        changed_schema, directory, f"flags_changed_{index}"
+                    )
+                    self.assert_extracted_drift(baseline, changed, expected)
+
     def test_checked_in_response_bfbs_is_the_schema_authority(self) -> None:
         closure = MODULE.result_closure(MODULE.BFBS.read_bytes())
         self.assertEqual(MODULE.verify(MODULE.BFBS.read_bytes()), [])
         self.assertIn("TensorCell", closure)
         self.assertIn("ValueKind", closure)
+
+        wire = MODULE.result_wire_schema(MODULE.BFBS.read_bytes())
+        self.assertIn(
+            "relation:TotalHitsRelation=Unspecified",
+            wire["TotalHits"]["wire_members"],
+        )
 
     def test_corrupt_non_bfbs_input_fails_closed(self) -> None:
         with self.assertRaises(ValueError):
@@ -113,8 +321,8 @@ root_type SearchResult;
     def test_field_type_change_fails(self) -> None:
         closure = MODULE.result_closure(MODULE.BFBS.read_bytes())
         wire = copy.deepcopy(MODULE.result_wire_schema(MODULE.BFBS.read_bytes()))
-        index = wire["Hit"]["wire_members"].index("fields:[ValueEntry]")
-        wire["Hit"]["wire_members"][index] = "fields:[StringEntry]"
+        index = wire["Hit"]["wire_members"].index("fields:vector<ValueEntry>(optional)")
+        wire["Hit"]["wire_members"][index] = "fields:vector<StringEntry>(optional)"
         errors = MODULE.verify_schema(closure, self.manifest(), wire)
         self.assertTrue(any("Hit wire members mismatch" in error for error in errors))
 

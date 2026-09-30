@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "authority": "SearchResult transitive closure from api/searchkernel.fbs; every member is pinned and exercised against official BFBS JSON projections.",
+  "authority": "SearchResult transitive closure reflected from the generated BFBS for api/searchkernel.fbs; every member is pinned and exercised against official BFBS JSON projections.",
   "schema": {
     "SearchResult": {
       "kind": "table",
@@ -14,25 +14,13 @@
         "trace"
       ],
       "wire_members": [
-        "root:ResultNode",
-        "total_hits:TotalHits",
-        "coverage:Coverage",
-        "timing:SearchTiming",
-        "errors:[SearchResultError]",
-        "trace:Value",
-        "metadata:[ValueEntry]"
-      ],
-      "wire_header": "table"
-    },
-    "ValueEntry": {
-      "kind": "table",
-      "members": [
-        "key",
-        "value"
-      ],
-      "wire_members": [
-        "key:string(key)",
-        "value:Value"
+        "root:ResultNode(optional)",
+        "total_hits:TotalHits(optional)",
+        "coverage:Coverage(optional)",
+        "timing:SearchTiming(optional)",
+        "errors:vector<SearchResultError>(optional)",
+        "trace:Value(optional)",
+        "metadata:vector<ValueEntry>(optional)"
       ],
       "wire_header": "table"
     },
@@ -42,7 +30,7 @@
         "kind"
       ],
       "wire_members": [
-        "kind:ValueKind"
+        "kind:ValueKind(optional)"
       ],
       "wire_header": "table"
     },
@@ -83,8 +71,8 @@
         "type_spec"
       ],
       "wire_members": [
-        "type_spec:string",
-        "payload:TensorPayloadKind"
+        "type_spec:string(optional)",
+        "payload:TensorPayloadKind(optional)"
       ],
       "wire_header": "table"
     },
@@ -108,7 +96,7 @@
         "blocks"
       ],
       "wire_members": [
-        "blocks:[TensorBlock]"
+        "blocks:vector<TensorBlock>(optional)"
       ],
       "wire_header": "table"
     },
@@ -119,8 +107,8 @@
         "values"
       ],
       "wire_members": [
-        "address:[TensorAddressEntry]",
-        "values:[double]"
+        "address:vector<TensorAddressEntry>(optional)",
+        "values:vector<double>(optional)"
       ],
       "wire_header": "table"
     },
@@ -131,8 +119,8 @@
         "label"
       ],
       "wire_members": [
-        "dimension:string(key)",
-        "label:string"
+        "dimension:string(key)(required)",
+        "label:string(optional)"
       ],
       "wire_header": "table"
     },
@@ -142,7 +130,7 @@
         "cells"
       ],
       "wire_members": [
-        "cells:[TensorCell]"
+        "cells:vector<TensorCell>(optional)"
       ],
       "wire_header": "table"
     },
@@ -153,7 +141,7 @@
         "value"
       ],
       "wire_members": [
-        "address:[TensorAddressEntry]",
+        "address:vector<TensorAddressEntry>(optional)",
         "value:double=0.0"
       ],
       "wire_header": "table"
@@ -164,7 +152,7 @@
         "values"
       ],
       "wire_members": [
-        "values:[double]"
+        "values:vector<double>(optional)"
       ],
       "wire_header": "table"
     },
@@ -174,7 +162,19 @@
         "fields"
       ],
       "wire_members": [
-        "fields:[ValueEntry]"
+        "fields:vector<ValueEntry>(optional)"
+      ],
+      "wire_header": "table"
+    },
+    "ValueEntry": {
+      "kind": "table",
+      "members": [
+        "key",
+        "value"
+      ],
+      "wire_members": [
+        "key:string(key)(required)",
+        "value:Value(optional)"
       ],
       "wire_header": "table"
     },
@@ -184,7 +184,7 @@
         "values"
       ],
       "wire_members": [
-        "values:[Value]"
+        "values:vector<Value>(optional)"
       ],
       "wire_header": "table"
     },
@@ -194,7 +194,7 @@
         "value"
       ],
       "wire_members": [
-        "value:[ubyte]"
+        "value:vector<ubyte>(optional)"
       ],
       "wire_header": "table"
     },
@@ -204,7 +204,7 @@
         "value"
       ],
       "wire_members": [
-        "value:string"
+        "value:string(optional)"
       ],
       "wire_header": "table"
     },
@@ -232,7 +232,7 @@
         "PositiveInfinity=2",
         "NegativeInfinity=3"
       ],
-      "wire_header": "enum:ubyte"
+      "wire_header": "enum:NonFiniteFloatKind"
     },
     "Float64Value": {
       "kind": "table",
@@ -294,129 +294,7 @@
         "Unspecified=0",
         "Null=1"
       ],
-      "wire_header": "enum:ubyte"
-    },
-    "SearchResultError": {
-      "kind": "table",
-      "members": [
-        "code",
-        "message",
-        "metadata",
-        "source",
-        "stack_trace",
-        "summary",
-        "transient"
-      ],
-      "wire_members": [
-        "code:long=0",
-        "summary:string",
-        "message:string",
-        "source:string",
-        "stack_trace:string",
-        "transient:OptionalBool",
-        "metadata:[ValueEntry]"
-      ],
-      "wire_header": "table"
-    },
-    "OptionalBool": {
-      "kind": "struct",
-      "members": [
-        "value"
-      ],
-      "wire_members": [
-        "value:bool=false"
-      ],
-      "wire_header": "struct"
-    },
-    "SearchTiming": {
-      "kind": "table",
-      "members": [
-        "metadata",
-        "query_time_seconds",
-        "search_time_seconds",
-        "summary_fetch_time_seconds"
-      ],
-      "wire_members": [
-        "query_time_seconds:OptionalDouble",
-        "search_time_seconds:OptionalDouble",
-        "summary_fetch_time_seconds:OptionalDouble",
-        "metadata:[ValueEntry]"
-      ],
-      "wire_header": "table"
-    },
-    "OptionalDouble": {
-      "kind": "struct",
-      "members": [
-        "value"
-      ],
-      "wire_members": [
-        "value:double=0.0"
-      ],
-      "wire_header": "struct"
-    },
-    "Coverage": {
-      "kind": "table",
-      "members": [
-        "coverage_percent",
-        "degraded",
-        "documents",
-        "full",
-        "metadata",
-        "nodes",
-        "results",
-        "results_full"
-      ],
-      "wire_members": [
-        "coverage_percent:OptionalDouble",
-        "documents:OptionalUInt64",
-        "full:OptionalBool",
-        "nodes:OptionalUInt32",
-        "results:OptionalUInt64",
-        "results_full:OptionalUInt64",
-        "degraded:CoverageDegraded",
-        "metadata:[ValueEntry]"
-      ],
-      "wire_header": "table"
-    },
-    "CoverageDegraded": {
-      "kind": "table",
-      "members": [
-        "adaptive_timeout",
-        "ann_timeout",
-        "match_phase",
-        "metadata",
-        "non_ideal_state",
-        "timeout"
-      ],
-      "wire_members": [
-        "match_phase:OptionalBool",
-        "timeout:OptionalBool",
-        "adaptive_timeout:OptionalBool",
-        "ann_timeout:OptionalBool",
-        "non_ideal_state:OptionalBool",
-        "metadata:[ValueEntry]"
-      ],
-      "wire_header": "table"
-    },
-    "OptionalUInt64": {
-      "kind": "struct",
-      "members": [
-        "value"
-      ],
-      "wire_members": [
-        "value:ulong=0"
-      ],
-      "wire_header": "struct"
-    },
-    "OptionalUInt32": {
-      "kind": "struct",
-      "members": [
-        "value"
-      ],
-      "wire_members": [
-        "value:uint=0"
-      ],
-      "wire_header": "struct"
+      "wire_header": "enum:NullValue"
     },
     "TotalHits": {
       "kind": "table",
@@ -446,7 +324,33 @@
         "Approximate=3",
         "Unknown=4"
       ],
-      "wire_header": "enum:ubyte"
+      "wire_header": "enum:TotalHitsRelation"
+    },
+    "SearchTiming": {
+      "kind": "table",
+      "members": [
+        "metadata",
+        "query_time_seconds",
+        "search_time_seconds",
+        "summary_fetch_time_seconds"
+      ],
+      "wire_members": [
+        "query_time_seconds:OptionalDouble(optional)",
+        "search_time_seconds:OptionalDouble(optional)",
+        "summary_fetch_time_seconds:OptionalDouble(optional)",
+        "metadata:vector<ValueEntry>(optional)"
+      ],
+      "wire_header": "table"
+    },
+    "OptionalDouble": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ],
+      "wire_members": [
+        "value:double=0.0"
+      ],
+      "wire_header": "struct"
     },
     "ResultNode": {
       "kind": "table",
@@ -454,7 +358,7 @@
         "node"
       ],
       "wire_members": [
-        "node:ResultNodeKind"
+        "node:ResultNodeKind(optional)"
       ],
       "wire_header": "table"
     },
@@ -486,29 +390,17 @@
         "value"
       ],
       "wire_members": [
-        "id:string",
-        "label:string",
-        "value:Value",
-        "fields:[ValueEntry]",
-        "children:[ResultNode]",
-        "continuations:[StringEntry]",
-        "source:string",
-        "types:[string]",
-        "relevance:Relevance",
-        "limits:ResultLimits",
-        "metadata:[ValueEntry]"
-      ],
-      "wire_header": "table"
-    },
-    "ResultLimits": {
-      "kind": "table",
-      "members": [
-        "from",
-        "to"
-      ],
-      "wire_members": [
-        "from:Value",
-        "to:Value"
+        "id:string(optional)",
+        "label:string(optional)",
+        "value:Value(optional)",
+        "fields:vector<ValueEntry>(optional)",
+        "children:vector<ResultNode>(optional)",
+        "continuations:vector<StringEntry>(optional)",
+        "source:string(optional)",
+        "types:vector<string>(optional)",
+        "relevance:Relevance(optional)",
+        "limits:ResultLimits(optional)",
+        "metadata:vector<ValueEntry>(optional)"
       ],
       "wire_header": "table"
     },
@@ -518,7 +410,7 @@
         "value"
       ],
       "wire_members": [
-        "value:RelevanceKind"
+        "value:RelevanceKind(optional)"
       ],
       "wire_header": "table"
     },
@@ -558,6 +450,18 @@
       ],
       "wire_header": "table"
     },
+    "ResultLimits": {
+      "kind": "table",
+      "members": [
+        "from",
+        "to"
+      ],
+      "wire_members": [
+        "from:Value(optional)",
+        "to:Value(optional)"
+      ],
+      "wire_header": "table"
+    },
     "StringEntry": {
       "kind": "table",
       "members": [
@@ -565,8 +469,8 @@
         "value"
       ],
       "wire_members": [
-        "key:string(key)",
-        "value:string"
+        "key:string(key)(required)",
+        "value:string(optional)"
       ],
       "wire_header": "table"
     },
@@ -585,16 +489,16 @@
         "types"
       ],
       "wire_members": [
-        "id:string",
-        "relevance:Relevance",
-        "fields:[ValueEntry]",
-        "highlights:[HighlightResult]",
-        "source:string",
-        "types:[string]",
-        "match_features:[ValueEntry]",
-        "summary_features:[ValueEntry]",
-        "rank_features:[ValueEntry]",
-        "sort_values:[Value]"
+        "id:string(optional)",
+        "relevance:Relevance(optional)",
+        "fields:vector<ValueEntry>(optional)",
+        "highlights:vector<HighlightResult>(optional)",
+        "source:string(optional)",
+        "types:vector<string>(optional)",
+        "match_features:vector<ValueEntry>(optional)",
+        "summary_features:vector<ValueEntry>(optional)",
+        "rank_features:vector<ValueEntry>(optional)",
+        "sort_values:vector<Value>(optional)"
       ],
       "wire_header": "table"
     },
@@ -605,8 +509,8 @@
         "fragments"
       ],
       "wire_members": [
-        "field:string",
-        "fragments:[HighlightFragment]"
+        "field:string(optional)",
+        "fragments:vector<HighlightFragment>(optional)"
       ],
       "wire_header": "table"
     },
@@ -617,8 +521,8 @@
         "text"
       ],
       "wire_members": [
-        "text:string",
-        "matches:[HighlightSpan]"
+        "text:string(optional)",
+        "matches:vector<HighlightSpan>(optional)"
       ],
       "wire_header": "table"
     },
@@ -631,6 +535,102 @@
       "wire_members": [
         "start_byte:uint=0",
         "end_byte:uint=0"
+      ],
+      "wire_header": "table"
+    },
+    "SearchResultError": {
+      "kind": "table",
+      "members": [
+        "code",
+        "message",
+        "metadata",
+        "source",
+        "stack_trace",
+        "summary",
+        "transient"
+      ],
+      "wire_members": [
+        "code:long=0",
+        "summary:string(optional)",
+        "message:string(optional)",
+        "source:string(optional)",
+        "stack_trace:string(optional)",
+        "transient:OptionalBool(optional)",
+        "metadata:vector<ValueEntry>(optional)"
+      ],
+      "wire_header": "table"
+    },
+    "OptionalBool": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ],
+      "wire_members": [
+        "value:bool=false"
+      ],
+      "wire_header": "struct"
+    },
+    "Coverage": {
+      "kind": "table",
+      "members": [
+        "coverage_percent",
+        "degraded",
+        "documents",
+        "full",
+        "metadata",
+        "nodes",
+        "results",
+        "results_full"
+      ],
+      "wire_members": [
+        "coverage_percent:OptionalDouble(optional)",
+        "documents:OptionalUInt64(optional)",
+        "full:OptionalBool(optional)",
+        "nodes:OptionalUInt32(optional)",
+        "results:OptionalUInt64(optional)",
+        "results_full:OptionalUInt64(optional)",
+        "degraded:CoverageDegraded(optional)",
+        "metadata:vector<ValueEntry>(optional)"
+      ],
+      "wire_header": "table"
+    },
+    "OptionalUInt64": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ],
+      "wire_members": [
+        "value:ulong=0"
+      ],
+      "wire_header": "struct"
+    },
+    "OptionalUInt32": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ],
+      "wire_members": [
+        "value:uint=0"
+      ],
+      "wire_header": "struct"
+    },
+    "CoverageDegraded": {
+      "kind": "table",
+      "members": [
+        "adaptive_timeout",
+        "ann_timeout",
+        "match_phase",
+        "metadata",
+        "non_ideal_state",
+        "timeout"
+      ],
+      "wire_members": [
+        "match_phase:OptionalBool(optional)",
+        "timeout:OptionalBool(optional)",
+        "adaptive_timeout:OptionalBool(optional)",
+        "ann_timeout:OptionalBool(optional)",
+        "non_ideal_state:OptionalBool(optional)",
+        "metadata:vector<ValueEntry>(optional)"
       ],
       "wire_header": "table"
     }
