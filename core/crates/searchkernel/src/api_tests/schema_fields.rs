@@ -1,4 +1,5 @@
 use super::*;
+use crate::{DataType, SchemaStructField};
 
 #[test]
 fn describe_exposes_schema_fields_publicly() {
@@ -643,7 +644,7 @@ fn public_array_of_struct_field_lowers_to_shared_array_schema() {
     assert!(matches!(
         resolved.fields()[0].data_type(),
         searchkernel_ir::DataTypeIr::Array(inner)
-            if matches!(inner.as_ref(), searchkernel_ir::DataTypeIr::Struct(fields)
+            if matches!(inner.as_ref(), searchkernel_ir::DataTypeIr::Struct { fields }
                 if fields.iter().map(|field| field.name().as_str()).collect::<Vec<_>>() == ["first", "last"])
     ));
 }

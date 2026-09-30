@@ -710,6 +710,8 @@ mod showcase {
                 .map(|group| json!({"value": group.key.as_ref().map(parity_value), "fields": group.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>() })).collect::<Vec<_>>(),
             "typed_query_contains": typed_observations["typed_query_contains"],
             "typed_query_phrase": typed_observations["typed_query_phrase"],
+            "typed_query_near": typed_observations["typed_query_near"],
+            "typed_query_ordered_near": typed_observations["typed_query_ordered_near"],
             "typed_query_range": typed_observations["typed_query_range"],
             "typed_query_boolean": typed_observations["typed_query_boolean"],
             "typed_query_in": typed_observations["typed_query_in"],
