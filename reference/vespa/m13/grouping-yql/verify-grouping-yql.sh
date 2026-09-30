@@ -5,9 +5,10 @@ DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DIR/../../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+PYTHON=$(bash "$ROOT/tools/resolve-python.sh")
 
 require_pinned_vespa
-python3 "$DIR/validate.py"
+"$PYTHON" "$DIR/validate.py"
 
 # The low-level grouping case is independently compared with a direct pinned
 # Vespa oracle and exercises the real native grouping ABI. M9 is frozen and is
@@ -20,8 +21,8 @@ python3 "$DIR/validate.py"
 # round-trips remain intentionally deferred until their translation path exists.
 PYTHON_LOG="$(mktemp)"
 trap 'rm -f "$PYTHON_LOG"' EXIT
-PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
-  python3 "$ROOT/clients/python/examples/try_searchkernel_client_api_e2e.py" | tee "$PYTHON_LOG"
+bash "$ROOT/tools/run-python-native-e2e.sh" \
+  --prevalidated-native-sdk --include-facade | tee "$PYTHON_LOG"
 rg -F 'textual filter parser, clause-local bindings, grammar, and syntax errors PASS' "$PYTHON_LOG" >/dev/null ||
   fail_verification "canonical Python E2E did not report textual filter parser coverage"
 
