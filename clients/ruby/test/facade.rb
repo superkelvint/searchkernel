@@ -448,8 +448,16 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
     assert(!args.include?("--definition-json"), "managed create provisions through canonical lifecycle requests")
     create_request = JSON.parse(File.readlines(request_log).fetch(0))
     assert(create_request.fetch("payload_type").end_with?("CreateIndexRequest"), "managed create sends lifecycle request")
-    assert(create_request.fetch("target").fetch("name").match?(/\Alocal-[0-9a-f]{32}\z/), "managed path maps to logical target")
+    same("index", create_request.fetch("target").fetch("name"), "managed path basename is the logical target")
+    sibling_path = File.join(root, "sibling")
+    sibling = SearchKernel::Index.create(
+      sibling_path,
+      fields: { "title" => SearchKernel::Text.new(stored: true, searchable: true) }
+    )
+    same(1, SearchKernel::ManagedLocalHost.pool.length, "sibling managed indexes share one daemon data root")
     managed.close
+    same(1, SearchKernel::ManagedLocalHost.pool.length, "closing one managed handle keeps the shared daemon alive")
+    sibling.close
     assert(managed.closed?, "managed close is idempotent state")
     managed.close
 
