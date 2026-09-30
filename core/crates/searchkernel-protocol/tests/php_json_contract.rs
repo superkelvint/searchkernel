@@ -111,7 +111,7 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                         .unwrap_or_else(|| panic!("{name}: create-index definition missing"));
                     assert_eq!(
                         definition.fields().map(|fields| fields.len()),
-                        Some(12),
+                        Some(13),
                         "{name}: exact PHP E2E field count"
                     );
                     assert_eq!(
