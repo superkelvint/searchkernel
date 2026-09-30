@@ -415,7 +415,7 @@ mod tests {
                     ))
                     .output(GroupingAggregation::named(
                         "revenue",
-                        GroupingAggregation::sum("price"),
+                        GroupingAggregation::alias_ref("revenue"),
                     )),
             )
             .into_ir()
@@ -443,7 +443,7 @@ mod tests {
                     },
                     GroupingOutputIr {
                         label: Some("revenue".to_owned()),
-                        expression: GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Sum(GroupingExpressionIr::Attribute("price".to_owned())))),
+                        expression: GroupingExpressionIr::Alias("revenue".to_owned()),
                     },
                 ]
         ));
