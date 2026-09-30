@@ -2000,6 +2000,25 @@ class EmbeddedEngine {
                 const bool observed_has_value = observed_value &&
                     (observed->hasValue(schema_field) || manifest_field.type == "tensor");
                 if (!observed_has_value) {
+                    // Boolean attributes have no undefined sentinel in Vespa:
+                    // an unset field reads as false. GET exposes that default
+                    // so callers can distinguish a known boolean field from
+                    // a missing schema field.
+                    if (observed_value &&
+                        observed_value->type() == document::FieldValue::Type::BOOL &&
+                        observed_value->getAsLong() == 0) {
+                        DocumentFieldState state{
+                            manifest_field.name,
+                            owned_value(*observed_value, manifest_field.name),
+                            {},
+                            {}};
+                        if (existing != result.fields.end()) {
+                            *existing = std::move(state);
+                        } else {
+                            result.fields.push_back(std::move(state));
+                        }
+                        continue;
+                    }
                     if (manifest_field.attribute && existing != result.fields.end() &&
                         existing->value.kind == SK_VALUE_STRING &&
                         existing->value.string.empty()) {
@@ -2027,13 +2046,6 @@ class EmbeddedEngine {
                         continue;
                     }
                     if (existing != result.fields.end()) result.fields.erase(existing);
-                    continue;
-                }
-                // Vespa's boolean attribute has no undefined sentinel and reads as false for
-                // every document. Do not turn that storage default into a document field when
-                // the source document never contained the field.
-                if (existing == result.fields.end() && observed_value->type() == document::FieldValue::Type::BOOL &&
-                    observed_value->getAsLong() == 0) {
                     continue;
                 }
                 DocumentFieldState state{manifest_field.name, owned_value(*observed_value, manifest_field.name), {}, {}};
@@ -3044,13 +3056,18 @@ public:
     bool failpoint_is_blocked(const char *name) const { return _failpoints->is_blocked(name); }
 
     void install_hardening_feed_view() {
-        auto *ready_sub_db = _db->getReadySubDB();
-        if (!ready_sub_db) {
-            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
-        }
-        auto feed_view = ready_sub_db->getFeedView();
+        // Preserve DocumentDB::syncFeedView() topology exactly: its active view is
+        // DocumentSubDBCollection::getFeedView(), which is a CombiningFeedView
+        // for the normal ready/removed/not-ready sub-databases.  Hardening may
+        // gate forceCommit(), but must not replace production feed routing with
+        // the ready sub-DB view. getDocumentSubDBs() is exposed as const even
+        // though getFeedView() only constructs a forwarding view, so remove
+        // constness narrowly for that pinned-Vespa factory call.
+        auto &sub_dbs = const_cast<proton::DocumentSubDBCollection &>(
+            _db->getDocumentSubDBs());
+        auto feed_view = sub_dbs.getFeedView();
         if (!feed_view) {
-            throw std::runtime_error("Vespa DocumentDB has no ready feed view");
+            throw std::runtime_error("Vespa DocumentDB has no production feed view");
         }
         _hardening_feed_view = std::make_shared<PublicationGateFeedView>(
             std::move(feed_view), _failpoints);

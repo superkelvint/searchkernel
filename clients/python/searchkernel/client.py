@@ -18,6 +18,7 @@ from typing import Any, BinaryIO
 
 from .grpc_transport import GrpcTransport, GrpcTransportError
 from .protocol import ERROR_TYPE, pack_object, pack_request, unpack_response
+from .scalars import check_int64
 
 from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT
 from SearchKernel.V2.AnalyzeRequest import AnalyzeRequestT
@@ -99,7 +100,7 @@ def value(item: Any) -> ValueT:
     if isinstance(item, bool):
         return ValueT(kindType=ValueKind.BoolValue, kind=BoolValueT(value=item))
     if isinstance(item, int):
-        return ValueT(kindType=ValueKind.Int64Value, kind=Int64ValueT(value=item))
+        return ValueT(kindType=ValueKind.Int64Value, kind=Int64ValueT(value=check_int64(item)))
     if isinstance(item, float):
         if not math.isfinite(item):
             raise ValueError("non-finite floats are not portable")
@@ -175,6 +176,12 @@ def _tensor_address(
     return result
 
 
+def _finite_tensor_cell(value: float) -> float:
+    if not math.isfinite(value):
+        raise ValueError("tensor cells must be finite")
+    return value
+
+
 def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
     tensor = {"type_spec": payload.typeSpec}
     if payload.payloadType == TensorPayloadKind.DenseTensorValues:
@@ -183,7 +190,7 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
             raise ValueError("mismatched Tensor payload: DenseTensorValues")
         if dense.values is None:
             raise ValueError("malformed dense tensor payload")
-        tensor["dense"] = list(dense.values)
+        tensor["dense"] = [_finite_tensor_cell(value) for value in dense.values]
     elif payload.payloadType == TensorPayloadKind.SparseTensorCells:
         sparse = payload.payload
         if not isinstance(sparse, SparseTensorCellsT):
@@ -194,7 +201,12 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
         for cell in sparse.cells:
             if not isinstance(cell, TensorCellT):
                 raise ValueError("malformed sparse tensor cell")
-            cells.append({"address": _tensor_address(cell.address), "value": cell.value})
+            cells.append(
+                {
+                    "address": _tensor_address(cell.address),
+                    "value": _finite_tensor_cell(cell.value),
+                }
+            )
         tensor["sparse"] = cells
     elif payload.payloadType == TensorPayloadKind.MixedTensorBlocks:
         mixed = payload.payload
@@ -209,7 +221,10 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
             if block.values is None:
                 raise ValueError("malformed mixed tensor block")
             blocks.append(
-                {"address": _tensor_address(block.address), "values": list(block.values)}
+                {
+                    "address": _tensor_address(block.address),
+                    "values": [_finite_tensor_cell(value) for value in block.values],
+                }
             )
         tensor["mixed"] = blocks
     else:

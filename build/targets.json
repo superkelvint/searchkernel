@@ -51,6 +51,9 @@
         "rust"
       ]
     },
+    "native-crud": {
+      "description": "Native Vespa engine CRUD integration tests"
+    },
     "python": {
       "description": "Python client, package, and real E2E tests"
     },
@@ -260,7 +263,8 @@
       ],
       "verify": [
         "verify:api-conformance",
-        "verify:contracts"
+        "verify:contracts",
+        "verify:client-semantic-parity"
       ],
       "generated": false,
       "rules": [
@@ -279,7 +283,8 @@
       "architecture": "docs/architecture.md#development-model",
       "test": [],
       "verify": [
-        "verify:contracts"
+        "verify:contracts",
+        "verify:client-semantic-parity"
       ],
       "generated": false,
       "rules": [
@@ -506,7 +511,8 @@
       "architecture": "docs/architecture.md#canonical-contracts",
       "test": [],
       "verify": [
-        "verify:contracts"
+        "verify:contracts",
+        "verify:client-semantic-parity"
       ],
       "generated": false,
       "rules": [
@@ -525,7 +531,8 @@
       "architecture": "docs/architecture.md#canonical-contracts",
       "test": [],
       "verify": [
-        "verify:contracts"
+        "verify:contracts",
+        "verify:client-semantic-parity"
       ],
       "generated": true,
       "rules": [
@@ -534,6 +541,140 @@
       "native_base_rebuild": false,
       "focused_check": "command:check-protocol",
       "strong_check": "command:check-fast"
+    },
+    "core/crates/searchkernel-protocol/bfbs/": {
+      "owner": "protocol-bfbs",
+      "area": "Generated FlatBuffers reflection schemas",
+      "read": [
+        "api/README.md",
+        "tools/check-flatbuffers-bfbs.sh"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "generated": true,
+      "rules": [
+        "Regenerate BFBS from canonical FlatBuffers schemas and verify reproducibility."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
+    },
+    "tools/flatbuffers/": {
+      "owner": "flatbuffers-reflection-metadata",
+      "area": "FlatBuffers reflection metadata support",
+      "read": [
+        "tools/check-result-response-schema.py"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "generated": false,
+      "rules": [
+        "Use the pinned FlatBuffers compiler and official reflection tables."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
+    },
+    "tools/check-flatbuffers-bfbs.sh": {
+      "owner": "bfbs-freshness-check",
+      "area": "FlatBuffers BFBS freshness verifier",
+      "read": [
+        "api/README.md"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "generated": false,
+      "rules": [
+        "Keep BFBS reproducibility verification ahead of consumers of checked-in BFBS."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
+    },
+    "tools/check-result-response-schema.py": {
+      "owner": "result-response-schema-verifier",
+      "area": "Result response schema verifier",
+      "read": [
+        "reference/result-response-conformance/coverage.json"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "generated": false,
+      "rules": [
+        "Derive reachable result schema from the checked-in BFBS reflection metadata."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
+    },
+    "tools/test_check_result_response_schema.py": {
+      "owner": "result-response-schema-verifier-tests",
+      "area": "Result response schema verifier tests",
+      "read": [
+        "tools/check-result-response-schema.py"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "generated": false,
+      "rules": [
+        "Exercise the production reflection walker against checked-in response BFBS."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
+    },
+    "tools/test_result_response_conformance.py": {
+      "owner": "result-response-conformance-tests",
+      "area": "Result response conformance verifier tests",
+      "read": [
+        "tools/check-result-response-conformance.py"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "generated": false,
+      "rules": [
+        "Keep frozen result response coverage checks on the parity lane."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
+    },
+    "tools/check-result-response-conformance.py": {
+      "owner": "result-response-conformance-verifier",
+      "area": "Result response conformance verifier",
+      "read": [
+        "reference/result-response-conformance/corpus.json"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
+      "generated": false,
+      "rules": [
+        "Keep the frozen result fixtures and cross-language checks on the parity lane."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "verify:client-semantic-parity",
+      "strong_check": "verify:client-semantic-parity"
     },
     "core/crates/searchkernel-rpc/": {
       "owner": "rust-rpc",
@@ -929,7 +1070,9 @@
       ],
       "architecture": "docs/architecture.md#development-model",
       "test": [],
-      "verify": [],
+      "verify": [
+        "verify:client-semantic-parity"
+      ],
       "focused_check": "command:check-fast",
       "strong_check": "command:check-fast",
       "native_base_rebuild": false,

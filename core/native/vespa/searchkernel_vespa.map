@@ -99,6 +99,7 @@ SEARCHKERNEL_2 {
         sk_document_update_assign_boolean;
         sk_document_update_assign_tensor_dense;
         sk_document_update_assign_string_array;
+        sk_document_update_assign_struct_array;
         sk_document_update_assign_position;
         sk_document_update_assign_predicate;
         sk_document_update_assign_predicate_json;
