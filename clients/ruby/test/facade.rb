@@ -4,6 +4,18 @@ require "fileutils"
 require "json"
 require "tempfile"
 require "tmpdir"
+require_relative "../examples/client_real_e2e_parity_helpers"
+
+e2e_corpus = JSON.parse(File.read(File.expand_path("../../../reference/client-real-e2e-parity/corpus.json", __dir__)))
+typed_corpus_document = ClientRealE2EParityHelpers.document_from_corpus(
+  e2e_corpus,
+  { "_id" => "typed-corpus-document", "price" => 89, "sale_price" => 79, "rating" => 5 }
+)
+TestSupport.same(89.0, typed_corpus_document.fetch("price"), "E2E Float64 field is normalized from JSON integer")
+TestSupport.same(79.0, typed_corpus_document.fetch("sale_price"), "E2E optional Float64 field is normalized from JSON integer")
+TestSupport.same(5, typed_corpus_document.fetch("rating"), "E2E Int64 field remains an integer")
+TestSupport.same(50.0, ClientRealE2EParityHelpers.query_value(e2e_corpus, "price", 50), "E2E range bound matches the declared Float64 field")
+TestSupport.same(5, ClientRealE2EParityHelpers.query_value(e2e_corpus, "rating", 5), "E2E query value preserves declared Int64 field")
 
 class CloseCountingOwner
   attr_reader :close_count

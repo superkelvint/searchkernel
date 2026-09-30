@@ -33,6 +33,8 @@ A module reviewer should not silently pass an item based on another module's evi
 | Daemon / RPC host | [13-searchkerneld.md](13-searchkerneld.md) | `searchkerneld` |
 | Python client | [14-client-python.md](14-client-python.md) | `clients/python` |
 | TypeScript client | [15-client-typescript.md](15-client-typescript.md) | `clients/typescript` |
+| PHP client | [28-client-php.md](28-client-php.md) | `clients/php` |
+| Ruby client | [29-client-ruby.md](29-client-ruby.md) | `clients/ruby` |
 | Generation/repository tools | [16-tools.md](16-tools.md) | `tools/` |
 | Verifier lanes | [17-reference-verifiers.md](17-reference-verifiers.md) | `reference/` conformance/oracle/verifier surfaces |
 | Cross-cutting gates | [18-cross-cutting-gates.md](18-cross-cutting-gates.md) | Capabilities/docs, packaging, parity, E2E, bypass search, final gates, snapshot closure |
@@ -40,8 +42,12 @@ A module reviewer should not silently pass an item based on another module's evi
 
 ## Split integrity
 
-The modular set is mechanically verified so that every stable checklist ID appears **exactly once** across the module files. The original 908 IDs remain traceable to the source split; live scope extensions are recorded in `split-manifest.json`. The index intentionally contains no duplicated checklist obligations.
+The modular set is mechanically verified so that every stable checklist ID appears **exactly once** across the module files. The original 908-ID source set is frozen by count and ID-set digest; live scope extensions are recorded in `split-manifest.json` and must account for every later ID. The index intentionally contains no duplicated checklist obligations.
+
+Run `python3 tools/check-audit-split.py` to verify item uniqueness, per-file counts and hashes, total counts, and live-extension metadata. Run `python3 tools/check-audit-client-coverage.py` to regenerate the first-party client file inventory from `reference/client-contracts/catalog.json` and verify every discovered client file maps to a dedicated audit module.
 
 ## Live checklist extensions
 
+- **2026-09-24 — `CODE_SCOPE_CHANGE`: first-party transport contract reconciliation.** Issue/PR #596 added `SK-00-019` and `SK-16-030`; this historical extension is explicitly represented so the frozen 908-ID source set remains mechanically distinguishable from later obligations.
 - **2026-09-23 — `CODE_SCOPE_CHANGE`: public Search Endpoints.** Issue #469 / PR #470 adds a new anonymous/public-serving ingress surface inside `searchkerneld`. `13-searchkerneld.md` now includes `SK-13-029..SK-13-110` covering public capability isolation, raw/decoded bounds, aggregate-memory and response-amplification limits, computational DoS, parser differential/injection defenses, connection/admission abuse, fuzz/property/stress requirements, privacy/error/logging boundaries, release gates, and implementation-specific closure checks derived from PR #470.
+- **2026-09-30 — `CODE_SCOPE_CHANGE`: first-party PHP and Ruby clients.** Issue #935 adds dedicated `28-client-php.md` and `29-client-ruby.md` modules for current production client roots plus `SK-16-031..SK-16-032` for the inventory and split-integrity checks. The change maps the existing `SK-20-*`, `SK-21-013`, `SK-22-002/004`, `SK-23-016/019`, `SK-26-001/004/007`, and `SK-27-001/004/006/007/009` gates to both modules without duplicating those cross-cutting obligations.
