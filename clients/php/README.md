@@ -79,17 +79,20 @@ competing high-level filter, sort, search-field, or projection methods.
 
 ## Lifecycle boundary
 
-PHP does not currently expose Python-style `Index::create()` /
-`Index::open()` schema construction and managed-daemon ownership. Index
-lifecycle/schema administration is outside the cross-language client API spec,
-and this HTTP client normally connects to an already managed `searchkerneld`.
+PHP supports the create/open/select slice of the canonical multi-index daemon
+lifecycle for an externally managed `searchkerneld`. `Index::create()`
+creates a logical target from an `IndexDefinition`, `Index::open()` reopens
+an existing target, and ordinary operations carry the same target in the
+canonical request envelope. PHP schema builders only construct the V2
+`IndexDefinition`; validation, defaults, and backend semantics remain
+server-owned. Local handle-close ownership semantics are not introduced by
+this slice.
 
-For the canonical real-engine E2E, the harness creates the exact same
-schema/rank-profile fixture through the existing canonical Python managed-local
-path, then starts `searchkerneld` with its HTTP edge and exercises only the
-public PHP facade. The harness restarts the daemon against the same index and
-runs PHP reopen assertions, so persistence is verified without inventing PHP
-schema semantics.
+The real-engine E2E starts one `searchkerneld --data-root`, creates the schema
+and rank profiles through PHP itself, restarts the daemon, and reopens the same
+logical target through PHP. It has no Python client/schema bootstrap dependency.
+Transparent PHP-owned daemon spawning remains out of scope: callers may still
+use `Index::connect()` with an already managed daemon.
 
 Grouping continuation execution remains deferred for the same backend reason as
 the Python showcase: the native grouping ABI does not currently return
