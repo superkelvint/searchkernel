@@ -1594,9 +1594,15 @@ foreach ($parityCorpus['schema']['fields'] as $name => $spec) {
         $spec['type'] === 'int64' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Int64']],
         $spec['type'] === 'bool' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Bool']],
         str_starts_with($spec['type'], 'tensor<') => ['kind_type' => 'TensorDataType', 'kind' => ['type_spec' => $spec['type']]],
+        $spec['type'] === 'position' => ['kind_type' => 'PositionDataType'],
+        $spec['type'] === 'array' => ['kind_type' => 'ArrayDataType'],
         default => throw new RuntimeException('unhandled shared corpus field type'),
     };
-    same($expectedType, $actual['data_type'], 'PHP field data type follows shared corpus: ' . $name);
+    if (array_key_exists('kind', $expectedType)) {
+        same($expectedType, $actual['data_type'], 'PHP field data type follows shared corpus: ' . $name);
+    } else {
+        same($expectedType['kind_type'], $actual['data_type']['kind_type'], 'PHP field data type follows shared corpus: ' . $name);
+    }
     foreach (['stored', 'searchable', 'filterable', 'sortable', 'facetable'] as $capability) {
         if (array_key_exists($capability, $spec)) {
             same(['value' => $spec[$capability]], $actual[$capability] ?? null, 'PHP field capability follows shared corpus: ' . $name . '.' . $capability);
