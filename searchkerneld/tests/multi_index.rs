@@ -1375,7 +1375,10 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
             .payload;
         let http = execute_http_json(http_address, &request).await;
         assert_eq!(portable_error_semantics(&direct), already_exists_expected);
-        assert_eq!(portable_error_semantics(&grpc_response), already_exists_expected);
+        assert_eq!(
+            portable_error_semantics(&grpc_response),
+            already_exists_expected
+        );
         assert_eq!(portable_error_semantics(&http), already_exists_expected);
     }
 

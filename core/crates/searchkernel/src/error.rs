@@ -273,19 +273,58 @@ mod tests {
     #[test]
     fn lifecycle_failure_adapter_classifies_every_internal_error_code() {
         let cases = [
-            (ErrorCode::InvalidArgument, searchkernel_ir::LifecycleFailureCode::InvalidArgument),
-            (ErrorCode::NotFound, searchkernel_ir::LifecycleFailureCode::NotFound),
-            (ErrorCode::AlreadyExists, searchkernel_ir::LifecycleFailureCode::AlreadyExists),
-            (ErrorCode::FailedPrecondition, searchkernel_ir::LifecycleFailureCode::FailedPrecondition),
-            (ErrorCode::Conflict, searchkernel_ir::LifecycleFailureCode::Conflict),
-            (ErrorCode::Unsupported, searchkernel_ir::LifecycleFailureCode::Unsupported),
-            (ErrorCode::ResourceExhausted, searchkernel_ir::LifecycleFailureCode::ResourceExhausted),
-            (ErrorCode::Internal, searchkernel_ir::LifecycleFailureCode::Internal),
-            (ErrorCode::Unavailable, searchkernel_ir::LifecycleFailureCode::Unavailable),
-            (ErrorCode::DeadlineExceeded, searchkernel_ir::LifecycleFailureCode::DeadlineExceeded),
-            (ErrorCode::CorruptIndex, searchkernel_ir::LifecycleFailureCode::CorruptIndex),
-            (ErrorCode::IncompatibleIndex, searchkernel_ir::LifecycleFailureCode::IncompatibleIndex),
-            (ErrorCode::IndexClosed, searchkernel_ir::LifecycleFailureCode::IndexClosed),
+            (
+                ErrorCode::InvalidArgument,
+                searchkernel_ir::LifecycleFailureCode::InvalidArgument,
+            ),
+            (
+                ErrorCode::NotFound,
+                searchkernel_ir::LifecycleFailureCode::NotFound,
+            ),
+            (
+                ErrorCode::AlreadyExists,
+                searchkernel_ir::LifecycleFailureCode::AlreadyExists,
+            ),
+            (
+                ErrorCode::FailedPrecondition,
+                searchkernel_ir::LifecycleFailureCode::FailedPrecondition,
+            ),
+            (
+                ErrorCode::Conflict,
+                searchkernel_ir::LifecycleFailureCode::Conflict,
+            ),
+            (
+                ErrorCode::Unsupported,
+                searchkernel_ir::LifecycleFailureCode::Unsupported,
+            ),
+            (
+                ErrorCode::ResourceExhausted,
+                searchkernel_ir::LifecycleFailureCode::ResourceExhausted,
+            ),
+            (
+                ErrorCode::Internal,
+                searchkernel_ir::LifecycleFailureCode::Internal,
+            ),
+            (
+                ErrorCode::Unavailable,
+                searchkernel_ir::LifecycleFailureCode::Unavailable,
+            ),
+            (
+                ErrorCode::DeadlineExceeded,
+                searchkernel_ir::LifecycleFailureCode::DeadlineExceeded,
+            ),
+            (
+                ErrorCode::CorruptIndex,
+                searchkernel_ir::LifecycleFailureCode::CorruptIndex,
+            ),
+            (
+                ErrorCode::IncompatibleIndex,
+                searchkernel_ir::LifecycleFailureCode::IncompatibleIndex,
+            ),
+            (
+                ErrorCode::IndexClosed,
+                searchkernel_ir::LifecycleFailureCode::IndexClosed,
+            ),
         ];
         for (source, expected) in cases {
             let failure = Error::search(source, "failure")
