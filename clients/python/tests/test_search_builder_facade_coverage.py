@@ -12,6 +12,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel.ergonomic import SearchBuilder, YqlBuilder  # noqa: E402
+from searchkernel.protocol import pack_object  # noqa: E402
 from SearchKernel.V2.GroupingSourceKind import GroupingSourceKind  # noqa: E402
 from SearchKernel.V2.MissingPolicyKind import MissingPolicyKind  # noqa: E402
 from SearchKernel.V2.QueryInputKind import QueryInputKind  # noqa: E402
@@ -178,6 +179,7 @@ class SearchBuilderFacadeCoverageTest(unittest.TestCase):
         self.assertEqual(request.searchChain, "chain")
         self.assertEqual([entry.key for entry in request.ranking.properties], ["alpha", "zeta"])
         self.assertEqual([entry.key for entry in request.properties], ["alpha", "zeta"])
+        self.assertGreater(len(pack_object(request)), 0)
 
         raw_grouping = request.grouping[-1]
         self.assertEqual(raw_grouping.sourceType, GroupingSourceKind.RawGroupingSource)
