@@ -71,6 +71,7 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertNotIn('"--no-index"', gate)
         self.assertNotIn('os.environ.get("GH_TOKEN")', gate)
         self.assertNotIn('os.environ.get("GITHUB_TOKEN")', gate)
+        self.assertNotIn("SEARCHKERNEL_BUILD_ENV", gate)
 
     def test_packaged_supported_rows_own_clean_consumer_gate(self):
         authority = json.loads((ROOT / "docs/release-support.json").read_text())
