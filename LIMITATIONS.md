@@ -71,7 +71,7 @@ approximated.
 
 ### YQL query source (`query.yql`)
 
-- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. Rust exposes YQL source with scalar and tensor parameter bindings.
+- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. Rust exposes Index::yql() through the same canonical search resolver, including scalar and tensor parameter bindings.
 
 ### Analyzed text search with default WeakAnd semantics (`query.text_weak_and`)
 
@@ -258,7 +258,7 @@ approximated.
 
 ### Numeric scalar query inputs (`ranking.numeric_query_inputs`)
 
-- The public Rust QueryInputValue currently exposes integer, unsigned integer, float, and tensor values; the proven scalar real-engine path is numeric. Expression query inputs are not exposed by the high-level facades.
+- The Rust facade now represents bool, integer, unsigned integer, float, string, JSON, tensor, and expression query inputs. The embedded native query-feature seam executes finite lossless numeric scalars (and dense tensors through the tensor path); expression inputs are preserved canonically but return query_input_expression_not_supported.
 
 ### Dense tensor query inputs (`ranking.tensor_query_inputs`)
 

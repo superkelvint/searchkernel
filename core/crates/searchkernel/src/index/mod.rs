@@ -2,6 +2,7 @@ use crate::analyze::{to_resolver_input, AnalyzeBuilder, AnalyzeResult, AnalyzedT
 use crate::document::{serialize, DocumentId};
 use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
+use crate::query::Query;
 use crate::result;
 use crate::schema::{
     Analyzer, ConstantDefinition, DocumentSummary, Field, FieldCapabilities, FieldSet,
@@ -249,14 +250,19 @@ impl Index {
         SearchBuilder::new(self.clone(), query)
     }
 
+    /// Start a typed query through the canonical query resolver.
+    pub fn query(&self, query: Query) -> SearchBuilder {
+        SearchBuilder::new(self.clone(), "").typed_query(query)
+    }
+
+    /// Start a YQL request through the canonical search resolver.
+    pub fn yql(&self, source: impl Into<String>) -> crate::search::YqlBuilder {
+        SearchBuilder::yql(self.clone(), source)
+    }
+
     /// Start a match-all search intended for browsing or administration.
     pub fn browse(&self) -> SearchBuilder {
         SearchBuilder::match_all(self.clone())
-    }
-
-    /// Start a search from a Vespa YQL source with typed `@parameter` bindings.
-    pub fn yql(&self, source: impl Into<String>) -> SearchBuilder {
-        SearchBuilder::yql(self.clone(), source)
     }
 
     /// Return the effective schema and search defaults for this index.
@@ -312,6 +318,7 @@ impl Index {
                     ));
                 }
             };
+            ensure_inspected_query_can_represent(&normalized)?;
             let highlighting = match normalized.highlighting() {
                 searchkernel_ir::HighlightingIr::Disabled => None,
                 searchkernel_ir::HighlightingIr::Requested { fields, .. } => Some(
@@ -341,19 +348,17 @@ impl Index {
                                 "annotated sort expressions are not supported by the public search API",
                             ));
                         }
-                        let field = match sort.target() {
-                            searchkernel_ir::SortTargetIr::Field(field) => field,
-                            searchkernel_ir::SortTargetIr::Relevance
-                            | searchkernel_ir::SortTargetIr::RankFeature(_) => {
-                                return Err(Error::search(
-                                    crate::error::ErrorCode::Unsupported,
-                                    "the public search API supports only field sort targets",
-                                ));
-                            }
-                        };
-                        let value = match sort.direction() {
-                            searchkernel_ir::SortDirection::Asc => Sort::asc(field.as_str()),
-                            searchkernel_ir::SortDirection::Desc => Sort::desc(field.as_str()),
+                        let value = match (sort.target(), sort.direction()) {
+                            (searchkernel_ir::SortTargetIr::Field(field), searchkernel_ir::SortDirection::Asc) => Sort::asc(field.as_str()),
+                            (searchkernel_ir::SortTargetIr::Field(field), searchkernel_ir::SortDirection::Desc) => Sort::desc(field.as_str()),
+                            (searchkernel_ir::SortTargetIr::Relevance, direction) => Sort::relevance(match direction {
+                                searchkernel_ir::SortDirection::Asc => crate::search::SortDirection::Asc,
+                                searchkernel_ir::SortDirection::Desc => crate::search::SortDirection::Desc,
+                            }),
+                            (searchkernel_ir::SortTargetIr::RankFeature(feature), direction) => Sort::feature(feature.clone(), match direction {
+                                searchkernel_ir::SortDirection::Asc => crate::search::SortDirection::Asc,
+                                searchkernel_ir::SortDirection::Desc => crate::search::SortDirection::Desc,
+                            }),
                         };
                         match sort.missing() {
                             searchkernel_ir::MissingPlacement::First => Ok(value.missing_first()),
@@ -416,6 +421,68 @@ impl Index {
             result::search_result(backend_result, &requested_facets)
         })
     }
+}
+
+fn ensure_inspected_query_can_represent(request: &searchkernel_ir::SearchRequestIr) -> Result<()> {
+    let unsupported = |path: &'static str| {
+        Err(Error::search(
+            crate::error::ErrorCode::Unsupported,
+            "inspect cannot faithfully represent the complete search request",
+        )
+        .with_detail(
+            "inspect_not_representable",
+            Some(path),
+            "this resolved request control is not represented by InspectedQuery",
+        ))
+    };
+
+    if !request.inputs().is_empty() {
+        return unsupported("inputs");
+    }
+    if !request.ranking_request().properties.is_empty() {
+        return unsupported("ranking.properties");
+    }
+    if request
+        .grouping()
+        .iter()
+        .any(|grouping| facet_from_grouping(grouping).is_none())
+    {
+        return unsupported("grouping");
+    }
+
+    let model = request.query_model();
+    if model.query_string.is_some()
+        || model.default_index.is_some()
+        || model.encoding.is_some()
+        || model.filter.is_some()
+        || model.locale.is_some()
+        || model.query_type.is_some()
+        || !model.sources.is_empty()
+        || !model.restrict.is_empty()
+        || model.search_path.is_some()
+        || model.search_group.is_some()
+    {
+        return unsupported("query_model");
+    }
+
+    let presentation = request.presentation();
+    if presentation.summary.is_some()
+        || presentation.format.is_some()
+        || presentation.bolding.is_some()
+        || presentation.timing.is_some()
+    {
+        return unsupported("presentation");
+    }
+    if !request.properties().is_empty() {
+        return unsupported("properties");
+    }
+    if request.query_profile().is_some() {
+        return unsupported("query_profile");
+    }
+    if request.search_chain().is_some() {
+        return unsupported("search_chain");
+    }
+    Ok(())
 }
 
 fn document_input(id: &str, value: &serde_json::Value) -> Result<searchkernel_ir::DocumentInput> {
