@@ -109,7 +109,7 @@ def corpus_value(field, item):
         return float(item)
     if field_type == "int64" and isinstance(item, (int, str)) and not isinstance(item, bool):
         return int(item)
-    if isinstance(field_type, str) and field_type.startswith("tensor<") and isinstance(item, list):
+    if isinstance(field_type, str) and field_type.startswith("tensor<") and isinstance(item, (list, tuple)):
         return embedding(*item)
     return item
 
