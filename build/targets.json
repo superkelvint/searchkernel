@@ -51,6 +51,9 @@
         "rust"
       ]
     },
+    "native-crud": {
+      "description": "Native Vespa engine CRUD integration tests"
+    },
     "python": {
       "description": "Python client, package, and real E2E tests"
     },
