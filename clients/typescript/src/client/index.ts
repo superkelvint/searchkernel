@@ -100,7 +100,7 @@ export interface ClientTransport {
 }
 
 export class Client {
-  constructor(readonly transport: ClientTransport) {}
+  constructor(readonly transport: ClientTransport, readonly target?: string) {}
 
   async execute<K extends Operation>(
     operation: K,
@@ -109,7 +109,7 @@ export class Client {
   ): Promise<OperationResponseMap[K]> {
     try {
       const decoded = unpackResponse(
-        await this.transport.execute(packRequest(operation, request), options),
+        await this.transport.execute(packRequest(operation, request, this.target), options),
         operation,
       );
       if (decoded.payloadType === ResponsePayload.SearchKernel_V2_Error) {
@@ -196,8 +196,10 @@ export class Index {
     this.client = client;
   }
 
-  static connect(endpoint: string, transport?: GrpcWebTransport): Index {
-    return new Index(new Client(transport ?? new GrpcWebTransport(endpoint)));
+  static connect(endpoint: string, transportOrTarget?: ClientTransport | string): Index {
+    const target = typeof transportOrTarget === "string" ? transportOrTarget : undefined;
+    const transport = typeof transportOrTarget === "string" ? undefined : transportOrTarget;
+    return new Index(new Client(transport ?? new GrpcWebTransport(endpoint), target));
   }
 
   insert(id: string, fields: Record<string, ValueInput>, options?: ExecuteOptions): Promise<InsertResultT>;

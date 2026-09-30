@@ -558,12 +558,16 @@ class _ManagedLocalHost:
 class Client:
     """Synchronous request/response client over a real gRPC channel."""
 
-    def __init__(self, transport: GrpcTransport):
+    def __init__(self, transport: GrpcTransport, *, target: str | None = None):
         self.transport = transport
+        self.target = target
 
     def execute(self, operation: str, request: Any) -> Any:
         try:
-            envelope = unpack_response(self.transport.call(pack_request(operation, request)), operation)
+            envelope = unpack_response(
+                self.transport.call(pack_request(operation, request, target=self.target)),
+                operation,
+            )
             if envelope.payloadType == ERROR_TYPE:
                 error = envelope.payload
                 raise ClientError(error.message or "Search Kernel request failed", error=error)
@@ -628,8 +632,8 @@ class Index:
         self._ergonomic = ergonomic
 
     @classmethod
-    def connect(cls, endpoint: str) -> "Index":
-        return cls(Client(GrpcTransport(endpoint)), ergonomic=True)
+    def connect(cls, endpoint: str, *, target: str | None = None) -> "Index":
+        return cls(Client(GrpcTransport(endpoint), target=target), ergonomic=True)
 
     @classmethod
     def create(
