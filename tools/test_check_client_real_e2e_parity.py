@@ -94,6 +94,32 @@ class RealE2EParityComparatorTests(unittest.TestCase):
             self.assertIn(consumed_marker, source, relative)
             self.assertNotIn(forbidden, source, relative)
 
+    def test_incomplete_executed_intent_fails_even_when_results_match(self):
+        inputs = {
+            "facets": {
+                "query": "shoes",
+                "field": "brand",
+                "name": "brands",
+                "limit": 10,
+                "sort": "count_desc",
+                "page_limit": 20,
+            }
+        }
+        observations = {
+            "facets": {
+                "intent": {
+                    "query": "shoes",
+                    "field": "brand",
+                    "name": "brands",
+                    "limit": 10,
+                    "page_limit": 20,
+                },
+                "Acme": 2,
+            }
+        }
+        with self.assertRaisesRegex(SystemExit, "did not consume the shared scenario intent"):
+            validate_observed_intents("rust", observations, inputs)
+
     def test_every_inventory_scenario_needs_a_shared_intent(self):
         corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
         scenarios = list(corpus["scenarios"])
