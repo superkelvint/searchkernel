@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 import subprocess
 import tempfile
 import unittest
@@ -193,7 +194,7 @@ root_type SearchResult;
             baseline = self.compile_bfbs(self.MINIMAL_SCHEMA, directory, "vector_base")
             baseline_reflection = MODULE.ReflectedSchema(baseline)
             self.assertIn(
-                "normal:vector<int>(optional)",
+                "normal:vector<int>=null(optional)",
                 baseline_reflection.wire["SearchResult"]["wire_members"],
             )
             changed_schema = self.MINIMAL_SCHEMA.replace(
@@ -203,7 +204,7 @@ root_type SearchResult;
             self.assert_extracted_drift(
                 baseline,
                 changed,
-                "normal:vector64<int>(optional)(offset64)",
+                "normal:vector64<int>=null(optional)(offset64)",
             )
 
     def test_bfbs_extraction_pins_fixed_array_element_and_length(self) -> None:
@@ -269,16 +270,20 @@ root_type SearchResult;
     def test_bfbs_extraction_pins_presence_and_offset_flags(self) -> None:
         cases = (
             ("presence:bool = null;", "presence:bool = false;", "presence:bool=false"),
-            ("offset:[int] (offset64);", "offset:[int];", "offset:vector<int>(optional)"),
+            (
+                "offset:[int] (offset64);",
+                "offset:[int];",
+                "offset:vector<int>=null(optional)",
+            ),
             (
                 "required_text:string (required);",
                 "required_text:string;",
-                "required_text:string(optional)",
+                "required_text:string=null(optional)",
             ),
             (
                 "key_text:string (key);",
                 "key_text:string;",
-                "key_text:string(optional)",
+                "key_text:string=null(optional)",
             ),
         )
         with tempfile.TemporaryDirectory() as temporary:
@@ -288,8 +293,8 @@ root_type SearchResult;
                 "SearchResult"
             ]["wire_members"]
             self.assertIn("presence:bool=null(optional)", baseline_members)
-            self.assertIn("wide:vector64<int>(optional)(offset64)", baseline_members)
-            self.assertIn("offset:vector<int>(optional)(offset64)", baseline_members)
+            self.assertIn("wide:vector64<int>=null(optional)(offset64)", baseline_members)
+            self.assertIn("offset:vector<int>=null(optional)(offset64)", baseline_members)
             self.assertIn("required_text:string(required)", baseline_members)
             self.assertIn("key_text:string(key)(required)", baseline_members)
             for index, (old, new, expected) in enumerate(cases):
@@ -310,6 +315,18 @@ root_type SearchResult;
         self.assertIn(
             "relation:TotalHitsRelation=Unspecified",
             wire["TotalHits"]["wire_members"],
+        )
+
+    def test_checked_in_signatures_pin_nullable_table_and_vector_defaults(self) -> None:
+        manifest = json.loads(MODULE.MANIFEST.read_text())
+        declared = manifest["schema"]
+        self.assertIn(
+            "root:ResultNode=null(optional)",
+            declared["SearchResult"]["wire_members"],
+        )
+        self.assertIn(
+            "fields:vector<ValueEntry>=null(optional)",
+            declared["ValueObject"]["wire_members"],
         )
 
     def test_corrupt_non_bfbs_input_fails_closed(self) -> None:
@@ -403,8 +420,8 @@ root_type SearchResult;
     def test_field_type_change_fails(self) -> None:
         closure = MODULE.result_closure(MODULE.BFBS.read_bytes())
         wire = copy.deepcopy(MODULE.result_wire_schema(MODULE.BFBS.read_bytes()))
-        index = wire["Hit"]["wire_members"].index("fields:vector<ValueEntry>(optional)")
-        wire["Hit"]["wire_members"][index] = "fields:vector<StringEntry>(optional)"
+        index = wire["Hit"]["wire_members"].index("fields:vector<ValueEntry>=null(optional)")
+        wire["Hit"]["wire_members"][index] = "fields:vector<StringEntry>=null(optional)"
         errors = MODULE.verify_schema(closure, self.manifest(), wire)
         self.assertTrue(any("Hit wire members mismatch" in error for error in errors))
 
@@ -510,6 +527,36 @@ root_type SearchResult;
         manifest["partitions"]["fields"]["Hit"]["highlights"] = ["empty"]
         errors = MODULE.verify_partitions(manifest, {"empty": {"payload": {}}})
         self.assertTrue(any("Hit.highlights is not exercised" in error for error in errors))
+
+    def test_map_partition_requires_an_empty_map_fixture(self) -> None:
+        manifest = json.loads(MODULE.MANIFEST.read_text())
+
+        def value_object(keys: list[str]) -> dict:
+            return {
+                "kind_type": "ValueObject",
+                "kind": {"fields": [{"key": key} for key in keys]},
+            }
+
+        envelopes = {
+            "empty": {"payload": {}},
+            "canonical": {"payload": {"value": value_object(["count"])}},
+            "value-variants": {
+                "payload": {
+                    "values": [
+                        value_object([]),
+                        value_object(["null", "text"]),
+                    ]
+                }
+            },
+        }
+        errors = MODULE.verify_partitions(manifest, envelopes)
+        self.assertFalse(
+            any(
+                "maps.empty_populated_and_multiple_keys has no scenario" in error
+                for error in errors
+            ),
+            errors,
+        )
 
     def test_malformed_manifest_scenario_must_match_failure_class(self) -> None:
         manifest = self.manifest()

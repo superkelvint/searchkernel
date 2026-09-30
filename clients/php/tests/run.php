@@ -58,6 +58,15 @@ function throws(string $class, callable $operation, string $message): void
     throw new RuntimeException($message . ': no exception');
 }
 
+/** @param array<string, mixed> $overrides @return array<string, mixed> */
+function canonicalResultPayload(array $overrides = []): array
+{
+    return array_replace([
+        'root' => ['node_type' => 'ResultGroup', 'node' => ['children' => []]],
+        'total_hits' => ['value' => 0, 'relation' => 'Exact'],
+    ], $overrides);
+}
+
 final class FixedResponseTransport implements Transport
 {
     /** @param array<string,mixed> $response */
@@ -201,7 +210,12 @@ $decoded = Protocol::decodeDocument($document);
 same('doc-1', $decoded['_id'], 'decode document id');
 same(PHP_INT_MAX, $decoded['count'], 'decode int');
 same(['one', 'two'], $decoded['tags'], 'decode list');
-same(['a' => 1, 'z' => 2], $decoded['meta'], 'decode object');
+truth($decoded['meta'] instanceof ValueObject, 'decode object retains its ValueObject type');
+same(
+    [['key' => 'a', 'value' => 1], ['key' => 'z', 'value' => 2]],
+    $decoded['meta']->entries,
+    'decode object preserves canonical entries',
+);
 
 $bytes = new Bytes("\x00\xffA");
 $encodedBytes = Protocol::value($bytes);
@@ -821,8 +835,21 @@ $malformedHit = [
 ];
 throws(
     \UnexpectedValueException::class,
-    static fn () => SearchResult::fromPayload(['root' => $malformedHit]),
+    static fn () => SearchResult::fromPayload(canonicalResultPayload(['root' => $malformedHit])),
     'malformed hit scalar fields fail closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload([]),
+    'missing SearchResult root fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload([
+        'root' => ['node_type' => 'ResultGroup', 'node' => ['children' => []]],
+        'total_hits' => null,
+    ]),
+    'null SearchResult total_hits fails closed',
 );
 
 $encodedEmptyObject = Protocol::value(ValueObject::fromPairs([]));
@@ -1029,14 +1056,14 @@ throws(
 );
 throws(
     SearchKernel\ProtocolException::class,
-    static fn () => SearchKernel\SearchResult::fromPayload([
+    static fn () => SearchKernel\SearchResult::fromPayload(canonicalResultPayload([
         'errors' => ['only' => ['code' => 1]],
-    ]),
+    ])),
     'SearchResult errors reject object-shaped vectors',
 );
 throws(
     SearchKernel\ProtocolException::class,
-    static fn () => SearchKernel\SearchResult::fromPayload([
+    static fn () => SearchKernel\SearchResult::fromPayload(canonicalResultPayload([
         'root' => [
             'node_type' => 'ResultGroup',
             'node' => [
@@ -1044,7 +1071,7 @@ throws(
                 'children' => [],
             ],
         ],
-    ]),
+    ])),
     'present malformed group limits fail closed instead of becoming null',
 );
 throws(
@@ -1583,7 +1610,7 @@ throws(
 );
 throws(
     ProtocolException::class,
-    static fn () => SearchResult::fromPayload(['errors' => null]),
+    static fn () => SearchResult::fromPayload(canonicalResultPayload(['errors' => null])),
     'present-null SearchResult errors vector fails closed',
 );
 throws(
@@ -1647,16 +1674,16 @@ throws(
 );
 same(
     'Unspecified',
-    SearchResult::fromPayload([
+    SearchResult::fromPayload(canonicalResultPayload([
         'total_hits' => ['value' => 0],
-    ])->totalHitsRelation,
+    ]))->totalHitsRelation,
     'present TotalHits with omitted relation preserves the schema default',
 );
 throws(
     ProtocolException::class,
-    static fn () => SearchResult::fromPayload([
+    static fn () => SearchResult::fromPayload(canonicalResultPayload([
         'total_hits' => ['value' => 0, 'relation' => 'FutureRelation'],
-    ]),
+    ])),
     'unknown TotalHits relation fails closed',
 );
 

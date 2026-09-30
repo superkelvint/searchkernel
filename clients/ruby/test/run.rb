@@ -116,6 +116,13 @@ end
 
 include TestSupport
 
+def canonical_search_result(overrides = {})
+  {
+    "root" => { "node_type" => "ResultGroup", "node" => {} },
+    "total_hits" => { "value" => 0, "relation" => "Exact" }
+  }.merge(overrides)
+end
+
 portable = SearchKernel::Value
 u64_boundary = portable.encode(portable.uint64(2**64 - 1))
 i64_min_boundary = portable.encode(-(2**63))
@@ -171,7 +178,18 @@ raises(SearchKernel::ProtocolError, "reject malformed tensor address") do
   portable.decode(wire)
 end
 raises(SearchKernel::ProtocolError, "reject malformed result node") do
-  SearchKernel::Results::SearchResults.new({"root" => {"node_type" => "Hit", "node" => {"id" => "a"}}, "metadata" => [{"key" => "x"}]})
+  SearchKernel::Results::SearchResults.new(canonical_search_result(
+    "root" => {"node_type" => "Hit", "node" => {"id" => "a"}},
+    "metadata" => [{"key" => "x"}]
+  ))
+end
+raises(SearchKernel::ProtocolError, "reject missing SearchResult root") do
+  SearchKernel::Results::SearchResults.new({"total_hits" => {"value" => 0}})
+end
+raises(SearchKernel::ProtocolError, "reject missing SearchResult total hits") do
+  SearchKernel::Results::SearchResults.new(
+    "root" => {"node_type" => "ResultGroup", "node" => {"children" => []}}
+  )
 end
 
 require "rubygems"
@@ -340,21 +358,21 @@ class RecordingTransport
     {
       "protocol_version" => 2,
       "payload_type" => "SearchKernel_V2_SearchResult",
-      "payload" => { "root" => nil }
+      "payload" => canonical_search_result
     }
   end
 end
 
 recording = RecordingTransport.new
 client = SearchKernel::Client.new(recording)
-same({ "root" => nil }, client.search({ "query" => { "source_type" => "MatchAllQuery" } }), "client returns operation payload")
+same(canonical_search_result, client.search({ "query" => { "source_type" => "MatchAllQuery" } }), "client returns operation payload")
 same([], client.search_results({}).hits, "client result wrapper derives hits from root")
 
-empty_results = SearchKernel::Results::SearchResults.new({})
+empty_results = SearchKernel::Results::SearchResults.new(canonical_search_result)
 same([], empty_results.hits, "empty result hits match Python facade semantics")
 same([], empty_results.groups, "empty result groups match Python facade semantics")
 same(0, empty_results.total_hits, "absent total hits defaults to zero")
-same("unknown", empty_results.total_hits_relation, "absent total-hit relation is unknown")
+same("Exact", empty_results.total_hits_relation, "canonical empty result relation")
 same([], empty_results.errors, "absent result errors default to an empty list")
 same({}, empty_results.metadata, "absent result metadata defaults to an empty map")
 same([], empty_results.continuations, "absent result continuations default to an empty list")
@@ -362,7 +380,7 @@ same({}, empty_results.aggregations, "absent result aggregations default to an e
 same({}, empty_results.facets, "absent result facets default to an empty map")
 
 empty_hit = SearchKernel::Results::SearchResults.new(
-  "root" => {"node_type" => "Hit", "node" => {}}
+  canonical_search_result("root" => {"node_type" => "Hit", "node" => {}})
 ).hits.first
 same("", empty_hit.id, "absent hit id defaults to an empty string")
 same({}, empty_hit.fields, "absent hit fields default to an empty map")
@@ -374,7 +392,7 @@ same({}, empty_hit.rank_features, "absent rank features default to an empty map"
 same([], empty_hit.sort_values, "absent hit sort values default to an empty list")
 
 empty_group = SearchKernel::Results::SearchResults.new(
-  "root" => {"node_type" => "ResultGroup", "node" => {}}
+  canonical_search_result("root" => {"node_type" => "ResultGroup", "node" => {}})
 ).root
 same({}, empty_group.fields, "absent group fields default to an empty map")
 same([], empty_group.children, "absent group children default to an empty list")
@@ -385,21 +403,25 @@ same([], empty_group.types, "absent group types default to an empty list")
 same({}, empty_group.metadata, "absent group metadata defaults to an empty map")
 
 empty_result_metadata = SearchKernel::Results::SearchResults.new(
+  canonical_search_result(
   "coverage" => {},
   "timing" => {},
   "errors" => [{"code" => "0"}]
+  )
 )
 same({}, empty_result_metadata.coverage.metadata, "absent coverage metadata defaults to an empty map")
 same({}, empty_result_metadata.timing.metadata, "absent timing metadata defaults to an empty map")
 same({}, empty_result_metadata.errors.first.metadata, "absent issue metadata defaults to an empty map")
-same(false, SearchKernel::Results::SearchResults.new({"coverage" => {"full" => {}}}).coverage.full,
+same(false, SearchKernel::Results::SearchResults.new(canonical_search_result("coverage" => {"full" => {}})).coverage.full,
      "present OptionalBool retains omitted default false")
-same(nil, SearchKernel::Results::SearchResults.new({"coverage" => {}}).coverage.full,
+same(nil, SearchKernel::Results::SearchResults.new(canonical_search_result("coverage" => {})).coverage.full,
      "absent OptionalBool differs from present false")
 integer_result = SearchKernel::Results::SearchResults.new(
+  canonical_search_result(
   "total_hits" => {"value" => "18446744073709551615", "relation" => "LowerBound"},
   "coverage" => {"documents" => {"value" => "18446744073709551615"}},
   "errors" => [{"code" => "-9223372036854775808", "message" => "boundary"}]
+  )
 )
 same(2**64 - 1, integer_result.total_hits, "total hits decode canonical uint64 text")
 same(2**64 - 1, integer_result.coverage.documents, "coverage decodes canonical uint64 text")
@@ -416,7 +438,7 @@ def facet_projection_result(count_value, generic: false)
   end
 
   SearchKernel::Results::SearchResults.new(
-    "root" => {
+    canonical_search_result("root" => {
       "node_type" => "ResultGroup",
       "node" => {
         "children" => [{
@@ -428,7 +450,7 @@ def facet_projection_result(count_value, generic: false)
           }
         }]
       }
-    }
+    })
   )
 end
 
@@ -473,7 +495,7 @@ same({}, negative_generic.facets, "generic facet rejects negative signed count")
 
 
 metadata_result = SearchKernel::Results::SearchResults.new(
-  "root" => {
+  canonical_search_result("root" => {
     "node_type" => "ResultGroup",
     "node" => {
       "continuations" => [{ "key" => "next", "value" => "opaque-token" }],
@@ -498,6 +520,7 @@ metadata_result = SearchKernel::Results::SearchResults.new(
   "trace" => SearchKernel::Value.encode("trace-token"),
   "metadata" => [{ "key" => "origin", "value" => SearchKernel::Value.encode("fixture") }],
   "errors" => [{ "code" => "7", "summary" => "warning", "message" => "fixture issue" }]
+  )
 )
 metadata_hit = metadata_result.hits.first
 same({ "match" => 1.5 }, metadata_hit.match_features, "match features decode")

@@ -327,9 +327,28 @@ fn duplicate_result_map_key(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes
 }
 
-fn clear_table_field(bytes: &mut [u8], table: usize, slot: usize) {
+fn clear_table_field(bytes: &mut Vec<u8>, table: usize, slot: usize) {
     let vtable = (table as isize - read_i32(bytes, table) as isize) as usize;
-    let offset = vtable + 4 + slot * 2;
+    let vtable_size = read_u16(bytes, vtable) as usize;
+    let field_offset = 4 + slot * 2;
+    assert!(
+        field_offset + 2 <= vtable_size,
+        "fixture field slot is outside its vtable"
+    );
+
+    // FlatBuffers tables can share vtables. Copy before changing the selected
+    // slot so one malformed fixture does not clear the same field on every
+    // table with an identical layout.
+    if bytes.len() % 2 != 0 {
+        bytes.push(0);
+    }
+    let copied_vtable = bytes[vtable..vtable + vtable_size].to_vec();
+    let copied_vtable_position = bytes.len();
+    bytes.extend_from_slice(&copied_vtable);
+    let vtable_distance = table as isize - copied_vtable_position as isize;
+    bytes[table..table + 4].copy_from_slice(&(vtable_distance as i32).to_le_bytes());
+
+    let offset = copied_vtable_position + field_offset;
     assert_ne!(
         read_u16(bytes, offset),
         0,
