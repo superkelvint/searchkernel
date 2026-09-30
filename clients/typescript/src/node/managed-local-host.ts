@@ -119,11 +119,17 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
 }
 
 export class ManagedLocalHost {
+  private static readonly pool = new Map<
+    string,
+    { promise: Promise<ManagedLocalHost>; refs: number }
+  >();
+
   readonly socketPath: string;
   readonly endpoint: string;
   private child: ChildProcess | null = null;
   private closed = false;
   private hostOutput = "";
+  private poolKey: string | null = null;
 
   private constructor(
     readonly dataRoot: string,
@@ -134,6 +140,29 @@ export class ManagedLocalHost {
   }
 
   static async start(dataRoot: string): Promise<ManagedLocalHost> {
+    const key = resolve(dataRoot);
+    let entry = this.pool.get(key);
+    if (entry === undefined) {
+      const promise = this.startUnpooled(key);
+      entry = { promise, refs: 0 };
+      this.pool.set(key, entry);
+      promise.catch(() => {
+        if (this.pool.get(key) === entry) this.pool.delete(key);
+      });
+    }
+
+    entry.refs += 1;
+    try {
+      const host = await entry.promise;
+      host.poolKey = key;
+      return host;
+    } catch (error) {
+      entry.refs -= 1;
+      throw error;
+    }
+  }
+
+  private static async startUnpooled(dataRoot: string): Promise<ManagedLocalHost> {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), "searchkernel-socket-"));
     const host = new ManagedLocalHost(dataRoot, temporaryDirectory);
 
@@ -217,8 +246,21 @@ export class ManagedLocalHost {
 
   async close(options: { force?: boolean } = {}): Promise<void> {
     if (this.closed) return;
-    this.closed = true;
 
+    const poolKey = this.poolKey;
+    if (poolKey !== null) {
+      const entry = ManagedLocalHost.pool.get(poolKey);
+      if (entry !== undefined) {
+        if (!options.force && entry.refs > 1) {
+          entry.refs -= 1;
+          return;
+        }
+        ManagedLocalHost.pool.delete(poolKey);
+      }
+      this.poolKey = null;
+    }
+
+    this.closed = true;
     const child = this.child;
     this.child = null;
     if (child?.pid && child.exitCode === null && child.signalCode === null) {
