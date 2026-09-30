@@ -1,6 +1,6 @@
 import { Index as RemoteIndex, Client, SearchKernelError } from "../client/index.js";
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
@@ -74,7 +74,8 @@ async function prepareManagedDataRoot(dataRoot: string): Promise<void> {
     await writeFile(marker, "searchkernel-managed-v1\n", { flag: "wx" });
   } catch (error) {
     if (created) {
-      await rm(dataRoot, { recursive: true, force: true }).catch(() => undefined);
+      await unlink(marker).catch(() => undefined);
+      await rmdir(dataRoot).catch(() => undefined);
     }
     throw error;
   }
@@ -89,7 +90,8 @@ async function reserveManagedPath(indexPath: string, target: string): Promise<vo
     await writeFile(join(indexPath, MANAGED_MARKER_NAME), `${target}\n`, { flag: "wx" });
   } catch (error) {
     if (created) {
-      await rm(indexPath, { recursive: true, force: true }).catch(() => undefined);
+      await unlink(join(indexPath, MANAGED_MARKER_NAME)).catch(() => undefined);
+      await rmdir(indexPath).catch(() => undefined);
     }
     throw error;
   }
@@ -101,8 +103,15 @@ async function ensureManagedMarker(indexPath: string, target: string): Promise<v
   await writeFile(join(indexPath, MANAGED_MARKER_NAME), `${target}\n`, { flag: "wx" });
 }
 
-async function cleanupManagedReservation(indexPath: string): Promise<void> {
-  await rm(indexPath, { recursive: true, force: true }).catch(() => undefined);
+async function cleanupManagedReservation(indexPath: string, target: string): Promise<void> {
+  const marker = join(indexPath, MANAGED_MARKER_NAME);
+  try {
+    if ((await readFile(marker, "utf8")).trim() !== target) return;
+    await unlink(marker);
+    await rmdir(indexPath);
+  } catch {
+    // Best-effort rollback only. Never remove caller-created contents.
+  }
 }
 
 /** Node-specific Index that can own a local searchkerneld process. */
@@ -158,7 +167,7 @@ export class Index extends RemoteIndex {
     } catch (error) {
       await client?.close();
       await owner?.close();
-      await cleanupManagedReservation(indexPath);
+      await cleanupManagedReservation(indexPath, target);
       throw error;
     }
   }
