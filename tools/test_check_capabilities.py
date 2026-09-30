@@ -65,8 +65,23 @@ class CapabilityLedgerTests(unittest.TestCase):
             documents[ROOT / "docs" / "CAPABILITIES.md"],
         )
         self.assertIn(
+            "`query.phrase` | typescript | supported",
+            documents[ROOT / "docs" / "CAPABILITIES.md"],
+        )
+        self.assertNotIn(
             "machine-checked structured support state",
             documents[ROOT / "LIMITATIONS.md"],
+        )
+
+    def test_query_term_evidence_uses_split_adapter_query_tests(self) -> None:
+        capability = next(
+            capability
+            for capability in self.ledger["capabilities"]
+            if capability["id"] == "query.term"
+        )
+        self.assertIn(
+            "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs",
+            capability["verified_by"],
         )
 
     def test_every_query_expr_kind_has_one_capability_owner(self) -> None:
@@ -145,7 +160,7 @@ class CapabilityLedgerTests(unittest.TestCase):
         )
         self.assertEqual(
             capability["facade_support"]["typescript"]["status"],
-            "missing",
+            "supported",
         )
         self.assertNotIn(
             "Rust Query",
@@ -247,6 +262,19 @@ class CapabilityLedgerTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(MODULE.LedgerError, "missing symbol"):
             MODULE.validate_ledger(ledger)
+
+
+    def test_limitations_include_authoritative_release_scope(self) -> None:
+        limitations = MODULE.generated_documents(self.ledger)[ROOT / "LIMITATIONS.md"]
+        release_support = MODULE.load_release_support()
+        platform = release_support["platform"]
+        self.assertIn("## Release scope", limitations)
+        self.assertIn(
+            f"**{platform['os']} {platform['arch']} {platform['libc']}**",
+            limitations,
+        )
+        for surface in release_support["deferred"]:
+            self.assertIn(f"`{surface}`", limitations)
 
     def test_stale_document_is_detected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

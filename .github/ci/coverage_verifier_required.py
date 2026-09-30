@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Classify whether changed paths require exact-head Rust coverage verification.
 
-This policy is independent of verification/dag.toml while DAG authorization is
-suspended. Coverage is expensive, so select it only when the coverage execution
-surface itself changes; nightly coverage remains the broad product baseline.
+Coverage is expensive, so select it only when the coverage execution surface
+itself changes; nightly coverage remains the broad product baseline.
 """
 
 from __future__ import annotations

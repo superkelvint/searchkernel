@@ -23,7 +23,7 @@ Search Kernel does not implement a Rust facet or aggregation engine.
 The public Rust shape is frozen by:
 
 ```text
-reference/vespa/api-contract/src/bin/m9.rs
+core/crates/searchkernel-vespa-engine/examples/api-contract-m9.rs
 ```
 
 M9 adds:

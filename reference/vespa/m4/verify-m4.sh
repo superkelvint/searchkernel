@@ -24,9 +24,7 @@ fi
 
 run_workspace_quality
 
-if [[ -f "$ROOT/reference/vespa/api-contract/Cargo.toml" ]]; then
-  cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m4
-fi
+cargo check --quiet -p searchkernel-vespa-engine --example api-contract-m4
 
 "$M4/run-rust.sh" "$WORK/rust-results.jsonl"
 python3 "$M4/compare.py" "$M4/expected/results.jsonl" "$WORK/rust-results.jsonl"

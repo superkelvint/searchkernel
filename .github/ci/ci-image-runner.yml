@@ -404,34 +404,34 @@ jobs:
             export NATIVE_ADAPTER_LIB
           }
 
-          prepare_native_full_verifier_sdk() {
-            local verifier_sdk="$CARGO_TARGET_DIR/native-verifier-sdk"
-            local verifier_build="$CARGO_TARGET_DIR/native-verifier-sdk-build"
-            local verifier_vespa_root
+          prepare_native_full_probe_sdk() {
+            local native_probe_sdk="$CARGO_TARGET_DIR/native-verifier-sdk"
+            local native_probe_build="$CARGO_TARGET_DIR/native-verifier-sdk-build"
+            local native_probe_vespa_root
 
-            verifier_vespa_root=$(bash tools/resolve-native-sdk.sh vespa-root)
+            native_probe_vespa_root=$(bash tools/resolve-native-sdk.sh vespa-root)
 
-            run_phase native-full-prepare-verifier-sdk env \
+            run_phase native-full-prepare-native-probe-sdk env \
               -u HEAD_CHECK_TOKEN \
               -u AUTOFIX_TOKEN \
-              SEARCHKERNEL_VERIFIER_SDK="$verifier_sdk" \
-              SEARCHKERNEL_VERIFIER_SDK_BUILD="$verifier_build" \
-              SEARCHKERNEL_VERIFIER_BASE_SDK="$native_base" \
-              SEARCHKERNEL_VERIFIER_VESPA_ROOT="$verifier_vespa_root" \
+              SEARCHKERNEL_NATIVE_PROBE_SDK="$native_probe_sdk" \
+              SEARCHKERNEL_NATIVE_PROBE_SDK_BUILD="$native_probe_build" \
+              SEARCHKERNEL_NATIVE_PROBE_BASE_SDK="$native_base" \
+              SEARCHKERNEL_NATIVE_PROBE_VESPA_ROOT="$native_probe_vespa_root" \
               bash -c '
                 set -euo pipefail
                 source reference/vespa/common/verify-common.sh
-                prepare_verifier_sdk
+                prepare_native_probe_sdk
               '
 
-            [[ -f "$verifier_sdk/manifest.json" ]]
-            [[ -f "$verifier_sdk/include/searchkernel_vespa.h" ]]
+            [[ -f "$native_probe_sdk/manifest.json" ]]
+            [[ -f "$native_probe_sdk/include/searchkernel_vespa.h" ]]
 
-            export SEARCHKERNEL_VERIFIER_SDK="$verifier_sdk"
-            export SEARCHKERNEL_VERIFIER_SDK_BUILD="$verifier_build"
-            export SEARCHKERNEL_VERIFIER_BASE_SDK="$native_base"
-            export SEARCHKERNEL_VERIFIER_VESPA_ROOT="$verifier_vespa_root"
-            export SEARCHKERNEL_VERIFIER_SDK_PREPARED=1
+            export SEARCHKERNEL_NATIVE_PROBE_SDK="$native_probe_sdk"
+            export SEARCHKERNEL_NATIVE_PROBE_SDK_BUILD="$native_probe_build"
+            export SEARCHKERNEL_NATIVE_PROBE_BASE_SDK="$native_base"
+            export SEARCHKERNEL_NATIVE_PROBE_VESPA_ROOT="$native_probe_vespa_root"
+            export SEARCHKERNEL_NATIVE_PROBE_SDK_PREPARED=1
           }
 
           case "$CI_TARGET" in
@@ -484,6 +484,8 @@ jobs:
               run_phase python-dependency-contract "$PYTHON" tools/test_python_dependency_contract.py
               run_phase toolchain-authorities "$PYTHON" tools/test_toolchain_authorities.py
               run_phase verifier-routing bash reference/vespa/verifiers/test-routing.sh
+              run_phase verifier-build-ownership-tests "$PYTHON" tools/test_check_verifier_build_ownership.py
+              run_phase verifier-build-ownership "$PYTHON" tools/check-verifier-build-ownership.py
               ;;
 
             client-capabilities)
@@ -625,7 +627,7 @@ jobs:
               # ABI surface workflow, which compares against the real PR/base SHA.
               # Prepare once in a tokenless child, then publish only the fixed
               # verifier paths/marker into the parent for later verifier reuse.
-              prepare_native_full_verifier_sdk
+              prepare_native_full_probe_sdk
 
               run_phase native-full-hnsw ./dev verify vespa.nearest-neighbor.hnsw
               run_phase native-full-product-integration ./dev verify product.integration --baseline-already-proved
@@ -649,6 +651,7 @@ jobs:
               cp -R examples/release-quickstart /artifacts/consumer-release-tools/quickstarts
               build_native_searchkerneld client-e2e-build
               run_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e
+              run_phase client-real-e2e-parity ./dev test client-real-e2e-parity
               ;;
 
             closure-422)

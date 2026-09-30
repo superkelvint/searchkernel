@@ -135,11 +135,14 @@ supply arbitrary server filesystem paths; the daemon maps validated logical
 identifiers under its configured data root.
 
 A daemon-bound `RequestEnvelope` therefore carries an explicit `IndexTarget`.
-Ordinary operations and canonical `CreateIndexRequest` / `OpenIndexRequest`
-lifecycle operations are direct members of the same request union. The daemon
-router validates `target` and selects the per-index dispatcher before semantic
-execution; the dispatcher itself remains target-agnostic because its index is
-already bound.
+Ordinary operations and canonical `CreateIndexRequest` / `OpenIndexRequest` /
+`DeleteIndexRequest` lifecycle operations are direct members of the same request
+union. After mechanical envelope verification, `searchkernel-ir` resolves and
+validates the target and lifecycle request meaning. The daemon uses that
+resolved target to select the per-index dispatcher or execute the lifecycle
+operation; the dispatcher itself remains target-agnostic because its index is
+already bound. Language clients encode target strings without applying the
+Search Kernel target grammar.
 
 `IndexDefinition.name` remains schema identity and may differ from the logical
 daemon target; routing must never be inferred from it. Target-less envelopes are

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
@@ -71,6 +71,9 @@ export function resolveHostBinary(): string {
 
 export function environmentForHost(): NodeJS.ProcessEnv {
   const environment = { ...process.env };
+  delete environment.SEARCHKERNEL_INDEX_PATH;
+  delete environment.SEARCHKERNEL_INDEX_DEFINITION;
+  delete environment.SEARCHKERNEL_INDEX_DEFINITION_JSON;
   const sdkLib = environment.SEARCHKERNEL_SDK_LIB;
   if (sdkLib) {
     environment.LD_LIBRARY_PATH = environment.LD_LIBRARY_PATH
@@ -180,7 +183,47 @@ export class ManagedLocalHost {
   ): Promise<void> {
     const destination = resolve(dataRoot, target);
     const marker = resolve(indexPath, ".searchkernel-managed-target");
-    if (existsSync(destination) || existsSync(marker) || !existsSync(indexPath)) return;
+    const statOrNull = (path: string) => {
+      try {
+        return lstatSync(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      }
+    };
+
+    const sourceStat = statOrNull(indexPath);
+    if (sourceStat !== null && (sourceStat.isSymbolicLink() || !sourceStat.isDirectory())) {
+      throw new SearchKernelError(
+        `legacy managed-local index must be a real directory: ${indexPath}`,
+      );
+    }
+
+    let markerMatches = false;
+    if (sourceStat !== null) {
+      const markerStat = statOrNull(marker);
+      if (markerStat !== null) {
+        if (markerStat.isSymbolicLink() || !markerStat.isFile()) {
+          throw new SearchKernelError(`unsafe managed-local marker: ${marker}`);
+        }
+        if (readFileSync(marker, "utf8").trim() !== target) {
+          throw new SearchKernelError(`managed-local marker target mismatch at ${marker}`);
+        }
+        markerMatches = true;
+      }
+    }
+
+    const destinationStat = statOrNull(destination);
+    if (destinationStat !== null) {
+      if (destinationStat.isSymbolicLink() || !destinationStat.isDirectory()) {
+        throw new SearchKernelError(`unsafe managed-local destination: ${destination}`);
+      }
+      if (sourceStat === null || markerMatches) return;
+      throw new SearchKernelError(
+        `managed-local destination already exists while legacy source remains: ${destination}`,
+      );
+    }
+    if (markerMatches || sourceStat === null) return;
 
     const binary = resolveHostBinary();
     if (!existsSync(binary)) {
@@ -216,6 +259,19 @@ export class ManagedLocalHost {
       ));
       child.once("exit", (code, signal) => {
         if (code === 0) {
+          resolveMigration();
+          return;
+        }
+        // An equivalent concurrent migrator may have completed while this
+        // process waited on the lifecycle lock. Converge on that publication.
+        const finalDestination = statOrNull(destination);
+        const finalSource = statOrNull(indexPath);
+        if (
+          finalDestination !== null
+          && finalDestination.isDirectory()
+          && !finalDestination.isSymbolicLink()
+          && finalSource === null
+        ) {
           resolveMigration();
           return;
         }

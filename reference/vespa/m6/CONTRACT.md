@@ -54,7 +54,7 @@ Rules:
 The compile-only fixture at:
 
 ```text
-reference/vespa/api-contract/src/bin/m6.rs
+core/crates/searchkernel-vespa-engine/examples/api-contract-m6.rs
 ```
 
 is normative.

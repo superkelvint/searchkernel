@@ -234,9 +234,12 @@ end
 
 targeted = SearchKernel::Protocol.request_envelope(:search, { "query" => {} }, target: "products")
 same({ "name" => "products" }, targeted["target"], "targeted request carries logical daemon target")
-raises(ArgumentError, "path-like target rejects locally") do
-  SearchKernel::Protocol.request_envelope(:search, {}, target: "../products")
-end
+invalid_but_representable = SearchKernel::Protocol.request_envelope(:search, {}, target: "Products")
+same(
+  { "name" => "Products" },
+  invalid_but_representable["target"],
+  "domain-invalid target reaches canonical semantic validation"
+)
 
 raises(ArgumentError, "unknown operation rejects") do
   SearchKernel::Protocol.request_envelope(:unknown, {})
