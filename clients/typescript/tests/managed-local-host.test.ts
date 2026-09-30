@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -273,7 +273,7 @@ describe("managed-local host binary resolution", () => {
       ).rejects.toThrow(/not owned by Search Kernel/);
 
       expect(lstatSync(dataRoot).ino).toBe(inode);
-      expect(readFileSync(resolve(dataRoot, "..", ".keep-missing"), { flag: "a+" })).toBeDefined();
+      expect(readdirSync(dataRoot)).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
