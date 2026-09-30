@@ -33,10 +33,10 @@ import {
   gf,
   q,
   type DocumentInput,
-  type ValueInput,
   type ResultGroup,
   type SearchResults,
   type CreateIndexOptions,
+  type ValueInput,
 } from "@searchkernel/client/node";
 
 let WORKSPACE_PATH = "";
@@ -128,7 +128,7 @@ function documentInput(source: Record<string, unknown>): DocumentInput {
   return document as DocumentInput;
 }
 
-function sharedFilterBindings(source: string, bindings: Record<string, ValueInput>): Record<string, ValueInput> {
+function sharedFilterBindings(source: string, bindings: Record<string, unknown>): Record<string, ValueInput> {
   const converted: Record<string, ValueInput> = {};
   for (const [name, input] of Object.entries(bindings)) {
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -136,7 +136,7 @@ function sharedFilterBindings(source: string, bindings: Record<string, ValueInpu
     const fieldType = field ? E2E_CORPUS.schema.fields[field]?.type : undefined;
     converted[name] = fieldType === "float64" ? float64(input as number)
       : fieldType === "int64" ? BigInt(input as number | string)
-        : input;
+        : input as ValueInput;
   }
   return converted;
 }
