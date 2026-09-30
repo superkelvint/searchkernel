@@ -10,7 +10,11 @@ use searchkernel_vespa_engine::{
     Document, DocumentUpdate, ScalarValue, TensorAddress, TensorBlock, TensorCell, TensorValue,
 };
 use serde_json::{json, Value as Json};
-use std::{env, fs, path::{Path, PathBuf}, sync::Arc};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 fn dense_json(case: &Json) -> Json {
     json!({"kind_type":"TensorValue","kind":{"type_spec":case["type_spec"],"payload_type":"DenseTensorValues","payload":{"values":case["values"]}}})
