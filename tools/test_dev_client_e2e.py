@@ -158,6 +158,21 @@ exit 0
                     e2e_log.read_text(encoding="utf-8"),
                 )
 
+    def test_python_real_e2e_wrapper_prepares_runtime_and_opts_in(self) -> None:
+        wrapper = (ROOT / "tools" / "run-python-native-e2e.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('source "$ROOT/tools/client-e2e-runtime.sh"', wrapper)
+        self.assertIn('prepare_client_e2e_runtime "$prevalidated_native_sdk"', wrapper)
+        self.assertIn("SEARCHKERNEL_RUN_NATIVE_E2E=1", wrapper)
+        self.assertIn("-p 'test_grpc_e2e.py'", wrapper)
+        self.assertIn('if [[ "$include_facade" == 1 ]]; then', wrapper)
+        self.assertIn(
+            '"$PYTHON_BIN" clients/python/examples/try_searchkernel_client_api_e2e.py',
+            wrapper,
+        )
+
     def test_ruby_real_e2e_uses_the_installed_gem(self) -> None:
         e2e_log = self.fixture / "ruby-installed.e2e.log"
         env = os.environ.copy()

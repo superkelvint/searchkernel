@@ -897,6 +897,7 @@ pub(crate) enum FieldKind {
     Float64,
     Bool,
     Position,
+    Struct(Vec<SchemaStructField>),
     Tensor(String),
 }
 
@@ -1165,6 +1166,14 @@ impl Field {
         Self::new(name, FieldKind::Position)
     }
 
+    /// Create an array field whose elements are structs with primitive members.
+    pub fn array_of_struct<I>(name: impl Into<String>, fields: I) -> Self
+    where
+        I: IntoIterator<Item = SchemaStructField>,
+    {
+        Self::new(name, FieldKind::Struct(fields.into_iter().collect())).multi()
+    }
+
     /// Create a dense tensor field with the supplied Vespa type spec.
     pub fn tensor(name: impl Into<String>, type_spec: impl Into<String>) -> Self {
         let type_spec = type_spec.into();
@@ -1387,6 +1396,9 @@ fn data_type_from_kind(kind: &FieldKind) -> DataType {
         FieldKind::Float64 => DataType::Primitive(PrimitiveDataType::Float64),
         FieldKind::Bool => DataType::Primitive(PrimitiveDataType::Bool),
         FieldKind::Position => DataType::Position,
+        FieldKind::Struct(fields) => DataType::Struct {
+            fields: fields.clone(),
+        },
         FieldKind::Tensor(type_spec) => DataType::Tensor {
             type_spec: type_spec.clone(),
         },
@@ -1840,6 +1852,7 @@ fn validate_public_field_data_type(field: &Field, path: &str) -> Result<()> {
         | (FieldKind::Float64, DataType::Primitive(PrimitiveDataType::Float64))
         | (FieldKind::Bool, DataType::Primitive(PrimitiveDataType::Bool))
         | (FieldKind::Position, DataType::Position) => true,
+        (FieldKind::Struct(expected), DataType::Struct { fields }) => expected == fields,
         (FieldKind::Tensor(expected_type), DataType::Tensor { type_spec }) => {
             expected_type == type_spec
         }

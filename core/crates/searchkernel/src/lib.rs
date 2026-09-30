@@ -16,12 +16,14 @@ mod result;
 mod schema;
 mod search;
 mod tensor;
+mod update;
 pub use analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 pub use document::DocumentId;
 pub use error::{Error, ErrorCode, ErrorDetail, Result};
 pub use filter::{field, FieldRef, Filter, FilterBindings, Range, SearchFilterInput};
 pub use grouping::{
-    GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOutput, GroupingPlan,
+    GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOrder, GroupingOutput,
+    GroupingPlan,
 };
 pub use index::{Index, IndexRuntime};
 pub use patch::Patch;
@@ -51,6 +53,7 @@ pub use search::{
     SearchBuilder, Sort, SortDirection, YqlBuilder,
 };
 pub use tensor::Tensor;
+pub use update::Update;
 
 /// Build clause-local typed values for a textual filter.
 #[macro_export]

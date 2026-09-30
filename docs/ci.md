@@ -22,8 +22,8 @@ Search Kernel separates two concerns that were previously coupled:
 Heavy native/Vespa verification is important, but it is **not** automatically
 scheduled merely because a pull request touches a native-sensitive path.
 
-The repository must not rebuild the historical model where a path classifier or
-verification DAG expands ordinary PR CI into a large native verifier matrix.
+The repository must not rebuild the historical model where path-based automation
+expands ordinary PR CI into a large native verifier matrix.
 
 ## 2. Mandatory pull-request CI
 
@@ -211,8 +211,8 @@ the ability to alter privileged orchestration for its own execution.
 ## 6. Verification selection is human/reviewer-directed, not PR-path automation
 
 The previous CI design attempted to derive an authoritative verification plan
-from the base-to-head diff using path classification and a repository
-verification DAG.
+from the base-to-head diff using repository-owned path classification and
+dependency policy.
 
 That is no longer the PR-CI architecture.
 
@@ -230,10 +230,6 @@ decide whether every PR needs a heavy matrix.
 A path-to-check mapping may guide humans and agents. It must not become a hidden
 automatic policy engine that reintroduces `native-full` or Universe as mandatory
 PR CI.
-
-Historical verification-DAG material may remain during migration where other
-tooling still consumes it, but it is not the authority for automatically
-expanding ordinary pull-request CI.
 
 ## 7. Native and Vespa verification
 
@@ -372,8 +368,8 @@ Do not use CI work to recreate:
 
 ## 13. Migration notes
 
-Some repository files and historical issues may still describe the older
-change-aware/DAG-selected PR verification architecture.
+Some historical issues may still describe the older change-aware PR verification
+architecture.
 
 When encountered, reconcile them against the current build-system design rather
 than implementing them literally.
@@ -382,8 +378,7 @@ In particular:
 
 - stale issues that require automatic heavy/native PR verification should be
   reassessed;
-- old exact-head machinery may still be useful where it proves revision
-  identity, but it should not imply automatic heavy lane selection;
+- obsolete path-selection machinery should be removed rather than revived;
 - specialist verifiers should migrate behind canonical `./dev verify` targets;
 - remote execution should become first-class before obsolete heavy CI paths are
   deleted if those paths are still the only way an agent can run a required

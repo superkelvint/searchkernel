@@ -5,12 +5,17 @@ import { FieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/fiel
 import { MatchingConfigT } from "../generated/flatbuffers/search-kernel/v2/matching-config.js";
 import { MatchingMode } from "../generated/flatbuffers/search-kernel/v2/matching-mode.js";
 import { OptionalBoolT } from "../generated/flatbuffers/search-kernel/v2/optional-bool.js";
+import { OptionalUInt32T } from "../generated/flatbuffers/search-kernel/v2/optional-uint32.js";
 import { PrimitiveDataTypeKind } from "../generated/flatbuffers/search-kernel/v2/primitive-data-type-kind.js";
 import { PrimitiveDataTypeT } from "../generated/flatbuffers/search-kernel/v2/primitive-data-type.js";
 import { RankPhaseDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-phase-definition.js";
 import { RankProfileDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-definition.js";
 import { RankProfileInputT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-input.js";
 import { TensorDataTypeT } from "../generated/flatbuffers/search-kernel/v2/tensor-data-type.js";
+import { ArrayDataTypeT } from "../generated/flatbuffers/search-kernel/v2/array-data-type.js";
+import { StructDataTypeT } from "../generated/flatbuffers/search-kernel/v2/struct-data-type.js";
+import { StructFieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/struct-field-definition.js";
+import { PositionDataTypeT } from "../generated/flatbuffers/search-kernel/v2/position-data-type.js";
 import { Tensor, value } from "../client/values.js";
 
 export interface FieldOptions {
@@ -71,6 +76,33 @@ export class Boolean extends FieldSpec {
   protected readonly primitive = PrimitiveDataTypeKind.Bool;
 }
 
+export class PositionField extends FieldSpec {
+  protected readonly primitive = PrimitiveDataTypeKind.String;
+
+  override definition(name: string): FieldDefinitionT {
+    if (!name) throw new TypeError("field name must not be empty");
+    return new FieldDefinitionT(name, new DataTypeT(DataTypeKind.PositionDataType, new PositionDataTypeT()),
+      optionalBool(this.options.stored), optionalBool(this.options.searchable),
+      optionalBool(this.options.filterable), optionalBool(this.options.sortable), optionalBool(this.options.facetable));
+  }
+}
+
+export class ArrayOfStructField {
+  constructor(readonly members: Record<string, FieldSpec>, readonly options: FieldOptions = {}) {}
+
+  definition(name: string): FieldDefinitionT {
+    if (!name || Object.keys(this.members).length === 0) throw new TypeError("array struct field requires a name and members");
+    const fields = Object.keys(this.members).sort().map((member) => {
+      const type = this.members[member]!.definition(member).dataType;
+      return new StructFieldDefinitionT(member, type);
+    });
+    const struct = new DataTypeT(DataTypeKind.StructDataType, new StructDataTypeT(fields));
+    const array = new DataTypeT(DataTypeKind.ArrayDataType, new ArrayDataTypeT(struct));
+    return new FieldDefinitionT(name, array, optionalBool(this.options.stored), optionalBool(this.options.searchable),
+      optionalBool(this.options.filterable), optionalBool(this.options.sortable), optionalBool(this.options.facetable));
+  }
+}
+
 export class TensorField {
   constructor(readonly typeSpec: string, readonly options: FieldOptions = {}) {
     if (!typeSpec.trim()) throw new TypeError("tensor type spec must be a non-empty string");
@@ -92,6 +124,8 @@ export class TensorField {
 
 export class RankProfile {
   private firstPhaseExpression?: string;
+  private secondPhaseExpression?: string;
+  private rerankCountValue?: number;
   private readonly matchFeatures: string[] = [];
   private readonly queryInputs = new Map<string, string>();
 
@@ -101,6 +135,20 @@ export class RankProfile {
 
   firstPhase(expression: string): this {
     this.firstPhaseExpression = expression;
+    return this;
+  }
+
+  secondPhase(expression: string): this {
+    if (!expression.trim()) throw new TypeError("second-phase expression must not be empty");
+    this.secondPhaseExpression = expression;
+    return this;
+  }
+
+  rerankCount(count: number): this {
+    if (!Number.isInteger(count) || count < 0 || count > 0xffff_ffff) {
+      throw new RangeError("rerank count must be a uint32");
+    }
+    this.rerankCountValue = count;
     return this;
   }
 
@@ -125,6 +173,13 @@ export class RankProfile {
         value(Tensor.dense(typeSpec, [])),
       ));
 
+    const secondPhase = this.secondPhaseExpression === undefined && this.rerankCountValue === undefined
+      ? null
+      : new RankPhaseDefinitionT(
+        this.secondPhaseExpression ?? null,
+        this.rerankCountValue === undefined ? null : new OptionalUInt32T(this.rerankCountValue),
+      );
+
     return new RankProfileDefinitionT(
       this.name,
       [],
@@ -133,7 +188,7 @@ export class RankProfile {
       this.firstPhaseExpression === undefined
         ? null
         : new RankPhaseDefinitionT(this.firstPhaseExpression),
-      null,
+      secondPhase,
       null,
       [],
       [...this.matchFeatures],

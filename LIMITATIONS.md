@@ -22,14 +22,6 @@ approximated.
 
 - The Python and TypeScript q facades do not yet expose range constructors.
 
-### Phrase queries (`query.phrase`)
-
-- The TypeScript high-level q namespace does not yet expose a phrase helper.
-
-### Near and ordered-near proximity queries (`query.proximity`)
-
-- The TypeScript facade does not expose this capability (machine-checked structured support state).
-
 ### sameElement query (`query.same_element`)
 
 - Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. The Rust query helper exists, but the current high-level Rust schema facade cannot itself define the required array-of-struct field.
@@ -38,10 +30,6 @@ approximated.
 ### Fuzzy query (`query.fuzzy`)
 
 - The TypeScript high-level q facade does not yet expose a fuzzy helper.
-
-### Prefix, suffix, and substring queries (`query.prefix_suffix_substring`)
-
-- the Python and TypeScript q facades do not yet expose
 
 ### Alternatives queries (`query.alternatives`)
 
@@ -83,7 +71,7 @@ approximated.
 
 ### YQL query source (`query.yql`)
 
-- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. Rust now exposes Index::yql() through the same canonical search resolver.
+- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. Rust exposes Index::yql() through the same canonical search resolver, including scalar and tensor parameter bindings.
 
 ### Analyzed text search with default WeakAnd semantics (`query.text_weak_and`)
 
@@ -127,6 +115,10 @@ approximated.
 ### First/last missing-value sort placement (`search.sort_missing_placement`)
 
 - Python and TypeScript high-level sort() helpers
+
+### Limit and offset pagination (`search.pagination`)
+
+- Python and Rust expose page() as a convenience over limit/offset.
 
 ### Text search-field selection (`search.search_fields`)
 
@@ -181,15 +173,15 @@ approximated.
 
 ### Structured grouping and faceting (`grouping.structured`)
 
-- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree.
+- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, and regex keep filters.
 
 ### Executable grouping expression/function subset (`grouping.functions`)
 
-- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust's public GroupingExpression currently exposes attributes only; Python exposes the richer expression facade.
+- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust exposes named aggregation aliases and regex keep filters; Python exposes the richer expression facade.
 
 ### Grouping aggregations (`grouping.aggregations`)
 
-- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust's high-level GroupingAggregation exposes count/average/sum/min/max; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete.
+- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust exposes count/average/sum/min/max, named outputs, and root-scope outputs; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete.
 
 ### Summary aggregation (`grouping.summary_aggregation`)
 
@@ -212,11 +204,11 @@ approximated.
 
 ### Arithmetic document updates (`update.arithmetic`)
 
-- Increment, decrement, multiply, and divide execute through canonical FlatBuffers -> IR -> native DocumentUpdate in Python. The high-level Rust product API currently has Patch set/unset only and no advanced UpdateBuilder.
+- Increment, decrement, multiply, and divide execute through canonical FlatBuffers -> IR -> native DocumentUpdate. Rust exposes assignment, clear, and each arithmetic operator; multiple updates to the same field in one request remain unsupported by the shared resolver.
 
 ### Create-if-nonexistent document updates (`update.create_if_nonexistent`)
 
-- Python UpdateBuilder.create() is proven through the real native path. The high-level Rust product API does not yet expose advanced document updates.
+- Python UpdateBuilder.create() is proven through the real native path. Rust exposes set, unset, and arithmetic updates but not create-if-nonexistent.
 
 ### Conditional document mutations (`update.conditional`)
 

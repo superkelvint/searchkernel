@@ -14,6 +14,7 @@ import {
   rootAggregationRequest,
 } from "../src/ergonomic/grouping.js";
 import { q } from "../src/ergonomic/query.js";
+import { paritySafe } from "../examples/parity-json.js";
 import { Keyword, RankProfile, TensorField, Text } from "../src/ergonomic/schema.js";
 import { DocumentT } from "../src/generated/flatbuffers/search-kernel/v2/document.js";
 import { ErrorCode } from "../src/generated/flatbuffers/search-kernel/v2/error-code.js";
@@ -26,6 +27,7 @@ import { SearchRequestT } from "../src/generated/flatbuffers/search-kernel/v2/se
 import { RequestEnvelope } from "../src/generated/flatbuffers/search-kernel/protocol/v2/request-envelope.js";
 import { SearchRequest } from "../src/generated/flatbuffers/search-kernel/v2/search-request.js";
 import { QuerySourceKind } from "../src/generated/flatbuffers/search-kernel/v2/query-source-kind.js";
+import { QueryExprKind } from "../src/generated/flatbuffers/search-kernel/v2/query-expr-kind.js";
 import { ValueKind } from "../src/generated/flatbuffers/search-kernel/v2/value-kind.js";
 import type { GrpcWebTransport } from "../src/transport/grpc-web.js";
 import { ByteBuffer } from "flatbuffers";
@@ -199,6 +201,30 @@ describe("ergonomic facade", () => {
     expect(root.root?.operations?.[0]?.operationType).toBe(GroupingOperationKind.GroupingGroupOperation);
   });
 
+  // SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=shared
+  it("lowers literal term/prefix/substring/suffix helpers to canonical query kinds", () => {
+    const term = (q.term("title", "quick").source as any).query;
+    expect(term.exprType).toBe(QueryExprKind.QueryContains);
+    expect(term.expr.item.exprType).toBe(QueryExprKind.TermQuery);
+
+    for (const [query, pattern] of [
+      [q.prefix("brand", "A.c+"), "A\\.c\\+.*"],
+      [q.substring("brand", "A.c+"), ".*A\\.c\\+.*"],
+      [q.suffix("brand", "A.c+"), ".*A\\.c\\+"],
+    ] as const) {
+      const expression = (query.source as any).query;
+      expect(expression.exprType).toBe(QueryExprKind.QueryMatches);
+      expect(expression.expr.pattern).toBe(pattern);
+    }
+  });
+
+  it("preserves unsafe 64-bit parity integers as decimal strings", () => {
+    expect(paritySafe(BigInt(Number.MAX_SAFE_INTEGER))).toBe(Number.MAX_SAFE_INTEGER);
+    expect(paritySafe(BigInt(Number.MAX_SAFE_INTEGER) + 1n)).toBe("9007199254740992");
+    expect(paritySafe(9007199254740993n)).toBe("9007199254740993");
+    expect(paritySafe({ count: 9007199254740993n })).toEqual({ count: "9007199254740993" });
+  });
+
   it("supports grouping expressions and catches local pagination misuse", () => {
     const expression = g.field("price").mul(agg.count()).as("revenue");
     expect(expression.label).toBe("revenue");
@@ -259,6 +285,8 @@ describe("ergonomic facade", () => {
     const tensor = new TensorField("tensor<float>(x[4])", { searchable: true }).definition("embedding");
     const rank = new RankProfile("semantic")
       .firstPhase("closeness(field, embedding)")
+      .secondPhase("attribute(inventory)")
+      .rerankCount(3)
       .matchFeature("bm25(title)")
       .queryInput("query_embedding", "tensor<float>(x[4])")
       .definition();
@@ -268,6 +296,14 @@ describe("ergonomic facade", () => {
     expect(tensor.name).toBe("embedding");
     expect(rank.name).toBe("semantic");
     expect(rank.inputs).toHaveLength(1);
+    expect(rank.secondPhase?.expression).toBe("attribute(inventory)");
+    expect(rank.secondPhase?.rerankCount?.value).toBe(3);
+  });
+
+  it("validates second-phase expressions and rerank counts", () => {
+    expect(() => new RankProfile("empty").secondPhase("  ")).toThrow(/must not be empty/);
+    expect(() => new RankProfile("negative").rerankCount(-1)).toThrow(/uint32/);
+    expect(() => new RankProfile("too-large").rerankCount(0x1_0000_0000)).toThrow(/uint32/);
   });
 
 

@@ -385,10 +385,10 @@ async fn php_emitted_create_index_json_reaches_multi_index_registry() {
         .payload_as_search_kernel_v2_create_index_request()
         .expect("daemon must access PHP create-index union payload");
     let definition = payload.definition().expect("PHP create-index definition");
-    assert_eq!(definition.fields().map(|fields| fields.len()), Some(11));
+    assert_eq!(definition.fields().map(|fields| fields.len()), Some(13));
     assert_eq!(
         definition.rank_profiles().map(|profiles| profiles.len()),
-        Some(5)
+        Some(6)
     );
 
     let temp = TempDir::new("php-create-json");

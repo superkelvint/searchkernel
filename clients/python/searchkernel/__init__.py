@@ -6,6 +6,7 @@ from .ergonomic import (
     Boolean, Coverage, CoverageDegraded, Float, Group, Hit, HnswIndexConfig, Integer, Keyword,
     PatchBuilder, RankProfile, ResultContinuation, ResultGroup, ResultIssue, ResultLimits,
     SearchBuilder, SearchResults, SearchTiming, TensorField, Text, UpdateBuilder,
+    PositionField, StructField, ArrayField,
     YqlBuilder, agg, asc, desc, g, gf, q,
 )
 
@@ -14,7 +15,7 @@ __all__ = [
     "GrpcTransportError", "Boolean", "Coverage", "CoverageDegraded", "Float",
     "Group", "Hit", "HnswIndexConfig", "Integer", "Keyword", "PatchBuilder", "RankProfile",
     "ResultContinuation", "ResultGroup", "ResultIssue", "ResultLimits", "SearchBuilder",
-    "SearchResults", "SearchTiming", "Tensor", "TensorField",
+    "SearchResults", "SearchTiming", "Tensor", "TensorField", "PositionField", "StructField", "ArrayField",
     "Text", "UpdateBuilder", "YqlBuilder", "agg", "asc", "desc", "g", "gf",
     "q", "uint64", "value",
 ]

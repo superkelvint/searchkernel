@@ -273,6 +273,18 @@ same(
 )
 same("QueryFuzzy", SearchKernel::Query.fuzzy("shoes").dig("source", "query", "expr_type"),
      "fuzzy query helper")
+# SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=http
+fielded_term = SearchKernel::Query.term("title", "quick").dig("source", "query")
+same("QueryContains", fielded_term.fetch("expr_type"), "fielded term query helper")
+same("TermQuery", fielded_term.dig("expr", "item", "expr_type"), "fielded term canonical item")
+{
+  "A\\.c\\+.*" => SearchKernel::Query.prefix("brand", "A.c+"),
+  ".*A\\.c\\+.*" => SearchKernel::Query.substring("brand", "A.c+"),
+  ".*A\\.c\\+" => SearchKernel::Query.suffix("brand", "A.c+")
+}.each do |pattern, query|
+  same("QueryMatches", query.dig("source", "query", "expr_type"), "literal query canonical kind")
+  same(pattern, query.dig("source", "query", "expr", "pattern"), "literal query escaped pattern")
+end
 same(
   "QueryGeoLocation",
   SearchKernel::Query.geo_location("position", lat: 37.3, lon: -121.9, radius: "10km")

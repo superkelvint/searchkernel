@@ -176,6 +176,23 @@ impl Index {
         })
     }
 
+    /// Apply typed assignments, clears, and arithmetic operations to a document.
+    pub fn update(&self, id: impl Into<DocumentId>, update: crate::Update) -> Result<()> {
+        self.with_backend(|backend| {
+            let operations = update.into_resolver()?;
+            let request = searchkernel_ir::resolve_update(
+                &self.inner.context,
+                id.into().as_str(),
+                &operations,
+                None,
+                None,
+            )
+            .map_err(Error::from_ir)?;
+            backend.update(request).map_err(Error::from_ir)?;
+            Ok(())
+        })
+    }
+
     /// Delete a document and return whether it existed.
     pub fn delete(&self, id: impl Into<DocumentId>) -> Result<bool> {
         self.with_backend(|backend| {
@@ -240,7 +257,7 @@ impl Index {
 
     /// Start a YQL request through the canonical search resolver.
     pub fn yql(&self, source: impl Into<String>) -> crate::search::YqlBuilder {
-        SearchBuilder::with_yql_source(self.clone(), source.into())
+        SearchBuilder::yql(self.clone(), source)
     }
 
     /// Start a match-all search intended for browsing or administration.

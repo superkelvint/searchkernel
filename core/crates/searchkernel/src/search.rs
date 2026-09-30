@@ -272,18 +272,6 @@ impl From<i64> for QueryInputValue {
     }
 }
 
-impl From<u64> for QueryInputValue {
-    fn from(value: u64) -> Self {
-        Self::UInt64(value)
-    }
-}
-
-impl From<f64> for QueryInputValue {
-    fn from(value: f64) -> Self {
-        Self::Float64(value)
-    }
-}
-
 impl From<String> for QueryInputValue {
     fn from(value: String) -> Self {
         Self::String(value)
@@ -293,6 +281,18 @@ impl From<String> for QueryInputValue {
 impl From<&str> for QueryInputValue {
     fn from(value: &str) -> Self {
         Self::String(value.to_owned())
+    }
+}
+
+impl From<u64> for QueryInputValue {
+    fn from(value: u64) -> Self {
+        Self::UInt64(value)
+    }
+}
+
+impl From<f64> for QueryInputValue {
+    fn from(value: f64) -> Self {
+        Self::Float64(value)
     }
 }
 
@@ -354,6 +354,7 @@ pub struct SearchBuilder {
     pub(crate) facets: Vec<Facet>,
     pub(crate) ranking: Option<Ranking>,
     pub(crate) query_inputs: std::collections::BTreeMap<String, QueryInput>,
+    pub(crate) yql_parameters: std::collections::BTreeMap<String, QueryInputValue>,
     pub(crate) rank_properties: std::collections::BTreeMap<String, String>,
     pub(crate) groupings: Vec<GroupingPlan>,
     aggregations: Vec<crate::GroupingOutput>,
@@ -404,8 +405,8 @@ impl SearchBuilder {
         Self::with_source(index, QuerySource::MatchAll)
     }
 
-    pub(crate) fn with_yql_source(index: Index, source: String) -> Self {
-        Self::with_source(index, QuerySource::Yql(source))
+    pub(crate) fn yql(index: Index, source: impl Into<String>) -> Self {
+        Self::with_source(index, QuerySource::Yql(source.into()))
     }
 
     fn with_source(index: Index, query_source: QuerySource) -> Self {
@@ -419,6 +420,7 @@ impl SearchBuilder {
             facets: Vec::new(),
             ranking: None,
             query_inputs: std::collections::BTreeMap::new(),
+            yql_parameters: std::collections::BTreeMap::new(),
             rank_properties: std::collections::BTreeMap::new(),
             groupings: Vec::new(),
             aggregations: Vec::new(),
@@ -561,6 +563,16 @@ impl SearchBuilder {
     /// Execute a typed query through the canonical IR query path.
     pub fn typed_query(mut self, query: Query) -> Self {
         self.query_source = QuerySource::Typed(query);
+        self
+    }
+
+    /// Bind a scalar or tensor value to a YQL `@parameter` reference.
+    pub fn yql_parameter(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<QueryInputValue>,
+    ) -> Self {
+        self.yql_parameters.insert(name.into(), value.into());
         self
     }
 
@@ -929,7 +941,49 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         }
         QuerySource::Yql(source) => searchkernel_ir::QuerySourceInput::Yql {
             source: source.clone(),
-            parameters: std::collections::BTreeMap::new(),
+            parameters: request
+                .yql_parameters
+                .iter()
+                .map(|(name, value)| {
+                    let value = match value {
+                        QueryInputValue::Int64(value) => {
+                            searchkernel_ir::RequestValueIr::Int64(*value)
+                        }
+                        QueryInputValue::Bool(value) => {
+                            searchkernel_ir::RequestValueIr::Bool(*value)
+                        }
+                        QueryInputValue::UInt64(value) => {
+                            searchkernel_ir::RequestValueIr::UInt64(*value)
+                        }
+                        QueryInputValue::Float64(value) if value.is_finite() => {
+                            searchkernel_ir::RequestValueIr::Float64(*value)
+                        }
+                        QueryInputValue::Float64(_) => {
+                            return Err(crate::error::Error::search(
+                                crate::ErrorCode::InvalidArgument,
+                                "YQL parameters must be finite",
+                            ))
+                        }
+                        QueryInputValue::String(value) => {
+                            searchkernel_ir::RequestValueIr::String(value.clone())
+                        }
+                        QueryInputValue::Json(value) => searchkernel_ir::request_value_from_json(
+                            value,
+                            format!("yql_parameters.{name}"),
+                        )
+                        .map_err(crate::error::Error::from_ir)?,
+                        QueryInputValue::Tensor(value) => searchkernel_ir::RequestValueIr::Tensor(
+                            searchkernel_ir::RequestTensorIr {
+                                type_spec: value.type_spec().to_owned(),
+                                payload: searchkernel_ir::RequestTensorPayloadIr::Dense(
+                                    value.values().to_vec(),
+                                ),
+                            },
+                        ),
+                    };
+                    Ok((name.clone(), value))
+                })
+                .collect::<Result<_>>()?,
         },
     };
     let query_model_type =
