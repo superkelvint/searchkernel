@@ -1,7 +1,6 @@
 import { Index as RemoteIndex, Client } from "../client/index.js";
-import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
 import { FieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/field-definition.js";
 import { RankProfileDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-definition.js";
@@ -40,14 +39,20 @@ function indexDefinition(options: CreateIndexOptions): IndexDefinitionT {
   return definition;
 }
 
-function localTarget(path: string): string {
+function localLocation(path: string): { dataRoot: string; target: string } {
   let canonicalPath: string;
   try {
     canonicalPath = realpathSync(path);
   } catch {
     canonicalPath = resolve(path);
   }
-  return `local-${createHash("sha256").update(canonicalPath).digest("hex").slice(0, 32)}`;
+  const target = basename(canonicalPath);
+  if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(target)) {
+    throw new TypeError(
+      "managed-local index directory name must match [a-z0-9][a-z0-9_-]{0,127}",
+    );
+  }
+  return { dataRoot: dirname(canonicalPath), target };
 }
 
 /** Node-specific Index that can own a local searchkerneld process. */
@@ -89,15 +94,16 @@ export class Index extends RemoteIndex {
       }
     }
 
-    const owner = await ManagedLocalHost.start(location);
-    const client = new Client(new NodeGrpcTransport(owner.endpoint), localTarget(location));
+    const { dataRoot, target } = localLocation(location);
+    const owner = await ManagedLocalHost.start(dataRoot);
+    const client = new Client(new NodeGrpcTransport(owner.endpoint), target);
     try {
       const result = await client.createIndex(indexDefinition(targetOrOptions));
       if (result.index === null) throw new Error("CreateIndexResult.index is missing");
       return new Index(client, owner);
     } catch (error) {
       await client.close();
-      await owner.close({ force: true });
+      await owner.close();
       throw error;
     }
   }
@@ -115,15 +121,16 @@ export class Index extends RemoteIndex {
       }
     }
 
-    const owner = await ManagedLocalHost.start(location);
-    const client = new Client(new NodeGrpcTransport(owner.endpoint), localTarget(location));
+    const { dataRoot, target } = localLocation(location);
+    const owner = await ManagedLocalHost.start(dataRoot);
+    const client = new Client(new NodeGrpcTransport(owner.endpoint), target);
     try {
       const result = await client.openIndex();
       if (result.index === null) throw new Error("OpenIndexResult.index is missing");
       return new Index(client, owner);
     } catch (error) {
       await client.close();
-      await owner.close({ force: true });
+      await owner.close();
       throw error;
     }
   }
