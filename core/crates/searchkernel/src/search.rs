@@ -1822,7 +1822,9 @@ mod tests {
         else {
             panic!("root aggregate must lower to output operation");
         };
-        assert_eq!(outputs[0].label.as_deref(), Some(""));
+        // Python and TypeScript use an empty ergonomic placeholder but encode it
+        // as an absent wire label. Canonical IR therefore keeps unlabeled output absent.
+        assert_eq!(outputs[0].label, None);
     }
 
     #[test]

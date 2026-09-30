@@ -203,7 +203,7 @@ impl GroupingOutput {
 
 impl From<GroupingAggregation> for GroupingOutput {
     fn from(value: GroupingAggregation) -> Self {
-        Self::aggregation(value).label(String::new())
+        Self::aggregation(value)
     }
 }
 
