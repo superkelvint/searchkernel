@@ -1,7 +1,9 @@
 import { Index } from "@searchkernel/client/node";
 
 const endpoint = process.env.SEARCHKERNEL_ENDPOINT ?? "http://127.0.0.1:8080";
-const index = Index.connect(endpoint);
+const target = process.env.SEARCHKERNEL_TARGET;
+if (!target) throw new Error("Set SEARCHKERNEL_TARGET to a logical index name");
+const index = Index.connect(endpoint, target);
 
 try {
   await index.insert({

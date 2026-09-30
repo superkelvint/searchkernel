@@ -3,7 +3,7 @@
 require "searchkernel"
 
 endpoint = ENV.fetch("SEARCHKERNEL_ENDPOINT", "http://127.0.0.1:8080")
-target = ENV["SEARCHKERNEL_TARGET"]
+target = ENV.fetch("SEARCHKERNEL_TARGET")
 index = SearchKernel::Index.connect(endpoint, target: target)
 
 begin

@@ -43,6 +43,13 @@ def clean_environment() -> dict[str, str]:
             "GH_TOKEN",
             "GITHUB_TOKEN",
             "LD_LIBRARY_PATH",
+            "LD_PRELOAD",
+            "LD_AUDIT",
+            "LD_ORIGIN_PATH",
+            "LD_RUN_PATH",
+            "LD_CONFIG_FILE",
+            "DYLD_LIBRARY_PATH",
+            "DYLD_FRAMEWORK_PATH",
             "LIBRARY_PATH",
             "NODE_PATH",
             "PYTHONPATH",
@@ -128,22 +135,25 @@ def run_python_quickstart(venv: Path, root: Path) -> None:
     )
 
 
-def run_node_quickstart(node: Path, endpoint: str) -> None:
+def run_node_quickstart(node: Path, endpoint: str, target: str) -> None:
     script = node / "release-quickstart.mjs"
     shutil.copy2(QUICKSTARTS / "typescript.mjs", script)
     run(
         "node",
         str(script),
         cwd=node,
-        env={"SEARCHKERNEL_ENDPOINT": endpoint},
+        env={"SEARCHKERNEL_ENDPOINT": endpoint, "SEARCHKERNEL_TARGET": target},
     )
 
 
-def run_ruby_quickstart(gem_home: Path, root: Path, endpoint: str) -> None:
+def run_ruby_quickstart(
+    gem_home: Path, root: Path, endpoint: str, target: str,
+) -> None:
     env = {
         "GEM_HOME": str(gem_home),
         "GEM_PATH": str(gem_home),
         "SEARCHKERNEL_ENDPOINT": endpoint,
+        "SEARCHKERNEL_TARGET": target,
     }
     run("ruby", str(QUICKSTARTS / "ruby.rb"), cwd=root, env=env)
 
@@ -208,90 +218,6 @@ def daemon_log(log) -> str:
         return ""
 
 
-SCHEMA_JSON = {
-    "name": "release_qualification",
-    "fields": [
-        {
-            "name": "title",
-            "data_type": {"kind_type": "PrimitiveDataType", "kind": {"kind": "String"}},
-            "stored": {"value": True}, "searchable": {"value": True},
-            "matching": {"mode": "Text"},
-        },
-        {
-            "name": "kind",
-            "data_type": {"kind_type": "PrimitiveDataType", "kind": {"kind": "String"}},
-            "stored": {"value": True}, "filterable": {"value": True},
-            "sortable": {"value": True}, "matching": {"mode": "Exact"},
-        },
-        {
-            "name": "score",
-            "data_type": {"kind_type": "PrimitiveDataType", "kind": {"kind": "Int64"}},
-            "stored": {"value": True}, "filterable": {"value": True},
-            "sortable": {"value": True},
-        },
-        {
-            "name": "embedding",
-            "data_type": {"kind_type": "TensorDataType", "kind": {"type_spec": "tensor<float>(x[2])"}},
-            "stored": {"value": True},
-            "index": {"enabled": {"value": True}, "hnsw": {}},
-            "attribute": {"enabled": {"value": True}, "distance_metric": "Angular"},
-        },
-    ],
-    "rank_profiles": [
-        {
-            "name": "semantic",
-            "inputs": [
-                {
-                    "name": "query_embedding",
-                    "data_type": {
-                        "kind_type": "TensorDataType",
-                        "kind": {"type_spec": "tensor<float>(x[2])"},
-                    },
-                    "default_value": {
-                        "kind_type": "TensorValue",
-                        "kind": {
-                            "type_spec": "tensor<float>(x[2])",
-                            "payload_type": "DenseTensorValues",
-                            "payload": {"values": []},
-                        },
-                    },
-                }
-            ],
-            "first_phase": {"expression": "closeness(embedding)"},
-        }
-    ],
-}
-
-
-def start_daemon(
-    binary: Path, index: Path, socket_path: Path, port: int,
-    definition_path: Path | None = None,
-):
-    log = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
-    command = [
-        str(binary), "--index", str(index), "--listen", f"unix://{socket_path}",
-        "--web-listen", f"127.0.0.1:{port}",
-    ]
-    if definition_path is not None:
-        command.extend(["--definition-json", str(definition_path)])
-    proc = subprocess.Popen(
-        command, env=clean_environment(), stdout=log, stderr=subprocess.STDOUT, text=True,
-    )
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        if proc.poll() is not None:
-            output = daemon_log(log)
-            log.close()
-            raise RuntimeError("packaged daemon exited" + (f":\n{output}" if output else ""))
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-                return proc, log
-        except OSError:
-            time.sleep(0.1)
-    stop_daemon(proc, log)
-    raise RuntimeError("packaged daemon did not become ready" + (f":\n{daemon_log(log)}" if log else ""))
-
-
 def start_multi_daemon(
     binary: Path, data_root: Path, socket_path: Path, port: int,
 ):
@@ -351,50 +277,129 @@ def extract_daemon(root: Path) -> Path:
     return daemon
 
 
-def packaged_daemon_negative_probe(root: Path) -> None:
-    bundle = artifact("searchkerneld-", ".tar.gz")
+def packaged_daemon_negative_probe(root: Path, packaged_root: Path) -> None:
     broken_root = root / "incomplete-daemon"
-    broken_root.mkdir()
-    with tarfile.open(bundle) as archive:
-        archive.extractall(broken_root, filter="data")
+    shutil.copytree(packaged_root, broken_root, symlinks=True)
     broken_daemon = broken_root / "bin/searchkerneld"
     adapter = broken_root / "lib/libsearchkernel_vespa.so.2"
+    if not adapter.is_file():
+        raise RuntimeError(f"packaged daemon is missing its required adapter: {adapter}")
     adapter.unlink()
-    broken_daemon.chmod(0o755)
-    result = run(str(broken_daemon), "--searchkernel-runtime-probe", check=False)
-    diagnostic = result.stderr + result.stdout
-    if result.returncode == 0 or "libsearchkernel_vespa.so.2" not in diagnostic:
+    socket_path = root / "broken-daemon.sock"
+    port = free_port()
+    environment = clean_environment()
+    environment["PATH"] = "/usr/bin:/bin"
+    forbidden = (
+        "LD_LIBRARY_PATH",
+        "LIBRARY_PATH",
+        "LD_PRELOAD",
+        "LD_AUDIT",
+        "CARGO_MANIFEST_DIR",
+        "CARGO_TARGET_DIR",
+    )
+    if any(name in environment for name in forbidden):
+        raise RuntimeError("runtime negative probe inherited a developer library/build override")
+
+    log = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+    proc = subprocess.Popen(
+        [
+            str(broken_daemon),
+            "--data-root",
+            str(root / "broken-data"),
+            "--listen",
+            f"unix://{socket_path}",
+            "--web-listen",
+            f"127.0.0.1:{port}",
+        ],
+        cwd=broken_root,
+        env=environment,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    ready = False
+    deadline = time.monotonic() + 10
+    try:
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                break
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                    ready = True
+                    break
+            except OSError:
+                time.sleep(0.05)
+        if proc.poll() is None and not ready:
+            proc.terminate()
+            proc.wait(timeout=5)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    diagnostic = daemon_log(log)
+    log.close()
+    if ready or proc.returncode == 0 or "libsearchkernel_vespa.so.2" not in diagnostic:
         raise RuntimeError(
-            "incomplete packaged daemon runtime did not fail at the missing native adapter: "
-            f"exit={result.returncode}, output={diagnostic!r}"
+            "incomplete packaged daemon runtime did not fail before readiness at the missing "
+            f"native adapter: ready={ready}, exit={proc.returncode}, output={diagnostic!r}"
         )
 
 
-def with_restarted_daemon(root: Path, daemon: Path, index_name: str, probe) -> None:
-    index = root / index_name
+CREATE_TARGET_RUBY = r'''require "searchkernel"
+target, endpoint = ARGV
+fields = {
+  "title" => SearchKernel::Text.new(stored: true, searchable: true),
+  "kind" => SearchKernel::Keyword.new(stored: true, filterable: true, sortable: true),
+  "score" => SearchKernel::IntegerField.new(stored: true, filterable: true, sortable: true),
+  "embedding" => SearchKernel::TensorField.new(
+    "tensor<float>(x[2])", stored: true, distance_metric: "angular",
+    hnsw: SearchKernel::HnswIndexConfig.new
+  )
+}
+profile = SearchKernel::RankProfile.new("semantic")
+  .first_phase("closeness(embedding)")
+  .query_input("query_embedding", "tensor<float>(x[2])")
+index = SearchKernel::Index.create(endpoint, fields: fields, rank_profiles: [profile], target: target)
+index.close
+'''
+
+
+def create_index_target(gem_home: Path, target: str, endpoint: str, root: Path) -> None:
+    env = {"GEM_HOME": str(gem_home), "GEM_PATH": str(gem_home)}
+    run(
+        "ruby", "-e", CREATE_TARGET_RUBY, target, endpoint,
+        cwd=root, env=env,
+    )
+
+
+def with_restarted_daemon(
+    root: Path, daemon: Path, index_name: str, gem_home: Path, probe,
+) -> None:
+    data_root = root / f"{index_name}-data-root"
     socket_path = root / f"{index_name}.sock"
-    definition = root / f"{index_name}.json"
-    definition.write_text(json.dumps(SCHEMA_JSON), encoding="utf-8")
+    target = index_name
     port = free_port()
     endpoint = f"unix://{socket_path}"
     http = f"http://127.0.0.1:{port}"
-    proc, log = start_daemon(daemon, index, socket_path, port, definition)
+    proc, log = start_multi_daemon(daemon, data_root, socket_path, port)
     try:
-        probe("initial", endpoint, http)
+        create_index_target(gem_home, target, http, root)
+        probe("initial", endpoint, http, target)
     finally:
         stop_daemon(proc, log)
 
     port = free_port()
-    proc, log = start_daemon(daemon, index, socket_path, port)
+    proc, log = start_multi_daemon(daemon, data_root, socket_path, port)
     try:
-        probe("reopened", endpoint, f"http://127.0.0.1:{port}")
+        probe("reopened", endpoint, f"http://127.0.0.1:{port}", target)
     finally:
         stop_daemon(proc, log)
 
 
-def python_connect_probe(venv: Path, phase: str, endpoint: str) -> None:
+def python_connect_probe(venv: Path, phase: str, endpoint: str, target: str) -> None:
     code = f'''from searchkernel import Index,Tensor,q
-x=Index.connect({endpoint!r})
+x=Index.connect({endpoint!r}, target={target!r})
 try:
  fields={{f.name for f in x.describe().index.fields}}
  assert {{"title","kind","score","embedding"}} <= fields
@@ -419,9 +424,9 @@ finally:
     run(str(venv / "bin/python"), "-c", code, cwd=venv.parent)
 
 
-def typescript_connect_probe(node: Path, phase: str, endpoint: str) -> None:
+def typescript_connect_probe(node: Path, phase: str, endpoint: str, target: str) -> None:
     code = f'''import {{Index,Tensor,q}} from "@searchkernel/client/node";
-const x=Index.connect({json.dumps(endpoint)});
+const x=Index.connect({json.dumps(endpoint)}, {json.dumps(target)});
 try {{
  const schema=(await x.describe()).index;
  const fields=new Set(schema.fields.map(f=>f.name));
@@ -456,8 +461,8 @@ entry = $LOADED_FEATURES.find { |path| File.basename(path) == "searchkernel.rb" 
 raise "installed gem entry point was not loaded" unless entry
 raise "Ruby client did not load from installed gem" unless File.expand_path(entry) == File.join(File.expand_path(spec.full_gem_path), "lib", "searchkernel.rb")
 
-phase, endpoint = ARGV
-index = SearchKernel::Index.connect(endpoint)
+phase, endpoint, target = ARGV
+index = phase == "reopened" ? SearchKernel::Index.open(endpoint, target: target) : SearchKernel::Index.connect(endpoint, target: target)
 begin
   names = index.describe.fetch("fields").map { |field| field.fetch("name") }
   raise "schema missing release fields: #{names.inspect}" unless %w[title kind score embedding].all? { |name| names.include?(name) }
@@ -483,11 +488,13 @@ end
 '''
 
 
-def ruby_connect_probe(gem_home: Path, root: Path, phase: str, http: str) -> None:
+def ruby_connect_probe(
+    gem_home: Path, root: Path, phase: str, http: str, target: str,
+) -> None:
     script = root / "ruby-connect-probe.rb"
     script.write_text(RUBY_PROBE, encoding="utf-8")
     env = {"GEM_HOME": str(gem_home), "GEM_PATH": str(gem_home)}
-    run("ruby", str(script), phase, http, cwd=root, env=env)
+    run("ruby", str(script), phase, http, target, cwd=root, env=env)
 
 
 MULTI_INDEX_RUBY_PROBE = r'''require "rubygems"
@@ -594,7 +601,7 @@ def main() -> None:
 
         def searchkerneld_runtime_probe() -> None:
             context["daemon"] = extract_daemon(root)
-            packaged_daemon_negative_probe(root)
+            packaged_daemon_negative_probe(root, context["daemon"].parent.parent)
             multi_index_registry_probe(installs["ruby"], root, context["daemon"])
 
         def python_managed_local_probe() -> None:
@@ -603,28 +610,30 @@ def main() -> None:
 
         def python_connect_probe_runner() -> None:
             with_restarted_daemon(
-                root, context["daemon"], "python-connect-index",
-                lambda phase, endpoint, _http: python_connect_probe(installs["python"], phase, endpoint),
+                root, context["daemon"], "python-connect-index", installs["ruby"],
+                lambda phase, endpoint, _http, target: python_connect_probe(
+                    installs["python"], phase, endpoint, target
+                ),
             )
 
         def typescript_node_connect_probe_runner() -> None:
-            def probe(phase, endpoint, _http):
+            def probe(phase, endpoint, _http, target):
                 if phase == "initial":
-                    run_node_quickstart(installs["node"], endpoint)
-                typescript_connect_probe(installs["node"], phase, endpoint)
+                    run_node_quickstart(installs["node"], endpoint, target)
+                typescript_connect_probe(installs["node"], phase, endpoint, target)
 
             with_restarted_daemon(
-                root, context["daemon"], "typescript-node-index", probe,
+                root, context["daemon"], "typescript-node-index", installs["ruby"], probe,
             )
 
         def ruby_connect_probe_runner() -> None:
-            def probe(phase, _endpoint, http):
+            def probe(phase, _endpoint, http, target):
                 if phase == "initial":
-                    run_ruby_quickstart(installs["ruby"], root, http)
-                ruby_connect_probe(installs["ruby"], root, phase, http)
+                    run_ruby_quickstart(installs["ruby"], root, http, target)
+                ruby_connect_probe(installs["ruby"], root, phase, http, target)
 
             with_restarted_daemon(
-                root, context["daemon"], "ruby-connect-index", probe,
+                root, context["daemon"], "ruby-connect-index", installs["ruby"], probe,
             )
 
         runners = {

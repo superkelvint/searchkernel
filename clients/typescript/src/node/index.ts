@@ -1,4 +1,4 @@
-import { Index as RemoteIndex, Client } from "../client/index.js";
+import { Index as RemoteIndex, Client, type ClientTransport } from "../client/index.js";
 import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
 import { FieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/field-definition.js";
 import { RankProfileDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-definition.js";
@@ -48,8 +48,10 @@ export class Index extends RemoteIndex {
     this.owner = owner;
   }
 
-  static connect(endpoint: string): Index {
-    return new Index(new Client(new NodeGrpcTransport(endpoint)));
+  static connect(endpoint: string, transportOrTarget?: ClientTransport | string): Index {
+    const target = typeof transportOrTarget === "string" ? transportOrTarget : undefined;
+    const transport = typeof transportOrTarget === "string" ? undefined : transportOrTarget;
+    return new Index(new Client(transport ?? new NodeGrpcTransport(endpoint), target));
   }
 
   static async create(path: string, options: CreateIndexOptions): Promise<Index> {

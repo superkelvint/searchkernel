@@ -25,7 +25,8 @@ def render() -> str:
         "The source files under `examples/release-quickstart/` are authoritative.\n\n",
         "Python managed-local and Rust embedded create their own local indexes. "
         "The TypeScript and Ruby connect examples expect a compatible packaged `searchkerneld` "
-        "endpoint in `SEARCHKERNEL_ENDPOINT` (default `http://127.0.0.1:8080`).\n\n",
+        "endpoint in `SEARCHKERNEL_ENDPOINT` (default `http://127.0.0.1:8080`) and a logical "
+        "index name in `SEARCHKERNEL_TARGET`.\n\n",
     ]
     for title, (language, path) in SOURCES.items():
         source = path.read_text(encoding="utf-8").rstrip() + "\n"

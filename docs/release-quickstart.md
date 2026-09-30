@@ -4,7 +4,7 @@
 
 These are the exact executable quickstarts used by clean-consumer release qualification. The source files under `examples/release-quickstart/` are authoritative.
 
-Python managed-local and Rust embedded create their own local indexes. The TypeScript and Ruby connect examples expect a compatible packaged `searchkerneld` endpoint in `SEARCHKERNEL_ENDPOINT` (default `http://127.0.0.1:8080`).
+Python managed-local and Rust embedded create their own local indexes. The TypeScript and Ruby connect examples expect a compatible packaged `searchkerneld` endpoint in `SEARCHKERNEL_ENDPOINT` (default `http://127.0.0.1:8080`) and a logical index name in `SEARCHKERNEL_TARGET`.
 
 ## Python managed-local
 
@@ -49,7 +49,9 @@ print("Python release quickstart PASS")
 import { Index } from "@searchkernel/client/node";
 
 const endpoint = process.env.SEARCHKERNEL_ENDPOINT ?? "http://127.0.0.1:8080";
-const index = Index.connect(endpoint);
+const target = process.env.SEARCHKERNEL_TARGET;
+if (!target) throw new Error("Set SEARCHKERNEL_TARGET to a logical index name");
+const index = Index.connect(endpoint, target);
 
 try {
   await index.insert({
@@ -77,7 +79,7 @@ console.log("TypeScript release quickstart PASS");
 require "searchkernel"
 
 endpoint = ENV.fetch("SEARCHKERNEL_ENDPOINT", "http://127.0.0.1:8080")
-target = ENV["SEARCHKERNEL_TARGET"]
+target = ENV.fetch("SEARCHKERNEL_TARGET")
 index = SearchKernel::Index.connect(endpoint, target: target)
 
 begin
