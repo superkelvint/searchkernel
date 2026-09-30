@@ -570,7 +570,7 @@ module SearchKernel
         File.expand_path(location.to_s)
       end
       target = File.basename(path)
-      unless target.match?(/A[a-z0-9][a-z0-9_-]{0,127}z/)
+      unless target.match?(/\A[a-z0-9][a-z0-9_-]{0,127}\z/)
         raise ArgumentError,
               "managed-local index directory name must match [a-z0-9][a-z0-9_-]{0,127}"
       end
