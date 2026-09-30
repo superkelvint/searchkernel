@@ -372,11 +372,11 @@ def capture_real_engine_parity(index)
     },
     "sorted_search" => {"ids" => ids(ordered), "total" => ordered.total_hits},
     "filtered_search" => {"ids" => ids(filtered), "total" => filtered.total_hits},
-    "facets" => faceted.facets.fetch("brands").to_h { |item| [item.fetch("value"), item.fetch("count")] },
+    "facets" => faceted.facets.fetch("brands").map { |item| {"value" => item.fetch("value").to_s, "count" => item.fetch("count")} },
     "root_aggregations" => root.aggregations,
     "advanced_update" => {"title" => advanced_update.fetch("title"), "inventory" => advanced_update.fetch("inventory"), "sale_price_present" => advanced_update.key?("sale_price")},
     "grouping_aggregations" => groups.map { |group| {"brand" => group.value, "products" => group.fields.fetch("products"), "avg_price" => group.fields.fetch("avg_price")} },
-    "filtered_facets" => filtered_facet.facets.fetch("brand").to_h { |item| [item.fetch("value"), item.fetch("count")] },
+    "filtered_facets" => filtered_facet.facets.fetch("brand").map { |item| {"value" => item.fetch("value").to_s, "count" => item.fetch("count")} },
     "nested_grouping" => grouping_buckets(nested).map { |group|
       {"category" => group.value, "products" => group.fields.fetch("products"),
        "ratings" => group.groups.map { |rating| {"rating" => rating.value, "products" => rating.fields.fetch("products"), "avg_price" => rating.fields.fetch("avg_price")} }}
