@@ -83,8 +83,8 @@ module SearchKernel
       def prepare_data_root(data_root)
         FileUtils.mkdir_p(File.dirname(data_root))
         marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
-        if File.exist?(data_root)
-          unless File.directory?(data_root) && File.file?(marker)
+        if File.exist?(data_root) || File.symlink?(data_root)
+          unless !File.symlink?(data_root) && File.directory?(data_root) && File.file?(marker)
             raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
           end
           return
