@@ -66,7 +66,10 @@ impl From<GroupingAggregation> for GroupingOutput {
     fn from(aggregation: GroupingAggregation) -> Self {
         Self {
             aggregation,
-            label: None,
+            // Python and TypeScript encode an unlabeled ergonomic aggregate
+            // as an explicit empty label. Preserve that canonical intent so
+            // equivalent first-party facade calls resolve identically.
+            label: Some(String::new()),
         }
     }
 }
