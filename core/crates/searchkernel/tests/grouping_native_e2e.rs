@@ -6,9 +6,9 @@ use searchkernel::{
 };
 use serde_json::json;
 
-// SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=native
-// SKC: grouping.functions/basic kinds=ergonomic,e2e runtime=native
-// SKC: grouping.aggregations/basic kinds=ergonomic,e2e runtime=native
+// SKC: grouping.structured/basic kinds=ergonomic runtime=native
+// SKC: grouping.functions/basic kinds=ergonomic runtime=native
+// SKC: grouping.aggregations/basic kinds=ergonomic runtime=native
 #[test]
 fn native_public_grouping_executes_nested_and_root_aggregations_after_reopen() {
     let path = std::env::temp_dir().join(format!(

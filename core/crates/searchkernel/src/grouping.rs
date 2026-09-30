@@ -402,8 +402,10 @@ impl GroupingLevel {
 ///
 /// This facade exposes only the subset the embedded native grouping adapter can
 /// execute without approximation: scalar expressions and verified functions,
-/// linear nesting, aggregation aliases/outputs, order, precision, one filter or
-/// keep predicate per level, and the executable aggregation family. Summary
+/// linear nesting, aggregation aliases/outputs, order, precision, and one filter
+/// predicate slot per level. `filter()` and `keep()` are each executable alone;
+/// setting both on one level returns `Unsupported` instead of being approximated.
+/// The facade also exposes the executable aggregation family. Summary
 /// aggregation can be represented for API parity but remains non-executable in
 /// the native result path; continuations remain absent. Member/map/bucket classifiers and raw grouping text
 /// remain absent because native lowering rejects them. The adapter's narrow

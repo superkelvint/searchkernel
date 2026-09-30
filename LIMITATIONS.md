@@ -158,7 +158,7 @@ approximated.
 
 ### Structured grouping and faceting (`grouping.structured`)
 
-- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, ordering, precision, filter/keep controls, and the executable expression/aggregation subset.
+- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, ordering, precision, filter/keep controls, and the executable expression/aggregation subset. The pinned native GroupingLevel has one filter predicate slot, so filter() and keep() are each executable alone but using both on the same level returns Unsupported rather than being approximated.
 
 ### Executable grouping expression/function subset (`grouping.functions`)
 
