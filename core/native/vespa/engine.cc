@@ -3046,7 +3046,17 @@ public:
     }
 
     void set_failpoint(const char *name, uint32_t hit, uint32_t action) {
-        _failpoints->set(name, hit, action);
+        if (name && std::string_view(name) ==
+                        "matcher_publication_before_feedview_force_commit") {
+            // FeedHandler may forceCommit its current serial independently of
+            // the mutation under test. Capture the processed serial when the
+            // hardening gate is armed so only publication of newer feed work
+            // can block it.
+            _failpoints->set(name, hit, action,
+                             _db->getFeedHandler().getSerialNum());
+        } else {
+            _failpoints->set(name, hit, action);
+        }
     }
 
     void clear_failpoint(const char *name) { _failpoints->clear(name); }
