@@ -1664,7 +1664,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/ruby/test/run.rb",
-              "line": 679
+              "line": 682
             }
           ],
           "overrides": []
@@ -2225,7 +2225,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
-              "line": 247
+              "line": 271
             },
             {
               "capability": "update.document_crud",
@@ -2245,7 +2245,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
-              "line": 247
+              "line": 271
             },
             {
               "capability": "update.document_crud",
@@ -2649,7 +2649,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
-              "line": 246
+              "line": 270
             },
             {
               "capability": "query.text_weak_and",
@@ -2659,7 +2659,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
-              "line": 246
+              "line": 270
             }
           ],
           "overrides": []
