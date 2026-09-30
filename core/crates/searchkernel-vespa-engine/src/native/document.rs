@@ -75,11 +75,92 @@ pub(crate) fn add_attribute_document_value(
     check(status, &error)
 }
 
-struct NativeStructArray(NonNull<sys::sk_struct_array>);
+pub(super) struct NativeStructArray(pub(super) NonNull<sys::sk_struct_array>);
 
 impl Drop for NativeStructArray {
     fn drop(&mut self) {
         unsafe { sys::sk_struct_array_destroy(self.0.as_ptr()) };
+    }
+}
+
+impl NativeStructArray {
+    pub(super) fn from_values(
+        values: &[BTreeMap<String, ScalarValue>],
+        error: &mut NativeError,
+    ) -> Result<Self, Error> {
+        let mut pointer = ptr::null_mut();
+        check(
+            unsafe {
+                sys::sk_struct_array_create(&mut pointer, error.as_mut_ptr(), error.capacity())
+            },
+            error,
+        )?;
+        let array = Self(require_ptr(pointer, "native struct array")?);
+        for (element_index, element) in values.iter().enumerate() {
+            let mut native_index = 0;
+            check(
+                unsafe {
+                    sys::sk_struct_array_add_element(
+                        array.0.as_ptr(),
+                        &mut native_index,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                },
+                error,
+            )?;
+            debug_assert_eq!(native_index as usize, element_index);
+            for (name, value) in element {
+                let name = cstring(name)?;
+                let status = match value {
+                    ScalarValue::String(value) => {
+                        let value = cstring(value)?;
+                        unsafe {
+                            sys::sk_struct_array_set_string(
+                                array.0.as_ptr(),
+                                native_index,
+                                name.as_ptr(),
+                                value.as_ptr(),
+                                error.as_mut_ptr(),
+                                error.capacity(),
+                            )
+                        }
+                    }
+                    ScalarValue::Integer(value) => unsafe {
+                        sys::sk_struct_array_set_integer(
+                            array.0.as_ptr(),
+                            native_index,
+                            name.as_ptr(),
+                            *value,
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    },
+                    ScalarValue::Float(value) => unsafe {
+                        sys::sk_struct_array_set_float(
+                            array.0.as_ptr(),
+                            native_index,
+                            name.as_ptr(),
+                            *value,
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    },
+                    ScalarValue::Boolean(value) => unsafe {
+                        sys::sk_struct_array_set_boolean(
+                            array.0.as_ptr(),
+                            native_index,
+                            name.as_ptr(),
+                            u8::from(*value),
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    },
+                };
+                check(status, error)?;
+            }
+        }
+        Ok(array)
     }
 }
 
@@ -89,76 +170,7 @@ fn add_struct_array_field(
     values: &[BTreeMap<String, ScalarValue>],
     error: &mut NativeError,
 ) -> Result<(), Error> {
-    let mut pointer = ptr::null_mut();
-    check(
-        unsafe { sys::sk_struct_array_create(&mut pointer, error.as_mut_ptr(), error.capacity()) },
-        error,
-    )?;
-    let array = NativeStructArray(require_ptr(pointer, "native struct array")?);
-    for (element_index, element) in values.iter().enumerate() {
-        let mut native_index = 0;
-        check(
-            unsafe {
-                sys::sk_struct_array_add_element(
-                    array.0.as_ptr(),
-                    &mut native_index,
-                    error.as_mut_ptr(),
-                    error.capacity(),
-                )
-            },
-            error,
-        )?;
-        debug_assert_eq!(native_index as usize, element_index);
-        for (name, value) in element {
-            let name = cstring(name)?;
-            let status = match value {
-                ScalarValue::String(value) => {
-                    let value = cstring(value)?;
-                    unsafe {
-                        sys::sk_struct_array_set_string(
-                            array.0.as_ptr(),
-                            native_index,
-                            name.as_ptr(),
-                            value.as_ptr(),
-                            error.as_mut_ptr(),
-                            error.capacity(),
-                        )
-                    }
-                }
-                ScalarValue::Integer(value) => unsafe {
-                    sys::sk_struct_array_set_integer(
-                        array.0.as_ptr(),
-                        native_index,
-                        name.as_ptr(),
-                        *value,
-                        error.as_mut_ptr(),
-                        error.capacity(),
-                    )
-                },
-                ScalarValue::Float(value) => unsafe {
-                    sys::sk_struct_array_set_float(
-                        array.0.as_ptr(),
-                        native_index,
-                        name.as_ptr(),
-                        *value,
-                        error.as_mut_ptr(),
-                        error.capacity(),
-                    )
-                },
-                ScalarValue::Boolean(value) => unsafe {
-                    sys::sk_struct_array_set_boolean(
-                        array.0.as_ptr(),
-                        native_index,
-                        name.as_ptr(),
-                        u8::from(*value),
-                        error.as_mut_ptr(),
-                        error.capacity(),
-                    )
-                },
-            };
-            check(status, error)?;
-        }
-    }
+    let array = NativeStructArray::from_values(values, error)?;
     check(
         unsafe {
             sys::sk_document_add_struct_array(

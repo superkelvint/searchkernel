@@ -84,6 +84,20 @@ class BuildSystemCiTest(unittest.TestCase):
             ],
         )
 
+    def test_ci_bookkeeping_checks_global_capability_ledger(self):
+        dev = DEV.read_text(encoding="utf-8")
+        start = dev.index("bookkeeping_command() {")
+        end = dev.index("\ncheck_protocol() {", start)
+        bookkeeping = dev[start:end]
+        self.assertIn(
+            '"$PYTHON" "$ROOT/tools/check-capabilities.py" --check',
+            bookkeeping,
+        )
+        self.assertIn(
+            '"$PYTHON" "$ROOT/tools/check-capabilities.py" --write',
+            bookkeeping,
+        )
+
     def test_ci_rejects_extra_arguments(self):
         result = self.run_ci("unexpected")
         self.assertEqual(result.returncode, 2)

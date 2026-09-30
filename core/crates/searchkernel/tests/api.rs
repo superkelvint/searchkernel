@@ -31,6 +31,32 @@ fn public_schema_signatures_use_searchkernel_owned_types() {
     let _: SchemaValue = SchemaValue::Null;
 }
 
+#[test]
+fn canonical_result_tree_types_are_public_to_downstream_crates() {
+    use searchkernel::{ResultGroup, ResultHit, ResultLimits, ResultNode};
+
+    fn visit(node: &ResultNode) -> usize {
+        match node {
+            ResultNode::Hit(hit) => {
+                let _: &ResultHit = hit;
+                1
+            }
+            ResultNode::Group(group) => {
+                let _: &ResultGroup = group;
+                group.children.iter().map(visit).sum()
+            }
+            _ => 0,
+        }
+    }
+
+    fn inspect_limits(limits: Option<&ResultLimits>) -> bool {
+        limits.is_some_and(|limits| limits.from.is_some() || limits.to.is_some())
+    }
+
+    let _ = visit as fn(&ResultNode) -> usize;
+    let _ = inspect_limits as fn(Option<&ResultLimits>) -> bool;
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct Product {
     title: String,
@@ -545,6 +571,16 @@ fn result_variants_map_to_owned_product_values() {
         .facet(Facet::new("brand"))
         .execute::<serde_json::Value>()
         .unwrap();
+    let searchkernel::ResultNode::Group(root) = &result.root else {
+        panic!("fixture root must remain a canonical result group");
+    };
+    assert!(matches!(
+        root.children.as_slice(),
+        [
+            searchkernel::ResultNode::Hit(_),
+            searchkernel::ResultNode::Group(_)
+        ]
+    ));
     assert_eq!(result.hits[0].score, None);
     assert_eq!(result.hits[0].document.as_ref().unwrap()["signed"], -7);
     assert_eq!(
