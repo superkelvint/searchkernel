@@ -30,6 +30,7 @@ import { QuerySourceKind } from "../generated/flatbuffers/search-kernel/v2/query
 import { QuerySourceT } from "../generated/flatbuffers/search-kernel/v2/query-source.js";
 import { TermQueryT } from "../generated/flatbuffers/search-kernel/v2/term-query.js";
 import { TypedQueryT } from "../generated/flatbuffers/search-kernel/v2/typed-query.js";
+import type { ValueT } from "../generated/flatbuffers/search-kernel/v2/value.js";
 import { value } from "../client/values.js";
 export type TypedQuery = QuerySourceT;
 function typed(expression: QueryExprT): QuerySourceT { return new QuerySourceT(QuerySourceKind.TypedQuery, new TypedQueryT(expression)); }
@@ -46,8 +47,8 @@ export const q = {
   phrase(field: string, ...terms: string[]): TypedQuery { if (!terms.length) throw new TypeError("q.phrase requires at least one term"); return typed(new QueryExprT(QueryExprKind.QueryContains, new QueryContainsT(new QueryFieldRefT(field), new QueryExprT(QueryExprKind.QueryPhrase, new QueryPhraseT(terms.map(term)))))); },
   near(field: string, ...terms: string[]): TypedQuery { if (!terms.length) throw new TypeError("q.near requires at least one term"); return typed(new QueryExprT(QueryExprKind.QueryContains, new QueryContainsT(new QueryFieldRefT(field), new QueryExprT(QueryExprKind.QueryNear, new QueryNearT(terms.map(term)))))); },
   orderedNear(field: string, ...terms: string[]): TypedQuery { if (!terms.length) throw new TypeError("q.orderedNear requires at least one term"); return typed(new QueryExprT(QueryExprKind.QueryContains, new QueryContainsT(new QueryFieldRefT(field), new QueryExprT(QueryExprKind.QueryONear, new QueryONearT(terms.map(term)))))); },
-  range(field: string, lower: number, upper: number): TypedQuery {
-    const bound = (input: number) => new RangeBoundT(RangeBoundKind.FiniteRangeBound, new FiniteRangeBoundT(value(input)));
+  range(field: string, lower: number | ValueT, upper: number | ValueT): TypedQuery {
+    const bound = (input: number | ValueT) => new RangeBoundT(RangeBoundKind.FiniteRangeBound, new FiniteRangeBoundT(value(input)));
     return typed(new QueryExprT(QueryExprKind.QueryRange, new QueryRangeT(new QueryFieldRefT(field), bound(lower), bound(upper), new OptionalBoolT(true), new OptionalBoolT(true))));
   },
   inValues(field: string, values: Array<string | number | boolean>): TypedQuery { if (!values.length) throw new TypeError("q.inValues requires at least one value"); return typed(new QueryExprT(QueryExprKind.QueryIn, new QueryInT(new QueryFieldRefT(field), values.map(value)))); },
