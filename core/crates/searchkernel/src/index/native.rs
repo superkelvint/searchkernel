@@ -442,9 +442,7 @@ impl Index {
             ))
         })?;
 
-        let source_parent = source
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new("."));
+        let source_parent = source.parent().unwrap_or_else(|| std::path::Path::new("."));
         if let Err(error) = sync_published_parent(source_parent)
             .and_then(|_| sync_published_parent(destination_parent))
         {
