@@ -255,7 +255,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
 
     def test_search_builder_inspect_returns_canonical_resolved_request(self):
         endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
         index = Index(self.client, ergonomic=True)
 
         resolved = (
