@@ -146,7 +146,7 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
             .get::<serde_json::Value>("absent")
             .expect("get absent bool document")
             .expect("absent bool document exists")["active"],
-        serde_json::Value::Null
+        json!(false)
     );
 
     index
@@ -157,7 +157,7 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
             .get::<serde_json::Value>("true")
             .expect("get cleared bool document")
             .expect("cleared bool document exists")["active"],
-        serde_json::Value::Null
+        json!(false)
     );
     index.close().expect("close native bool index");
     let reopened = searchkernel::Index::open(&path).expect("reopen native bool index");
@@ -445,7 +445,7 @@ fn native_product_path_has_current_search_and_facet_parity() {
     assert!(paged.hits.iter().all(|hit| hit.score.is_some()));
     assert_eq!(
         paged.hits[0].document.as_ref().unwrap(),
-        json!({"title": "Wireless Keyboard", "brand": "Charlie"})
+        &json!({"title": "Wireless Keyboard", "brand": "Charlie"})
     );
 
     // Unsupported controls still fail at the adapter with stable details
