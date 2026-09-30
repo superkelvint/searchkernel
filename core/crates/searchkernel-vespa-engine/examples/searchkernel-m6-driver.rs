@@ -1,6 +1,5 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, Query, Schema,
-    SearchRequest,
+    ConfigCompiler, Document, Engine, Field, FieldType, Query, Schema, SearchRequest,
 };
 use serde::Deserialize;
 use std::fs;
@@ -94,7 +93,7 @@ fn main() {
             // separate process invocation: Engine::open must learn document
             // type/fields solely from the compiled configuration directory.
             let data_dir = PathBuf::from(&args[4]);
-            let mut engine = Engine::open(&data_dir, &config_dir).expect("open generated config");
+            let engine = Engine::open(&data_dir, &config_dir).expect("open generated config");
             match scenario.smoke {
                 Smoke::Open => {}
                 Smoke::Text { field, text, query } => {
