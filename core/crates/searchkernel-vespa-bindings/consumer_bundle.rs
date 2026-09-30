@@ -1890,7 +1890,9 @@ if [ "${SK_NATIVE_SDK_PACKAGE_LOCK_HELD:-}" != "$SDK_PACKAGE" ]; then
     # lock descriptors; replacing one here would silently release that lock.
     SK_NATIVE_SDK_PACKAGE_LOCK_HELD="$SDK_PACKAGE"
     export SK_NATIVE_SDK_PACKAGE_LOCK_HELD
-    exec flock "$SDK_LOCK" "$0" "$@"
+    # Packaged consumer support materializes embedded files with ordinary
+    # permissions, so re-enter this script through bash under flock.
+    exec flock "$SDK_LOCK" bash "$0" "$@"
 fi
 
 # Assemble the package away from the published path. The private staging path
@@ -10361,13 +10363,18 @@ public:
     bool failpoint_is_blocked(const char *name) const { return _failpoints->is_blocked(name); }
 
     void install_hardening_feed_view() {
-        auto *ready_sub_db = _db->getReadySubDB();
-        if (!ready_sub_db) {
-            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
-        }
-        auto feed_view = ready_sub_db->getFeedView();
+        // Preserve DocumentDB::syncFeedView() topology exactly: its active view is
+        // DocumentSubDBCollection::getFeedView(), which is a CombiningFeedView
+        // for the normal ready/removed/not-ready sub-databases.  Hardening may
+        // gate forceCommit(), but must not replace production feed routing with
+        // the ready sub-DB view. getDocumentSubDBs() is exposed as const even
+        // though getFeedView() only constructs a forwarding view, so remove
+        // constness narrowly for that pinned-Vespa factory call.
+        auto &sub_dbs = const_cast<proton::DocumentSubDBCollection &>(
+            _db->getDocumentSubDBs());
+        auto feed_view = sub_dbs.getFeedView();
         if (!feed_view) {
-            throw std::runtime_error("Vespa DocumentDB has no ready feed view");
+            throw std::runtime_error("Vespa DocumentDB has no production feed view");
         }
         _hardening_feed_view = std::make_shared<PublicationGateFeedView>(
             std::move(feed_view), _failpoints);
@@ -12429,8 +12436,8 @@ public:
 
 // Hardening builds install this forwarding view as FeedHandler's active view.
 // Automatic FeedHandler commits and Search Kernel's explicit publication fence
-// therefore pass through the same gate. The delegate remains Vespa's real
-// ready feed view; only forceCommit scheduling is held by the failpoint.
+// therefore pass through the same gate. The delegate preserves Vespa's real
+// DocumentSubDBCollection feed topology; only forceCommit scheduling is held.
 class PublicationGateFeedView final : public proton::IFeedView {
     proton::IFeedView::SP _delegate;
     std::shared_ptr<FailpointController> _failpoints;

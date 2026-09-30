@@ -21,6 +21,35 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ConsumerReleaseTests(unittest.TestCase):
+    def test_packaged_build_sdk_reexecs_through_bash_under_flock(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            script = root / "core/native/vespa/build-sdk.sh"
+            script.parent.mkdir(parents=True)
+            script.write_bytes((ROOT / "core/native/vespa/build-sdk.sh").read_bytes())
+            script.chmod(0o644)
+
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_flock = fake_bin / "flock"
+            fake_flock.write_text(
+                '#!/bin/sh\n[ "$2" = bash ] && [ "$3" = "$EXPECTED_SCRIPT" ]\n',
+                encoding="utf-8",
+            )
+            fake_flock.chmod(0o755)
+            environment = {
+                "PATH": f"{fake_bin}:/usr/bin:/bin",
+                "CARGO_TARGET_DIR": str(root / "target"),
+                "EXPECTED_SCRIPT": str(script),
+            }
+            result = subprocess.run(
+                ["bash", str(script)],
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_python_wheel_build_uses_declared_isolated_build_requirements(self) -> None:
         project = tomllib.loads(
             (ROOT / "clients/python/pyproject.toml").read_text(encoding="utf-8")
