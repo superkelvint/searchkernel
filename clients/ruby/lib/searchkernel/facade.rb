@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "digest"
-
 require_relative "client"
 require_relative "grouping"
 require_relative "http_transport"
@@ -516,10 +514,11 @@ module SearchKernel
         return new(client)
       end
 
-      owner = ManagedLocalHost.new(location)
+      data_root, local_target = local_location(location)
+      owner = ManagedLocalHost.acquire(data_root)
       client = Client.new(
         HttpTransport.new(owner.base_url, timeout: timeout),
-        target: local_target(location)
+        target: local_target
       )
       payload = client.create_index("definition" => definition)
       index = payload["index"]
@@ -527,7 +526,7 @@ module SearchKernel
       new(client, owner: owner)
     rescue StandardError
       client&.close
-      owner&.close(force: true)
+      owner&.close
       raise
     end
 
@@ -540,10 +539,11 @@ module SearchKernel
         return new(client)
       end
 
-      owner = ManagedLocalHost.new(location)
+      data_root, local_target = local_location(location)
+      owner = ManagedLocalHost.acquire(data_root)
       client = Client.new(
         HttpTransport.new(owner.base_url, timeout: timeout),
-        target: local_target(location)
+        target: local_target
       )
       payload = client.open_index({})
       index = payload["index"]
@@ -551,7 +551,7 @@ module SearchKernel
       new(client, owner: owner)
     rescue StandardError
       client&.close
-      owner&.close(force: true)
+      owner&.close
       raise
     end
 
@@ -563,15 +563,20 @@ module SearchKernel
       client&.close
     end
 
-    def self.local_target(location)
+    def self.local_location(location)
       path = begin
         File.realpath(location.to_s)
       rescue Errno::ENOENT
         File.expand_path(location.to_s)
       end
-      "local-#{Digest::SHA256.hexdigest(path)[0, 32]}"
+      target = File.basename(path)
+      unless target.match?(/A[a-z0-9][a-z0-9_-]{0,127}z/)
+        raise ArgumentError,
+              "managed-local index directory name must match [a-z0-9][a-z0-9_-]{0,127}"
+      end
+      [File.dirname(path), target]
     end
-    private_class_method :local_target
+    private_class_method :local_location
 
     def initialize(client, owner: nil)
       @client = client
