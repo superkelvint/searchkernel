@@ -34,6 +34,7 @@ _REQUEST_TYPES = {
     "inspect_query": RequestPayload.RequestPayload.SearchKernel_V2_InspectQueryRequest,
     "create_index": RequestPayload.RequestPayload.SearchKernel_V2_CreateIndexRequest,
     "open_index": RequestPayload.RequestPayload.SearchKernel_V2_OpenIndexRequest,
+    "delete_index": RequestPayload.RequestPayload.SearchKernel_V2_DeleteIndexRequest,
 }
 _RESPONSE_TYPES = {
     "insert": ResponsePayload.ResponsePayload.SearchKernel_V2_InsertResult,
@@ -48,6 +49,7 @@ _RESPONSE_TYPES = {
     "inspect_query": ResponsePayload.ResponsePayload.SearchKernel_V2_InspectQueryResult,
     "create_index": ResponsePayload.ResponsePayload.SearchKernel_V2_CreateIndexResult,
     "open_index": ResponsePayload.ResponsePayload.SearchKernel_V2_OpenIndexResult,
+    "delete_index": ResponsePayload.ResponsePayload.SearchKernel_V2_DeleteIndexResult,
 }
 ERROR_TYPE = ResponsePayload.ResponsePayload.SearchKernel_V2_Error
 

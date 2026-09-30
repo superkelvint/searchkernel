@@ -16,12 +16,13 @@ import { UpdateRequestT } from "../generated/flatbuffers/search-kernel/v2/update
 import { UpsertRequestT } from "../generated/flatbuffers/search-kernel/v2/upsert-request.js";
 import { CreateIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/create-index-request.js";
 import { OpenIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/open-index-request.js";
+import { DeleteIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/delete-index-request.js";
 
 export const PROTOCOL_VERSION = 2;
 export const REQUEST_IDENTIFIER = "SKRQ";
 export const RESPONSE_IDENTIFIER = "SKRS";
 
-export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex";
+export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex" | "deleteIndex";
 
 export interface OperationRequestMap {
   insert: InsertRequestT;
@@ -36,6 +37,7 @@ export interface OperationRequestMap {
   inspectQuery: InspectQueryRequestT;
   createIndex: CreateIndexRequestT;
   openIndex: OpenIndexRequestT;
+  deleteIndex: DeleteIndexRequestT;
 }
 
 const requestTypes: Record<Operation, RequestPayload> = {
@@ -51,6 +53,7 @@ const requestTypes: Record<Operation, RequestPayload> = {
   inspectQuery: RequestPayload.SearchKernel_V2_InspectQueryRequest,
   createIndex: RequestPayload.SearchKernel_V2_CreateIndexRequest,
   openIndex: RequestPayload.SearchKernel_V2_OpenIndexRequest,
+  deleteIndex: RequestPayload.SearchKernel_V2_DeleteIndexRequest,
 };
 
 const responseTypes: Record<Operation, ResponsePayload> = {
@@ -66,6 +69,7 @@ const responseTypes: Record<Operation, ResponsePayload> = {
   inspectQuery: ResponsePayload.SearchKernel_V2_InspectQueryResult,
   createIndex: ResponsePayload.SearchKernel_V2_CreateIndexResult,
   openIndex: ResponsePayload.SearchKernel_V2_OpenIndexResult,
+  deleteIndex: ResponsePayload.SearchKernel_V2_DeleteIndexResult,
 };
 
 export class ProtocolError extends Error { override name = "ProtocolError"; }

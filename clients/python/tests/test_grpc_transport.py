@@ -20,6 +20,7 @@ from searchkernel.protocol import pack_object, pack_request  # noqa: E402
 from SearchKernel.Protocol.V2.ResponseEnvelope import ResponseEnvelopeT  # noqa: E402
 from SearchKernel.Protocol.V2.ResponsePayload import ResponsePayload  # noqa: E402
 from SearchKernel.V2.CreateIndexResult import CreateIndexResultT  # noqa: E402
+from SearchKernel.V2.DeleteIndexResult import DeleteIndexResultT  # noqa: E402
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
 from SearchKernel.V2.OpenIndexResult import OpenIndexResultT  # noqa: E402
 from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelope  # noqa: E402
@@ -81,6 +82,18 @@ class GrpcTransportTest(unittest.TestCase):
             client.create_index(IndexDefinitionT(name="products"))
         with self.assertRaisesRegex(ClientError, "OpenIndexResult.index is missing"):
             client.open_index()
+
+    def test_delete_index_uses_the_canonical_empty_request(self):
+        client = Client(
+            _FrameTransport([
+                _response(
+                    ResponsePayload.SearchKernel_V2_DeleteIndexResult,
+                    DeleteIndexResultT(),
+                ),
+            ]),
+            target="products",
+        )
+        self.assertIsNotNone(client.delete_index())
 
     def test_channel_uses_symmetric_large_message_limits(self):
         channel = object()

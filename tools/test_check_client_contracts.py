@@ -188,6 +188,32 @@ class ClientContractTests(unittest.TestCase):
             [],
         )
 
+    def test_schema_derived_lifecycle_parity_rejects_create_open_without_delete(self) -> None:
+        (self.root / "api").mkdir()
+        (self.root / "api" / "searchkernel_request.fbs").write_text(
+            "union RequestPayload { SearchKernel.V2.CreateIndexRequest, "
+            "SearchKernel.V2.OpenIndexRequest, SearchKernel.V2.DeleteIndexRequest }",
+            encoding="utf-8",
+        )
+        (self.root / "api" / "searchkernel_response.fbs").write_text(
+            "union ResponsePayload { SearchKernel.V2.CreateIndexResult, "
+            "SearchKernel.V2.OpenIndexResult, SearchKernel.V2.DeleteIndexResult }",
+            encoding="utf-8",
+        )
+        source = self.root / "clients" / "typescript" / "src"
+        source.mkdir(parents=True)
+        (source / "lifecycle.ts").write_text(
+            "CreateIndexRequestT CreateIndexResultT createIndex "
+            "OpenIndexRequestT OpenIndexResultT openIndex",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            MODULE.RegistryError,
+            "typescript.*CreateIndex/OpenIndex.*DeleteIndex",
+        ):
+            MODULE.validate_client_lifecycle_parity(self.root)
+
     def test_evidence_is_discovered_and_rendered(self) -> None:
         (self.root / "rust-tests" / "e2e.rs").write_text(
             "// SKC: result.highlighting/basic "

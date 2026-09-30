@@ -394,6 +394,24 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             second.upsert("doc-c", {"title": "another alpha", "category": "a", "price": 2})
             self.assertIsNotNone(second.get("doc-c"))
             second.close()
+
+            closed_only = Index.open(endpoint, target="products-b")
+            closed_only.close()
+            reopened_beta = Index.open(endpoint, target="products-b")
+            self.assertIsNotNone(reopened_beta.get("doc-b"))
+            reopened_beta.close()
+
+            Index.delete_index(endpoint, target="products-a")
+            with self.assertRaises(ClientError) as deleted:
+                Index.open(endpoint, target="products-a")
+            self.assertEqual(deleted.exception.code, "not_found")
+            still_usable_beta = Index.open(endpoint, target="products-b")
+            self.assertIsNotNone(still_usable_beta.get("doc-b"))
+            still_usable_beta.close()
+
+            with self.assertRaises(ClientError) as missing_delete:
+                Index.delete_index(endpoint, target="products-a")
+            self.assertEqual(missing_delete.exception.code, "not_found")
         finally:
             alpha.close()
             beta.close()

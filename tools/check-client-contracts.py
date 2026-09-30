@@ -23,6 +23,7 @@ STRENGTH_RANK = {"builder": 0, "conformance": 1, "runtime": 2}
 SOURCE_SUFFIXES = {
     ".rs", ".py", ".php", ".rb", ".ts", ".tsx", ".js", ".mjs", ".c", ".cc", ".cpp", ".h", ".sh"
 }
+CLIENT_SOURCE_SUFFIXES = {".py", ".php", ".rb", ".ts", ".tsx", ".js", ".mjs"}
 ANNOTATION_RE = re.compile(
     r"SKC:\s*(?P<capability>[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+)/"
     r"(?P<scenario>[a-z0-9_.-]+)\s+"
@@ -61,6 +62,93 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RegistryError("client contract catalog root must be an object")
     return value
+
+
+def canonical_lifecycle_operations(root: Path = ROOT) -> tuple[str, ...]:
+    """Read the index lifecycle operation set from the canonical V2 unions."""
+    request_schema = root / "api" / "searchkernel_request.fbs"
+    response_schema = root / "api" / "searchkernel_response.fbs"
+    if not request_schema.is_file() or not response_schema.is_file():
+        return ()
+
+    def request_union_members(path: Path) -> list[str]:
+        source = path.read_text(encoding="utf-8")
+        match = re.search(
+            r"union\s+RequestPayload\s*\{(?P<body>.*?)\}",
+            source,
+            re.DOTALL,
+        )
+        if match is None:
+            raise RegistryError(f"cannot find RequestPayload in {path}")
+        return re.findall(
+            r"SearchKernel\.V2\.([A-Za-z][A-Za-z0-9]*Index)Request",
+            match.group("body"),
+        )
+
+    request_operations = request_union_members(request_schema)
+    response_source = response_schema.read_text(encoding="utf-8")
+    response_match = re.search(
+        r"union\s+ResponsePayload\s*\{(?P<body>.*?)\}",
+        response_source,
+        re.DOTALL,
+    )
+    if response_match is None:
+        raise RegistryError(f"cannot find ResponsePayload in {response_schema}")
+    response_operations = set(
+        re.findall(
+            r"SearchKernel\.V2\.([A-Za-z][A-Za-z0-9]*Index)Result",
+            response_match.group("body"),
+        )
+    )
+    operations = tuple(operation for operation in request_operations if operation in response_operations)
+    required = {"CreateIndex", "OpenIndex", "DeleteIndex"}
+    missing = sorted(required - set(operations))
+    if missing:
+        raise RegistryError(
+            "canonical lifecycle unions are missing required operation(s): "
+            + ", ".join(missing)
+        )
+    return operations
+
+
+def validate_client_lifecycle_parity(root: Path = ROOT) -> None:
+    """Reject client source drift when create/open lifecycle support is advertised."""
+    operations = set(canonical_lifecycle_operations(root))
+    if not operations:
+        return
+
+    clients_root = root / "clients"
+    if not clients_root.is_dir():
+        return
+
+    def source_for(client_root: Path) -> str:
+        chunks = []
+        for path in sorted(client_root.rglob("*")):
+            if not path.is_file() or path.suffix not in CLIENT_SOURCE_SUFFIXES:
+                continue
+            if {"generated", "_wire_generated"}.intersection(path.parts):
+                continue
+            chunks.append(path.read_text(encoding="utf-8"))
+        return "\n".join(chunks)
+
+    def supports(source: str, operation: str) -> bool:
+        snake = re.sub(r"(?<!^)([A-Z])", r"_\1", operation).lower()
+        camel = operation[0].lower() + operation[1:]
+        request = re.search(rf"\b{re.escape(operation)}Request(?:T)?\b", source)
+        result = re.search(rf"\b{re.escape(operation)}Result(?:T)?\b", source)
+        operation_key = re.search(
+            rf"(?<![A-Za-z0-9])(?:{re.escape(snake)}|{re.escape(camel)})(?![A-Za-z0-9])",
+            source,
+        )
+        return request is not None and result is not None and operation_key is not None
+
+    for client_root in sorted(path for path in clients_root.iterdir() if (path / "src").is_dir()):
+        source = source_for(client_root / "src")
+        if supports(source, "CreateIndex") and supports(source, "OpenIndex") and not supports(source, "DeleteIndex"):
+            raise RegistryError(
+                f"client {client_root.name} exposes CreateIndex/OpenIndex lifecycle "
+                "support but does not represent canonical DeleteIndex"
+            )
 
 def validate_catalog(
     catalog: dict[str, Any],
@@ -729,6 +817,7 @@ def check_documents(documents: dict[Path, str]) -> list[str]:
 
 
 def build_current_report(root: Path = ROOT) -> dict[str, Any]:
+    validate_client_lifecycle_parity(root)
     global_capabilities = load_global_capabilities(root / "docs" / "capabilities.json")
     catalog = load_catalog(root / "reference" / "client-contracts" / "catalog.json")
     surfaces, scenarios, overrides = validate_catalog(catalog, global_capabilities, root)
@@ -748,6 +837,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.run_e2e or args.run_e2e_surface:
+            validate_client_lifecycle_parity()
             global_capabilities = load_global_capabilities()
             catalog = load_catalog()
             surfaces, scenarios, _overrides = validate_catalog(

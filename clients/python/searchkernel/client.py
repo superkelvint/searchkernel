@@ -38,6 +38,7 @@ from SearchKernel.V2.Float64Value import Float64ValueT
 from SearchKernel.V2.GetRequest import GetRequestT
 from SearchKernel.V2.CreateIndexRequest import CreateIndexRequestT
 from SearchKernel.V2.OpenIndexRequest import OpenIndexRequestT
+from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequestT
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT
 from SearchKernel.V2.InsertRequest import InsertRequestT
 from SearchKernel.V2.Int64Value import Int64ValueT
@@ -760,6 +761,9 @@ class Client:
             raise ClientError("OpenIndexResult.index is missing")
         return result
 
+    def delete_index(self) -> Any:
+        return self.execute("delete_index", DeleteIndexRequestT())
+
     def close(self) -> None:
         self.transport.close()
 
@@ -841,6 +845,15 @@ class Index:
             owner.close()
             raise
         return cls(client, owner, ergonomic=True)
+
+    @classmethod
+    def delete_index(cls, endpoint: str, *, target: str) -> None:
+        """Delete a daemon-owned logical target through the canonical envelope."""
+        client = Client(GrpcTransport(os.fspath(endpoint)), target=target)
+        try:
+            client.delete_index()
+        finally:
+            client.close()
 
     def insert(self, identifier: str | Mapping[str, Any], fields: Mapping[str, Any] | None = None) -> Any:
         if self._ergonomic and isinstance(identifier, Mapping):

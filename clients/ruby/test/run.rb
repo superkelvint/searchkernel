@@ -234,6 +234,8 @@ end
 
 targeted = SearchKernel::Protocol.request_envelope(:search, { "query" => {} }, target: "products")
 same({ "name" => "products" }, targeted["target"], "targeted request carries logical daemon target")
+targeted_delete = SearchKernel::Protocol.request_envelope(:delete_index, {}, target: "products")
+same({ "name" => "products" }, targeted_delete["target"], "targeted delete carries logical daemon target")
 invalid_but_representable = SearchKernel::Protocol.request_envelope(:search, {}, target: "Products")
 same(
   { "name" => "Products" },

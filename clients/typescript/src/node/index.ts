@@ -213,6 +213,14 @@ export class Index extends RemoteIndex {
     }
   }
 
+  static async delete(
+    endpoint: string,
+    target: string,
+    transport?: ClientTransport,
+  ): Promise<void> {
+    return RemoteIndex.delete(endpoint, target, transport ?? new NodeGrpcTransport(endpoint));
+  }
+
   override async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;

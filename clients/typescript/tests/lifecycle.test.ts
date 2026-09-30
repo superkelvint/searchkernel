@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { Index, type ClientTransport } from "../src/client/index.js";
 import { CreateIndexRequest } from "../src/generated/flatbuffers/search-kernel/v2/create-index-request.js";
 import { CreateIndexResultT } from "../src/generated/flatbuffers/search-kernel/v2/create-index-result.js";
+import { DeleteIndexRequest } from "../src/generated/flatbuffers/search-kernel/v2/delete-index-request.js";
+import { DeleteIndexResultT } from "../src/generated/flatbuffers/search-kernel/v2/delete-index-result.js";
 import { DescribeResultT } from "../src/generated/flatbuffers/search-kernel/v2/describe-result.js";
 import { ErrorCode } from "../src/generated/flatbuffers/search-kernel/v2/error-code.js";
 import { ErrorT } from "../src/generated/flatbuffers/search-kernel/v2/error.js";
@@ -87,6 +89,42 @@ describe("logical index lifecycle", () => {
     );
     await expect(Index.create("unused", "products", new IndexDefinitionT(), successfulTransport([collision])))
       .rejects.toMatchObject({ name: "SearchKernelError", code: "already_exists" });
+  });
+
+  it("deletes through the canonical request and closes its temporary handle", async () => {
+    let deleteRequest: Uint8Array | undefined;
+    let closed = 0;
+    const transport: ClientTransport = {
+      execute: async (request) => {
+        deleteRequest = request;
+        return envelope(
+          ResponsePayload.SearchKernel_V2_DeleteIndexResult,
+          new DeleteIndexResultT(),
+        );
+      },
+      close: () => { closed += 1; },
+    };
+
+    await expect(Index.delete("unused", "products", transport)).resolves.toBeUndefined();
+
+    const decoded = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(deleteRequest!));
+    expect(decoded.payloadType()).toBe(RequestPayload.SearchKernel_V2_DeleteIndexRequest);
+    expect(decoded.target(new IndexTarget())?.name()).toBe("products");
+    expect(decoded.payload(new DeleteIndexRequest())?.unpack()).toBeDefined();
+    expect(closed).toBe(1);
+  });
+
+  it("propagates canonical delete errors and still closes its temporary handle", async () => {
+    let closed = 0;
+    const missing = envelope(
+      ResponsePayload.SearchKernel_V2_Error,
+      new ErrorT(ErrorCode.NotFound, "missing", [], false),
+    );
+    await expect(Index.delete("unused", "missing", {
+      execute: async () => missing,
+      close: () => { closed += 1; },
+    })).rejects.toMatchObject({ name: "SearchKernelError", code: "not_found" });
+    expect(closed).toBe(1);
   });
 
   it("closing one handle closes only its transport and leaves another handle usable", async () => {
