@@ -139,9 +139,13 @@ mod native_main {
         }
         let mode = if migrate_index_path.is_some() || migrate_target.is_some() {
             if index_path.is_some() || definition_path.is_some() || definition_json_path.is_some() {
-                return Err("--migrate-index cannot be combined with legacy --index/--definition options".into());
+                return Err(
+                    "--migrate-index cannot be combined with legacy --index/--definition options"
+                        .into(),
+                );
             }
-            let source_path = migrate_index_path.ok_or("--migrate-index is required with --target")?;
+            let source_path =
+                migrate_index_path.ok_or("--migrate-index is required with --target")?;
             let data_root = data_root.ok_or("--data-root is required with --migrate-index")?;
             let target = migrate_target.ok_or("--target is required with --migrate-index")?;
             searchkernel_protocol::target::validate_index_target(&target)?;
@@ -155,10 +159,13 @@ mod native_main {
                 return Err("--target is only valid with --migrate-index".into());
             }
             if data_root.is_some()
-                && (index_path.is_some() || definition_path.is_some() || definition_json_path.is_some())
+                && (index_path.is_some()
+                    || definition_path.is_some()
+                    || definition_json_path.is_some())
             {
                 return Err(
-                    "--data-root cannot be combined with legacy --index/--definition options".into(),
+                    "--data-root cannot be combined with legacy --index/--definition options"
+                        .into(),
                 );
             }
 
