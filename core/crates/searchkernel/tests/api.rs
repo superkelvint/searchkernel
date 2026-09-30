@@ -1,6 +1,7 @@
 use searchkernel::{
-    field, DocumentId, Error, ErrorCode, Facet, FacetSort, Field, Filter, Index, IndexDefinition,
-    Patch, Range, RankProfile, Ranking, Sort,
+    field, DocumentId, Error, ErrorCode, Facet, FacetSort, Field, Filter, GroupingAggregation,
+    GroupingExpression, GroupingFilter, GroupingOrder, GroupingOutput, GroupingPlan, Index,
+    IndexDefinition, Patch, Range, RankProfile, Ranking, Sort,
 };
 use searchkernel_ir::{
     Backend, FieldName, FilterIr, GetResult, GroupingAggregationIr, GroupingAllIr,
@@ -29,6 +30,32 @@ fn public_schema_signatures_use_searchkernel_owned_types() {
     let _: &[FieldSet] = definition.fieldsets();
     let _: Option<IndexConfig> = None;
     let _: SchemaValue = SchemaValue::Null;
+}
+
+#[test]
+fn query_model_and_yql_types_remain_public_at_the_crate_root() {
+    use searchkernel::{QueryModelType, YqlBuilder};
+
+    let _ = QueryModelType::default();
+    fn accepts_yql_builder(_: Option<YqlBuilder>) {}
+    accepts_yql_builder(None);
+}
+
+#[test]
+fn grouping_order_variants_remain_source_compatible() {
+    fn descending(order: GroupingOrder) -> bool {
+        match order {
+            GroupingOrder::Field(_, descending) | GroupingOrder::Aggregation(_, descending) => {
+                descending
+            }
+        }
+    }
+
+    let field_order = GroupingOrder::Field(GroupingExpression::attribute("brand"), true);
+    assert!(descending(field_order));
+
+    let aggregation_order = GroupingOrder::Aggregation(GroupingAggregation::count(), false);
+    assert!(!descending(aggregation_order));
 }
 
 #[test]
@@ -1243,4 +1270,193 @@ fn public_helper_types_and_errors_have_stable_behavior() {
         "document deserialization failed: bad result"
     );
     assert_eq!(Error::Infrastructure("broken".into()).to_string(), "broken");
+}
+
+#[test]
+fn advanced_grouping_facade_matches_independent_portable_request_ir() {
+    let definition = IndexDefinition::new()
+        .name("grouping-products")
+        .field(Field::keyword("brand").facetable(true))
+        .field(Field::float64("price").facetable(true));
+    let direct_backend = Arc::new(RecordingBackend::new());
+    let index = Index::from_backend(definition, direct_backend.clone()).unwrap();
+    let grouping = GroupingPlan::new().level(
+        GroupingPlan::by_expression(GroupingExpression::function(
+            "lowercase",
+            [GroupingExpression::attribute("brand")],
+        ))
+        .alias("total", GroupingAggregation::sum("price"))
+        .max_groups(5)
+        .precision(9)
+        .order_by([GroupingOrder::descending_alias("total")])
+        .filter(GroupingFilter::range(
+            "price",
+            GroupingExpression::literal(10_i64),
+            GroupingExpression::literal(100_i64),
+        ))
+        .output(GroupingOutput::alias("total").label("revenue"))
+        .output(GroupingAggregation::stddev("price")),
+    );
+    assert!(index
+        .browse()
+        .grouping(grouping)
+        .execute::<serde_json::Value>()
+        .is_err());
+    let direct = direct_backend.last_call().expect("direct Rust grouping IR");
+
+    let field = |name: &str, kind, facetable| searchkernel_ir::RustFieldInput {
+        name: name.to_owned(),
+        kind,
+        multi: false,
+        stored: None,
+        searchable: None,
+        filterable: None,
+        sortable: None,
+        facetable,
+        analyzer: None,
+        distance_metric: None,
+        hnsw: None,
+    };
+    let definition =
+        searchkernel_ir::resolve_rust_index_definition(searchkernel_ir::RustIndexDefinitionInput {
+            name: Some("grouping-products".to_owned()),
+            fields: vec![
+                field("brand", searchkernel_ir::RustFieldKind::Keyword, Some(true)),
+                field("price", searchkernel_ir::RustFieldKind::Float64, Some(true)),
+            ],
+            default_search_fields: None,
+        })
+        .expect("portable parity schema");
+    let portable_backend = Arc::new(RecordingBackend::new());
+    let dispatcher = searchkernel_dispatch::Dispatcher::from_backend(
+        Arc::new(searchkernel_ir::IndexContext::from_definition_ir(
+            definition,
+        )),
+        portable_backend.clone(),
+    );
+    let request = searchkernel_protocol::json::request_json_to_flatbuffer(
+        br#"{
+          "protocol_version": 2,
+          "payload_type": "SearchKernel_V2_SearchRequest",
+          "payload": {
+            "query": {"source_type": "MatchAllQuery", "source": {}},
+            "grouping": [{
+              "source_type": "StructuredGroupingSource",
+              "source": {"root": {"operations": [
+                {
+                  "operation_type": "GroupingGroupOperation",
+                  "operation": {"expression": {
+                    "expr_type": "GroupingFunctionExpression",
+                    "expr": {
+                      "name": "lowercase",
+                      "arguments": [{
+                        "expr_type": "GroupingAttributeExpression",
+                        "expr": {"field": "brand"}
+                      }]
+                    }
+                  }}
+                },
+                {
+                  "operation_type": "GroupingEachOperation",
+                  "operation": {"operations": [
+                    {
+                      "operation_type": "GroupingAliasOperation",
+                      "operation": {"name": "total", "expression": {
+                        "expr_type": "GroupingAggregationExpression",
+                        "expr": {
+                          "aggregation_type": "SumAggregation",
+                          "aggregation": {"expression": {
+                            "expr_type": "GroupingAttributeExpression",
+                            "expr": {"field": "price"}
+                          }}
+                        }
+                      }}
+                    },
+                    {
+                      "operation_type": "GroupingMaxOperation",
+                      "operation": {
+                        "value_type": "FiniteGroupingMax",
+                        "value": {"value": 5}
+                      }
+                    },
+                    {
+                      "operation_type": "GroupingPrecisionOperation",
+                      "operation": {"value": 9}
+                    },
+                    {
+                      "operation_type": "GroupingOrderOperation",
+                      "operation": {"expressions": [{"expression": {
+                        "expr_type": "GroupingUnaryExpression",
+                        "expr": {
+                          "op": "Negative",
+                          "expression": {
+                            "expr_type": "GroupingAliasReference",
+                            "expr": {"name": "total"}
+                          }
+                        }
+                      }}]}
+                    },
+                    {
+                      "operation_type": "GroupingFilterOperation",
+                      "operation": {"filter": {
+                        "expr_type": "GroupingFilterRange",
+                        "expr": {
+                          "expression": {
+                            "expr_type": "GroupingAttributeExpression",
+                            "expr": {"field": "price"}
+                          },
+                          "lower": {
+                            "expr_type": "GroupingLiteralExpression",
+                            "expr": {"value": {
+                              "kind_type": "Int64Value",
+                              "kind": {"value": "10"}
+                            }}
+                          },
+                          "upper": {
+                            "expr_type": "GroupingLiteralExpression",
+                            "expr": {"value": {
+                              "kind_type": "Int64Value",
+                              "kind": {"value": "100"}
+                            }}
+                          }
+                        }
+                      }}
+                    },
+                    {
+                      "operation_type": "GroupingOutputOperation",
+                      "operation": {"outputs": [
+                        {
+                          "label": "revenue",
+                          "expression": {
+                            "expr_type": "GroupingAliasReference",
+                            "expr": {"name": "total"}
+                          }
+                        },
+                        {
+                          "expression": {
+                            "expr_type": "GroupingAggregationExpression",
+                            "expr": {
+                              "aggregation_type": "StdDevAggregation",
+                              "aggregation": {"expression": {
+                                "expr_type": "GroupingAttributeExpression",
+                                "expr": {"field": "price"}
+                              }}
+                            }
+                          }
+                        }
+                      ]}
+                    }
+                  ]}
+                }
+              ]}}
+            }]
+          }
+        }"#,
+    )
+    .expect("canonical portable grouping request");
+    dispatcher
+        .dispatch(&request)
+        .expect("recording backend error is encoded as a portable response");
+    let portable = portable_backend.last_call().expect("portable grouping IR");
+    assert_eq!(direct, portable);
 }

@@ -1604,6 +1604,17 @@ $parityCorpus = json_decode(
     true,
     flags: JSON_THROW_ON_ERROR,
 );
+$typedCorpusDocument = searchkernelPhpClientApiE2eDocument($parityCorpus, [
+    '_id' => 'typed-corpus-document',
+    'price' => 89,
+    'sale_price' => 79,
+    'rating' => 5,
+]);
+truth(is_float($typedCorpusDocument['price']), 'E2E corpus integer for Float64 field becomes float');
+truth(is_float($typedCorpusDocument['sale_price']), 'E2E corpus optional Float64 field becomes float');
+same(5, $typedCorpusDocument['rating'], 'E2E corpus integer field remains integer');
+same(50.0, searchkernelPhpClientApiE2eQueryValue($parityCorpus, 'price', 50), 'E2E range bound matches the declared Float64 field');
+same(5, searchkernelPhpClientApiE2eQueryValue($parityCorpus, 'rating', 5), 'E2E query value preserves declared Int64 field');
 $parityDefinition = searchkernelPhpClientApiE2eDefinition($parityCorpus)->toWire();
 $parityFieldNames = array_column($parityDefinition['fields'], 'name');
 $expectedParityFieldNames = array_keys($parityCorpus['schema']['fields']);
@@ -1714,10 +1725,12 @@ foreach ($lifecycleTransport->requests as $request) {
     same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
 }
 
-throws(
-    InvalidArgumentException::class,
-    static fn () => (new Client(new RecordingTransport(), '../escape'))->openIndex(),
-    'unsafe logical target fails closed',
+$unsafeTargetTransport = new RecordingTransport();
+(new Client($unsafeTargetTransport, '../escape'))->openIndex();
+same(
+    ['name' => '../escape'],
+    $unsafeTargetTransport->requests[0]['target'],
+    'domain-invalid target reaches canonical semantic validation',
 );
 
 throws(

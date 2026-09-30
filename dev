@@ -389,6 +389,8 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/check-python-flatbuffers-boundary.py"
     "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+    "$PYTHON" "$ROOT/tools/check-audit-split.py"
+    "$PYTHON" "$ROOT/tools/check-audit-client-coverage.py"
     run_typescript_generation_check
     "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
     "$PYTHON" "$ROOT/tools/test_build_system_ci.py"
@@ -432,6 +434,8 @@ bookkeeping_command() {
             "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            "$PYTHON" "$ROOT/tools/check-audit-split.py"
+            "$PYTHON" "$ROOT/tools/check-audit-client-coverage.py"
             ;;
         sync)
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --write
@@ -444,6 +448,8 @@ bookkeeping_command() {
             "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            "$PYTHON" "$ROOT/tools/check-audit-split.py"
+            "$PYTHON" "$ROOT/tools/check-audit-client-coverage.py"
             ;;
         *)
             echo 'usage: ./dev bookkeeping check|sync' >&2
@@ -468,6 +474,8 @@ check_all() {
     check_protocol
     "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
     "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
+    "$PYTHON" "$ROOT/tools/test_check_audit_split.py"
+    "$PYTHON" "$ROOT/tools/test_check_audit_client_coverage.py"
     "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
     lint_target --profile rust-clippy-all-features
     "$CARGO" test --workspace --all-targets --all-features
@@ -751,8 +759,12 @@ verify_target() {
         contracts)
             "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            "$PYTHON" "$ROOT/tools/check-audit-split.py"
+            "$PYTHON" "$ROOT/tools/check-audit-client-coverage.py"
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
+            "$PYTHON" "$ROOT/tools/test_check_audit_split.py"
+            "$PYTHON" "$ROOT/tools/test_check_audit_client_coverage.py"
             "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
             ;;
         client-semantic-parity)
