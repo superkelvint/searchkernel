@@ -371,6 +371,7 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
     "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
     "$PYTHON" "$ROOT/tools/test_consumer_runtime.py"
+    "$PYTHON" "$ROOT/tools/test_package_consumer_release.py"
     "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
     "$PYTHON" "$ROOT/tools/test_dev_universe_summary.py"
     "$PYTHON" "$ROOT/tools/test_check_verifier_build_ownership.py"
@@ -696,6 +697,7 @@ test_target() {
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
         rust-api)
+            "$CARGO" test -p searchkernel-vespa-bindings --lib --no-default-features
             "$CARGO" test -p searchkernel --all-targets --no-default-features
             ;;
         client-real-e2e-parity)
