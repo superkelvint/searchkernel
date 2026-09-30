@@ -59,7 +59,7 @@ results = index.search("shoes")
 index.close
 ```
 
-`Index.create` and `Index.open` own a private local `searchkerneld` process.
+`Index.create` and `Index.open` acquire a managed `searchkerneld` for the index directory's parent data root; sibling managed indexes share that daemon until the last handle closes.
 Set `SEARCHKERNEL_LOCAL_HOST` to override the daemon binary and
 `SEARCHKERNEL_SDK_LIB` to prepend its native library directory. Startup uses a
 private Unix gRPC socket plus loopback HTTP listener, probes readiness instead of
