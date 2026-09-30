@@ -54,6 +54,24 @@ mod showcase {
             .as_str()
     }
 
+    fn sort_from_intent(field: &str, direction: &str) -> Result<Sort, Box<dyn std::error::Error>> {
+        match direction {
+            "asc" => Ok(Sort::asc(field)),
+            "desc" => Ok(Sort::desc(field)),
+            other => Err(format!("unsupported sort direction: {other}").into()),
+        }
+    }
+
+    fn facet_sort_from_intent(value: &str) -> Result<FacetSort, Box<dyn std::error::Error>> {
+        match value {
+            "count_asc" => Ok(FacetSort::CountAsc),
+            "count_desc" => Ok(FacetSort::CountDesc),
+            "value_asc" => Ok(FacetSort::ValueAsc),
+            "value_desc" => Ok(FacetSort::ValueDesc),
+            other => Err(format!("unsupported facet sort: {other}").into()),
+        }
+    }
+
     fn corpus_documents() -> Result<Vec<(String, Value)>, Box<dyn std::error::Error>> {
         let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
         let mut documents = Vec::new();
@@ -380,13 +398,16 @@ mod showcase {
         let pagination_sort = pagination_intent["sort"][0]["field"]
             .as_str()
             .ok_or("pagination sort field missing")?;
+        let pagination_direction = pagination_intent["sort"][0]["direction"]
+            .as_str()
+            .ok_or("pagination sort direction missing")?;
         let pagination_all_limit = pagination_intent["all_limit"]
             .as_u64()
             .ok_or("pagination all limit missing")? as u32;
         let filtered_facets_intent = intent!("filtered_facets");
         let parity_sorted = index
             .search(pagination_query)
-            .sort(Sort::asc(pagination_sort))
+            .sort(sort_from_intent(pagination_sort, pagination_direction)?)
             .limit(pagination_all_limit)
             .execute::<Value>()?;
         let parity_filtered = index
@@ -400,7 +421,7 @@ mod showcase {
                     .as_str()
                     .ok_or("filtered facet filter missing")?,
             )
-            .sort(Sort::asc(pagination_sort))
+            .sort(sort_from_intent(pagination_sort, pagination_direction)?)
             .limit(
                 filtered_facets_intent["page_limit"]
                     .as_u64()
@@ -415,10 +436,26 @@ mod showcase {
                     .ok_or("facet query missing")?,
             )
             .facet(
-                facet_intent["field"]
-                    .as_str()
-                    .ok_or("facet field missing")?
-                    .into(),
+                Facet::new(
+                    facet_intent["field"]
+                        .as_str()
+                        .ok_or("facet field missing")?,
+                )
+                .name(
+                    facet_intent["name"]
+                        .as_str()
+                        .ok_or("facet result name missing")?,
+                )
+                .limit(
+                    facet_intent["limit"]
+                        .as_u64()
+                        .ok_or("facet limit missing")? as u32,
+                )
+                .sort(facet_sort_from_intent(
+                    facet_intent["sort"]
+                        .as_str()
+                        .ok_or("facet sort missing")?,
+                )?),
             )
             .limit(
                 facet_intent["page_limit"]
@@ -595,12 +632,12 @@ mod showcase {
             .execute::<Value>()?;
         let parity_all_sorted = index
             .search(pagination_query)
-            .sort(Sort::asc(pagination_sort))
-            .limit(20)
+            .sort(sort_from_intent(pagination_sort, pagination_direction)?)
+            .limit(pagination_all_limit)
             .execute::<Value>()?;
         let parity_page = index
             .search(pagination_query)
-            .sort(Sort::asc(pagination_sort))
+            .sort(sort_from_intent(pagination_sort, pagination_direction)?)
             .offset(
                 pagination_intent["offset"]
                     .as_u64()
@@ -634,7 +671,11 @@ mod showcase {
                         .as_u64()
                         .ok_or("filtered facet limit missing")? as u32,
                 )
-                .sort(FacetSort::CountDesc),
+                .sort(facet_sort_from_intent(
+                    filtered_facets_intent["sort"]
+                        .as_str()
+                        .ok_or("filtered facet sort missing")?,
+                )?),
             )
             .limit(
                 filtered_facets_intent["page_limit"]
@@ -823,10 +864,10 @@ mod showcase {
                         alias_intent["outputs"][1]["output_name"]
                             .as_str()
                             .ok_or("alias output name missing")?,
-                        GroupingAggregation::sum(
-                            alias_intent["aliases"][0]["field"]
+                        GroupingAggregation::alias_ref(
+                            alias_intent["outputs"][1]["name"]
                                 .as_str()
-                                .ok_or("alias output field missing")?,
+                                .ok_or("alias output reference missing")?,
                         ),
                     )),
                 ),
@@ -856,21 +897,32 @@ mod showcase {
                             .ok_or("keep regex pattern missing")?,
                     )
                     .output(GroupingAggregation::named(
-                        "products",
+                        keep_intent["outputs"][0]["name"]
+                            .as_str()
+                            .ok_or("keep output name missing")?,
                         GroupingAggregation::count(),
                     )),
                 ),
             )
             .execute::<Value>()?;
         let yql_intent = intent!("yql");
+        let (yql_parameter_name, yql_parameter_value) = yql_intent["bindings"]
+            .as_object()
+            .and_then(|bindings| bindings.iter().next())
+            .ok_or("YQL binding missing")?;
         let parity_yql = index
             .yql(yql_intent["source"].as_str().ok_or("YQL source missing")?)
             .yql_parameter(
-                "q",
-                yql_intent["bindings"]["q"]
+                yql_parameter_name,
+                yql_parameter_value
                     .as_str()
-                    .ok_or("YQL binding missing")?,
+                    .ok_or("YQL binding value must be text")?,
             )
+            .ranking(Ranking::named(
+                yql_intent["ranking_profile"]
+                    .as_str()
+                    .ok_or("YQL ranking profile missing")?,
+            ))
             .page(
                 yql_intent["page"].as_u64().ok_or("YQL page missing")? as u32,
                 yql_intent["page_size"]
@@ -1080,7 +1132,7 @@ mod showcase {
             .as_str()
             .ok_or("nested child average output name missing")?;
         let mut parity_observations = json!({
-            "document_crud": {"id": "shoe-1", "title": parity_document["title"], "brand": parity_document["brand"], "price": parity_document["price"]},
+            "document_crud": {"id": document_intent["document_id"], "title": parity_document["title"], "brand": parity_document["brand"], "price": parity_document["price"]},
             "full_text_search": {"ids": ids(&parity_full_text), "total": parity_full_text.total_hits.value},
             "stemming": {"ids": ids(&parity_stemming)},
             "text_filter_binding": {"ids": ids(&parity_text_binding)},
