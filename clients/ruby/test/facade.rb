@@ -465,7 +465,7 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
     args = JSON.parse(File.read(log))
     assert(args.include?("--data-root"), "managed open reuses multi-index daemon mode")
     assert(!args.include?("--index"), "managed open selects a logical target after startup")
-    open_request = JSON.parse(File.readlines(request_log).fetch(1))
+    open_request = JSON.parse(File.readlines(request_log).last)
     assert(open_request.fetch("payload_type").end_with?("OpenIndexRequest"), "managed open sends lifecycle request")
     reopened.close
   ensure
