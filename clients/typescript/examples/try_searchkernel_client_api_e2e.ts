@@ -7,9 +7,11 @@
  * SEARCHKERNEL_LOCAL_HOST to its path.
  */
 
+import { readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { paritySafe } from "./parity-json.js";
 import {
   Boolean,
   Float,
@@ -17,6 +19,8 @@ import {
   Index,
   Integer,
   Keyword,
+  PositionField,
+  ArrayOfStructField,
   RankProfile,
   SearchKernelError,
   Tensor,
@@ -32,6 +36,8 @@ import {
   type DocumentInput,
   type ResultGroup,
   type SearchResults,
+  type CreateIndexOptions,
+  type ValueInput,
 } from "@searchkernel/client/node";
 
 let WORKSPACE_PATH = "";
@@ -42,21 +48,440 @@ let INDEX_PATH = "";
 // SKC: search.pagination/basic kinds=ergonomic,e2e runtime=node
 // SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=node
 // SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=node
+// SKC: query.phrase/basic kinds=ergonomic,e2e runtime=node
+// SKC: query.proximity/basic kinds=ergonomic,e2e runtime=node
 // SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=node
 // SKC: grouping.aggregations/basic kinds=ergonomic,e2e runtime=node
-const VECTOR_TYPE = "tensor<float>(x[8])";
+const E2E_CORPUS: any = JSON.parse(readFileSync(resolve(process.cwd(), "../../reference/client-real-e2e-parity/corpus.json"), "utf8"));
+const PARITY_CONSUMED_INTENTS = new Map<string, Record<string, unknown>>();
+function trackedIntent(scenario: string, source: Record<string, any>): Record<string, any> {
+  return new Proxy(source, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof property === "string" && Object.prototype.hasOwnProperty.call(target, property)) {
+        const consumed = PARITY_CONSUMED_INTENTS.get(scenario) ?? {};
+        consumed[property] = structuredClone(value);
+        PARITY_CONSUMED_INTENTS.set(scenario, consumed);
+      }
+      return value;
+    },
+  });
+}
+const PARITY_INTENTS = new Proxy(E2E_CORPUS.scenario_inputs as Record<string, any>, {
+  get(target, property, receiver) {
+    const value = Reflect.get(target, property, receiver);
+    if (typeof property === "string" && Object.prototype.hasOwnProperty.call(target, property)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new TypeError(`parity scenario intent ${property} must be an object`);
+      }
+      return trackedIntent(property, value);
+    }
+    return value;
+  },
+});
+const VECTOR_TYPE: string = E2E_CORPUS.schema.fields.embedding.type;
 
 function embedding(...values: number[]): Tensor {
   if (values.length !== 8) throw new TypeError("the E2E corpus uses eight-dimensional embeddings");
   return Tensor.dense(VECTOR_TYPE, values);
 }
 
-const SHOE_1_VECTOR = [0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78] as const;
-const SHOE_2_VECTOR = [0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64] as const;
-const SHOE_3_VECTOR = [0.10, 0.16, 0.78, 0.12, 0.24, 0.28, 0.92, 0.16] as const;
-const SHOE_4_VECTOR = [0.82, 0.12, 0.06, 0.96, 0.72, 0.82, 0.10, 0.88] as const;
-const SHOE_5_VECTOR = [0.64, 0.82, 0.07, 0.62, 0.34, 0.92, 0.16, 0.62] as const;
-const BAG_1_VECTOR = [0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55] as const;
+function corpusVector(documentId: string): number[] {
+  const document = E2E_CORPUS.documents.find((item: any) => item._id === documentId);
+  if (!document || !Array.isArray(document.embedding)) throw new Error(`missing corpus vector: ${documentId}`);
+  return document.embedding;
+}
+
+const SHOE_1_VECTOR = corpusVector("shoe-1");
+const SHOE_2_VECTOR = corpusVector("shoe-2");
+const SHOE_3_VECTOR = corpusVector("shoe-3");
+const SHOE_4_VECTOR = corpusVector("shoe-4");
+const SHOE_5_VECTOR = corpusVector("shoe-5");
+const BAG_1_VECTOR = corpusVector("bag-1");
+
+interface CorpusFieldBuilder {
+  definition(name: string): any;
+}
+
+const FIELD_TYPES: Record<string, new (options?: any) => CorpusFieldBuilder> = {
+  text: Text,
+  keyword: Keyword,
+  int64: Integer,
+  float64: Float,
+  bool: Boolean,
+  position: PositionField,
+};
+
+function corpusField(spec: any): CorpusFieldBuilder {
+  const options = Object.fromEntries(Object.entries(spec).filter(([key]) => !["type", "element", "fields"].includes(key)));
+  if (spec.type === "array" && spec.element?.type === "struct") {
+    const members = Object.fromEntries(Object.entries<any>(spec.element.fields).map(([name, member]) => [name, corpusField(member)]));
+    return new ArrayOfStructField(members as any, options);
+  }
+  if (spec.type.startsWith("tensor<")) return new TensorField(spec.type, options);
+  const FieldType = FIELD_TYPES[spec.type];
+  if (!FieldType) throw new Error(`unsupported corpus field type: ${spec.type}`);
+  return new FieldType(options);
+}
+
+function fieldsFromCorpus(): CreateIndexOptions["fields"] {
+  const fields: Record<string, CorpusFieldBuilder> = {};
+  for (const [name, spec] of Object.entries<any>(E2E_CORPUS.schema.fields)) {
+    fields[name] = corpusField(spec);
+  }
+  return fields;
+}
+
+function rankProfilesFromCorpus(): RankProfile[] {
+  return E2E_CORPUS.schema.rank_profiles.map((spec: any) => {
+    let profile = new RankProfile(spec.name).firstPhase(spec.first_phase);
+    if (spec.second_phase !== undefined) profile = profile.secondPhase(spec.second_phase);
+    if (spec.rerank_count !== undefined) profile = profile.rerankCount(spec.rerank_count);
+    for (const [name, typeSpec] of Object.entries<string>(spec.query_inputs ?? {})) profile = profile.queryInput(name, typeSpec);
+    for (const feature of spec.match_features ?? []) profile = profile.matchFeature(feature);
+    return profile;
+  });
+}
+
+function corpusValue(field: string, input: unknown): ValueInput {
+  const type = E2E_CORPUS.schema.fields[field]?.type;
+  if (type === "float64" && typeof input === "number") return float64(input);
+  if (type === "int64" && (typeof input === "number" || typeof input === "string")) return BigInt(input);
+  if (type?.startsWith("tensor<") && Array.isArray(input)) return embedding(...input as number[]);
+  return input as ValueInput;
+}
+
+function documentInput(source: Record<string, unknown>): DocumentInput {
+  return Object.fromEntries(Object.entries(source).map(([field, input]) => [field, corpusValue(field, input)])) as DocumentInput;
+}
+
+function sharedFilterBindings(source: string, bindings: Record<string, unknown>): Record<string, ValueInput> {
+  const converted: Record<string, ValueInput> = {};
+  for (const [name, input] of Object.entries(bindings)) {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const field = new RegExp(`([A-Za-z_][\\w.]*)\\s*(?:(?:<=|>=|=|<|>)\\s*|IN\\s*\\(\\s*):${escapedName}\\b`, "i").exec(source)?.[1];
+    converted[name] = field ? corpusValue(field, input) : input as ValueInput;
+  }
+  return converted;
+}
+
+const PARITY_OBSERVATIONS: Record<string, unknown> = {};
+
+function typedQueryForScenario(scenario: string, intent: any): any {
+  const field = intent.field;
+  switch (scenario) {
+    case "typed_query_term": return q.term(field, intent.value);
+    case "typed_query_contains": return q.contains(field, intent.value);
+    case "typed_query_phrase": return q.phrase(field, ...intent.terms);
+    case "typed_query_near": return q.near(field, ...intent.terms);
+    case "typed_query_ordered_near": return q.orderedNear(field, ...intent.terms);
+    case "typed_query_range":
+    case "typed_query_range_exclusive": {
+      const fieldType = E2E_CORPUS.schema.fields[field].type;
+      const bound = (input: number) => fieldType === "float64" ? float64(input) : input;
+      return q.range(field, bound(intent.lower), bound(intent.upper), {
+        includeLower: intent.include_lower,
+        includeUpper: intent.include_upper,
+      });
+    }
+    case "typed_query_boolean": {
+      const [left, right] = intent.or_terms;
+      return q.allOf(
+        q.anyOf(q.contains(left.field, left.value), q.contains(right.field, right.value)),
+        q.not(q.contains(intent.not_term.field, intent.not_term.value)),
+      );
+    }
+    case "typed_query_in": return q.inValues(field, intent.values);
+    case "typed_query_equals": return q.equals(field, intent.value);
+    case "typed_query_fuzzy": return q.fuzzy(field, intent.value);
+    case "typed_query_weak_and": return q.weakAnd(...intent.terms.map((term: any) => q.contains(term.field, term.value)));
+    case "typed_query_wand": return q.wand(field, intent.items);
+    case "typed_query_weighted_set": return q.weightedSet(field, intent.items);
+    case "typed_query_dot_product": return q.dotProduct(field, intent.items);
+    case "typed_query_prefix": return q.prefix(field, intent.value);
+    case "typed_query_substring": return q.substring(field, intent.value);
+    case "typed_query_suffix": return q.suffix(field, intent.value);
+    case "typed_query_same_element":
+      return q.sameElement(
+        field,
+        q.contains(intent.first_field, intent.first_value),
+        q.contains(intent.last_field, intent.last_value),
+      );
+    case "typed_query_geo_location": return q.geoLocation(field, intent.latitude, intent.longitude, intent.radius);
+    case "typed_query_geo_box": return q.geoBox(field, intent.south, intent.west, intent.north, intent.east);
+    default: throw new Error("unsupported typed parity scenario: " + scenario);
+  }
+}
+
+async function sharedTypedQueryObservations(index: Index): Promise<Record<string, unknown>> {
+  const observations: Record<string, unknown> = {};
+  for (const scenario of Object.keys(E2E_CORPUS.scenario_inputs)) {
+    if (!scenario.startsWith("typed_query_")) continue;
+    const input = PARITY_INTENTS[scenario];
+    const capabilities = E2E_CORPUS.client_scenario_contract[scenario].typescript;
+    let builder = index.query(typedQueryForScenario(scenario, input));
+    const rankingProfile = input.ranking_profile;
+    if (rankingProfile) builder = builder.ranking(rankingProfile);
+    const results = await builder.limit(input.limit).execute();
+    const resultOrder = input.result_order;
+    const feature = input.feature;
+    let queryResult: unknown;
+    if (feature) {
+      queryResult = results.hits.map((hit) => ({ id: hit.id, feature: paritySafe(hit.features[feature]) }));
+    } else {
+      const ids = results.hits.map((hit) => hit.id);
+      if (resultOrder === "sorted_ids") ids.sort();
+      queryResult = ids;
+    }
+    observations[scenario] = {
+      observation: { intent: PARITY_CONSUMED_INTENTS.get(scenario), query_result: queryResult },
+      capabilities,
+    };
+  }
+  return observations;
+}
+
+function aggregationExpression(spec: any): any {
+  switch (spec.kind) {
+    case "count": return agg.count();
+    case "sum": return agg.sum(spec.field);
+    case "avg": return agg.avg(spec.field);
+    default: throw new Error(`unsupported parity aggregation kind: ${spec.kind}`);
+  }
+}
+
+function aggregationOutput(spec: any): any {
+  if (spec.kind === "alias") return g.aliasRef(spec.name).as(spec.output_name);
+  return aggregationExpression(spec).as(spec.name);
+}
+
+async function captureRealEngineParity(index: Index): Promise<Record<string, unknown>> {
+  const typedQueryObservations = await sharedTypedQueryObservations(index);
+  const intents = PARITY_INTENTS;
+  const orderedSpec = intents.pagination;
+  const ordered = await index.search(orderedSpec.query).sort(orderedSpec.sort[0].field, orderedSpec.sort[0].direction).limit(orderedSpec.all_limit).execute();
+  const filteredSpec = intents.filtered_facets;
+  const filtered = await index.search(filteredSpec.query).filter(filteredSpec.filter).sort(orderedSpec.sort[0].field, orderedSpec.sort[0].direction).limit(filteredSpec.page_limit).execute();
+  const facetSpec = intents.facets;
+  const faceted = await index.search(facetSpec.query).facet(facetSpec.field, { name: facetSpec.name, limit: facetSpec.limit, sort: facetSpec.sort }).limit(facetSpec.page_limit).execute();
+  const rootSpec = intents.root_aggregations;
+  if (rootSpec.kind !== "browse") throw new Error("root_aggregations requires browse intent");
+  let rootBuilder = index.browse().filter(rootSpec.filter);
+  for (const aggregationSpec of rootSpec.aggregations) rootBuilder = rootBuilder.aggregate(aggregationOutput(aggregationSpec));
+  const root = await rootBuilder.limit(rootSpec.limit).execute();
+  const groupedSpec = intents.grouping_aggregations;
+  const groupedOrder = groupedSpec.order.map((order: any) => {
+    const expression = order.kind === "count" ? agg.count() : g.field(order.field);
+    return order.direction === "desc" ? desc(expression) : asc(expression);
+  });
+  const grouped = await index.search(groupedSpec.query).group(
+    Group.by(groupedSpec.group_by).limit(groupedSpec.limit).precision(groupedSpec.precision)
+      .orderBy(...groupedOrder)
+      .output(...groupedSpec.outputs.map(aggregationOutput)),
+  ).execute();
+  const nearestIntent = PARITY_INTENTS.nearest_neighbor;
+  const nearest = await index.query(q.nearestNeighbor(nearestIntent.field, nearestIntent.query_input))
+    .ranking(nearestIntent.ranking_profile)
+    .input(nearestIntent.query_input, embedding(...corpusVector(nearestIntent.query_input_document)))
+    .limit(nearestIntent.limit).execute();
+  const hybridIntent = PARITY_INTENTS.hybrid_text_vector;
+  const hybrid = await index.query(q.anyOf(
+    q.contains(hybridIntent.text_field, hybridIntent.text_value),
+    q.nearestNeighbor(hybridIntent.vector_field, hybridIntent.query_input),
+  )).ranking(hybridIntent.ranking_profile)
+    .input(hybridIntent.query_input, embedding(...corpusVector(hybridIntent.query_input_document)))
+    .limit(hybridIntent.limit).execute();
+  const rerankedSpec = intents.two_phase_reranking;
+  const reranked = await index.search(rerankedSpec.query).ranking(rerankedSpec.ranking_profile).limit(rerankedSpec.limit).execute();
+  let errorCodes: string[];
+  try {
+    const errorSpec = intents.structured_filter_error;
+    await index.search(errorSpec.query).filter(errorSpec.filter).execute();
+    throw new Error("unknown field filter unexpectedly succeeded");
+  } catch (error) {
+    assert(error instanceof SearchKernelError);
+    errorCodes = error.details.map((detail) => (detail as { code: string }).code).sort();
+  }
+  const document = await index.get(intents.document_crud.document_id);
+  assert(document !== null);
+  const tensorSpec = intents.tensor_readback;
+  const tensorDocument = await index.get(tensorSpec.document_id);
+  assert(tensorDocument !== null);
+  const tensorValue = tensorDocument[tensorSpec.field] as { $searchkernel_tensor: { dense: number[] } };
+  const fullSpec = intents.full_text_search;
+  const fullText = await index.search(fullSpec.query).limit(fullSpec.limit).execute();
+  const stemmingSpec = intents.stemming;
+  const stemming = await index.search(stemmingSpec.query).limit(stemmingSpec.limit).execute();
+  const bindingSpec = intents.text_filter_binding;
+  const textBinding = await index.search(bindingSpec.query).filter(bindingSpec.filter, sharedFilterBindings(bindingSpec.filter, bindingSpec.bindings)).sort(bindingSpec.sort[0].field, bindingSpec.sort[0].direction).limit(bindingSpec.limit).execute();
+  const repeatedSpec = intents.repeated_filters;
+  let repeatedBuilder = index.search(repeatedSpec.query);
+  for (const filter of repeatedSpec.filters) repeatedBuilder = repeatedBuilder.filter(filter.source, sharedFilterBindings(filter.source, filter.bindings));
+  const repeatedFilters = await repeatedBuilder.sort(repeatedSpec.sort[0].field, repeatedSpec.sort[0].direction).limit(repeatedSpec.limit).execute();
+  const booleanSpec = intents.boolean_filter_grammar;
+  const booleanFilter = await index.search(booleanSpec.query).filter(booleanSpec.filter, sharedFilterBindings(booleanSpec.filter, booleanSpec.bindings))
+    .sort(booleanSpec.sort[0].field, booleanSpec.sort[0].direction).limit(booleanSpec.limit).execute();
+  const projectionSpec = intents.sorting_projection;
+  const projection = await index.search(projectionSpec.query).sort(projectionSpec.sort[0].field, projectionSpec.sort[0].direction).fields(...projectionSpec.projection).limit(projectionSpec.limit).execute();
+  const allSorted = await index.search(orderedSpec.query).sort(orderedSpec.sort[0].field, orderedSpec.sort[0].direction).limit(orderedSpec.all_limit).execute();
+  const page = await index.search(orderedSpec.query).sort(orderedSpec.sort[0].field, orderedSpec.sort[0].direction).offset(orderedSpec.offset).limit(orderedSpec.limit).execute();
+  const filteredFacet = await index.search(filteredSpec.query).filter(filteredSpec.filter)
+    .facet(filteredSpec.field, { limit: filteredSpec.limit, sort: filteredSpec.sort }).limit(filteredSpec.page_limit).execute();
+  const nestedSpec = intents.nested_grouping;
+  if (nestedSpec.kind !== "browse") throw new Error("nested_grouping requires browse intent");
+  const nested = await index.browse().filter(nestedSpec.filter.source, sharedFilterBindings(nestedSpec.filter.source, nestedSpec.filter.bindings)).group(
+    Group.by(nestedSpec.group_by).limit(nestedSpec.limit).output(...nestedSpec.outputs.map(aggregationOutput)).subgroup(
+      Group.by(nestedSpec.nested.group_by).limit(nestedSpec.nested.limit).output(...nestedSpec.nested.outputs.map(aggregationOutput)),
+    ),
+  ).execute();
+  const aliasSpec = intents.group_alias;
+  const aliasOrder = aliasSpec.order_by_alias.direction === "desc" ? desc : asc;
+  let aliasGroup = Group.by(aliasSpec.group_by).limit(aliasSpec.limit);
+  for (const aliasSpecification of aliasSpec.aliases) {
+    aliasGroup = aliasGroup.alias(aliasSpecification.name, aggregationExpression(aliasSpecification));
+  }
+  const aliased = await index.search(aliasSpec.query).group(
+    aliasGroup.orderBy(aliasOrder(g.aliasRef(aliasSpec.order_by_alias.name))).output(...aliasSpec.outputs.map(aggregationOutput)),
+  ).execute();
+  const keepSpec = intents.group_keep_filter;
+  const kept = await index.search(keepSpec.query).group(
+    Group.by(keepSpec.group_by).limit(keepSpec.limit).keep(gf.regex(g.field(keepSpec.keep_regex.field), keepSpec.keep_regex.pattern)).output(...keepSpec.outputs.map(aggregationOutput)),
+  ).execute();
+  const rankInputSpec = intents.rank_inputs;
+  let rankInputBuilder = index.search(rankInputSpec.query).ranking(rankInputSpec.ranking_profile);
+  for (const [key, value] of Object.entries<any>(rankInputSpec.inputs)) {
+    rankInputBuilder = rankInputBuilder.input(key, rankInputSpec.input_types[key] === "float64" ? float64(value) : value);
+  }
+  const rankInput = await rankInputBuilder.limit(rankInputSpec.limit).execute();
+  const rankPropertySpec = intents.rank_properties;
+  let rankPropertyBuilder = index.search(rankPropertySpec.query).ranking(rankPropertySpec.ranking_profile);
+  for (const [key, value] of Object.entries<string>(rankPropertySpec.rank_properties)) rankPropertyBuilder = rankPropertyBuilder.rankProperty(key, value);
+  const rankProperty = await rankPropertyBuilder.limit(rankPropertySpec.limit).execute();
+  const degradedSpec = intents.coverage_degradation;
+  if (degradedSpec.kind !== "browse") throw new Error("coverage_degradation requires browse intent");
+  let degradedBuilder = index.browse().filter(degradedSpec.filter.source, sharedFilterBindings(degradedSpec.filter.source, degradedSpec.filter.bindings)).sort(degradedSpec.sort[0].field, degradedSpec.sort[0].direction);
+  for (const [key, value] of Object.entries<string>(degradedSpec.rank_properties)) degradedBuilder = degradedBuilder.rankProperty(key, value);
+  const degraded = await degradedBuilder.limit(degradedSpec.limit).execute();
+  const yqlSpec = intents.yql;
+  let yqlBuilder = index.yql(yqlSpec.source);
+  for (const [key, value] of Object.entries<string>(yqlSpec.bindings)) {
+    yqlBuilder = yqlBuilder.property(key, value);
+  }
+  const yql = await yqlBuilder.ranking(yqlSpec.ranking_profile).page(yqlSpec.page, yqlSpec.page_size).execute();
+  let syntaxError: SearchKernelError;
+  try {
+    const syntaxSpec = intents.text_filter_syntax_error;
+    await index.search(syntaxSpec.query).filter(syntaxSpec.filter).execute();
+    throw new Error("malformed textual filter unexpectedly succeeded");
+  } catch (error) {
+    assert(error instanceof SearchKernelError);
+    syntaxError = error;
+  }
+  const scenarioIds = (result: SearchResults) => result.hits.map((hit) => hit.id);
+  const groupsByBrand = (result: SearchResults) => groupingGroups(result).map((group) => ({
+    brand: group.value,
+    products: paritySafe(group.get("products")),
+    avg_price: paritySafe(group.get("avg_price")),
+  }));
+  const nestedGroups = groupingGroups(nested).map((category) => ({
+    category: category.value,
+    products: paritySafe(category.get("products")),
+    ratings: category.groups.map((group) => ({
+      rating: group.value,
+      products: paritySafe(group.get("products")),
+      avg_price: paritySafe(group.get("avg_price")),
+    })),
+  }));
+  const misuseSpec = intents.builder_misuse;
+  let pageAndLimitRejected = false;
+  try { await index.search(misuseSpec.query).page(misuseSpec.page, misuseSpec.page_size).limit(misuseSpec.limit).execute(); } catch { pageAndLimitRejected = true; }
+  let pageAndOffsetRejected = false;
+  try { await index.search(misuseSpec.query).page(misuseSpec.page, misuseSpec.page_size).offset(misuseSpec.page_size).execute(); } catch { pageAndOffsetRejected = true; }
+  assertThrows(() => index.search(misuseSpec.query).limit(misuseSpec.negative_limit), "negative limit rejected");
+  assertThrows(() => index.search(misuseSpec.query).offset(misuseSpec.negative_offset), "negative offset rejected");
+  const negativeLimitRejected = true;
+  const negativeOffsetRejected = true;
+  const updateSpec = intents.advanced_update;
+  await index.insert(documentInput({ _id: updateSpec.document_id, ...updateSpec.initial }));
+  let updateBuilder = index.update(updateSpec.document_id);
+  for (const [key, value] of Object.entries<any>(updateSpec.set)) updateBuilder = updateBuilder.set(key, corpusValue(key, value));
+  for (const field of updateSpec.unset) updateBuilder = updateBuilder.unset(field);
+  for (const [key, value] of Object.entries<any>(updateSpec.increments)) updateBuilder = updateBuilder.increment(key, corpusValue(key, value));
+  await updateBuilder.execute();
+  for (const [key, value] of Object.entries<any>(updateSpec.decrements)) await index.update(updateSpec.document_id).decrement(key, corpusValue(key, value)).execute();
+  for (const [key, value] of Object.entries<any>(updateSpec.multipliers)) await index.update(updateSpec.document_id).multiply(key, corpusValue(key, value)).execute();
+  for (const [key, value] of Object.entries<any>(updateSpec.divisors)) await index.update(updateSpec.document_id).divide(key, corpusValue(key, value)).execute();
+  const advancedUpdate = await index.get(updateSpec.document_id);
+  const observations: Record<string, any> = {
+    document_crud: { id: document._id, title: document.title, brand: document.brand, price: document.price },
+    full_text_search: { ids: scenarioIds(fullText), total: paritySafe(fullText.totalHits) },
+    stemming: { ids: scenarioIds(stemming) },
+    text_filter_binding: { ids: scenarioIds(textBinding) },
+    repeated_filters: { ids: scenarioIds(repeatedFilters) },
+    boolean_filter_grammar: { ids: scenarioIds(booleanFilter) },
+    sorting_projection: { hits: projection.hits.map((hit) => ({ id: hit.id, fields: paritySafe(hit.fields) })) },
+    pagination: { all_ids: scenarioIds(allSorted), offset_ids: scenarioIds(page), total: paritySafe(page.totalHits) },
+    builder_misuse: {
+      observation: {
+        page_and_limit_rejected: pageAndLimitRejected,
+        page_and_offset_rejected: pageAndOffsetRejected,
+        negative_limit_rejected: negativeLimitRejected,
+        negative_offset_rejected: negativeOffsetRejected,
+      },
+      capabilities: {
+        negative_limit_rejected: { kind: "runtime_rejected" },
+        negative_offset_rejected: { kind: "runtime_rejected" },
+      },
+    },
+    sorted_search: { ids: ordered.hits.map((hit) => hit.id), total: paritySafe(ordered.totalHits) },
+    filtered_search: { ids: filtered.hits.map((hit) => hit.id), total: paritySafe(filtered.totalHits) },
+    facets: faceted.facets.brands!.map((item) => ({ value: String(item.value), count: paritySafe(item.count) })),
+    root_aggregations: paritySafe(root.aggregations),
+    advanced_update: { title: advancedUpdate!.title, inventory: paritySafe(advancedUpdate!.inventory), sale_price_present: "sale_price" in advancedUpdate! },
+    grouping_aggregations: groupsByBrand(grouped),
+    filtered_facets: filteredFacet.facets.brand!.map((item) => ({ value: String(item.value), count: paritySafe(item.count) })),
+    nested_grouping: nestedGroups,
+    group_alias: groupingGroups(aliased).map((group) => ({ value: group.value, fields: paritySafe(group.fields) })),
+    group_keep_filter: groupingGroups(kept).map((group) => ({ value: group.value, fields: paritySafe(group.fields) })),
+    ...typedQueryObservations,
+    rank_inputs: rankInput.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
+    rank_properties: rankProperty.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
+    tensor_readback: paritySafe(tensorValue.$searchkernel_tensor.dense),
+    nearest_neighbor: { observation: { intent: PARITY_CONSUMED_INTENTS.get("nearest_neighbor"), ids: nearest.hits.map((hit) => hit.id), scores: nearest.hits.map((hit) => hit.relevance) }, capabilities: {} },
+    hybrid_text_vector: { observation: { intent: PARITY_CONSUMED_INTENTS.get("hybrid_text_vector"), ids: hybrid.hits.map((hit) => hit.id), top_score: hybrid.hits[0]!.score }, capabilities: {} },
+    hybrid: { top_id: hybrid.hits[0]!.id, has_bag: hybrid.hits.some((hit) => hit.id === "bag-1") },
+    two_phase_reranking: { ids: reranked.hits.map((hit) => hit.id) },
+    coverage_degradation: {
+      ids: degraded.hits.map((hit) => hit.id),
+      full: degraded.coverage?.full,
+      degraded: degraded.coverage?.degraded !== null,
+    },
+    yql: { ids: scenarioIds(yql), total: paritySafe(yql.totalHits) },
+    unknown_field_error: { code: "invalid_argument", details: errorCodes },
+    structured_filter_error: { code: "invalid_argument", details: errorCodes },
+    text_filter_syntax_error: {
+      code: "invalid_argument",
+      details: syntaxError!.details.map((detail) => (detail as { code: string }).code).sort(),
+    },
+  };
+  return observations;
+}
+
+function writeRealEngineParity(observations: Record<string, unknown>): void {
+  const path = process.env.SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT;
+  if (path) {
+    for (const [scenario, value] of Object.entries<any>(observations)) {
+      if (scenario.startsWith("typed_query_")) continue;
+      const intent = PARITY_CONSUMED_INTENTS.get(scenario);
+      if (intent === undefined) throw new Error(`parity scenario ${scenario} emitted an observation without consuming its shared intent`);
+      const payload = value && value.observation ? value.observation : value;
+      if (Array.isArray(payload)) observations[scenario] = { intent, result: value };
+      else if (payload && typeof payload === "object" && !("intent" in payload)) payload.intent = intent;
+      else if (!payload || typeof payload !== "object") observations[scenario] = { intent, result: value };
+    }
+    writeFileSync(path, JSON.stringify({ version: 1, scenarios: paritySafe(observations) }));
+  }
+}
 
 function heading(title: string): void {
   console.log();
@@ -176,64 +601,41 @@ async function main(): Promise<void> {
     heading("1. CREATE INDEX");
 
     const index = await Index.create(INDEX_PATH, {
-      fields: {
-        title: new Text({ stored: true, searchable: true }),
-        brand: new Keyword({ stored: true, filterable: true, sortable: true, facetable: true }),
-        category: new Keyword({ stored: true, filterable: true, facetable: true }),
-        price: new Float({ stored: true, filterable: true, sortable: true }),
-        sale_price: new Float({ stored: true, filterable: true, sortable: true }),
-        rating: new Integer({ stored: true, filterable: true, sortable: true }),
-        inventory: new Integer({ stored: true, filterable: true, sortable: true }),
-        in_stock: new Boolean({ stored: true, filterable: true }),
-        embedding: new TensorField(VECTOR_TYPE, { stored: true }),
-      },
-      rankProfiles: [
-        new RankProfile("boosted")
-          .firstPhase("query(boost)")
-          .matchFeature("query(boost)"),
-        new RankProfile("semantic")
-          .firstPhase("closeness(embedding)")
-          .queryInput("query_embedding", VECTOR_TYPE)
-          .matchFeature("query(query_embedding)"),
-        new RankProfile("hybrid")
-          .firstPhase("bm25(title) + 10 * closeness(embedding)")
-          .queryInput("query_embedding", VECTOR_TYPE)
-          .matchFeature("bm25(title)")
-          .matchFeature("closeness(embedding)")
-          .matchFeature("query(query_embedding)"),
-      ],
+      fields: fieldsFromCorpus(),
+      rankProfiles: rankProfilesFromCorpus(),
     });
 
     try {
       console.log("created:", INDEX_PATH);
 
       heading("2. INSERT DOCUMENTS");
-      const documents: DocumentInput[] = [
-        { _id: "shoe-1", title: "Jumped Running Shoes for Daily Training", brand: "Acme", category: "shoes", price: float64(89), sale_price: float64(79), rating: 5n, inventory: 10n, in_stock: true, embedding: embedding(...SHOE_1_VECTOR) },
-        { _id: "shoe-2", title: "Trail Running Shoes", brand: "TrailCo", category: "shoes", price: float64(129), rating: 5n, inventory: 4n, in_stock: true, embedding: embedding(...SHOE_2_VECTOR) },
-        { _id: "shoe-3", title: "Budget Walking Shoes", brand: "Budget", category: "shoes", price: float64(49), rating: 3n, inventory: 25n, in_stock: true, embedding: embedding(...SHOE_3_VECTOR) },
-        { _id: "shoe-4", title: "Acme Racing Shoes", brand: "Acme", category: "shoes", price: float64(159), rating: 4n, inventory: 0n, in_stock: false, embedding: embedding(...SHOE_4_VECTOR) },
-        { _id: "shoe-5", title: "TrailCo Hiking Shoes", brand: "TrailCo", category: "shoes", price: float64(109), rating: 4n, inventory: 8n, in_stock: true, embedding: embedding(...SHOE_5_VECTOR) },
-        { _id: "bag-1", title: "Lightweight Running Backpack", brand: "Acme", category: "bags", price: float64(69), rating: 4n, inventory: 12n, in_stock: true, embedding: embedding(...BAG_1_VECTOR) },
-      ];
+      const documents: DocumentInput[] = E2E_CORPUS.documents.map((item: Record<string, unknown>) => documentInput(item));
 
       for (const document of documents) {
         await index.insert(document);
         console.log("insert:", document._id);
       }
-      for (let probe = 0; probe < 200; probe += 1) {
-        await index.insert({
-          _id: `degraded-${probe}`,
-          title: "Coverage Degradation Probe",
-          category: "degradation",
-          price: float64(18),
-          rating: 1n,
-          inventory: 18n,
-          in_stock: true,
-          embedding: embedding(...SHOE_3_VECTOR),
-        });
+      const probeSpec = E2E_CORPUS.coverage_probes;
+      for (let probe = 0; probe < probeSpec.count; probe += 1) {
+        await index.insert(documentInput({ ...probeSpec.document, _id: `degraded-${probe}` }));
       }
-      console.log("inserted 200 deterministic coverage probe documents");
+      console.log(`inserted ${probeSpec.count} deterministic coverage probe documents`);
+
+      Object.assign(PARITY_OBSERVATIONS, await captureRealEngineParity(index));
+      const patchSpec = PARITY_INTENTS.patch;
+      await index.insert(documentInput({ _id: patchSpec.document_id, ...patchSpec.initial }));
+      let patchBuilder = index.patch(patchSpec.document_id);
+      for (const [key, value] of Object.entries<any>(patchSpec.set)) patchBuilder = patchBuilder.set(key, corpusValue(key, value));
+      for (const field of patchSpec.unset) patchBuilder = patchBuilder.unset(field);
+      await patchBuilder.execute();
+      const mutated = await index.get(patchSpec.document_id);
+      assert(mutated !== null);
+      PARITY_OBSERVATIONS.patch = { price: mutated.price, sale_price_present: "sale_price" in mutated };
+      const deleteSpec = PARITY_INTENTS.delete;
+      const parityMutationDeleted = await index.delete(deleteSpec.document_id);
+      PARITY_OBSERVATIONS.delete = { deleted: parityMutationDeleted, absent_after_delete: (await index.get(deleteSpec.document_id)) === null };
+      const reopenSpec = PARITY_INTENTS.reopen_persistence;
+      await index.insert(documentInput({ _id: reopenSpec.marker_id, ...reopenSpec.marker }));
 
       heading("3. GET BY ID");
       const doc = await index.get("shoe-1");
@@ -428,6 +830,17 @@ async function main(): Promise<void> {
       assert(rankPropertyResults.hits.every((hit) => hit.score !== null && closeTo(asNumber(hit.features["query(boost)"]), 4)));
       console.log("scalar ranking feature PASS");
 
+      heading("TWO-PHASE RANKING / SECOND-PHASE RERANK");
+      const firstPhase = await index.search("candidate").ranking("first_phase_only").limit(4).execute();
+      assertIds(firstPhase, ["rerank-a", "rerank-b", "rerank-c", "rerank-d"]);
+      assert(firstPhase.hits.map((hit) => hit.score).join(",") === "100,90,80,70");
+      const twoPhase = await index.search("candidate").ranking("two_phase").limit(4).execute();
+      assertIds(twoPhase, ["rerank-b", "rerank-c", "rerank-a", "rerank-d"]);
+      assert(twoPhase.hits[0]!.score === 100 && twoPhase.hits[1]!.score === 90 && twoPhase.hits[2]!.score === 1);
+      assert(Number.isFinite(twoPhase.hits[3]!.score));
+      assert(twoPhase.hits[3]!.score !== 1000);
+      console.log("first-phase ordering and finite-window second-phase reranking PASS");
+
       heading("TENSOR READBACK + NEAREST NEIGHBOR");
       const nearest = await index.query(q.nearestNeighbor("embedding", "query_embedding"))
         .ranking("semantic")
@@ -569,21 +982,16 @@ async function main(): Promise<void> {
       console.log("DELETE PASS");
 
       heading("28. UPSERT REPLACEMENT");
-      await index.upsert({
-        _id: "shoe-2",
-        title: "Trail Running Shoes - Updated Edition",
-        brand: "TrailCo",
-        category: "shoes",
-        price: float64(119),
-        rating: 5n,
-        inventory: 4n,
-        in_stock: true,
-        embedding: embedding(...SHOE_2_VECTOR),
-      });
-      const shoe2 = await index.get("shoe-2");
+      const upsertSpec = PARITY_INTENTS.upsert_replacement;
+      const replacement = { ...upsertSpec.replacement };
+      const vectorDocumentId = replacement.vector_document_id;
+      delete replacement.vector_document_id;
+      await index.upsert(documentInput({ _id: upsertSpec.document_id, ...replacement, embedding: embedding(...corpusVector(vectorDocumentId)) }));
+      const shoe2 = await index.get(upsertSpec.document_id);
       assert(shoe2?.price === 119 && String(shoe2.title).includes("Updated Edition"));
-      results = await index.search("updated").limit(20).execute();
-      assert(results.hits.length === 1 && results.hits[0]!.id === "shoe-2");
+      results = await index.search(upsertSpec.search_query).limit(20).execute();
+      assert(results.hits.length === 1 && results.hits[0]!.id === upsertSpec.document_id);
+      PARITY_OBSERVATIONS.upsert_replacement = { price: shoe2?.price, updated_title_matches: String(shoe2?.title).includes("Updated"), search_ids: results.hits.map((hit) => hit.id) };
     } finally {
       await index.close();
     }
@@ -595,6 +1003,17 @@ async function main(): Promise<void> {
     const reopened = await Index.open(INDEX_PATH);
     try {
       assert(await reopened.get("shoe-3") === null);
+      const reopenSpec = PARITY_INTENTS.reopen_persistence;
+      const upsertSpec = PARITY_INTENTS.upsert_replacement;
+      const persistedParity = await reopened.get(reopenSpec.marker_id);
+      assert(persistedParity !== null);
+      const persistedShoe1 = await reopened.get("shoe-1");
+      const persistedShoe2 = await reopened.get(upsertSpec.document_id);
+      PARITY_OBSERVATIONS.reopen_persistence = {
+        marker: { title: persistedParity.title, price: persistedParity.price, inventory: persistedParity.inventory },
+        upserted: { updated_title_matches: String(persistedShoe2?.title).includes("Updated"), price: persistedShoe2?.price },
+        deleted_absent: (await reopened.get(PARITY_INTENTS.delete.document_id)) === null,
+      };
       const shoe1 = await reopened.get("shoe-1");
       assert(shoe1 !== null);
       assert(shoe1.price === 79);
@@ -642,6 +1061,8 @@ async function main(): Promise<void> {
     } finally {
       await reopened.close();
     }
+
+    writeRealEngineParity(PARITY_OBSERVATIONS);
 
     heading("32. ALL CLIENT API E2E CHECKS PASSED");
     console.log(`

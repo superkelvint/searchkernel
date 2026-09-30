@@ -65,8 +65,23 @@ class CapabilityLedgerTests(unittest.TestCase):
             documents[ROOT / "docs" / "CAPABILITIES.md"],
         )
         self.assertIn(
+            "`query.phrase` | typescript | supported",
+            documents[ROOT / "docs" / "CAPABILITIES.md"],
+        )
+        self.assertNotIn(
             "machine-checked structured support state",
             documents[ROOT / "LIMITATIONS.md"],
+        )
+
+    def test_query_term_evidence_uses_split_adapter_query_tests(self) -> None:
+        capability = next(
+            capability
+            for capability in self.ledger["capabilities"]
+            if capability["id"] == "query.term"
+        )
+        self.assertIn(
+            "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs",
+            capability["verified_by"],
         )
 
     def test_every_query_expr_kind_has_one_capability_owner(self) -> None:
@@ -145,7 +160,7 @@ class CapabilityLedgerTests(unittest.TestCase):
         )
         self.assertEqual(
             capability["facade_support"]["typescript"]["status"],
-            "missing",
+            "supported",
         )
         self.assertNotIn(
             "Rust Query",

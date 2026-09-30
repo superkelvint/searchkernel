@@ -124,12 +124,6 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assert_lanes([path], expected)
 
-    def test_suspended_dag_and_layout_checks_do_not_select_product_lanes(self) -> None:
-        self.assert_lanes(
-            ["verification/dag.toml", "tools/check-layout.sh"],
-            set(),
-        )
-
     def test_remote_rust_client_regression_does_not_select_other_clients(self) -> None:
         self.assert_lanes(
             [
@@ -154,7 +148,6 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
                 "tools/check-layout.sh",
                 "tools/check-searchkernel-rpc.sh",
                 "tools/generate-searchkernel-rpc.sh",
-                "verification/dag.toml",
             ],
             {"rust"},
         )
@@ -222,7 +215,6 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
             'git show "$BASE_SHA:.github/ci/behavioral_lanes_required.py"',
             source,
         )
-        self.assertNotIn("verification/dag.toml", source)
 
     def test_windows_separators_are_normalized(self) -> None:
         self.assert_lanes([r"clients\python\searchkernel\client.py"], {"python"})

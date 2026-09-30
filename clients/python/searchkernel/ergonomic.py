@@ -12,6 +12,10 @@ from SearchKernel.V2.FieldDefinition import FieldDefinitionT
 from SearchKernel.V2.DataType import DataTypeT
 from SearchKernel.V2.DataTypeKind import DataTypeKind
 from SearchKernel.V2.TensorDataType import TensorDataTypeT
+from SearchKernel.V2.ArrayDataType import ArrayDataTypeT
+from SearchKernel.V2.StructDataType import StructDataTypeT
+from SearchKernel.V2.StructFieldDefinition import StructFieldDefinitionT
+from SearchKernel.V2.PositionDataType import PositionDataTypeT
 from SearchKernel.V2.RankPhaseDefinition import RankPhaseDefinitionT
 from SearchKernel.V2.RankProfileDefinition import RankProfileDefinitionT
 from SearchKernel.V2.RankProfileInput import RankProfileInputT
@@ -64,6 +68,7 @@ from SearchKernel.V2.QueryExprKind import QueryExprKind
 from SearchKernel.V2.QueryFuzzy import QueryFuzzyT
 from SearchKernel.V2.QueryGeoBoundingBox import QueryGeoBoundingBoxT
 from SearchKernel.V2.QueryGeoLocation import QueryGeoLocationT
+from SearchKernel.V2.QueryMatches import QueryMatchesT
 from SearchKernel.V2.QueryFieldRef import QueryFieldRefT
 from SearchKernel.V2.QueryNear import QueryNearT
 from SearchKernel.V2.QueryNearestNeighbor import QueryNearestNeighborT
@@ -88,6 +93,17 @@ from SearchKernel.V2.MatchAllQuery import MatchAllQueryT
 from SearchKernel.V2.YqlQuery import YqlQueryT
 from SearchKernel.V2.TypedQuery import TypedQueryT
 from SearchKernel.V2.QueryWand import QueryWandT
+from SearchKernel.V2.QueryComparison import QueryComparisonT
+from SearchKernel.V2.ComparisonOp import ComparisonOp
+from SearchKernel.V2.QueryRange import QueryRangeT
+from SearchKernel.V2.QueryIn import QueryInT
+from SearchKernel.V2.RangeBound import RangeBoundT
+from SearchKernel.V2.RangeBoundKind import RangeBoundKind
+from SearchKernel.V2.FiniteRangeBound import FiniteRangeBoundT
+from SearchKernel.V2.QueryWeightedSet import QueryWeightedSetT
+from SearchKernel.V2.QueryDotProduct import QueryDotProductT
+from SearchKernel.V2.WeightedQueryItem import WeightedQueryItemT
+from SearchKernel.V2.OptionalBool import OptionalBoolT
 from SearchKernel.V2.QueryWeakAnd import QueryWeakAndT
 from SearchKernel.V2.WeightedQueryItem import WeightedQueryItemT
 from SearchKernel.V2.RankingRequest import RankingRequestT
@@ -131,6 +147,17 @@ from SearchKernel.V2.ResultGroup import ResultGroupT
 
 from .client import Tensor, _decode_value_entries, _python_value, value
 from .scalars import check_uint32
+
+
+_MISSING = object()
+_REGEX_LITERAL_SPECIALS = frozenset(".^$*+?()[]{}|\\")
+
+
+def _literal_regex(value: str) -> str:
+    return "".join(
+        ("\\" + character) if character in _REGEX_LITERAL_SPECIALS else character
+        for character in value
+    )
 
 
 class _FieldSpec:
@@ -263,6 +290,60 @@ class TensorField(_FieldSpec):
                 enabled=OptionalBoolT(value=True),
                 distanceMetric=metric or DistanceMetric.Unspecified,
             ) if metric is not None or hnsw is not None else None,
+        )
+
+
+class PositionField(_FieldSpec):
+    def definition(self, name: str) -> FieldDefinitionT:
+        return FieldDefinitionT(
+            name=name,
+            dataType=DataTypeT(kindType=DataTypeKind.PositionDataType, kind=PositionDataTypeT()),
+            stored=None if self.stored is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.stored),
+            searchable=None if self.searchable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.searchable),
+            filterable=None if self.filterable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.filterable),
+            sortable=None if self.sortable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.sortable),
+            facetable=None if self.facetable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.facetable),
+        )
+
+
+class StructField(_FieldSpec):
+    def __init__(self, fields: Mapping[str, _FieldSpec], **kwargs):
+        super().__init__(**kwargs)
+        self.fields = fields
+
+    def definition(self, name: str) -> FieldDefinitionT:
+        members = []
+        for member_name, member in sorted(self.fields.items()):
+            nested = member.definition(member_name).dataType
+            members.append(StructFieldDefinitionT(name=member_name, dataType=nested))
+        data_type = DataTypeT(kindType=DataTypeKind.StructDataType, kind=StructDataTypeT(fields=members))
+        optional = lambda setting: None if setting is None else OptionalBoolT(value=setting)
+        return FieldDefinitionT(
+            name=name,
+            dataType=data_type,
+            stored=optional(self.stored),
+            searchable=optional(self.searchable),
+            filterable=optional(self.filterable),
+            sortable=optional(self.sortable),
+            facetable=optional(self.facetable),
+        )
+
+
+class ArrayField(_FieldSpec):
+    def __init__(self, element: _FieldSpec, **kwargs):
+        super().__init__(**kwargs)
+        self.element = element
+
+    def definition(self, name: str) -> FieldDefinitionT:
+        element = self.element.definition("element").dataType
+        return FieldDefinitionT(
+            name=name,
+            dataType=DataTypeT(kindType=DataTypeKind.ArrayDataType, kind=ArrayDataTypeT(elementType=element)),
+            stored=None if self.stored is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.stored),
+            searchable=None if self.searchable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.searchable),
+            filterable=None if self.filterable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.filterable),
+            sortable=None if self.sortable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.sortable),
+            facetable=None if self.facetable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.facetable),
         )
 
 
@@ -480,8 +561,10 @@ class _QueryNamespace:
             ),
         )
 
-    def term(self, item: Any) -> QueryExprT:
-        return self._term(item)
+    def term(self, field_or_item: Any, item: Any = _MISSING) -> QueryExprT | QuerySourceT:
+        if item is _MISSING:
+            return self._term(field_or_item)
+        return self.contains(str(field_or_item), self._term(item))
 
     def contains(self, field: str, item: Any) -> QuerySourceT:
         if isinstance(item, str):
@@ -574,6 +657,62 @@ class _QueryNamespace:
             QueryExprKind.QueryWand,
             QueryWandT(field=QueryFieldRefT(path=field), items=weighted),
         )
+
+    def equals(self, field: str, item: Any) -> QuerySourceT:
+        return self._combine(QueryExprKind.QueryComparison, QueryComparisonT(
+            field=QueryFieldRefT(path=field), op=ComparisonOp.Eq, value=value(item)))
+
+    def in_values(self, field: str, items: list[Any]) -> QuerySourceT:
+        if not items:
+            raise ValueError("q.in_values requires at least one value")
+        return self._combine(QueryExprKind.QueryIn, QueryInT(
+            field=QueryFieldRefT(path=field), values=[value(item) for item in items]))
+
+    def range(
+        self,
+        field: str,
+        lower: Any,
+        upper: Any,
+        *,
+        include_lower: bool = True,
+        include_upper: bool = True,
+    ) -> QuerySourceT:
+        def bound(item):
+            return RangeBoundT(
+                boundType=RangeBoundKind.FiniteRangeBound,
+                bound=FiniteRangeBoundT(value=value(item)),
+            )
+        return self._combine(QueryExprKind.QueryRange, QueryRangeT(
+            field=QueryFieldRefT(path=field), lower=bound(lower), upper=bound(upper),
+            includeLower=OptionalBoolT(value=include_lower),
+            includeUpper=OptionalBoolT(value=include_upper)))
+
+    def matches(self, field: str, pattern: str) -> QuerySourceT:
+        return self._combine(
+            QueryExprKind.QueryMatches,
+            QueryMatchesT(field=QueryFieldRefT(path=field), pattern=pattern),
+        )
+
+    def prefix(self, field: str, item: str) -> QuerySourceT:
+        return self.matches(field, _literal_regex(item) + ".*")
+
+    def substring(self, field: str, item: str) -> QuerySourceT:
+        return self.matches(field, ".*" + _literal_regex(item) + ".*")
+
+    def suffix(self, field: str, item: str) -> QuerySourceT:
+        return self.matches(field, ".*" + _literal_regex(item))
+
+    def weighted_set(self, field: str, items: Mapping[Any, int]) -> QuerySourceT:
+        weighted = [WeightedQueryItemT(key=value(key), weight=weight)
+                    for key, weight in sorted(items.items(), key=lambda item: str(item[0]))]
+        return self._combine(QueryExprKind.QueryWeightedSet,
+                             QueryWeightedSetT(field=QueryFieldRefT(path=field), items=weighted))
+
+    def dot_product(self, field: str, items: Mapping[Any, int]) -> QuerySourceT:
+        weighted = [WeightedQueryItemT(key=value(key), weight=weight)
+                    for key, weight in sorted(items.items(), key=lambda item: str(item[0]))]
+        return self._combine(QueryExprKind.QueryDotProduct,
+                             QueryDotProductT(field=QueryFieldRefT(path=field), items=weighted))
 
     def rank(self, match: QuerySourceT, *ranking: QuerySourceT) -> QuerySourceT:
         return self._combine(

@@ -22,8 +22,6 @@ class NativeVerifierRunnerWorkflowTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", source)
         self.assertNotIn("pull_request:", source)
         self.assertNotIn("push:", source)
-        self.assertNotIn("python3 verification/dag.py", source)
-        self.assertNotIn("./verification/dag.py", source)
 
     def test_runs_requested_exact_revision_inside_ci_image(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")

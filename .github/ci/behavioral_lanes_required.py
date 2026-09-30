@@ -4,8 +4,7 @@
 The authoritative copy is loaded from the pull request's trusted base revision.
 Unknown behavioral/build/tooling paths deliberately select every lane so a new
 surface cannot become untested merely because this temporary selector predates
-it. The verification DAG remains intentionally out of this path while DAG
-authorization is suspended.
+it.
 """
 
 from __future__ import annotations
@@ -107,7 +106,6 @@ NON_BEHAVIORAL_PATTERNS = (
     "implementation-plan/**",
     "clients/*.md",
     "clients/php/**",
-    "verification/dag.toml",
     "tools/check-layout.sh",
     ".gitignore",
     ".rgignore",

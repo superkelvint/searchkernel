@@ -22,7 +22,6 @@ class ToolingInvariantRequiredTests(unittest.TestCase):
             "tools/test_ci_image_identity.py",
             "tools/test-dev-ci-image.sh",
             ".github/ci/behavioral_lanes_required.py",
-            ".github/ci/test_exact_head.py",
             "reference/vespa/verifiers/test-routing.sh",
         ):
             with self.subTest(path=path):
