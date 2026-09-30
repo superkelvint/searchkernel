@@ -367,23 +367,21 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         .order_by(*group_order)
         .output(agg.count().as_(grouped_spec["outputs"][0]["name"]), agg.avg(grouped_spec["outputs"][1]["field"]).as_(grouped_spec["outputs"][1]["name"]))
     ).execute()
-    nearest_intent = PARITY_INTENTS["nearest_neighbor"]
-    nearest_spec = nearest_intent["query"]
+    nearest_intent = intents["nearest_neighbor"]
     nearest = (
-        index.query(q.nearest_neighbor(nearest_spec["field"], nearest_spec["query_input"]))
+        index.query(q.nearest_neighbor(nearest_intent["field"], nearest_intent["query_input"]))
         .ranking(nearest_intent["ranking_profile"])
-        .input(nearest_spec["query_input"], embedding(*corpus_vector(nearest_intent["query_input_document"])))
+        .input(nearest_intent["query_input"], embedding(*corpus_vector(nearest_intent["query_input_document"])))
         .limit(nearest_intent["limit"]).execute()
     )
-    hybrid_intent = PARITY_INTENTS["hybrid_text_vector"]
-    hybrid_text, hybrid_vector = hybrid_intent["query"]["clauses"]
+    hybrid_intent = intents["hybrid_text_vector"]
     hybrid = (
         index.query(q.any_of(
-            q.contains(hybrid_text["field"], hybrid_text["value"]),
-            q.nearest_neighbor(hybrid_vector["field"], hybrid_vector["query_input"]),
+            q.contains(hybrid_intent["text_field"], hybrid_intent["text_value"]),
+            q.nearest_neighbor(hybrid_intent["vector_field"], hybrid_intent["query_input"]),
         ))
         .ranking(hybrid_intent["ranking_profile"])
-        .input(hybrid_vector["query_input"], embedding(*corpus_vector(hybrid_intent["query_input_document"])))
+        .input(hybrid_intent["query_input"], embedding(*corpus_vector(hybrid_intent["query_input_document"])))
         .limit(hybrid_intent["limit"]).execute()
     )
     reranked_spec = intents["two_phase_reranking"]
@@ -440,7 +438,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     kept = index.search(keep_spec["query"]).group(
         Group.by(keep_spec["group_by"]).limit(keep_spec["limit"]).keep(gf.regex(g.field(keep_spec["keep_regex"]["field"]), keep_spec["keep_regex"]["pattern"])).output(agg.count().as_(keep_spec["outputs"][0]["name"]))
     ).execute()
-    typed = index.query(shared_typed_query(intents["typed_query_contains"]["query"])).ranking("default").limit(full_spec["limit"]).execute()
+    typed = index.query(typed_query_for_scenario("typed_query_contains", intents["typed_query_contains"])).ranking("default").limit(full_spec["limit"]).execute()
     rank_input_spec = intents["rank_inputs"]
     rank_input_builder = index.search(rank_input_spec["query"]).ranking(rank_input_spec["ranking_profile"])
     for key, value in rank_input_spec["inputs"].items():
@@ -462,7 +460,10 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     for key, value in degraded_spec["rank_properties"].items(): degraded = degraded.rank_property(key, value)
     degraded = degraded.limit(degraded_spec["limit"]).execute()
     yql_spec = intents["yql"]
-    yql = index.yql(yql_spec["source"]).property("q", yql_spec["bindings"]["q"]).ranking(yql_spec["ranking_profile"]).page(yql_spec["page"], yql_spec["page_size"]).execute()
+    yql_builder = index.yql(yql_spec["source"])
+    for key, value in yql_spec["bindings"].items():
+        yql_builder = yql_builder.property(key, value)
+    yql = yql_builder.ranking(yql_spec["ranking_profile"]).page(yql_spec["page"], yql_spec["page_size"]).execute()
     try:
         syntax_spec = intents["text_filter_syntax_error"]
         index.search(syntax_spec["query"]).filter(syntax_spec["filter"]).execute()
