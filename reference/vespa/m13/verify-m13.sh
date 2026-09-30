@@ -89,7 +89,8 @@ for scenario in "$M13"/scenarios/[0-9][0-9]-*.json; do
 
   low_config="$TMP/$id-low-config"
   low_data="$TMP/$id-low-data"
-  "$LOW" "$scenario" "$low_config" "$low_data" >"$TMP/$id-low.json"
+  cargo run --quiet -p searchkernel --features native --example searchkernel-m13-driver -- \
+    "$scenario" "$low_config" "$low_data" >"$TMP/$id-low.json"
   "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-low.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$M13/compare.py" "$TMP/$id-oracle.json" <"$TMP/$id-low.json"
@@ -97,7 +98,8 @@ for scenario in "$M13"/scenarios/[0-9][0-9]-*.json; do
 
   adapter_config="$TMP/$id-adapter-config"
   adapter_data="$TMP/$id-adapter-data"
-  "$ADAPTER" "$scenario" "$DEFINITION_BIN" "$adapter_config" "$adapter_data" \
+  cargo run --quiet -p searchkernel --features native --example searchkernel-m13-adapter-driver -- \
+    "$scenario" "$DEFINITION_BIN" "$adapter_config" "$adapter_data" \
     >"$TMP/$id-adapter.json"
   "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-adapter.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -109,7 +111,8 @@ ERRORS="$M13/scenarios/errors.json"
 while read -r id expected path; do
   config="$TMP/error-$id-config"
   data="$TMP/error-$id-data"
-  actual="$("$ERROR" "$ERRORS" "$id" "$DEFINITION_BIN" "$config" "$data" 2>/dev/null || true)"
+  actual="$(cargo run --quiet -p searchkernel --features native --example searchkernel-m13-error -- \
+    "$ERRORS" "$id" "$DEFINITION_BIN" "$config" "$data" 2>/dev/null || true)"
   [[ "$actual" == "$expected" ]] || {
     echo "M13 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1

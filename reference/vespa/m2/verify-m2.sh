@@ -16,7 +16,6 @@ check_fixture_literals "$ROOT/m2/scenarios/01-crud-attribute-search.json" \
 
 cargo check --quiet -p searchkernel-vespa-engine --example api-contract-m2
 cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-m2-driver
-
 BIN=$CARGO_TARGET_DIR/debug/examples/searchkernel-m2-driver
 if [ ! -x "$BIN" ]; then
     echo "M2 driver binary not found at $BIN" >&2
@@ -26,7 +25,8 @@ fi
 require_native_driver "$BIN" sk_engine_put sk_engine_update sk_engine_remove sk_engine_search
 
 rm -rf "$TARGET/data"
-"$BIN" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
+cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m2-driver -- \
+    "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
 
 python3 "$ROOT/common/compare_json.py" \
     "$ROOT/m2/expected/01-crud-attribute-search.json" \

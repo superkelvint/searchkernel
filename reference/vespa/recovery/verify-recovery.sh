@@ -18,8 +18,8 @@ TARGET="$ROOT/target/vespa-verifier/recovery"
 rm -rf "$TARGET"
 mkdir -p "$TARGET"
 
-"$DRIVER" matrix "$TARGET/matrix"
-"$DRIVER" repeat "$TARGET/repeated"
-"$DRIVER" missing "$TARGET/missing"
+cargo run --quiet -p searchkernel --features native --example searchkernel-recovery-driver -- matrix "$TARGET/matrix"
+cargo run --quiet -p searchkernel --features native --example searchkernel-recovery-driver -- repeat "$TARGET/repeated"
+cargo run --quiet -p searchkernel --features native --example searchkernel-recovery-driver -- missing "$TARGET/missing"
 
 echo "product recovery PASS"

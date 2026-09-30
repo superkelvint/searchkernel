@@ -45,7 +45,8 @@ for scenario in "$SCRIPT_DIR"/scenarios/*.json; do
   id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
   data="$TARGET/$id-data"
   mkdir -p "$data"
-  "$DRIVER" "$scenario" "$data" \
+  cargo run --quiet -p searchkernel --features native --example searchkernel-i-driver -- \
+    "$scenario" "$data" \
     > "$TARGET/$id.actual.json" 2> "$TARGET/$id.native.log"
   python3 "$SCRIPT_DIR/compare.py" \
     "$SCRIPT_DIR/expected/$id.json" "$TARGET/$id.actual.json"

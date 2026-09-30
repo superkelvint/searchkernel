@@ -14,7 +14,6 @@ if live_oracle_enabled; then
 else
   announce_frozen_oracle_replay
 fi
-export LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 SCENARIO="$SCRIPT_DIR/scenario.json"
 EXPECTED="$SCRIPT_DIR/expected.json"
 [[ -f "$EXPECTED" ]] || fail_verification "feature-value golden is missing: $EXPECTED"

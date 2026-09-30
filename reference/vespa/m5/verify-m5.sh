@@ -31,7 +31,6 @@ if ! rg -q 'std::process::abort\(\)' "$M5_DRIVER"; then
 fi
 
 cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-m5-driver
-
 BIN=$CARGO_TARGET_DIR/debug/examples/searchkernel-m5-driver
 if [ ! -x "$BIN" ]; then
     echo "M5 driver binary not found at $BIN" >&2
@@ -57,7 +56,8 @@ run_driver_config() {
     data=$2
     config=$3
     shift 3
-    "$BIN" "$mode" "$data" "$config" "$@"
+    cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m5-driver -- \
+        "$mode" "$data" "$config" "$@"
 }
 
 compare() {

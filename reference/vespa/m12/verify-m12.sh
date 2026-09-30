@@ -44,7 +44,8 @@ prepare_fixture() {
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$M12/oracle/prepare-fixture.sh" "$scenario" "$config" "$data"
   else
-    "$PREPARE" "$scenario" "$config" "$data"
+    cargo run --quiet -p searchkernel --features native --example searchkernel-m12-prepare -- \
+      "$scenario" "$config" "$data"
   fi
 }
 

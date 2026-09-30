@@ -324,6 +324,9 @@ check_fixture_literals() {
   python3 "$COMMON_DIR/check-fixture-literals.py" "$@"
 }
 
+# Rust examples must be executed with `cargo run` from their verifier. Their
+# native adapter is a Cargo-produced runtime dependency; launching the example
+# path directly bypasses Cargo's runtime search setup after a successful build.
 require_native_driver() {
   local binary="$1"
   shift

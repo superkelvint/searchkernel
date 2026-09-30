@@ -12,7 +12,6 @@ mkdir -p "$TARGET"
 
 cargo check --quiet -p searchkernel-vespa-engine --example api-contract-m1
 cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-m1-driver
-
 BIN=$CARGO_TARGET_DIR/debug/examples/searchkernel-m1-driver
 if [ ! -x "$BIN" ]; then
     echo "M1 driver binary not found at $BIN" >&2
@@ -22,7 +21,8 @@ fi
 require_native_driver "$BIN"
 
 rm -rf "$TARGET/data"
-"$BIN" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
+cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m1-driver -- \
+    "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
 
 python3 "$ROOT/common/compare_json.py" \
     "$ROOT/m1/expected/01-rust-open-close.json" \

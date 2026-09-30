@@ -38,7 +38,7 @@ fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-"$CONFIG_BIN" "$TMP/config"
+cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-searchreply-config -- "$TMP/config"
 
 PROBE="$TMP/searchreply_probe"
 "${CXX:-c++}" -std=gnu++23 -O0 -g -Wall -Wextra -Werror -pthread \
