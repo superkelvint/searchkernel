@@ -10,7 +10,7 @@ use searchkernel_vespa_engine::{
     Document, DocumentUpdate, ScalarValue, TensorAddress, TensorBlock, TensorCell, TensorValue,
 };
 use serde_json::{json, Value as Json};
-use std::{env, fs, path::PathBuf, sync::Arc};
+use std::{env, fs, path::{Path, PathBuf}, sync::Arc};
 
 fn dense_json(case: &Json) -> Json {
     json!({"kind_type":"TensorValue","kind":{"type_spec":case["type_spec"],"payload_type":"DenseTensorValues","payload":{"values":case["values"]}}})
@@ -60,7 +60,7 @@ fn engine_category(error: &searchkernel_vespa_engine::Error) -> String {
     "backend_request".to_owned()
 }
 
-fn low_level(root: &Json, case: &Json, config: &PathBuf, data: &PathBuf) -> String {
+fn low_level(root: &Json, case: &Json, config: &Path, data: &Path) -> String {
     let engine = compile_and_open(root, config, data);
     let id = "id:ns:typea::negative";
     let field = case["field"].as_str().expect("field");
@@ -89,7 +89,7 @@ fn low_level(root: &Json, case: &Json, config: &PathBuf, data: &PathBuf) -> Stri
     category
 }
 
-fn context(definition: &PathBuf) -> Arc<IndexContext> {
+fn context(definition: &Path) -> Arc<IndexContext> {
     let bytes = fs::read(definition).expect("read definition");
     let root =
         searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
@@ -141,7 +141,7 @@ fn envelope(case: &Json, operation: &str) -> Vec<u8> {
     bytes
 }
 
-fn portable(case: &Json, definition: &PathBuf, config: &PathBuf, data: &PathBuf) -> String {
+fn portable(case: &Json, definition: &Path, config: &Path, data: &Path) -> String {
     if !config.join("searchkernel-schema.json").exists() {
         let bytes = fs::read(definition).expect("read definition");
         let root =
