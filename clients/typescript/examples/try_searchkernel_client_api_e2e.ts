@@ -127,6 +127,19 @@ function documentInput(source: Record<string, unknown>): DocumentInput {
   return document as DocumentInput;
 }
 
+function sharedFilterBindings(source: string, bindings: Record<string, unknown>): Record<string, unknown> {
+  const converted: Record<string, unknown> = {};
+  for (const [name, input] of Object.entries(bindings)) {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const field = new RegExp(`([A-Za-z_][\\w.]*)\\s*(?:(?:<=|>=|=|<|>)\\s*|IN\\s*\\(\\s*):${escapedName}\\b`, "i").exec(source)?.[1];
+    const fieldType = field ? E2E_CORPUS.schema.fields[field]?.type : undefined;
+    converted[name] = fieldType === "float64" ? float64(input as number)
+      : fieldType === "int64" ? BigInt(input as number | string)
+        : input;
+  }
+  return converted;
+}
+
 const PARITY_OBSERVATIONS: Record<string, unknown> = {};
 
 function sharedTypedQuery(spec: any): any {
@@ -246,13 +259,13 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const stemmingSpec = intents.stemming;
   const stemming = await index.search(stemmingSpec.query).limit(stemmingSpec.limit).execute();
   const bindingSpec = intents.text_filter_binding;
-  const textBinding = await index.search(bindingSpec.query).filter(bindingSpec.filter, bindingSpec.bindings).sort(bindingSpec.sort[0].field, bindingSpec.sort[0].direction).limit(bindingSpec.limit).execute();
+  const textBinding = await index.search(bindingSpec.query).filter(bindingSpec.filter, sharedFilterBindings(bindingSpec.filter, bindingSpec.bindings)).sort(bindingSpec.sort[0].field, bindingSpec.sort[0].direction).limit(bindingSpec.limit).execute();
   const repeatedSpec = intents.repeated_filters;
   let repeatedBuilder = index.search(repeatedSpec.query);
-  for (const filter of repeatedSpec.filters) repeatedBuilder = repeatedBuilder.filter(filter.source, filter.bindings);
+  for (const filter of repeatedSpec.filters) repeatedBuilder = repeatedBuilder.filter(filter.source, sharedFilterBindings(filter.source, filter.bindings));
   const repeatedFilters = await repeatedBuilder.sort(repeatedSpec.sort[0].field, repeatedSpec.sort[0].direction).limit(repeatedSpec.limit).execute();
   const booleanSpec = intents.boolean_filter_grammar;
-  const booleanFilter = await index.search(booleanSpec.query).filter(booleanSpec.filter, booleanSpec.bindings)
+  const booleanFilter = await index.search(booleanSpec.query).filter(booleanSpec.filter, sharedFilterBindings(booleanSpec.filter, booleanSpec.bindings))
     .sort(booleanSpec.sort[0].field, booleanSpec.sort[0].direction).limit(booleanSpec.limit).execute();
   const projectionSpec = intents.sorting_projection;
   const projection = await index.search(projectionSpec.query).sort(projectionSpec.sort[0].field, projectionSpec.sort[0].direction).fields(...projectionSpec.projection).limit(projectionSpec.limit).execute();
@@ -261,7 +274,7 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const filteredFacet = await index.search(filteredSpec.query).filter(filteredSpec.filter)
     .facet(filteredSpec.field, { limit: filteredSpec.limit, sort: filteredSpec.sort }).limit(filteredSpec.page_limit).execute();
   const nestedSpec = intents.nested_grouping;
-  const nested = await index.browse().filter(nestedSpec.filter.source, nestedSpec.filter.bindings).group(
+  const nested = await index.browse().filter(nestedSpec.filter.source, sharedFilterBindings(nestedSpec.filter.source, nestedSpec.filter.bindings)).group(
     Group.by(nestedSpec.group_by).limit(nestedSpec.limit).output(agg.count().as(nestedSpec.outputs[0].name)).subgroup(
       Group.by(nestedSpec.nested.group_by).limit(nestedSpec.nested.limit).output(agg.count().as(nestedSpec.nested.outputs[0].name), agg.avg(nestedSpec.nested.outputs[1].field).as(nestedSpec.nested.outputs[1].name)),
     ),
@@ -287,7 +300,7 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   for (const [key, value] of Object.entries<string>(rankPropertySpec.rank_properties)) rankPropertyBuilder = rankPropertyBuilder.rankProperty(key, value);
   const rankProperty = await rankPropertyBuilder.limit(rankPropertySpec.limit).execute();
   const degradedSpec = intents.coverage_degradation;
-  let degradedBuilder = index.browse().filter(degradedSpec.filter.source, degradedSpec.filter.bindings).sort(degradedSpec.sort[0].field, degradedSpec.sort[0].direction);
+  let degradedBuilder = index.browse().filter(degradedSpec.filter.source, sharedFilterBindings(degradedSpec.filter.source, degradedSpec.filter.bindings)).sort(degradedSpec.sort[0].field, degradedSpec.sort[0].direction);
   for (const [key, value] of Object.entries<string>(degradedSpec.rank_properties)) degradedBuilder = degradedBuilder.rankProperty(key, value);
   const degraded = await degradedBuilder.limit(degradedSpec.limit).execute();
   const yqlSpec = intents.yql;
