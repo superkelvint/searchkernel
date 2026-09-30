@@ -255,7 +255,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                 self.client = CaptureClient()
 
         index = Index()
-        (
+        request = (
             SearchBuilder(index, "wireless")
             .search_fields("title")
             .sort("price", "asc", missing="last")
@@ -263,7 +263,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             .sort_feature("freshness", "asc")
             .timeout(500)
             .language("en")
-            .execute()
+            ._request()
         )
         canonical = SearchRequestT(
             query=QuerySourceT(
@@ -302,7 +302,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             queryModel=QueryModelT(language="en"),
         )
         self.assertEqual(
-            _canonical_snapshot(index.client.request),
+            _canonical_snapshot(request),
             _canonical_snapshot(canonical),
         )
 

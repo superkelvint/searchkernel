@@ -91,7 +91,7 @@ class SearchBuilderFacadeCoverageTest(unittest.TestCase):
                 self.client = CaptureClient()
 
         index = Index()
-        (
+        request = (
             SearchBuilder(index, "wireless")
             .search_field("title", weight=1.0)
             .search_fields("description")
@@ -120,9 +120,8 @@ class SearchBuilderFacadeCoverageTest(unittest.TestCase):
             .properties({"zeta": 2, "alpha": 1})
             .query_profile("profile")
             .search_chain("chain")
-            .execute()
+            ._request()
         )
-        request = index.client.request
 
         self.assertEqual([field.field for field in request.searchFields.fields], ["title", "description"])
         self.assertTrue(math.isclose(request.searchFields.fields[0].weight.value, 1.0))
