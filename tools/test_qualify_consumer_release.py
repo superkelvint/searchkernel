@@ -174,6 +174,13 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertNotIn('"--index"', negative)
         self.assertNotIn("SEARCHKERNEL_LOCAL_HOST", negative)
 
+    def test_node_runtime_probe_exercises_python_file_lock_interoperability(self):
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        probe = gate.split("def typescript_node_runtime_lock_probe", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("fcntl.flock(f, fcntl.LOCK_EX)", probe)
+        self.assertIn('"node", "-e", script', probe)
+        self.assertIn("runtime lock must remain a persistent file after release", probe)
+
     def test_public_quickstarts_are_canonical_and_rendered(self):
         quickstarts = ROOT / "examples" / "release-quickstart"
         required = [

@@ -151,6 +151,71 @@ def run_node_quickstart(node: Path, endpoint: str, target: str) -> None:
     )
 
 
+def typescript_node_runtime_lock_probe(node: Path, root: Path) -> None:
+    package = node / "node_modules/@searchkernel/client"
+    descriptor = json.loads((package / "runtime.json").read_text(encoding="utf-8"))
+    identity = descriptor["runtime_identity"]
+    cache = root / "typescript-runtime-lock-cache"
+    lock = cache / "locks" / f"{identity}.lock"
+    lock.parent.mkdir(parents=True)
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import fcntl,sys,time; f=open(sys.argv[1], 'a+'); "
+            "fcntl.flock(f, fcntl.LOCK_EX); print('LOCKED', flush=True); time.sleep(0.3)",
+            str(lock),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    workers: list[subprocess.Popen[str]] = []
+    try:
+        if holder.stdout is None or holder.stdout.readline().strip() != "LOCKED":
+            raise RuntimeError("Python did not acquire the shared runtime file lock")
+        resolver = package / "dist/node/runtime-resolver.js"
+        script = (
+            f"require({json.dumps(str(resolver))}).resolveRuntime()"
+            ".then((path) => console.log(path), (error) => { console.error(error); process.exitCode = 1; })"
+        )
+        environment = clean_environment()
+        environment.update({
+            "SEARCHKERNEL_RUNTIME_CACHE": str(cache),
+            "SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri(),
+        })
+        workers.extend([
+            subprocess.Popen(
+                ["node", "-e", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, env=environment,
+            )
+            for _ in range(2)
+        ])
+        holder.wait(timeout=10)
+        results = [worker.communicate(timeout=120) for worker in workers]
+        failures = [
+            f"exit={worker.returncode} stdout={stdout!r} stderr={stderr!r}"
+            for worker, (stdout, stderr) in zip(workers, results, strict=True)
+            if worker.returncode != 0
+        ]
+        if failures:
+            raise RuntimeError("Node runtime resolver failed under shared lock: " + "; ".join(failures))
+        paths = [stdout.strip() for stdout, _ in results]
+        expected = str(cache / "objects" / identity)
+        if paths != [expected, expected]:
+            raise RuntimeError(f"concurrent Node runtime resolvers returned inconsistent cache paths: {paths}")
+        if not lock.is_file() or lock.is_dir():
+            raise RuntimeError("runtime lock must remain a persistent file after release")
+    finally:
+        for worker in workers:
+            if worker.poll() is None:
+                worker.terminate()
+                worker.wait(timeout=5)
+        if holder.poll() is None:
+            holder.terminate()
+            holder.wait(timeout=5)
+
+
 def run_ruby_quickstart(
     gem_home: Path, root: Path, endpoint: str, target: str,
 ) -> None:
@@ -785,6 +850,7 @@ def main() -> None:
         def typescript_node_connect_probe_runner() -> None:
             def probe(phase, endpoint, _http, target):
                 if phase == "initial":
+                    typescript_node_runtime_lock_probe(installs["node"], root)
                     run_node_quickstart(installs["node"], endpoint, target)
                 typescript_connect_probe(installs["node"], phase, endpoint, target)
 

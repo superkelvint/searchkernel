@@ -145,5 +145,86 @@ async function validate(root: string, d: Descriptor): Promise<string> {
   }
   return resolve(root);
 }
-async function acquireLock(path:string):Promise<()=>Promise<void>>{ await mkdir(dirname(path),{recursive:true}); for(let i=0;i<600;i++){ try{await mkdir(path);return async()=>rm(path,{recursive:true,force:true});}catch(e){if((e as NodeJS.ErrnoException).code!=="EEXIST") throw e; await new Promise(r=>setTimeout(r,50));} } throw new Error("runtime cache lock timeout"); }
-export async function resolveRuntime():Promise<string>{ const d=descriptor(); const override=process.env.SEARCHKERNEL_RUNTIME_DIR; if(override) return validate(override,d); const root=cacheRoot(), final=resolve(root,"objects",d.runtime_identity); try{return await validate(final,d);}catch{} const unlock=await acquireLock(resolve(root,"locks",`${d.runtime_identity}.lock`)); try { try{return await validate(final,d);}catch{await rm(final,{recursive:true,force:true});} await mkdir(resolve(root,"staging"),{recursive:true}); const stage=await mkdtemp(resolve(root,"staging",`${d.runtime_identity}.`)); try { const archive=resolve(stage,"runtime.tar.gz"); const url=artifactUrl(d); if(url.startsWith("file:")) await pipeline(createReadStream(fileURLToPath(url)),createWriteStream(archive)); else { const response=await fetch(url); if(!response.ok||!response.body) throw new Error(`acquire-failed: HTTP ${response.status}`); await pipeline(Readable.fromWeb(response.body as never),createWriteStream(archive)); } if(await sha256(archive)!==d.artifact_sha256) throw new Error("artifact-digest-mismatch: downloaded archive digest differs"); const {stdout}=await execFileAsync("tar",["-tzf",archive]); for(const name of stdout.split("\n").filter(Boolean)){ if(name.startsWith("/")||name.split("/").includes("..")) throw new Error("artifact-invalid: archive path escapes runtime root"); } const unpack=resolve(stage,"unpack"); await mkdir(unpack); await execFileAsync("tar",["-xzf",archive,"-C",unpack,"--no-same-owner","--no-same-permissions"]); await validate(unpack,d); await mkdir(dirname(final),{recursive:true}); await rename(unpack,final); return await validate(final,d); } finally{await rm(stage,{recursive:true,force:true});} } catch(e){throw e instanceof SearchKernelError ? e : new SearchKernelError(`managed-local runtime resolution failed: ${String(e)}`);} finally{await unlock();} }
+async function resolveRuntimeUnderLock(d: Descriptor): Promise<string> {
+  const root = cacheRoot();
+  const final = resolve(root, "objects", d.runtime_identity);
+  try {
+    return await validate(final, d);
+  } catch {
+    await rm(final, { recursive: true, force: true });
+  }
+
+  await mkdir(resolve(root, "staging"), { recursive: true });
+  const stage = await mkdtemp(resolve(root, "staging", `${d.runtime_identity}.`));
+  try {
+    const archive = resolve(stage, "runtime.tar.gz");
+    const url = artifactUrl(d);
+    if (url.startsWith("file:")) {
+      await pipeline(createReadStream(fileURLToPath(url)), createWriteStream(archive));
+    } else {
+      const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      if (!response.ok || !response.body) throw new Error(`acquire-failed: HTTP ${response.status}`);
+      await pipeline(Readable.fromWeb(response.body as never), createWriteStream(archive));
+    }
+    if (await sha256(archive) !== d.artifact_sha256) {
+      throw new Error("artifact-digest-mismatch: downloaded archive digest differs");
+    }
+    const { stdout } = await execFileAsync("tar", ["-tzf", archive]);
+    for (const name of stdout.split("\n").filter(Boolean)) {
+      if (name.startsWith("/") || name.split("/").includes("..")) {
+        throw new Error("artifact-invalid: archive path escapes runtime root");
+      }
+    }
+    const unpack = resolve(stage, "unpack");
+    await mkdir(unpack);
+    await execFileAsync("tar", ["-xzf", archive, "-C", unpack, "--no-same-owner", "--no-same-permissions"]);
+    await validate(unpack, d);
+    await mkdir(dirname(final), { recursive: true });
+    await rename(unpack, final);
+    return await validate(final, d);
+  } finally {
+    await rm(stage, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Resolve inside a flock worker so Node shares the persistent file lock used
+ * by the Python and Ruby consumers. The kernel releases the lock if the worker
+ * exits unexpectedly, avoiding stale lock directories.
+ */
+export async function runRuntimeResolutionWorker(): Promise<void> {
+  try {
+    process.stdout.write(await resolveRuntimeUnderLock(descriptor()));
+  } catch (error) {
+    process.stderr.write(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}
+
+export async function resolveRuntime(): Promise<string> {
+  const d = descriptor();
+  const override = process.env.SEARCHKERNEL_RUNTIME_DIR;
+  if (override) return validate(override, d);
+  const root = cacheRoot();
+  const final = resolve(root, "objects", d.runtime_identity);
+  try {
+    return await validate(final, d);
+  } catch {
+    // A missing or stale cache object is repaired by the lock-owning worker.
+  }
+
+  const lockPath = resolve(root, "locks", `${d.runtime_identity}.lock`);
+  await mkdir(dirname(lockPath), { recursive: true });
+  const worker = `require(${JSON.stringify(__filename)}).runRuntimeResolutionWorker()`;
+  try {
+    const { stdout } = await execFileAsync(
+      "flock",
+      ["--exclusive", lockPath, process.execPath, "-e", worker],
+      { timeout: 300_000 },
+    );
+    return stdout.trim();
+  } catch (error) {
+    const diagnostic = error instanceof Error ? error.message : String(error);
+    throw new SearchKernelError(`managed-local runtime resolution failed: ${diagnostic}`);
+  }
+}
