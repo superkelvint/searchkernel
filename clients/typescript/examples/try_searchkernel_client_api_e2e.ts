@@ -135,7 +135,11 @@ function sharedTypedQuery(spec: any): any {
     case "phrase": return q.phrase(spec.field, ...spec.terms);
     case "near": return q.near(spec.field, ...spec.terms);
     case "ordered_near": return q.orderedNear(spec.field, ...spec.terms);
-    case "range": return q.range(spec.field, spec.lower, spec.upper);
+    case "range": {
+      const fieldType = E2E_CORPUS.schema.fields[spec.field].type;
+      const bound = (input: number) => fieldType === "float64" ? float64(input) : input;
+      return q.range(spec.field, bound(spec.lower), bound(spec.upper));
+    }
     case "and": return q.allOf(...spec.clauses.map(sharedTypedQuery));
     case "or": return q.anyOf(...spec.clauses.map(sharedTypedQuery));
     case "not": return q.not(sharedTypedQuery(spec.clause));
