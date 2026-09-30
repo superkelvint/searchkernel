@@ -3,8 +3,12 @@ use std::path::PathBuf;
 type Result<T> = std::result::Result<T, searchkernel_vespa_engine::Error>;
 
 fn search_ids(engine: &Engine, value: i64) -> Result<Vec<String>> {
-    let mut ids: Vec<String> = engine.search(SearchRequest::new(Query::equals("attr1", value)).limit(10))?.hits
-        .into_iter().map(|hit| hit.document_id).collect();
+    let mut ids: Vec<String> = engine
+        .search(SearchRequest::new(Query::equals("attr1", value)).limit(10))?
+        .hits
+        .into_iter()
+        .map(|hit| hit.document_id)
+        .collect();
     ids.sort();
     Ok(ids)
 }

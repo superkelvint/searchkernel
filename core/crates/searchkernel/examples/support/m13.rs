@@ -1,8 +1,8 @@
-use serde_json::{Value as Json, json};
 use searchkernel_vespa_engine::{
     ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, Query, QueryInput,
     RankProfile, Schema, SearchRequest, TensorValue,
 };
+use serde_json::{json, Value as Json};
 use std::{fs, path::Path};
 
 pub fn load(path: &Path) -> Json {
@@ -29,26 +29,22 @@ pub fn tensor(root: &Json, name: &str) -> TensorValue {
 
 pub fn schema(root: &Json) -> Schema {
     let tensor_type = type_spec(root).to_owned();
-    Schema::new(
-        root["document_type"]
-            .as_str()
-            .expect("document type"),
-    )
-    .field(
-        Field::new(
-            root["tensor_field"]["name"]
-                .as_str()
-                .expect("tensor field name"),
-            FieldType::Tensor(tensor_type.clone()),
+    Schema::new(root["document_type"].as_str().expect("document type"))
+        .field(
+            Field::new(
+                root["tensor_field"]["name"]
+                    .as_str()
+                    .expect("tensor field name"),
+                FieldType::Tensor(tensor_type.clone()),
+            )
+            .attribute(),
         )
-        .attribute(),
-    )
-    .field(Field::new("score", FieldType::Float).attribute().summary())
-    .rank_profile(
-        RankProfile::new("semantic")
-            .query_input("query_embedding", tensor_type)
-            .first_phase("closeness(embedding)"),
-    )
+        .field(Field::new("score", FieldType::Float).attribute().summary())
+        .rank_profile(
+            RankProfile::new("semantic")
+                .query_input("query_embedding", tensor_type)
+                .first_phase("closeness(embedding)"),
+        )
 }
 
 pub fn compile_and_open(root: &Json, config: &Path, data: &Path) -> Engine {
@@ -151,7 +147,10 @@ pub fn run_low_level(root: &Json, config: &Path, data: &Path) -> Json {
     let engine = Engine::open(data, config).expect("reopen after tensor reassign");
     let persisted_reassign = document_tensor(&engine, id_a, field);
     let deleted = engine.delete(id_a).expect("delete tensor document");
-    let deleted_get = engine.get(id_a).expect("get deleted tensor document").is_none();
+    let deleted_get = engine
+        .get(id_a)
+        .expect("get deleted tensor document")
+        .is_none();
     engine.close().expect("final close M13 engine");
 
     json!({

@@ -16,8 +16,12 @@ fn open(data_dir: &Path, config_dir: &Path) -> Result<Engine> {
 }
 
 fn search(engine: &Engine, value: i64) -> Result<Vec<String>> {
-    let mut ids: Vec<String> = engine.search(SearchRequest::new(Query::equals("attr1", value)).limit(10))?
-        .hits.into_iter().map(|hit| hit.document_id).collect();
+    let mut ids: Vec<String> = engine
+        .search(SearchRequest::new(Query::equals("attr1", value)).limit(10))?
+        .hits
+        .into_iter()
+        .map(|hit| hit.document_id)
+        .collect();
     ids.sort();
     Ok(ids)
 }

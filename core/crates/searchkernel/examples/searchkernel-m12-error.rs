@@ -1,14 +1,14 @@
+//! M12 negative-driver contract.
+
 #[path = "support/m12.rs"]
 mod m12;
 
-//! M12 negative-driver contract.
-
-use searchkernel_dispatch::Dispatcher;
-use searchkernel_ir::{IndexContext, index_definition_to_ir};
 use crate::m12::{load, low_level_request, portable_request_json};
+use searchkernel_dispatch::Dispatcher;
+use searchkernel_ir::{index_definition_to_ir, IndexContext};
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use searchkernel_vespa_engine::{Engine, Error as EngineError};
-use serde_json::{Value as Json, json};
+use serde_json::{json, Value as Json};
 use std::{env, fs, path::PathBuf, sync::Arc};
 
 fn main() {

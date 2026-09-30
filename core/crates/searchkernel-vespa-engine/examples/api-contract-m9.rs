@@ -95,7 +95,9 @@ fn grouping(engine: &Engine) -> Result<()> {
     let plan = GroupingPlan::new().level(
         GroupingLevel::new(GroupingExpression::attribute("category"))
             .aggregation(GroupingAggregation::Count)
-            .aggregation(GroupingAggregation::Average(GroupingExpression::attribute("price"))),
+            .aggregation(GroupingAggregation::Average(GroupingExpression::attribute(
+                "price",
+            ))),
     );
     let result = engine.group(
         &Query::AttributeRange {

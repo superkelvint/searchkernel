@@ -1,6 +1,6 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Document, Engine, Field, FieldType, FieldValue, Query,
-    RangeBound, ScalarValue, Schema, SearchRequest, SortField, SummaryRequest,
+    ConfigCompiler, Document, Engine, Field, FieldType, FieldValue, Query, RangeBound, ScalarValue,
+    Schema, SearchRequest, SortField, SummaryRequest,
 };
 use serde_json::{json, Map, Value as Json};
 use std::fs;
@@ -95,12 +95,7 @@ pub fn query(v: &Json) -> Query {
         };
     }
     if let Some(x) = o.get("and") {
-        return Query::And(x
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(query)
-            .collect());
+        return Query::And(x.as_array().unwrap().iter().map(query).collect());
     }
     if let Some(x) = o.get("range") {
         return Query::Range {

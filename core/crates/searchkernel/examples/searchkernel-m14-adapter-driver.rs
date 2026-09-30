@@ -1,12 +1,12 @@
 #[path = "support/m14.rs"]
 mod m14;
 
+use crate::m14::{load, TraceReader};
 use searchkernel_dispatch::Dispatcher;
-use searchkernel_ir::{Backend, BackendSession, IndexContext, index_definition_to_ir};
+use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexContext};
 use searchkernel_ir_adapter::VespaBackend;
-use crate::m14::{TraceReader, load};
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
-use serde_json::{Value as Json, json};
+use serde_json::{json, Value as Json};
 use std::{fs, path::PathBuf, sync::Arc};
 
 fn definition_ir(path: &PathBuf) -> searchkernel_ir::IndexDefinitionIr {

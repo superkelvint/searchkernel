@@ -1,4 +1,4 @@
-use serde_json::{Value as Json, json};
+use serde_json::{json, Value as Json};
 use std::{collections::BTreeMap, fs, path::Path};
 
 use searchkernel_vespa_engine::{

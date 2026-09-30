@@ -1,6 +1,4 @@
-use searchkernel_vespa_engine::{
-    Language, Linguistics, LinguisticsOptions, StemMode,
-};
+use searchkernel_vespa_engine::{Language, Linguistics, LinguisticsOptions, StemMode};
 use std::io::{self, BufRead};
 
 fn from_hex(hex: &str) -> Vec<u8> {
@@ -48,7 +46,9 @@ fn options(stemming: &str, remove_accents: &str) -> LinguisticsOptions {
 }
 
 fn main() {
-    let mode = std::env::args().nth(1).expect("usage: driver document|query");
+    let mode = std::env::args()
+        .nth(1)
+        .expect("usage: driver document|query");
     assert!(mode == "document" || mode == "query", "invalid mode");
     let linguistics = Linguistics::default();
 

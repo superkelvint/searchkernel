@@ -9,7 +9,11 @@ fn m10_surface() {
     let schema = Schema::new("typea")
         .field(Field::new("title", FieldType::Text).indexed().summary())
         .field(Field::new("body", FieldType::Text).indexed().summary())
-        .field(Field::new("popularity", FieldType::Integer).attribute().summary())
+        .field(
+            Field::new("popularity", FieldType::Integer)
+                .attribute()
+                .summary(),
+        )
         .rank_profile(
             RankProfile::new("product")
                 .first_phase("bm25(title) + query(boost) * attribute(popularity)")

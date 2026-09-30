@@ -1,28 +1,25 @@
 #[path = "support/m13.rs"]
 mod m13;
 
-use searchkernel_dispatch::Dispatcher;
-use searchkernel_ir::{Backend, BackendSession, IndexContext, index_definition_to_ir};
-use searchkernel_ir_adapter::VespaBackend;
 use crate::m13::load;
+use searchkernel_dispatch::Dispatcher;
+use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexContext};
+use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
-use serde_json::{Value as Json, json};
+use serde_json::{json, Value as Json};
 use std::{fs, path::PathBuf, sync::Arc};
 
 fn context(path: &PathBuf) -> Arc<IndexContext> {
     let bytes = fs::read(path).expect("read M13 portable definition");
-    let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
-        .expect("parse M13 portable definition");
+    let root =
+        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
+            .expect("parse M13 portable definition");
     Arc::new(IndexContext::from_definition_ir(
         index_definition_to_ir(root).expect("convert M13 portable definition"),
     ))
 }
 
-fn create_dispatcher(
-    definition: &PathBuf,
-    config: &PathBuf,
-    data: &PathBuf,
-) -> Dispatcher {
+fn create_dispatcher(definition: &PathBuf, config: &PathBuf, data: &PathBuf) -> Dispatcher {
     if !config.join("searchkernel-schema.json").exists() {
         let definition_bytes = fs::read(definition).expect("read M13 portable definition");
         let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(
@@ -33,9 +30,8 @@ fn create_dispatcher(
         searchkernel_ir_adapter::compile_index_definition(&definition_ir, config)
             .expect("compile M13 portable definition");
     }
-    let backend: Arc<dyn Backend> = Arc::new(
-        VespaBackend::open(data, config).expect("open M13 portable backend"),
-    );
+    let backend: Arc<dyn Backend> =
+        Arc::new(VespaBackend::open(data, config).expect("open M13 portable backend"));
     Dispatcher::new(context(definition), BackendSession::from_backend(backend))
 }
 
@@ -83,7 +79,9 @@ fn get(dispatcher: &Dispatcher, id: &str, field: &str) -> Json {
         json!({"id":id,"projection":{"fields":[field]}}),
     );
     let fields = response["payload"]["document"]["fields"].as_array();
-    let Some(fields) = fields else { return Json::Null };
+    let Some(fields) = fields else {
+        return Json::Null;
+    };
     let value = fields
         .iter()
         .find(|entry| entry["key"] == field)
@@ -160,7 +158,9 @@ fn search(dispatcher: &Dispatcher, root: &Json) -> Json {
             }
             Some("ResultGroup") => {
                 if let Some(children) = value["node"]["children"].as_array() {
-                    for child in children { visit(child, ids); }
+                    for child in children {
+                        visit(child, ids);
+                    }
                 }
             }
             _ => {}
@@ -178,13 +178,25 @@ fn run(root: &Json, definition: &PathBuf, config: &PathBuf, data: &PathBuf) -> J
     let id_b = "id:ns:typea::b";
     let dispatcher = create_dispatcher(definition, config, data);
     assert_eq!(
-        dispatch(&dispatcher, "SearchKernel_V2_InsertRequest", json!({"document":document(root,id_a,"a")}))["payload_type"],
+        dispatch(
+            &dispatcher,
+            "SearchKernel_V2_InsertRequest",
+            json!({"document":document(root,id_a,"a")})
+        )["payload_type"],
         "SearchKernel_V2_InsertResult"
     );
-    dispatch(&dispatcher, "SearchKernel_V2_InsertRequest", json!({"document":document(root,id_b,"b")}));
+    dispatch(
+        &dispatcher,
+        "SearchKernel_V2_InsertRequest",
+        json!({"document":document(root,id_b,"b")}),
+    );
     let inserted = get(&dispatcher, id_a, field);
     let nn_before_patch = search(&dispatcher, root);
-    dispatch(&dispatcher, "SearchKernel_V2_UpsertRequest", json!({"document":document(root,id_a,"b")}));
+    dispatch(
+        &dispatcher,
+        "SearchKernel_V2_UpsertRequest",
+        json!({"document":document(root,id_a,"b")}),
+    );
     let upserted = get(&dispatcher, id_a, field);
     patch(&dispatcher, root, id_a, Some("replacement"));
     let patched = get(&dispatcher, id_a, field);
@@ -197,13 +209,21 @@ fn run(root: &Json, definition: &PathBuf, config: &PathBuf, data: &PathBuf) -> J
     let unset_fields = field_names(&dispatcher, id_a, field);
     patch(&dispatcher, root, id_a, Some("reassign"));
     let reassigned = get(&dispatcher, id_a, field);
-    dispatcher.close().expect("close portable M13 reassign backend");
+    dispatcher
+        .close()
+        .expect("close portable M13 reassign backend");
 
     let dispatcher = create_dispatcher(definition, config, data);
     let persisted_reassign = get(&dispatcher, id_a, field);
-    let deleted = dispatch(&dispatcher, "SearchKernel_V2_DeleteRequest", json!({"id":id_a}));
+    let deleted = dispatch(
+        &dispatcher,
+        "SearchKernel_V2_DeleteRequest",
+        json!({"id":id_a}),
+    );
     let deleted_get = get(&dispatcher, id_a, field).is_null();
-    dispatcher.close().expect("final close portable M13 backend");
+    dispatcher
+        .close()
+        .expect("final close portable M13 backend");
 
     json!({
         "id":root["id"], "inserted":inserted, "upserted":upserted,
@@ -223,5 +243,8 @@ fn main() {
     let data = PathBuf::from(args.next().expect("data"));
     assert!(args.next().is_none());
     let root = load(&scenario);
-    println!("{}", serde_json::to_string(&run(&root, &definition, &config, &data)).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string(&run(&root, &definition, &config, &data)).unwrap()
+    );
 }

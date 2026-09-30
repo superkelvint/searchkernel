@@ -1,9 +1,9 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, DistanceMetric, Document, DocumentUpdate, Engine, Field, FieldType,
-    FieldValue, HnswIndexConfig, NearestNeighborOptions, Query, RankProfile, Schema, SearchRequest,
+    ConfigCompiler, DistanceMetric, Document, DocumentUpdate, Engine, Field, FieldType, FieldValue,
+    HnswIndexConfig, NearestNeighborOptions, Query, RankProfile, Schema, SearchRequest,
     TensorValue,
 };
-use serde_json::{Value as Json, json};
+use serde_json::{json, Value as Json};
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -121,7 +121,9 @@ pub fn feed(engine: &Engine, root: &Json) -> searchkernel_vespa_engine::Result<(
         engine.put(document(root, doc))?;
         let id = doc["id"].as_str().unwrap();
         let expected = FieldValue::Tensor(tensor(type_spec, &doc["values"]));
-        let fetched = engine.get(id)?.expect("new HNSW document is visible to GET");
+        let fetched = engine
+            .get(id)?
+            .expect("new HNSW document is visible to GET");
         assert_eq!(fetched.fields().get(field), Some(&expected));
         let result = engine.search(query_request(root, &options, &doc["values"]))?;
         assert!(
@@ -244,7 +246,10 @@ pub fn run_lifecycle(
     evidence.push(json!({"id":"after_reopen","trace":trace}));
     let deleted = engine.delete(delete_id)?;
     assert!(deleted, "M14 delete did not find document");
-    assert!(engine.get(delete_id)?.is_none(), "deleted HNSW document remains visible to GET");
+    assert!(
+        engine.get(delete_id)?.is_none(),
+        "deleted HNSW document remains visible to GET"
+    );
     let (after_delete, trace) =
         search_with_evidence(&engine, root, options, &root["query"], &mut traces)?;
     evidence.push(json!({"id":"after_delete","trace":trace}));

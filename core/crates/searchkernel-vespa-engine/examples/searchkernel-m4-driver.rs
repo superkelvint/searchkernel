@@ -62,7 +62,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let result = engine.search(SearchRequest::new(query).rank_profile(rank_profile))?;
                 write!(stdout, "RESULT\t{}\t", search_id)?;
                 for (i, hit) in result.hits.iter().enumerate() {
-                    if i > 0 { write!(stdout, ";")?; }
+                    if i > 0 {
+                        write!(stdout, ";")?;
+                    }
                     write!(stdout, "{},{}", hit.document_id, hit.score)?;
                 }
                 writeln!(stdout)?;

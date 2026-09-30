@@ -303,21 +303,11 @@ fn marker_path(root: &Path, operation: Operation, phase: Phase) -> PathBuf {
     ))
 }
 
-fn run_child(
-    operation: Operation,
-    phase: Phase,
-    root: &Path,
-    cycle: usize,
-) -> AnyResult<()> {
+fn run_child(operation: Operation, phase: Phase, root: &Path, cycle: usize) -> AnyResult<()> {
     product_crash(root, operation, phase, cycle)
 }
 
-fn spawn_crash(
-    operation: Operation,
-    phase: Phase,
-    root: &Path,
-    cycle: usize,
-) -> AnyResult<()> {
+fn spawn_crash(operation: Operation, phase: Phase, root: &Path, cycle: usize) -> AnyResult<()> {
     let executable = env::current_exe()?;
     let status = Command::new(executable)
         .arg("child")
@@ -390,13 +380,7 @@ fn run_matrix(root: &Path) -> AnyResult<()> {
                 let identity = setup(&case_root)?;
                 let baseline = seed_state();
                 spawn_crash(operation, phase, &case_root, usize::MAX)?;
-                verify(
-                    &case_root,
-                    &identity,
-                    &baseline,
-                    operation,
-                    usize::MAX,
-                )?;
+                verify(&case_root, &identity, &baseline, operation, usize::MAX)?;
             }
         }
     }

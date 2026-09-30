@@ -11,5 +11,8 @@ fn main() {
     let data = PathBuf::from(args.next().expect("data"));
     assert!(args.next().is_none());
     let root = load(&scenario);
-    println!("{}", serde_json::to_string(&run_low_level(&root, &config, &data)).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string(&run_low_level(&root, &config, &data)).unwrap()
+    );
 }

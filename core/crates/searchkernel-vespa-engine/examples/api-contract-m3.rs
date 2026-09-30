@@ -1,6 +1,4 @@
-use searchkernel_vespa_engine::{
-    Language, Linguistics, LinguisticsOptions, StemMode,
-};
+use searchkernel_vespa_engine::{Language, Linguistics, LinguisticsOptions, StemMode};
 
 fn main() {
     let linguistics = Linguistics::default();

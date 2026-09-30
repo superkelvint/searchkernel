@@ -4,7 +4,7 @@ use searchkernel_vespa_engine::{
     GroupingResult, GroupingResultValue, Query, Schema, SearchRequest, SortField, SummaryRequest,
     Value,
 };
-use serde_json::{Map, Value as Json, json};
+use serde_json::{json, Map, Value as Json};
 use std::fs;
 use std::path::{Path, PathBuf};
 

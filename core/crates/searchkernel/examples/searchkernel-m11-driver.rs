@@ -8,10 +8,10 @@ use searchkernel_ir::{
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_vespa_engine::{
     hardening::{self, Action},
-    ConfigCompiler, DistanceMetric, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType,
-    FieldValue, GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan,
-    HnswIndexConfig, NearestNeighborOptions, Query, RankProfile, ScalarValue, Schema, SearchRequest,
-    SortField, SortOrder, SummaryRequest, TensorValue,
+    ConfigCompiler, DistanceMetric, Document, DocumentUpdate, Engine, FacetRequest, Field,
+    FieldType, FieldValue, GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan,
+    HnswIndexConfig, NearestNeighborOptions, Query, RankProfile, ScalarValue, Schema,
+    SearchRequest, SortField, SortOrder, SummaryRequest, TensorValue,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -328,7 +328,9 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
             .iter()
             .any(|id| id == "publication-gated-upsert")
     {
-        return Err("UPSERT did not preserve the old matcher generation while publication was held".into());
+        return Err(
+            "UPSERT did not preserve the old matcher generation while publication was held".into(),
+        );
     }
     if upsert_thread.is_finished() {
         upsert_thread
@@ -423,7 +425,9 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
         .iter()
         .any(|id| id == "publication-gated-delete")
     {
-        return Err("DELETE matcher state disappeared before the held publication completed".into());
+        return Err(
+            "DELETE matcher state disappeared before the held publication completed".into(),
+        );
     }
     if delete_thread.is_finished() {
         let deleted = delete_thread
@@ -500,7 +504,9 @@ fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()
     }
     let stale_put = nearest_neighbor_ids(&engine, query.clone())?;
     if stale_put.first().map(String::as_str) != Some(id_b) {
-        return Err("HNSW matcher observed tensor PUT before the held publication completed".into());
+        return Err(
+            "HNSW matcher observed tensor PUT before the held publication completed".into(),
+        );
     }
     if put_thread.is_finished() {
         put_thread
@@ -514,16 +520,17 @@ fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()
         .map_err(|_| "gated tensor PUT panicked")??;
     let after_put = nearest_neighbor_ids(&engine, query.clone())?;
     if after_put.first().map(String::as_str) != Some(id_a) {
-        return Err("tensor PUT returned before immediate HNSW search observed the new document".into());
+        return Err(
+            "tensor PUT returned before immediate HNSW search observed the new document".into(),
+        );
     }
 
     // Now force the same split for an in-place tensor UPDATE A -> B behavior.
     hardening::set(&engine, PUBLICATION_GATE, 1, Action::Block)?;
     let update_engine = Arc::clone(&engine);
     let update_thread = thread::spawn(move || {
-        update_engine.update(
-            DocumentUpdate::new(id_a).assign("embedding", tensor_value(&[0.0, 2.0])),
-        )
+        update_engine
+            .update(DocumentUpdate::new(id_a).assign("embedding", tensor_value(&[0.0, 2.0])))
     });
     let mut gate = wait_for_blocking_guard(&engine, PUBLICATION_GATE)?;
     let expected = tensor_value(&[0.0, 2.0]);
@@ -534,11 +541,15 @@ fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()
         thread::sleep(Duration::from_millis(1));
     }
     if tensor_field(&engine, id_a, "embedding")? != Some(expected) {
-        return Err("tensor UPDATE did not become GET-visible while HNSW publication was held".into());
+        return Err(
+            "tensor UPDATE did not become GET-visible while HNSW publication was held".into(),
+        );
     }
     let stale_update = nearest_neighbor_ids(&engine, query.clone())?;
     if stale_update.first().map(String::as_str) != Some(id_a) {
-        return Err("HNSW matcher changed before the held tensor UPDATE publication completed".into());
+        return Err(
+            "HNSW matcher changed before the held tensor UPDATE publication completed".into(),
+        );
     }
     if update_thread.is_finished() {
         update_thread
@@ -552,7 +563,9 @@ fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()
         .map_err(|_| "gated tensor UPDATE panicked")??;
     let after_update = nearest_neighbor_ids(&engine, query)?;
     if after_update.first().map(String::as_str) != Some(id_b) {
-        return Err("tensor UPDATE returned before immediate HNSW search reflected replacement B".into());
+        return Err(
+            "tensor UPDATE returned before immediate HNSW search reflected replacement B".into(),
+        );
     }
     drop(engine);
     Ok(())
@@ -1050,8 +1063,7 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     hardening::set(&engine, "mutation_before_visibility_wait", 1, Action::Block)?;
     let visibility_engine = Arc::clone(&engine);
     let visibility_put = thread::spawn(move || put(&visibility_engine, "visibility", 9));
-    let mut visibility_gate =
-        wait_for_blocking_guard(&engine, "mutation_before_visibility_wait")?;
+    let mut visibility_gate = wait_for_blocking_guard(&engine, "mutation_before_visibility_wait")?;
     if visibility_put.is_finished() {
         panic!("put returned before its visibility barrier");
     }
