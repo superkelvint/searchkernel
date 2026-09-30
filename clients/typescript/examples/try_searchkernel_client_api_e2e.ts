@@ -52,12 +52,28 @@ let INDEX_PATH = "";
 // SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=node
 // SKC: grouping.aggregations/basic kinds=ergonomic,e2e runtime=node
 const E2E_CORPUS: any = JSON.parse(readFileSync(resolve(process.cwd(), "../../reference/client-real-e2e-parity/corpus.json"), "utf8"));
-const PARITY_CONSUMED_INTENTS = new Map<string, any>();
+const PARITY_CONSUMED_INTENTS = new Map<string, Record<string, unknown>>();
+function trackedIntent(scenario: string, source: Record<string, any>): Record<string, any> {
+  return new Proxy(source, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof property === "string" && Object.prototype.hasOwnProperty.call(target, property)) {
+        const consumed = PARITY_CONSUMED_INTENTS.get(scenario) ?? {};
+        consumed[property] = structuredClone(value);
+        PARITY_CONSUMED_INTENTS.set(scenario, consumed);
+      }
+      return value;
+    },
+  });
+}
 const PARITY_INTENTS = new Proxy(E2E_CORPUS.scenario_inputs as Record<string, any>, {
   get(target, property, receiver) {
     const value = Reflect.get(target, property, receiver);
     if (typeof property === "string" && Object.prototype.hasOwnProperty.call(target, property)) {
-      PARITY_CONSUMED_INTENTS.set(property, structuredClone(value));
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new TypeError(`parity scenario intent ${property} must be an object`);
+      }
+      return trackedIntent(property, value);
     }
     return value;
   },
@@ -185,7 +201,7 @@ async function sharedTypedQueryObservations(index: Index): Promise<Record<string
     const input = PARITY_INTENTS[scenario];
     const capabilities = E2E_CORPUS.client_scenario_contract[scenario].typescript;
     const supported = capabilities.query_result.kind === "comparable";
-    const observation: Record<string, unknown> = { intent: input };
+    const observation: Record<string, unknown> = {};
     if (supported) {
       let results;
       try {
@@ -197,6 +213,7 @@ async function sharedTypedQueryObservations(index: Index): Promise<Record<string
       if (input.result_order === "sorted_ids") ids.sort();
       observation.query_result = ids;
     }
+    observation.intent = PARITY_CONSUMED_INTENTS.get(scenario);
     observations[scenario] = { observation, capabilities };
   }
   return observations;
