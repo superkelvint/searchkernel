@@ -323,12 +323,13 @@ def shared_typed_query_observations(index):
         if ranking_profile:
             builder = builder.ranking(ranking_profile)
         results = builder.limit(intent["limit"]).execute()
+        result_order = intent["result_order"]
         feature = intent.get("feature")
         if feature:
             query_result = [{"id": hit.id, "feature": hit.features.get(feature)} for hit in results.hits]
         else:
             query_result = [hit.id for hit in results.hits]
-            if intent["result_order"] == "sorted_ids":
+            if result_order == "sorted_ids":
                 query_result.sort()
         observations[scenario] = {
             "observation": {"intent": PARITY_CONSUMED_INTENTS[scenario], "query_result": query_result},
