@@ -433,9 +433,9 @@ fn update_builder_matches_portable_dispatcher_ir_for_full_executable_union() {
             serde_json::to_vec(&request_json).expect("serialize canonical portable update");
         let request = searchkernel_protocol::json::request_json_to_flatbuffer(&request_json)
             .unwrap_or_else(|error| panic!("{name}: canonical portable update request: {error}"));
-        dispatcher
-            .dispatch(&request)
-            .unwrap_or_else(|error| panic!("{name}: dispatcher must encode backend errors: {error}"));
+        dispatcher.dispatch(&request).unwrap_or_else(|error| {
+            panic!("{name}: dispatcher must encode backend errors: {error}")
+        });
         let portable = portable_backend
             .last_call()
             .unwrap_or_else(|| panic!("{name}: portable dispatcher update IR"));
@@ -461,7 +461,8 @@ fn reusable_update_entry_point_remains_compatible() {
         )
         .is_err());
 
-    let OperationIr::Update(request) = backend.last_call().expect("recorded reusable update") else {
+    let OperationIr::Update(request) = backend.last_call().expect("recorded reusable update")
+    else {
         panic!("expected update operation");
     };
     assert_eq!(request.id().as_str(), "sku-42");
@@ -484,7 +485,10 @@ fn update_builder_defers_semantic_validation_to_the_canonical_resolver() {
     let backend = Arc::new(RecordingBackend::new());
     let index = index_with(backend.clone());
 
-    let empty = index.update_builder("sku-42").execute().expect_err("empty update");
+    let empty = index
+        .update_builder("sku-42")
+        .execute()
+        .expect_err("empty update");
     assert_eq!(empty.code(), ErrorCode::InvalidArgument);
     assert_eq!(empty.details()[0].code, "empty_update");
     assert!(backend.calls().is_empty());
