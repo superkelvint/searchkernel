@@ -365,6 +365,7 @@ pub struct SearchBuilder {
     pub(crate) limit: Option<u32>,
     pub(crate) offset: Option<u32>,
     page: Option<(i64, i64)>,
+    page_repeated: bool,
     query_string: Option<String>,
     default_index: Option<String>,
     locale: Option<String>,
@@ -429,6 +430,7 @@ impl SearchBuilder {
             limit: None,
             offset: None,
             page: None,
+            page_repeated: false,
             query_string: None,
             default_index: None,
             locale: None,
@@ -748,6 +750,9 @@ impl SearchBuilder {
 
     /// Select a one-based page and page size.
     pub fn page(mut self, page: i64, size: i64) -> Self {
+        if self.page.is_some() {
+            self.page_repeated = true;
+        }
         self.page = Some((page, size));
         self
     }
@@ -1040,6 +1045,17 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
 
 fn lower_pagination(request: &SearchBuilder) -> Result<(Option<u32>, Option<u32>)> {
     if let Some((page, size)) = request.page {
+        if request.page_repeated {
+            return Err(crate::Error::search(
+                crate::ErrorCode::InvalidArgument,
+                "page may only be specified once",
+            )
+            .with_detail(
+                "pagination_conflict",
+                Some("page"),
+                "page cannot be specified more than once",
+            ));
+        }
         if request.offset.is_some() || request.limit.is_some() {
             return Err(crate::Error::search(
                 crate::ErrorCode::InvalidArgument,
@@ -1682,6 +1698,7 @@ mod tests {
             index.browse().page(2, 20).limit(20),
             index.browse().offset(20).page(2, 20),
             index.browse().limit(20).page(2, 20),
+            index.browse().page(1, 20).page(2, 20),
         ] {
             let error = to_resolver_input(&request).expect_err("mixed pagination must fail");
             assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
