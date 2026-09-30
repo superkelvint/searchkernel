@@ -1479,6 +1479,9 @@ mod tests {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum Coverage {
         Executable,
+        /// The facade represents the full method, but only a documented subset
+        /// reaches the embedded native execution boundary.
+        PartiallyExecutable(&'static str),
         RepresentedUnsupported,
         BackendDeferred,
     }
@@ -1498,7 +1501,7 @@ mod tests {
         ("raw_grouping", Coverage::BackendDeferred),
         ("ranking", Coverage::Executable),
         ("rank_property", Coverage::Executable),
-        ("input", Coverage::Executable),
+        ("input", Coverage::PartiallyExecutable("finite numeric scalars and dense tensors execute; bool, string, JSON, and expression inputs are represented but rejected by the native adapter")),
         ("input_expr", Coverage::RepresentedUnsupported),
         ("fields", Coverage::Executable),
         ("summary", Coverage::Executable),
@@ -1519,8 +1522,8 @@ mod tests {
         ("search_group", Coverage::RepresentedUnsupported),
         ("query_string", Coverage::Executable),
         ("query_model_type", Coverage::RepresentedUnsupported),
-        ("property", Coverage::Executable),
-        ("properties", Coverage::Executable),
+        ("property", Coverage::PartiallyExecutable("generic properties execute for YQL requests; non-YQL properties are rejected by the native adapter")),
+        ("properties", Coverage::PartiallyExecutable("generic properties execute for YQL requests; non-YQL properties are rejected by the native adapter")),
         ("query_profile", Coverage::RepresentedUnsupported),
         ("search_chain", Coverage::RepresentedUnsupported),
         ("execute", Coverage::Executable),
@@ -1583,6 +1586,29 @@ mod tests {
         assert_eq!(
             entrypoints,
             ["browse", "query", "search", "yql"].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn coverage_dispositions_match_adapter_execution_boundaries() {
+        let partial = SEARCH_BUILDER_COVERAGE
+            .iter()
+            .filter_map(|(concept, coverage)| match coverage {
+                Coverage::PartiallyExecutable(reason) => {
+                    assert!(
+                        !reason.trim().is_empty(),
+                        "{concept} must explain its partial execution boundary"
+                    );
+                    Some(*concept)
+                }
+                _ => None,
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(
+            partial,
+            ["input", "properties", "property"].into_iter().collect(),
+            "mixed execution-boundary methods must not be advertised as universally executable"
         );
     }
 
@@ -1773,6 +1799,30 @@ mod tests {
             panic!("root aggregate must lower to output operation");
         };
         assert_eq!(outputs[0].label.as_deref(), Some("avg_price"));
+    }
+
+    #[test]
+    fn aggregate_without_label_matches_other_first_party_facades() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::float64("price").facetable(true)),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+        let input = to_resolver_input(
+            &runtime
+                .index()
+                .browse()
+                .aggregate(crate::GroupingAggregation::avg("price")),
+        )
+        .expect("aggregate intent");
+        let searchkernel_ir::GroupingInput::Structured(grouping) = &input.grouping[0] else {
+            panic!("root aggregate must lower to structured grouping");
+        };
+        let searchkernel_ir::GroupingOperationIr::Output(outputs) = &grouping.root.operations[0]
+        else {
+            panic!("root aggregate must lower to output operation");
+        };
+        assert_eq!(outputs[0].label.as_deref(), Some(""));
     }
 
     #[test]
