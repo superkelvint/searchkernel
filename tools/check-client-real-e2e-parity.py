@@ -241,9 +241,9 @@ def float_semantic_paths_for_scenario(
 ) -> frozenset[str]:
     """Return schema-derived floating paths in shared scenario intents."""
     spec = inputs.get(scenario, {})
-    intent = spec.get("query", {})
-    kind = intent.get("kind")
-    field = intent.get("field")
+    intent = spec.get("query")
+    kind = intent.get("kind") if isinstance(intent, dict) else None
+    field = intent.get("field") if isinstance(intent, dict) else None
     field_type = schema.get("fields", {}).get(field, {}).get("type")
     paths: set[str] = set()
     if kind == "range" and field_type == "float64":

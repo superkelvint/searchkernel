@@ -213,6 +213,16 @@ class RealE2EParityComparatorTests(unittest.TestCase):
             )
         )
 
+    def test_float_semantic_paths_accept_string_search_queries(self):
+        self.assertEqual(
+            frozenset(),
+            float_semantic_paths_for_scenario(
+                "full_text_search",
+                {"full_text_search": {"query": "shoes"}},
+                {"fields": {"price": {"type": "float64"}}},
+            ),
+        )
+
     def test_filter_binding_float_tolerance_comes_from_the_referenced_field(self):
         inputs = {"text_filter_binding": {"filter": "price <= :max", "bindings": {"max": 7.0}}}
         schema = {"fields": {"price": {"type": "float64"}, "inventory": {"type": "int64"}}}
