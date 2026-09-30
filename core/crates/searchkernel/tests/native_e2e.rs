@@ -354,7 +354,7 @@ fn native_product_path_has_current_search_and_facet_parity() {
     assert!(paged.hits.iter().all(|hit| hit.score.is_some()));
     assert_eq!(
         paged.hits[0].document.as_ref().unwrap(),
-        json!({"title": "Wireless Keyboard", "brand": "Charlie"})
+        &json!({"title": "Wireless Keyboard", "brand": "Charlie"})
     );
 
     // Unsupported controls still fail at the adapter with stable details
