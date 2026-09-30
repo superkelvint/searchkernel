@@ -307,6 +307,19 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         finally:
             index.close()
 
+    def test_managed_local_refuses_preexisting_unowned_data_root(self):
+        root = Path(self.tempdir.name)
+        managed_root = root / ".searchkernel-managed"
+        managed_root.mkdir()
+        sentinel = managed_root / "user-data.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+
+        with self.assertRaisesRegex(ClientError, "not owned by Search Kernel"):
+            Index.create(root / "index", fields=self.definition)
+
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+        self.assertFalse((root / "index").exists())
+
     def test_managed_local_sibling_indexes_share_one_daemon_and_survive_handle_close(self):
         root = Path(self.tempdir.name)
         alpha = Index.create(root / "managed-a", fields=self.definition)
