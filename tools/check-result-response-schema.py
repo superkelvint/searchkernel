@@ -138,6 +138,27 @@ class ReflectedSchema:
                 return self._name(member)
         return str(value)
 
+    def _scalar_default_signature(self, reflected_type: Any, field: Any) -> str | None:
+        """Return the reflected semantic default for ordinary scalar fields."""
+        bt = self.base.BaseType()
+        base = reflected_type.BaseType()
+        if base == bt.Bool:
+            return "true" if field.DefaultInteger() else "false"
+        if base in (
+            bt.Byte,
+            bt.UByte,
+            bt.Short,
+            bt.UShort,
+            bt.Int,
+            bt.UInt,
+            bt.Long,
+            bt.ULong,
+        ):
+            return str(field.DefaultInteger())
+        if base in (bt.Float, bt.Double):
+            return repr(field.DefaultReal())
+        return None
+
     def _wire_schema(self) -> dict[str, dict[str, Any]]:
         """Pin declaration headers and ordered wire members from BFBS reflection."""
         bt = self.base.BaseType()
@@ -147,7 +168,7 @@ class ReflectedSchema:
                 enum = self.enums[self.enum_indices[name]]
                 if kind == "union":
                     members = [
-                        self._name(enum.Values(i))
+                        f"{self._name(enum.Values(i))}={enum.Values(i).Value()}"
                         for i in range(enum.ValuesLength())
                         if self._name(enum.Values(i)) != "NONE"
                     ]
@@ -183,6 +204,10 @@ class ReflectedSchema:
                     and not self.enums[enum_index].IsUnion()
                 ):
                     signature += f"={self._enum_default_name(enum_index, field.DefaultInteger())}"
+                else:
+                    scalar_default = self._scalar_default_signature(field_type, field)
+                    if scalar_default is not None:
+                        signature += f"={scalar_default}"
                 if field.Key():
                     signature += "(key)"
                 if field.Required():
