@@ -55,5 +55,7 @@
 - [ ] **SK-16-028** No build/test/doc still references obsolete custom bindgen/native-client transport tooling.
 - [ ] **SK-16-029** Retired `reference/ffi-conformance` is not an active product acceptance dependency.
 - [ ] **SK-16-030** Every explicitly designated HTTP-first first-party client has a mechanical conformance check that feeds representative client-emitted/requested standard FlatBuffers JSON through the official BFBS-backed bridge and fails on schema, discriminator, scalar-width, or malformed-union drift.
+- [ ] **SK-16-031** `check-audit-client-coverage.py` derives client roots from the canonical contract catalog and fails closed when a first-party client lacks a dedicated audit module or any tracked client file is unmapped.
+- [ ] **SK-16-032** `check-audit-split.py` detects duplicate/missing checklist IDs, stale file hashes/counts, and inconsistent extension metadata; its update mode changes only derived manifest inventory fields.
 
 ---

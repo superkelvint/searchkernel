@@ -206,6 +206,7 @@ function detailCodes(SearchKernelException $error): array
 /** @param array<string,mixed> $spec @return array<string,mixed> */
 function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
 {
+    global $e2eCorpus;
     $field = $intent['field'] ?? null;
     return match ($scenario) {
         'typed_query_term' => Query::term($field, $intent['value']),
@@ -215,10 +216,10 @@ function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
         'typed_query_ordered_near' => Query::contains($field, Query::onear(...$intent['terms'])),
         'typed_query_range', 'typed_query_range_exclusive' => Query::range(
             $field,
-            gte: $intent['include_lower'] ? $intent['lower'] : null,
-            gt: $intent['include_lower'] ? null : $intent['lower'],
-            lte: $intent['include_upper'] ? $intent['upper'] : null,
-            lt: $intent['include_upper'] ? null : $intent['upper'],
+            gte: $intent['include_lower'] ? searchkernelPhpClientApiE2eQueryValue($e2eCorpus, $field, $intent['lower']) : null,
+            gt: $intent['include_lower'] ? null : searchkernelPhpClientApiE2eQueryValue($e2eCorpus, $field, $intent['lower']),
+            lte: $intent['include_upper'] ? searchkernelPhpClientApiE2eQueryValue($e2eCorpus, $field, $intent['upper']) : null,
+            lt: $intent['include_upper'] ? null : searchkernelPhpClientApiE2eQueryValue($e2eCorpus, $field, $intent['upper']),
         ),
         'typed_query_boolean' => Query::allOf(
             Query::anyOf(
@@ -308,7 +309,7 @@ function sharedTypedQueryObservations(Index $index): array
 
 function captureRealEngineParity(Index $index): array
 {
-    global $parityIntents;
+    global $parityIntents, $parityConsumedIntents;
     $corpus = searchkernelPhpClientApiE2eCorpus();
     $typedObservations = sharedTypedQueryObservations($index);
     $intents = $parityIntents;
@@ -434,7 +435,7 @@ function captureRealEngineParity(Index $index): array
 
     $groups = groupingGroups($grouped);
     $updateSpec = $intents['advanced_update'];
-    $index->insert(['_id' => $updateSpec['document_id'], ...$updateSpec['initial']]);
+    $index->insert(searchkernelPhpClientApiE2eDocument($corpus, ['_id' => $updateSpec['document_id'], ...$updateSpec['initial']]));
     $updateBuilder = $index->update($updateSpec['document_id']);
     foreach ($updateSpec['set'] as $field => $value) $updateBuilder = $updateBuilder->set($field, $value);
     foreach ($updateSpec['unset'] as $field) $updateBuilder = $updateBuilder->unset($field);
@@ -576,7 +577,7 @@ if ($phase === 'initial') {
     $secondHandle = Index::open($url, $target);
     $firstHandle->close();
     check(
-        $secondHandle->describe()['name'] === $index->describe()['name'],
+        $secondHandle->describe()['fields'] === $index->describe()['fields'],
         'closing one PHP handle leaves an already-open sibling usable'
     );
     $secondHandle->close();
@@ -585,7 +586,7 @@ if ($phase === 'initial') {
     $other = Index::create(
         $url,
         $otherTarget,
-        searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE),
+        searchkernelPhpClientApiE2eDefinition($e2eCorpus),
     );
     $other->upsert([
         '_id' => 'php-isolation',
@@ -695,7 +696,8 @@ heading('1. INDEX SCHEMA + RANK PROFILES PREPARED BY CANONICAL HARNESS');
 echo "PHP executes the same product corpus through the HTTP/FlatBuffers-JSON edge.\n";
 
 heading('2. INSERT DOCUMENTS');
-$documents = array_map(static function (array $document): array {
+$documents = array_map(static function (array $document) use ($e2eCorpus): array {
+    $document = searchkernelPhpClientApiE2eDocument($e2eCorpus, $document);
     if (isset($document['embedding']) && is_array($document['embedding'])) {
         $document['embedding'] = embedding($document['embedding']);
     }
@@ -708,15 +710,16 @@ $probeSpec = $e2eCorpus['coverage_probes'];
 for ($probe = 0; $probe < $probeSpec['count']; $probe++) {
     $document = $probeSpec['document'];
     $document['_id'] = "degraded-{$probe}";
+    $document = searchkernelPhpClientApiE2eDocument($e2eCorpus, $document);
     $document['embedding'] = embedding($document['embedding']);
     $index->insert($document);
 }
 
 $parity = captureRealEngineParity($index);
 $patchSpec = $parityIntents['patch'];
-$index->insert(['_id' => $patchSpec['document_id'], ...$patchSpec['initial']]);
+$index->insert(searchkernelPhpClientApiE2eDocument($e2eCorpus, ['_id' => $patchSpec['document_id'], ...$patchSpec['initial']]));
 $patchBuilder = $index->patch($patchSpec['document_id']);
-foreach ($patchSpec['set'] as $field => $value) $patchBuilder = $patchBuilder->set($field, $value);
+foreach (searchkernelPhpClientApiE2eDocument($e2eCorpus, $patchSpec['set']) as $field => $value) $patchBuilder = $patchBuilder->set($field, $value);
 foreach ($patchSpec['unset'] as $field) $patchBuilder = $patchBuilder->unset($field);
 $patchBuilder->execute();
 $mutated = $index->get($patchSpec['document_id']);
@@ -725,7 +728,7 @@ $deleteSpec = $parityIntents['delete'];
 $parityMutationDeleted = $index->delete($deleteSpec['document_id']);
 $parity['delete'] = ['deleted' => $parityMutationDeleted, 'absent_after_delete' => $index->get($deleteSpec['document_id']) === null];
 $reopenSpec = $parityIntents['reopen_persistence'];
-$index->insert(['_id' => $reopenSpec['marker_id'], ...$reopenSpec['marker']]);
+$index->insert(searchkernelPhpClientApiE2eDocument($e2eCorpus, ['_id' => $reopenSpec['marker_id'], ...$reopenSpec['marker']]));
 
 heading('3. GET BY ID');
 $doc = $index->get('shoe-1');
@@ -1205,7 +1208,7 @@ $upsertSpec = $parityIntents['upsert_replacement'];
 $replacement = $upsertSpec['replacement'];
 $vectorDocumentId = $replacement['vector_document_id'];
 unset($replacement['vector_document_id']);
-$index->upsert(['_id' => $upsertSpec['document_id'], ...$replacement, 'embedding' => embedding(corpusVector($vectorDocumentId))]);
+$index->upsert(searchkernelPhpClientApiE2eDocument($e2eCorpus, ['_id' => $upsertSpec['document_id'], ...$replacement, 'embedding' => embedding(corpusVector($vectorDocumentId))]));
 $doc = $index->get($upsertSpec['document_id']);
 same(119.0, $doc['price'], 'upsert replacement price');
 check(str_contains($doc['title'], 'Updated Edition'), 'upsert replacement title');

@@ -35,6 +35,26 @@ function searchkernelPhpClientApiE2eDefinition(array $corpus): IndexDefinition
     );
 }
 
+/** @param array<string, mixed> $document @return array<string, mixed> */
+function searchkernelPhpClientApiE2eDocument(array $corpus, array $document): array
+{
+    foreach ($document as $name => $value) {
+        $field = $corpus['schema']['fields'][$name] ?? null;
+        if (($field['type'] ?? null) === 'float64' && is_int($value)) {
+            $document[$name] = (float) $value;
+        }
+    }
+    return $document;
+}
+
+function searchkernelPhpClientApiE2eQueryValue(array $corpus, string $field, mixed $value): mixed
+{
+    if (($corpus['schema']['fields'][$field]['type'] ?? null) === 'float64' && is_int($value)) {
+        return (float) $value;
+    }
+    return $value;
+}
+
 function searchkernelPhpClientApiE2eField(array $spec): Field
 {
     $capabilities = array_intersect_key($spec, array_flip(['stored', 'searchable', 'filterable', 'sortable', 'facetable']));
