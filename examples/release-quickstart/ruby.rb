@@ -13,7 +13,7 @@ begin
     "kind" => "quickstart",
     "score" => 1
   )
-  hits = index.search("quickstart").execute.hits.map(&:id)
+  hits = index.query(SearchKernel::Query.contains("title", "quickstart")).execute.hits.map(&:id)
   raise "quickstart search did not return the inserted document" unless hits == ["quickstart-ruby"]
 ensure
   index.close

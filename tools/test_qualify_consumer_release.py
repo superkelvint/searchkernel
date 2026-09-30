@@ -18,7 +18,7 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertIn('-v "$ARTIFACT_DIR/consumer-release:/release:ro"', section)
         self.assertIn('-v "$ARTIFACT_DIR/consumer-release-tools:/qualification:ro"', section)
         self.assertIn("python3 /qualification/qualify-consumer-release.py /release", section)
-        self.assertNotIn('GH_TOKEN="$GH_TOKEN"', section)
+        self.assertIn('-e GH_TOKEN="${GH_TOKEN:-}"', section)
         for forbidden in (
             "$SOURCE_VOLUME",
             "$TARGET_VOLUME",
@@ -69,8 +69,9 @@ class QualificationPolicyTests(unittest.TestCase):
         ):
             self.assertIn(variable, gate)
         self.assertNotIn('"--no-index"', gate)
-        self.assertNotIn('os.environ.get("GH_TOKEN")', gate)
-        self.assertNotIn('os.environ.get("GITHUB_TOKEN")', gate)
+        rust_runner = gate.split("def run_rust_quickstart", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('os.environ.get("GH_TOKEN")', rust_runner)
+        self.assertIn('os.environ.get("GITHUB_TOKEN")', rust_runner)
         self.assertNotIn("SEARCHKERNEL_BUILD_ENV", gate)
 
     def test_packaged_supported_rows_own_clean_consumer_gate(self):

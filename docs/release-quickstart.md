@@ -6,6 +6,8 @@ These are the exact executable quickstarts used by clean-consumer release qualif
 
 Python managed-local and Rust embedded create their own local indexes. The TypeScript and Ruby connect examples expect a compatible packaged `searchkerneld` endpoint in `SEARCHKERNEL_ENDPOINT` (default `http://127.0.0.1:8080`) and a logical index name in `SEARCHKERNEL_TARGET`.
 
+Rust embedded builds provision the pinned native runtime from the release service; use an authenticated GitHub CLI session or set `GH_TOKEN` when downloading from a private repository.
+
 ## Python managed-local
 
 ```python
@@ -46,7 +48,7 @@ print("Python release quickstart PASS")
 ## TypeScript / Node connect
 
 ```javascript
-import { Index } from "@searchkernel/client/node";
+import { Index, q } from "@searchkernel/client/node";
 
 const endpoint = process.env.SEARCHKERNEL_ENDPOINT ?? "http://127.0.0.1:8080";
 const target = process.env.SEARCHKERNEL_TARGET;
@@ -60,7 +62,7 @@ try {
     kind: "quickstart",
     score: 1n,
   });
-  const hits = (await index.search("quickstart").execute()).hits;
+  const hits = (await index.query(q.contains("title", "quickstart")).execute()).hits;
   if (hits.map((hit) => hit.id).join(",") !== "quickstart-typescript") {
     throw new Error("quickstart search did not return the inserted document");
   }
@@ -89,7 +91,7 @@ begin
     "kind" => "quickstart",
     "score" => 1
   )
-  hits = index.search("quickstart").execute.hits.map(&:id)
+  hits = index.query(SearchKernel::Query.contains("title", "quickstart")).execute.hits.map(&:id)
   raise "quickstart search did not return the inserted document" unless hits == ["quickstart-ruby"]
 ensure
   index.close

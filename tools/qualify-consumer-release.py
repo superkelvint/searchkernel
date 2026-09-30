@@ -161,6 +161,15 @@ def run_ruby_quickstart(
 def run_rust_quickstart(rust_root: Path, root: Path) -> None:
     quickstart = rust_root / "release-quickstart"
     shutil.copytree(QUICKSTARTS / "rust", quickstart)
+    environment = {
+        "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
+    }
+    # Rust embedded builds resolve the published native base from GitHub.
+    # Pass consumer authentication only to this build; runtime probes still
+    # receive the ordinary scrubbed clean environment.
+    github_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if github_token:
+        environment["GH_TOKEN"] = github_token
     run(
         "cargo",
         "run",
@@ -168,9 +177,7 @@ def run_rust_quickstart(rust_root: Path, root: Path) -> None:
         "--manifest-path",
         str(quickstart / "Cargo.toml"),
         cwd=quickstart,
-        env={
-            "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
-        },
+        env=environment,
     )
 
 
@@ -392,6 +399,13 @@ def with_restarted_daemon(
     port = free_port()
     proc, log = start_multi_daemon(daemon, data_root, socket_path, port)
     try:
+        open_target = r'''require "searchkernel"
+target, endpoint = ARGV
+index = SearchKernel::Index.open(endpoint, target: target)
+index.close
+'''
+        run("ruby", "-e", open_target, target, f"http://127.0.0.1:{port}",
+            cwd=root, env={"GEM_HOME": str(gem_home), "GEM_PATH": str(gem_home)})
         probe("reopened", endpoint, f"http://127.0.0.1:{port}", target)
     finally:
         stop_daemon(proc, log)

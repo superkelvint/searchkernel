@@ -740,6 +740,7 @@ jobs:
             docker run --rm \
               -v "$ARTIFACT_DIR/consumer-release:/release:ro" \
               -v "$ARTIFACT_DIR/consumer-release-tools:/qualification:ro" \
+              -e GH_TOKEN="${GH_TOKEN:-}" \
               "$CI_IMAGE_ID" \
               /bin/bash -lc 'python3 /qualification/qualify-consumer-release.py /release'
           fi

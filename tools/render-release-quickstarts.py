@@ -27,6 +27,8 @@ def render() -> str:
         "The TypeScript and Ruby connect examples expect a compatible packaged `searchkerneld` "
         "endpoint in `SEARCHKERNEL_ENDPOINT` (default `http://127.0.0.1:8080`) and a logical "
         "index name in `SEARCHKERNEL_TARGET`.\n\n",
+        "Rust embedded builds provision the pinned native runtime from the release service; "
+        "use an authenticated GitHub CLI session or set `GH_TOKEN` when downloading from a private repository.\n\n",
     ]
     for title, (language, path) in SOURCES.items():
         source = path.read_text(encoding="utf-8").rstrip() + "\n"
