@@ -118,9 +118,18 @@
         "core/crates/searchkernel/src/query.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
-      "limitations": [
-        "The TypeScript high-level q namespace does not yet expose a phrase helper."
-      ]
+      "facade_support": {
+        "typescript": {
+          "status": "supported",
+          "evidence": [
+            {
+              "path": "clients/typescript/src/ergonomic/query.ts",
+              "symbols": ["phrase(field:"]
+            }
+          ]
+        }
+      },
+      "limitations": []
     },
     {
       "id": "query.proximity",
@@ -165,14 +174,13 @@
           ]
         },
         "typescript": {
-          "status": "missing",
-          "evidence": [],
-          "absence_evidence": [
+          "status": "supported",
+          "evidence": [
             {
               "path": "clients/typescript/src/ergonomic/query.ts",
               "symbols": [
                 "near(",
-                "onear("
+                "orderedNear("
               ]
             }
           ]

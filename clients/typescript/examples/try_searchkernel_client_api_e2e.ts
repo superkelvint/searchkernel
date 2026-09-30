@@ -46,6 +46,8 @@ let INDEX_PATH = "";
 // SKC: search.pagination/basic kinds=ergonomic,e2e runtime=node
 // SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=node
 // SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=node
+// SKC: query.phrase/basic kinds=ergonomic,e2e runtime=node
+// SKC: query.proximity/basic kinds=ergonomic,e2e runtime=node
 // SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=node
 // SKC: grouping.aggregations/basic kinds=ergonomic,e2e runtime=node
 const E2E_CORPUS: any = JSON.parse(readFileSync(resolve(process.cwd(), "../../reference/client-real-e2e-parity/corpus.json"), "utf8"));

@@ -17,8 +17,9 @@ CORPUS = ROOT / "reference/client-real-e2e-parity/corpus.json"
 CLIENTS = ("rust", "python", "typescript", "php", "ruby")
 FLOAT_TOLERANCE = 1e-6
 FLOAT_SEMANTIC_KEYS = {
-    # Explicitly floating output paths. JavaScript can serialize an integral
-    # float (3.0) as the JSON number 3, so these paths use their domain type.
+    # Search scores and explicitly floating fields/aggregations. JavaScript's
+    # JSON encoder can serialize a float such as 3.0 as `3`; these paths carry
+    # the domain type that the wire representation no longer preserves.
     "price", "sale_price", "avg_price", "sum_price", "min_price", "max_price",
     "revenue", "score", "scores", "top_score", "feature", "relevance",
 }

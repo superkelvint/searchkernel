@@ -22,14 +22,6 @@ approximated.
 
 - The Python and TypeScript q facades do not yet expose range constructors.
 
-### Phrase queries (`query.phrase`)
-
-- The TypeScript high-level q namespace does not yet expose a phrase helper.
-
-### Near and ordered-near proximity queries (`query.proximity`)
-
-- The TypeScript facade does not expose this capability (machine-checked structured support state).
-
 ### sameElement query (`query.same_element`)
 
 - Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. The Rust query helper exists, but the current high-level Rust schema facade cannot itself define the required array-of-struct field.

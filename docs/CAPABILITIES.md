@@ -87,7 +87,6 @@ Capabilities with known constraints are collected in the generated
 - `query.boolean_constants` — No high-level Rust, Python, or TypeScript facade helper currently constructs these constants.
 - `query.comparison` — The Python and TypeScript q facades do not yet expose comparison constructors.
 - `query.range` — The Python and TypeScript q facades do not yet expose range constructors.
-- `query.phrase` — The TypeScript high-level q namespace does not yet expose a phrase helper.
 - `query.same_element` — Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. The Rust query helper exists, but the current high-level Rust schema facade cannot itself define the required array-of-struct field.
 - `query.fuzzy` — The TypeScript high-level q facade does not yet expose a fuzzy helper.
 - `query.prefix_suffix_substring` — the Python and TypeScript q facades do not yet expose
@@ -152,6 +151,7 @@ Facade availability below is validated against implementation symbols and execut
 
 | Capability | Surface | Status | Structural evidence |
 | --- | --- | --- | --- |
+| `query.phrase` | typescript | supported | clients/typescript/src/ergonomic/query.ts |
 | `query.proximity` | rust | supported | core/crates/searchkernel/src/query.rs |
 | `query.proximity` | python | supported | clients/python/searchkernel/ergonomic.py |
-| `query.proximity` | typescript | missing | — |
+| `query.proximity` | typescript | supported | clients/typescript/src/ergonomic/query.ts |

@@ -166,11 +166,12 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         self.assertEqual([], compare({"scores": [100.0]}, {"scores": [100.00005]}))
 
     def test_integer_semantics_reject_float_drift_and_float_kind(self):
-        self.assertTrue(compare(7, 7.0000005))
         self.assertTrue(compare(7, 7.0))
+        self.assertTrue(compare(7, 7.0000005))
         self.assertTrue(compare({"integer_value": 7}, {"integer_value": 7.0}))
         self.assertTrue(compare({"integer_value": 7}, {"integer_value": 7.0000005}))
         self.assertTrue(compare({"sum": 7}, {"sum": 7.0}))
+        self.assertTrue(compare({"sum": 7}, {"sum": 7.0000005}))
         self.assertEqual([], compare({"count": 7}, {"count": 7}))
 
     def test_close_float_values_pass_and_material_drift_fails(self):
@@ -179,14 +180,7 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         for invalid in (float("nan"), float("inf"), float("-inf")):
             self.assertTrue(compare({"score": 1.0}, {"score": invalid}))
 
-    def test_integer_and_boolean_kinds_remain_exact(self):
-        self.assertTrue(compare(True, 1))
-        self.assertTrue(compare(False, 0))
-        self.assertTrue(compare({"count": 1}, {"count": 2}))
-        self.assertTrue(compare({"count": 1}, {"count": True}))
-        self.assertTrue(compare({"count": 0}, {"count": False}))
-
-    def test_typed_query_float_intents_use_field_schema(self):
+    def test_float_semantics_for_typed_query_intents_come_from_the_schema(self):
         inputs = {"typed_query_range": {"query": {"kind": "range", "field": "price"}}}
         schema = {"fields": {"price": {"type": "float64"}}}
         paths = float_semantic_paths_for_scenario("typed_query_range", inputs, schema)
@@ -200,6 +194,13 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         )
         schema["fields"]["price"]["type"] = "int64"
         self.assertFalse(float_semantic_paths_for_scenario("typed_query_range", inputs, schema))
+
+    def test_integer_and_boolean_kinds_remain_exact(self):
+        self.assertTrue(compare(True, 1))
+        self.assertTrue(compare(False, 0))
+        self.assertTrue(compare({"count": 1}, {"count": 2}))
+        self.assertTrue(compare({"count": 1}, {"count": True}))
+        self.assertTrue(compare({"count": 0}, {"count": False}))
 
     def test_missing_fields_and_ordered_ids_fail(self):
         self.assertTrue(compare({"ids": ["a", "b"]}, {"ids": ["a"]}))
