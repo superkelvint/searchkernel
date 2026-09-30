@@ -1071,11 +1071,13 @@ mod showcase {
             .execute::<Value>()
             .is_err();
         let typed_scenarios = [
+            "typed_query_term",
             "typed_query_contains",
             "typed_query_phrase",
             "typed_query_near",
             "typed_query_ordered_near",
             "typed_query_range",
+            "typed_query_range_exclusive",
             "typed_query_boolean",
             "typed_query_in",
             "typed_query_equals",
@@ -1084,6 +1086,9 @@ mod showcase {
             "typed_query_wand",
             "typed_query_weighted_set",
             "typed_query_dot_product",
+            "typed_query_prefix",
+            "typed_query_substring",
+            "typed_query_suffix",
             "typed_query_same_element",
             "typed_query_geo_location",
             "typed_query_geo_box",
@@ -1091,17 +1096,33 @@ mod showcase {
         let mut typed_observations = serde_json::Map::new();
         for scenario in typed_scenarios {
             let input = tracked_intent(scenario, shared_inputs, &consumed_intents);
-            let mut results = index
+            let mut builder = index
                 .search("")
                 .typed_query(
-                    query_from_spec(&input["query"])
+                    typed_query_for_scenario(scenario, &input)
                         .map_err(|error| format!("{scenario}: {error}"))?,
-                )
+                );
+            if let Some(profile) = input.get("ranking_profile").and_then(Value::as_str) {
+                builder = builder.ranking(Ranking::named(profile));
+            }
+            let mut results = builder
                 .limit(input["limit"].as_u64().ok_or("typed query limit missing")? as u32)
                 .execute::<Value>()?;
-            if input["result_order"] == "sorted_ids" {
-                results.hits.sort_by(|left, right| left.id.cmp(&right.id));
-            }
+            let query_result = if let Some(feature) = input.get("feature").and_then(Value::as_str) {
+                json!(results
+                    .hits
+                    .iter()
+                    .map(|hit| json!({
+                        "id": hit.id.as_str(),
+                        "feature": parity_feature(hit, feature),
+                    }))
+                    .collect::<Vec<_>>())
+            } else {
+                if input["result_order"] == "sorted_ids" {
+                    results.hits.sort_by(|left, right| left.id.cmp(&right.id));
+                }
+                json!(ids(&results))
+            };
             let consumed = consumed_intents
                 .borrow()
                 .get(scenario)
@@ -1112,7 +1133,7 @@ mod showcase {
             typed_observations.insert(
                 scenario.to_owned(),
                 json!({
-                    "observation": {"intent": consumed, "query_result": ids(&results)},
+                    "observation": {"intent": consumed, "query_result": query_result},
                     "capabilities": scenario_inputs["client_scenario_contract"][scenario]["rust"],
                 }),
             );
@@ -1180,19 +1201,6 @@ mod showcase {
             )
             .execute::<Value>()?;
         let hybrid_intent = intent!("hybrid_text_vector");
-        let hybrid_query = &hybrid_intent["query"];
-        let nearest_clause = hybrid_query["clauses"]
-            .as_array()
-            .ok_or("hybrid clauses missing")?
-            .iter()
-            .find(|clause| clause["kind"] == "nearest_neighbor")
-            .ok_or("hybrid nearest clause missing")?;
-        let text_clause = hybrid_query["clauses"]
-            .as_array()
-            .ok_or("hybrid clauses missing")?
-            .iter()
-            .find(|clause| clause["kind"] == "contains")
-            .ok_or("hybrid text clause missing")?;
         let parity_hybrid = index
             .search("")
             .ranking(Ranking::named(
@@ -1201,27 +1209,25 @@ mod showcase {
                     .ok_or("hybrid ranking profile missing")?,
             ))
             .typed_query(Query::or([
-                Query::contains(
-                    text_clause["field"]
+                Query::term(
+                    hybrid_intent["text_field"]
                         .as_str()
                         .ok_or("hybrid text field missing")?,
-                    Query::term_value(
-                        text_clause["value"]
-                            .as_str()
-                            .ok_or("hybrid text value missing")?,
-                    ),
+                    hybrid_intent["text_value"]
+                        .as_str()
+                        .ok_or("hybrid text value missing")?,
                 ),
                 Query::nearest_neighbor(
-                    nearest_clause["field"]
+                    hybrid_intent["vector_field"]
                         .as_str()
                         .ok_or("hybrid vector field missing")?,
-                    nearest_clause["query_input"]
+                    hybrid_intent["query_input"]
                         .as_str()
                         .ok_or("hybrid query input missing")?,
                 ),
             ]))
             .query_input(
-                nearest_clause["query_input"]
+                hybrid_intent["query_input"]
                     .as_str()
                     .ok_or("hybrid query input missing")?,
                 Tensor::dense(
