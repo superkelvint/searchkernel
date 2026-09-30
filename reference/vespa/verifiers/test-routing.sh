@@ -48,6 +48,10 @@ if grep -F 'prepare_native_probe_sdk' "$VERIFY" >/dev/null; then
     echo "verify-through must not prepare a native-probe SDK for every Rust verifier" >&2
     exit 1
 fi
+if grep -F 'prepare_native_probe_sdk' "$ROOT/reference/vespa/i/verify-i.sh" >/dev/null; then
+    echo "I-series Rust verifier must not synthesize the native-probe SDK" >&2
+    exit 1
+fi
 grep -F 'prepare_native_probe_sdk' "$ROOT/reference/vespa/m0/verify-m0.sh" >/dev/null || {
     echo "M0 direct native probe does not explicitly prepare its native-probe SDK" >&2
     exit 1
