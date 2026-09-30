@@ -723,7 +723,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 851
+              "line": 833
             },
             {
               "capability": "query.prefix_suffix_substring",
@@ -1413,7 +1413,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 239
+              "line": 245
             }
           ],
           "overrides": []
@@ -1571,7 +1571,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 238
+              "line": 244
             }
           ],
           "overrides": []
