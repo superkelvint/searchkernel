@@ -3,6 +3,7 @@ import ast
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -59,6 +60,61 @@ class QualificationPolicyTests(unittest.TestCase):
             'run_phase client-e2e-quickstart-docs "$PYTHON" tools/render-release-quickstarts.py --check',
             runner,
         )
+
+    def test_ci_stages_canonical_quickstarts_at_qualifier_input_path(self):
+        runner = (ROOT / ".github/ci/ci-image-runner.yml").read_text()
+        source_path = "examples/release-quickstart"
+        artifact_path = "/artifacts/consumer-release-tools/quickstarts"
+        commands = [
+            line.strip()
+            for line in runner.splitlines()
+            if line.strip().startswith(
+                (
+                    f"mkdir -p {artifact_path}",
+                    f"cp -R {source_path}/. {artifact_path}/",
+                )
+            )
+        ]
+        self.assertEqual(
+            commands,
+            [
+                f"mkdir -p {artifact_path}",
+                f"cp -R {source_path}/. {artifact_path}/",
+            ],
+        )
+
+        with tempfile.TemporaryDirectory(prefix="release-quickstart-stage-") as raw:
+            destination = Path(raw) / "quickstarts"
+            script = "\n".join(
+                command.replace(artifact_path, str(destination))
+                for command in commands
+            )
+            result = subprocess.run(
+                ["bash", "-e", "-c", script],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            canonical = ROOT / source_path
+            expected_files = sorted(
+                path.relative_to(canonical)
+                for path in canonical.rglob("*")
+                if path.is_file()
+            )
+            staged_files = sorted(
+                path.relative_to(destination)
+                for path in destination.rglob("*")
+                if path.is_file()
+            )
+            self.assertEqual(staged_files, expected_files)
+            for relative in expected_files:
+                self.assertEqual(
+                    (destination / relative).read_bytes(),
+                    (canonical / relative).read_bytes(),
+                )
 
     def test_gate_scrubs_repository_and_native_runtime_overrides(self):
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
