@@ -84,7 +84,7 @@ has real-runtime evidence.
 ### Term and fielded contains queries (query.term)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1404)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1410)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L877)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L877)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L556)
@@ -93,22 +93,22 @@ has real-runtime evidence.
 ### True and false query constants (query.boolean_constants)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1405)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1411)
 
 ### Comparison queries (query.comparison)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1406)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1412)
 
 ### Range queries (query.range)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1407)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1413)
 
 ### Boolean query operators (query.boolean)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1408)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1414)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L884)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L884)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L563)
@@ -117,7 +117,7 @@ has real-runtime evidence.
 ### Phrase queries (query.phrase)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1409)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1415)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L878)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L878)
   - python / grpc / e2e / runtime — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L370)
@@ -130,7 +130,7 @@ has real-runtime evidence.
 ### Near and ordered-near proximity queries (query.proximity)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1410)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1416)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L879)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L879)
   - python / grpc / e2e / runtime — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L371)
@@ -143,7 +143,7 @@ has real-runtime evidence.
 ### sameElement query (query.same_element)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1411)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1417)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L881)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L881)
   - python / grpc / e2e / runtime — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L400)
@@ -155,7 +155,7 @@ has real-runtime evidence.
 ### Fuzzy query (query.fuzzy)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1412)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1418)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L880)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L880)
   - python / grpc / e2e / runtime — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L372)
@@ -168,7 +168,7 @@ has real-runtime evidence.
 ### Nearest-neighbor vector search (query.nearest_neighbor)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1413)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1419)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L885)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L885)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L564)
@@ -180,7 +180,7 @@ has real-runtime evidence.
 ### Geo-location and bounding-box queries (query.geo)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1414)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1420)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L882)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L882)
   - python / grpc / e2e / runtime — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L466)
@@ -192,12 +192,12 @@ has real-runtime evidence.
 ### Predicate queries (query.predicate)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1415)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1421)
 
 ### WeakAnd and WAND queries (query.weighted_and_wand)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1416)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1422)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L883)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L883)
   - python / grpc / e2e / runtime — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L373)
@@ -210,27 +210,27 @@ has real-runtime evidence.
 ### Weighted-set and dot-product queries (query.weighted_set_dot_product)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1417)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1423)
 
 ### Equivalence queries (query.equivalence)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1418)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1424)
 
 ### Rank query composition (query.rank)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1419)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1425)
 
 ### userInput and userQuery text parsing (query.user_input_user_query)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1420)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1426)
 
 ### Textual filter expressions (filter.textual)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1425)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1431)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L886)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L886)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L565)
@@ -242,7 +242,7 @@ has real-runtime evidence.
 ### Field sorting (search.sorting)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1426)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1432)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L887)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L887)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L566)
@@ -255,7 +255,7 @@ has real-runtime evidence.
 ### Limit and offset pagination (search.pagination)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1428)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1434)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L889)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L889)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L567)
@@ -268,7 +268,7 @@ has real-runtime evidence.
 ### Text search-field selection (search.search_fields)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1427)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1433)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L888)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L888)
 
@@ -302,16 +302,16 @@ has real-runtime evidence.
 ### Highlighting (result.highlighting)
 
 - **Basic structured dynamic-teaser highlighting** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1443)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1449)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L892)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L892)
-  - python / shared / conformance / conformance — [clients/python/tests/test_results.py](../clients/python/tests/test_results.py#L222)
+  - python / shared / conformance / conformance — [clients/python/tests/test_results.py](../clients/python/tests/test_results.py#L237)
   - python / grpc / e2e / runtime — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L508)
   - python / grpc / ergonomic / builder — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L508)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L570)
   - ruby / managed-local / ergonomic / builder — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L570)
   - rust / native / ergonomic / builder — [core/crates/searchkernel/tests/native_e2e.rs](../core/crates/searchkernel/tests/native_e2e.rs#L220)
-  - typescript / shared / conformance / conformance — [clients/typescript/tests/results.test.ts](../clients/typescript/tests/results.test.ts#L321)
+  - typescript / shared / conformance / conformance — [clients/typescript/tests/results.test.ts](../clients/typescript/tests/results.test.ts#L330)
 
 ### Dense tensor document readback (result.tensor_document_readback)
 
@@ -324,7 +324,7 @@ has real-runtime evidence.
 ### Structured grouping and faceting (grouping.structured)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1429)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1435)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L894)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L894)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L575)
@@ -336,12 +336,12 @@ has real-runtime evidence.
 ### Executable grouping expression/function subset (grouping.functions)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1430)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1436)
 
 ### Grouping aggregations (grouping.aggregations)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1431)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1437)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L895)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L895)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L576)
@@ -359,17 +359,17 @@ has real-runtime evidence.
 ### Grouping continuations (grouping.continuations)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1432)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1438)
 
 ### Raw grouping source (grouping.raw_source)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1433)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1439)
 
 ### Document insert, upsert, patch, delete, and get (update.document_crud)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1434)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1440)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L897)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L897)
   - python / managed-local / e2e / runtime — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L257)
@@ -385,7 +385,7 @@ has real-runtime evidence.
 ### Arithmetic document updates (update.arithmetic)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1435)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1441)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L898)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L898)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L578)
@@ -394,7 +394,7 @@ has real-runtime evidence.
 ### Create-if-nonexistent document updates (update.create_if_nonexistent)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1436)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1442)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L899)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L899)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L579)
@@ -403,12 +403,12 @@ has real-runtime evidence.
 ### Matched-element updates (update.matched_element)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1437)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1443)
 
 ### Tensor modify updates (update.tensor_modify)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1438)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1444)
 
 ### Dense tensor document values (tensor.dense_document_crud)
 
@@ -421,7 +421,7 @@ has real-runtime evidence.
 ### YQL query source (query.yql)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1439)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1445)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L901)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L901)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L585)
@@ -438,27 +438,27 @@ has real-runtime evidence.
 ### Typed analyzed-text query nodes (query.typed_text)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1421)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1427)
 
 ### Native in-term queries (query.in_term)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1422)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1428)
 
 ### NonEmpty query wrapper (query.non_empty)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1423)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1429)
 
 ### Labeled query rank properties (query.labels)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1424)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1430)
 
 ### Rank-profile selection (ranking.profile_selection)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1440)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1446)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L903)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L903)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L581)
@@ -475,7 +475,7 @@ has real-runtime evidence.
 ### Dense tensor query inputs (ranking.tensor_query_inputs)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1441)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1447)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L905)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L905)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L584)
@@ -484,7 +484,7 @@ has real-runtime evidence.
 ### Rank properties (ranking.rank_properties)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1442)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1448)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L906)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L906)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L583)
@@ -501,7 +501,7 @@ has real-runtime evidence.
 ### Recursive grouping result trees (result.grouping_tree)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1444)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1450)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L908)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L908)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L574)
@@ -510,7 +510,7 @@ has real-runtime evidence.
 ### Coverage and degradation metadata (result.degradation_metadata)
 
 - **Basic behavior** (basic)
-  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1445)
+  - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1451)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L909)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L909)
   - ruby / managed-local / e2e / runtime — [clients/ruby/examples/try_searchkernel_client_api_e2e.rb](../clients/ruby/examples/try_searchkernel_client_api_e2e.rb#L571)
