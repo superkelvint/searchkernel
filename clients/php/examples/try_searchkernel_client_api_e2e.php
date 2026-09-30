@@ -456,7 +456,10 @@ function captureRealEngineParity(Index $index): array
         'pagination' => ['all_ids' => ids($allSorted), 'offset_ids' => ids($page), 'total' => $page->totalHits],
         'sorted_search' => ['ids' => ids($ordered), 'total' => $ordered->totalHits],
         'filtered_search' => ['ids' => ids($filtered), 'total' => $filtered->totalHits],
-        'facets' => array_column($faceted->facets['brands'], 'count', 'value'),
+        'facets' => array_values(array_map(
+            static fn (array $item): array => ['value' => (string) $item['value'], 'count' => (int) $item['count']],
+            $faceted->facets['brands'],
+        )),
         'root_aggregations' => $root->aggregations,
         'advanced_update' => ['title' => $advancedUpdate['title'], 'inventory' => $advancedUpdate['inventory'], 'sale_price_present' => array_key_exists('sale_price', $advancedUpdate)],
         'builder_misuse' => (function () use ($index, $misuseSpec): array {
@@ -482,7 +485,10 @@ function captureRealEngineParity(Index $index): array
             'products' => $group->fields['products'],
             'avg_price' => $group->fields['avg_price'],
         ], $groups)),
-        'filtered_facets' => array_column($filteredFacet->facets['brand'], 'count', 'value'),
+        'filtered_facets' => array_values(array_map(
+            static fn (array $item): array => ['value' => (string) $item['value'], 'count' => (int) $item['count']],
+            $filteredFacet->facets['brand'],
+        )),
         'nested_grouping' => array_values(array_map(static fn ($group): array => [
             'category' => $group->value,
             'products' => $group->fields['products'],
