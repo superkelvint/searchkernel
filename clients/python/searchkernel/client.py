@@ -18,6 +18,7 @@ from typing import Any, BinaryIO
 
 from .grpc_transport import GrpcTransport, GrpcTransportError
 from .protocol import ERROR_TYPE, pack_object, pack_request, unpack_response
+from .scalars import check_int64
 
 from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT
 from SearchKernel.V2.AnalyzeRequest import AnalyzeRequestT
@@ -99,7 +100,7 @@ def value(item: Any) -> ValueT:
     if isinstance(item, bool):
         return ValueT(kindType=ValueKind.BoolValue, kind=BoolValueT(value=item))
     if isinstance(item, int):
-        return ValueT(kindType=ValueKind.Int64Value, kind=Int64ValueT(value=item))
+        return ValueT(kindType=ValueKind.Int64Value, kind=Int64ValueT(value=check_int64(item)))
     if isinstance(item, float):
         if not math.isfinite(item):
             raise ValueError("non-finite floats are not portable")
