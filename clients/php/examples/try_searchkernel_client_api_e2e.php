@@ -30,9 +30,9 @@ $corpusPath = dirname(__DIR__, 3) . '/reference/client-real-e2e-parity/corpus.js
 $e2eCorpus = json_decode((string) file_get_contents($corpusPath), true, flags: JSON_THROW_ON_ERROR);
 $parityConsumedIntents = [];
 
-final class ConsumedIntentMap implements ArrayAccess, IteratorAggregate
+final class ConsumedIntent implements ArrayAccess
 {
-    public function __construct(private array $source) {}
+    public function __construct(private string $scenario, private array $source) {}
 
     public function offsetExists(mixed $offset): bool
     {
@@ -43,10 +43,11 @@ final class ConsumedIntentMap implements ArrayAccess, IteratorAggregate
     {
         global $parityConsumedIntents;
         if (!is_string($offset) || !array_key_exists($offset, $this->source)) {
-            throw new OutOfBoundsException('unknown parity scenario intent');
+            throw new OutOfBoundsException('unknown parity intent field');
         }
         $value = $this->source[$offset];
-        $parityConsumedIntents[$offset] = $value;
+        $parityConsumedIntents[$this->scenario] ??= [];
+        $parityConsumedIntents[$this->scenario][$offset] = $value;
         return $value;
     }
 
@@ -59,12 +60,37 @@ final class ConsumedIntentMap implements ArrayAccess, IteratorAggregate
     {
         throw new LogicException('parity intents are immutable');
     }
+}
 
-    public function getIterator(): Traversable
+final class ConsumedIntentMap implements ArrayAccess
+{
+    public function __construct(private array $source) {}
+
+    public function offsetExists(mixed $offset): bool
     {
-        foreach (array_keys($this->source) as $key) {
-            yield $key => $this[$key];
+        return is_string($offset) && array_key_exists($offset, $this->source);
+    }
+
+    public function offsetGet(mixed $offset): mixed
+    {
+        if (!is_string($offset) || !array_key_exists($offset, $this->source)) {
+            throw new OutOfBoundsException('unknown parity scenario intent');
         }
+        $value = $this->source[$offset];
+        if (!is_array($value) || array_is_list($value)) {
+            throw new TypeError("parity scenario intent {$offset} must be an object");
+        }
+        return new ConsumedIntent($offset, $value);
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+        throw new LogicException('parity intents are immutable');
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+        throw new LogicException('parity intents are immutable');
     }
 }
 
@@ -216,7 +242,7 @@ function sharedTypedQueryObservations(Index $index): array
         $ids = ids($index->query(sharedTypedQuery($input['query']))->limit($input['limit'])->execute());
         if ($input['result_order'] === 'sorted_ids') sort($ids, SORT_STRING);
         $observations[$scenario] = [
-            'observation' => ['intent' => $input, 'query_result' => $ids],
+            'observation' => ['intent' => $parityConsumedIntents[$scenario], 'query_result' => $ids],
             'capabilities' => $corpus['client_scenario_contract'][$scenario]['php'],
         ];
     }
