@@ -68,20 +68,31 @@ class RealE2EParityComparatorTests(unittest.TestCase):
     def test_parity_writers_use_execution_consumed_intents_not_corpus_decoration(self):
         root = Path(__file__).parents[1]
         checks = {
-            "clients/python/examples/try_searchkernel_client_api_e2e.py": ("def write_real_engine_parity", "PARITY_CONSUMED_INTENTS"),
-            "clients/typescript/examples/try_searchkernel_client_api_e2e.ts": ("function writeRealEngineParity", "PARITY_CONSUMED_INTENTS"),
-            "clients/ruby/examples/try_searchkernel_client_api_e2e.rb": ("def write_real_engine_parity", "PARITY_CONSUMED_INTENTS"),
-            "clients/php/examples/try_searchkernel_client_api_e2e.php": ("function writeRealEngineParity", "$parityConsumedIntents"),
-            "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs": ("for scenario in shared_inputs", "consumed_intents.get(scenario)"),
+            "clients/python/examples/try_searchkernel_client_api_e2e.py": (
+                "PARITY_CONSUMED_INTENTS",
+                'E2E_CORPUS["scenario_inputs"].get(scenario)',
+            ),
+            "clients/typescript/examples/try_searchkernel_client_api_e2e.ts": (
+                "PARITY_CONSUMED_INTENTS",
+                "E2E_CORPUS.scenario_inputs[scenario]",
+            ),
+            "clients/ruby/examples/try_searchkernel_client_api_e2e.rb": (
+                "PARITY_CONSUMED_INTENTS",
+                'E2E_CORPUS.fetch("scenario_inputs")[scenario]',
+            ),
+            "clients/php/examples/try_searchkernel_client_api_e2e.php": (
+                "$parityConsumedIntents",
+                "searchkernelPhpClientApiE2eCorpus()['scenario_inputs']",
+            ),
+            "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs": (
+                "consumed_intents.get(scenario)",
+                "for (scenario, intent) in shared_inputs",
+            ),
         }
-        for relative, (marker, consumed_marker) in checks.items():
+        for relative, (consumed_marker, forbidden) in checks.items():
             source = (root / relative).read_text()
             self.assertIn(consumed_marker, source, relative)
-            if relative.endswith(".rs"):
-                continue
-            writer = source.split(marker, 1)[1].split("\n}", 1)[0]
-            self.assertNotIn("scenario_inputs", writer, relative)
-            self.assertIn(consumed_marker, writer, relative)
+            self.assertNotIn(forbidden, source, relative)
 
     def test_every_inventory_scenario_needs_a_shared_intent(self):
         corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
