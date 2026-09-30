@@ -13,6 +13,8 @@ namespace SearchKernel;
  */
 final class Client
 {
+    private bool $closed = false;
+
     public function __construct(
         private readonly Transport $transport,
         private readonly ?string $target = null,
@@ -32,6 +34,9 @@ final class Client
      */
     public function execute(string $operation, array|JsonObject $payload): array
     {
+        if ($this->closed) {
+            throw new TransportException('Search Kernel client is closed');
+        }
         [$requestType, $responseType] = Protocol::operation($operation);
         $response = $this->transport->execute(
             Protocol::envelope($requestType, $payload, $this->target),
@@ -63,6 +68,10 @@ final class Client
     public function createIndex(array $payload): array { return $this->execute('create_index', $payload); }
     /** @return array<string,mixed> */
     public function openIndex(): array { return $this->execute('open_index', JsonObject::empty()); }
-    /** @return array<string,mixed> */
-    public function deleteIndex(): array { return $this->execute('delete_index', JsonObject::empty()); }
+
+    /** Close this PHP handle without changing shared daemon index state. */
+    public function close(): void
+    {
+        $this->closed = true;
+    }
 }

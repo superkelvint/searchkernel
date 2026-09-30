@@ -168,6 +168,11 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path) -> None:
         adapter_lib / "libsearchkernel_vespa.so.2",
         libdir / "libsearchkernel_vespa.so.2",
     )
+    cargo_adapter = bindir / ".searchkernel-native"
+    cargo_adapter.mkdir()
+    (cargo_adapter / "libsearchkernel_vespa.so.2").symlink_to(
+        "../../lib/libsearchkernel_vespa.so.2"
+    )
 
     native_base = Path(
         subprocess.check_output(
@@ -273,7 +278,6 @@ def main() -> None:
                 "pip",
                 "wheel",
                 "--no-deps",
-                "--no-build-isolation",
                 "--wheel-dir",
                 str(out),
                 str(ROOT / "clients/python"),
@@ -284,6 +288,14 @@ def main() -> None:
                 "--pack-destination",
                 str(out),
                 cwd=ROOT / "clients/typescript",
+            )
+            run(
+                "gem",
+                "build",
+                "searchkernel.gemspec",
+                "--output",
+                str(out / f"searchkernel-{VERSION}.gem"),
+                cwd=ROOT / "clients/ruby",
             )
         finally:
             for path in reversed(created):

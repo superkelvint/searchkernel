@@ -67,17 +67,17 @@ module SearchKernel
 
       def initialize(raw)
         Value.object!(raw, "SearchResult")
-        @root = Results.node(raw["root"]) unless raw["root"].nil?
-        @hits = (@root.is_a?(Hit) ? [@root] : @root&.hits || []).freeze
+        raise ProtocolError, "SearchResult.root is required" unless raw.key?("root") && !raw["root"].nil?
+
+        @root = Results.node(raw["root"])
+        @hits = (@root.is_a?(Hit) ? [@root] : @root.hits || []).freeze
         @groups = (@root.is_a?(ResultGroup) ? @root.groups || [] : []).freeze
-        @total_hits = 0
-        @total_hits_relation = "unknown"
-        if raw.key?("total_hits")
-          total = Value.object!(raw["total_hits"], "TotalHits")
-          @total_hits = Value.decimal_integer!(total.fetch("value", "0"), Value::UINT64)
-          @total_hits_relation = total.fetch("relation", "Unspecified")
-          raise ProtocolError, "unknown total hits relation" unless %w[Unspecified Exact LowerBound Approximate Unknown].include?(@total_hits_relation)
-        end
+        raise ProtocolError, "SearchResult.total_hits is required" unless raw.key?("total_hits") && !raw["total_hits"].nil?
+
+        total = Value.object!(raw["total_hits"], "TotalHits")
+        @total_hits = Value.decimal_integer!(total.fetch("value", "0"), Value::UINT64)
+        @total_hits_relation = total.fetch("relation", "Unspecified")
+        raise ProtocolError, "unknown total hits relation" unless %w[Unspecified Exact LowerBound Approximate Unknown].include?(@total_hits_relation)
         @coverage = Results.coverage(raw["coverage"]) if raw.key?("coverage")
         @timing = Results.timing(raw["timing"]) if raw.key?("timing")
         @errors = Results.vector(raw, "errors") { |error| Results.issue(error) } || [].freeze

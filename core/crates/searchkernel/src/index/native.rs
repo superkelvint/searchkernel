@@ -358,6 +358,108 @@ impl Index {
         )
     }
 
+    /// Move one validated path-owned index into a daemon-owned storage path.
+    ///
+    /// This is local control-plane plumbing for the managed-local transition
+    /// from legacy `--index PATH` ownership to canonical logical targets.
+    /// Both lifecycle locks are held across validation and rename.
+    #[doc(hidden)]
+    #[cfg(feature = "internal-api")]
+    pub fn migrate_storage(
+        source: impl AsRef<std::path::Path>,
+        destination: impl AsRef<std::path::Path>,
+    ) -> Result<()> {
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+
+        if destination.is_dir() {
+            return Ok(());
+        }
+
+        let _source_lock = LifecycleLock::acquire(source).map_err(|error| {
+            if error.code() == crate::error::ErrorCode::AlreadyExists {
+                Error::search(
+                    crate::error::ErrorCode::Conflict,
+                    format!("legacy index storage is in use: {}", source.display()),
+                )
+                .with_detail(
+                    "index_in_use",
+                    None::<String>,
+                    "legacy index storage is owned by another active runtime",
+                )
+            } else {
+                error
+            }
+        })?;
+
+        if !source.is_dir() {
+            return Err(Error::not_found(source.display().to_string()));
+        }
+
+        let manifest = super::manifest::IndexManifest::read(source)?;
+        let config = source.join("config");
+        if !source.join("data").is_dir() || !config.is_dir() {
+            return Err(Error::corrupt_index(
+                "index data/config directories are missing",
+            ));
+        }
+        manifest.validate_config(&config)?;
+
+        let destination_parent = destination
+            .parent()
+            .ok_or_else(|| Error::infrastructure("managed index path has no parent directory"))?;
+        std::fs::create_dir_all(destination_parent)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+
+        let _destination_lock = LifecycleLock::acquire(destination).map_err(|error| {
+            if error.code() == crate::error::ErrorCode::AlreadyExists {
+                Error::search(
+                    crate::error::ErrorCode::Conflict,
+                    format!("managed index storage is in use: {}", destination.display()),
+                )
+                .with_detail(
+                    "index_in_use",
+                    None::<String>,
+                    "managed index storage is owned by another active runtime",
+                )
+            } else {
+                error
+            }
+        })?;
+
+        if destination.exists() {
+            return Err(Error::already_exists(destination.display().to_string()));
+        }
+
+        std::fs::rename(source, destination).map_err(|error| {
+            Error::Infrastructure(format!(
+                "migrate legacy index '{}' to '{}': {error}",
+                source.display(),
+                destination.display()
+            ))
+        })?;
+
+        let source_parent = source.parent().unwrap_or_else(|| std::path::Path::new("."));
+        if let Err(error) = sync_published_parent(source_parent)
+            .and_then(|_| sync_published_parent(destination_parent))
+        {
+            return Err(Error::search(
+                crate::error::ErrorCode::Unavailable,
+                format!(
+                    "legacy index migrated to '{}' but parent directory sync failed: {error}",
+                    destination.display()
+                ),
+            )
+            .with_detail(
+                "index_migration_durability_uncertain",
+                None::<String>,
+                "legacy index was moved but crash durability is uncertain",
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Delete a persisted index after proving that no other process owns its
     /// lifecycle lock. This is daemon control-plane plumbing, not part of the
     /// ergonomic document API.
@@ -367,7 +469,15 @@ impl Index {
         let root = path.as_ref();
         let _lifecycle_lock = LifecycleLock::acquire(root).map_err(|error| {
             if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::from_ir(searchkernel_ir::index_in_use_error())
+                Error::search(
+                    crate::error::ErrorCode::Conflict,
+                    format!("index storage is in use: {}", root.display()),
+                )
+                .with_detail(
+                    "index_in_use",
+                    None::<String>,
+                    "index storage is owned by another active runtime",
+                )
             } else {
                 error
             }

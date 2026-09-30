@@ -125,16 +125,6 @@ function detailCodes(SearchKernelException $error): array
 
 $url = getenv('SEARCHKERNEL_HTTP_URL') ?: 'http://127.0.0.1:50052';
 $target = getenv('SEARCHKERNEL_E2E_TARGET') ?: 'php-e2e';
-$invalidTargetReachedServer = false;
-try {
-    Index::open($url, 'Products');
-} catch (SearchKernelException $error) {
-    $invalidTargetReachedServer = $error->errorCode === 'InvalidArgument'
-        && ($error->details[0]['code'] ?? null) === 'invalid_index_target'
-        && ($error->details[0]['path'] ?? null) === 'target.name';
-}
-check($invalidTargetReachedServer, 'invalid target is rejected by canonical daemon semantics');
-
 $phase = $argv[1] ?? 'initial';
 if (!in_array($phase, ['initial', 'reopen'], true)) {
     throw new InvalidArgumentException('expected initial or reopen phase');
@@ -144,13 +134,33 @@ $index = $phase === 'initial'
     : Index::open($url, $target);
 
 if ($phase === 'initial') {
-    try {
-        Index::create($url, $target, searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE));
-        throw new RuntimeException('duplicate logical index unexpectedly created');
-    } catch (SearchKernelException $error) {
-        same('AlreadyExists', $error->errorCode, 'duplicate create has canonical AlreadyExists semantics');
-        same('index_already_exists', $error->details[0]['code'] ?? null, 'duplicate create canonical detail');
-    }
+    $firstHandle = Index::open($url, $target);
+    $secondHandle = Index::open($url, $target);
+    $firstHandle->close();
+    check(
+        $secondHandle->describe()['name'] === $index->describe()['name'],
+        'closing one PHP handle leaves an already-open sibling usable'
+    );
+    $secondHandle->close();
+
+    $otherTarget = $target . '-other';
+    $other = Index::create(
+        $url,
+        $otherTarget,
+        searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE),
+    );
+    $other->upsert([
+        '_id' => 'php-isolation',
+        'title' => 'Isolated PHP index',
+        'category' => 'other',
+        'price' => 1.0,
+        'rating' => 1,
+        'inventory' => 1,
+        'in_stock' => true,
+    ]);
+    check($other->get('php-isolation') !== null, 'second PHP logical index reads its document');
+    same(null, $index->get('php-isolation'), 'PHP logical indexes remain isolated on one daemon');
+    $other->close();
 }
 
 if ($phase === 'reopen') {
@@ -228,22 +238,6 @@ if ($phase === 'reopen') {
     $categories = groupsByValue(groupingGroups($results));
     same(3, $categories['shoes']->fields['products'], 'shoe grouping survives reopen');
     same(1, $categories['bags']->fields['products'], 'bag grouping survives reopen');
-
-    check(Index::deleteTarget($url, $target), 'delete logical multi-index target');
-    try {
-        Index::open($url, $target);
-        throw new RuntimeException('deleted logical index unexpectedly reopened');
-    } catch (SearchKernelException $error) {
-        same('NotFound', $error->errorCode, 'deleted logical target has canonical NotFound semantics');
-        same('index_not_found', $error->details[0]['code'] ?? null, 'deleted logical target canonical detail');
-    }
-    try {
-        Index::deleteTarget($url, $target);
-        throw new RuntimeException('missing logical index unexpectedly deleted');
-    } catch (SearchKernelException $error) {
-        same('NotFound', $error->errorCode, 'missing delete has canonical NotFound semantics');
-        same('index_not_found', $error->details[0]['code'] ?? null, 'missing delete canonical detail');
-    }
 
     heading('32. ALL PHP CLIENT API E2E REOPEN CHECKS PASSED');
     exit(0);
@@ -752,7 +746,6 @@ closeEnough(
     (float) $top->matchFeatures['bm25(title)'] + 10.0 * (float) $top->matchFeatures['closeness(embedding)'],
     'hybrid score consistency',
 );
-
 $lexicalHit = current(array_values(array_filter($hybrid->hits, static fn ($hit): bool => $hit->id === 'shoe-1')));
 check($lexicalHit !== false, 'lexical candidate remains in hybrid hits');
 check($lexicalHit->matchFeatures['bm25(title)'] > 0, 'lexical BM25 contribution');

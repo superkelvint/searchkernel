@@ -36,7 +36,7 @@ if [[ -z "$probe" ]]; then
     failures=$((failures + 1))
 else
     printf '\n// stale generated-output probe\n' >> "$probe"
-    if "$npm" run check:generated --prefix "$client"; then
+    if "$npm" run check:generated --prefix "$client" >/dev/null 2>&1; then
         echo 'TypeScript freshness check accepted perturbed generated output' >&2
         failures=$((failures + 1))
     fi

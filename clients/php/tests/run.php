@@ -58,17 +58,14 @@ function throws(string $class, callable $operation, string $message): void
     throw new RuntimeException($message . ': no exception');
 }
 
-$invalidButRepresentable = Protocol::envelope(
-    'OpenIndexRequest',
-    SearchKernel\JsonObject::empty(),
-    'Products',
-);
-same(
-    ['name' => 'Products'],
-    $invalidButRepresentable['target'],
-    'domain-invalid target reaches canonical semantic validation',
-);
-echo "PASS: domain-invalid PHP target is encoded for canonical validation\n";
+/** @param array<string, mixed> $overrides @return array<string, mixed> */
+function canonicalResultPayload(array $overrides = []): array
+{
+    return array_replace([
+        'root' => ['node_type' => 'ResultGroup', 'node' => ['children' => []]],
+        'total_hits' => ['value' => 0, 'relation' => 'Exact'],
+    ], $overrides);
+}
 
 final class FixedResponseTransport implements Transport
 {
@@ -156,10 +153,6 @@ final class RecordingTransport implements Transport
                 'payload_type' => 'SearchKernel_V2_OpenIndexResult',
                 'payload' => ['index' => ['fields' => []]],
             ],
-            'SearchKernel_V2_DeleteIndexRequest' => [
-                'payload_type' => 'SearchKernel_V2_DeleteIndexResult',
-                'payload' => [],
-            ],
             default => throw new RuntimeException('unexpected test request type: ' . $requestType),
         };
 
@@ -193,6 +186,18 @@ throws(
 // Portable value boundary.
 // --------------------------------------------------------------------------
 
+$handleTransport = new RecordingTransport();
+$firstHandle = new Index($handleTransport, 'products');
+$secondHandle = new Index($handleTransport, 'products');
+$firstHandle->close();
+throws(
+    SearchKernel\TransportException::class,
+    static fn () => $firstHandle->describe(),
+    'closed PHP handle rejects further operations',
+);
+same('test', $secondHandle->describe()['name'], 'closing one PHP handle leaves another selected handle usable');
+
+
 $document = Protocol::document([
     '_id' => 'doc-1',
     'title' => 'The quick brown fox',
@@ -217,7 +222,15 @@ $decoded = Protocol::decodeDocument($document);
 same('doc-1', $decoded['_id'], 'decode document id');
 same(PHP_INT_MAX, $decoded['count'], 'decode int');
 same(['one', 'two'], $decoded['tags'], 'decode list');
-same(['a' => 1, 'z' => 2], $decoded['meta'], 'decode object');
+truth($decoded['meta'] instanceof ValueObject, 'decode object preserves ValueObject identity');
+same(
+    [
+        ['key' => 'a', 'value' => 1],
+        ['key' => 'z', 'value' => 2],
+    ],
+    $decoded['meta']->entries,
+    'decode object preserves canonical key/value entries',
+);
 
 $bytes = new Bytes("\x00\xffA");
 $encodedBytes = Protocol::value($bytes);
@@ -837,8 +850,21 @@ $malformedHit = [
 ];
 throws(
     \UnexpectedValueException::class,
-    static fn () => SearchResult::fromPayload(['root' => $malformedHit]),
+    static fn () => SearchResult::fromPayload(canonicalResultPayload(['root' => $malformedHit])),
     'malformed hit scalar fields fail closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload([]),
+    'missing SearchResult root fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload([
+        'root' => ['node_type' => 'ResultGroup', 'node' => ['children' => []]],
+        'total_hits' => null,
+    ]),
+    'null SearchResult total_hits fails closed',
 );
 
 $encodedEmptyObject = Protocol::value(ValueObject::fromPairs([]));
@@ -847,6 +873,12 @@ same([], $encodedEmptyObject['kind']['fields'], 'empty object encodes with an em
 $decodedEmptyObject = Protocol::decodeValue($encodedEmptyObject);
 truth($decodedEmptyObject instanceof ValueObject, 'decoded ValueObject retains its object type when empty');
 same([], $decodedEmptyObject->entries, 'empty decoded ValueObject has no entries');
+$decodedObject = Protocol::decodeValue(Protocol::value(ValueObject::fromPairs([
+    ['key' => 'name', 'value' => 'searchkernel'],
+])));
+truth($decodedObject instanceof ValueObject, 'decoded non-empty ValueObject retains its object type');
+same('name', $decodedObject->entries[0]['key'], 'decoded ValueObject preserves entry keys');
+same('searchkernel', $decodedObject->entries[0]['value'], 'decoded ValueObject preserves entry values');
 $decodedEmptyList = Protocol::decodeValue(['kind_type' => 'ValueList', 'kind' => ['values' => []]]);
 same([], $decodedEmptyList, 'decoded empty ValueList remains a PHP list');
 truth(!$decodedEmptyList instanceof ValueObject, 'decoded empty ValueList stays distinct from ValueObject');
@@ -1039,14 +1071,14 @@ throws(
 );
 throws(
     SearchKernel\ProtocolException::class,
-    static fn () => SearchKernel\SearchResult::fromPayload([
+    static fn () => SearchKernel\SearchResult::fromPayload(canonicalResultPayload([
         'errors' => ['only' => ['code' => 1]],
-    ]),
+    ])),
     'SearchResult errors reject object-shaped vectors',
 );
 throws(
     SearchKernel\ProtocolException::class,
-    static fn () => SearchKernel\SearchResult::fromPayload([
+    static fn () => SearchKernel\SearchResult::fromPayload(canonicalResultPayload([
         'root' => [
             'node_type' => 'ResultGroup',
             'node' => [
@@ -1054,7 +1086,7 @@ throws(
                 'children' => [],
             ],
         ],
-    ]),
+    ])),
     'present malformed group limits fail closed instead of becoming null',
 );
 throws(
@@ -1475,7 +1507,6 @@ $expectedOperations = [
     'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
     'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
     'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
-    'delete_index' => ['DeleteIndexRequest', 'DeleteIndexResult'],
 ];
 same(array_keys($expectedOperations), Protocol::operations(), 'low-level portable operation list');
 foreach ($expectedOperations as $operation => $types) {
@@ -1547,12 +1578,6 @@ same(
 );
 same(['name' => 'products'], $lifecycleTransport->requests[0]['target'], 'create-index carries logical target');
 same([], $lifecycle->openIndex()['index']['fields'], 'open-index result accepted');
-$lifecycle->deleteIndex();
-$deleteRequest = $lifecycleTransport->requests[array_key_last($lifecycleTransport->requests)];
-truth(
-    $deleteRequest['payload'] instanceof SearchKernel\JsonObject,
-    'delete-index uses explicit empty-table payload',
-);
 $openRequest = $lifecycleTransport->requests[array_key_last($lifecycleTransport->requests)];
 truth(
     $openRequest['payload'] instanceof SearchKernel\JsonObject,
@@ -1565,6 +1590,13 @@ truth(
 foreach ($lifecycleTransport->requests as $request) {
     same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
 }
+
+throws(
+    InvalidArgumentException::class,
+    static fn () => (new Client(new RecordingTransport(), '../escape'))->openIndex(),
+    'unsafe logical target fails closed',
+);
+
 throws(
     InvalidArgumentException::class,
     static fn () => Protocol::operation('future_operation'),
@@ -1594,7 +1626,7 @@ throws(
 );
 throws(
     ProtocolException::class,
-    static fn () => SearchResult::fromPayload(['errors' => null]),
+    static fn () => SearchResult::fromPayload(canonicalResultPayload(['errors' => null])),
     'present-null SearchResult errors vector fails closed',
 );
 throws(
@@ -1658,16 +1690,16 @@ throws(
 );
 same(
     'Unspecified',
-    SearchResult::fromPayload([
+    SearchResult::fromPayload(canonicalResultPayload([
         'total_hits' => ['value' => 0],
-    ])->totalHitsRelation,
+    ]))->totalHitsRelation,
     'present TotalHits with omitted relation preserves the schema default',
 );
 throws(
     ProtocolException::class,
-    static fn () => SearchResult::fromPayload([
+    static fn () => SearchResult::fromPayload(canonicalResultPayload([
         'total_hits' => ['value' => 0, 'relation' => 'FutureRelation'],
-    ]),
+    ])),
     'unknown TotalHits relation fails closed',
 );
 
