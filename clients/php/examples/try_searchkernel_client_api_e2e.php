@@ -254,7 +254,7 @@ function captureRealEngineParity(Index $index): array
     $nestedSpec = $intents['nested_grouping'];
     $nested = $index->browse()->filter($nestedSpec['filter']['source'], $nestedSpec['filter']['bindings'])->group(
         Group::by($nestedSpec['group_by'])->limit($nestedSpec['limit'])->output(Agg::count()->as($nestedSpec['outputs'][0]['name']))
-            ->subgroup(Group::by($nestedSpec['nested']['group_by'])->limit($nestedSpec['nested']['limit'])->output(Agg::count()->as($nestedSpec['nested']['outputs'][0]['name']), Agg::avg($nestedSpec['nested']['outputs'][1]['field'])->as($nestedSpec['nested']['outputs'][1]['name']))
+            ->subgroup(Group::by($nestedSpec['nested']['group_by'])->limit($nestedSpec['nested']['limit'])->output(Agg::count()->as($nestedSpec['nested']['outputs'][0]['name']), Agg::avg($nestedSpec['nested']['outputs'][1]['field'])->as($nestedSpec['nested']['outputs'][1]['name'])))
     )->execute();
     $aliasSpec = $intents['group_alias'];
     $aliasExpression = G::aliasRef($aliasSpec['order_by_alias']['name']);
