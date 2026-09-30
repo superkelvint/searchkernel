@@ -34,6 +34,10 @@ the gem does not yet carry or lazily acquire the native `searchkerneld`
 runtime required for a clean consumer install. Managed-local remains deferred
 until that consumer runtime path is packaged and qualified.
 
+## Consumer quickstarts
+
+The canonical executable release quickstarts are rendered in [release-quickstart.md](release-quickstart.md) and are executed by the clean-consumer qualification gate.
+
 ## Python / Ruby parity boundary
 
 Issue #803's final adversarial pass compares the release-relevant ergonomic
