@@ -1378,7 +1378,7 @@
       "owner": "rust-client-real-e2e",
       "area": "Rust client real-engine showcase",
       "read": [
-        "core/crates/searchkernel/examples/"
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
       "architecture": "docs/architecture.md#rust-api",
       "test": [
