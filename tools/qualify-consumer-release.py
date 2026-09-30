@@ -159,7 +159,6 @@ def run_rust_quickstart(rust_root: Path, root: Path) -> None:
         str(quickstart / "Cargo.toml"),
         cwd=quickstart,
         env={
-            "SEARCHKERNEL_BUILD_ENV": "ci",
             "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
         },
     )
@@ -584,14 +583,13 @@ def main() -> None:
             rust_root.mkdir()
             with tarfile.open(rust) as archive:
                 archive.extractall(rust_root, filter="data")
-            # Resolve the public release native-base generation exactly as an
+            # Resolve the public host native-base generation exactly as an
             # ordinary unauthenticated consumer would. The clean container has
-            # no GitHub token and no producer SDK cache.
+            # no GitHub token, build-environment override, or producer SDK cache.
             run_rust_quickstart(rust_root, root)
             run(
                 "cargo", "run", "--quiet", "-p", "searchkernel", "--features", "native",
                 "--example", "try_searchkernel_client_api_e2e", cwd=rust_root,
-                env={"SEARCHKERNEL_BUILD_ENV": "ci"},
             )
 
         def searchkerneld_runtime_probe() -> None:
