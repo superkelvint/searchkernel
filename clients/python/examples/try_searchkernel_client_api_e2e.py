@@ -37,6 +37,29 @@ INDEX_PATH = WORKSPACE_PATH / "showcase-index"
 ROOT = Path(__file__).resolve().parents[3]
 E2E_CORPUS_PATH = ROOT / "reference/client-real-e2e-parity/corpus.json"
 E2E_CORPUS = json.loads(E2E_CORPUS_PATH.read_text())
+PARITY_CONSUMED_INTENTS: dict[str, object] = {}
+
+
+class _ConsumedIntentMap:
+    def __init__(self, source: dict[str, object]):
+        self._source = source
+
+    def __getitem__(self, key: str):
+        value = self._source[key]
+        PARITY_CONSUMED_INTENTS[key] = json.loads(json.dumps(value))
+        return value
+
+    def get(self, key: str, default=None):
+        if key not in self._source:
+            return default
+        return self[key]
+
+    def items(self):
+        for key in self._source:
+            yield key, self[key]
+
+
+PARITY_INTENTS = _ConsumedIntentMap(E2E_CORPUS["scenario_inputs"])
 VECTOR_TYPE = E2E_CORPUS["schema"]["fields"]["embedding"]["type"]
 
 
@@ -242,7 +265,7 @@ def shared_typed_query(spec):
 
 def shared_typed_query_observations(index):
     observations = {}
-    for scenario, intent in E2E_CORPUS["scenario_inputs"].items():
+    for scenario, intent in PARITY_INTENTS.items():
         if not scenario.startswith("typed_query_"):
             continue
         results = index.query(shared_typed_query(intent["query"])).limit(intent["limit"]).execute()
@@ -257,7 +280,7 @@ def shared_typed_query_observations(index):
 
 def capture_real_engine_parity(index) -> dict[str, object]:
     typed_observations = shared_typed_query_observations(index)
-    intents = E2E_CORPUS["scenario_inputs"]
+    intents = PARITY_INTENTS
     ordered_spec = intents["pagination"]
     ordered = index.search(ordered_spec["query"]).sort(ordered_spec["sort"][0]["field"], ordered_spec["sort"][0]["direction"]).limit(ordered_spec["all_limit"]).execute()
     filtered_spec = intents["filtered_facets"]
@@ -283,7 +306,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         .order_by(*group_order)
         .output(agg.count().as_(grouped_spec["outputs"][0]["name"]), agg.avg(grouped_spec["outputs"][1]["field"]).as_(grouped_spec["outputs"][1]["name"]))
     ).execute()
-    nearest_intent = E2E_CORPUS["scenario_inputs"]["nearest_neighbor"]
+    nearest_intent = PARITY_INTENTS["nearest_neighbor"]
     nearest_spec = nearest_intent["query"]
     nearest = (
         index.query(q.nearest_neighbor(nearest_spec["field"], nearest_spec["query_input"]))
@@ -291,7 +314,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         .input(nearest_spec["query_input"], embedding(*corpus_vector(nearest_intent["query_input_document"])))
         .limit(nearest_intent["limit"]).execute()
     )
-    hybrid_intent = E2E_CORPUS["scenario_inputs"]["hybrid_text_vector"]
+    hybrid_intent = PARITY_INTENTS["hybrid_text_vector"]
     hybrid_text, hybrid_vector = hybrid_intent["query"]["clauses"]
     hybrid = (
         index.query(q.any_of(
@@ -453,9 +476,11 @@ def write_real_engine_parity(observations: dict[str, object]) -> None:
     output = os.getenv("SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT")
     if output:
         for scenario, value in observations.items():
-            intent = E2E_CORPUS["scenario_inputs"].get(scenario)
-            if intent is None or scenario.startswith("typed_query_"):
+            if scenario.startswith("typed_query_"):
                 continue
+            intent = PARITY_CONSUMED_INTENTS.get(scenario)
+            if intent is None:
+                raise RuntimeError(f"parity scenario {scenario} emitted an observation without consuming its shared intent")
             payload = value.get("observation", value) if isinstance(value, dict) else None
             if isinstance(payload, dict):
                 payload.setdefault("intent", intent)
@@ -524,7 +549,7 @@ with Index.create(
     print(f"inserted {probe_spec['count']} deterministic coverage probe documents")
 
     PARITY_OBSERVATIONS.update(capture_real_engine_parity(index))
-    patch_spec = E2E_CORPUS["scenario_inputs"]["patch"]
+    patch_spec = PARITY_INTENTS["patch"]
     index.insert(patch_spec["document_id"], patch_spec["initial"])
     patch_builder = index.patch(patch_spec["document_id"])
     for key, value in patch_spec["set"].items(): patch_builder = patch_builder.set(key, value)
@@ -532,10 +557,10 @@ with Index.create(
     patch_builder.execute()
     mutated = index.get(patch_spec["document_id"])
     PARITY_OBSERVATIONS["patch"] = {"price": mutated["price"], "sale_price_present": "sale_price" in mutated}
-    delete_spec = E2E_CORPUS["scenario_inputs"]["delete"]
+    delete_spec = PARITY_INTENTS["delete"]
     parity_mutation_deleted = index.delete(delete_spec["document_id"])
     PARITY_OBSERVATIONS["delete"] = {"deleted": parity_mutation_deleted, "absent_after_delete": index.get(delete_spec["document_id"]) is None}
-    reopen_spec = E2E_CORPUS["scenario_inputs"]["reopen_persistence"]
+    reopen_spec = PARITY_INTENTS["reopen_persistence"]
     index.insert({"_id": reopen_spec["marker_id"], **reopen_spec["marker"]})
 
     # -----------------------------------------------------------------------
@@ -1468,7 +1493,7 @@ with Index.create(
 
     heading("28. UPSERT REPLACEMENT")
 
-    upsert_spec = E2E_CORPUS["scenario_inputs"]["upsert_replacement"]
+    upsert_spec = PARITY_INTENTS["upsert_replacement"]
     replacement = dict(upsert_spec["replacement"])
     vector_document_id = replacement.pop("vector_document_id")
     index.upsert({"_id": upsert_spec["document_id"], **replacement, "embedding": embedding(*corpus_vector(vector_document_id))})
@@ -1497,15 +1522,15 @@ print("The first Engine instance has shut down.")
 heading("30. REOPEN PERSISTED INDEX")
 
 with Index.open(INDEX_PATH) as index:
-    reopen_spec = E2E_CORPUS["scenario_inputs"]["reopen_persistence"]
-    upsert_spec = E2E_CORPUS["scenario_inputs"]["upsert_replacement"]
+    reopen_spec = PARITY_INTENTS["reopen_persistence"]
+    upsert_spec = PARITY_INTENTS["upsert_replacement"]
     persisted = index.get(reopen_spec["marker_id"])
     assert persisted is not None
     shoe2 = index.get(upsert_spec["document_id"])
     PARITY_OBSERVATIONS["reopen_persistence"] = {
         "marker": {"title": persisted["title"], "price": persisted["price"], "inventory": persisted["inventory"]},
         "upserted": {"updated_title_matches": "Updated" in shoe2["title"], "price": shoe2["price"]},
-        "deleted_absent": index.get(E2E_CORPUS["scenario_inputs"]["delete"]["document_id"]) is None,
+        "deleted_absent": index.get(PARITY_INTENTS["delete"]["document_id"]) is None,
     }
     # Deleted document remains deleted.
     assert index.get("shoe-3") is None
