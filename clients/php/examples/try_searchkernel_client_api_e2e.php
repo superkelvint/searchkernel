@@ -209,6 +209,12 @@ function captureRealEngineParity(Index $index): array
     }
 
     $groups = groupingGroups($grouped);
+    $index->insert(['_id' => 'parity-advanced-update', 'title' => 'before', 'inventory' => 10, 'sale_price' => 1.0]);
+    $index->update('parity-advanced-update')->set('title', 'after')->unset('sale_price')->increment('inventory', 3)->execute();
+    $index->update('parity-advanced-update')->decrement('inventory', 1)->execute();
+    $index->update('parity-advanced-update')->multiply('inventory', 2)->execute();
+    $index->update('parity-advanced-update')->divide('inventory', 4)->execute();
+    $advancedUpdate = $index->get('parity-advanced-update');
     return [
         'document_crud' => ['id' => $document['_id'], 'title' => $document['title'], 'brand' => $document['brand'], 'price' => $document['price']],
         'full_text_search' => ['ids' => ids($fullText), 'total' => $fullText->totalHits],
@@ -221,7 +227,26 @@ function captureRealEngineParity(Index $index): array
         'sorted_search' => ['ids' => ids($ordered), 'total' => $ordered->totalHits],
         'filtered_search' => ['ids' => ids($filtered), 'total' => $filtered->totalHits],
         'facets' => array_column($faceted->facets['brands'], 'count', 'value'),
-        'aggregations' => $root->aggregations,
+        'root_aggregations' => $root->aggregations,
+        'advanced_update' => ['title' => $advancedUpdate['title'], 'inventory' => $advancedUpdate['inventory'], 'sale_price_present' => array_key_exists('sale_price', $advancedUpdate)],
+        'builder_misuse' => (function () use ($index): array {
+            expectInvalid(static fn () => $index->search('shoes')->page(2, 20)->limit(20), 'page plus limit rejected');
+            expectInvalid(static fn () => $index->search('shoes')->page(2, 20)->offset(20), 'page plus offset rejected');
+            expectInvalid(static fn () => $index->search('shoes')->limit(-1), 'negative limit rejected');
+            expectInvalid(static fn () => $index->search('shoes')->offset(-1), 'negative offset rejected');
+            return [
+                'observation' => [
+                    'page_and_limit_rejected' => true,
+                    'page_and_offset_rejected' => true,
+                    'negative_limit_rejected' => true,
+                    'negative_offset_rejected' => true,
+                ],
+                'capabilities' => [
+                    'negative_limit_rejected' => ['kind' => 'runtime_rejected'],
+                    'negative_offset_rejected' => ['kind' => 'runtime_rejected'],
+                ],
+            ];
+        })(),
         'grouping_aggregations' => array_map(static fn ($group): array => [
             'brand' => $group->value,
             'products' => $group->fields['products'],
@@ -272,7 +297,7 @@ if (!in_array($phase, ['initial', 'reopen'], true)) {
     throw new InvalidArgumentException('expected initial or reopen phase');
 }
 $index = $phase === 'initial'
-    ? Index::create($url, $target, searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE))
+    ? Index::create($url, $target, searchkernelPhpClientApiE2eDefinition($e2eCorpus))
     : Index::open($url, $target);
 
 if ($phase === 'reopen') {

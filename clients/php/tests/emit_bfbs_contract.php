@@ -131,7 +131,7 @@ emitCase('request', 'inspect-query', Protocol::envelope('InspectQueryRequest', [
     'request' => $search,
 ]));
 
-$createDefinition = searchkernelPhpClientApiE2eDefinition('tensor<float>(x[8])');
+$createDefinition = searchkernelPhpClientApiE2eDefinition(searchkernelPhpClientApiE2eCorpus());
 emitCase(
     'request',
     'create-index-e2e-schema',

@@ -20,6 +20,9 @@ pub enum GroupingAggregation {
     Sum(GroupingExpression),
     Min(GroupingExpression),
     Max(GroupingExpression),
+    Alias(String, Box<GroupingAggregation>),
+    AliasReference(String),
+    Named(String, Box<GroupingAggregation>),
 }
 
 impl GroupingAggregation {
@@ -38,6 +41,15 @@ impl GroupingAggregation {
     pub fn max(field: impl Into<String>) -> Self {
         Self::Max(GroupingExpression::attribute(field))
     }
+    pub fn alias(name: impl Into<String>, aggregation: GroupingAggregation) -> Self {
+        Self::Alias(name.into(), Box::new(aggregation))
+    }
+    pub fn alias_reference(name: impl Into<String>) -> Self {
+        Self::AliasReference(name.into())
+    }
+    pub fn named(name: impl Into<String>, aggregation: GroupingAggregation) -> Self {
+        Self::Named(name.into(), Box::new(aggregation))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -46,6 +58,9 @@ pub struct GroupingLevel {
     outputs: Vec<GroupingAggregation>,
     nested: Option<Box<GroupingLevel>>,
     max_groups: Option<u32>,
+    aliases: Vec<(String, GroupingAggregation)>,
+    keep_regex: Vec<(String, String)>,
+    order_by_alias: Vec<(String, bool)>,
 }
 
 impl GroupingLevel {
@@ -55,6 +70,9 @@ impl GroupingLevel {
             outputs: Vec::new(),
             nested: None,
             max_groups: None,
+            aliases: Vec::new(),
+            keep_regex: Vec::new(),
+            order_by_alias: Vec::new(),
         }
     }
 
@@ -70,11 +88,27 @@ impl GroupingLevel {
         self.max_groups = Some(value);
         self
     }
+    /// Define a named aggregation that can be referenced by an alias output.
+    pub fn alias(mut self, name: impl Into<String>, aggregation: GroupingAggregation) -> Self {
+        self.aliases.push((name.into(), aggregation));
+        self
+    }
+    /// Keep only groups whose field value matches the regular expression.
+    pub fn keep_regex(mut self, field: impl Into<String>, pattern: impl Into<String>) -> Self {
+        self.keep_regex.push((field.into(), pattern.into()));
+        self
+    }
+    /// Order groups by a declared aggregation alias.
+    pub fn order_by_alias(mut self, name: impl Into<String>, descending: bool) -> Self {
+        self.order_by_alias.push((name.into(), descending));
+        self
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GroupingPlan {
     levels: Vec<GroupingLevel>,
+    root_outputs: Vec<GroupingAggregation>,
 }
 
 impl GroupingPlan {
@@ -85,11 +119,30 @@ impl GroupingPlan {
         self.levels.push(level);
         self
     }
+    /// Add an aggregation directly to the root grouping scope.
+    pub fn root_output(mut self, aggregation: GroupingAggregation) -> Self {
+        self.root_outputs.push(aggregation);
+        self
+    }
     pub fn by(field: impl Into<String>) -> GroupingLevel {
         GroupingLevel::new(GroupingExpression::attribute(field))
     }
 
     pub(crate) fn into_ir(self) -> Result<GroupingRequestIr> {
+        if self.levels.is_empty() && !self.root_outputs.is_empty() {
+            return Ok(GroupingRequestIr {
+                root: GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(
+                        self.root_outputs
+                            .into_iter()
+                            .map(output_to_ir)
+                            .collect::<Result<Vec<_>>>()?,
+                    )],
+                    label: None,
+                },
+                continuations: Vec::new(),
+            });
+        }
         let levels = self.levels;
         if levels.len() > 1 {
             return Err(Error::search(
@@ -103,8 +156,20 @@ impl GroupingPlan {
                 "grouping requires at least one level",
             )
         })?;
+        let mut root = level_to_scope(first)?;
+        if !self.root_outputs.is_empty() {
+            root.operations.insert(
+                0,
+                GroupingOperationIr::Output(
+                    self.root_outputs
+                        .into_iter()
+                        .map(output_to_ir)
+                        .collect::<Result<Vec<_>>>()?,
+                ),
+            );
+        }
         Ok(GroupingRequestIr {
-            root: level_to_scope(first)?,
+            root,
             continuations: Vec::new(),
         })
     }
@@ -114,6 +179,36 @@ fn level_to_scope(level: GroupingLevel) -> Result<GroupingAllIr> {
     let mut each = Vec::new();
     if let Some(max) = level.max_groups {
         each.push(GroupingOperationIr::Max(Some(max)));
+    }
+    for (name, aggregation) in level.aliases {
+        each.push(GroupingOperationIr::Alias {
+            name,
+            expression: aggregation_expression(aggregation)?,
+        });
+    }
+    for (field, pattern) in level.keep_regex {
+        each.push(GroupingOperationIr::Keep(
+            searchkernel_ir::GroupingFilterIr::Regex {
+                expression: Box::new(GroupingExpressionIr::Attribute(field)),
+                pattern,
+            },
+        ));
+    }
+    if !level.order_by_alias.is_empty() {
+        each.push(GroupingOperationIr::Order(
+            level
+                .order_by_alias
+                .into_iter()
+                .map(|(name, descending)| {
+                    let expression = GroupingExpressionIr::Alias(name);
+                    if descending {
+                        GroupingExpressionIr::Negative(Box::new(expression))
+                    } else {
+                        expression
+                    }
+                })
+                .collect(),
+        ));
     }
     if !level.outputs.is_empty() {
         each.push(GroupingOperationIr::Output(
@@ -144,6 +239,22 @@ fn expression_to_ir(expression: GroupingExpression) -> Result<GroupingExpression
 }
 
 fn output_to_ir(output: GroupingAggregation) -> Result<GroupingOutputIr> {
+    let (label, expression) = match output {
+        GroupingAggregation::AliasReference(name) => {
+            (Some(name.clone()), GroupingExpressionIr::Alias(name))
+        }
+        GroupingAggregation::Alias(name, aggregation) => {
+            (Some(name), aggregation_expression(*aggregation)?)
+        }
+        GroupingAggregation::Named(name, aggregation) => {
+            (Some(name), aggregation_expression(*aggregation)?)
+        }
+        aggregation => (None, aggregation_expression(aggregation)?),
+    };
+    Ok(GroupingOutputIr { label, expression })
+}
+
+fn aggregation_expression(output: GroupingAggregation) -> Result<GroupingExpressionIr> {
     let aggregation = match output {
         GroupingAggregation::Count => GroupingAggregationIr::Count,
         GroupingAggregation::Average(expression) => {
@@ -158,11 +269,16 @@ fn output_to_ir(output: GroupingAggregation) -> Result<GroupingOutputIr> {
         GroupingAggregation::Max(expression) => {
             GroupingAggregationIr::Max(expression_to_ir(expression)?)
         }
+        GroupingAggregation::Alias(_, _)
+        | GroupingAggregation::AliasReference(_)
+        | GroupingAggregation::Named(_, _) => {
+            return Err(Error::search(
+                crate::ErrorCode::InvalidArgument,
+                "grouping aliases cannot be nested as aggregations",
+            ));
+        }
     };
-    Ok(GroupingOutputIr {
-        label: None,
-        expression: GroupingExpressionIr::Aggregation(Box::new(aggregation)),
-    })
+    Ok(GroupingExpressionIr::Aggregation(Box::new(aggregation)))
 }
 
 #[cfg(test)]

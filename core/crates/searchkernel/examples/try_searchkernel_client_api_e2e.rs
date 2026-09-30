@@ -29,7 +29,7 @@ mod showcase {
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
         GroupingAggregation, GroupingPlan, Hit, Index, IndexDefinition, Patch, Query, QueryBound,
         QueryValue, RankProfile, Ranking, ResultValue, SearchResult, Sort, Tensor,
-        TotalHitsRelation, WandOptions, WeightedQueryItem,
+        TotalHitsRelation, Update, WandOptions, WeightedQueryItem,
     };
     use serde_json::{json, Value};
     use std::collections::{BTreeMap, BTreeSet};
@@ -296,7 +296,6 @@ mod showcase {
                         .output(GroupingAggregation::average("price")),
                 ),
             )
-            .limit(0)
             .execute::<Value>()?;
         let parity_nested = index
             .browse()
@@ -315,8 +314,72 @@ mod showcase {
                         ),
                 ),
             )
+            .execute::<Value>()?;
+        let parity_root_aggregations = index
+            .browse()
+            .filter("category = 'shoes'")
+            .grouping(
+                GroupingPlan::new()
+                    .root_output(GroupingAggregation::named(
+                        "products",
+                        GroupingAggregation::count(),
+                    ))
+                    .root_output(GroupingAggregation::named(
+                        "sum_price",
+                        GroupingAggregation::sum("price"),
+                    ))
+                    .root_output(GroupingAggregation::named(
+                        "avg_price",
+                        GroupingAggregation::average("price"),
+                    )),
+            )
             .limit(0)
             .execute::<Value>()?;
+        let parity_alias = index
+            .search("shoes")
+            .grouping(
+                GroupingPlan::new().level(
+                    GroupingPlan::by("brand")
+                        .alias("revenue", GroupingAggregation::sum("price"))
+                        .order_by_alias("revenue", true)
+                        .output(GroupingAggregation::named(
+                            "products",
+                            GroupingAggregation::count(),
+                        ))
+                        .output(GroupingAggregation::alias_reference("revenue")),
+                ),
+            )
+            .execute::<Value>()?;
+        let parity_keep = index
+            .search("shoes")
+            .grouping(
+                GroupingPlan::new().level(
+                    GroupingPlan::by("brand")
+                        .keep_regex("brand", "^A.*")
+                        .output(GroupingAggregation::named(
+                            "products",
+                            GroupingAggregation::count(),
+                        )),
+                ),
+            )
+            .execute::<Value>()?;
+        let parity_yql = index
+            .yql("select * from sources * where title contains text(@q) order by price asc")
+            .yql_parameter("q", "shoes")
+            .limit(3)
+            .execute::<Value>()?;
+        let page_limit_rejected = index
+            .search("shoes")
+            .page(2, 20)
+            .limit(20)
+            .execute::<Value>()
+            .is_err();
+        let page_offset_rejected = index
+            .search("shoes")
+            .page(2, 20)
+            .offset(20)
+            .execute::<Value>()
+            .is_err();
         let parity_typed = index
             .search("")
             .typed_query(Query::contains("title", Query::term_value("shoes")))
@@ -347,11 +410,9 @@ mod showcase {
             )
             .limit(20)
             .execute::<Value>()?;
-        let mut parity_grouping_aggregations = parity_grouped
-            .groups
-            .first()
+        let parity_group_buckets = direct_group_buckets(&parity_grouped.groups);
+        let mut parity_grouping_aggregations = parity_group_buckets
             .into_iter()
-            .flat_map(|root| root.groups.iter())
             .map(parity_grouping_aggregation)
             .collect::<Vec<_>>();
         parity_grouping_aggregations.sort_by(|left, right| {
@@ -369,16 +430,28 @@ mod showcase {
             "boolean_filter_grammar": {"ids": ids(&parity_boolean)},
             "sorting_projection": {"hits": parity_projection.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "fields": hit.document})).collect::<Vec<_>>()},
             "pagination": {"all_ids": ids(&parity_all_sorted), "offset_ids": ids(&parity_page), "total": parity_page.total_hits.value},
+            "builder_misuse": {
+                "observation": {"page_and_limit_rejected": page_limit_rejected, "page_and_offset_rejected": page_offset_rejected},
+                "capabilities": {
+                    "negative_limit_rejected": {"kind": "not_expressible", "reason": "SearchBuilder::limit accepts u32, so a negative limit cannot be represented."},
+                    "negative_offset_rejected": {"kind": "not_expressible", "reason": "SearchBuilder::offset accepts u32, so a negative offset cannot be represented."}
+                }
+            },
             "sorted_search": {"ids": ids(&parity_sorted), "total": parity_sorted.total_hits.value},
             "filtered_search": {"ids": ids(&parity_filtered), "total": parity_filtered.total_hits.value},
             "facets": facet_counts(&parity_faceted, "brand"),
+            "root_aggregations": parity_root_aggregations.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>(),
             "filtered_facets": facet_counts(&parity_filtered_facet, "brand"),
             "grouping_aggregations": parity_grouping_aggregations,
-            "nested_grouping": parity_nested.groups.first().into_iter()
-                .flat_map(|root| root.groups.iter())
+            "nested_grouping": direct_group_buckets(&parity_nested.groups).into_iter()
                 .map(parity_nested_group)
                 .collect::<Vec<_>>(),
+            "group_alias": direct_group_buckets(&parity_alias.groups).into_iter()
+                .map(|group| json!({"value": group.key.as_ref().map(parity_value), "fields": group.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>() })).collect::<Vec<_>>(),
+            "group_keep_filter": direct_group_buckets(&parity_keep.groups).into_iter()
+                .map(|group| json!({"value": group.key.as_ref().map(parity_value), "fields": group.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>() })).collect::<Vec<_>>(),
             "typed_query": {"ids": ids(&parity_typed)},
+            "yql": {"ids": ids(&parity_yql), "total": parity_yql.total_hits.value},
             "rank_inputs": parity_rank_input.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
             "rank_properties": parity_rank_property.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
             "tensor_readback": parity_document["embedding"]["$searchkernel_tensor"]["dense"],
@@ -1208,6 +1281,37 @@ mod showcase {
             "deleted": parity_deleted,
             "absent_after_delete": index.get::<Value>("parity-mutation")?.is_none()
         });
+        index.insert(
+            "parity-advanced-update",
+            &json!({"title": "before", "inventory": 10, "sale_price": 1.0}),
+        )?;
+        index.update(
+            "parity-advanced-update",
+            Update::new()
+                .set("title", "after")
+                .unset("sale_price")
+                .increment("inventory", 3.0),
+        )?;
+        index.update(
+            "parity-advanced-update",
+            Update::new().decrement("inventory", 1.0),
+        )?;
+        index.update(
+            "parity-advanced-update",
+            Update::new().multiply("inventory", 2.0),
+        )?;
+        index.update(
+            "parity-advanced-update",
+            Update::new().divide("inventory", 4.0),
+        )?;
+        let advanced_update = index
+            .get::<Value>("parity-advanced-update")?
+            .expect("updated document remains");
+        parity_observations["advanced_update"] = json!({
+            "title": advanced_update["title"],
+            "inventory": advanced_update["inventory"],
+            "sale_price_present": advanced_update.get("sale_price").is_some()
+        });
         index.insert("parity-reopen", &json!({"title": "Parity Reopen", "category": "parity", "price": 42.0, "inventory": 7, "in_stock": true}))?;
 
         println!("before: {:#}", index.get::<Value>("shoe-1")?.unwrap());
@@ -1553,18 +1657,19 @@ Successfully demonstrated through the public Rust facade:
   ✓ field-aware analyze request
   ✓ search-field execution, language, timeout, and inspect
 
-EXPLICITLY UNSUPPORTED / NOT YET PUBLIC:
+ADDITIONAL SHARED CLIENT-PARITY SCENARIOS:
+
+  ✓ raw YQL through the public facade
+  ✓ root aggregations and grouping output aliases / keep filters
+  ✓ page-builder conflict validation
+  ✓ set, unset, increment, decrement, multiply, and divide updates
+
+REMAINING LIMITATIONS:
 
   - sort-value readback (`Hit.sort_values`) is not exposed by the current native ABI
-  - typed sameElement requires a public array-of-struct field definition, which
-    is not currently public
-  - typed geo and predicate require public geo/predicate field definitions,
-    which are not currently public
   - typed exists query (public Filter::exists is covered)
-  - YQL/property-substitution
   - opaque tensor-backed feature output
-  - page() convenience, aliases/keep-filters, summary-hit grouping children,
-    continuation tokens, root aggregations, and advanced update/increment APIs
+  - summary-hit grouping children and continuation tokens
 
 Every check above uses only the public `searchkernel` facade and the real
 native Vespa backend.
@@ -1608,6 +1713,17 @@ native Vespa backend.
         name: &str,
     ) -> Option<Value> {
         group.aggregations.get(name).map(parity_value)
+    }
+
+    fn direct_group_buckets<T>(
+        groups: &[searchkernel::GroupingResult<T>],
+    ) -> Vec<&searchkernel::GroupingResult<T>> {
+        if let [root] = groups {
+            if root.key.is_none() && root.aggregations.is_empty() {
+                return root.groups.iter().collect();
+            }
+        }
+        groups.iter().collect()
     }
 
     fn parity_grouping_aggregation(group: &searchkernel::GroupingResult<Value>) -> Value {

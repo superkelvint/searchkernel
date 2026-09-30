@@ -279,6 +279,16 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         for item in faceted.facets["brands"]
     }
     groups = grouping_groups(grouped)
+    assert_raises((TypeError, ValueError), lambda: index.search("shoes").page(2, 20).limit(20), "page plus limit rejected")
+    assert_raises((TypeError, ValueError), lambda: index.search("shoes").page(2, 20).offset(20), "page plus offset rejected")
+    assert_raises((TypeError, ValueError), lambda: index.search("shoes").limit(-1), "negative limit rejected")
+    assert_raises((TypeError, ValueError), lambda: index.search("shoes").offset(-1), "negative offset rejected")
+    index.insert("parity-advanced-update", {"title": "before", "inventory": 10, "sale_price": 1.0})
+    index.update("parity-advanced-update").set("title", "after").unset("sale_price").increment("inventory", 3).execute()
+    index.update("parity-advanced-update").decrement("inventory", 1).execute()
+    index.update("parity-advanced-update").multiply("inventory", 2).execute()
+    index.update("parity-advanced-update").divide("inventory", 4).execute()
+    advanced_update = index.get("parity-advanced-update")
     group_values = [
         {"brand": group.value, "products": group.get("products"), "avg_price": group.get("avg_price")}
         for group in groups
@@ -292,10 +302,23 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         "boolean_filter_grammar": {"ids": [hit.id for hit in boolean_filter.hits]},
         "sorting_projection": {"hits": [{"id": hit.id, "fields": dict(hit.fields)} for hit in projection.hits]},
         "pagination": {"all_ids": [hit.id for hit in all_sorted.hits], "offset_ids": [hit.id for hit in page.hits], "total": page.total_hits},
+        "builder_misuse": {
+            "observation": {
+                "page_and_limit_rejected": True,
+                "page_and_offset_rejected": True,
+                "negative_limit_rejected": True,
+                "negative_offset_rejected": True,
+            },
+            "capabilities": {
+                "negative_limit_rejected": {"kind": "runtime_rejected"},
+                "negative_offset_rejected": {"kind": "runtime_rejected"},
+            },
+        },
         "sorted_search": {"ids": [hit.id for hit in ordered.hits], "total": ordered.total_hits},
         "filtered_search": {"ids": [hit.id for hit in filtered.hits], "total": filtered.total_hits},
         "facets": brand_counts,
-        "aggregations": dict(root.aggregations),
+        "root_aggregations": dict(root.aggregations),
+        "advanced_update": {"title": advanced_update["title"], "inventory": advanced_update["inventory"], "sale_price_present": "sale_price" in advanced_update},
         "grouping_aggregations": group_values,
         "filtered_facets": {str(item["value"]): item["count"] for item in filtered_facet.facets["brand"]},
         "nested_grouping": [{
