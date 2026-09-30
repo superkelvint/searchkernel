@@ -15,6 +15,7 @@ module SearchKernel
     KILL_TIMEOUT = 5.0
     MANAGED_DATA_ROOT_NAME = ".searchkernel-managed"
     MANAGED_MARKER_NAME = ".searchkernel-managed-target"
+    MANAGED_ROOT_MARKER_NAME = ".searchkernel-data-root"
 
     attr_reader :base_url
 
@@ -77,6 +78,27 @@ module SearchKernel
 
       def marker_path(index_path)
         File.join(index_path, MANAGED_MARKER_NAME)
+      end
+
+      def prepare_data_root(data_root)
+        FileUtils.mkdir_p(File.dirname(data_root))
+        marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
+        if File.exist?(data_root)
+          unless File.directory?(data_root) && File.file?(marker)
+            raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+          end
+          return
+        end
+
+        created = false
+        begin
+          Dir.mkdir(data_root)
+          created = true
+          File.write(marker, "searchkernel-managed-v1\n", mode: "wx")
+        rescue StandardError
+          FileUtils.remove_entry_secure(data_root) if created && File.directory?(data_root)
+          raise
+        end
       end
 
       def reserve_path(index_path, target)
