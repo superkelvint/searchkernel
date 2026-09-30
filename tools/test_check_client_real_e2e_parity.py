@@ -154,6 +154,20 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "did not consume the shared scenario intent"):
             validate_observed_intents("rust", observations, inputs)
 
+    def test_facet_parity_preserves_order_and_exercises_limit(self):
+        corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
+        for scenario in ("facets", "filtered_facets"):
+            intent = corpus["scenario_inputs"][scenario]
+            self.assertEqual("value_asc", intent["sort"])
+            self.assertEqual(2, intent["limit"])
+
+        expected = [
+            {"value": "Acme", "count": 2},
+            {"value": "Budget", "count": 1},
+        ]
+        self.assertTrue(compare(expected, list(reversed(expected))))
+        self.assertTrue(compare(expected, expected[:1]))
+
     def test_every_inventory_scenario_needs_a_shared_intent(self):
         corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
         scenarios = list(corpus["scenarios"])
