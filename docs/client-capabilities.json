@@ -67,7 +67,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1416
+              "line": 1424
             },
             {
               "capability": "query.term",
@@ -131,7 +131,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1417
+              "line": 1425
             }
           ],
           "overrides": []
@@ -155,7 +155,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1418
+              "line": 1426
             }
           ],
           "overrides": []
@@ -179,7 +179,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1419
+              "line": 1427
             }
           ],
           "overrides": []
@@ -203,7 +203,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1420
+              "line": 1428
             },
             {
               "capability": "query.boolean",
@@ -267,7 +267,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1421
+              "line": 1429
             },
             {
               "capability": "query.phrase",
@@ -297,7 +297,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 408
+              "line": 483
             },
             {
               "capability": "query.phrase",
@@ -307,7 +307,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 408
+              "line": 483
             },
             {
               "capability": "query.phrase",
@@ -327,7 +327,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 515
+              "line": 523
             },
             {
               "capability": "query.phrase",
@@ -371,7 +371,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1422
+              "line": 1430
             },
             {
               "capability": "query.proximity",
@@ -401,7 +401,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 409
+              "line": 484
             },
             {
               "capability": "query.proximity",
@@ -411,7 +411,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 409
+              "line": 484
             },
             {
               "capability": "query.proximity",
@@ -431,7 +431,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 516
+              "line": 524
             },
             {
               "capability": "query.proximity",
@@ -475,7 +475,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1423
+              "line": 1431
             },
             {
               "capability": "query.same_element",
@@ -505,7 +505,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 438
+              "line": 513
             },
             {
               "capability": "query.same_element",
@@ -515,7 +515,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 438
+              "line": 513
             },
             {
               "capability": "query.same_element",
@@ -535,7 +535,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 517
+              "line": 525
             },
             {
               "capability": "query.same_element",
@@ -569,7 +569,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1424
+              "line": 1432
             },
             {
               "capability": "query.fuzzy",
@@ -599,7 +599,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 410
+              "line": 485
             },
             {
               "capability": "query.fuzzy",
@@ -609,7 +609,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 410
+              "line": 485
             },
             {
               "capability": "query.fuzzy",
@@ -629,7 +629,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 518
+              "line": 526
             },
             {
               "capability": "query.fuzzy",
@@ -699,7 +699,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1425
+              "line": 1433
             },
             {
               "capability": "query.nearest_neighbor",
@@ -793,7 +793,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1426
+              "line": 1434
             },
             {
               "capability": "query.geo",
@@ -823,7 +823,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 503
+              "line": 578
             },
             {
               "capability": "query.geo",
@@ -833,7 +833,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 503
+              "line": 578
             },
             {
               "capability": "query.geo",
@@ -853,7 +853,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 519
+              "line": 527
             },
             {
               "capability": "query.geo",
@@ -887,7 +887,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1427
+              "line": 1435
             }
           ],
           "overrides": []
@@ -911,7 +911,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1428
+              "line": 1436
             },
             {
               "capability": "query.weighted_and_wand",
@@ -941,7 +941,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 411
+              "line": 486
             },
             {
               "capability": "query.weighted_and_wand",
@@ -951,7 +951,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 411
+              "line": 486
             },
             {
               "capability": "query.weighted_and_wand",
@@ -971,7 +971,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 520
+              "line": 528
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1015,7 +1015,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1429
+              "line": 1437
             }
           ],
           "overrides": []
@@ -1039,7 +1039,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1430
+              "line": 1438
             }
           ],
           "overrides": []
@@ -1063,7 +1063,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1431
+              "line": 1439
             }
           ],
           "overrides": []
@@ -1087,7 +1087,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1432
+              "line": 1440
             }
           ],
           "overrides": []
@@ -1124,7 +1124,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1437
+              "line": 1445
             },
             {
               "capability": "filter.textual",
@@ -1218,7 +1218,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1438
+              "line": 1446
             },
             {
               "capability": "search.sorting",
@@ -1335,7 +1335,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1440
+              "line": 1448
             },
             {
               "capability": "search.pagination",
@@ -1439,7 +1439,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1439
+              "line": 1447
             },
             {
               "capability": "search.search_fields",
@@ -1503,7 +1503,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 543
+              "line": 618
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1513,7 +1513,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 543
+              "line": 618
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1688,7 +1688,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1455
+              "line": 1463
             },
             {
               "capability": "result.highlighting",
@@ -1728,7 +1728,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 544
+              "line": 619
             },
             {
               "capability": "result.highlighting",
@@ -1738,7 +1738,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 544
+              "line": 619
             },
             {
               "capability": "result.highlighting",
@@ -1881,7 +1881,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1441
+              "line": 1449
             },
             {
               "capability": "grouping.structured",
@@ -1975,7 +1975,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1442
+              "line": 1450
             }
           ],
           "overrides": []
@@ -1999,7 +1999,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1443
+              "line": 1451
             },
             {
               "capability": "grouping.aggregations",
@@ -2127,7 +2127,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1444
+              "line": 1452
             }
           ],
           "overrides": []
@@ -2151,7 +2151,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1445
+              "line": 1453
             }
           ],
           "overrides": []
@@ -2175,7 +2175,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1446
+              "line": 1454
             },
             {
               "capability": "update.document_crud",
@@ -2205,7 +2205,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 260
+              "line": 301
             },
             {
               "capability": "update.document_crud",
@@ -2215,7 +2215,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 260
+              "line": 301
             },
             {
               "capability": "update.document_crud",
@@ -2309,7 +2309,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1447
+              "line": 1455
             },
             {
               "capability": "update.arithmetic",
@@ -2373,7 +2373,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1448
+              "line": 1456
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -2463,7 +2463,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1449
+              "line": 1457
             }
           ],
           "overrides": []
@@ -2487,7 +2487,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1450
+              "line": 1458
             }
           ],
           "overrides": []
@@ -2565,7 +2565,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1451
+              "line": 1459
             },
             {
               "capability": "query.yql",
@@ -2683,7 +2683,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1433
+              "line": 1441
             }
           ],
           "overrides": []
@@ -2707,7 +2707,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1434
+              "line": 1442
             }
           ],
           "overrides": []
@@ -2731,7 +2731,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1435
+              "line": 1443
             }
           ],
           "overrides": []
@@ -2755,7 +2755,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1436
+              "line": 1444
             }
           ],
           "overrides": []
@@ -2818,7 +2818,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1452
+              "line": 1460
             },
             {
               "capability": "ranking.profile_selection",
@@ -2936,7 +2936,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1453
+              "line": 1461
             },
             {
               "capability": "ranking.tensor_query_inputs",
@@ -3000,7 +3000,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1454
+              "line": 1462
             },
             {
               "capability": "ranking.rank_properties",
@@ -3118,7 +3118,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1456
+              "line": 1464
             },
             {
               "capability": "result.grouping_tree",
@@ -3182,7 +3182,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
-              "line": 1457
+              "line": 1465
             },
             {
               "capability": "result.degradation_metadata",
