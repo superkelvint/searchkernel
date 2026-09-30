@@ -569,15 +569,15 @@ mod showcase {
                     .ok_or("nearest ranking profile missing")?,
             ))
             .typed_query(Query::nearest_neighbor(
-                nearest_intent["query"]["field"]
+                nearest_intent["field"]
                     .as_str()
                     .ok_or("nearest field missing")?,
-                nearest_intent["query"]["query_input"]
+                nearest_intent["query_input"]
                     .as_str()
                     .ok_or("nearest query input missing")?,
             ))
             .query_input(
-                nearest_intent["query"]["query_input"]
+                nearest_intent["query_input"]
                     .as_str()
                     .ok_or("nearest query input missing")?,
                 Tensor::dense(
@@ -676,7 +676,7 @@ mod showcase {
         let parity_text_binding = index
             .search(binding_intent["query"].as_str().ok_or("binding query missing")?)
             .filter((binding_intent["filter"].as_str().ok_or("binding filter missing")?, params! { "max" => binding_intent["bindings"]["max"].as_f64().ok_or("max binding missing")? }))
-            .sort(Sort::asc(binding_intent["sort"][0]["field"].as_str().ok_or("binding sort missing")?))
+            .sort(sort_from_intent(binding_intent["sort"][0]["field"].as_str().ok_or("binding sort missing")?, binding_intent["sort"][0]["direction"].as_str().ok_or("binding sort direction missing")?)?)
             .limit(binding_intent["limit"].as_u64().ok_or("binding limit missing")? as u32)
             .execute::<Value>()?;
         let repeated_intent = intent!("repeated_filters");
@@ -685,7 +685,7 @@ mod showcase {
             .filter((repeated_intent["filters"][0]["source"].as_str().ok_or("first repeated filter missing")?, params! { "value" => repeated_intent["filters"][0]["bindings"]["value"].as_f64().ok_or("repeated float binding missing")? }))
             .filter((repeated_intent["filters"][1]["source"].as_str().ok_or("second repeated filter missing")?, params! { "value" => repeated_intent["filters"][1]["bindings"]["value"].as_i64().ok_or("repeated integer binding missing")? }))
             .filter(repeated_intent["filters"][2]["source"].as_str().ok_or("third repeated filter missing")?)
-            .sort(Sort::asc(repeated_intent["sort"][0]["field"].as_str().ok_or("repeated sort missing")?))
+            .sort(sort_from_intent(repeated_intent["sort"][0]["field"].as_str().ok_or("repeated sort missing")?, repeated_intent["sort"][0]["direction"].as_str().ok_or("repeated sort direction missing")?)?)
             .limit(repeated_intent["limit"].as_u64().ok_or("repeated limit missing")? as u32)
             .execute::<Value>()?;
         let boolean_intent = intent!("boolean_filter_grammar");
@@ -698,7 +698,7 @@ mod showcase {
                     "rating" => boolean_intent["bindings"]["rating"].as_i64().ok_or("rating binding missing")?
                 },
             ))
-            .sort(Sort::asc(boolean_intent["sort"][0]["field"].as_str().ok_or("boolean sort missing")?))
+            .sort(sort_from_intent(boolean_intent["sort"][0]["field"].as_str().ok_or("boolean sort missing")?, boolean_intent["sort"][0]["direction"].as_str().ok_or("boolean sort direction missing")?)?)
             .limit(boolean_intent["limit"].as_u64().ok_or("boolean limit missing")? as u32)
             .execute::<Value>()?;
         let projection_intent = intent!("sorting_projection");
@@ -708,11 +708,14 @@ mod showcase {
                     .as_str()
                     .ok_or("projection query missing")?,
             )
-            .sort(Sort::desc(
+            .sort(sort_from_intent(
                 projection_intent["sort"][0]["field"]
                     .as_str()
                     .ok_or("projection sort missing")?,
-            ))
+                projection_intent["sort"][0]["direction"]
+                    .as_str()
+                    .ok_or("projection sort direction missing")?,
+            )?)
             .projection(
                 projection_intent["projection"]
                     .as_array()
