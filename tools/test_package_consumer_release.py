@@ -19,6 +19,12 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+RUNTIME_SPEC = importlib.util.spec_from_file_location(
+    "consumer_runtime", ROOT / "tools" / "consumer_runtime.py"
+)
+assert RUNTIME_SPEC and RUNTIME_SPEC.loader
+RUNTIME = importlib.util.module_from_spec(RUNTIME_SPEC)
+RUNTIME_SPEC.loader.exec_module(RUNTIME)
 
 
 class ConsumerReleaseTests(unittest.TestCase):
@@ -244,10 +250,64 @@ class ConsumerReleaseTests(unittest.TestCase):
                 bundle = next(member for member in archive.getmembers() if member.name.endswith("/consumer_bundle.rs"))
                 self.assertIsNotNone(bundle)
                 packaged_support = archive.extractfile(bundle).read().decode("utf-8")
-                self.assertIn("tools/consumer_runtime.py", packaged_support)
+                self.assertNotIn("tools/consumer_runtime.py", packaged_support)
                 self.assertNotIn("tools/resolve-native-sdk.sh", packaged_support)
                 self.assertNotIn("core/native/vespa/build-sdk.sh", packaged_support)
+        build_script = (ROOT / "core/crates/searchkernel-vespa-bindings/build.rs").read_text(encoding="utf-8")
+        self.assertIn("consumer_runtime::ensure_runtime", build_script)
+        packaged_resolver = build_script.split("fn configure_packaged_consumer_runtime(", 1)[1].split("\n}", 1)[0]
+        self.assertNotIn("python3", packaged_resolver)
         self.assertFalse((ROOT / "core/crates/searchkernel-vespa-bindings/runtime.json").exists())
+
+    def test_rust_packaged_build_resolves_runtime_without_python(self) -> None:
+        bindings = ROOT / "core/crates/searchkernel-vespa-bindings"
+        descriptor_path = bindings / "runtime.json"
+        self.assertFalse(descriptor_path.exists())
+        conformance = json.loads((ROOT / "build/consumer-runtime/conformance.json").read_text())
+        vector = conformance["vectors"][0]
+        identity = {**vector["identity_material"], "runtime_identity": vector["runtime_identity"]}
+        with tempfile.TemporaryDirectory() as tempdir:
+            base = Path(tempdir)
+            runtime = base / "runtime"
+            (runtime / "bin").mkdir(parents=True)
+            (runtime / "lib").mkdir()
+            for relative, data in (
+                ("bin/searchkerneld", b"launcher"),
+                ("bin/searchkerneld.real", b"daemon"),
+                ("lib/libsearchkernel_vespa.so.2", b"adapter"),
+            ):
+                path = runtime / relative
+                path.write_bytes(data)
+                if relative.startswith("bin/"):
+                    path.chmod(0o755)
+            manifest = {
+                "format_version": 1,
+                **identity,
+                "payload_sha256": RUNTIME.payload_digest(runtime),
+            }
+            (runtime / "manifest.json").write_text(json.dumps(manifest))
+            archive = base / RUNTIME.expected_artifact_filename(identity)
+            descriptor = {
+                "format_version": 1,
+                **identity,
+                "artifact_url": archive.as_uri(),
+                "artifact_sha256": "a" * 64,
+            }
+            descriptor_path.write_text(json.dumps(descriptor))
+            environment = os.environ.copy()
+            environment["SEARCHKERNEL_RUNTIME_DIR"] = str(runtime)
+            try:
+                result = subprocess.run(
+                    ["cargo", "check", "-p", "searchkernel-vespa-bindings", "--features", "native"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+            finally:
+                descriptor_path.unlink(missing_ok=True)
 
     def test_publishable_rust_crates_pin_internal_dependency_versions(self) -> None:
         for manifest in (ROOT / "core/crates").glob("*/Cargo.toml"):

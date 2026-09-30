@@ -1,4 +1,7 @@
 mod consumer_bundle;
+#[cfg(feature = "native")]
+#[path = "src/consumer_runtime.rs"]
+mod consumer_runtime;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -35,7 +38,7 @@ fn main() {
     let support_root = support_root(&manifest_dir);
     #[cfg(feature = "native")]
     if manifest_dir.join("runtime.json").is_file() && env::var_os("SK_NATIVE_SDK").is_none() {
-        configure_packaged_consumer_runtime(&manifest_dir, &support_root).unwrap_or_else(|error| {
+        configure_packaged_consumer_runtime(&manifest_dir).unwrap_or_else(|error| {
             panic!("Search Kernel packaged native runtime provisioning failed: {error}")
         });
         return;
@@ -420,38 +423,12 @@ fn resolve_shared_native_sdk(
 }
 
 #[cfg(feature = "native")]
-fn configure_packaged_consumer_runtime(
-    manifest_dir: &Path,
-    support_root: &Path,
-) -> Result<(), String> {
+fn configure_packaged_consumer_runtime(manifest_dir: &Path) -> Result<(), String> {
     if env::var_os("CARGO_FEATURE_HARDENING").is_some() {
         return Err("hardening is a maintainer-only native build mode and is unavailable from the consumer runtime".to_owned());
     }
-    let resolver = support_root.join("tools/consumer_runtime.py");
     let descriptor = manifest_dir.join("runtime.json");
-    let output = Command::new("python3")
-        .arg(&resolver)
-        .arg("ensure")
-        .arg(&descriptor)
-        .output()
-        .map_err(|error| {
-            format!(
-                "start consumer-runtime resolver '{}': {error}",
-                resolver.display()
-            )
-        })?;
-    if !output.status.success() {
-        return Err(format!(
-            "consumer-runtime resolver exited with {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    let runtime = PathBuf::from(
-        String::from_utf8(output.stdout)
-            .map_err(|error| format!("resolver returned non-UTF-8 path: {error}"))?
-            .trim(),
-    );
+    let runtime = consumer_runtime::ensure_runtime(&descriptor)?;
     let lib_dir = runtime.join("lib");
     let adapter = lib_dir.join("libsearchkernel_vespa.so.2");
     if !adapter.is_file() {

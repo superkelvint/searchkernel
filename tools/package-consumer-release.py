@@ -139,15 +139,9 @@ def target_dir(metadata: dict[str, object]) -> Path:
 
 
 def packaged_rust_consumer_bundle() -> str:
-    data = (ROOT / "tools/consumer_runtime.py").read_text(encoding="utf-8")
-    delimiter = "########"
-    if f'"{delimiter}' in data:
-        raise RuntimeError("consumer runtime resolver collides with Rust raw-string delimiter")
     return (
         "// @generated for the publishable Rust consumer artifact; do not edit.\n"
-        "pub const FILES: &[(&str, &[u8])] = &[\n"
-        f'    ("tools/consumer_runtime.py", br{delimiter}"{data}"{delimiter}),\n'
-        "];\n"
+        "pub const FILES: &[(&str, &[u8])] = &[];\n"
     )
 
 

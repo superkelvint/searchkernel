@@ -696,6 +696,7 @@ test_target() {
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
         rust-api)
+            "$CARGO" test -p searchkernel-vespa-bindings --lib --no-default-features
             "$CARGO" test -p searchkernel --all-targets --no-default-features
             ;;
         client-real-e2e-parity)
