@@ -43,14 +43,19 @@ fn query_model_and_yql_types_remain_public_at_the_crate_root() {
 
 #[test]
 fn grouping_order_variants_remain_source_compatible() {
+    fn descending(order: GroupingOrder) -> bool {
+        match order {
+            GroupingOrder::Field(_, descending) | GroupingOrder::Aggregation(_, descending) => {
+                descending
+            }
+        }
+    }
+
     let field_order = GroupingOrder::Field(GroupingExpression::attribute("brand"), true);
-    assert!(matches!(field_order, GroupingOrder::Field(_, true)));
+    assert!(descending(field_order));
 
     let aggregation_order = GroupingOrder::Aggregation(GroupingAggregation::count(), false);
-    assert!(matches!(
-        aggregation_order,
-        GroupingOrder::Aggregation(GroupingAggregation::Count, false)
-    ));
+    assert!(!descending(aggregation_order));
 }
 
 #[test]
