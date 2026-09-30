@@ -434,7 +434,7 @@ fn update_builder_matches_portable_dispatcher_ir_for_full_executable_union() {
         let request = searchkernel_protocol::json::request_json_to_flatbuffer(&request_json)
             .unwrap_or_else(|error| panic!("{name}: canonical portable update request: {error}"));
         dispatcher.dispatch(&request).unwrap_or_else(|error| {
-            panic!("{name}: dispatcher must encode backend errors: {error}")
+            panic!("{name}: dispatcher must encode backend errors: {error:?}")
         });
         let portable = portable_backend
             .last_call()
