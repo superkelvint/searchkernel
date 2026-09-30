@@ -101,7 +101,7 @@ validated when the complete YQL statement is searched.
 
 ## Typed API semantics
 
-The frozen API contract is `reference/vespa/api-contract/src/bin/m7.rs`.
+The frozen API contract is `core/crates/searchkernel-vespa-engine/examples/api-contract-m7.rs`.
 
 The semantic shape is:
 

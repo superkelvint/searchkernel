@@ -102,11 +102,12 @@ pub enum GroupingAggregation {
     Min(GroupingExpression),
     Max(GroupingExpression),
     Xor(GroupingExpression),
-    StandardDeviation(GroupingExpression),
+    StdDev(GroupingExpression),
     Quantiles {
         expression: GroupingExpression,
         quantiles: Vec<f64>,
     },
+    Summary(Option<String>),
     /// Compatibility form for referring to an aggregation alias as an expression.
     AliasRef(String),
     /// Compatibility form for attaching an output label to an aggregation.
@@ -119,6 +120,9 @@ impl GroupingAggregation {
     }
     pub fn average(expression: impl Into<GroupingExpression>) -> Self {
         Self::Average(expression.into())
+    }
+    pub fn avg(field: impl Into<String>) -> Self {
+        Self::average(field.into())
     }
     pub fn sum(expression: impl Into<GroupingExpression>) -> Self {
         Self::Sum(expression.into())
@@ -133,7 +137,7 @@ impl GroupingAggregation {
         Self::Xor(expression.into())
     }
     pub fn stddev(expression: impl Into<GroupingExpression>) -> Self {
-        Self::StandardDeviation(expression.into())
+        Self::StdDev(expression.into())
     }
     pub fn quantiles<I>(expression: impl Into<GroupingExpression>, quantiles: I) -> Self
     where
@@ -143,6 +147,16 @@ impl GroupingAggregation {
             expression: expression.into(),
             quantiles: quantiles.into_iter().collect(),
         }
+    }
+    pub fn summary() -> Self {
+        Self::Summary(None)
+    }
+    pub fn summary_named(name: impl Into<String>) -> Self {
+        Self::Summary(Some(name.into()))
+    }
+    /// Name this aggregation when it is used as an output.
+    pub fn as_(self, label: impl Into<String>) -> GroupingOutput {
+        GroupingOutput::from(self).label(label)
     }
     pub fn alias_ref(name: impl Into<String>) -> Self {
         Self::AliasRef(name.into())
@@ -180,6 +194,10 @@ impl GroupingOutput {
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
+    }
+    /// Compatibility alias for assigning an output label.
+    pub fn as_(self, label: impl Into<String>) -> Self {
+        self.label(label)
     }
 }
 
@@ -415,8 +433,8 @@ impl GroupingLevel {
 /// execute without approximation: scalar expressions and verified functions,
 /// linear nesting, aggregation aliases/outputs, order, precision, one filter or
 /// keep predicate per level, and the executable aggregation family. Summary
-/// aggregation and continuations remain absent because their native runtime
-/// paths are incomplete. Member/map/bucket classifiers and raw grouping text
+/// aggregation can be represented for API parity but remains non-executable in
+/// the native result path; continuations remain absent. Member/map/bucket classifiers and raw grouping text
 /// remain absent because native lowering rejects them. The adapter's narrow
 /// root-only `where(true)` / `where($query)` forms are also not surfaced as a
 /// general Rust predicate API.
@@ -623,7 +641,7 @@ fn aggregation_to_expression_ir(aggregation: GroupingAggregation) -> Result<Grou
         GroupingAggregation::Xor(expression) => {
             GroupingAggregationIr::Xor(expression_to_ir(expression)?)
         }
-        GroupingAggregation::StandardDeviation(expression) => {
+        GroupingAggregation::StdDev(expression) => {
             GroupingAggregationIr::StdDev(expression_to_ir(expression)?)
         }
         GroupingAggregation::Quantiles {
@@ -633,6 +651,7 @@ fn aggregation_to_expression_ir(aggregation: GroupingAggregation) -> Result<Grou
             quantiles,
             expression: expression_to_ir(expression)?,
         },
+        GroupingAggregation::Summary(name) => GroupingAggregationIr::Summary(name),
         GroupingAggregation::AliasRef(name) => return Ok(GroupingExpressionIr::Alias(name)),
         GroupingAggregation::Named(_, _) => {
             return Err(Error::search(
@@ -659,6 +678,22 @@ fn output_to_ir(output: GroupingOutput) -> Result<GroupingOutputIr> {
         GroupingOutputSource::Alias(name) => GroupingExpressionIr::Alias(name),
     };
     Ok(GroupingOutputIr { label, expression })
+}
+
+pub(crate) fn aggregate_request(outputs: &[GroupingOutput]) -> Result<GroupingRequestIr> {
+    Ok(GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![GroupingOperationIr::Output(
+                outputs
+                    .iter()
+                    .cloned()
+                    .map(output_to_ir)
+                    .collect::<Result<Vec<_>>>()?,
+            )],
+            label: None,
+        },
+        continuations: Vec::new(),
+    })
 }
 
 fn filter_to_ir(filter: GroupingFilter) -> Result<GroupingFilterIr> {

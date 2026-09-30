@@ -24,7 +24,7 @@ done
 # M10 is cumulative and must preserve the full implemented M0-M9 surface.
 reference/vespa/m9/verify-m9.sh --skip-workspace-quality
 run_workspace_quality
-cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m10
+cargo check -p searchkernel-vespa-engine --example api-contract-m10
 "$SCRIPT_DIR/check-structure.sh"
 
 # Freeze SearchReply coverage/degradation semantics in the normal cumulative
@@ -34,8 +34,8 @@ cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m10
 # Additive Phase 5 coverage of the real Vespa double | opaque-data value path.
 "$SCRIPT_DIR/feature-values/verify-feature-values.sh"
 
-cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bins
-require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m10-driver" \
+cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-m10-driver
+require_native_driver "$CARGO_TARGET_DIR/debug/examples/searchkernel-m10-driver" \
   sk_engine_open \
   sk_engine_search_generic \
   sk_generic_search_request_add_query_feature \
@@ -51,7 +51,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   fi
 
   cfg="$TMP/$id-cfg"; data="$TMP/$id-data"; mkdir -p "$data"
-  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m10-driver -- \
+  cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m10-driver -- \
     "$s" "$cfg" "$data" | "$SCRIPT_DIR/canonicalize.py" > "$TMP/rust-$id.json"
   "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/rust-$id.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -67,14 +67,13 @@ for c in json.load(open(sys.argv[1],encoding='utf-8'))['cases']:
 PY
 while read -r id expected; do
   cfg="$TMP/error-$id-cfg"; data="$TMP/error-$id-data"; mkdir -p "$data"
-  actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m10-error -- "$ERRORS" "$id" "$cfg" "$data")"
+  actual="$(cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m10-error -- "$ERRORS" "$id" "$cfg" "$data")"
   [[ "$actual" == "$expected" ]] || { echo "M10 error category mismatch $id: expected=$expected actual=$actual" >&2; exit 1; }
 done < "$TMP/error-jobs"
 
 REGRESSIONS="$SCRIPT_DIR/config-regressions.json"
 mkdir -p "$TMP/config-regressions-data"
-cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" \
-  --bin searchkernel-m10-config-regressions -- \
+cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m10-config-regressions -- \
   "$REGRESSIONS" "$TMP/config-regressions" "$TMP/config-regressions-data"
 
 echo 'M10 verification passed'

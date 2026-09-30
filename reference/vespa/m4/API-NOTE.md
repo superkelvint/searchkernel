@@ -1,6 +1,6 @@
 # API freeze note
 
-`reference/vespa/api-contract/src/bin/m4.rs` deliberately freezes only the
+`core/crates/searchkernel-vespa-engine/examples/api-contract-m4.rs` deliberately freezes only the
 **additive M4 text surface**. It does not restate M1 engine construction or M2
 delete syntax.
 

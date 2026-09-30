@@ -18,7 +18,7 @@ fi
 # M12 is cumulative.
 reference/vespa/m11/verify-m11.sh --skip-workspace-quality
 run_workspace_quality
-cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m12
+cargo check -p searchkernel-vespa-engine --example api-contract-m12
 "$M12/check-structure.sh"
 
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -26,10 +26,11 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "M12 direct oracle is not built; author/review it per oracle/AUTHOR_ORACLE.md and run oracle/build-cpp-oracle.sh"
 fi
 
-cargo build --quiet --manifest-path "$M12/rust-driver/Cargo.toml" --bins
-LOW="$CARGO_TARGET_DIR/debug/searchkernel-m12-driver"
-ADAPTER="$CARGO_TARGET_DIR/debug/searchkernel-m12-adapter-driver"
-PREPARE="$CARGO_TARGET_DIR/debug/searchkernel-m12-prepare-fixture"
+cargo build --quiet -p searchkernel --features native --example searchkernel-m12-driver
+cargo build --quiet -p searchkernel --features native --example searchkernel-m12-prepare-fixture
+LOW="$CARGO_TARGET_DIR/debug/examples/searchkernel-m12-driver"
+ADAPTER="$CARGO_TARGET_DIR/debug/examples/searchkernel-m12-adapter-driver"
+PREPARE="$CARGO_TARGET_DIR/debug/examples/searchkernel-m12-prepare-fixture"
 require_native_driver "$LOW" \
   sk_engine_open \
   sk_engine_search_generic \
@@ -44,7 +45,8 @@ prepare_fixture() {
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$M12/oracle/prepare-fixture.sh" "$scenario" "$config" "$data"
   else
-    "$PREPARE" "$scenario" "$config" "$data"
+    cargo run --quiet -p searchkernel --features native --example searchkernel-m12-prepare-fixture -- \
+      "$scenario" "$config" "$data"
   fi
 }
 
@@ -63,7 +65,7 @@ for s in "$M12"/scenarios/[0-9][0-9]-*.json; do
 
   cfg="$TMP/$id-cfg"; data="$TMP/$id-data"
   prepare_fixture "$s" "$cfg" "$data"
-  cargo run --quiet --manifest-path "$M12/rust-driver/Cargo.toml" --bin searchkernel-m12-driver -- \
+  cargo run --quiet -p searchkernel --features native --example searchkernel-m12-driver -- \
     "$s" "$cfg" "$data" | "$M12/canonicalize.py" > "$TMP/low-$id.json"
   "$M12/compare.py" "$M12/expected/$id.json" "$TMP/low-$id.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -73,7 +75,7 @@ for s in "$M12"/scenarios/[0-9][0-9]-*.json; do
   # Re-prepare because opening/matching/close may mutate persistent engine state.
   rm -rf "$cfg" "$data"
   prepare_fixture "$s" "$cfg" "$data"
-  cargo run --quiet --manifest-path "$M12/rust-driver/Cargo.toml" --bin searchkernel-m12-adapter-driver -- \
+  cargo run --quiet -p searchkernel --features native --example searchkernel-m12-adapter-driver -- \
     "$s" "$DEFINITION_BIN" "$cfg" "$data" | "$M12/canonicalize.py" > "$TMP/adapter-$id.json"
   "$M12/compare.py" "$M12/expected/$id.json" "$TMP/adapter-$id.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -86,7 +88,7 @@ ERRORS="$M12/scenarios/errors.json"
 while read -r id expected path; do
   cfg="$TMP/error-$id-cfg"; data="$TMP/error-$id-data"
   prepare_fixture "$M12/scenarios/01-exact-near-far.json" "$cfg" "$data"
-  actual="$(cargo run --quiet --manifest-path "$M12/rust-driver/Cargo.toml" --bin searchkernel-m12-error -- "$ERRORS" "$id" "$cfg" "$data" "$DEFINITION_BIN" 2>/dev/null || true)"
+  actual="$(cargo run --quiet -p searchkernel --features native --example searchkernel-m12-error -- "$ERRORS" "$id" "$cfg" "$data" "$DEFINITION_BIN" 2>/dev/null || true)"
   [[ "$actual" == "$expected" ]] || {
     echo "M12 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1

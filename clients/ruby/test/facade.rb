@@ -556,3 +556,84 @@ puts "Ruby facade/lifecycle tests PASS"
 # SKC: query.fuzzy/basic kinds=ergonomic runtime=http
 # SKC: query.geo/basic kinds=ergonomic runtime=http
 # SKC: query.weighted_and_wand/basic kinds=ergonomic runtime=http
+
+Dir.mktmpdir("searchkernel-ruby-managed-root-race-") do |root|
+  data_root = File.join(root, ".searchkernel-managed")
+  errors = []
+  mutex = Mutex.new
+  threads = 8.times.map do
+    Thread.new do
+      begin
+        SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+      rescue StandardError => error
+        mutex.synchronize { errors << error }
+      end
+    end
+  end
+  threads.each(&:join)
+  same([], errors, "concurrent managed-root first use converges")
+  same(
+    "searchkernel-managed-v1\n",
+    File.read(File.join(data_root, SearchKernel::ManagedLocalHost::MANAGED_ROOT_MARKER_NAME)),
+    "managed-root ownership marker is atomically published",
+  )
+end
+
+Dir.mktmpdir("searchkernel-ruby-unowned-empty-root-") do |root|
+  data_root = File.join(root, ".searchkernel-managed")
+  Dir.mkdir(data_root)
+  inode = File.stat(data_root).ino
+  raises(SearchKernel::ClientError, "pre-existing empty unowned managed root rejects") do
+    SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  end
+  same(inode, File.stat(data_root).ino, "unowned managed root is never replaced")
+  same([], Dir.children(data_root), "unowned managed root remains empty")
+end
+
+Dir.mktmpdir("searchkernel-ruby-managed-root-marker-") do |root|
+  data_root = File.join(root, ".searchkernel-managed")
+  Dir.mkdir(data_root)
+  marker = File.join(data_root, SearchKernel::ManagedLocalHost::MANAGED_ROOT_MARKER_NAME)
+  File.write(marker, "searchkernel-managed-v2\n")
+  raises(SearchKernel::ClientError, "wrong managed-root marker version rejects") do
+    SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  end
+  File.delete(marker)
+  Dir.mkdir(marker)
+  raises(SearchKernel::ClientError, "managed-root marker directory rejects") do
+    SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  end
+end
+
+Dir.mktmpdir("searchkernel-ruby-migrate-symlink-") do |root|
+  real = File.join(root, "real-index")
+  source = File.join(root, "legacy-index")
+  data_root = File.join(root, ".searchkernel-managed")
+  Dir.mkdir(real)
+  Dir.mkdir(data_root)
+  File.symlink(real, source)
+  raises(SearchKernel::ClientError, "legacy migration rejects a symlink source") do
+    SearchKernel::ManagedLocalHost.migrate_legacy(source, data_root, "local-test")
+  end
+  assert(File.symlink?(source), "rejected legacy symlink remains untouched")
+  assert(File.directory?(real), "rejected legacy symlink target remains untouched")
+end
+
+legacy_env = %w[
+  SEARCHKERNEL_INDEX_PATH
+  SEARCHKERNEL_INDEX_DEFINITION
+  SEARCHKERNEL_INDEX_DEFINITION_JSON
+].to_h { |key| [key, ENV[key]] }
+begin
+  ENV["SEARCHKERNEL_INDEX_PATH"] = "/legacy/index"
+  ENV["SEARCHKERNEL_INDEX_DEFINITION"] = "/legacy/definition.fb"
+  ENV["SEARCHKERNEL_INDEX_DEFINITION_JSON"] = "/legacy/definition.json"
+  child_env = SearchKernel::ManagedLocalHost.host_environment
+  same(nil, child_env["SEARCHKERNEL_INDEX_PATH"], "managed host unsets legacy index path")
+  same(nil, child_env["SEARCHKERNEL_INDEX_DEFINITION"], "managed host unsets legacy definition")
+  same(nil, child_env["SEARCHKERNEL_INDEX_DEFINITION_JSON"], "managed host unsets legacy JSON definition")
+ensure
+  legacy_env.each do |key, value|
+    value.nil? ? ENV.delete(key) : ENV[key] = value
+  end
+end
