@@ -56,11 +56,15 @@ function localLocation(path: string): { indexPath: string; dataRoot: string; tar
 
 async function reserveManagedPath(indexPath: string, target: string): Promise<void> {
   await mkdir(dirname(indexPath), { recursive: true });
+  let created = false;
   try {
     await mkdir(indexPath);
+    created = true;
     await writeFile(join(indexPath, MANAGED_MARKER_NAME), `${target}\n`, { flag: "wx" });
   } catch (error) {
-    await rm(indexPath, { recursive: true, force: true }).catch(() => undefined);
+    if (created) {
+      await rm(indexPath, { recursive: true, force: true }).catch(() => undefined);
+    }
     throw error;
   }
 }
