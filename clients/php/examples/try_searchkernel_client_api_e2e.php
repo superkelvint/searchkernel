@@ -341,6 +341,12 @@ function writeRealEngineParity(array $scenarios): void
         $previous = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
         $observations['scenarios'] = array_replace($previous['scenarios'] ?? [], $scenarios);
     }
+    foreach ($observations['scenarios'] as &$scenario) {
+        if (isset($scenario['capabilities']) && $scenario['capabilities'] === []) {
+            $scenario['capabilities'] = (object) [];
+        }
+    }
+    unset($scenario);
     file_put_contents($path, json_encode($observations, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
 }
 
