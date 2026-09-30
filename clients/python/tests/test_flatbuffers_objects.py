@@ -467,6 +467,23 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "uint32"):
             RankProfile("two-phase").rerank_count(0x1_0000_0000)
 
+
+    def test_struct_field_preserves_capability_options(self):
+        definition = StructField(
+            {"first": Keyword(), "last": Keyword()},
+            stored=True,
+            searchable=False,
+            filterable=True,
+            sortable=False,
+            facetable=True,
+        ).definition("person")
+        self.assertTrue(definition.stored.value)
+        self.assertFalse(definition.searchable.value)
+        self.assertTrue(definition.filterable.value)
+        self.assertFalse(definition.sortable.value)
+        self.assertTrue(definition.facetable.value)
+        self.assertEqual([field.name for field in definition.dataType.kind.fields], ["first", "last"])
+
     def test_dense_tensor_values_round_trip_through_python_value(self):
         tensor = Tensor.dense("tensor<float>(x[2])", [1, 0])
         encoded = value(tensor)
