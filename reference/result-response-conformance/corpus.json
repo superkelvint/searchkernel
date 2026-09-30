@@ -204,6 +204,21 @@
       "id": "non-finite-mixed-tensor-cell",
       "file": "result-malformed-non-finite-mixed-tensor-cell.skrs",
       "failure_class": "non_finite_mixed_tensor_cell"
+    },
+    {
+      "id": "tensor-dense-nan",
+      "file": "invalid-tensor-dense-nan.skrs",
+      "failure_class": "non_finite_tensor_cell"
+    },
+    {
+      "id": "tensor-sparse-positive-infinity",
+      "file": "invalid-tensor-sparse-positive-infinity.skrs",
+      "failure_class": "non_finite_tensor_cell"
+    },
+    {
+      "id": "tensor-mixed-negative-infinity",
+      "file": "invalid-tensor-mixed-negative-infinity.skrs",
+      "failure_class": "non_finite_tensor_cell"
     }
   ]
 }

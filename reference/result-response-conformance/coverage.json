@@ -1258,6 +1258,11 @@
       ],
       "malformed.non_finite_mixed_tensor_cell": [
         "non-finite-mixed-tensor-cell"
+      ],
+      "malformed.non_finite_tensor_cell": [
+        "tensor-dense-nan",
+        "tensor-sparse-positive-infinity",
+        "tensor-mixed-negative-infinity"
       ]
     }
   },

@@ -29,6 +29,10 @@ const fixtureRoot = resolve(
   process.cwd(),
   "../../core/crates/searchkernel-dispatch/tests/fixtures/portable/responses",
 );
+const conformanceFixtureRoot = resolve(
+  process.cwd(),
+  "../../reference/result-response-conformance/fixtures",
+);
 
 function loadFixture(name: string): SearchResults {
   const bytes = readFileSync(`${fixtureRoot}/result-${name}.skrs`);
@@ -393,14 +397,44 @@ describe("shared canonical result corpus", () => {
     if (!(result.root instanceof ResultGroup)) throw new Error("tensor fixture root is not a group");
     expect(result.hits[0]?.get("sparse")).toEqual({
       $searchkernel_tensor: {
-        typeSpec: "tensor<float>(label{})",
-        sparse: [{ address: [{ dimension: "label", label: "a" }], value: 0.5 }],
+        typeSpec: "tensor<float>(label{},region{})",
+        sparse: [
+          {
+            address: [
+              { dimension: "label", label: "a" },
+              { dimension: "region", label: "east" },
+            ],
+            value: 0.5,
+          },
+          {
+            address: [
+              { dimension: "label", label: "b" },
+              { dimension: "region", label: "west" },
+            ],
+            value: -0.25,
+          },
+        ],
       },
     });
     expect(result.root.value).toEqual({
       $searchkernel_tensor: {
-        typeSpec: "tensor<float>(label{},x[2])",
-        mixed: [{ address: [{ dimension: "label", label: "b" }], values: [0.25, 0.75] }],
+        typeSpec: "tensor<float>(label{},region{},x[2])",
+        mixed: [
+          {
+            address: [
+              { dimension: "label", label: "b" },
+              { dimension: "region", label: "west" },
+            ],
+            values: [0.25, 0.75],
+          },
+          {
+            address: [
+              { dimension: "label", label: "c" },
+              { dimension: "region", label: "north" },
+            ],
+            values: [1.5, -2.0],
+          },
+        ],
       },
     });
   });
@@ -421,4 +455,17 @@ describe("shared canonical result corpus", () => {
       expect(result.facets, filename).toEqual({});
     }
   });
+  it.each([
+    "invalid-tensor-dense-nan.skrs",
+    "invalid-tensor-sparse-positive-infinity.skrs",
+    "invalid-tensor-mixed-negative-infinity.skrs",
+  ])("rejects forbidden tensor cells in %s", (filename) => {
+    expect(() => {
+      const bytes = readFileSync(`${conformanceFixtureRoot}/${filename}`);
+      const response = unpackResponse(new Uint8Array(bytes), "search");
+      return new SearchResults(response.payload as SearchResultT);
+    }).toThrow(/tensor cells must be finite/);
+  });
+
+
 });

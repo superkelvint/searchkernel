@@ -18,6 +18,11 @@ from SearchKernel.V2.Value import ValueT
 from SearchKernel.V2.ValueEntry import ValueEntryT
 from SearchKernel.V2.ValueKind import ValueKind
 
+CONFORMANCE_FIXTURE_ROOT = (
+    Path(__file__).resolve().parents[3]
+    / "reference/result-response-conformance/fixtures"
+)
+
 
 def result_node(node):
     node_type = ResultNodeKind.Hit if isinstance(node, HitT) else ResultNodeKind.ResultGroup
@@ -302,12 +307,22 @@ class SharedResultFixtureTest(unittest.TestCase):
             hit["sparse"],
             {
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(label{})",
+                    "type_spec": "tensor<float>(label{},region{})",
                     "sparse": [
                         {
-                            "address": [{"dimension": "label", "label": "a"}],
+                            "address": [
+                                {"dimension": "label", "label": "a"},
+                                {"dimension": "region", "label": "east"},
+                            ],
                             "value": 0.5,
-                        }
+                        },
+                        {
+                            "address": [
+                                {"dimension": "label", "label": "b"},
+                                {"dimension": "region", "label": "west"},
+                            ],
+                            "value": -0.25,
+                        },
                     ],
                 }
             },
@@ -316,12 +331,22 @@ class SharedResultFixtureTest(unittest.TestCase):
             result.root.value,
             {
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(label{},x[2])",
+                    "type_spec": "tensor<float>(label{},region{},x[2])",
                     "mixed": [
                         {
-                            "address": [{"dimension": "label", "label": "b"}],
+                            "address": [
+                                {"dimension": "label", "label": "b"},
+                                {"dimension": "region", "label": "west"},
+                            ],
                             "values": [0.25, 0.75],
-                        }
+                        },
+                        {
+                            "address": [
+                                {"dimension": "label", "label": "c"},
+                                {"dimension": "region", "label": "north"},
+                            ],
+                            "values": [1.5, -2.0],
+                        },
                     ],
                 }
             },
@@ -342,6 +367,19 @@ class SharedResultFixtureTest(unittest.TestCase):
             result = self.load(path.stem.removeprefix("result-"))
             result._project_facet("brand", "brand")
             self.assertEqual(result.facets, {}, path.name)
+
+    def test_shared_malformed_tensor_fixtures_fail_closed(self):
+        for filename in (
+            "invalid-tensor-dense-nan.skrs",
+            "invalid-tensor-sparse-positive-infinity.skrs",
+            "invalid-tensor-mixed-negative-infinity.skrs",
+        ):
+            with self.subTest(filename=filename):
+                envelope = unpack_response(
+                    (CONFORMANCE_FIXTURE_ROOT / filename).read_bytes(), "search"
+                )
+                with self.assertRaisesRegex(ValueError, "finite"):
+                    SearchResults(envelope.payload)
 
 
 if __name__ == "__main__":

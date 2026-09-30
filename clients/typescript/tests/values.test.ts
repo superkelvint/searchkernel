@@ -109,6 +109,10 @@ describe("portable values", () => {
       ValueKind.NonFiniteFloatValue,
       new NonFiniteFloatValueT(NonFiniteFloatKind.NaN),
     )) as number)).toBe(true);
+    expect(fromValue(new ValueT(
+      ValueKind.NonFiniteFloatValue,
+      new NonFiniteFloatValueT(NonFiniteFloatKind.NegativeInfinity),
+    ))).toBe(Number.NEGATIVE_INFINITY);
   });
 
   it("fails closed for missing or unknown value/tensor discriminators", () => {
