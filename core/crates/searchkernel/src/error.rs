@@ -151,6 +151,46 @@ impl Error {
         )
     }
 
+    #[doc(hidden)]
+    pub fn to_lifecycle_failure(&self) -> searchkernel_ir::LifecycleFailure {
+        let code = match self.code() {
+            ErrorCode::InvalidArgument => searchkernel_ir::LifecycleFailureCode::InvalidArgument,
+            ErrorCode::NotFound => searchkernel_ir::LifecycleFailureCode::NotFound,
+            ErrorCode::AlreadyExists => searchkernel_ir::LifecycleFailureCode::AlreadyExists,
+            ErrorCode::FailedPrecondition => {
+                searchkernel_ir::LifecycleFailureCode::FailedPrecondition
+            }
+            ErrorCode::Conflict => searchkernel_ir::LifecycleFailureCode::Conflict,
+            ErrorCode::Unsupported => searchkernel_ir::LifecycleFailureCode::Unsupported,
+            ErrorCode::ResourceExhausted => {
+                searchkernel_ir::LifecycleFailureCode::ResourceExhausted
+            }
+            ErrorCode::Internal => searchkernel_ir::LifecycleFailureCode::Internal,
+            ErrorCode::Unavailable => searchkernel_ir::LifecycleFailureCode::Unavailable,
+            ErrorCode::DeadlineExceeded => searchkernel_ir::LifecycleFailureCode::DeadlineExceeded,
+            ErrorCode::CorruptIndex => searchkernel_ir::LifecycleFailureCode::CorruptIndex,
+            ErrorCode::IncompatibleIndex => {
+                searchkernel_ir::LifecycleFailureCode::IncompatibleIndex
+            }
+            ErrorCode::IndexClosed => searchkernel_ir::LifecycleFailureCode::IndexClosed,
+        };
+        searchkernel_ir::LifecycleFailure {
+            code,
+            message: self.to_string(),
+            details: self
+                .details()
+                .iter()
+                .map(|detail| searchkernel_ir::LifecycleFailureDetail {
+                    code: detail.code.clone(),
+                    path: detail.path.clone(),
+                    message: detail.message.clone(),
+                    metadata: detail.metadata.clone(),
+                })
+                .collect(),
+            retryable: self.retryable(),
+        }
+    }
+
     pub(crate) fn from_ir(error: searchkernel_ir::PortableError) -> Self {
         let code = match error.code {
             searchkernel_ir::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
@@ -228,6 +268,34 @@ mod tests {
         );
         assert_eq!(detailed.details()[0].code, "bad_field");
         assert_eq!(detailed.details()[0].message, "wrong type");
+    }
+
+    #[test]
+    fn lifecycle_failure_adapter_classifies_every_internal_error_code() {
+        let cases = [
+            (ErrorCode::InvalidArgument, searchkernel_ir::LifecycleFailureCode::InvalidArgument),
+            (ErrorCode::NotFound, searchkernel_ir::LifecycleFailureCode::NotFound),
+            (ErrorCode::AlreadyExists, searchkernel_ir::LifecycleFailureCode::AlreadyExists),
+            (ErrorCode::FailedPrecondition, searchkernel_ir::LifecycleFailureCode::FailedPrecondition),
+            (ErrorCode::Conflict, searchkernel_ir::LifecycleFailureCode::Conflict),
+            (ErrorCode::Unsupported, searchkernel_ir::LifecycleFailureCode::Unsupported),
+            (ErrorCode::ResourceExhausted, searchkernel_ir::LifecycleFailureCode::ResourceExhausted),
+            (ErrorCode::Internal, searchkernel_ir::LifecycleFailureCode::Internal),
+            (ErrorCode::Unavailable, searchkernel_ir::LifecycleFailureCode::Unavailable),
+            (ErrorCode::DeadlineExceeded, searchkernel_ir::LifecycleFailureCode::DeadlineExceeded),
+            (ErrorCode::CorruptIndex, searchkernel_ir::LifecycleFailureCode::CorruptIndex),
+            (ErrorCode::IncompatibleIndex, searchkernel_ir::LifecycleFailureCode::IncompatibleIndex),
+            (ErrorCode::IndexClosed, searchkernel_ir::LifecycleFailureCode::IndexClosed),
+        ];
+        for (source, expected) in cases {
+            let failure = Error::search(source, "failure")
+                .with_detail("detail", Some("path"), "explanation")
+                .to_lifecycle_failure();
+            assert_eq!(failure.code, expected);
+            assert_eq!(failure.message, "failure");
+            assert_eq!(failure.details[0].code, "detail");
+            assert_eq!(failure.details[0].path.as_deref(), Some("path"));
+        }
     }
 
     #[test]

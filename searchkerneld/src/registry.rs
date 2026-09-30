@@ -437,42 +437,7 @@ fn lifecycle_index_error_to_portable(
     operation: searchkernel_ir::LifecycleOperation,
     error: IndexError,
 ) -> PortableError {
-    use searchkernel_ir::{LifecycleFailure, LifecycleFailureCode, LifecycleFailureDetail};
-
-    let code = match error.code() {
-        IndexErrorCode::InvalidArgument => LifecycleFailureCode::InvalidArgument,
-        IndexErrorCode::NotFound => LifecycleFailureCode::NotFound,
-        IndexErrorCode::AlreadyExists => LifecycleFailureCode::AlreadyExists,
-        IndexErrorCode::FailedPrecondition => LifecycleFailureCode::FailedPrecondition,
-        IndexErrorCode::Conflict => LifecycleFailureCode::Conflict,
-        IndexErrorCode::Unsupported => LifecycleFailureCode::Unsupported,
-        IndexErrorCode::ResourceExhausted => LifecycleFailureCode::ResourceExhausted,
-        IndexErrorCode::Internal => LifecycleFailureCode::Internal,
-        IndexErrorCode::Unavailable => LifecycleFailureCode::Unavailable,
-        IndexErrorCode::DeadlineExceeded => LifecycleFailureCode::DeadlineExceeded,
-        IndexErrorCode::CorruptIndex => LifecycleFailureCode::CorruptIndex,
-        IndexErrorCode::IncompatibleIndex => LifecycleFailureCode::IncompatibleIndex,
-        IndexErrorCode::IndexClosed => LifecycleFailureCode::IndexClosed,
-        _ => LifecycleFailureCode::Other,
-    };
-    searchkernel_ir::lifecycle_failure(
-        operation,
-        LifecycleFailure {
-            code,
-            message: error.to_string(),
-            details: error
-                .details()
-                .iter()
-                .map(|detail| LifecycleFailureDetail {
-                    code: detail.code.clone(),
-                    path: detail.path.clone(),
-                    message: detail.message.clone(),
-                    metadata: detail.metadata.clone(),
-                })
-                .collect(),
-            retryable: error.retryable(),
-        },
-    )
+    searchkernel_ir::lifecycle_failure(operation, error.to_lifecycle_failure())
 }
 
 fn encode_lifecycle_result(

@@ -360,6 +360,33 @@ fn portable_error_semantics(
     )
 }
 
+fn ir_portable_error_semantics(
+    error: searchkernel_ir::PortableError,
+) -> (api::ErrorCode, String, Option<String>, String, String) {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let error = searchkernel_ir::error_offset(&mut builder, &error);
+    builder.finish(error, None);
+    let error = root::<api::Error<'_>>(builder.finished_data()).expect("canonical IR error");
+    let details = error.details().expect("canonical IR error details");
+    assert_eq!(details.len(), 1);
+    let detail = details.get(0);
+    (
+        error.code(),
+        error.message().unwrap_or_default().to_owned(),
+        detail.path().map(ToOwned::to_owned),
+        detail.code().unwrap_or_default().to_owned(),
+        detail.message().unwrap_or_default().to_owned(),
+    )
+}
+
+fn resolved_ir_request_error(request: &[u8]) -> searchkernel_ir::PortableError {
+    let envelope = root::<wire::RequestEnvelope<'_>>(request).expect("request envelope");
+    match searchkernel_ir::resolve_control_plane_request(envelope) {
+        Err(searchkernel_ir::ControlPlaneResolutionError::Semantic(error)) => error,
+        result => panic!("expected canonical IR semantic error, got {result:?}"),
+    }
+}
+
 fn assert_upsert(bytes: &[u8]) {
     assert_eq!(
         response(bytes).payload_type(),
@@ -1244,6 +1271,7 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
             create_request(&invalid, "title"),
             delete_index_request(&invalid),
         ] {
+            let expected = ir_portable_error_semantics(resolved_ir_request_error(&request));
             let direct = registry
                 .dispatch(&request)
                 .expect("direct semantic response");
@@ -1258,18 +1286,24 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
             let http = execute_http_json(http_address, &request).await;
             assert_eq!(
                 portable_error_semantics(&direct),
-                portable_error_semantics(&grpc_response),
-                "gRPC invalid target {invalid:?} must match direct IR semantics"
+                expected,
+                "direct invalid target {invalid:?} must match IR semantics"
             );
             assert_eq!(
-                portable_error_semantics(&direct),
+                portable_error_semantics(&grpc_response),
+                expected,
+                "gRPC invalid target {invalid:?} must match IR semantics"
+            );
+            assert_eq!(
                 portable_error_semantics(&http),
-                "HTTP invalid target {invalid:?} must match direct IR semantics"
+                expected,
+                "HTTP invalid target {invalid:?} must match IR semantics"
             );
         }
     }
 
     let missing = open_request(None);
+    let missing_expected = ir_portable_error_semantics(resolved_ir_request_error(&missing));
     let direct = registry.dispatch(&missing).expect("direct missing target");
     let grpc_missing = grpc
         .execute(Request::new(rpc::FlatBufferFrame {
@@ -1280,14 +1314,9 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
         .into_inner()
         .payload;
     let http_missing = execute_http_json(http_address, &missing).await;
-    assert_eq!(
-        portable_error_semantics(&direct),
-        portable_error_semantics(&grpc_missing)
-    );
-    assert_eq!(
-        portable_error_semantics(&direct),
-        portable_error_semantics(&http_missing)
-    );
+    assert_eq!(portable_error_semantics(&direct), missing_expected);
+    assert_eq!(portable_error_semantics(&grpc_missing), missing_expected);
+    assert_eq!(portable_error_semantics(&http_missing), missing_expected);
 
     let boundary_target = "a".repeat(128);
     assert_lifecycle(
@@ -1326,6 +1355,8 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
             .expect("seed duplicate target"),
         wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
     );
+    let already_exists_expected =
+        ir_portable_error_semantics(searchkernel_ir::already_exists_error());
     for request in [
         create_request_with_definition_name("already-there", "title", "already_there"),
         create_request_with_definition_name("already-there", "title", "already_there"),
@@ -1343,20 +1374,12 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
             .into_inner()
             .payload;
         let http = execute_http_json(http_address, &request).await;
-        assert_eq!(
-            portable_error_semantics(&direct),
-            portable_error_semantics(&grpc_response)
-        );
-        assert_eq!(
-            portable_error_semantics(&direct),
-            portable_error_semantics(&http)
-        );
-        assert_eq!(
-            portable_error_semantics(&direct).0,
-            api::ErrorCode::AlreadyExists
-        );
+        assert_eq!(portable_error_semantics(&direct), already_exists_expected);
+        assert_eq!(portable_error_semantics(&grpc_response), already_exists_expected);
+        assert_eq!(portable_error_semantics(&http), already_exists_expected);
     }
 
+    let not_found_expected = ir_portable_error_semantics(searchkernel_ir::not_found_error());
     for request in [
         open_request(Some("not-there")),
         delete_index_request("not-there"),
@@ -1373,18 +1396,9 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
             .into_inner()
             .payload;
         let http = execute_http_json(http_address, &request).await;
-        assert_eq!(
-            portable_error_semantics(&direct),
-            portable_error_semantics(&grpc_response)
-        );
-        assert_eq!(
-            portable_error_semantics(&direct),
-            portable_error_semantics(&http)
-        );
-        assert_eq!(
-            portable_error_semantics(&direct).0,
-            api::ErrorCode::NotFound
-        );
+        assert_eq!(portable_error_semantics(&direct), not_found_expected);
+        assert_eq!(portable_error_semantics(&grpc_response), not_found_expected);
+        assert_eq!(portable_error_semantics(&http), not_found_expected);
     }
 
     let owned_path = temp.0.join("external_owner");
@@ -1397,6 +1411,7 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
         ),
     )
     .expect("create externally owned index");
+    let conflict_expected = ir_portable_error_semantics(searchkernel_ir::index_in_use_error());
     for request in [
         open_request(Some("external_owner")),
         delete_index_request("external_owner"),
@@ -1413,17 +1428,9 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
             .into_inner()
             .payload;
         let http = execute_http_json(http_address, &request).await;
-        assert_eq!(
-            portable_error_semantics(&direct),
-            portable_error_semantics(&grpc_response)
-        );
-        assert_eq!(
-            portable_error_semantics(&direct),
-            portable_error_semantics(&http)
-        );
-        let outcome = portable_error_semantics(&direct);
-        assert_eq!(outcome.0, api::ErrorCode::Conflict);
-        assert_eq!(outcome.3, searchkernel_ir::INDEX_IN_USE_DETAIL_CODE);
+        assert_eq!(portable_error_semantics(&direct), conflict_expected);
+        assert_eq!(portable_error_semantics(&grpc_response), conflict_expected);
+        assert_eq!(portable_error_semantics(&http), conflict_expected);
     }
     owner.close().expect("close external owner");
 
