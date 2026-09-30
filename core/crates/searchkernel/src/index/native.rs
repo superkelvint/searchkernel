@@ -358,13 +358,11 @@ impl Index {
         )
     }
 
-    /// Move one legacy path-owned index into a daemon-owned storage path.
+    /// Move one validated path-owned index into a daemon-owned storage path.
     ///
-    /// This is intentionally local control-plane plumbing used by managed-local
-    /// clients during the one-time transition from `--index PATH` to canonical
-    /// logical targets. Both source and destination lifecycle locks are held
-    /// across validation and rename so an active legacy process cannot be moved
-    /// out from underneath itself.
+    /// This is local control-plane plumbing for the managed-local transition
+    /// from legacy `--index PATH` ownership to canonical logical targets.
+    /// Both lifecycle locks are held across validation and rename.
     #[doc(hidden)]
     #[cfg(feature = "internal-api")]
     pub fn migrate_storage(
@@ -398,7 +396,6 @@ impl Index {
             return Err(Error::not_found(source.display().to_string()));
         }
 
-        // Prove this is a complete Search Kernel index before moving anything.
         let manifest = super::manifest::IndexManifest::read(source)?;
         let config = source.join("config");
         if !source.join("data").is_dir() || !config.is_dir() {
@@ -446,8 +443,6 @@ impl Index {
         if let Err(error) = sync_published_parent(source_parent)
             .and_then(|_| sync_published_parent(destination_parent))
         {
-            // The data is already fully present at the destination. Surface the
-            // durability uncertainty without attempting a lossy rollback.
             return Err(Error::search(
                 crate::error::ErrorCode::Unavailable,
                 format!(
