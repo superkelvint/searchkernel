@@ -285,7 +285,7 @@ mod showcase {
                         ))
                     })
                     .collect::<Result<Vec<_>, String>>()?,
-                100,
+                input["limit"].as_u64().ok_or("weak-and target hits missing")? as u32,
             ),
             "typed_query_wand" => Query::wand(field()?, weighted()?),
             "typed_query_weighted_set" => Query::weighted_set(field()?, weighted()?),
