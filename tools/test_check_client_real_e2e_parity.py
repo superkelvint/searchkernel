@@ -102,7 +102,7 @@ class RealE2EParityComparatorTests(unittest.TestCase):
                 "searchkernelPhpClientApiE2eCorpus()['scenario_inputs']",
             ),
             "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs": (
-                "consumed_intents.get(scenario)",
+                ".get(scenario)",
                 "for (scenario, intent) in shared_inputs",
             ),
         }
