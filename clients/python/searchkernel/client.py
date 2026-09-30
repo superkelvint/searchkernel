@@ -128,6 +128,15 @@ def value(item: Any) -> ValueT:
     raise TypeError(f"unsupported value type: {type(item).__name__}")
 
 
+def uint64(item: int) -> ValueT:
+    """Construct an explicitly tagged UInt64 request value."""
+    if isinstance(item, bool) or not isinstance(item, int):
+        raise TypeError("uint64 value must be an integer")
+    if item < 0 or item > 2**64 - 1:
+        raise ValueError("uint64 value is out of range")
+    return ValueT(kindType=ValueKind.UInt64Value, kind=UInt64ValueT(value=item))
+
+
 def _document(identifier: str, fields: Mapping[str, Any]) -> DocumentT:
     if not isinstance(identifier, str) or not identifier:
         raise ValueError("document id must be a non-empty string")
@@ -135,17 +144,6 @@ def _document(identifier: str, fields: Mapping[str, Any]) -> DocumentT:
         id=identifier,
         fields=[ValueEntryT(key=str(name), value=value(item)) for name, item in sorted(fields.items())],
     )
-
-
-def _entries(entries: Sequence[ValueEntryT] | None) -> dict[str, ValueT]:
-    result = {}
-    for entry in entries or []:
-        if entry is None or entry.key is None:
-            continue
-        if entry.key in result:
-            raise ValueError(f"duplicate key: {entry.key!r}")
-        result[entry.key] = entry.value
-    return result
 
 
 def _decode_value_entries(entries: Sequence[ValueEntryT] | None) -> dict[str, Any]:
@@ -178,6 +176,12 @@ def _tensor_address(
     return result
 
 
+def _finite_tensor_cell(value: float) -> float:
+    if not math.isfinite(value):
+        raise ValueError("tensor cells must be finite")
+    return value
+
+
 def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
     tensor = {"type_spec": payload.typeSpec}
     if payload.payloadType == TensorPayloadKind.DenseTensorValues:
@@ -186,7 +190,7 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
             raise ValueError("mismatched Tensor payload: DenseTensorValues")
         if dense.values is None:
             raise ValueError("malformed dense tensor payload")
-        tensor["dense"] = list(dense.values)
+        tensor["dense"] = [_finite_tensor_cell(value) for value in dense.values]
     elif payload.payloadType == TensorPayloadKind.SparseTensorCells:
         sparse = payload.payload
         if not isinstance(sparse, SparseTensorCellsT):
@@ -197,7 +201,12 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
         for cell in sparse.cells:
             if not isinstance(cell, TensorCellT):
                 raise ValueError("malformed sparse tensor cell")
-            cells.append({"address": _tensor_address(cell.address), "value": cell.value})
+            cells.append(
+                {
+                    "address": _tensor_address(cell.address),
+                    "value": _finite_tensor_cell(cell.value),
+                }
+            )
         tensor["sparse"] = cells
     elif payload.payloadType == TensorPayloadKind.MixedTensorBlocks:
         mixed = payload.payload
@@ -212,7 +221,10 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
             if block.values is None:
                 raise ValueError("malformed mixed tensor block")
             blocks.append(
-                {"address": _tensor_address(block.address), "values": list(block.values)}
+                {
+                    "address": _tensor_address(block.address),
+                    "values": [_finite_tensor_cell(value) for value in block.values],
+                }
             )
         tensor["mixed"] = blocks
     else:
@@ -676,7 +688,7 @@ class Index:
             return None
         return {
             "_id": result.document.id,
-            **{name: _python_value(item) for name, item in _entries(result.document.fields).items()},
+            **_decode_value_entries(result.document.fields),
         }
 
     def search(self, request: Any) -> Any:
@@ -762,4 +774,4 @@ def _index_definition(
     return IndexDefinitionT(name="index", fields=fields, rankProfiles=profiles or None)
 
 
-__all__ = ["Client", "ClientError", "Index", "SearchKernelError", "Tensor", "value"]
+__all__ = ["Client", "ClientError", "Index", "SearchKernelError", "Tensor", "uint64", "value"]

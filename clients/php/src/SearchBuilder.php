@@ -96,7 +96,7 @@ class SearchBuilder
         return $copy;
     }
 
-    public function sort(string $field, string $direction = 'asc', mixed $missing = null): self
+    public function sort(string $field, string $direction, mixed $missing = null): self
     {
         if ($field === '') {
             throw new InvalidArgumentException('sort field must not be empty');
@@ -529,9 +529,11 @@ class SearchBuilder
         }
         if ($this->ranking !== null || $this->rankProperties !== []) {
             $request['ranking'] = [
-                'profile' => $this->ranking ?? 'default',
                 'properties' => Protocol::stringEntries($this->rankProperties),
             ];
+            if ($this->ranking !== null) {
+                $request['ranking']['profile'] = $this->ranking;
+            }
         }
         if ($this->inputs !== []) {
             $inputs = $this->inputs;

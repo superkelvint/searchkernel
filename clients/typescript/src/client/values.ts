@@ -187,6 +187,11 @@ function decodeAddress(entries: readonly TensorAddressEntryT[]): DecodedTensorAd
   });
 }
 
+function finiteTensorCell(value: number): number {
+  if (!Number.isFinite(value)) throw new ValueDecodeError("tensor cells must be finite");
+  return value;
+}
+
 /** Returns a union payload only when it matches the discriminator exactly. */
 function requirePayload<T>(
   input: ValueT,
@@ -199,13 +204,18 @@ function requirePayload<T>(
   return input.kind;
 }
 
-function valueObjectEntries(fields: readonly ValueEntryT[]): Record<string, unknown> {
+export function decodeValueEntries(
+  fields: readonly (ValueEntryT | null)[] | null | undefined,
+  label = "value object",
+): Record<string, unknown> {
   const decoded: Record<string, unknown> = {};
   const seen = new Set<string>();
-  for (const entry of fields) {
+  for (const entry of fields ?? []) {
+    if (entry === null) throw new ValueDecodeError(`malformed ${label} entry`);
     const key = portableText(entry.key);
-    if (key === null) throw new ValueDecodeError("value object entry has no key");
-    if (seen.has(key)) throw new ValueDecodeError(`duplicate value object key: ${key}`);
+    if (key === null) throw new ValueDecodeError(`${label} entry has no key`);
+    if (seen.has(key)) throw new ValueDecodeError(`duplicate ${label} key: ${key}`);
+    if (entry.value === null) throw new ValueDecodeError(`${label} entry has no Value payload: ${key}`);
     seen.add(key);
     decoded[key] = fromValue(entry.value);
   }
@@ -255,7 +265,7 @@ export function fromValue(input: ValueT | null): unknown {
     case ValueKind.ValueList:
       return requirePayload(input, ValueListT, "list").values.map(fromValue);
     case ValueKind.ValueObject:
-      return valueObjectEntries(requirePayload(input, ValueObjectT, "object").fields);
+      return decodeValueEntries(requirePayload(input, ValueObjectT, "object").fields);
     case ValueKind.TensorValue: {
       const tensor = requirePayload(input, TensorValueT, "tensor");
       const typeSpec = portableText(tensor.typeSpec);
@@ -265,7 +275,12 @@ export function fromValue(input: ValueT | null): unknown {
           if (!(tensor.payload instanceof DenseTensorValuesT)) {
             throw new ValueDecodeError("dense tensor has a missing or mismatched payload");
           }
-          return { $searchkernel_tensor: { typeSpec, dense: [...tensor.payload.values] } } satisfies DecodedTensor;
+          return {
+            $searchkernel_tensor: {
+              typeSpec,
+              dense: tensor.payload.values.map(finiteTensorCell),
+            },
+          } satisfies DecodedTensor;
         }
         case TensorPayloadKind.SparseTensorCells: {
           if (!(tensor.payload instanceof SparseTensorCellsT)) {
@@ -276,7 +291,7 @@ export function fromValue(input: ValueT | null): unknown {
               typeSpec,
               sparse: tensor.payload.cells.map((cell) => ({
                 address: decodeAddress(cell.address),
-                value: cell.value,
+                value: finiteTensorCell(cell.value),
               })),
             },
           } satisfies DecodedTensor;
@@ -290,7 +305,7 @@ export function fromValue(input: ValueT | null): unknown {
               typeSpec,
               mixed: tensor.payload.blocks.map((block) => ({
                 address: decodeAddress(block.address),
-                values: [...block.values],
+                values: block.values.map(finiteTensorCell),
               })),
             },
           } satisfies DecodedTensor;

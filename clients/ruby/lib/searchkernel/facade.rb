@@ -66,7 +66,7 @@ module SearchKernel
       self
     end
 
-    def sort(field, direction = "asc", missing: nil)
+    def sort(field, direction, missing: nil)
       Wire.name!(field, "sort field")
       sort = {
         "target" => {
@@ -313,10 +313,8 @@ module SearchKernel
       result["grouping"] = grouping unless grouping.empty?
 
       if @ranking || !@rank_properties.empty?
-        result["ranking"] = {
-          "profile" => @ranking || "default",
-          "properties" => Wire.string_entries(@rank_properties)
-        }
+        result["ranking"] = { "properties" => Wire.string_entries(@rank_properties) }
+        result["ranking"]["profile"] = @ranking unless @ranking.nil?
       end
 
       unless @inputs.empty?

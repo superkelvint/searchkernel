@@ -1,5 +1,6 @@
 // Search Kernel native adapter: hardening and timing support.
 #include <thread>
+#include <type_traits>
 // This file is included by abi.cc so the private adapter remains one native
 // boundary while responsibilities stay physically searchable by subsystem.
 
@@ -58,7 +59,7 @@ class FailpointController {
     std::map<std::string, Entry> _entries;
 
     static bool known(std::string_view name) noexcept {
-        static constexpr std::array<std::string_view, 19> names = {
+        static constexpr std::array<std::string_view, 22> names = {
             "open_before_native_create", "open_after_native_create",
             "open_constructor", "open_initialize",
             "mutation_before_native_call", "mutation_after_native_call",
@@ -67,7 +68,9 @@ class FailpointController {
             "attribute_mutation_before_native_call",
             "attribute_mutation_after_native_call", "group_before_match",
             "group_after_match", "search_after_id_resolution", "search_after_docsums",
-            "mutation_before_visibility_wait"};
+            "mutation_before_visibility_wait", "mutation_before_search_publication_wait",
+            "mutation_after_search_publication_start",
+            "matcher_publication_before_feedview_force_commit"};
         return std::find(names.begin(), names.end(), name) != names.end();
     }
 
@@ -165,6 +168,72 @@ public:
         }
     }
 };
+
+// Hardening builds install this forwarding view as FeedHandler's active view.
+// Automatic FeedHandler commits and Search Kernel's explicit publication fence
+// therefore pass through the same gate. The delegate remains Vespa's real
+// ready feed view; only forceCommit scheduling is held by the failpoint.
+class PublicationGateFeedView final : public proton::IFeedView {
+    proton::IFeedView::SP _delegate;
+    std::shared_ptr<FailpointController> _failpoints;
+
+public:
+    PublicationGateFeedView(proton::IFeedView::SP delegate,
+                             std::shared_ptr<FailpointController> failpoints) noexcept
+        : _delegate(std::move(delegate)), _failpoints(std::move(failpoints)) {}
+
+    const std::shared_ptr<const document::DocumentTypeRepo>& getDocumentTypeRepo() const override {
+        return _delegate->getDocumentTypeRepo();
+    }
+    const proton::ISimpleDocumentMetaStore* getDocumentMetaStorePtr() const override {
+        return _delegate->getDocumentMetaStorePtr();
+    }
+    void preparePut(proton::PutOperation& op) override { _delegate->preparePut(op); }
+    void handlePut(proton::FeedToken token, const proton::PutOperation& op) override {
+        _delegate->handlePut(std::move(token), op);
+    }
+    void prepareUpdate(proton::UpdateOperation& op) override { _delegate->prepareUpdate(op); }
+    void handleUpdate(proton::FeedToken token, const proton::UpdateOperation& op) override {
+        _delegate->handleUpdate(std::move(token), op);
+    }
+    void prepareRemove(proton::RemoveOperation& op) override { _delegate->prepareRemove(op); }
+    void handleRemove(proton::FeedToken token, const proton::RemoveOperation& op) override {
+        _delegate->handleRemove(std::move(token), op);
+    }
+    void prepareDeleteBucket(proton::DeleteBucketOperation& op) override {
+        _delegate->prepareDeleteBucket(op);
+    }
+    bool isMoveStillValid(const proton::MoveOperation& op) const override {
+        return _delegate->isMoveStillValid(op);
+    }
+    void prepareMove(proton::MoveOperation& op) override { _delegate->prepareMove(op); }
+    void handleDeleteBucket(const proton::DeleteBucketOperation& op,
+                            const DoneCallback& on_done) override {
+        _delegate->handleDeleteBucket(op, on_done);
+    }
+    void handleMove(const proton::MoveOperation& op, const DoneCallback& on_done) override {
+        _delegate->handleMove(op, on_done);
+    }
+    void heartBeat(search::SerialNum serial, const DoneCallback& on_done) override {
+        _delegate->heartBeat(serial, on_done);
+    }
+    void forceCommit(const CommitParam& param, const DoneCallback& on_done) override {
+        _failpoints->hit("matcher_publication_before_feedview_force_commit");
+        _delegate->forceCommit(param, on_done);
+    }
+    void handlePruneRemovedDocuments(const proton::PruneRemovedDocumentsOperation& op,
+                                     const DoneCallback& on_done) override {
+        _delegate->handlePruneRemovedDocuments(op, on_done);
+    }
+    void handleCompactLidSpace(const proton::CompactLidSpaceOperation& op,
+                               const DoneCallback& on_done) override {
+        _delegate->handleCompactLidSpace(op, on_done);
+    }
+};
+
+static_assert(std::is_nothrow_constructible_v<PublicationGateFeedView,
+                                              proton::IFeedView::SP,
+                                              std::shared_ptr<FailpointController>>);
 
 // Open failpoints are process-global because no Engine exists yet. Make them
 // thread-affine so parallel tests cannot consume a failpoint armed by another

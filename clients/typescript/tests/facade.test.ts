@@ -113,11 +113,41 @@ describe("ergonomic facade", () => {
     expect(request.limit?.value).toBe(20);
   });
 
+  it("requires an explicit field sort direction", () => {
+    const builder = index().search("running shoes");
+    expect(() => (builder.sort as (field: string) => unknown)("price")).toThrow(TypeError);
+    if (false) {
+      // @ts-expect-error Field sort direction is required by the public contract.
+      builder.sort("price");
+    }
+
+    const ascending = index().search("running shoes").sort("price", "asc").build();
+    const descending = index().search("running shoes").sort("price", "desc").build();
+    expect(ascending.sort?.[0]?.direction).toBe(1);
+    expect(descending.sort?.[0]?.direction).toBe(2);
+    expect(canonicalSnapshot(ascending)).toMatchObject({ sort: [{ direction: "asc" }] });
+    expect(canonicalSnapshot(descending)).toMatchObject({ sort: [{ direction: "desc" }] });
+  }, 120_000);
+
   it("rejects non-string rank properties and preserves string values", () => {
     const builder = index().search("running shoes");
     expect(() => builder.rankProperty("enabled", false as unknown as string)).toThrow(TypeError);
     expect(builder.rankProperty("source", "catalog").build().ranking?.properties?.[0]?.value)
       .toBe("catalog");
+  });
+
+  it("preserves absent and explicit ranking profiles with rank properties", () => {
+    const implicit = index().search("running shoes").rankProperty("source", "catalog").build();
+    expect(implicit.ranking?.profile).toBeNull();
+    expect(implicit.ranking?.properties?.[0]?.value).toBe("catalog");
+    const wire = packRequest("search", implicit);
+    const envelope = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(wire));
+    const search = envelope.payload(new SearchRequest());
+    expect(search?.ranking()?.profile()).toBeNull();
+
+    const explicit = index().search("running shoes").ranking("default")
+      .rankProperty("source", "catalog").build();
+    expect(explicit.ranking?.profile).toBe("default");
   });
 
   it("omits deprecated filter vectors when packing textual filters", () => {

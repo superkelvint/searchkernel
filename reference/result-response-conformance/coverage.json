@@ -1,0 +1,965 @@
+{
+  "version": 1,
+  "authority": "SearchResult transitive closure from api/searchkernel.fbs; every member is pinned and exercised against official BFBS JSON projections.",
+  "schema": {
+    "SearchResult": {
+      "kind": "table",
+      "members": [
+        "coverage",
+        "errors",
+        "metadata",
+        "root",
+        "timing",
+        "total_hits",
+        "trace"
+      ]
+    },
+    "ValueEntry": {
+      "kind": "table",
+      "members": [
+        "key",
+        "value"
+      ]
+    },
+    "Value": {
+      "kind": "table",
+      "members": [
+        "kind"
+      ]
+    },
+    "ValueKind": {
+      "kind": "union",
+      "members": [
+        "BoolValue",
+        "BytesValue",
+        "Float64Value",
+        "Int64Value",
+        "NonFiniteFloatValue",
+        "NullValueValue",
+        "StringValue",
+        "TensorValue",
+        "UInt64Value",
+        "ValueList",
+        "ValueObject"
+      ]
+    },
+    "TensorValue": {
+      "kind": "table",
+      "members": [
+        "payload",
+        "type_spec"
+      ]
+    },
+    "TensorPayloadKind": {
+      "kind": "union",
+      "members": [
+        "DenseTensorValues",
+        "MixedTensorBlocks",
+        "SparseTensorCells"
+      ]
+    },
+    "MixedTensorBlocks": {
+      "kind": "table",
+      "members": [
+        "blocks"
+      ]
+    },
+    "TensorBlock": {
+      "kind": "table",
+      "members": [
+        "address",
+        "values"
+      ]
+    },
+    "TensorAddressEntry": {
+      "kind": "table",
+      "members": [
+        "dimension",
+        "label"
+      ]
+    },
+    "SparseTensorCells": {
+      "kind": "table",
+      "members": [
+        "cells"
+      ]
+    },
+    "TensorCell": {
+      "kind": "table",
+      "members": [
+        "address",
+        "value"
+      ]
+    },
+    "DenseTensorValues": {
+      "kind": "table",
+      "members": [
+        "values"
+      ]
+    },
+    "ValueObject": {
+      "kind": "table",
+      "members": [
+        "fields"
+      ]
+    },
+    "ValueList": {
+      "kind": "table",
+      "members": [
+        "values"
+      ]
+    },
+    "BytesValue": {
+      "kind": "table",
+      "members": [
+        "value"
+      ]
+    },
+    "StringValue": {
+      "kind": "table",
+      "members": [
+        "value"
+      ]
+    },
+    "NonFiniteFloatValue": {
+      "kind": "table",
+      "members": [
+        "kind"
+      ]
+    },
+    "NonFiniteFloatKind": {
+      "kind": "enum",
+      "members": [
+        "NaN",
+        "NegativeInfinity",
+        "PositiveInfinity",
+        "Unspecified"
+      ]
+    },
+    "Float64Value": {
+      "kind": "table",
+      "members": [
+        "value"
+      ]
+    },
+    "UInt64Value": {
+      "kind": "table",
+      "members": [
+        "value"
+      ]
+    },
+    "Int64Value": {
+      "kind": "table",
+      "members": [
+        "value"
+      ]
+    },
+    "BoolValue": {
+      "kind": "table",
+      "members": [
+        "value"
+      ]
+    },
+    "NullValueValue": {
+      "kind": "table",
+      "members": [
+        "value"
+      ]
+    },
+    "NullValue": {
+      "kind": "enum",
+      "members": [
+        "Null",
+        "Unspecified"
+      ]
+    },
+    "SearchResultError": {
+      "kind": "table",
+      "members": [
+        "code",
+        "message",
+        "metadata",
+        "source",
+        "stack_trace",
+        "summary",
+        "transient"
+      ]
+    },
+    "OptionalBool": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ]
+    },
+    "SearchTiming": {
+      "kind": "table",
+      "members": [
+        "metadata",
+        "query_time_seconds",
+        "search_time_seconds",
+        "summary_fetch_time_seconds"
+      ]
+    },
+    "OptionalDouble": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ]
+    },
+    "Coverage": {
+      "kind": "table",
+      "members": [
+        "coverage_percent",
+        "degraded",
+        "documents",
+        "full",
+        "metadata",
+        "nodes",
+        "results",
+        "results_full"
+      ]
+    },
+    "CoverageDegraded": {
+      "kind": "table",
+      "members": [
+        "adaptive_timeout",
+        "ann_timeout",
+        "match_phase",
+        "metadata",
+        "non_ideal_state",
+        "timeout"
+      ]
+    },
+    "OptionalUInt64": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ]
+    },
+    "OptionalUInt32": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ]
+    },
+    "TotalHits": {
+      "kind": "table",
+      "members": [
+        "relation",
+        "value"
+      ]
+    },
+    "TotalHitsRelation": {
+      "kind": "enum",
+      "members": [
+        "Approximate",
+        "Exact",
+        "LowerBound",
+        "Unknown",
+        "Unspecified"
+      ]
+    },
+    "ResultNode": {
+      "kind": "table",
+      "members": [
+        "node"
+      ]
+    },
+    "ResultNodeKind": {
+      "kind": "union",
+      "members": [
+        "Hit",
+        "ResultGroup"
+      ]
+    },
+    "ResultGroup": {
+      "kind": "table",
+      "members": [
+        "children",
+        "continuations",
+        "fields",
+        "id",
+        "label",
+        "limits",
+        "metadata",
+        "relevance",
+        "source",
+        "types",
+        "value"
+      ]
+    },
+    "ResultLimits": {
+      "kind": "table",
+      "members": [
+        "from",
+        "to"
+      ]
+    },
+    "Relevance": {
+      "kind": "table",
+      "members": [
+        "value"
+      ]
+    },
+    "RelevanceKind": {
+      "kind": "union",
+      "members": [
+        "FiniteRelevance",
+        "NegativeInfinityRelevance",
+        "PositiveInfinityRelevance"
+      ]
+    },
+    "PositiveInfinityRelevance": {
+      "kind": "table",
+      "members": []
+    },
+    "NegativeInfinityRelevance": {
+      "kind": "table",
+      "members": []
+    },
+    "FiniteRelevance": {
+      "kind": "table",
+      "members": [
+        "value"
+      ]
+    },
+    "StringEntry": {
+      "kind": "table",
+      "members": [
+        "key",
+        "value"
+      ]
+    },
+    "Hit": {
+      "kind": "table",
+      "members": [
+        "fields",
+        "highlights",
+        "id",
+        "match_features",
+        "rank_features",
+        "relevance",
+        "sort_values",
+        "source",
+        "summary_features",
+        "types"
+      ]
+    },
+    "HighlightResult": {
+      "kind": "table",
+      "members": [
+        "field",
+        "fragments"
+      ]
+    },
+    "HighlightFragment": {
+      "kind": "table",
+      "members": [
+        "matches",
+        "text"
+      ]
+    },
+    "HighlightSpan": {
+      "kind": "table",
+      "members": [
+        "end_byte",
+        "start_byte"
+      ]
+    }
+  },
+  "partitions": {
+    "fields": {
+      "SearchResult": {
+        "root": [
+          "canonical"
+        ],
+        "total_hits": [
+          "canonical"
+        ],
+        "coverage": [
+          "canonical"
+        ],
+        "timing": [
+          "canonical"
+        ],
+        "errors": [
+          "canonical"
+        ],
+        "trace": [
+          "canonical"
+        ],
+        "metadata": [
+          "canonical"
+        ]
+      },
+      "ValueEntry": {
+        "key": [
+          "canonical"
+        ],
+        "value": [
+          "canonical"
+        ]
+      },
+      "Value": {
+        "kind": [
+          "canonical"
+        ]
+      },
+      "TensorValue": {
+        "type_spec": [
+          "sparse-mixed-tensors"
+        ],
+        "payload": [
+          "sparse-mixed-tensors"
+        ]
+      },
+      "MixedTensorBlocks": {
+        "blocks": [
+          "sparse-mixed-tensors"
+        ]
+      },
+      "TensorBlock": {
+        "address": [
+          "sparse-mixed-tensors"
+        ],
+        "values": [
+          "sparse-mixed-tensors"
+        ]
+      },
+      "TensorAddressEntry": {
+        "dimension": [
+          "sparse-mixed-tensors"
+        ],
+        "label": [
+          "sparse-mixed-tensors"
+        ]
+      },
+      "SparseTensorCells": {
+        "cells": [
+          "sparse-mixed-tensors"
+        ]
+      },
+      "TensorCell": {
+        "address": [
+          "sparse-mixed-tensors"
+        ],
+        "value": [
+          "sparse-mixed-tensors"
+        ]
+      },
+      "DenseTensorValues": {
+        "values": [
+          "sparse-mixed-tensors"
+        ]
+      },
+      "ValueObject": {
+        "fields": [
+          "canonical"
+        ]
+      },
+      "ValueList": {
+        "values": [
+          "value-variants"
+        ]
+      },
+      "BytesValue": {
+        "value": [
+          "value-variants"
+        ]
+      },
+      "StringValue": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "NonFiniteFloatValue": {
+        "kind": {
+          "unsupported": "This union arm is not representable by canonical searchkernel_ir::Value."
+        }
+      },
+      "Float64Value": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "UInt64Value": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "Int64Value": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "BoolValue": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "NullValueValue": {
+        "value": [
+          "value-variants"
+        ]
+      },
+      "SearchResultError": {
+        "code": [
+          "canonical"
+        ],
+        "summary": [
+          "canonical"
+        ],
+        "message": [
+          "canonical"
+        ],
+        "source": [
+          "canonical"
+        ],
+        "stack_trace": [
+          "canonical"
+        ],
+        "transient": [
+          "canonical"
+        ],
+        "metadata": [
+          "canonical"
+        ]
+      },
+      "OptionalBool": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "SearchTiming": {
+        "query_time_seconds": [
+          "canonical"
+        ],
+        "search_time_seconds": [
+          "canonical"
+        ],
+        "summary_fetch_time_seconds": [
+          "canonical"
+        ],
+        "metadata": [
+          "canonical"
+        ]
+      },
+      "OptionalDouble": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "Coverage": {
+        "coverage_percent": [
+          "canonical"
+        ],
+        "documents": [
+          "canonical"
+        ],
+        "full": [
+          "canonical"
+        ],
+        "nodes": [
+          "canonical"
+        ],
+        "results": [
+          "canonical"
+        ],
+        "results_full": [
+          "canonical"
+        ],
+        "degraded": [
+          "canonical"
+        ],
+        "metadata": [
+          "canonical"
+        ]
+      },
+      "CoverageDegraded": {
+        "match_phase": [
+          "canonical"
+        ],
+        "timeout": [
+          "canonical"
+        ],
+        "adaptive_timeout": [
+          "canonical"
+        ],
+        "ann_timeout": [
+          "canonical"
+        ],
+        "non_ideal_state": [
+          "canonical"
+        ],
+        "metadata": [
+          "canonical"
+        ]
+      },
+      "OptionalUInt64": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "OptionalUInt32": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "TotalHits": {
+        "value": [
+          "canonical"
+        ],
+        "relation": [
+          "canonical"
+        ]
+      },
+      "ResultNode": {
+        "node": [
+          "canonical"
+        ]
+      },
+      "ResultGroup": {
+        "id": [
+          "canonical"
+        ],
+        "label": [
+          "canonical"
+        ],
+        "value": [
+          "canonical"
+        ],
+        "fields": [
+          "canonical"
+        ],
+        "children": [
+          "canonical"
+        ],
+        "continuations": [
+          "canonical"
+        ],
+        "source": [
+          "canonical"
+        ],
+        "types": [
+          "canonical"
+        ],
+        "relevance": [
+          "canonical"
+        ],
+        "limits": [
+          "canonical"
+        ],
+        "metadata": [
+          "canonical"
+        ]
+      },
+      "ResultLimits": {
+        "from": [
+          "canonical"
+        ],
+        "to": [
+          "canonical"
+        ]
+      },
+      "Relevance": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "PositiveInfinityRelevance": {},
+      "NegativeInfinityRelevance": {},
+      "FiniteRelevance": {
+        "value": [
+          "canonical"
+        ]
+      },
+      "StringEntry": {
+        "key": [
+          "canonical"
+        ],
+        "value": [
+          "canonical"
+        ]
+      },
+      "Hit": {
+        "id": [
+          "canonical"
+        ],
+        "relevance": [
+          "canonical"
+        ],
+        "fields": [
+          "canonical"
+        ],
+        "highlights": [
+          "canonical"
+        ],
+        "source": [
+          "canonical"
+        ],
+        "types": [
+          "canonical"
+        ],
+        "match_features": [
+          "canonical"
+        ],
+        "summary_features": [
+          "canonical"
+        ],
+        "rank_features": [
+          "canonical"
+        ],
+        "sort_values": [
+          "canonical"
+        ]
+      },
+      "HighlightResult": {
+        "field": [
+          "canonical"
+        ],
+        "fragments": [
+          "canonical"
+        ]
+      },
+      "HighlightFragment": {
+        "text": [
+          "canonical"
+        ],
+        "matches": [
+          "canonical"
+        ]
+      },
+      "HighlightSpan": {
+        "start_byte": [
+          "canonical"
+        ],
+        "end_byte": [
+          "canonical"
+        ]
+      }
+    },
+    "enums": {
+      "NonFiniteFloatKind": {
+        "Unspecified": {
+          "unsupported": "Ordinary non-finite scalar Values are not representable by canonical searchkernel_ir::Value."
+        },
+        "NaN": {
+          "unsupported": "Ordinary non-finite scalar Values are not representable by canonical searchkernel_ir::Value."
+        },
+        "PositiveInfinity": {
+          "unsupported": "Ordinary non-finite scalar Values are not representable by canonical searchkernel_ir::Value."
+        },
+        "NegativeInfinity": {
+          "unsupported": "Ordinary non-finite scalar Values are not representable by canonical searchkernel_ir::Value."
+        }
+      },
+      "NullValue": {
+        "Unspecified": {
+          "unsupported": "Unspecified is not emitted by the canonical Value IR; Value::Null uses Null."
+        },
+        "Null": [
+          "value-variants"
+        ]
+      },
+      "TotalHitsRelation": {
+        "Unspecified": [
+          "total-hits-unspecified"
+        ],
+        "Exact": [
+          "empty"
+        ],
+        "LowerBound": [
+          "canonical"
+        ],
+        "Approximate": [
+          "total-hits-approximate"
+        ],
+        "Unknown": [
+          "total-hits-unknown"
+        ]
+      }
+    },
+    "unions": {
+      "ValueKind": {
+        "NullValueValue": [
+          "value-variants",
+          "sparse-mixed-tensors"
+        ],
+        "BoolValue": [
+          "value-variants",
+          "sparse-mixed-tensors"
+        ],
+        "Int64Value": [
+          "value-variants",
+          "sparse-mixed-tensors"
+        ],
+        "UInt64Value": [
+          "value-variants",
+          "sparse-mixed-tensors"
+        ],
+        "Float64Value": [
+          "value-variants",
+          "sparse-mixed-tensors"
+        ],
+        "NonFiniteFloatValue": {
+          "unsupported": "Ordinary non-finite scalar Values are not representable by canonical searchkernel_ir::Value."
+        },
+        "StringValue": [
+          "value-variants",
+          "sparse-mixed-tensors"
+        ],
+        "BytesValue": [
+          "value-variants",
+          "sparse-mixed-tensors"
+        ],
+        "ValueList": [
+          "value-variants",
+          "sparse-mixed-tensors"
+        ],
+        "ValueObject": [
+          "value-variants",
+          "sparse-mixed-tensors"
+        ],
+        "TensorValue": [
+          "sparse-mixed-tensors"
+        ]
+      },
+      "TensorPayloadKind": {
+        "DenseTensorValues": [
+          "sparse-mixed-tensors"
+        ],
+        "SparseTensorCells": [
+          "sparse-mixed-tensors"
+        ],
+        "MixedTensorBlocks": [
+          "sparse-mixed-tensors"
+        ]
+      },
+      "ResultNodeKind": {
+        "Hit": [
+          "root-hit"
+        ],
+        "ResultGroup": [
+          "canonical"
+        ]
+      },
+      "RelevanceKind": {
+        "FiniteRelevance": [
+          "canonical"
+        ],
+        "NegativeInfinityRelevance": [
+          "infinite-relevance"
+        ],
+        "PositiveInfinityRelevance": [
+          "infinite-relevance"
+        ]
+      }
+    },
+    "semantic": {
+      "result_tree.root_hit": [
+        "root-hit"
+      ],
+      "result_tree.empty_root_group": [
+        "empty"
+      ],
+      "result_tree.root_group_with_direct_hits": [
+        "canonical",
+        "mixed-hit-group-children"
+      ],
+      "result_tree.nested_groups": [
+        "nested-groups"
+      ],
+      "result_tree.mixed_hit_and_group_siblings": [
+        "mixed-hit-group-children"
+      ],
+      "result_tree.child_order": [
+        "mixed-hit-group-children"
+      ],
+      "result_tree.group_without_children": [
+        "empty",
+        "root-state-only"
+      ],
+      "result_tree.group_with_multiple_children": [
+        "canonical",
+        "sibling-groups"
+      ],
+      "result_tree.keyed_continuations": [
+        "continuations-limits-metadata",
+        "canonical"
+      ],
+      "optional.absent_and_present": [
+        "absent-optional-fields",
+        "present-empty-optional-fields",
+        "canonical"
+      ],
+      "collections.empty_and_populated_maps_lists": [
+        "empty",
+        "present-empty-optional-fields",
+        "canonical",
+        "value-variants"
+      ],
+      "maps.empty_populated_and_multiple_keys": [
+        "empty",
+        "canonical",
+        "value-variants"
+      ],
+      "maps.duplicate_key_rejection": [
+        "duplicate-result-map-key"
+      ],
+      "value.supported_variants_and_integer_boundaries": [
+        "value-variants"
+      ],
+      "tensor.dense_sparse_mixed_shapes": [
+        "sparse-mixed-tensors"
+      ],
+      "relevance.finite_positive_infinity_negative_infinity": [
+        "canonical",
+        "infinite-relevance"
+      ],
+      "total_hits.all_relations": [
+        "empty",
+        "canonical",
+        "total-hits-unspecified",
+        "total-hits-approximate",
+        "total-hits-unknown"
+      ],
+      "result_tree.sibling_groups": [
+        "sibling-groups"
+      ],
+      "value.empty_strings_bytes_and_fractional_values": [
+        "value-variants"
+      ],
+      "optional.limits_sides_independently_optional": [
+        "limits-from-only",
+        "limits-to-only",
+        "continuations-limits-metadata"
+      ],
+      "malformed.unknown_result_node_union": [
+        "unknown-result-node-union"
+      ],
+      "malformed.unknown_value_union": [
+        "unknown-value-union"
+      ],
+      "malformed.unknown_relevance_union": [
+        "unknown-relevance-union"
+      ],
+      "malformed.unknown_tensor_payload_union": [
+        "unknown-tensor-payload-union"
+      ],
+      "malformed.duplicate_map_key": [
+        "duplicate-result-map-key"
+      ],
+      "malformed.response_payload_union": [
+        "unknown-response-payload-union"
+      ],
+      "malformed.non_finite_tensor_cell": [
+        "tensor-dense-nan",
+        "tensor-sparse-positive-infinity",
+        "tensor-mixed-negative-infinity"
+      ]
+    }
+  },
+  "limitations": {
+    "ValueKind.NonFiniteFloatValue": "searchkernel_ir::Value has no scalar non-finite variant. The schema arm is explicitly unsupported by the canonical IR fixture source; do not synthesize independent wire fixtures. Relevance infinities remain covered."
+  }
+}

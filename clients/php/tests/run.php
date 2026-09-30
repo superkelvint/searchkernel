@@ -136,6 +136,14 @@ final class RecordingTransport implements Transport
                 'payload_type' => 'SearchKernel_V2_InspectQueryResult',
                 'payload' => ['resolved_request' => $payload['request'] ?? []],
             ],
+            'SearchKernel_V2_CreateIndexRequest' => [
+                'payload_type' => 'SearchKernel_V2_CreateIndexResult',
+                'payload' => ['index' => $payload['definition'] ?? []],
+            ],
+            'SearchKernel_V2_OpenIndexRequest' => [
+                'payload_type' => 'SearchKernel_V2_OpenIndexResult',
+                'payload' => ['index' => ['fields' => []]],
+            ],
             default => throw new RuntimeException('unexpected test request type: ' . $requestType),
         };
 
@@ -145,6 +153,25 @@ final class RecordingTransport implements Transport
         ];
     }
 }
+
+same(
+    '{"list":[],"object":{}}',
+    Protocol::encodeJson([
+        'list' => [],
+        'object' => SearchKernel\JsonObject::empty(),
+    ]),
+    'wire JSON preserves empty-list versus empty-object shape',
+);
+same(
+    '{"kind_type":"PositionDataType","kind":{}}',
+    Protocol::encodeJson(SearchKernel\Field::position()->dataType()),
+    'position data type emits an empty table object, not an array',
+);
+throws(
+    ProtocolException::class,
+    static fn () => Protocol::encodeJson(['object' => new stdClass()]),
+    'arbitrary PHP objects remain rejected from wire JSON',
+);
 
 // --------------------------------------------------------------------------
 // Portable value boundary.
@@ -192,6 +219,18 @@ $decodedTensor = Protocol::decodeValue($encodedTensor);
 truth($decodedTensor instanceof Tensor, 'tensor decode to Tensor');
 same('tensor<float>(x[2])', $decodedTensor->typeSpec, 'tensor type spec round trip');
 same([1.0, 2.5], $decodedTensor->payload['values'], 'tensor cells round trip');
+$emptyTensor = Protocol::value(Tensor::dense('tensor<float>(x[2])', []));
+$emptyTensorJson = Protocol::encodeJson($emptyTensor);
+same(
+    '{"kind_type":"TensorValue","kind":{"type_spec":"tensor<float>(x[2])","payload_type":"DenseTensorValues","payload":{}}}',
+    $emptyTensorJson,
+    'empty dense tensor omits its vector and preserves an empty table for BFBS JSON alignment',
+);
+$decodedEmptyTensor = Protocol::decodeValue(
+    json_decode($emptyTensorJson, true, 512, JSON_THROW_ON_ERROR),
+);
+truth($decodedEmptyTensor instanceof Tensor, 'empty dense tensor decodes from omitted vector');
+same([], $decodedEmptyTensor->payload['values'], 'omitted dense tensor vector decodes as empty');
 
 throws(
     \InvalidArgumentException::class,
@@ -238,6 +277,44 @@ foreach ($malformedFacadeCases as [$resultType, $operation, $payload]) {
         $resultType . ' malformed scalar fields fail closed',
     );
 }
+
+$getFieldCases = [
+    'duplicate key' => [
+        ['key' => 'same', 'value' => Protocol::value(1)],
+        ['key' => 'same', 'value' => Protocol::value(2)],
+    ],
+    'null entry' => [null],
+    'missing key' => [['value' => Protocol::value(1)]],
+    'missing value' => [['key' => 'missing']],
+];
+foreach ($getFieldCases as $label => $fields) {
+    $malformedGet = new Index(new FixedResponseTransport([
+        'protocol_version' => 2,
+        'payload_type' => 'SearchKernel_V2_GetResult',
+        'payload' => ['document' => ['id' => 'doc-1', 'fields' => $fields]],
+    ]));
+    throws(
+        ProtocolException::class,
+        static fn () => $malformedGet->get('doc-1'),
+        'GET rejects malformed semantic map: ' . $label,
+    );
+}
+$validGet = new Index(new FixedResponseTransport([
+    'protocol_version' => 2,
+    'payload_type' => 'SearchKernel_V2_GetResult',
+    'payload' => ['document' => [
+        'id' => 'doc-1',
+        'fields' => [
+            ['key' => 'nothing', 'value' => Protocol::value(null)],
+            ['key' => 'count', 'value' => Protocol::value(3)],
+        ],
+    ]],
+]));
+same(
+    ['nothing' => null, 'count' => 3, '_id' => 'doc-1'],
+    $validGet->get('doc-1'),
+    'GET preserves explicit canonical null and valid semantic-map values',
+);
 
 $transport = new RecordingTransport();
 $index = new Index($transport);
@@ -338,6 +415,12 @@ throws(
 // Search request facade and canonical namespaces.
 // --------------------------------------------------------------------------
 
+throws(
+    ArgumentCountError::class,
+    static fn () => $index->search('fox')->sort('price'),
+    'field sort direction is required',
+);
+
 $request = $index
     ->search('brown fox')
     ->searchField('title', 3.0)
@@ -425,6 +508,12 @@ $advanced = $index->search('fox')
     ->queryProfile('web')
     ->searchChain('default')
     ->request();
+
+$implicitRanking = $index->search('fox')->rankProperty('source', 'catalog')->request()['ranking'];
+same(false, array_key_exists('profile', $implicitRanking), 'rank properties preserve absent ranking profile');
+same([['key' => 'source', 'value' => 'catalog']], $implicitRanking['properties'], 'rank properties remain present');
+$explicitRanking = $index->search('fox')->ranking('default')->rankProperty('source', 'catalog')->request()['ranking'];
+same('default', $explicitRanking['profile'], 'explicit default ranking profile remains explicit');
 
 $advancedInputs = [];
 foreach ($advanced['inputs'] as $input) {
@@ -739,6 +828,12 @@ throws(
 $encodedEmptyObject = Protocol::value(ValueObject::fromPairs([]));
 same('ValueObject', $encodedEmptyObject['kind_type'], 'empty object is distinct from empty list');
 same([], $encodedEmptyObject['kind']['fields'], 'empty object encodes with an empty field vector');
+$decodedEmptyObject = Protocol::decodeValue($encodedEmptyObject);
+truth($decodedEmptyObject instanceof ValueObject, 'decoded ValueObject retains its object type when empty');
+same([], $decodedEmptyObject->entries, 'empty decoded ValueObject has no entries');
+$decodedEmptyList = Protocol::decodeValue(['kind_type' => 'ValueList', 'kind' => ['values' => []]]);
+same([], $decodedEmptyList, 'decoded empty ValueList remains a PHP list');
+truth(!$decodedEmptyList instanceof ValueObject, 'decoded empty ValueList stays distinct from ValueObject');
 
 $encodedNumericKeyObject = Protocol::value(ValueObject::fromPairs([
     ['key' => '0', 'value' => 'zero'],
@@ -1182,10 +1277,20 @@ same(
     $queryExpr(SearchKernel\Query::weightedSet('tags', ['a' => 10]))['expr_type'],
     'weighted-set query',
 );
+$wand = $queryExpr(SearchKernel\Query::wand('tags', ['b' => 5, 'a' => 10]));
+same('QueryWand', $wand['expr_type'], 'WAND query');
 same(
-    'QueryWand',
-    $queryExpr(SearchKernel\Query::wand('tags', ['a' => 10]))['expr_type'],
-    'WAND query',
+    ['a', 'b'],
+    array_map(
+        static fn (array $item): mixed => $item['key']['kind']['value'] ?? null,
+        $wand['expr']['items'],
+    ),
+    'WAND items are canonical and preserve keys',
+);
+same(
+    ['10', '5'],
+    array_column($wand['expr']['items'], 'weight'),
+    'WAND weights preserve exact int64 strings',
 );
 same(
     'QueryWeakAnd',
@@ -1248,6 +1353,41 @@ throws(
     \InvalidArgumentException::class,
     static fn () => SearchKernel\Query::range('price', gte: 10, gt: 11),
     'range rejects conflicting lower-bound forms',
+);
+throws(
+    \InvalidArgumentException::class,
+    static fn () => SearchKernel\Query::phrase(),
+    'phrase rejects an empty term list',
+);
+throws(
+    \InvalidArgumentException::class,
+    static fn () => SearchKernel\Query::near(),
+    'near rejects an empty term list',
+);
+throws(
+    \InvalidArgumentException::class,
+    static fn () => SearchKernel\Query::sameElement(),
+    'same-element rejects an empty clause list',
+);
+throws(
+    \InvalidArgumentException::class,
+    static fn () => SearchKernel\Query::wand('title', []),
+    'WAND rejects an empty weighted term map',
+);
+throws(
+    \InvalidArgumentException::class,
+    static fn () => SearchKernel\Query::wand('title', ['fox' => 1.5]),
+    'WAND rejects non-integer weights',
+);
+throws(
+    \InvalidArgumentException::class,
+    static fn () => SearchKernel\Query::geoLocation('location', INF, -121.9, '10km'),
+    'geo-location rejects non-finite coordinates',
+);
+throws(
+    \InvalidArgumentException::class,
+    static fn () => SearchKernel\Query::geoBox('location', 37.0, -122.0, NAN, -121.0),
+    'geo-box rejects non-finite coordinates',
 );
 throws(
     \InvalidArgumentException::class,
@@ -1317,6 +1457,8 @@ $expectedOperations = [
     'analyze' => ['AnalyzeRequest', 'AnalyzeResult'],
     'describe' => ['DescribeRequest', 'DescribeResult'],
     'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
+    'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
+    'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
 ];
 same(array_keys($expectedOperations), Protocol::operations(), 'low-level portable operation list');
 foreach ($expectedOperations as $operation => $types) {
@@ -1338,6 +1480,72 @@ same(
     'MatchAllQuery',
     $lowLevel->inspectQuery(['request' => ['query' => ['source_type' => 'MatchAllQuery', 'source' => []]]])['resolved_request']['query']['source_type'],
     'low-level inspect query',
+);
+
+$schema = new SearchKernel\IndexDefinition(
+    fields: [
+        'title' => SearchKernel\Field::text(stored: true, searchable: true),
+        'people' => SearchKernel\Field::arrayOf(
+            SearchKernel\Field::structOf([
+                'first' => SearchKernel\Field::keyword(),
+                'last' => SearchKernel\Field::keyword(),
+            ]),
+            stored: false,
+            searchable: false,
+        ),
+        'location' => SearchKernel\Field::position(stored: false),
+    ],
+    rankProfiles: [
+        (new SearchKernel\RankProfile('semantic'))
+            ->firstPhase('closeness(embedding)')
+            ->queryInput('query_embedding', 'tensor<float>(x[8])'),
+    ],
+);
+$schemaWire = $schema->toWire();
+same(['location', 'people', 'title'], array_column($schemaWire['fields'], 'name'), 'index definition fields are canonical key order');
+$peopleField = current(array_values(array_filter(
+    $schemaWire['fields'],
+    static fn (array $field): bool => $field['name'] === 'people',
+)));
+truth(is_array($peopleField), 'people field present in index definition');
+same('ArrayDataType', $peopleField['data_type']['kind_type'], 'people field keeps array type');
+same(
+    'StructDataType',
+    $peopleField['data_type']['kind']['element_type']['kind_type'],
+    'people array keeps struct element type',
+);
+$locationField = current(array_values(array_filter(
+    $schemaWire['fields'],
+    static fn (array $field): bool => $field['name'] === 'location',
+)));
+truth(is_array($locationField), 'location field present in index definition');
+same('PositionDataType', $locationField['data_type']['kind_type'], 'location field keeps position type');
+
+$lifecycleTransport = new RecordingTransport();
+$lifecycle = new Client($lifecycleTransport, 'products');
+same(
+    $schemaWire,
+    $lifecycle->createIndex(['definition' => $schemaWire])['index'],
+    'create-index response preserves canonical definition',
+);
+same(['name' => 'products'], $lifecycleTransport->requests[0]['target'], 'create-index carries logical target');
+same([], $lifecycle->openIndex()['index']['fields'], 'open-index result accepted');
+$openRequest = $lifecycleTransport->requests[array_key_last($lifecycleTransport->requests)];
+truth(
+    $openRequest['payload'] instanceof SearchKernel\JsonObject,
+    'open-index uses explicit empty-table payload',
+);
+truth(
+    str_contains(Protocol::encodeJson($openRequest), '"payload":{}'),
+    'open-index JSON emits an empty object payload',
+);
+foreach ($lifecycleTransport->requests as $request) {
+    same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
+}
+throws(
+    InvalidArgumentException::class,
+    static fn () => (new Client(new RecordingTransport(), '../escape'))->openIndex(),
+    'unsafe logical target fails closed',
 );
 
 throws(

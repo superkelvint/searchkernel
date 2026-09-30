@@ -608,12 +608,23 @@ mod showcase {
         print_results(&results);
         assert_ids(&results, ["shoe-4", "shoe-2"]);
         assert_eq!(
-            results.hits[0].document["title"],
+            results.hits[0].document.as_ref().unwrap()["title"],
             json!("Acme Racing Shoes")
         );
-        assert_eq!(results.hits[0].document["brand"], json!("Acme"));
-        assert_eq!(results.hits[0].document["price"], json!(159.0));
-        assert!(results.hits[0].document.get("rating").is_none());
+        assert_eq!(
+            results.hits[0].document.as_ref().unwrap()["brand"],
+            json!("Acme")
+        );
+        assert_eq!(
+            results.hits[0].document.as_ref().unwrap()["price"],
+            json!(159.0)
+        );
+        assert!(results.hits[0]
+            .document
+            .as_ref()
+            .unwrap()
+            .get("rating")
+            .is_none());
         println!("default summary selection + projection docsums PASS");
 
         heading("12. OFFSET / LIMIT PAGINATION");
@@ -885,7 +896,10 @@ mod showcase {
             .highlight(["title"])
             .execute::<Value>()?;
         assert!(!highlighted.hits.is_empty());
-        assert_eq!(highlighted.hits[0].document, json!({"category": "shoes"}));
+        assert_eq!(
+            highlighted.hits[0].document,
+            Some(json!({"category": "shoes"}))
+        );
         assert_eq!(highlighted.hits[0].highlights.len(), 1);
         assert_eq!(highlighted.hits[0].highlights[0].field, "title");
         assert!(!highlighted.hits[0].highlights[0].fragments[0]
