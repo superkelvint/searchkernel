@@ -279,18 +279,16 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
       .output(agg.count().as(groupedSpec.outputs[0].name), agg.avg(groupedSpec.outputs[1].field).as(groupedSpec.outputs[1].name)),
   ).execute();
   const nearestIntent = PARITY_INTENTS.nearest_neighbor;
-  const nearestSpec = nearestIntent.query;
-  const nearest = await index.query(q.nearestNeighbor(nearestSpec.field, nearestSpec.query_input))
+  const nearest = await index.query(q.nearestNeighbor(nearestIntent.field, nearestIntent.query_input))
     .ranking(nearestIntent.ranking_profile)
-    .input(nearestSpec.query_input, embedding(...corpusVector(nearestIntent.query_input_document)))
+    .input(nearestIntent.query_input, embedding(...corpusVector(nearestIntent.query_input_document)))
     .limit(nearestIntent.limit).execute();
   const hybridIntent = PARITY_INTENTS.hybrid_text_vector;
-  const [hybridText, hybridVector] = hybridIntent.query.clauses;
   const hybrid = await index.query(q.anyOf(
-    q.contains(hybridText.field, hybridText.value),
-    q.nearestNeighbor(hybridVector.field, hybridVector.query_input),
+    q.contains(hybridIntent.text_field, hybridIntent.text_value),
+    q.nearestNeighbor(hybridIntent.vector_field, hybridIntent.query_input),
   )).ranking(hybridIntent.ranking_profile)
-    .input(hybridVector.query_input, embedding(...corpusVector(hybridIntent.query_input_document)))
+    .input(hybridIntent.query_input, embedding(...corpusVector(hybridIntent.query_input_document)))
     .limit(hybridIntent.limit).execute();
   const rerankedSpec = intents.two_phase_reranking;
   const reranked = await index.search(rerankedSpec.query).ranking(rerankedSpec.ranking_profile).limit(rerankedSpec.limit).execute();
@@ -361,8 +359,11 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   for (const [key, value] of Object.entries<string>(degradedSpec.rank_properties)) degradedBuilder = degradedBuilder.rankProperty(key, value);
   const degraded = await degradedBuilder.limit(degradedSpec.limit).execute();
   const yqlSpec = intents.yql;
-  const yql = await index.yql(yqlSpec.source)
-    .property("q", yqlSpec.bindings.q).ranking(yqlSpec.ranking_profile).page(yqlSpec.page, yqlSpec.page_size).execute();
+  let yqlBuilder = index.yql(yqlSpec.source);
+  for (const [key, value] of Object.entries<string>(yqlSpec.bindings)) {
+    yqlBuilder = yqlBuilder.property(key, value);
+  }
+  const yql = await yqlBuilder.ranking(yqlSpec.ranking_profile).page(yqlSpec.page, yqlSpec.page_size).execute();
   let syntaxError: SearchKernelError;
   try {
     const syntaxSpec = intents.text_filter_syntax_error;
