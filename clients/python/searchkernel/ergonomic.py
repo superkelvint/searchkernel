@@ -305,7 +305,16 @@ class StructField(_FieldSpec):
             nested = member.definition(member_name).dataType
             members.append(StructFieldDefinitionT(name=member_name, dataType=nested))
         data_type = DataTypeT(kindType=DataTypeKind.StructDataType, kind=StructDataTypeT(fields=members))
-        return FieldDefinitionT(name=name, dataType=data_type)
+        optional = lambda setting: None if setting is None else OptionalBoolT(value=setting)
+        return FieldDefinitionT(
+            name=name,
+            dataType=data_type,
+            stored=optional(self.stored),
+            searchable=optional(self.searchable),
+            filterable=optional(self.filterable),
+            sortable=optional(self.sortable),
+            facetable=optional(self.facetable),
+        )
 
 
 class ArrayField(_FieldSpec):
