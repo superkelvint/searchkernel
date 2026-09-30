@@ -48,8 +48,6 @@ class FailpointController {
         uint32_t trigger = 0;
         uint32_t action = 0;
         uint32_t hits = 0;
-        search::SerialNum serial_floor = 0;
-        bool has_serial_floor = false;
         bool blocked = false;
         bool armed = false;
         std::thread::id owner;
@@ -80,8 +78,7 @@ public:
     explicit FailpointController(bool thread_affine = false) noexcept
         : _thread_affine(thread_affine) {}
 
-    void set(const char *name, uint32_t trigger, uint32_t action,
-             std::optional<search::SerialNum> serial_floor = std::nullopt) {
+    void set(const char *name, uint32_t trigger, uint32_t action) {
         if (!name || !known(name)) {
             throw std::invalid_argument("unknown hardening failpoint");
         }
@@ -93,7 +90,7 @@ public:
         }
         std::lock_guard<std::mutex> guard(_mutex);
         _entries[name] = Entry{
-            trigger, action, 0, serial_floor.value_or(0), serial_floor.has_value(), false, true,
+            trigger, action, 0, false, true,
             _thread_affine ? std::this_thread::get_id() : std::thread::id{}
         };
     }
@@ -134,19 +131,11 @@ public:
         return entry != _entries.end() && entry->second.blocked;
     }
 
-    void hit(std::string_view name,
-             std::optional<search::SerialNum> serial = std::nullopt) const {
+    void hit(std::string_view name) const {
         auto *self = const_cast<FailpointController *>(this);
         std::unique_lock<std::mutex> guard(self->_mutex);
         auto entry = self->_entries.find(std::string(name));
         if (entry == self->_entries.end() || !entry->second.armed) {
-            return;
-        }
-        // Vespa also requests commits for an unchanged feed serial. A
-        // publication regression arms this gate before its mutation, so only
-        // a commit that includes later feed work may consume the failpoint.
-        if (entry->second.has_serial_floor &&
-            (!serial || *serial <= entry->second.serial_floor)) {
             return;
         }
         if (self->_thread_affine && entry->second.owner != std::this_thread::get_id()) {
@@ -229,8 +218,13 @@ public:
         _delegate->heartBeat(serial, on_done);
     }
     void forceCommit(const CommitParam& param, const DoneCallback& on_done) override {
-        _failpoints->hit("matcher_publication_before_feedview_force_commit",
-                         param.lastSerialNum());
+        // FeedHandler's automatic SIZES_ONLY commit may be queued before its
+        // feed operation becomes source-visible. Gate the Search Kernel
+        // explicit SKIP commit instead: it runs after the mutation's source
+        // visibility wait and is the fence whose completion the caller awaits.
+        if (param.getUpdateStats() == CommitParam::UpdateStats::SKIP) {
+            _failpoints->hit("matcher_publication_before_feedview_force_commit");
+        }
         _delegate->forceCommit(param, on_done);
     }
     void handlePruneRemovedDocuments(const proton::PruneRemovedDocumentsOperation& op,
