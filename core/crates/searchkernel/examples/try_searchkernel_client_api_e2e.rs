@@ -792,7 +792,7 @@ mod showcase {
                         alias_intent["order_by_alias"]["name"]
                             .as_str()
                             .ok_or("alias order field missing")?,
-                        alias_intent["order_by_alias"]["direction"] == "asc",
+                        alias_intent["order_by_alias"]["direction"] == "desc",
                     )
                     .output(GroupingAggregation::named(
                         alias_intent["outputs"][0]["name"]
@@ -1039,10 +1039,25 @@ mod showcase {
             )
             .execute::<Value>()?;
         let parity_group_buckets = direct_group_buckets(&parity_grouped.groups);
+        let grouping_count_name = grouping_intent["outputs"][0]["name"]
+            .as_str()
+            .ok_or("group count output name missing")?;
+        let grouping_average_name = grouping_intent["outputs"][1]["name"]
+            .as_str()
+            .ok_or("group average output name missing")?;
         let parity_grouping_aggregations = parity_group_buckets
             .into_iter()
-            .map(parity_grouping_aggregation)
+            .map(|group| parity_grouping_aggregation(group, grouping_count_name, grouping_average_name))
             .collect::<Vec<_>>();
+        let nested_count_name = nested_intent["outputs"][0]["name"]
+            .as_str()
+            .ok_or("nested group count output name missing")?;
+        let nested_child_count_name = nested_intent["nested"]["outputs"][0]["name"]
+            .as_str()
+            .ok_or("nested child count output name missing")?;
+        let nested_child_average_name = nested_intent["nested"]["outputs"][1]["name"]
+            .as_str()
+            .ok_or("nested child average output name missing")?;
         let mut parity_observations = json!({
             "document_crud": {"id": "shoe-1", "title": parity_document["title"], "brand": parity_document["brand"], "price": parity_document["price"]},
             "full_text_search": {"ids": ids(&parity_full_text), "total": parity_full_text.total_hits.value},
@@ -1066,7 +1081,7 @@ mod showcase {
             "filtered_facets": facet_counts(&parity_filtered_facet, "brand"),
             "grouping_aggregations": parity_grouping_aggregations,
             "nested_grouping": direct_group_buckets(&parity_nested.groups).into_iter()
-                .map(parity_nested_group)
+                .map(|group| parity_nested_group(group, nested_count_name, nested_child_count_name, nested_child_average_name))
                 .collect::<Vec<_>>(),
             "group_alias": direct_group_buckets(&parity_alias.groups).into_iter()
                 .map(|group| json!({"value": group.key.as_ref().map(parity_value), "fields": group.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>() })).collect::<Vec<_>>(),
@@ -2509,22 +2524,31 @@ native Vespa backend.
         groups.iter().collect()
     }
 
-    fn parity_grouping_aggregation(group: &searchkernel::GroupingResult<Value>) -> Value {
+    fn parity_grouping_aggregation(
+        group: &searchkernel::GroupingResult<Value>,
+        count_name: &str,
+        average_name: &str,
+    ) -> Value {
         json!({
             "brand": group.key.as_ref().map(parity_value),
-            "products": parity_aggregation(group, "count"),
-            "avg_price": parity_aggregation(group, "average(price)"),
+            "products": parity_aggregation(group, count_name),
+            "avg_price": parity_aggregation(group, average_name),
         })
     }
 
-    fn parity_nested_group(group: &searchkernel::GroupingResult<Value>) -> Value {
+    fn parity_nested_group(
+        group: &searchkernel::GroupingResult<Value>,
+        count_name: &str,
+        nested_count_name: &str,
+        nested_average_name: &str,
+    ) -> Value {
         json!({
             "category": group.key.as_ref().map(parity_value),
-            "products": parity_aggregation(group, "count"),
+            "products": parity_aggregation(group, count_name),
             "ratings": group.groups.iter().map(|rating| json!({
                 "rating": rating.key.as_ref().map(parity_value),
-                "products": parity_aggregation(rating, "count"),
-                "avg_price": parity_aggregation(rating, "average(price)"),
+                "products": parity_aggregation(rating, nested_count_name),
+                "avg_price": parity_aggregation(rating, nested_average_name),
             })).collect::<Vec<_>>(),
         })
     }
