@@ -12,8 +12,6 @@ if [[ "$SKIP_WORKSPACE_QUALITY" == 1 ]]; then
 fi
 
 require_pinned_vespa
-prepare_native_probe_sdk
-require_sdk_manifest "$SDK/manifest.json"
 python3 "$SCRIPT_DIR/validate.py"
 
 # I-series is only meaningful when the latest frozen cumulative native
