@@ -25,9 +25,9 @@ FACADE_COVERAGE = {
     "filter": ("executable", None),
     "search_field": ("executable_with_limit", "non-default weights are backend-deferred"),
     "search_fields": ("executable", None),
-    "sort": ("executable_with_limit", "native field sort supports missing first/last; missing-as is backend-deferred"),
-    "sort_relevance": ("represented_backend_rejected", "native adapter rejects relevance sort targets"),
-    "sort_feature": ("represented_backend_rejected", "native adapter rejects rank-feature sort targets"),
+    "sort": ("executable", None),
+    "sort_relevance": ("executable", None),
+    "sort_feature": ("executable", None),
     "raw_sort": ("represented_backend_rejected", "raw sort has no canonical resolved form"),
     "facet": ("executable", None),
     "facets": ("executable", None),
@@ -39,7 +39,7 @@ FACADE_COVERAGE = {
     "input": ("executable_with_limit", "native adapter executes finite scalar numeric and dense tensor inputs; other values are rejected"),
     "input_expr": ("represented_backend_rejected", "expression inputs require a container-aware path"),
     "fields": ("executable", None),
-    "summary": ("executable_with_limit", "custom named summary definitions are backend-limited"),
+    "summary": ("executable", None),
     "highlight": ("executable", None),
     "format": ("represented_backend_rejected", "advanced presentation format is backend-deferred"),
     "bolding": ("represented_backend_rejected", "advanced presentation bolding is backend-deferred"),
@@ -80,6 +80,13 @@ class SearchBuilderFacadeCoverageTest(unittest.TestCase):
                 self.assertIn(status, allowed)
                 if status != "executable":
                     self.assertTrue(reason)
+
+        partial = {
+            concept
+            for concept, (status, _reason) in FACADE_COVERAGE.items()
+            if status == "executable_with_limit"
+        }
+        self.assertEqual(partial, {"search_field", "input", "property", "properties"})
 
     def test_added_controls_lower_mechanically_to_generated_request(self):
         class EmptyResult:
@@ -174,7 +181,7 @@ class SearchBuilderFacadeCoverageTest(unittest.TestCase):
         facet = request.grouping[2].source.root.operations[1].operation.operations
         self.assertTrue(any(op.operation.value == 200 for op in facet if hasattr(op.operation, "value")))
 
-    def test_limited_controls_preserve_caller_intent_for_shared_rejection_or_yql_execution(self):
+    def test_advanced_sort_and_yql_property_controls_preserve_caller_intent(self):
         missing_as = SearchBuilder(SimpleNamespace(), "wireless").sort(
             "price", "asc", missing=0
         )._request()
