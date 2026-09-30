@@ -208,68 +208,39 @@ impl From<GroupingAggregation> for GroupingOutput {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct GroupingOrder {
-    source: GroupingOrderSource,
-    descending: bool,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum GroupingOrderSource {
-    Expression(GroupingExpression),
-    Aggregation(GroupingAggregation),
-    Alias(String),
+pub enum GroupingOrder {
+    /// Compatibility variant retained from the original Rust grouping facade.
+    Field(GroupingExpression, bool),
+    /// Compatibility variant retained from the original Rust grouping facade.
+    Aggregation(GroupingAggregation, bool),
+    Expression(GroupingExpression, bool),
+    Alias(String, bool),
 }
 
 impl GroupingOrder {
     pub fn ascending(expression: impl Into<GroupingExpression>) -> Self {
-        Self {
-            source: GroupingOrderSource::Expression(expression.into()),
-            descending: false,
-        }
+        Self::Expression(expression.into(), false)
     }
     pub fn descending(expression: impl Into<GroupingExpression>) -> Self {
-        Self {
-            source: GroupingOrderSource::Expression(expression.into()),
-            descending: true,
-        }
+        Self::Expression(expression.into(), true)
     }
     pub fn ascending_aggregation(aggregation: GroupingAggregation) -> Self {
-        Self {
-            source: GroupingOrderSource::Aggregation(aggregation),
-            descending: false,
-        }
+        Self::Aggregation(aggregation, false)
     }
     pub fn descending_aggregation(aggregation: GroupingAggregation) -> Self {
-        Self {
-            source: GroupingOrderSource::Aggregation(aggregation),
-            descending: true,
-        }
+        Self::Aggregation(aggregation, true)
     }
     pub fn ascending_alias(name: impl Into<String>) -> Self {
-        Self {
-            source: GroupingOrderSource::Alias(name.into()),
-            descending: false,
-        }
+        Self::Alias(name.into(), false)
     }
     pub fn descending_alias(name: impl Into<String>) -> Self {
-        Self {
-            source: GroupingOrderSource::Alias(name.into()),
-            descending: true,
-        }
+        Self::Alias(name.into(), true)
     }
     pub fn field(field: impl Into<String>, descending: bool) -> Self {
-        if descending {
-            Self::descending(GroupingExpression::attribute(field))
-        } else {
-            Self::ascending(GroupingExpression::attribute(field))
-        }
+        Self::Field(GroupingExpression::attribute(field), descending)
     }
     pub fn aggregation(aggregation: GroupingAggregation, descending: bool) -> Self {
-        if descending {
-            Self::descending_aggregation(aggregation)
-        } else {
-            Self::ascending_aggregation(aggregation)
-        }
+        Self::Aggregation(aggregation, descending)
     }
 }
 
@@ -611,12 +582,17 @@ fn expression_to_ir(expression: GroupingExpression) -> Result<GroupingExpression
 }
 
 fn order_to_ir(order: GroupingOrder) -> Result<GroupingExpressionIr> {
-    let expression = match order.source {
-        GroupingOrderSource::Expression(expression) => expression_to_ir(expression)?,
-        GroupingOrderSource::Aggregation(aggregation) => aggregation_to_expression_ir(aggregation)?,
-        GroupingOrderSource::Alias(name) => GroupingExpressionIr::Alias(name),
+    let (expression, descending) = match order {
+        GroupingOrder::Field(expression, descending)
+        | GroupingOrder::Expression(expression, descending) => {
+            (expression_to_ir(expression)?, descending)
+        }
+        GroupingOrder::Aggregation(aggregation, descending) => {
+            (aggregation_to_expression_ir(aggregation)?, descending)
+        }
+        GroupingOrder::Alias(name, descending) => (GroupingExpressionIr::Alias(name), descending),
     };
-    Ok(if order.descending {
+    Ok(if descending {
         GroupingExpressionIr::Negative(Box::new(expression))
     } else {
         GroupingExpressionIr::Positive(Box::new(expression))
