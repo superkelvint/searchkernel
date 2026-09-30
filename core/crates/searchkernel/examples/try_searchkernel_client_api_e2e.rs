@@ -1002,7 +1002,10 @@ mod showcase {
             let input = tracked_intent(scenario, shared_inputs, &consumed_intents);
             let mut results = index
                 .search("")
-                .typed_query(query_from_spec(&input["query"]).map_err(|error| format!("{scenario}: {error}"))?)
+                .typed_query(
+                    query_from_spec(&input["query"])
+                        .map_err(|error| format!("{scenario}: {error}"))?,
+                )
                 .limit(input["limit"].as_u64().ok_or("typed query limit missing")? as u32)
                 .execute::<Value>()?;
             if input["result_order"] == "sorted_ids" {
@@ -1012,7 +1015,9 @@ mod showcase {
                 .borrow()
                 .get(scenario)
                 .cloned()
-                .ok_or_else(|| format!("typed parity scenario {scenario} consumed no intent fields"))?;
+                .ok_or_else(|| {
+                    format!("typed parity scenario {scenario} consumed no intent fields")
+                })?;
             typed_observations.insert(
                 scenario.to_owned(),
                 json!({
