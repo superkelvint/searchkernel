@@ -71,14 +71,8 @@ def pack_request(operation: str, payload: Any, *, target: str | None = None) -> 
         raise ValueError(f"unsupported V2 request operation: {operation}") from exc
     index_target = None
     if target is not None:
-        if (
-            not isinstance(target, str)
-            or len(target.encode("utf-8")) > 128
-            or not target
-            or target[0] not in "abcdefghijklmnopqrstuvwxyz0123456789"
-            or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in target)
-        ):
-            raise ValueError("index target must match [a-z0-9][a-z0-9_-]{0,127}")
+        if not isinstance(target, str):
+            raise TypeError("Search Kernel target must be a string")
         index_target = IndexTargetT(target)
     envelope = RequestEnvelope.RequestEnvelopeT(PROTOCOL_VERSION, payload_type, payload, index_target)
     return pack_object(envelope, file_identifier=REQUEST_IDENTIFIER)

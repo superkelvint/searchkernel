@@ -58,6 +58,17 @@ function throws(string $class, callable $operation, string $message): void
     throw new RuntimeException($message . ': no exception');
 }
 
+$invalidButRepresentable = Protocol::envelope(
+    'OpenIndexRequest',
+    SearchKernel\JsonObject::empty(),
+    'Products',
+);
+same(
+    ['name' => 'Products'],
+    $invalidButRepresentable['target'],
+    'domain-invalid target reaches canonical semantic validation',
+);
+
 /** @param array<string, mixed> $overrides @return array<string, mixed> */
 function canonicalResultPayload(array $overrides = []): array
 {
@@ -152,6 +163,10 @@ final class RecordingTransport implements Transport
             'SearchKernel_V2_OpenIndexRequest' => [
                 'payload_type' => 'SearchKernel_V2_OpenIndexResult',
                 'payload' => ['index' => ['fields' => []]],
+            ],
+            'SearchKernel_V2_DeleteIndexRequest' => [
+                'payload_type' => 'SearchKernel_V2_DeleteIndexResult',
+                'payload' => [],
             ],
             default => throw new RuntimeException('unexpected test request type: ' . $requestType),
         };
@@ -1507,6 +1522,7 @@ $expectedOperations = [
     'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
     'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
     'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
+    'delete_index' => ['DeleteIndexRequest', 'DeleteIndexResult'],
 ];
 same(array_keys($expectedOperations), Protocol::operations(), 'low-level portable operation list');
 foreach ($expectedOperations as $operation => $types) {
@@ -1586,6 +1602,16 @@ truth(
 truth(
     str_contains(Protocol::encodeJson($openRequest), '"payload":{}'),
     'open-index JSON emits an empty object payload',
+);
+$lifecycle->deleteIndex();
+$deleteRequest = $lifecycleTransport->requests[array_key_last($lifecycleTransport->requests)];
+truth(
+    $deleteRequest['payload'] instanceof SearchKernel\JsonObject,
+    'delete-index uses explicit empty-table payload',
+);
+truth(
+    str_contains(Protocol::encodeJson($deleteRequest), '"payload":{}'),
+    'delete-index JSON emits an empty object payload',
 );
 foreach ($lifecycleTransport->requests as $request) {
     same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
