@@ -106,8 +106,9 @@ def shared_typed_query(spec)
 end
 
 def shared_typed_query_observations(index)
-  PARITY_INTENTS.filter_map do |scenario, intent|
+  E2E_CORPUS.fetch("scenario_inputs").filter_map do |scenario, _raw_intent|
     next unless scenario.start_with?("typed_query_")
+    intent = PARITY_INTENTS.fetch(scenario)
     result = index.query(shared_typed_query(intent.fetch("query"))).limit(intent.fetch("limit")).execute
     result_ids = ids(result)
     result_ids.sort! if intent.fetch("result_order") == "sorted_ids"
