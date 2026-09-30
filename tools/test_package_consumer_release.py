@@ -241,6 +241,12 @@ class ConsumerReleaseTests(unittest.TestCase):
                 member = archive.extractfile("core/crates/searchkernel-vespa-bindings/runtime.json")
                 self.assertIsNotNone(member)
                 self.assertEqual(json.loads(member.read()), descriptor)
+                bundle = archive.extractfile("core/crates/searchkernel-vespa-bindings/consumer_bundle.rs")
+                self.assertIsNotNone(bundle)
+                packaged_support = bundle.read().decode("utf-8")
+                self.assertIn("tools/consumer_runtime.py", packaged_support)
+                self.assertNotIn("tools/resolve-native-sdk.sh", packaged_support)
+                self.assertNotIn("core/native/vespa/build-sdk.sh", packaged_support)
         self.assertFalse((ROOT / "core/crates/searchkernel-vespa-bindings/runtime.json").exists())
 
     def test_publishable_rust_crates_pin_internal_dependency_versions(self) -> None:

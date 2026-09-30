@@ -150,24 +150,44 @@ RUST_BUNDLE_PATHS = [
 ]
 
 
+def packaged_rust_consumer_bundle() -> str:
+    data = (ROOT / "tools/consumer_runtime.py").read_text(encoding="utf-8")
+    delimiter = "########"
+    if f'"{delimiter}' in data:
+        raise RuntimeError("consumer runtime resolver collides with Rust raw-string delimiter")
+    return (
+        "// @generated for the publishable Rust consumer artifact; do not edit.\n"
+        "pub const FILES: &[(&str, &[u8])] = &[\n"
+        f'    ("tools/consumer_runtime.py", br{delimiter}"{data}"{delimiter}),\n'
+        "];\n"
+    )
+
+
 def build_rust_bundle(rust_bundle: Path, descriptor: dict[str, object] | None = None) -> None:
     missing = [relative for relative in RUST_BUNDLE_PATHS if not (ROOT / relative).exists()]
     if missing:
         raise FileNotFoundError(
             f"missing Rust consumer bundle inputs: {', '.join(missing)}"
         )
-    runtime_descriptor_path = ROOT / "core/crates/searchkernel-vespa-bindings/runtime.json"
+    bindings_root = ROOT / "core/crates/searchkernel-vespa-bindings"
+    runtime_descriptor_path = bindings_root / "runtime.json"
+    consumer_bundle_path = bindings_root / "consumer_bundle.rs"
     if runtime_descriptor_path.exists():
         raise RuntimeError(f"refusing to overwrite source runtime descriptor: {runtime_descriptor_path}")
+    original_consumer_bundle = consumer_bundle_path.read_text(encoding="utf-8")
     try:
         if descriptor is not None:
             runtime_descriptor_path.write_text(
                 json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )
+            # The published crate resolves the qualified consumer runtime and must
+            # not carry the developer native-base/build source bundle as a fallback.
+            consumer_bundle_path.write_text(packaged_rust_consumer_bundle(), encoding="utf-8")
         with tarfile.open(rust_bundle, "w:gz") as archive:
             for relative in RUST_BUNDLE_PATHS:
                 archive.add(ROOT / relative, arcname=relative)
     finally:
+        consumer_bundle_path.write_text(original_consumer_bundle, encoding="utf-8")
         runtime_descriptor_path.unlink(missing_ok=True)
 
 
