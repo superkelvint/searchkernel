@@ -5,6 +5,7 @@ import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { SearchKernelError } from "../client/index.js";
+import { resolveRuntime } from "./runtime-resolver.js";
 
 const activeProcessGroups = new Set<number>();
 let exitCleanupInstalled = false;
@@ -51,12 +52,12 @@ function sourceRepositoryRoot(): string | null {
   return root;
 }
 
-export function resolveHostBinary(): string {
+export async function resolveHostBinary(): Promise<string> {
   const configured = process.env.SEARCHKERNEL_LOCAL_HOST;
   if (configured) return configured;
 
-  const packaged = resolve(packageRoot(), "bin", "searchkerneld");
-  if (existsSync(packaged)) return packaged;
+  const runtimeDescriptor = resolve(packageRoot(), "runtime.json");
+  if (existsSync(runtimeDescriptor)) return resolve(await resolveRuntime(), "bin", "searchkerneld");
 
   const sourceRoot = sourceRepositoryRoot();
   if (sourceRoot !== null) {
@@ -146,7 +147,7 @@ export class ManagedLocalHost {
       if (definitionPath !== null && definition !== null) {
         await writeFile(definitionPath, definition);
       }
-      host.spawn();
+      await host.spawn();
       await host.waitUntilReady();
       return host;
     } catch (error) {
@@ -155,8 +156,8 @@ export class ManagedLocalHost {
     }
   }
 
-  private spawn(): void {
-    const binary = resolveHostBinary();
+  private async spawn(): Promise<void> {
+    const binary = await resolveHostBinary();
     if (!existsSync(binary)) {
       throw new SearchKernelError(
         `managed local host binary not found at ${binary}; set SEARCHKERNEL_LOCAL_HOST to an existing searchkerneld binary`,
