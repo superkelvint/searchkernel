@@ -277,6 +277,20 @@ class ManagedLocalHostTest(unittest.TestCase):
             "local-test\n",
         )
 
+    def test_preexisting_empty_unowned_root_is_never_replaced(self):
+        temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-unowned-empty-")
+        self.addCleanup(temporary.cleanup)
+        data_root = Path(temporary.name) / ".searchkernel-managed"
+        data_root.mkdir()
+        inode = data_root.stat().st_ino
+
+        with self.assertRaisesRegex(client_module.ClientError, "not owned"):
+            client_module._prepare_managed_data_root(data_root)
+
+        self.assertTrue(data_root.is_dir())
+        self.assertEqual(data_root.stat().st_ino, inode)
+        self.assertEqual(list(data_root.iterdir()), [])
+
     def test_managed_root_marker_type_and_version_are_validated(self):
         temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-root-marker-")
         self.addCleanup(temporary.cleanup)
