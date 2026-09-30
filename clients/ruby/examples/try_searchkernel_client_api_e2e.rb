@@ -203,18 +203,16 @@ def capture_real_engine_parity(index)
       .output(SearchKernel::Agg.count.as(grouped_spec.fetch("outputs")[0].fetch("name")), SearchKernel::Agg.avg(grouped_spec.fetch("outputs")[1].fetch("field")).as(grouped_spec.fetch("outputs")[1].fetch("name")))
   ).execute
   nearest_intent = PARITY_INTENTS.fetch("nearest_neighbor")
-  nearest_spec = nearest_intent.fetch("query")
-  nearest = index.query(SearchKernel::Query.nearest_neighbor(nearest_spec.fetch("field"), nearest_spec.fetch("query_input")))
+  nearest = index.query(SearchKernel::Query.nearest_neighbor(nearest_intent.fetch("field"), nearest_intent.fetch("query_input")))
     .ranking(nearest_intent.fetch("ranking_profile"))
-    .input(nearest_spec.fetch("query_input"), embedding(*corpus_vector(nearest_intent.fetch("query_input_document"))))
+    .input(nearest_intent.fetch("query_input"), embedding(*corpus_vector(nearest_intent.fetch("query_input_document"))))
     .limit(nearest_intent.fetch("limit")).execute
   hybrid_intent = PARITY_INTENTS.fetch("hybrid_text_vector")
-  hybrid_text, hybrid_vector = hybrid_intent.fetch("query").fetch("clauses")
   hybrid = index.query(SearchKernel::Query.any_of(
-    SearchKernel::Query.contains(hybrid_text.fetch("field"), hybrid_text.fetch("value")),
-    SearchKernel::Query.nearest_neighbor(hybrid_vector.fetch("field"), hybrid_vector.fetch("query_input"))
+    SearchKernel::Query.contains(hybrid_intent.fetch("text_field"), hybrid_intent.fetch("text_value")),
+    SearchKernel::Query.nearest_neighbor(hybrid_intent.fetch("vector_field"), hybrid_intent.fetch("query_input"))
   )).ranking(hybrid_intent.fetch("ranking_profile"))
-    .input(hybrid_vector.fetch("query_input"), embedding(*corpus_vector(hybrid_intent.fetch("query_input_document"))))
+    .input(hybrid_intent.fetch("query_input"), embedding(*corpus_vector(hybrid_intent.fetch("query_input_document"))))
     .limit(hybrid_intent.fetch("limit")).execute
   reranked_spec = intents.fetch("two_phase_reranking")
   reranked = index.search(reranked_spec.fetch("query")).ranking(reranked_spec.fetch("ranking_profile")).limit(reranked_spec.fetch("limit")).execute
@@ -268,7 +266,7 @@ def capture_real_engine_parity(index)
       .keep(SearchKernel::GroupingFilter.regex(SearchKernel::Grouping.field(keep_spec.fetch("keep_regex").fetch("field")), keep_spec.fetch("keep_regex").fetch("pattern")))
       .output(SearchKernel::Agg.count.as(keep_spec.fetch("outputs")[0].fetch("name")))
   ).execute
-  typed = index.query(shared_typed_query(intents.fetch("typed_query_contains").fetch("query"))).ranking("default").limit(full_spec.fetch("limit")).execute
+  typed = index.query(typed_query_for_scenario("typed_query_contains", intents.fetch("typed_query_contains"))).ranking("default").limit(full_spec.fetch("limit")).execute
   rank_input_spec = intents.fetch("rank_inputs")
   rank_input_builder = index.search(rank_input_spec.fetch("query")).ranking(rank_input_spec.fetch("ranking_profile"))
   rank_input_spec.fetch("inputs").each do |key, value|
@@ -286,7 +284,9 @@ def capture_real_engine_parity(index)
   degraded_spec.fetch("rank_properties").each { |key, value| degraded_builder = degraded_builder.rank_property(key, value) }
   degraded = degraded_builder.limit(degraded_spec.fetch("limit")).execute
   yql_spec = intents.fetch("yql")
-  yql = index.yql(yql_spec.fetch("source")).property("q", yql_spec.fetch("bindings").fetch("q")).ranking(yql_spec.fetch("ranking_profile")).page(yql_spec.fetch("page"), yql_spec.fetch("page_size")).execute
+  yql_builder = index.yql(yql_spec.fetch("source"))
+  yql_spec.fetch("bindings").each { |key, value| yql_builder = yql_builder.property(key, value) }
+  yql = yql_builder.ranking(yql_spec.fetch("ranking_profile")).page(yql_spec.fetch("page"), yql_spec.fetch("page_size")).execute
   begin
     syntax_spec = intents.fetch("text_filter_syntax_error")
     index.search(syntax_spec.fetch("query")).filter(syntax_spec.fetch("filter")).execute
