@@ -5,7 +5,7 @@
 Own the M0 native engine safely from the frozen public Rust API.
 
 Required public API is defined by `../API_CONTRACT.md` and mechanically checked
-by `../api-contract/src/bin/m1.rs`.
+by `core/crates/searchkernel-vespa-engine/examples/api-contract-m1.rs`.
 
 ## Acceptance
 

@@ -10,7 +10,7 @@ M11_BUILD="${M11_BUILD:-$ROOT/target/vespa-verifier/m11/native-build/hardening}"
 M11_SDK_CONFIG="$M11_SDK/share/embedded_crud_cfg"
 M11_CONFIG="${M11_CONFIG:-$ROOT/target/vespa-verifier/m11/config}"
 M11_CARGO_TARGET="$CARGO_TARGET_DIR"
-M11_DRIVER="$M11_CARGO_TARGET/debug/searchkernel-m11-driver"
+M11_DRIVER="$M11_CARGO_TARGET/debug/examples/searchkernel-m11-driver"
 M11_DEPS="${VESPA_DEPS:-$ROOT/vespa-deps}"
 
 m11_adapter_path_from_ldd() {
@@ -75,7 +75,7 @@ build_m11_driver() {
   unset SK_NATIVE_SDK SK_NATIVE_BASE_SDK
   export CARGO_TARGET_DIR="$M11_CARGO_TARGET"
   export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,$M11_SDK/lib"
-  cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
+  cargo build --quiet -p searchkernel --features native,internal-api,m11-verifier-hardening --example searchkernel-m11-driver
   [[ -x "$M11_DRIVER" ]] || fail_verification "M11 driver was not built: $M11_DRIVER"
   # Native consumer binaries intentionally carry a slash-bearing
   # $ORIGIN/.searchkernel-native DT_NEEDED entry. LD_LIBRARY_PATH cannot

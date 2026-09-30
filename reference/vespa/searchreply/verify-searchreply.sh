@@ -27,9 +27,9 @@ grep -q 'SK_DEGRADATION_TIMEOUT' "$ROOT/core/native/vespa/search.cc"
 grep -q 'was_degraded_by_ann_timeout' "$ROOT/core/native/vespa/search.cc"
 grep -q 'SK_DEGRADATION_ANN_TIMEOUT' "$ROOT/core/native/vespa/search.cc"
 
-cargo fmt --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" -- --check
-cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml"
-CONFIG_BIN="$CARGO_TARGET_DIR/debug/searchkernel-searchreply-config"
+cargo fmt --all -- --check
+cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-searchreply-config
+CONFIG_BIN="$CARGO_TARGET_DIR/debug/examples/searchkernel-searchreply-config"
 [[ -x "$CONFIG_BIN" ]] || fail_verification "SearchReply config compiler was not built: $CONFIG_BIN"
 
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then

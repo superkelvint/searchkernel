@@ -23,7 +23,7 @@ python3 "$M14/test_flatc_invocation.py"
 # M14 is cumulative.
 "$ROOT/reference/vespa/m13/verify-m13.sh" --skip-workspace-quality
 run_workspace_quality
-cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m14
+cargo check --quiet -p searchkernel-vespa-engine --example api-contract-m14
 "$M14/check-structure.sh"
 
 ORACLE="$M14/oracle/target/m14_cpp_oracle"
@@ -32,10 +32,10 @@ if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     'M14 direct oracle is not built; review oracle/AUTHOR_ORACLE.md and run oracle/build-cpp-oracle.sh'
 fi
 
-cargo build --quiet --manifest-path "$M14/rust-driver/Cargo.toml" --bins
-LOW="$CARGO_TARGET_DIR/debug/searchkernel-m14-driver"
-ADAPTER="$CARGO_TARGET_DIR/debug/searchkernel-m14-adapter-driver"
-ERROR="$CARGO_TARGET_DIR/debug/searchkernel-m14-error"
+cargo build --quiet -p searchkernel --features native --examples
+LOW="$CARGO_TARGET_DIR/debug/examples/searchkernel-m14-driver"
+ADAPTER="$CARGO_TARGET_DIR/debug/examples/searchkernel-m14-adapter-driver"
+ERROR="$CARGO_TARGET_DIR/debug/examples/searchkernel-m14-error"
 require_native_driver "$LOW" \
   sk_engine_open \
   sk_engine_put \
@@ -67,8 +67,7 @@ for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
 
   low_cfg="$TMP/$id-low-config"; low_data="$TMP/$id-low-data"
   low_trace="$TMP/$id-low-trace.jsonl"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
+  SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
     SEARCHKERNEL_NATIVE_TRACE_FILE="$low_trace" \
     "$LOW" "$scenario" "$low_cfg" "$low_data" > "$TMP/$id-low-raw.json"
   python3 "$M14/validate_execution_evidence.py" "$scenario" "$TMP/$id-low-raw.json"
@@ -82,8 +81,7 @@ for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
 
   adapter_cfg="$TMP/$id-adapter-config"; adapter_data="$TMP/$id-adapter-data"
   adapter_trace="$TMP/$id-adapter-trace.jsonl"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
+  SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
     SEARCHKERNEL_NATIVE_TRACE_FILE="$adapter_trace" \
     "$ADAPTER" "$scenario" "$DEFINITION_BIN" "$adapter_cfg" "$adapter_data" > "$TMP/$id-adapter-raw.json"
   python3 "$M14/validate_execution_evidence.py" "$scenario" "$TMP/$id-adapter-raw.json"

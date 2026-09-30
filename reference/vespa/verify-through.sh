@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$ROOT/../.."
 
 list_targets() {
     "$ROOT/../../tools/dev-targets.py" list verify

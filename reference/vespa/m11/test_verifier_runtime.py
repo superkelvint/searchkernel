@@ -42,14 +42,14 @@ class M11VerifierRuntimeTests(unittest.TestCase):
                 "case \"${RUSTFLAGS:-}\" in *target/vespa-verifier/m11/sdk/hardening/lib*) ;; *) echo hardening-rpath-missing >&2; exit 46 ;; esac\n"
                 "mkdir -p \"$CARGO_TARGET_DIR/debug/.searchkernel-native\"\n"
                 "printf normal-adapter > \"$CARGO_TARGET_DIR/debug/.searchkernel-native/libsearchkernel_vespa.so.2\"\n"
-                "cat > \"$CARGO_TARGET_DIR/debug/searchkernel-m11-driver\" <<'DRIVER'\n"
+                "cat > \"$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver\" <<'DRIVER'\n"
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
                 "case \"${LD_LIBRARY_PATH:-}\" in *target/vespa-verifier/m11/sdk/hardening/lib*) ;; *) exit 43 ;; esac\n"
                 "[[ \"${1:-}\" == compile ]] || exit 44\n"
                 "mkdir -p \"${2:?}\"\n"
                 "DRIVER\n"
-                "chmod +x \"$CARGO_TARGET_DIR/debug/searchkernel-m11-driver\"\n"
+                "chmod +x \"$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver\"\n"
             )
             cargo.chmod(0o755)
             env = os.environ.copy()

@@ -484,6 +484,7 @@ jobs:
               run_phase python-dependency-contract "$PYTHON" tools/test_python_dependency_contract.py
               run_phase toolchain-authorities "$PYTHON" tools/test_toolchain_authorities.py
               run_phase verifier-routing bash reference/vespa/verifiers/test-routing.sh
+              run_phase verifier-build-ownership "$PYTHON" tools/check-verifier-build-ownership.py
               ;;
 
             client-capabilities)

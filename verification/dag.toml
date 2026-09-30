@@ -1050,7 +1050,8 @@ requires = ["rust-non-native", "persistence-native", "vespa.recovery"]
 [[subsystem]]
 id = "vespa-verifiers"
 paths = [
-  "reference/vespa/api-contract/**",
+  "core/crates/searchkernel/examples/**",
+  "core/crates/searchkernel-vespa-engine/examples/**",
   "reference/vespa/common/**",
   "reference/vespa/i/**",
   "reference/vespa/m0/**",

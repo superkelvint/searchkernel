@@ -12,7 +12,7 @@ python3 "$M11/test_structure.py"
 prepare_hardening_sdk
 build_m11_driver
 
-cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m11
+cargo check --quiet -p searchkernel-vespa-engine --example api-contract-m11
 LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   cargo test --quiet -p searchkernel-vespa-engine --all-targets --all-features
 

@@ -18,11 +18,11 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
 done
 reference/vespa/m7/verify-m7.sh --skip-workspace-quality
 run_workspace_quality
-cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m8
+cargo check -p searchkernel-vespa-engine --example api-contract-m8
 "$SCRIPT_DIR/check-structure.sh"
 
-cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bins
-require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m8-driver" \
+cargo build --quiet -p searchkernel-vespa-engine --examples
+require_native_driver "$CARGO_TARGET_DIR/debug/examples/searchkernel-m8-driver" \
   sk_engine_open \
   sk_engine_search_generic
 
@@ -34,7 +34,7 @@ for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
     "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/oracle-$id.json"
   fi
   cfg="$TMP/$id-cfg"; data="$TMP/$id-data"; mkdir -p "$data"
-  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m8-driver -- "$s" "$cfg" "$data" > "$TMP/rust-$id.json"
+  cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m8-driver -- "$s" "$cfg" "$data" > "$TMP/rust-$id.json"
   "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/rust-$id.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$SCRIPT_DIR/compare.py" "$TMP/oracle-$id.json" "$TMP/rust-$id.json"
@@ -49,7 +49,7 @@ for c in json.load(open(sys.argv[1],encoding='utf-8'))['cases']:
 PY
 while read -r id expected; do
   cfg="$TMP/error-$id-cfg"; data="$TMP/error-$id-data"; mkdir -p "$data"
-  actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m8-error -- "$ERRORS" "$id" "$cfg" "$data")"
+  actual="$(cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m8-error -- "$ERRORS" "$id" "$cfg" "$data")"
   [[ "$actual" == "$expected" ]] || { echo "M8 error category mismatch $id: expected=$expected actual=$actual" >&2; exit 1; }
 done < "$TMP/error-jobs"
 

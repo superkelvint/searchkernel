@@ -248,8 +248,7 @@ phase9_line="$(grep -nF 'run_phase native-full-phase9 reference/vespa/phase9/ver
         exit 1
     }
 
-# M3 must execute the driver from Cargo's active target directory. The verifier
-# exports a shared CARGO_TARGET_DIR, so crate-local target/debug is not reliable.
+# M3 must execute its owning workspace example from Cargo's active target directory.
 M3_RUN="$ROOT/reference/vespa/m3/run-rust.sh"
 mkdir -p "$SOURCE_TEST/m3-bin" "$SOURCE_TEST/m3-target"
 cat > "$SOURCE_TEST/m3-bin/cargo" <<'SH'
@@ -259,21 +258,17 @@ set -euo pipefail
     echo "unexpected cargo invocation: $*" >&2
     exit 96
 }
-mkdir -p "$CARGO_TARGET_DIR/debug"
-cat > "$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver" <<'DRIVER'
+mkdir -p "$CARGO_TARGET_DIR/debug/examples"
+cat > "$CARGO_TARGET_DIR/debug/examples/searchkernel-m3-conformance-driver" <<'DRIVER'
 #!/usr/bin/env bash
 exit 0
 DRIVER
-chmod +x "$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver"
+chmod +x "$CARGO_TARGET_DIR/debug/examples/searchkernel-m3-conformance-driver"
 SH
 cat > "$SOURCE_TEST/m3-bin/python3" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1:-}" == */.github/ci/resolve-native-adapter-lib.py ]]; then
-    printf '%s\n' "$CARGO_TARGET_DIR/fake-native-adapter"
-    exit 0
-fi
-expected="$CARGO_TARGET_DIR/debug/searchkernel-m3-conformance-driver"
+expected="$CARGO_TARGET_DIR/debug/examples/searchkernel-m3-conformance-driver"
 actual="${@: -2:1}"
 [[ "$actual" == "$expected" ]] || {
     echo "M3 run-rust used $actual instead of Cargo target driver $expected" >&2

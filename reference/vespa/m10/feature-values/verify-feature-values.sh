@@ -22,7 +22,7 @@ EXPECTED="$SCRIPT_DIR/expected.json"
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
   "$M10/oracle/build-cpp-oracle.sh"
 fi
-cargo build --quiet --manifest-path "$M10/rust-driver/Cargo.toml" --bin searchkernel-m10-driver
+cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-m10-driver
 
 TARGET="$REPO_ROOT/target/vespa-verifier/m10-feature-values"
 mkdir -p "$TARGET"
@@ -45,8 +45,7 @@ fi
 CFG="$TMP/config"
 DATA="$TMP/data"
 mkdir -p "$DATA"
-cargo run --quiet --manifest-path "$M10/rust-driver/Cargo.toml" \
-  --bin searchkernel-m10-driver -- "$SCENARIO" "$CFG" "$DATA" |
+env -u LD_LIBRARY_PATH cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m10-driver -- "$SCENARIO" "$CFG" "$DATA" |
   "$M10/canonicalize.py" > "$TMP/rust.json"
 "$M10/compare.py" "$EXPECTED" "$TMP/rust.json"
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then

@@ -126,16 +126,15 @@ run_lane() {
   unset SK_NATIVE_SDK SK_NATIVE_BASE_SDK
   export CARGO_TARGET_DIR="$cargo_target"
   export RUSTFLAGS="$M11_BASE_RUSTFLAGS -C link-arg=-Wl,-rpath,$sdk/lib"
-  cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
+  cargo build --quiet -p searchkernel --features native,internal-api,m11-verifier-hardening --example searchkernel-m11-driver
   if [[ "$lane" == tsan ]]; then
     # Rust emits PIE executables by default. TSan's shadow-memory layout
     # cannot coexist with the randomized PIE mapping on this platform. Use
     # cargo rustc so -no-pie is applied only to the final binary, not to
     # proc-macro shared libraries built during cargo build.
-    cargo rustc --quiet --manifest-path "$M11/rust-driver/Cargo.toml" \
-      --bin searchkernel-m11-driver -- -C link-arg=-no-pie
+    cargo rustc --quiet -p searchkernel --features native,internal-api,m11-verifier-hardening --example searchkernel-m11-driver -- -C link-arg=-no-pie
   fi
-  local binary="$CARGO_TARGET_DIR/debug/searchkernel-m11-driver"
+  local binary="$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver"
   require_native_driver "$binary" sk_test_failpoint_set sk_test_failpoint_is_blocked
   stage_m11_driver_adapter "$binary" "$sdk"
   local runtime_sdk_path="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

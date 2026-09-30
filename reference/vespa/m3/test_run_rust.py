@@ -29,12 +29,8 @@ def main() -> int:
             "from pathlib import Path\n"
             "args = sys.argv[1:]\n"
             "Path(os.environ['FAKE_CARGO_LOG']).write_text(' '.join(args) + '\\n', encoding='utf-8')\n"
-            "target = Path(args[args.index('--target-dir') + 1]).resolve()\n"
-            "out_dir = target / 'debug/build/searchkernel-vespa-bindings-fake/out'\n"
-            "adapter = out_dir / 'native-adapter/lib'\n"
-            "adapter.mkdir(parents=True)\n"
-            "(adapter / 'libsearchkernel_vespa.so.2').write_bytes(b'fake')\n"
-            "binary = target / 'debug/searchkernel-m3-conformance-driver'\n"
+            "target = Path(os.environ['CARGO_TARGET_DIR']).resolve()\n"
+            "binary = target / 'debug/examples/searchkernel-m3-conformance-driver'\n"
             "binary.parent.mkdir(parents=True, exist_ok=True)\n"
             "binary.write_text(\n"
             "    '#!/usr/bin/env python3\\n'\n"
@@ -48,12 +44,7 @@ def main() -> int:
             "    encoding='utf-8',\n"
             ")\n"
             "binary.chmod(0o755)\n"
-            "print(json.dumps({\n"
-            "    'reason': 'build-script-executed',\n"
-            "    'package_id': 'path+file:///fake#searchkernel-vespa-bindings@0.0.0',\n"
-            "    'out_dir': str(out_dir),\n"
-            "    'linked_paths': ['native=' + str(adapter)],\n"
-            "}))\n",
+            "print('normal example build')\n",
             encoding="utf-8",
         )
         fake_cargo.chmod(0o755)
@@ -81,29 +72,20 @@ def main() -> int:
             raise SystemExit(completed.stdout)
 
         cargo_args = cargo_log.read_text(encoding="utf-8").strip()
-        expected_manifest = M3 / "rust-driver" / "Cargo.toml"
-        expected_adapter = (
-            target_dir
-            / "debug/build/searchkernel-vespa-bindings-fake/out/native-adapter/lib"
-        ).resolve()
         runtime_path = runtime_log.read_text(encoding="utf-8").strip()
 
         checks = (
             (cargo_args.startswith("build --quiet "), cargo_args),
-            ("--message-format=json-render-diagnostics" in cargo_args, cargo_args),
-            (f"--target-dir {target_dir}" in cargo_args, cargo_args),
-            (f"--manifest-path {expected_manifest}" in cargo_args, cargo_args),
-            (
-                runtime_path == f"{expected_adapter}:{existing_runtime}",
-                runtime_path,
-            ),
+            ("-p searchkernel-vespa-engine --example searchkernel-m3-conformance-driver" in cargo_args, cargo_args),
+            ("--manifest-path" not in cargo_args and "--target-dir" not in cargo_args, cargo_args),
+            (runtime_path == str(existing_runtime), runtime_path),
             (bool(output.read_text(encoding="utf-8").strip()), "empty run-rust output"),
         )
         for ok, message in checks:
             if not ok:
                 raise SystemExit(f"M3 run-rust regression failed: {message}")
 
-    print("M3 exact Cargo adapter runtime regression PASS")
+    print("M3 normal-workspace Cargo example regression PASS")
     return 0
 
 

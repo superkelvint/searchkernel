@@ -7,7 +7,9 @@ COMMON_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REFERENCE_ROOT="$(cd "$COMMON_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$REFERENCE_ROOT/../.." && pwd)"
 PIN_FILE="$REFERENCE_ROOT/PINNED_VESPA.json"
-CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target/vespa-verifier/cargo}"
+# ./dev supplies its worktree-scoped Cargo target root. Direct supported host
+# calls fall back to BUILDING.md's normal repository target, not a verifier-owned tree.
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target/host}"
 SK_NATIVE_SDK_WAS_EXPLICIT=0
 if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
   SK_NATIVE_SDK_WAS_EXPLICIT=1
