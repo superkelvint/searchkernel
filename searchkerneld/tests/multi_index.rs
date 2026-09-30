@@ -385,10 +385,27 @@ async fn php_emitted_create_index_json_reaches_multi_index_registry() {
         .payload_as_search_kernel_v2_create_index_request()
         .expect("daemon must access PHP create-index union payload");
     let definition = payload.definition().expect("PHP create-index definition");
-    assert_eq!(definition.fields().map(|fields| fields.len()), Some(12));
+    let parity_corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../reference/client-real-e2e-parity/corpus.json"
+    ))
+    .expect("shared parity corpus JSON");
+    let parity_field_count = parity_corpus["schema"]["fields"]
+        .as_object()
+        .expect("shared parity schema fields")
+        .len();
+    let parity_rank_profile_count = parity_corpus["schema"]["rank_profiles"]
+        .as_array()
+        .expect("shared parity rank profiles")
+        .len();
+    assert_eq!(
+        definition.fields().map(|fields| fields.len()),
+        Some(parity_field_count),
+        "PHP E2E fields follow the shared parity corpus"
+    );
     assert_eq!(
         definition.rank_profiles().map(|profiles| profiles.len()),
-        Some(6)
+        Some(parity_rank_profile_count),
+        "PHP E2E rank profiles follow the shared parity corpus"
     );
 
     let temp = TempDir::new("php-create-json");
