@@ -416,6 +416,40 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             alpha.close()
             beta.close()
 
+    def test_managed_local_delete_uses_path_identity_and_preserves_sibling(self):
+        root = Path(self.tempdir.name)
+        alpha_path = root / "managed-alpha"
+        beta_path = root / "managed-beta"
+
+        alpha = Index.create(alpha_path, fields=self.definition)
+        beta = Index.create(beta_path, fields=self.definition)
+        try:
+            alpha.upsert("alpha-doc", {"title": "alpha", "category": "a", "price": 1})
+            beta.upsert("beta-doc", {"title": "beta", "category": "b", "price": 2})
+        finally:
+            alpha.close()
+            beta.close()
+
+        Index.delete_index(alpha_path)
+        self.assertFalse(alpha_path.exists(), "successful managed delete should remove only its marker path")
+
+        with self.assertRaises(ClientError) as deleted:
+            Index.open(alpha_path)
+        self.assertEqual(deleted.exception.code, "not_found")
+
+        surviving = Index.open(beta_path)
+        try:
+            self.assertIsNotNone(surviving.get("beta-doc"))
+        finally:
+            surviving.close()
+
+        with self.assertRaises(ClientError) as missing_delete:
+            Index.delete_index(alpha_path)
+        self.assertEqual(missing_delete.exception.code, "not_found")
+
+        Index.delete_index(beta_path)
+        self.assertFalse(beta_path.exists())
+
     def test_ranking_profile_reaches_vespa_and_survives_reopen(self):
         self.definition = IndexDefinitionT(
             name="ranking_e2e",
