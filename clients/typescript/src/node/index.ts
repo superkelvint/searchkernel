@@ -1,9 +1,9 @@
 import { Index as RemoteIndex, Client, SearchKernelError } from "../client/index.js";
 import type { ClientTransport } from "../client/index.js";
-import { existsSync, lstatSync } from "node:fs";
-import { mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
 import { FieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/field-definition.js";
 import { RankProfileDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-definition.js";
@@ -45,6 +45,7 @@ function indexDefinition(options: CreateIndexOptions): IndexDefinitionT {
 const MANAGED_DATA_ROOT_NAME = ".searchkernel-managed";
 const MANAGED_MARKER_NAME = ".searchkernel-managed-target";
 const MANAGED_ROOT_MARKER_NAME = ".searchkernel-data-root";
+const MANAGED_ROOT_MARKER_VALUE = "searchkernel-managed-v1";
 
 function localLocation(path: string): { indexPath: string; dataRoot: string; target: string } {
   const indexPath = resolve(path);
@@ -56,30 +57,72 @@ function localLocation(path: string): { indexPath: string; dataRoot: string; tar
   };
 }
 
+function managedRootError(dataRoot: string): SearchKernelError {
+  return new SearchKernelError(
+    `managed-local data root is not owned by Search Kernel: ${dataRoot}`,
+  );
+}
+
+async function validateManagedDataRoot(dataRoot: string): Promise<void> {
+  const marker = join(dataRoot, MANAGED_ROOT_MARKER_NAME);
+  let rootStat;
+  let markerStat;
+  try {
+    rootStat = await lstat(dataRoot);
+    markerStat = await lstat(marker);
+  } catch {
+    throw managedRootError(dataRoot);
+  }
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) throw managedRootError(dataRoot);
+  if (markerStat.isSymbolicLink() || !markerStat.isFile()) throw managedRootError(dataRoot);
+  let value: string;
+  try {
+    value = await readFile(marker, "utf8");
+  } catch {
+    throw managedRootError(dataRoot);
+  }
+  if (
+    value !== MANAGED_ROOT_MARKER_VALUE
+    && value !== `${MANAGED_ROOT_MARKER_VALUE}\n`
+    && value !== `${MANAGED_ROOT_MARKER_VALUE}\r\n`
+  ) {
+    throw managedRootError(dataRoot);
+  }
+}
+
 async function prepareManagedDataRoot(dataRoot: string): Promise<void> {
   await mkdir(dirname(dataRoot), { recursive: true });
-  const marker = join(dataRoot, MANAGED_ROOT_MARKER_NAME);
-  if (existsSync(dataRoot)) {
-    if (lstatSync(dataRoot).isSymbolicLink() || !existsSync(marker)) {
-      throw new SearchKernelError(
-        `managed-local data root is not owned by Search Kernel: ${dataRoot}`,
-      );
-    }
+  try {
+    await lstat(dataRoot);
+    await validateManagedDataRoot(dataRoot);
     return;
+  } catch (error) {
+    if (error instanceof SearchKernelError) throw error;
   }
 
-  let created = false;
+  const staging = await mkdtemp(
+    join(dirname(dataRoot), `.${basename(dataRoot)}.bootstrap-`),
+  );
   try {
-    await mkdir(dataRoot);
-    created = true;
-    await writeFile(marker, "searchkernel-managed-v1\n", { flag: "wx" });
-  } catch (error) {
-    if (created) {
-      await unlink(marker).catch(() => undefined);
-      await rmdir(dataRoot).catch(() => undefined);
+    await writeFile(
+      join(staging, MANAGED_ROOT_MARKER_NAME),
+      `${MANAGED_ROOT_MARKER_VALUE}\n`,
+      { flag: "wx" },
+    );
+    try {
+      await rename(staging, dataRoot);
+    } catch (error) {
+      try {
+        await validateManagedDataRoot(dataRoot);
+        return;
+      } catch {
+        throw error;
+      }
     }
-    throw error;
+  } finally {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
   }
+  await validateManagedDataRoot(dataRoot);
 }
 
 async function reserveManagedPath(indexPath: string, target: string): Promise<void> {
@@ -99,9 +142,31 @@ async function reserveManagedPath(indexPath: string, target: string): Promise<vo
 }
 
 async function ensureManagedMarker(indexPath: string, target: string): Promise<void> {
-  if (existsSync(indexPath)) return;
-  await mkdir(indexPath);
-  await writeFile(join(indexPath, MANAGED_MARKER_NAME), `${target}\n`, { flag: "wx" });
+  try {
+    await mkdir(indexPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const pathStat = await lstat(indexPath);
+    if (pathStat.isSymbolicLink() || !pathStat.isDirectory()) {
+      throw new SearchKernelError(
+        `managed-local identity path is not a real directory: ${indexPath}`,
+      );
+    }
+  }
+
+  const marker = join(indexPath, MANAGED_MARKER_NAME);
+  try {
+    await writeFile(marker, `${target}\n`, { flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+  const markerStat = await lstat(marker);
+  if (markerStat.isSymbolicLink() || !markerStat.isFile()) {
+    throw new SearchKernelError(`unsafe managed-local marker: ${marker}`);
+  }
+  if ((await readFile(marker, "utf8")).trim() !== target) {
+    throw new SearchKernelError(`managed-local marker target mismatch at ${marker}`);
+  }
 }
 
 async function cleanupManagedReservation(indexPath: string, target: string): Promise<void> {
