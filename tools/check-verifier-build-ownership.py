@@ -296,26 +296,26 @@ def check_example_routing(root: Path = ROOT, metadata: dict[str, object] | None 
         for line_number, line in enumerate(text.splitlines(), 1):
             if line.lstrip().startswith("#"):
                 continue
-            match = command_pattern.search(line)
-            if (
-                not match
-                or not re.search(r"(?:^|\s)--example(?:\s|$)", match.group("args"))
-                or "-p" not in match.group("args")
-            ):
-                continue
-            package_match = re.search(r"(?:^|\s)-p\s+([\w.-]+)", match.group("args"))
-            example_match = re.search(r"(?:^|\s)--example\s+([\w.-]+)", match.group("args"))
-            if not package_match or not example_match:
-                fail(f"could not parse Cargo package/example invocation: {script.relative_to(root)}:{line_number}")
-            package, example = package_match.group(1), example_match.group(1)
-            target = targets.get((package, example))
-            if target is None:
-                fail(
-                    f"{script.relative_to(root)}:{line_number} invokes Cargo example "
-                    f"{example!r} that is not registered for package {package!r}"
-                )
-            if "example" not in target.get("kind", []):
-                fail(f"{script.relative_to(root)}:{line_number} invokes non-example Cargo target {example!r}")
+            for match in command_pattern.finditer(line):
+                args = match.group("args")
+                if (
+                    not re.search(r"(?:^|\s)--example(?:\s|$)", args)
+                    or "-p" not in args
+                ):
+                    continue
+                package_match = re.search(r"(?:^|\s)-p\s+([\w.-]+)", args)
+                example_match = re.search(r"(?:^|\s)--example\s+([\w.-]+)", args)
+                if not package_match or not example_match:
+                    fail(f"could not parse Cargo package/example invocation: {script.relative_to(root)}:{line_number}")
+                package, example = package_match.group(1), example_match.group(1)
+                target = targets.get((package, example))
+                if target is None:
+                    fail(
+                        f"{script.relative_to(root)}:{line_number} invokes Cargo example "
+                        f"{example!r} that is not registered for package {package!r}"
+                    )
+                if "example" not in target.get("kind", []):
+                    fail(f"{script.relative_to(root)}:{line_number} invokes non-example Cargo target {example!r}")
 
 
 def check_focused_builds(root: Path = ROOT) -> None:
