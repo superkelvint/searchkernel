@@ -6,6 +6,7 @@ import hashlib
 import math
 import os
 import signal
+import stat
 import socket
 import subprocess
 import tempfile
@@ -29,6 +30,7 @@ from SearchKernel.V2.BytesValue import BytesValueT
 from SearchKernel.V2.DataType import DataTypeT
 from SearchKernel.V2.DataTypeKind import DataTypeKind
 from SearchKernel.V2.DeleteRequest import DeleteRequestT
+from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequestT
 from SearchKernel.V2.DescribeRequest import DescribeRequestT
 from SearchKernel.V2.Document import DocumentT
 from SearchKernel.V2.ErrorCode import ErrorCode
@@ -38,7 +40,6 @@ from SearchKernel.V2.Float64Value import Float64ValueT
 from SearchKernel.V2.GetRequest import GetRequestT
 from SearchKernel.V2.CreateIndexRequest import CreateIndexRequestT
 from SearchKernel.V2.OpenIndexRequest import OpenIndexRequestT
-from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequestT
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT
 from SearchKernel.V2.InsertRequest import InsertRequestT
 from SearchKernel.V2.Int64Value import Int64ValueT
@@ -342,6 +343,12 @@ _MANAGED_HOST_POOL: dict[str, "_ManagedLocalHost"] = {}
 _MANAGED_DATA_ROOT_NAME = ".searchkernel-managed"
 _MANAGED_MARKER_NAME = ".searchkernel-managed-target"
 _MANAGED_ROOT_MARKER_NAME = ".searchkernel-data-root"
+_MANAGED_ROOT_MARKER_VALUE = "searchkernel-managed-v1"
+_LEGACY_HOST_ENV_KEYS = (
+    "SEARCHKERNEL_INDEX_PATH",
+    "SEARCHKERNEL_INDEX_DEFINITION",
+    "SEARCHKERNEL_INDEX_DEFINITION_JSON",
+)
 
 
 def _managed_location(path: Path) -> tuple[Path, Path, str]:
@@ -357,31 +364,119 @@ def _managed_marker(path: Path) -> Path:
     return path / _MANAGED_MARKER_NAME
 
 
+def _managed_root_error(data_root: Path) -> ClientError:
+    return ClientError(f"managed-local data root is not owned by Search Kernel: {data_root}")
+
+
+def _validate_managed_data_root(data_root: Path) -> None:
+    marker = data_root / _MANAGED_ROOT_MARKER_NAME
+    try:
+        root_stat = data_root.lstat()
+        marker_stat = marker.lstat()
+    except OSError as exc:
+        raise _managed_root_error(data_root) from exc
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise _managed_root_error(data_root)
+    if stat.S_ISLNK(marker_stat.st_mode) or not stat.S_ISREG(marker_stat.st_mode):
+        raise _managed_root_error(data_root)
+    try:
+        marker_value = marker.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise _managed_root_error(data_root) from exc
+    if marker_value not in (
+        _MANAGED_ROOT_MARKER_VALUE,
+        _MANAGED_ROOT_MARKER_VALUE + "\n",
+        _MANAGED_ROOT_MARKER_VALUE + "\r\n",
+    ):
+        raise _managed_root_error(data_root)
+
+
 def _prepare_managed_data_root(data_root: Path) -> None:
     data_root.parent.mkdir(parents=True, exist_ok=True)
     marker = data_root / _MANAGED_ROOT_MARKER_NAME
-    if data_root.exists() or data_root.is_symlink():
-        if data_root.is_symlink() or not data_root.is_dir() or not marker.is_file():
-            raise ClientError(
-                f"managed-local data root is not owned by Search Kernel: {data_root}"
-            )
-        return
-    data_root.mkdir(parents=False)
+    created = False
     try:
-        marker.write_text("searchkernel-managed-v1\n", encoding="utf-8")
-    except Exception:
+        data_root.mkdir()
+        created = True
+    except FileExistsError:
+        pass
+
+    if created:
         try:
-            data_root.rmdir()
-        except OSError:
-            pass
-        raise
+            with marker.open("x", encoding="utf-8") as stream:
+                stream.write(_MANAGED_ROOT_MARKER_VALUE + "\n")
+            _validate_managed_data_root(data_root)
+            return
+        except Exception:
+            try:
+                marker.unlink(missing_ok=True)
+                data_root.rmdir()
+            except OSError:
+                pass
+            raise
+
+    # Another process may have created the final directory and still be
+    # publishing its marker. Wait only for a missing marker; wrong types or
+    # marker contents fail closed immediately. Using mkdir rather than rename
+    # guarantees we never replace a caller-created empty directory.
+    deadline = time.monotonic() + 2.0
+    while True:
+        try:
+            root_stat = data_root.lstat()
+        except OSError as exc:
+            raise _managed_root_error(data_root) from exc
+        if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+            raise _managed_root_error(data_root)
+        try:
+            marker.lstat()
+        except FileNotFoundError:
+            if time.monotonic() >= deadline:
+                raise _managed_root_error(data_root)
+            time.sleep(0.025)
+            continue
+        _validate_managed_data_root(data_root)
+        return
+
+
+def _managed_target_marker_matches(path: Path, target: str) -> bool:
+    marker = _managed_marker(path)
+    try:
+        marker_stat = marker.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise ClientError(f"cannot inspect managed-local marker: {marker}") from exc
+    if stat.S_ISLNK(marker_stat.st_mode) or not stat.S_ISREG(marker_stat.st_mode):
+        raise ClientError(f"unsafe managed-local marker: {marker}")
+    try:
+        value = marker.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ClientError(f"cannot read managed-local marker: {marker}") from exc
+    if value != target:
+        raise ClientError(f"managed-local marker target mismatch at {marker}")
+    return True
 
 
 def _write_managed_marker(path: Path, target: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.mkdir(exist_ok=True)
+    try:
+        path.mkdir()
+    except FileExistsError:
+        try:
+            path_stat = path.lstat()
+        except OSError as exc:
+            raise ClientError(f"cannot inspect managed-local identity path: {path}") from exc
+        if stat.S_ISLNK(path_stat.st_mode) or not stat.S_ISDIR(path_stat.st_mode):
+            raise ClientError(f"managed-local identity path is not a real directory: {path}")
+
     marker = _managed_marker(path)
-    marker.write_text(target + "\n", encoding="utf-8")
+    try:
+        with marker.open("x", encoding="utf-8") as stream:
+            stream.write(target + "\n")
+    except FileExistsError:
+        pass
+    if not _managed_target_marker_matches(path, target):
+        raise ClientError(f"managed-local identity path is not owned by Search Kernel: {path}")
 
 
 def _reserve_managed_path(path: Path, target: str) -> None:
@@ -412,6 +507,8 @@ def _cleanup_managed_reservation(path: Path, target: str) -> None:
 
 def _managed_host_environment() -> dict[str, str]:
     environment = os.environ.copy()
+    for key in _LEGACY_HOST_ENV_KEYS:
+        environment.pop(key, None)
     sdk_lib = os.environ.get("SEARCHKERNEL_SDK_LIB")
     if sdk_lib:
         previous = environment.get("LD_LIBRARY_PATH")
@@ -421,7 +518,34 @@ def _managed_host_environment() -> dict[str, str]:
 
 def _migrate_legacy_managed_path(path: Path, data_root: Path, target: str) -> None:
     destination = data_root / target
-    if destination.is_dir() or _managed_marker(path).is_file() or not path.exists():
+    try:
+        source_stat = path.lstat()
+    except FileNotFoundError:
+        source_stat = None
+    if source_stat is not None and (
+        stat.S_ISLNK(source_stat.st_mode) or not stat.S_ISDIR(source_stat.st_mode)
+    ):
+        raise ClientError(f"legacy managed-local index must be a real directory: {path}")
+
+    marker_matches = False
+    if source_stat is not None:
+        marker_matches = _managed_target_marker_matches(path, target)
+
+    try:
+        destination_stat = destination.lstat()
+    except FileNotFoundError:
+        destination_stat = None
+    if destination_stat is not None:
+        if stat.S_ISLNK(destination_stat.st_mode) or not stat.S_ISDIR(destination_stat.st_mode):
+            raise ClientError(f"unsafe managed-local destination: {destination}")
+        if source_stat is None or marker_matches:
+            return
+        raise ClientError(
+            f"managed-local destination already exists while legacy source remains: {destination}"
+        )
+    if marker_matches:
+        return
+    if source_stat is None:
         return
 
     binary = _host_binary()
@@ -446,6 +570,24 @@ def _migrate_legacy_managed_path(path: Path, data_root: Path, target: str) -> No
         check=False,
     )
     if completed.returncode != 0:
+        # An equivalent concurrent migrator may have completed while this
+        # process was waiting on the lifecycle lock. Converge on that result.
+        try:
+            destination_stat = destination.lstat()
+        except FileNotFoundError:
+            destination_stat = None
+        try:
+            source_stat = path.lstat()
+        except FileNotFoundError:
+            source_stat = None
+        if (
+            destination_stat is not None
+            and stat.S_ISDIR(destination_stat.st_mode)
+            and not stat.S_ISLNK(destination_stat.st_mode)
+            and source_stat is None
+        ):
+            _write_managed_marker(path, target)
+            return
         output = completed.stdout.decode("utf-8", errors="replace").strip()
         suffix = f"\nsearchkerneld output:\n{output}" if output else ""
         raise ClientError(
