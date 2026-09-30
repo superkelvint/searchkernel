@@ -70,9 +70,19 @@ from SearchKernel.V2.FiniteRelevance import FiniteRelevanceT  # noqa: E402
 from SearchKernel.V2.PositiveInfinityRelevance import PositiveInfinityRelevanceT  # noqa: E402
 from SearchKernel.V2.NegativeInfinityRelevance import NegativeInfinityRelevanceT  # noqa: E402
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind  # noqa: E402
+from SearchKernel.V2.ResultGroup import ResultGroupT  # noqa: E402
+from SearchKernel.V2.ResultNode import ResultNodeT  # noqa: E402
+from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation  # noqa: E402
 
 
 _SNAPSHOT_BINARY = None
+
+
+def _empty_search_result():
+    return SimpleNamespace(
+        root=ResultNodeT(ResultNodeKind.ResultGroup, ResultGroupT()),
+        totalHits=SimpleNamespace(value=0, relation=TotalHitsRelation.Exact),
+    )
 
 
 def _snapshot_binary(root):
@@ -187,17 +197,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_field_sorts_match_canonical_rust_ir(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -328,14 +334,10 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             ["alpha", "zeta"],
         )
 
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -349,17 +351,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_facet_preserves_zero_limit_and_canonical_name(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -376,17 +374,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(root.label, "brands")
 
     def test_facet_sort_modes_and_multiple_names_are_canonical(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -422,14 +416,10 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             )
 
     def test_ergonomic_summary_and_fields_share_one_presentation(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -685,14 +675,10 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(profile.inputs[0].name, "query_embedding")
         self.assertEqual(profile.firstPhase.expression, "closeness(embedding)")
 
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -941,17 +927,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_ergonomic_filter_bindings_are_sorted(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -965,17 +947,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_ergonomic_ranking_inputs_use_generated_objects(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -1006,17 +984,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(builder._rank_properties, {"source": "catalog"})
 
     def test_ergonomic_rank_properties_preserve_absent_profile(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -1037,17 +1011,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(index.client.request.ranking.profile, "default")
 
     def test_ergonomic_ranking_properties_and_inputs_are_canonical_order(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -1071,17 +1041,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_page_and_grouping_helpers_match_canonical_rust_ir(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
