@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import math
 import os
-import shutil
 import signal
 import stat
 import socket
@@ -393,33 +392,49 @@ def _validate_managed_data_root(data_root: Path) -> None:
 
 def _prepare_managed_data_root(data_root: Path) -> None:
     data_root.parent.mkdir(parents=True, exist_ok=True)
-    if data_root.exists() or data_root.is_symlink():
+    marker = data_root / _MANAGED_ROOT_MARKER_NAME
+    created = False
+    try:
+        data_root.mkdir()
+        created = True
+    except FileExistsError:
+        pass
+
+    if created:
+        try:
+            with marker.open("x", encoding="utf-8") as stream:
+                stream.write(_MANAGED_ROOT_MARKER_VALUE + "\n")
+            _validate_managed_data_root(data_root)
+            return
+        except Exception:
+            try:
+                marker.unlink(missing_ok=True)
+                data_root.rmdir()
+            except OSError:
+                pass
+            raise
+
+    # Another process may have created the final directory and still be
+    # publishing its marker. Wait only for a missing marker; wrong types or
+    # marker contents fail closed immediately. Using mkdir rather than rename
+    # guarantees we never replace a caller-created empty directory.
+    deadline = time.monotonic() + 2.0
+    while True:
+        try:
+            root_stat = data_root.lstat()
+        except OSError as exc:
+            raise _managed_root_error(data_root) from exc
+        if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+            raise _managed_root_error(data_root)
+        try:
+            marker.lstat()
+        except FileNotFoundError:
+            if time.monotonic() >= deadline:
+                raise _managed_root_error(data_root)
+            time.sleep(0.025)
+            continue
         _validate_managed_data_root(data_root)
         return
-
-    staging = Path(
-        tempfile.mkdtemp(
-            prefix=f".{data_root.name}.bootstrap-",
-            dir=data_root.parent,
-        )
-    )
-    try:
-        (staging / _MANAGED_ROOT_MARKER_NAME).write_text(
-            _MANAGED_ROOT_MARKER_VALUE + "\n", encoding="utf-8"
-        )
-        try:
-            os.rename(staging, data_root)
-        except OSError:
-            # Another process may have atomically published the complete root.
-            # Only accept it after validating the ownership marker and type.
-            if data_root.exists() or data_root.is_symlink():
-                _validate_managed_data_root(data_root)
-                return
-            raise
-    finally:
-        if staging.exists():
-            shutil.rmtree(staging, ignore_errors=True)
-    _validate_managed_data_root(data_root)
 
 
 def _managed_target_marker_matches(path: Path, target: str) -> bool:
