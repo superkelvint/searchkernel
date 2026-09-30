@@ -265,9 +265,10 @@ def shared_typed_query(spec):
 
 def shared_typed_query_observations(index):
     observations = {}
-    for scenario, intent in PARITY_INTENTS.items():
+    for scenario in E2E_CORPUS["scenario_inputs"]:
         if not scenario.startswith("typed_query_"):
             continue
+        intent = PARITY_INTENTS[scenario]
         results = index.query(shared_typed_query(intent["query"])).limit(intent["limit"]).execute()
         ids = [hit.id for hit in results.hits]
         if intent["result_order"] == "sorted_ids": ids.sort()
