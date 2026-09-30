@@ -51,27 +51,26 @@ class RealE2EParityComparatorTests(unittest.TestCase):
             scenario_contract({"scenarios": ["facets"], "non_comparable": {"facets": "reason"}})
 
     def test_capability_contract_is_per_client_and_keeps_the_scenario_required(self):
-        scenarios, capabilities = scenario_contract({
-            "scenarios": ["full_text_search", "yql"],
-            "client_scenario_contract": {
-                "yql": {
-                    client: {
-                        "negative_limit": (
-                            {"kind": "not_expressible", "reason": "Rust type system prevents this input."}
-                            if client == "rust"
-                            else {"kind": "runtime_rejected"}
-                        )
-                    }
-                    for client in PARITY.CLIENTS
-                }
-            },
-        })
-        self.assertEqual(["full_text_search", "yql"], scenarios)
-        self.assertEqual("not_expressible", capabilities["yql"]["rust"]["negative_limit"]["kind"])
+        import json
+
+        corpus = json.loads(PARITY.CORPUS.read_text())
+        scenarios, capabilities = scenario_contract(corpus)
+        self.assertIn("builder_misuse", scenarios)
+        self.assertEqual(
+            "not_expressible",
+            capabilities["builder_misuse"]["rust"]["negative_limit_rejected"]["kind"],
+        )
         with self.assertRaisesRegex(SystemExit, "unknown scenarios"):
             scenario_contract({"scenarios": ["facets"], "client_scenario_contract": {"yql": {}}})
         with self.assertRaisesRegex(SystemExit, "every required client"):
             scenario_contract({"scenarios": ["facets"], "client_scenario_contract": {"facets": {"rust": {"negative_limit": {"kind": "not_expressible", "reason": " "}}}}})
+        invented = json.loads(json.dumps(corpus))
+        invented["client_scenario_contract"]["builder_misuse"]["python"]["negative_limit_rejected"] = {
+            "kind": "not_expressible",
+            "reason": "convenience only",
+        }
+        with self.assertRaisesRegex(SystemExit, "checked capability contract"):
+            scenario_contract(invented)
 
     def test_every_shared_scenario_is_required_in_each_snapshot(self):
         with self.assertRaisesRegex(SystemExit, "python snapshot is missing scenarios: facets"):
@@ -138,9 +137,17 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         self.assertTrue(compare({"score": 100.0}, {"score": 100.01}))
 
     def test_integer_semantics_reject_float_drift_and_float_kind(self):
+        self.assertTrue(compare(7, 7.0))
+        self.assertTrue(compare(7, 7.0000005))
+        self.assertTrue(compare({"value": 7}, {"value": 7.0}))
         self.assertTrue(compare({"total": 7}, {"total": 7.0000005}))
         self.assertTrue(compare({"total": 7}, {"total": 7.0}))
+        self.assertEqual([], compare(7, 7))
         self.assertEqual([], compare({"count": 7}, {"count": 7}))
+
+    def test_declared_float_paths_keep_float_semantics_after_json_serialization(self):
+        self.assertEqual([], compare({"score": 100.0}, {"score": 100}))
+        self.assertTrue(compare({"score": 100.0}, {"score": 100.01}))
 
     def test_close_float_values_pass_and_material_drift_fails(self):
         self.assertEqual([], compare({"score": 7.0}, {"score": 7.0000005}))
@@ -150,6 +157,8 @@ class RealE2EParityComparatorTests(unittest.TestCase):
 
     def test_integer_and_boolean_kinds_remain_exact(self):
         self.assertTrue(compare({"count": 1}, {"count": 2}))
+        self.assertTrue(compare(True, 1))
+        self.assertTrue(compare(False, 0))
         self.assertTrue(compare({"count": 1}, {"count": True}))
         self.assertTrue(compare({"count": 0}, {"count": False}))
 

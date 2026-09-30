@@ -15,10 +15,34 @@ ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "reference/client-real-e2e-parity/corpus.json"
 CLIENTS = ("rust", "python", "typescript", "php", "ruby")
 FLOAT_TOLERANCE = 1e-6
-INTEGER_FIELDS = {
-    "total", "total_hits", "count", "products", "rating", "inventory",
-    "rerank_count", "hits", "limit", "offset", "integer_value", "value",
-    "documents", "results", "results_full", "nodes",
+FLOAT_SEMANTIC_KEYS = {
+    # Portable schema fields and named aggregation outputs whose domain type is
+    # float64. Some clients serialize integral-valued floats as JSON integers.
+    "price", "sale_price", "avg_price", "sum_price", "min_price", "max_price",
+    "revenue", "score", "scores", "top_score", "feature", "relevance",
+    "percent", "sum", "avg", "min", "max", "stddev",
+}
+CAPABILITY_CONTRACT = {
+    "builder_misuse": {
+        client: {
+            case: (
+                {
+                    "kind": "not_expressible",
+                    "reason": (
+                        f"SearchBuilder::{method} accepts u32, so a negative {name} "
+                        "cannot be represented."
+                    ),
+                }
+                if client == "rust"
+                else {"kind": "runtime_rejected"}
+            )
+            for case, method, name in (
+                ("negative_limit_rejected", "limit", "limit"),
+                ("negative_offset_rejected", "offset", "offset"),
+            )
+        }
+        for client in CLIENTS
+    }
 }
 
 
@@ -45,11 +69,22 @@ def compare(expected: Any, actual: Any, path: str = "$", differences: list[str] 
             differences.append(f"{path}: {expected!r} != {actual!r}")
         return differences
     if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-        if path.rsplit(".", 1)[-1] in INTEGER_FIELDS:
-            if type(expected) is not int or type(actual) is not int or expected != actual:
-                differences.append(f"{path}: integer semantics require exact integers, got {expected!r} != {actual!r}")
+        # For untyped paths, JSON integer and floating forms are distinct and
+        # never share tolerance. These named paths are explicitly float64 in
+        # the portable schema/result contract; clients may serialize 3.0 as 3.
+        semantic_key = path.rsplit(".", 1)[-1].split("[", 1)[0]
+        float_semantic = semantic_key in FLOAT_SEMANTIC_KEYS
+        if type(expected) is not type(actual):
+            if not float_semantic:
+                differences.append(f"{path}: numeric kinds differ: {type(expected).__name__} != {type(actual).__name__}")
+                return differences
+            left, right = float(expected), float(actual)
+            if not (math.isfinite(left) and math.isfinite(right)) or not math.isclose(
+                left, right, rel_tol=FLOAT_TOLERANCE, abs_tol=FLOAT_TOLERANCE
+            ):
+                differences.append(f"{path}: {expected!r} != {actual!r} (float tolerance {FLOAT_TOLERANCE:g})")
             return differences
-        if isinstance(expected, int) and isinstance(actual, int):
+        if isinstance(expected, int):
             if expected != actual:
                 differences.append(f"{path}: {expected!r} != {actual!r}")
         elif not (math.isfinite(expected) and math.isfinite(actual)) or not math.isclose(
@@ -111,6 +146,8 @@ def scenario_contract(corpus: dict[str, Any]) -> tuple[list[str], dict[str, dict
                         raise SystemExit(f"{scenario}.{client}.{case}: not_expressible requires a concrete reason")
                 elif kind != "runtime_rejected":
                     raise SystemExit(f"{scenario}.{client}.{case}: unsupported case classification")
+    if capabilities != CAPABILITY_CONTRACT:
+        raise SystemExit("client_scenario_contract does not match the checked capability contract")
     return scenarios, capabilities
 
 

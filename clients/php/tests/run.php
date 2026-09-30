@@ -1555,6 +1555,17 @@ foreach ($parityCorpus['schema']['rank_profiles'] as $position => $spec) {
     }
     if (isset($spec['query_inputs'])) {
         same(array_keys($spec['query_inputs']), array_column($actualProfile['inputs'], 'name'), 'PHP rank profile inputs follow corpus: ' . $spec['name']);
+        foreach ($spec['query_inputs'] as $inputName => $typeSpec) {
+            $actualInput = current(array_values(array_filter(
+                $actualProfile['inputs'],
+                static fn (array $input): bool => $input['name'] === $inputName,
+            )));
+            same(
+                $typeSpec,
+                $actualInput['data_type']['kind']['type_spec'],
+                'PHP rank profile query input type follows corpus: ' . $spec['name'] . '.' . $inputName,
+            );
+        }
     }
 }
 $parityEmbedding = current(array_values(array_filter(
@@ -1583,9 +1594,10 @@ foreach ($parityCorpus['schema']['fields'] as $name => $spec) {
     };
     same($expectedType, $actual['data_type'], 'PHP field data type follows shared corpus: ' . $name);
     foreach (['stored', 'searchable', 'filterable', 'sortable', 'facetable'] as $capability) {
-        if (array_key_exists($capability, $spec)) {
-            same(['value' => $spec[$capability]], $actual[$capability] ?? null, 'PHP field capability follows shared corpus: ' . $name . '.' . $capability);
-        }
+        $expectedCapability = array_key_exists($capability, $spec)
+            ? ['value' => $spec[$capability]]
+            : null;
+        same($expectedCapability, $actual[$capability] ?? null, 'PHP field capability follows shared corpus: ' . $name . '.' . $capability);
     }
 }
 

@@ -20,7 +20,6 @@ pub enum GroupingAggregation {
     Sum(GroupingExpression),
     Min(GroupingExpression),
     Max(GroupingExpression),
-    Alias(String, Box<GroupingAggregation>),
     AliasReference(String),
     Named(String, Box<GroupingAggregation>),
 }
@@ -40,9 +39,6 @@ impl GroupingAggregation {
     }
     pub fn max(field: impl Into<String>) -> Self {
         Self::Max(GroupingExpression::attribute(field))
-    }
-    pub fn alias(name: impl Into<String>, aggregation: GroupingAggregation) -> Self {
-        Self::Alias(name.into(), Box::new(aggregation))
     }
     pub fn alias_reference(name: impl Into<String>) -> Self {
         Self::AliasReference(name.into())
@@ -243,9 +239,6 @@ fn output_to_ir(output: GroupingAggregation) -> Result<GroupingOutputIr> {
         GroupingAggregation::AliasReference(name) => {
             (Some(name.clone()), GroupingExpressionIr::Alias(name))
         }
-        GroupingAggregation::Alias(name, aggregation) => {
-            (Some(name), aggregation_expression(*aggregation)?)
-        }
         GroupingAggregation::Named(name, aggregation) => {
             (Some(name), aggregation_expression(*aggregation)?)
         }
@@ -269,9 +262,7 @@ fn aggregation_expression(output: GroupingAggregation) -> Result<GroupingExpress
         GroupingAggregation::Max(expression) => {
             GroupingAggregationIr::Max(expression_to_ir(expression)?)
         }
-        GroupingAggregation::Alias(_, _)
-        | GroupingAggregation::AliasReference(_)
-        | GroupingAggregation::Named(_, _) => {
+        GroupingAggregation::AliasReference(_) | GroupingAggregation::Named(_, _) => {
             return Err(Error::search(
                 crate::ErrorCode::InvalidArgument,
                 "grouping aliases cannot be nested as aggregations",
