@@ -6,7 +6,7 @@ import { ErrorT } from "../src/generated/flatbuffers/search-kernel/v2/error.js";
 import { GetResultT } from "../src/generated/flatbuffers/search-kernel/v2/get-result.js";
 import { InsertRequestT } from "../src/generated/flatbuffers/search-kernel/v2/insert-request.js";
 import { InsertResultT } from "../src/generated/flatbuffers/search-kernel/v2/insert-result.js";
-import { IndexTarget, IndexTargetT } from "../src/generated/flatbuffers/search-kernel/v2/index-target.js";
+import { IndexTarget } from "../src/generated/flatbuffers/search-kernel/v2/index-target.js";
 import { RequestEnvelope } from "../src/generated/flatbuffers/search-kernel/protocol/v2/request-envelope.js";
 import { ResponseEnvelope, ResponseEnvelopeT } from "../src/generated/flatbuffers/search-kernel/protocol/v2/response-envelope.js";
 import { ResponsePayload } from "../src/generated/flatbuffers/search-kernel/protocol/v2/response-payload.js";

@@ -211,11 +211,15 @@ export class Index {
     this.client = client;
   }
 
+  static connect(endpoint: string, target: string, transport?: ClientTransport): Index;
+  static connect(endpoint: string, transport?: ClientTransport): Index;
   static connect(
     endpoint: string,
-    target: string,
-    transport?: ClientTransport,
+    targetOrTransport?: string | ClientTransport,
+    selectedTransport?: ClientTransport,
   ): Index {
+    const target = typeof targetOrTransport === "string" ? targetOrTransport : undefined;
+    const transport = typeof targetOrTransport === "string" ? selectedTransport : targetOrTransport;
     return new Index(new Client(transport ?? new GrpcWebTransport(endpoint), target));
   }
 

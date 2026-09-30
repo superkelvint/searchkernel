@@ -687,14 +687,15 @@ class _ManagedLocalHost:
 class Client:
     """Synchronous request/response client over a real gRPC channel."""
 
-    def __init__(self, transport: GrpcTransport, target: str | None = None):
+    def __init__(self, transport: GrpcTransport, *, target: str | None = None):
         self.transport = transport
         self.target = target
 
     def execute(self, operation: str, request: Any) -> Any:
         try:
             envelope = unpack_response(
-                self.transport.call(pack_request(operation, request, target=self.target)), operation
+                self.transport.call(pack_request(operation, request, target=self.target)),
+                operation,
             )
             if envelope.payloadType == ERROR_TYPE:
                 error = envelope.payload
@@ -772,7 +773,7 @@ class Index:
         self._ergonomic = ergonomic
 
     @classmethod
-    def connect(cls, endpoint: str, target: str) -> "Index":
+    def connect(cls, endpoint: str, target: str | None = None) -> "Index":
         return cls(Client(GrpcTransport(endpoint), target=target), ergonomic=True)
 
     @classmethod

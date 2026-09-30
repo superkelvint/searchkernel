@@ -1,4 +1,5 @@
 import { Index as RemoteIndex, Client, SearchKernelError } from "../client/index.js";
+import type { ClientTransport } from "../client/index.js";
 import { existsSync, lstatSync } from "node:fs";
 import { mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -124,8 +125,16 @@ export class Index extends RemoteIndex {
     this.owner = owner;
   }
 
-  static connect(endpoint: string, target: string): Index {
-    return new Index(new Client(new NodeGrpcTransport(endpoint), target));
+  static connect(endpoint: string, target: string, transport?: ClientTransport): Index;
+  static connect(endpoint: string, transport?: ClientTransport): Index;
+  static connect(
+    endpoint: string,
+    targetOrTransport?: string | ClientTransport,
+    selectedTransport?: ClientTransport,
+  ): Index {
+    const target = typeof targetOrTransport === "string" ? targetOrTransport : undefined;
+    const transport = typeof targetOrTransport === "string" ? selectedTransport : targetOrTransport;
+    return new Index(new Client(transport ?? new NodeGrpcTransport(endpoint), target));
   }
 
   static create(endpoint: string, target: string, definition: IndexDefinitionT | CreateIndexOptions): Promise<Index>;

@@ -11,37 +11,43 @@
       "surface": "rust-embedded",
       "runtime": "native",
       "evidence": "native-full",
-      "verification": "./dev verify persistence"
+      "verification": "./dev verify persistence",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
       "surface": "searchkerneld",
       "runtime": "native",
       "evidence": "client-e2e",
-      "verification": "./dev verify product.integration"
+      "verification": "./dev verify product.integration",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
       "surface": "python",
       "runtime": "managed-local",
       "evidence": "native-full",
-      "verification": "./dev test python"
+      "verification": "./dev test python",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
       "surface": "python",
       "runtime": "connect",
       "evidence": "client-e2e",
-      "verification": "./dev test python"
+      "verification": "./dev test python",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
       "surface": "typescript-node",
       "runtime": "connect",
       "evidence": "client-e2e",
-      "verification": "./dev test typescript"
+      "verification": "./dev test typescript",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
       "surface": "ruby",
       "runtime": "connect",
       "evidence": "client-e2e",
-      "verification": "./dev test ruby"
+      "verification": "./dev test ruby",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
     }
   ],
   "deferred": [

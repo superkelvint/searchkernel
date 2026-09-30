@@ -9,6 +9,7 @@ import { DescribeRequestT } from "../generated/flatbuffers/search-kernel/v2/desc
 import { GetRequestT } from "../generated/flatbuffers/search-kernel/v2/get-request.js";
 import { InsertRequestT } from "../generated/flatbuffers/search-kernel/v2/insert-request.js";
 import { InspectQueryRequestT } from "../generated/flatbuffers/search-kernel/v2/inspect-query-request.js";
+import { IndexTargetT } from "../generated/flatbuffers/search-kernel/v2/index-target.js";
 import { PatchRequestT } from "../generated/flatbuffers/search-kernel/v2/patch-request.js";
 import { SearchRequestT } from "../generated/flatbuffers/search-kernel/v2/search-request.js";
 import { UpdateRequestT } from "../generated/flatbuffers/search-kernel/v2/update-request.js";
