@@ -91,6 +91,8 @@ searchkernel-dispatch
 searchkernel-ir
 ```
 
+Index lifecycle follows one canonical invariant across first-party clients: any client that exposes `CreateIndex` and `OpenIndex` also exposes `DeleteIndex`, with the logical target carried by the V2 request envelope. Managed-local clients may resolve a caller path to that logical target, but deletion still goes through the daemon lifecycle operation; closing a handle never deletes an index.
+
 The low-level complete API is mechanically derived from the canonical
 FlatBuffers contract. Binary clients expose generated FlatBuffers objects;
 explicit HTTP-first clients expose supported standard-FlatBuffers-JSON
