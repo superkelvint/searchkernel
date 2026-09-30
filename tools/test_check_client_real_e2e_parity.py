@@ -203,7 +203,39 @@ class RealE2EParityComparatorTests(unittest.TestCase):
             ),
         )
         schema["fields"]["price"]["type"] = "int64"
-        self.assertFalse(float_semantic_paths_for_scenario("typed_query_range", inputs, schema))
+        paths = float_semantic_paths_for_scenario("typed_query_range", inputs, schema)
+        self.assertFalse(paths)
+        self.assertTrue(
+            compare(
+                {"intent": {"query": {"lower": 7}}},
+                {"intent": {"query": {"lower": 7.0000005}}},
+                float_semantic_paths=paths,
+            )
+        )
+
+    def test_filter_binding_float_tolerance_comes_from_the_referenced_field(self):
+        inputs = {"text_filter_binding": {"filter": "price <= :max", "bindings": {"max": 7.0}}}
+        schema = {"fields": {"price": {"type": "float64"}, "inventory": {"type": "int64"}}}
+        paths = float_semantic_paths_for_scenario("text_filter_binding", inputs, schema)
+        self.assertIn("$.intent.bindings.max", paths)
+        self.assertEqual(
+            [],
+            compare(
+                {"intent": {"bindings": {"max": 7}}},
+                {"intent": {"bindings": {"max": 7.0000005}}},
+                float_semantic_paths=paths,
+            ),
+        )
+        inputs["text_filter_binding"] = {"filter": "inventory <= :max", "bindings": {"max": 7}}
+        paths = float_semantic_paths_for_scenario("text_filter_binding", inputs, schema)
+        self.assertNotIn("$.intent.bindings.max", paths)
+        self.assertTrue(
+            compare(
+                {"intent": {"bindings": {"max": 7}}},
+                {"intent": {"bindings": {"max": 7.0000005}}},
+                float_semantic_paths=paths,
+            )
+        )
 
     def test_integer_and_boolean_kinds_remain_exact(self):
         self.assertTrue(compare(True, 1))

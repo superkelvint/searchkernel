@@ -24,8 +24,7 @@ FLOAT_SEMANTIC_KEYS = {
     "revenue", "score", "scores", "top_score", "feature", "relevance",
     # The shared intent artifact stores language-neutral JSON operands. These
     # names are float-valued filter/ranking, typed-query, and geo operands.
-    "boost", "max", "lower", "upper", "latitude", "longitude",
-    "south", "west", "north", "east",
+    "latitude", "longitude", "south", "west", "north", "east",
 }
 REQUIRED_TYPED_SCENARIOS = (
     "typed_query_contains", "typed_query_phrase", "typed_query_near", "typed_query_ordered_near", "typed_query_range",
@@ -240,18 +239,44 @@ def float_semantic_paths_for_scenario(
     inputs: dict[str, Any],
     schema: dict[str, Any],
 ) -> frozenset[str]:
-    """Return schema-derived floating paths in shared typed-query intents."""
-    intent = inputs.get(scenario, {}).get("query", {})
+    """Return schema-derived floating paths in shared scenario intents."""
+    spec = inputs.get(scenario, {})
+    intent = spec.get("query", {})
     kind = intent.get("kind")
     field = intent.get("field")
     field_type = schema.get("fields", {}).get(field, {}).get("type")
+    paths: set[str] = set()
     if kind == "range" and field_type == "float64":
-        return frozenset({"$.intent.query.lower", "$.intent.query.upper"})
+        paths.update(("$.intent.query.lower", "$.intent.query.upper"))
     if kind == "geo_location":
-        return frozenset({"$.intent.query.latitude", "$.intent.query.longitude"})
-    if kind == "geo_box":
-        return frozenset({"$.intent.query.south", "$.intent.query.west", "$.intent.query.north", "$.intent.query.east"})
-    return frozenset()
+        paths.update(("$.intent.query.latitude", "$.intent.query.longitude"))
+    elif kind == "geo_box":
+        paths.update(("$.intent.query.south", "$.intent.query.west", "$.intent.query.north", "$.intent.query.east"))
+
+    def add_filter_binding_paths(source: Any, bindings: Any, base_path: str) -> None:
+        if not isinstance(source, str) or not isinstance(bindings, dict):
+            return
+        for name in bindings:
+            match = re.search(
+                rf"([A-Za-z_][A-Za-z0-9_.]*)\s*(?:(?:<=|>=|=|<|>)\s*|IN\s*\(\s*):{re.escape(name)}\b",
+                source,
+                flags=re.IGNORECASE,
+            )
+            if match and schema.get("fields", {}).get(match.group(1), {}).get("type") == "float64":
+                paths.add(f"{base_path}.{name}")
+
+    add_filter_binding_paths(spec.get("filter"), spec.get("bindings"), "$.intent.bindings")
+    filter_spec = spec.get("filter")
+    if isinstance(filter_spec, dict):
+        add_filter_binding_paths(filter_spec.get("source"), filter_spec.get("bindings"), "$.intent.filter.bindings")
+    for index, item in enumerate(spec.get("filters", [])):
+        if isinstance(item, dict):
+            add_filter_binding_paths(item.get("source"), item.get("bindings"), f"$.intent.filters[{index}].bindings")
+    if scenario == "rank_inputs":
+        for name, input_type in spec.get("input_types", {}).items():
+            if input_type == "float64":
+                paths.add(f"$.intent.inputs.{name}")
+    return frozenset(paths)
 
 
 def main() -> int:
