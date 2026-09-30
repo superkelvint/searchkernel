@@ -24,6 +24,7 @@ import { QueryWeightedSetT } from "../generated/flatbuffers/search-kernel/v2/que
 import { QueryDotProductT } from "../generated/flatbuffers/search-kernel/v2/query-dot-product.js";
 import { QuerySameElementT } from "../generated/flatbuffers/search-kernel/v2/query-same-element.js";
 import { QueryGeoLocationT } from "../generated/flatbuffers/search-kernel/v2/query-geo-location.js";
+import { QueryMatchesT } from "../generated/flatbuffers/search-kernel/v2/query-matches.js";
 import { QueryGeoBoundingBoxT } from "../generated/flatbuffers/search-kernel/v2/query-geo-bounding-box.js";
 import { WeightedQueryItemT } from "../generated/flatbuffers/search-kernel/v2/weighted-query-item.js";
 import { QuerySourceKind } from "../generated/flatbuffers/search-kernel/v2/query-source-kind.js";
