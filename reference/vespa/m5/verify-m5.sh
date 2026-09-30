@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$ROOT/common/verify-common.sh"
+cd "$REPO_ROOT"
 parse_verifier_args "$@"
 
 TARGET=$REPO_ROOT/target/vespa-verifier/m5
@@ -17,22 +18,20 @@ for scenario in "$ROOT/m5/scenarios"/*.json; do
         "$REPO_ROOT/core/crates/searchkernel-vespa-bindings/src" "$REPO_ROOT/core/native/vespa"
 done
 
-# Inspect the driver's declared manifest and source, not Cargo.lock. A
-# transitive dependency of the public engine (for example serde_json) is not
-# an M5 driver dependency or persistence shortcut.
-if rg -n 'searchkernel-(core|testkit)|searchkernel =|searchkernel-ir|searchkernel-testkit|serde_json|HashMap|HashSet' \
-    "$ROOT/m5/rust-driver/Cargo.toml" "$ROOT/m5/rust-driver/src"; then
+# The M5 persistence verifier is a workspace example owned by the native engine.
+M5_DRIVER="$REPO_ROOT/core/crates/searchkernel-vespa-engine/examples/searchkernel-m5-driver.rs"
+if rg -n 'searchkernel-(core|testkit)|searchkernel-ir|searchkernel-testkit|serde_json|HashMap|HashSet' \
+    "$M5_DRIVER"; then
     echo "M5 driver has a forbidden dependency or persistence shortcut" >&2
     exit 1
 fi
-if ! rg -q 'std::process::abort\(\)' "$ROOT/m5/rust-driver/src/main.rs"; then
+if ! rg -q 'std::process::abort\(\)' "$M5_DRIVER"; then
     echo "M5 crash writer does not terminate without the ordinary close path" >&2
     exit 1
 fi
 
-cargo build --quiet --manifest-path "$ROOT/m5/rust-driver/Cargo.toml"
-
-BIN=$CARGO_TARGET_DIR/debug/searchkernel-m5-driver
+cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-m5-driver
+BIN=$CARGO_TARGET_DIR/debug/examples/searchkernel-m5-driver
 if [ ! -x "$BIN" ]; then
     echo "M5 driver binary not found at $BIN" >&2
     exit 1
@@ -57,8 +56,8 @@ run_driver_config() {
     data=$2
     config=$3
     shift 3
-    LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$BIN" "$mode" "$data" "$config" "$@"
+    cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m5-driver -- \
+        "$mode" "$data" "$config" "$@"
 }
 
 compare() {

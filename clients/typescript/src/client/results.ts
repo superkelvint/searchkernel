@@ -307,7 +307,9 @@ export class SearchResults {
 
   constructor(result: SearchResultT) {
     this.raw = result;
-    this.root = result.root ? wrapNode(result.root) : null;
+    if (result.root == null) throw new ResultDecodeError("missing SearchResult.root");
+    if (result.totalHits == null) throw new ResultDecodeError("missing SearchResult.total_hits");
+    this.root = wrapNode(result.root);
 
     const rootChildren = this.root instanceof ResultGroup ? this.root.children : [];
     this.hits = this.root instanceof Hit
@@ -320,8 +322,8 @@ export class SearchResults {
     // by the builder that knows the request.
     this.groups = rootChildren.filter((child): child is ResultGroup => child instanceof ResultGroup);
 
-    this.totalHits = result.totalHits?.value ?? 0n;
-    this.totalHitsRelation = totalHitsRelationName(result.totalHits?.relation);
+    this.totalHits = result.totalHits.value;
+    this.totalHitsRelation = totalHitsRelationName(result.totalHits.relation);
     this.coverage = result.coverage ? new Coverage(result.coverage) : null;
     this.timing = result.timing ? new SearchTiming(result.timing) : null;
     this.issues = (result.errors ?? []).map((issue) => new ResultIssue(issue));

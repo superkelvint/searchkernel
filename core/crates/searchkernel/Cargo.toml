@@ -21,6 +21,7 @@ remote = [
     "dep:tower",
 ]
 internal-api = []
+m11-verifier-hardening = ["searchkernel-vespa-engine/hardening"]
 
 [dependencies]
 searchkernel-ir = { path = "../searchkernel-ir" }
@@ -42,3 +43,70 @@ searchkernel-ir = { path = "../searchkernel-ir", features = ["test"] }
 searchkernel-protocol = { path = "../searchkernel-protocol" }
 searchkernel-testkit = { path = "../searchkernel-testkit" }
 tokio-stream = { version = "0.1", features = ["net"] }
+
+searchkernel-vespa-engine = { path = "../searchkernel-vespa-engine", default-features = false }
+
+[[example]]
+name = "searchkernel-i-driver"
+path = "examples/searchkernel-i-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m11-driver"
+path = "examples/searchkernel-m11-driver.rs"
+required-features = ["native", "internal-api", "m11-verifier-hardening"]
+
+[[example]]
+name = "searchkernel-m12-driver"
+path = "examples/searchkernel-m12-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m12-adapter-driver"
+path = "examples/searchkernel-m12-adapter-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m12-error"
+path = "examples/searchkernel-m12-error.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m12-prepare-fixture"
+path = "examples/searchkernel-m12-prepare-fixture.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m13-driver"
+path = "examples/searchkernel-m13-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m13-adapter-driver"
+path = "examples/searchkernel-m13-adapter-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m13-error"
+path = "examples/searchkernel-m13-error.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m14-driver"
+path = "examples/searchkernel-m14-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m14-adapter-driver"
+path = "examples/searchkernel-m14-adapter-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m14-error"
+path = "examples/searchkernel-m14-error.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-recovery-driver"
+path = "examples/searchkernel-recovery-driver.rs"
+required-features = ["native"]

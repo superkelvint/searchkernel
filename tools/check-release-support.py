@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import ast
 import json
 import shlex
 from pathlib import Path
@@ -26,6 +27,8 @@ REQUIRED_DEFERRED = {
     "linux-aarch64",
 }
 
+PACKAGED_QUALIFICATION = "tools/qualify-consumer-release.py dist/release"
+
 REQUIRED_VERIFICATION = {
     ("rust-embedded", "native"): "./dev verify persistence",
     ("searchkerneld", "native"): "./dev verify product.integration",
@@ -38,6 +41,46 @@ REQUIRED_VERIFICATION = {
 
 def _load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def qualification_registry(root: Path) -> dict[str, str]:
+    source = ast.parse(
+        (root / "tools" / "qualify-consumer-release.py").read_text(encoding="utf-8")
+    )
+    for statement in source.body:
+        if isinstance(statement, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "QUALIFICATION_PROBES"
+            for target in statement.targets
+        ):
+            value = ast.literal_eval(statement.value)
+            if isinstance(value, dict) and all(
+                isinstance(key, str) and isinstance(probe, str)
+                for key, probe in value.items()
+            ):
+                return value
+    raise SystemExit("qualifier has no structured QUALIFICATION_PROBES registry")
+
+
+def qualification_runners(root: Path) -> set[str]:
+    source = ast.parse(
+        (root / "tools" / "qualify-consumer-release.py").read_text(encoding="utf-8")
+    )
+    for node in ast.walk(source):
+        if not isinstance(node, ast.Assign) or not any(
+            isinstance(target, ast.Name) and target.id == "runners"
+            for target in node.targets
+        ):
+            continue
+        if not isinstance(node.value, ast.Dict):
+            break
+        names = set()
+        for key in node.value.keys:
+            if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+                break
+            names.add(key.value)
+        else:
+            return names
+    raise SystemExit("qualifier has no structured runners dispatch map")
 
 
 def validate_verification_command(root: Path, command: str, registry: dict) -> None:
@@ -85,8 +128,28 @@ def validate(root: Path = ROOT) -> None:
         raise SystemExit("unsupported/deferred release surfaces are incomplete")
 
     registry = _load_json(root / "build" / "targets.json")
-    if registry.get("schema_version") != 1:
+    if registry.get("schema_version") != 2:
         raise SystemExit("unsupported build target registry schema")
+
+    probes = qualification_registry(root)
+    supported_rows = {
+        f"{row['surface']}/{row['runtime']}" for row in authority["supported"]
+    }
+    if set(probes) != supported_rows:
+        raise SystemExit(
+            "clean-machine qualifier coverage differs from supported release rows: "
+            f"missing={sorted(supported_rows - set(probes))}, "
+            f"extra={sorted(set(probes) - supported_rows)}"
+        )
+    if len(set(probes.values())) != len(probes):
+        raise SystemExit("each supported release row must own a distinct qualifier probe")
+    runners = qualification_runners(root)
+    if set(probes.values()) != runners:
+        raise SystemExit(
+            "qualifier probe registry differs from runner dispatch map: "
+            f"unimplemented={sorted(set(probes.values()) - runners)}, "
+            f"unowned={sorted(runners - set(probes.values()))}"
+        )
 
     for row in authority["supported"]:
         key = (row["surface"], row["runtime"])
@@ -98,6 +161,11 @@ def validate(root: Path = ROOT) -> None:
                 f"expected {expected!r}, found {command!r}"
             )
         validate_verification_command(root, command, registry)
+
+        if row.get("qualification") != PACKAGED_QUALIFICATION:
+            raise SystemExit(
+                f"{key} is missing packaged clean-machine qualification ownership"
+            )
 
     readme = (root / "README.md").read_text(encoding="utf-8")
     clients = (root / "clients" / "README.md").read_text(encoding="utf-8")

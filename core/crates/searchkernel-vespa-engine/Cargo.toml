@@ -23,3 +23,156 @@ default = ["native"]
 native = ["searchkernel-vespa-bindings/native"]
 native-contract-tests = ["native", "searchkernel-vespa-bindings/native-contract-tests"]
 hardening = ["native", "searchkernel-vespa-bindings/hardening"]
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[[example]]
+name = "api-contract-m1"
+path = "examples/api-contract-m1.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m2"
+path = "examples/api-contract-m2.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m3"
+path = "examples/api-contract-m3.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m4"
+path = "examples/api-contract-m4.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m6"
+path = "examples/api-contract-m6.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m7"
+path = "examples/api-contract-m7.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m8"
+path = "examples/api-contract-m8.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m9"
+path = "examples/api-contract-m9.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m10"
+path = "examples/api-contract-m10.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m11"
+path = "examples/api-contract-m11.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m12"
+path = "examples/api-contract-m12.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m13"
+path = "examples/api-contract-m13.rs"
+required-features = ["native"]
+
+[[example]]
+name = "api-contract-m14"
+path = "examples/api-contract-m14.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m1-driver"
+path = "examples/searchkernel-m1-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m2-driver"
+path = "examples/searchkernel-m2-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m3-conformance-driver"
+path = "examples/searchkernel-m3-conformance-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-kstem-driver"
+path = "examples/searchkernel-kstem-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m4-driver"
+path = "examples/searchkernel-m4-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m5-driver"
+path = "examples/searchkernel-m5-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m6-driver"
+path = "examples/searchkernel-m6-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m7-driver"
+path = "examples/searchkernel-m7-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m7-error"
+path = "examples/searchkernel-m7-error.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m8-driver"
+path = "examples/searchkernel-m8-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m8-error"
+path = "examples/searchkernel-m8-error.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m9-driver"
+path = "examples/searchkernel-m9-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m9-error"
+path = "examples/searchkernel-m9-error.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m10-driver"
+path = "examples/searchkernel-m10-driver.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m10-error"
+path = "examples/searchkernel-m10-error.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-m10-config-regressions"
+path = "examples/searchkernel-m10-config-regressions.rs"
+required-features = ["native"]
+
+[[example]]
+name = "searchkernel-searchreply-config"
+path = "examples/searchkernel-searchreply-config.rs"
+required-features = ["native"]

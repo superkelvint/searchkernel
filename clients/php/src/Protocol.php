@@ -24,6 +24,7 @@ final class Protocol
         'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
         'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
         'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
+        'delete_index' => ['DeleteIndexRequest', 'DeleteIndexResult'],
     ];
 
     /** @return array{0:string,1:string} */
@@ -54,11 +55,6 @@ final class Protocol
             'payload' => $payload,
         ];
         if ($target !== null) {
-            if (preg_match('/^[a-z0-9][a-z0-9_-]{0,127}$/', $target) !== 1) {
-                throw new InvalidArgumentException(
-                    'index target must match [a-z0-9][a-z0-9_-]{0,127}'
-                );
-            }
             $envelope['target'] = ['name' => $target];
         }
         return $envelope;

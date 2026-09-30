@@ -10,6 +10,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEV = ROOT / "dev"
 RUST_CI = ROOT / ".github" / "workflows" / "rust-ci.yml"
 TARGETS = ROOT / "build" / "targets.json"
+CAPABILITIES_DOC = ROOT / "docs" / "CAPABILITIES.md"
+SELECT_PYTHON = ROOT / ".github" / "ci" / "select-python.sh"
+PERSISTENCE_IMMUTABILITY = ROOT / "tools" / "check-persistence-fixture-immutability.sh"
 
 
 class BuildSystemCiTest(unittest.TestCase):
@@ -98,6 +101,21 @@ class BuildSystemCiTest(unittest.TestCase):
             bookkeeping,
         )
 
+    def test_ci_rejects_stale_global_capability_documents(self):
+        original = CAPABILITIES_DOC.read_text(encoding="utf-8")
+        try:
+            CAPABILITIES_DOC.write_text(
+                original + "\n<!-- deliberate stale capability document -->\n",
+                encoding="utf-8",
+            )
+            result = self.run_ci()
+        finally:
+            CAPABILITIES_DOC.write_text(original, encoding="utf-8")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Capability documents are stale:", result.stderr)
+        self.assertFalse(self.log.exists())
+
     def test_ci_rejects_extra_arguments(self):
         result = self.run_ci("unexpected")
         self.assertEqual(result.returncode, 2)
@@ -143,6 +161,95 @@ class BuildSystemCiTest(unittest.TestCase):
             "CXX=",
         ):
             self.assertNotIn(fragment, workflow)
+
+
+    def test_abi_verifier_uses_repository_header_without_sdk_resolution(self):
+        dev = DEV.read_text(encoding="utf-8")
+        start = dev.index("        abi)\n")
+        end = dev.index("        persistence)\n", start)
+        abi = dev[start:end]
+
+        self.assertIn(
+            'git show HEAD:core/native/vespa/searchkernel_vespa.h > "$local_baseline"',
+            abi,
+        )
+        self.assertIn(
+            '"$ROOT/core/native/vespa/searchkernel_vespa.h"',
+            abi,
+        )
+        self.assertNotIn("native-sdk ensure", abi)
+        self.assertNotIn("resolve-native-sdk", abi)
+
+    def test_ci_python_selection_never_uses_bare_system_python(self):
+        selector = SELECT_PYTHON.read_text(encoding="utf-8")
+
+        self.assertIn("sys.prefix != sys.base_prefix", selector)
+        self.assertIn('if [[ -n "${CI_PYTHON:-}" ]] && isolated_python "$CI_PYTHON"; then', selector)
+        self.assertIn('"$base" -m venv "$venv_dir"', selector)
+        self.assertIn('if ! isolated_python "$selected"; then', selector)
+        self.assertIn('echo "CI_PYTHON=$selected" >> "$GITHUB_ENV"', selector)
+        self.assertNotIn('selected="$base"', selector)
+
+    def test_persistence_immutability_can_check_the_staged_snapshot(self):
+        repo = self.root / "persistence-repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "config", "user.name", "CI Test"],
+            cwd=repo,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "ci@example.invalid"],
+            cwd=repo,
+            check=True,
+        )
+
+        fixture = (
+            repo
+            / "reference"
+            / "persistence"
+            / "fixtures"
+            / "manifest-v2-storage-v1"
+            / "METADATA.json"
+        )
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text("{}\n", encoding="utf-8")
+
+        script = repo / "tools" / "check-persistence-fixture-immutability.sh"
+        script.parent.mkdir(parents=True)
+        script.write_bytes(PERSISTENCE_IMMUTABILITY.read_bytes())
+        script.chmod(0o755)
+
+        subprocess.run(["git", "add", "."], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "fixture"],
+            cwd=repo,
+            check=True,
+        )
+
+        fixture.write_text('{"changed": true}\n', encoding="utf-8")
+        subprocess.run(
+            ["git", "add", str(fixture.relative_to(repo))],
+            cwd=repo,
+            check=True,
+        )
+
+        environment = os.environ.copy()
+        environment["PERSISTENCE_CHECK_INDEX"] = "1"
+        result = subprocess.run(
+            ["bash", str(script), "HEAD"],
+            cwd=repo,
+            env=environment,
+            text=True,
+            capture_output=True,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "historical persistence fixture is immutable",
+            result.stdout + result.stderr,
+        )
 
 
 if __name__ == "__main__":

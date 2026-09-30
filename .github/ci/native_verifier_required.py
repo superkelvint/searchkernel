@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Classify whether a PR change requires the native verifier lane.
 
-This policy is intentionally independent of verification/dag.toml while DAG
-authorization is suspended. Keep it conservative: false positives cost runner
-time; false negatives can merge native regressions.
+Keep this policy conservative: false positives cost runner time; false negatives
+can merge native regressions.
 """
 
 from __future__ import annotations

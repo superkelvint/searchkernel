@@ -7,6 +7,7 @@ import os
 import signal
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -56,7 +57,7 @@ class ManagedLocalHostTest(unittest.TestCase):
                 item.stop()
 
         self.addCleanup(stop_patches)
-        host = client_module._ManagedLocalHost(root / "index", b"definition")
+        host = client_module._ManagedLocalHost(root / "data-root")
         self.addCleanup(temporary.cleanup)
         return host, process
 
@@ -65,6 +66,10 @@ class ManagedLocalHostTest(unittest.TestCase):
         popen = client_module.subprocess.Popen
 
         popen.assert_called_once()
+        command = popen.call_args.args[0]
+        self.assertIn("--data-root", command)
+        self.assertNotIn("--index", command)
+        self.assertNotIn("--definition", command)
         self.assertEqual(popen.call_args.kwargs["stdout"], client_module.subprocess.PIPE)
         self.assertEqual(popen.call_args.kwargs["stderr"], client_module.subprocess.STDOUT)
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
@@ -177,7 +182,7 @@ class ManagedLocalHostTest(unittest.TestCase):
             patch.object(client_module.subprocess, "Popen", side_effect=popen),
             self.assertRaises(client_module.ClientError) as raised,
         ):
-            client_module._ManagedLocalHost(root / "index", b"definition")
+            client_module._ManagedLocalHost(root / "data-root")
 
         message = str(raised.exception)
         self.assertIn("exit code 127", message)
@@ -220,9 +225,132 @@ class ManagedLocalHostTest(unittest.TestCase):
         )
         host.close(force=True)
 
+    def test_managed_root_first_use_is_atomic_under_concurrency(self):
+        temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-root-race-")
+        self.addCleanup(temporary.cleanup)
+        data_root = Path(temporary.name) / ".searchkernel-managed"
+        barrier = threading.Barrier(8)
+        failures = []
+
+        def prepare():
+            try:
+                barrier.wait()
+                client_module._prepare_managed_data_root(data_root)
+            except Exception as exc:  # pragma: no cover - asserted below
+                failures.append(exc)
+
+        threads = [threading.Thread(target=prepare) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(failures, [])
+        self.assertEqual(
+            (data_root / client_module._MANAGED_ROOT_MARKER_NAME).read_text(encoding="utf-8"),
+            client_module._MANAGED_ROOT_MARKER_VALUE + "\n",
+        )
+
+    def test_managed_identity_marker_publication_converges(self):
+        temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-marker-race-")
+        self.addCleanup(temporary.cleanup)
+        identity = Path(temporary.name) / "legacy-index"
+        barrier = threading.Barrier(8)
+        failures = []
+
+        def publish():
+            try:
+                barrier.wait()
+                client_module._write_managed_marker(identity, "local-test")
+            except Exception as exc:  # pragma: no cover - asserted below
+                failures.append(exc)
+
+        threads = [threading.Thread(target=publish) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(failures, [])
+        self.assertEqual(
+            (identity / client_module._MANAGED_MARKER_NAME).read_text(encoding="utf-8"),
+            "local-test\n",
+        )
+
+    def test_preexisting_empty_unowned_root_is_never_replaced(self):
+        temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-unowned-empty-")
+        self.addCleanup(temporary.cleanup)
+        data_root = Path(temporary.name) / ".searchkernel-managed"
+        data_root.mkdir()
+        inode = data_root.stat().st_ino
+
+        with self.assertRaisesRegex(client_module.ClientError, "not owned"):
+            client_module._prepare_managed_data_root(data_root)
+
+        self.assertTrue(data_root.is_dir())
+        self.assertEqual(data_root.stat().st_ino, inode)
+        self.assertEqual(list(data_root.iterdir()), [])
+
+    def test_managed_root_marker_type_and_version_are_validated(self):
+        temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-root-marker-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        data_root = root / ".searchkernel-managed"
+        data_root.mkdir()
+        marker = data_root / client_module._MANAGED_ROOT_MARKER_NAME
+
+        marker.write_text("searchkernel-managed-v2\n", encoding="utf-8")
+        with self.assertRaisesRegex(client_module.ClientError, "not owned"):
+            client_module._prepare_managed_data_root(data_root)
+
+        marker.unlink()
+        marker.mkdir()
+        with self.assertRaisesRegex(client_module.ClientError, "not owned"):
+            client_module._prepare_managed_data_root(data_root)
+
+        marker.rmdir()
+        marker.write_text(client_module._MANAGED_ROOT_MARKER_VALUE + "\n", encoding="utf-8")
+        client_module._prepare_managed_data_root(data_root)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
+    def test_legacy_migration_rejects_symlink_source_without_spawning_daemon(self):
+        temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-symlink-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        real = root / "real-index"
+        real.mkdir()
+        source = root / "legacy-index"
+        source.symlink_to(real, target_is_directory=True)
+        data_root = root / ".searchkernel-managed"
+        client_module._prepare_managed_data_root(data_root)
+
+        with (
+            patch.object(client_module.subprocess, "run") as run,
+            self.assertRaisesRegex(client_module.ClientError, "real directory"),
+        ):
+            client_module._migrate_legacy_managed_path(source, data_root, "local-test")
+        run.assert_not_called()
+        self.assertTrue(source.is_symlink())
+        self.assertTrue(real.is_dir())
+
+    def test_managed_host_scrubs_legacy_mode_environment(self):
+        with patch.dict(
+            os.environ,
+            {
+                "SEARCHKERNEL_INDEX_PATH": "/legacy/index",
+                "SEARCHKERNEL_INDEX_DEFINITION": "/legacy/definition.fb",
+                "SEARCHKERNEL_INDEX_DEFINITION_JSON": "/legacy/definition.json",
+            },
+            clear=False,
+        ):
+            environment = client_module._managed_host_environment()
+
+        self.assertNotIn("SEARCHKERNEL_INDEX_PATH", environment)
+        self.assertNotIn("SEARCHKERNEL_INDEX_DEFINITION", environment)
+        self.assertNotIn("SEARCHKERNEL_INDEX_DEFINITION_JSON", environment)
+
     def test_finalizer_stops_daemon_and_removes_owned_resources(self):
         host, process = self._host()
-        definition_path = host.definition_path
         socket_directory = Path(host.socket_dir.name)
         output = process.stdout
         finalizer = host._finalizer
@@ -234,7 +362,6 @@ class ManagedLocalHostTest(unittest.TestCase):
             gc.collect()
 
         killpg.assert_called_once_with(process.pid, signal.SIGINT)
-        self.assertFalse(definition_path.exists())
         self.assertFalse(socket_directory.exists())
         self.assertTrue(output.closed)
         self.assertFalse(finalizer.alive)

@@ -12,6 +12,8 @@
 //! reach into implementation internals to paper over missing product-API
 //! capabilities.
 
+#![recursion_limit = "256"]
+
 #[cfg(not(feature = "native"))]
 fn main() {
     eprintln!("this example requires `--features native`");
@@ -27,14 +29,508 @@ mod showcase {
     use searchkernel::params;
     use searchkernel::{
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
-        GroupingAggregation, GroupingPlan, Hit, Index, IndexDefinition, Patch, Query, QueryBound,
-        QueryValue, RankProfile, Ranking, SearchResult, Sort, Tensor, TotalHitsRelation,
-        WandOptions, WeightedQueryItem,
+        GroupingAggregation, GroupingLevel, GroupingOrder, GroupingPlan, Hit, Index,
+        IndexDefinition, Patch, Query, QueryBound, QueryValue, RankProfile, Ranking, ResultValue,
+        SchemaStructField, SearchResult, Sort, Tensor, TotalHitsRelation, Update, WandOptions,
+        WeightedQueryItem,
     };
     use serde_json::{json, Value};
+    use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    const E2E_CORPUS: &str =
+        include_str!("../../../../reference/client-real-e2e-parity/corpus.json");
+    fn vector_type() -> &'static str {
+        static VECTOR_TYPE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        VECTOR_TYPE
+            .get_or_init(|| {
+                let corpus: Value = serde_json::from_str(E2E_CORPUS)
+                    .expect("shared parity corpus JSON should be valid");
+                corpus["schema"]["fields"]["embedding"]["type"]
+                    .as_str()
+                    .expect("shared corpus embedding type should be present")
+                    .to_owned()
+            })
+            .as_str()
+    }
+
+    fn sort_from_intent(field: &str, direction: &str) -> Result<Sort, Box<dyn std::error::Error>> {
+        match direction {
+            "asc" => Ok(Sort::asc(field)),
+            "desc" => Ok(Sort::desc(field)),
+            other => Err(format!("unsupported sort direction: {other}").into()),
+        }
+    }
+
+    fn facet_sort_from_intent(value: &str) -> Result<FacetSort, Box<dyn std::error::Error>> {
+        match value {
+            "count_asc" => Ok(FacetSort::CountAsc),
+            "count_desc" => Ok(FacetSort::CountDesc),
+            "value_asc" => Ok(FacetSort::ValueAsc),
+            "value_desc" => Ok(FacetSort::ValueDesc),
+            other => Err(format!("unsupported facet sort: {other}").into()),
+        }
+    }
+
+    fn aggregation_expression_from_intent(
+        spec: &Value,
+    ) -> Result<GroupingAggregation, Box<dyn std::error::Error>> {
+        Ok(
+            match spec["kind"].as_str().ok_or("aggregation kind missing")? {
+                "count" => GroupingAggregation::count(),
+                "sum" => GroupingAggregation::sum(
+                    spec["field"]
+                        .as_str()
+                        .ok_or("sum aggregation field missing")?,
+                ),
+                "avg" => GroupingAggregation::average(
+                    spec["field"]
+                        .as_str()
+                        .ok_or("average aggregation field missing")?,
+                ),
+                kind => return Err(format!("unsupported parity aggregation kind: {kind}").into()),
+            },
+        )
+    }
+
+    fn aggregation_output_from_intent(
+        spec: &Value,
+    ) -> Result<GroupingAggregation, Box<dyn std::error::Error>> {
+        if spec["kind"] == "alias" {
+            return Ok(GroupingAggregation::named(
+                spec["output_name"]
+                    .as_str()
+                    .ok_or("alias output name missing")?,
+                GroupingAggregation::alias_ref(
+                    spec["name"]
+                        .as_str()
+                        .ok_or("alias output reference missing")?,
+                ),
+            ));
+        }
+        Ok(GroupingAggregation::named(
+            spec["name"]
+                .as_str()
+                .ok_or("aggregation output name missing")?,
+            aggregation_expression_from_intent(spec)?,
+        ))
+    }
+
+    fn add_group_outputs(
+        mut level: GroupingLevel,
+        outputs: &[Value],
+    ) -> Result<GroupingLevel, Box<dyn std::error::Error>> {
+        for output in outputs {
+            level = level.output(aggregation_output_from_intent(output)?);
+        }
+        Ok(level)
+    }
+
+    fn add_group_aliases(
+        mut level: GroupingLevel,
+        aliases: &[Value],
+    ) -> Result<GroupingLevel, Box<dyn std::error::Error>> {
+        for alias in aliases {
+            level = level.alias(
+                alias["name"].as_str().ok_or("group alias name missing")?,
+                aggregation_expression_from_intent(alias)?,
+            );
+        }
+        Ok(level)
+    }
+
+    #[cfg(test)]
+    mod parity_intent_tests {
+        use super::*;
+
+        #[test]
+        fn nested_aggregation_kind_changes_constructed_public_aggregation() {
+            let average = json!({"kind": "avg", "field": "price", "name": "metric"});
+            let sum = json!({"kind": "sum", "field": "price", "name": "metric"});
+            let average_output = aggregation_output_from_intent(&average).unwrap();
+            let sum_output = aggregation_output_from_intent(&sum).unwrap();
+            assert_eq!(
+                average_output,
+                GroupingAggregation::named("metric", GroupingAggregation::average("price"))
+            );
+            assert_eq!(
+                sum_output,
+                GroupingAggregation::named("metric", GroupingAggregation::sum("price"))
+            );
+            assert_ne!(average_output, sum_output);
+        }
+    }
+
+    struct TrackedIntent<'a> {
+        scenario: String,
+        source: &'a Value,
+        consumed: &'a RefCell<BTreeMap<String, serde_json::Map<String, Value>>>,
+    }
+
+    impl TrackedIntent<'_> {
+        fn get(&self, key: &str) -> Option<&Value> {
+            let value = self.source.get(key)?;
+            self.consumed
+                .borrow_mut()
+                .entry(self.scenario.clone())
+                .or_default()
+                .insert(key.to_owned(), value.clone());
+            Some(value)
+        }
+    }
+
+    impl std::ops::Index<&str> for TrackedIntent<'_> {
+        type Output = Value;
+
+        fn index(&self, key: &str) -> &Self::Output {
+            let value = &self.source[key];
+            self.consumed
+                .borrow_mut()
+                .entry(self.scenario.clone())
+                .or_default()
+                .insert(key.to_owned(), value.clone());
+            value
+        }
+    }
+
+    fn tracked_intent<'a>(
+        scenario: &str,
+        shared_inputs: &'a Value,
+        consumed: &'a RefCell<BTreeMap<String, serde_json::Map<String, Value>>>,
+    ) -> TrackedIntent<'a> {
+        TrackedIntent {
+            scenario: scenario.to_owned(),
+            source: &shared_inputs[scenario],
+            consumed,
+        }
+    }
+
+    fn corpus_documents() -> Result<Vec<(String, Value)>, Box<dyn std::error::Error>> {
+        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let mut documents = Vec::new();
+        for source in corpus["documents"]
+            .as_array()
+            .ok_or("corpus documents missing")?
+        {
+            let id = source["_id"].as_str().ok_or("corpus document id missing")?;
+            let mut document = source.clone();
+            document
+                .as_object_mut()
+                .ok_or("corpus document must be an object")?
+                .remove("_id");
+            if let Some(cells) = document.get("embedding").and_then(Value::as_array) {
+                let values = cells
+                    .iter()
+                    .map(|cell| cell.as_f64().ok_or("embedding cell must be numeric"))
+                    .collect::<Result<Vec<_>, _>>()?;
+                document["embedding"] = serde_json::to_value(Tensor::dense(vector_type(), values))?;
+            }
+            documents.push((id.to_owned(), document));
+        }
+        Ok(documents)
+    }
+
+    fn corpus_vector(document_id: &str) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
+        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let document = corpus["documents"]
+            .as_array()
+            .and_then(|documents| documents.iter().find(|doc| doc["_id"] == document_id))
+            .ok_or("requested vector document missing from E2E corpus")?;
+        let cells = document["embedding"]
+            .as_array()
+            .ok_or("corpus embedding must be a dense vector")?;
+        Ok(cells
+            .iter()
+            .map(|cell| {
+                cell.as_f64()
+                    .map(|value| f64::from(value as f32))
+                    .ok_or("embedding cell must be numeric")
+            })
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
+    fn typed_query_for_scenario(
+        scenario: &str,
+        input: &TrackedIntent<'_>,
+    ) -> Result<Query, String> {
+        let field = || input["field"].as_str().ok_or("typed query field missing");
+        let text = |name: &str| input[name].as_str().ok_or("typed query value missing");
+        let text_terms = || {
+            input["terms"]
+                .as_array()
+                .ok_or("typed query terms missing")?
+                .iter()
+                .map(|term| term.as_str().ok_or("typed query term must be text"))
+                .collect::<Result<Vec<_>, _>>()
+        };
+        let weighted = || {
+            input["items"]
+                .as_object()
+                .ok_or("weighted query items missing")?
+                .iter()
+                .map(|(key, weight)| {
+                    Ok(WeightedQueryItem::new(
+                        key.as_str(),
+                        weight
+                            .as_i64()
+                            .ok_or("weighted query weight must be an integer")?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()
+        };
+
+        Ok(match scenario {
+            "typed_query_term" => Query::term(field()?, text("value")?),
+            "typed_query_contains" => Query::contains(field()?, Query::term_value(text("value")?)),
+            "typed_query_phrase" => Query::phrase(field()?, text_terms()?.join(" ")),
+            "typed_query_near" => {
+                Query::near(field()?, text_terms()?.into_iter().map(Query::term_value))
+            }
+            "typed_query_ordered_near" => {
+                Query::onear(field()?, text_terms()?.into_iter().map(Query::term_value))
+            }
+            "typed_query_range" | "typed_query_range_exclusive" => {
+                let lower = input["lower"].as_f64().ok_or("range lower bound missing")?;
+                let upper = input["upper"].as_f64().ok_or("range upper bound missing")?;
+                let lower = if input["include_lower"]
+                    .as_bool()
+                    .ok_or("range include_lower missing")?
+                {
+                    QueryBound::Included(lower.into())
+                } else {
+                    QueryBound::Excluded(lower.into())
+                };
+                let upper = if input["include_upper"]
+                    .as_bool()
+                    .ok_or("range include_upper missing")?
+                {
+                    QueryBound::Included(upper.into())
+                } else {
+                    QueryBound::Excluded(upper.into())
+                };
+                Query::range(field()?, lower, upper)
+            }
+            "typed_query_boolean" => {
+                let terms = input["or_terms"]
+                    .as_array()
+                    .ok_or("boolean or_terms missing")?;
+                if terms.len() != 2 {
+                    return Err("boolean parity scenario requires exactly two OR terms".to_owned());
+                }
+                let left = &terms[0];
+                let right = &terms[1];
+                let negative = &input["not_term"];
+                Query::and([
+                    Query::or([
+                        Query::term(
+                            left["field"].as_str().ok_or("boolean left field missing")?,
+                            left["value"].as_str().ok_or("boolean left value missing")?,
+                        ),
+                        Query::term(
+                            right["field"]
+                                .as_str()
+                                .ok_or("boolean right field missing")?,
+                            right["value"]
+                                .as_str()
+                                .ok_or("boolean right value missing")?,
+                        ),
+                    ]),
+                    Query::not(Query::term(
+                        negative["field"]
+                            .as_str()
+                            .ok_or("boolean negative field missing")?,
+                        negative["value"]
+                            .as_str()
+                            .ok_or("boolean negative value missing")?,
+                    )),
+                ])
+            }
+            "typed_query_in" => Query::in_values(
+                field()?,
+                input["values"]
+                    .as_array()
+                    .ok_or("IN values missing")?
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(QueryValue::from)
+                            .ok_or("IN value must be text")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            "typed_query_equals" => Query::equals(field()?, text("value")?),
+            "typed_query_fuzzy" => Query::fuzzy(field()?, text("value")?),
+            "typed_query_weak_and" => Query::weak_and(
+                input["terms"]
+                    .as_array()
+                    .ok_or("weak-and terms missing")?
+                    .iter()
+                    .map(|term| {
+                        Ok(Query::term(
+                            term["field"].as_str().ok_or("weak-and field missing")?,
+                            term["value"].as_str().ok_or("weak-and value missing")?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?,
+                input["limit"]
+                    .as_u64()
+                    .ok_or("weak-and target hits missing")? as u32,
+            ),
+            "typed_query_wand" => Query::wand(field()?, weighted()?),
+            "typed_query_weighted_set" => Query::weighted_set(field()?, weighted()?),
+            "typed_query_dot_product" => Query::dot_product(field()?, weighted()?),
+            // SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=native
+            "typed_query_prefix" => Query::prefix(field()?, text("value")?),
+            "typed_query_substring" => Query::substring(field()?, text("value")?),
+            "typed_query_suffix" => Query::suffix(field()?, text("value")?),
+            "typed_query_same_element" => Query::same_element(
+                field()?,
+                [
+                    Query::term(
+                        input["first_field"]
+                            .as_str()
+                            .ok_or("same-element first field missing")?,
+                        input["first_value"]
+                            .as_str()
+                            .ok_or("same-element first value missing")?,
+                    ),
+                    Query::term(
+                        input["last_field"]
+                            .as_str()
+                            .ok_or("same-element last field missing")?,
+                        input["last_value"]
+                            .as_str()
+                            .ok_or("same-element last value missing")?,
+                    ),
+                ],
+            ),
+            "typed_query_geo_location" => Query::geo_location(
+                field()?,
+                input["latitude"].as_f64().ok_or("geo latitude missing")?,
+                input["longitude"].as_f64().ok_or("geo longitude missing")?,
+                input["radius"].as_str().ok_or("geo radius missing")?,
+            ),
+            "typed_query_geo_box" => Query::geo_bounding_box(
+                field()?,
+                input["south"].as_f64().ok_or("geo south missing")?,
+                input["west"].as_f64().ok_or("geo west missing")?,
+                input["north"].as_f64().ok_or("geo north missing")?,
+                input["east"].as_f64().ok_or("geo east missing")?,
+            ),
+            _ => return Err(format!("unsupported typed parity scenario: {scenario}")),
+        })
+    }
+
+    fn corpus_definition() -> Result<IndexDefinition, Box<dyn std::error::Error>> {
+        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let schema = &corpus["schema"];
+        let mut definition = IndexDefinition::new();
+        for (name, spec) in schema["fields"]
+            .as_object()
+            .ok_or("corpus fields missing")?
+        {
+            let type_name = spec["type"].as_str().ok_or("field type missing")?;
+            let mut field = match type_name {
+                "text" => Field::text(name),
+                "keyword" => Field::keyword(name),
+                "float64" => Field::float64(name),
+                "int64" => Field::int64(name),
+                "bool" => Field::bool(name),
+                "position" => Field::position(name),
+                "array" => {
+                    let element = &spec["element"];
+                    if element["type"] != "struct" {
+                        return Err(format!("unsupported corpus array element for {name}").into());
+                    }
+                    let members = element["fields"]
+                        .as_object()
+                        .ok_or("corpus struct fields missing")?
+                        .iter()
+                        .map(|(member, member_spec)| {
+                            let data_type = match member_spec["type"].as_str() {
+                                Some("keyword" | "text") => searchkernel::DataType::Primitive(
+                                    searchkernel::PrimitiveDataType::String,
+                                ),
+                                Some("int64") => searchkernel::DataType::Primitive(
+                                    searchkernel::PrimitiveDataType::Int64,
+                                ),
+                                _ => {
+                                    return Err(
+                                        format!("unsupported corpus struct field {member}").into()
+                                    )
+                                }
+                            };
+                            Ok(SchemaStructField {
+                                name: member.clone(),
+                                data_type,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+                    Field::array_of_struct(name, members)
+                }
+                tensor if tensor.starts_with("tensor<") => Field::tensor(name, tensor),
+                _ => return Err(format!("unknown corpus field type: {type_name}").into()),
+            };
+            if let Some(value) = spec.get("stored").and_then(Value::as_bool) {
+                field = field.stored(value);
+            }
+            if let Some(value) = spec.get("searchable").and_then(Value::as_bool) {
+                field = field.searchable(value);
+            }
+            if let Some(value) = spec.get("filterable").and_then(Value::as_bool) {
+                field = field.filterable(value);
+            }
+            if let Some(value) = spec.get("sortable").and_then(Value::as_bool) {
+                field = field.sortable(value);
+            }
+            if let Some(value) = spec.get("facetable").and_then(Value::as_bool) {
+                field = field.facetable(value);
+            }
+            definition = definition.field(field);
+        }
+        let default_fields = schema["default_search_fields"]
+            .as_array()
+            .ok_or("default search fields missing")?
+            .iter()
+            .map(|value| value.as_str().ok_or("search field must be text"))
+            .collect::<Result<Vec<_>, _>>()?;
+        definition = definition.default_search_fields(default_fields);
+        for spec in schema["rank_profiles"]
+            .as_array()
+            .ok_or("rank profiles missing")?
+        {
+            let name = spec["name"].as_str().ok_or("rank profile name missing")?;
+            let first_phase = spec["first_phase"]
+                .as_str()
+                .ok_or("rank profile first phase missing")?;
+            let mut profile = RankProfile::new(name).first_phase(first_phase);
+            if let Some(second_phase) = spec.get("second_phase").and_then(Value::as_str) {
+                profile = profile.second_phase(second_phase);
+            }
+            if let Some(count) = spec.get("rerank_count").and_then(Value::as_u64) {
+                profile = profile.rerank_count(count as u32);
+            }
+            if let Some(inputs) = spec.get("query_inputs").and_then(Value::as_object) {
+                for (input_name, type_spec) in inputs {
+                    profile = profile.query_input(
+                        input_name,
+                        type_spec.as_str().ok_or("query input type must be text")?,
+                    );
+                }
+            }
+            if let Some(features) = spec.get("match_features").and_then(Value::as_array) {
+                for feature in features {
+                    profile = profile
+                        .match_feature(feature.as_str().ok_or("match feature must be text")?);
+                }
+            }
+            definition = definition.rank_profile(profile);
+        }
+        Ok(definition)
+    }
 
     pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Keep all showcase state, including any sibling lock files created by
@@ -47,217 +543,844 @@ mod showcase {
 
         heading("1. CREATE INDEX");
 
-        let definition = IndexDefinition::new()
-            .field(Field::text("title").stored(true).searchable(true))
-            .field(Field::text("description").stored(true).searchable(true))
-            .field(
-                Field::keyword("brand")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true)
-                    .facetable(true),
-            )
-            .field(
-                Field::keyword("category")
-                    .stored(true)
-                    .filterable(true)
-                    .facetable(true),
-            )
-            .field(
-                Field::float64("price")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true),
-            )
-            .field(
-                Field::float64("sale_price")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true),
-            )
-            .field(
-                Field::int64("rating")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true)
-                    .facetable(true),
-            )
-            .field(
-                Field::int64("inventory")
-                    .stored(true)
-                    .filterable(true)
-                    .sortable(true),
-            )
-            .field(Field::bool("in_stock").stored(true).filterable(true))
-            .field(Field::tensor("embedding", "tensor<float>(x[2])").stored(true))
-            .rank_profile(
-                RankProfile::new("boosted")
-                    .first_phase("query(boost)")
-                    .match_feature("query(boost)"),
-            )
-            .rank_profile(
-                RankProfile::new("semantic")
-                    .first_phase("closeness(embedding)")
-                    .query_input("query_embedding", "tensor<float>(x[2])"),
-            )
-            .default_search_fields(["title", "description"]);
-        let definition = definition.rank_profile(
-            RankProfile::new("two_phase")
-                .first_phase("attribute(rating)")
-                .second_phase("attribute(inventory)")
-                .rerank_count(3),
-        );
-        let definition = definition
-            .rank_profile(RankProfile::new("first_phase_only").first_phase("attribute(rating)"));
-        let definition = definition.rank_profile(
-            RankProfile::new("operator")
-                .first_phase("nativeRank")
-                .match_feature("nativeRank"),
-        );
+        let definition = corpus_definition()?;
 
         let index = Index::create(&path, definition)?;
         println!("created: {}", path.display());
 
         heading("2. INSERT DOCUMENTS");
 
-        let documents = [
-            (
-                "shoe-1",
-                json!({
-                    "title": "Jumped Running Shoes for Daily Training",
-                    "brand": "Acme",
-                    "category": "shoes",
-                    "price": 89.0,
-                    "sale_price": 79.0,
-                    "rating": 5,
-                    "inventory": 10,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]),
-                }),
-            ),
-            (
-                "shoe-2",
-                json!({
-                    "title": "Trail Running Shoes",
-                    "brand": "TrailCo",
-                    "category": "shoes",
-                    "price": 129.0,
-                    "rating": 5,
-                    "inventory": 4,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.8, 0.2]),
-                }),
-            ),
-            (
-                "shoe-3",
-                json!({
-                    "title": "Budget Walking Shoes",
-                    "brand": "Budget",
-                    "category": "shoes",
-                    "price": 49.0,
-                    "rating": 3,
-                    "inventory": 25,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.0, 1.0]),
-                }),
-            ),
-            (
-                "shoe-4",
-                json!({
-                    "title": "Acme Racing Shoes",
-                    "brand": "Acme",
-                    "category": "shoes",
-                    "price": 159.0,
-                    "rating": 4,
-                    "inventory": 0,
-                    "in_stock": false,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.7, 0.3]),
-                }),
-            ),
-            (
-                "shoe-5",
-                json!({
-                    "title": "TrailCo Hiking Shoes",
-                    "brand": "TrailCo",
-                    "category": "shoes",
-                    "price": 109.0,
-                    "rating": 4,
-                    "inventory": 8,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.9, 0.1]),
-                }),
-            ),
-            (
-                "bag-1",
-                json!({
-                    "title": "Lightweight Running Backpack",
-                    "description": "exclusive catalog marker",
-                    "brand": "Acme",
-                    "category": "bags",
-                    "price": 69.0,
-                    "rating": 4,
-                    "inventory": 12,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.6, 0.4]),
-                }),
-            ),
-            (
-                "rerank-a",
-                json!({
-                    "title": "Rerank Candidate A",
-                    "category": "two-phase",
-                    "rating": 100,
-                    "inventory": 1,
-                }),
-            ),
-            (
-                "rerank-b",
-                json!({
-                    "title": "Rerank Candidate B",
-                    "category": "two-phase",
-                    "rating": 90,
-                    "inventory": 100,
-                }),
-            ),
-            (
-                "rerank-c",
-                json!({
-                    "title": "Rerank Candidate C",
-                    "category": "two-phase",
-                    "rating": 80,
-                    "inventory": 90,
-                }),
-            ),
-            (
-                "rerank-d",
-                json!({
-                    "title": "Rerank Candidate D",
-                    "category": "two-phase",
-                    "rating": 70,
-                    "inventory": 1000,
-                }),
-            ),
-        ];
-
-        for (id, document) in &documents {
-            index.insert(*id, document)?;
+        let corpus = corpus_documents()?;
+        for (id, document) in &corpus {
+            index.insert(id, document)?;
             println!("insert: {id}");
         }
-        for probe in 0..200 {
-            index.insert(
-                format!("degraded-{probe}"),
-                &json!({
-                    "title": "Coverage Degradation Probe",
-                    "category": "degradation",
-                    "price": 18.0,
-                    "rating": 1,
-                    "inventory": 18,
-                    "in_stock": true,
-                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.0, 1.0]),
-                }),
-            )?;
+        let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let probe_count = corpus["coverage_probes"]["count"]
+            .as_u64()
+            .ok_or("coverage probe count missing")?;
+        let probe_template = &corpus["coverage_probes"]["document"];
+        let probe_vector = probe_template["embedding"]
+            .as_array()
+            .ok_or("coverage probe embedding missing")?
+            .iter()
+            .map(|cell| cell.as_f64().ok_or("embedding cell must be numeric"))
+            .collect::<Result<Vec<_>, _>>()?;
+        for probe in 0..probe_count {
+            let mut document = probe_template.clone();
+            document["embedding"] =
+                serde_json::to_value(Tensor::dense(vector_type(), probe_vector.clone()))?;
+            index.insert(format!("degraded-{probe}"), &document)?;
         }
         println!("inserted 200 deterministic coverage probe documents");
+
+        let scenario_inputs: Value = serde_json::from_str(E2E_CORPUS)?;
+        let shared_inputs = &scenario_inputs["scenario_inputs"];
+        let consumed_intents: RefCell<BTreeMap<String, serde_json::Map<String, Value>>> =
+            RefCell::new(BTreeMap::new());
+        macro_rules! intent {
+            ($name:literal) => {{
+                tracked_intent($name, shared_inputs, &consumed_intents)
+            }};
+        }
+        let pagination_intent = intent!("pagination");
+        let pagination_query = pagination_intent["query"]
+            .as_str()
+            .ok_or("pagination query missing")?;
+        let pagination_sort = pagination_intent["sort"][0]["field"]
+            .as_str()
+            .ok_or("pagination sort field missing")?;
+        let pagination_direction = pagination_intent["sort"][0]["direction"]
+            .as_str()
+            .ok_or("pagination sort direction missing")?;
+        let pagination_all_limit = pagination_intent["all_limit"]
+            .as_u64()
+            .ok_or("pagination all limit missing")? as u32;
+        let filtered_facets_intent = intent!("filtered_facets");
+        let parity_sorted = index
+            .search(pagination_query)
+            .sort(sort_from_intent(pagination_sort, pagination_direction)?)
+            .limit(pagination_all_limit)
+            .execute::<Value>()?;
+        let parity_filtered = index
+            .search(
+                filtered_facets_intent["query"]
+                    .as_str()
+                    .ok_or("filtered facet query missing")?,
+            )
+            .filter(
+                filtered_facets_intent["filter"]
+                    .as_str()
+                    .ok_or("filtered facet filter missing")?,
+            )
+            .sort(sort_from_intent(pagination_sort, pagination_direction)?)
+            .limit(
+                filtered_facets_intent["page_limit"]
+                    .as_u64()
+                    .ok_or("filtered search page limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let facet_intent = intent!("facets");
+        let parity_faceted = index
+            .search(
+                facet_intent["query"]
+                    .as_str()
+                    .ok_or("facet query missing")?,
+            )
+            .facet(
+                Facet::new(
+                    facet_intent["field"]
+                        .as_str()
+                        .ok_or("facet field missing")?,
+                )
+                .name(
+                    facet_intent["name"]
+                        .as_str()
+                        .ok_or("facet result name missing")?,
+                )
+                .limit(
+                    facet_intent["limit"]
+                        .as_u64()
+                        .ok_or("facet limit missing")? as u32,
+                )
+                .sort(facet_sort_from_intent(
+                    facet_intent["sort"].as_str().ok_or("facet sort missing")?,
+                )?),
+            )
+            .limit(
+                facet_intent["page_limit"]
+                    .as_u64()
+                    .ok_or("facet page limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let nearest_intent = intent!("nearest_neighbor");
+        let parity_nearest = index
+            .search("")
+            .ranking(Ranking::named(
+                nearest_intent["ranking_profile"]
+                    .as_str()
+                    .ok_or("nearest ranking profile missing")?,
+            ))
+            .typed_query(Query::nearest_neighbor(
+                nearest_intent["field"]
+                    .as_str()
+                    .ok_or("nearest field missing")?,
+                nearest_intent["query_input"]
+                    .as_str()
+                    .ok_or("nearest query input missing")?,
+            ))
+            .query_input(
+                nearest_intent["query_input"]
+                    .as_str()
+                    .ok_or("nearest query input missing")?,
+                Tensor::dense(
+                    vector_type(),
+                    corpus_vector(
+                        nearest_intent["query_input_document"]
+                            .as_str()
+                            .ok_or("nearest vector document missing")?,
+                    )?,
+                ),
+            )
+            .limit(
+                nearest_intent["limit"]
+                    .as_u64()
+                    .ok_or("nearest limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let rerank_intent = intent!("two_phase_reranking");
+        let parity_reranked = index
+            .search(
+                rerank_intent["query"]
+                    .as_str()
+                    .ok_or("rerank query missing")?,
+            )
+            .ranking(Ranking::named(
+                rerank_intent["ranking_profile"]
+                    .as_str()
+                    .ok_or("rerank profile missing")?,
+            ))
+            .limit(
+                rerank_intent["limit"]
+                    .as_u64()
+                    .ok_or("rerank limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let structured_error_intent = intent!("structured_filter_error");
+        let parity_error = index
+            .search(
+                structured_error_intent["query"]
+                    .as_str()
+                    .ok_or("structured error query missing")?,
+            )
+            .filter(
+                structured_error_intent["filter"]
+                    .as_str()
+                    .ok_or("structured error filter missing")?,
+            )
+            .execute::<Value>()
+            .expect_err("unknown field must fail");
+        let document_intent = intent!("document_crud");
+        let parity_document = index
+            .get::<Value>(
+                document_intent["document_id"]
+                    .as_str()
+                    .ok_or("document id missing")?,
+            )?
+            .expect("shoe-1 exists");
+        let tensor_intent = intent!("tensor_readback");
+        let tensor_document = index
+            .get::<Value>(
+                tensor_intent["document_id"]
+                    .as_str()
+                    .ok_or("tensor readback document id missing")?,
+            )?
+            .ok_or("tensor readback document missing")?;
+        let tensor_field = tensor_intent["field"]
+            .as_str()
+            .ok_or("tensor readback field missing")?;
+        let full_text_intent = intent!("full_text_search");
+        let parity_full_text = index
+            .search(
+                full_text_intent["query"]
+                    .as_str()
+                    .ok_or("full-text query missing")?,
+            )
+            .limit(
+                full_text_intent["limit"]
+                    .as_u64()
+                    .ok_or("full-text limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let stemming_intent = intent!("stemming");
+        let parity_stemming = index
+            .search(
+                stemming_intent["query"]
+                    .as_str()
+                    .ok_or("stemming query missing")?,
+            )
+            .limit(
+                stemming_intent["limit"]
+                    .as_u64()
+                    .ok_or("stemming limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let binding_intent = intent!("text_filter_binding");
+        let parity_text_binding = index
+            .search(binding_intent["query"].as_str().ok_or("binding query missing")?)
+            .filter((binding_intent["filter"].as_str().ok_or("binding filter missing")?, params! { "max" => binding_intent["bindings"]["max"].as_f64().ok_or("max binding missing")? }))
+            .sort(sort_from_intent(binding_intent["sort"][0]["field"].as_str().ok_or("binding sort missing")?, binding_intent["sort"][0]["direction"].as_str().ok_or("binding sort direction missing")?)?)
+            .limit(binding_intent["limit"].as_u64().ok_or("binding limit missing")? as u32)
+            .execute::<Value>()?;
+        let repeated_intent = intent!("repeated_filters");
+        let parity_repeated = index
+            .search(repeated_intent["query"].as_str().ok_or("repeated filter query missing")?)
+            .filter((repeated_intent["filters"][0]["source"].as_str().ok_or("first repeated filter missing")?, params! { "value" => repeated_intent["filters"][0]["bindings"]["value"].as_f64().ok_or("repeated float binding missing")? }))
+            .filter((repeated_intent["filters"][1]["source"].as_str().ok_or("second repeated filter missing")?, params! { "value" => repeated_intent["filters"][1]["bindings"]["value"].as_i64().ok_or("repeated integer binding missing")? }))
+            .filter(repeated_intent["filters"][2]["source"].as_str().ok_or("third repeated filter missing")?)
+            .sort(sort_from_intent(repeated_intent["sort"][0]["field"].as_str().ok_or("repeated sort missing")?, repeated_intent["sort"][0]["direction"].as_str().ok_or("repeated sort direction missing")?)?)
+            .limit(repeated_intent["limit"].as_u64().ok_or("repeated limit missing")? as u32)
+            .execute::<Value>()?;
+        let boolean_intent = intent!("boolean_filter_grammar");
+        let parity_boolean = index
+            .search(boolean_intent["query"].as_str().ok_or("boolean filter query missing")?)
+            .filter((
+                boolean_intent["filter"].as_str().ok_or("boolean filter missing")?,
+                params! {
+                    "brands" => boolean_intent["bindings"]["brands"].as_array().ok_or("brands binding missing")?.iter().map(|brand| brand.as_str().ok_or("brand must be text")).collect::<Result<Vec<_>, _>>()?,
+                    "rating" => boolean_intent["bindings"]["rating"].as_i64().ok_or("rating binding missing")?
+                },
+            ))
+            .sort(sort_from_intent(boolean_intent["sort"][0]["field"].as_str().ok_or("boolean sort missing")?, boolean_intent["sort"][0]["direction"].as_str().ok_or("boolean sort direction missing")?)?)
+            .limit(boolean_intent["limit"].as_u64().ok_or("boolean limit missing")? as u32)
+            .execute::<Value>()?;
+        let projection_intent = intent!("sorting_projection");
+        let parity_projection = index
+            .search(
+                projection_intent["query"]
+                    .as_str()
+                    .ok_or("projection query missing")?,
+            )
+            .sort(sort_from_intent(
+                projection_intent["sort"][0]["field"]
+                    .as_str()
+                    .ok_or("projection sort missing")?,
+                projection_intent["sort"][0]["direction"]
+                    .as_str()
+                    .ok_or("projection sort direction missing")?,
+            )?)
+            .projection(
+                projection_intent["projection"]
+                    .as_array()
+                    .ok_or("projection fields missing")?
+                    .iter()
+                    .map(|field| field.as_str().ok_or("projection field must be text"))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+            .limit(
+                projection_intent["limit"]
+                    .as_u64()
+                    .ok_or("projection limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let parity_all_sorted = index
+            .search(pagination_query)
+            .sort(sort_from_intent(pagination_sort, pagination_direction)?)
+            .limit(pagination_all_limit)
+            .execute::<Value>()?;
+        let parity_page = index
+            .search(pagination_query)
+            .sort(sort_from_intent(pagination_sort, pagination_direction)?)
+            .offset(
+                pagination_intent["offset"]
+                    .as_u64()
+                    .ok_or("pagination offset missing")? as u32,
+            )
+            .limit(
+                pagination_intent["limit"]
+                    .as_u64()
+                    .ok_or("pagination limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let parity_filtered_facet = index
+            .search(
+                filtered_facets_intent["query"]
+                    .as_str()
+                    .ok_or("filtered facet query missing")?,
+            )
+            .filter(
+                filtered_facets_intent["filter"]
+                    .as_str()
+                    .ok_or("filtered facet filter missing")?,
+            )
+            .facet(
+                Facet::new(
+                    filtered_facets_intent["field"]
+                        .as_str()
+                        .ok_or("filtered facet field missing")?,
+                )
+                .limit(
+                    filtered_facets_intent["limit"]
+                        .as_u64()
+                        .ok_or("filtered facet limit missing")? as u32,
+                )
+                .sort(facet_sort_from_intent(
+                    filtered_facets_intent["sort"]
+                        .as_str()
+                        .ok_or("filtered facet sort missing")?,
+                )?),
+            )
+            .limit(
+                filtered_facets_intent["page_limit"]
+                    .as_u64()
+                    .ok_or("filtered facet page limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let grouping_intent = intent!("grouping_aggregations");
+        let grouping_order = grouping_intent["order"]
+            .as_array()
+            .ok_or("grouping order missing")?
+            .iter()
+            .map(|order| {
+                let descending = order["direction"] == "desc";
+                match order["kind"].as_str().ok_or("group order kind missing")? {
+                    "count" => Ok(GroupingOrder::aggregation(
+                        GroupingAggregation::count(),
+                        descending,
+                    )),
+                    "field" => Ok(GroupingOrder::field(
+                        order["field"].as_str().ok_or("group order field missing")?,
+                        descending,
+                    )),
+                    kind => Err(format!("unsupported grouping order kind: {kind}")),
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let grouping_outputs = grouping_intent["outputs"]
+            .as_array()
+            .ok_or("grouping outputs missing")?;
+        let grouping_level = add_group_outputs(
+            GroupingPlan::by(
+                grouping_intent["group_by"]
+                    .as_str()
+                    .ok_or("grouping field missing")?,
+            )
+            .max_groups(
+                grouping_intent["limit"]
+                    .as_u64()
+                    .ok_or("group limit missing")? as u32,
+            )
+            .precision(
+                grouping_intent["precision"]
+                    .as_u64()
+                    .ok_or("group precision missing")? as u32,
+            )
+            .order_by(grouping_order),
+            grouping_outputs,
+        )?;
+        let parity_grouped = index
+            .search(
+                grouping_intent["query"]
+                    .as_str()
+                    .ok_or("grouping query missing")?,
+            )
+            .grouping(GroupingPlan::new().level(grouping_level))
+            .execute::<Value>()?;
+        let nested_intent = intent!("nested_grouping");
+        if nested_intent["kind"].as_str() != Some("browse") {
+            return Err("nested_grouping requires browse intent".into());
+        }
+        let nested_child = add_group_outputs(
+            GroupingPlan::by(
+                nested_intent["nested"]["group_by"]
+                    .as_str()
+                    .ok_or("nested child field missing")?,
+            )
+            .max_groups(
+                nested_intent["nested"]["limit"]
+                    .as_u64()
+                    .ok_or("nested child limit missing")? as u32,
+            ),
+            nested_intent["nested"]["outputs"]
+                .as_array()
+                .ok_or("nested child outputs missing")?,
+        )?;
+        let nested_level = add_group_outputs(
+            GroupingPlan::by(
+                nested_intent["group_by"]
+                    .as_str()
+                    .ok_or("nested group field missing")?,
+            )
+            .max_groups(
+                nested_intent["limit"]
+                    .as_u64()
+                    .ok_or("nested group limit missing")? as u32,
+            ),
+            nested_intent["outputs"]
+                .as_array()
+                .ok_or("nested outputs missing")?,
+        )?
+        .nested(nested_child);
+        let parity_nested = index
+            .browse()
+            .filter((
+                nested_intent["filter"]["source"].as_str().ok_or("nested filter missing")?,
+                params! { "categories" => nested_intent["filter"]["bindings"]["categories"].as_array().ok_or("nested categories missing")?.iter().map(|value| value.as_str().ok_or("nested category must be text")).collect::<Result<Vec<_>, _>>()? },
+            ))
+            .grouping(GroupingPlan::new().level(nested_level))
+            .execute::<Value>()?;
+        let root_intent = intent!("root_aggregations");
+        if root_intent["kind"].as_str() != Some("browse") {
+            return Err("root_aggregations requires browse intent".into());
+        }
+        let mut root_plan = GroupingPlan::new();
+        for aggregation in root_intent["aggregations"]
+            .as_array()
+            .ok_or("root aggregations missing")?
+        {
+            root_plan = root_plan.root_output(aggregation_output_from_intent(aggregation)?);
+        }
+        let parity_root_aggregations = index
+            .browse()
+            .filter(
+                root_intent["filter"]
+                    .as_str()
+                    .ok_or("root aggregation filter missing")?,
+            )
+            .grouping(root_plan)
+            .limit(
+                root_intent["limit"]
+                    .as_u64()
+                    .ok_or("root aggregation limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let alias_intent = intent!("group_alias");
+        let alias_level = add_group_outputs(
+            add_group_aliases(
+                GroupingPlan::by(
+                    alias_intent["group_by"]
+                        .as_str()
+                        .ok_or("alias group field missing")?,
+                )
+                .max_groups(
+                    alias_intent["limit"]
+                        .as_u64()
+                        .ok_or("alias group limit missing")? as u32,
+                ),
+                alias_intent["aliases"]
+                    .as_array()
+                    .ok_or("group aliases missing")?,
+            )?
+            .order_by_alias(
+                alias_intent["order_by_alias"]["name"]
+                    .as_str()
+                    .ok_or("alias order field missing")?,
+                alias_intent["order_by_alias"]["direction"] == "desc",
+            ),
+            alias_intent["outputs"]
+                .as_array()
+                .ok_or("alias outputs missing")?,
+        )?;
+        let parity_alias = index
+            .search(
+                alias_intent["query"]
+                    .as_str()
+                    .ok_or("alias query missing")?,
+            )
+            .grouping(GroupingPlan::new().level(alias_level))
+            .execute::<Value>()?;
+        let keep_intent = intent!("group_keep_filter");
+        let keep_level = add_group_outputs(
+            GroupingPlan::by(
+                keep_intent["group_by"]
+                    .as_str()
+                    .ok_or("keep group field missing")?,
+            )
+            .max_groups(
+                keep_intent["limit"]
+                    .as_u64()
+                    .ok_or("keep group limit missing")? as u32,
+            )
+            .keep_regex(
+                keep_intent["keep_regex"]["field"]
+                    .as_str()
+                    .ok_or("keep regex field missing")?,
+                keep_intent["keep_regex"]["pattern"]
+                    .as_str()
+                    .ok_or("keep regex pattern missing")?,
+            ),
+            keep_intent["outputs"]
+                .as_array()
+                .ok_or("keep outputs missing")?,
+        )?;
+        let parity_keep = index
+            .search(keep_intent["query"].as_str().ok_or("keep query missing")?)
+            .grouping(GroupingPlan::new().level(keep_level))
+            .execute::<Value>()?;
+        let yql_intent = intent!("yql");
+        let (yql_parameter_name, yql_parameter_value) = yql_intent["bindings"]
+            .as_object()
+            .and_then(|bindings| bindings.iter().next())
+            .ok_or("YQL binding missing")?;
+        let parity_yql = index
+            .yql(yql_intent["source"].as_str().ok_or("YQL source missing")?)
+            .yql_parameter(
+                yql_parameter_name,
+                yql_parameter_value
+                    .as_str()
+                    .ok_or("YQL binding value must be text")?,
+            )
+            .ranking(Ranking::named(
+                yql_intent["ranking_profile"]
+                    .as_str()
+                    .ok_or("YQL ranking profile missing")?,
+            ))
+            .page(
+                yql_intent["page"].as_u64().ok_or("YQL page missing")? as u32,
+                yql_intent["page_size"]
+                    .as_u64()
+                    .ok_or("YQL page size missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let misuse_intent = intent!("builder_misuse");
+        let misuse_query = misuse_intent["query"]
+            .as_str()
+            .ok_or("builder misuse query missing")?;
+        let page_number = misuse_intent["page"]
+            .as_u64()
+            .ok_or("builder misuse page missing")? as u32;
+        let page_size = misuse_intent["page_size"]
+            .as_u64()
+            .ok_or("builder misuse page size missing")? as u32;
+        let misuse_limit = misuse_intent["limit"]
+            .as_u64()
+            .ok_or("builder misuse limit missing")? as u32;
+        let negative_limit = misuse_intent["negative_limit"]
+            .as_i64()
+            .ok_or("builder misuse negative limit missing")?;
+        let negative_offset = misuse_intent["negative_offset"]
+            .as_i64()
+            .ok_or("builder misuse negative offset missing")?;
+        if negative_limit >= 0 || negative_offset >= 0 {
+            return Err("builder misuse negative cases must remain negative".into());
+        }
+        let page_limit_rejected = index
+            .search(misuse_query)
+            .page(page_number, page_size)
+            .limit(misuse_limit)
+            .execute::<Value>()
+            .is_err();
+        let page_offset_rejected = index
+            .search(misuse_query)
+            .page(page_number, page_size)
+            .offset(page_size)
+            .execute::<Value>()
+            .is_err();
+        let typed_scenarios = [
+            "typed_query_term",
+            "typed_query_contains",
+            "typed_query_phrase",
+            "typed_query_near",
+            "typed_query_ordered_near",
+            "typed_query_range",
+            "typed_query_range_exclusive",
+            "typed_query_boolean",
+            "typed_query_in",
+            "typed_query_equals",
+            "typed_query_fuzzy",
+            "typed_query_weak_and",
+            "typed_query_wand",
+            "typed_query_weighted_set",
+            "typed_query_dot_product",
+            "typed_query_prefix",
+            "typed_query_substring",
+            "typed_query_suffix",
+            "typed_query_same_element",
+            "typed_query_geo_location",
+            "typed_query_geo_box",
+        ];
+        let mut typed_observations = serde_json::Map::new();
+        for scenario in typed_scenarios {
+            let input = tracked_intent(scenario, shared_inputs, &consumed_intents);
+            let mut builder = index.search("").typed_query(
+                typed_query_for_scenario(scenario, &input)
+                    .map_err(|error| format!("{scenario}: {error}"))?,
+            );
+            if let Some(profile) = input.get("ranking_profile").and_then(Value::as_str) {
+                builder = builder.ranking(Ranking::named(profile));
+            }
+            let mut results = builder
+                .limit(input["limit"].as_u64().ok_or("typed query limit missing")? as u32)
+                .execute::<Value>()?;
+            let result_order = input["result_order"]
+                .as_str()
+                .ok_or("typed query result_order missing")?;
+            let query_result = if let Some(feature) = input.get("feature").and_then(Value::as_str) {
+                json!(results
+                    .hits
+                    .iter()
+                    .map(|hit| json!({
+                        "id": hit.id.as_str(),
+                        "feature": parity_feature(hit, feature),
+                    }))
+                    .collect::<Vec<_>>())
+            } else {
+                if result_order == "sorted_ids" {
+                    results.hits.sort_by(|left, right| left.id.cmp(&right.id));
+                }
+                json!(ids(&results))
+            };
+            let consumed = consumed_intents
+                .borrow()
+                .get(scenario)
+                .cloned()
+                .ok_or_else(|| {
+                    format!("typed parity scenario {scenario} consumed no intent fields")
+                })?;
+            typed_observations.insert(
+                scenario.to_owned(),
+                json!({
+                    "observation": {"intent": consumed, "query_result": query_result},
+                    "capabilities": scenario_inputs["client_scenario_contract"][scenario]["rust"],
+                }),
+            );
+        }
+        let rank_input_intent = intent!("rank_inputs");
+        let (rank_input_name, rank_input_value) = rank_input_intent["inputs"]
+            .as_object()
+            .and_then(|inputs| inputs.iter().next())
+            .ok_or("rank input missing")?;
+        let rank_input_type = rank_input_intent["input_types"][rank_input_name]
+            .as_str()
+            .ok_or("rank input type missing")?;
+        if rank_input_type != "float64" {
+            return Err(format!("unsupported parity rank input type: {rank_input_type}").into());
+        }
+        let parity_rank_input = index
+            .search(
+                rank_input_intent["query"]
+                    .as_str()
+                    .ok_or("rank input query missing")?,
+            )
+            .ranking(Ranking::named(
+                rank_input_intent["ranking_profile"]
+                    .as_str()
+                    .ok_or("rank input profile missing")?,
+            ))
+            .query_input(
+                rank_input_name,
+                rank_input_value
+                    .as_f64()
+                    .ok_or("rank input value missing")?,
+            )
+            .limit(
+                rank_input_intent["limit"]
+                    .as_u64()
+                    .ok_or("rank input limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let rank_property_intent = intent!("rank_properties");
+        let (rank_property_name, rank_property_value) = rank_property_intent["rank_properties"]
+            .as_object()
+            .and_then(|properties| properties.iter().next())
+            .ok_or("rank property missing")?;
+        let parity_rank_property = index
+            .search(
+                rank_property_intent["query"]
+                    .as_str()
+                    .ok_or("rank property query missing")?,
+            )
+            .ranking(Ranking::named(
+                rank_property_intent["ranking_profile"]
+                    .as_str()
+                    .ok_or("rank property profile missing")?,
+            ))
+            .rank_property(
+                rank_property_name,
+                rank_property_value
+                    .as_str()
+                    .ok_or("rank property value missing")?,
+            )
+            .limit(
+                rank_property_intent["limit"]
+                    .as_u64()
+                    .ok_or("rank property limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let hybrid_intent = intent!("hybrid_text_vector");
+        let parity_hybrid = index
+            .search("")
+            .ranking(Ranking::named(
+                hybrid_intent["ranking_profile"]
+                    .as_str()
+                    .ok_or("hybrid ranking profile missing")?,
+            ))
+            .typed_query(Query::or([
+                Query::term(
+                    hybrid_intent["text_field"]
+                        .as_str()
+                        .ok_or("hybrid text field missing")?,
+                    hybrid_intent["text_value"]
+                        .as_str()
+                        .ok_or("hybrid text value missing")?,
+                ),
+                Query::nearest_neighbor(
+                    hybrid_intent["vector_field"]
+                        .as_str()
+                        .ok_or("hybrid vector field missing")?,
+                    hybrid_intent["query_input"]
+                        .as_str()
+                        .ok_or("hybrid query input missing")?,
+                ),
+            ]))
+            .query_input(
+                hybrid_intent["query_input"]
+                    .as_str()
+                    .ok_or("hybrid query input missing")?,
+                Tensor::dense(
+                    vector_type(),
+                    corpus_vector(
+                        hybrid_intent["query_input_document"]
+                            .as_str()
+                            .ok_or("hybrid vector document missing")?,
+                    )?,
+                ),
+            )
+            .limit(
+                hybrid_intent["limit"]
+                    .as_u64()
+                    .ok_or("hybrid limit missing")? as u32,
+            )
+            .execute::<Value>()?;
+        let parity_group_buckets = direct_group_buckets(&parity_grouped.groups);
+        let grouping_count_name = grouping_intent["outputs"][0]["name"]
+            .as_str()
+            .ok_or("group count output name missing")?;
+        let grouping_average_name = grouping_intent["outputs"][1]["name"]
+            .as_str()
+            .ok_or("group average output name missing")?;
+        let parity_grouping_aggregations = parity_group_buckets
+            .into_iter()
+            .map(|group| {
+                parity_grouping_aggregation(group, grouping_count_name, grouping_average_name)
+            })
+            .collect::<Vec<_>>();
+        let nested_count_name = nested_intent["outputs"][0]["name"]
+            .as_str()
+            .ok_or("nested group count output name missing")?;
+        let nested_child_count_name = nested_intent["nested"]["outputs"][0]["name"]
+            .as_str()
+            .ok_or("nested child count output name missing")?;
+        let nested_child_average_name = nested_intent["nested"]["outputs"][1]["name"]
+            .as_str()
+            .ok_or("nested child average output name missing")?;
+        let mut parity_observations = json!({
+            "document_crud": {"id": document_intent["document_id"], "title": parity_document["title"], "brand": parity_document["brand"], "price": parity_document["price"]},
+            "full_text_search": {"ids": ids(&parity_full_text), "total": parity_full_text.total_hits.value},
+            "stemming": {"ids": ids(&parity_stemming)},
+            "text_filter_binding": {"ids": ids(&parity_text_binding)},
+            "repeated_filters": {"ids": ids(&parity_repeated)},
+            "boolean_filter_grammar": {"ids": ids(&parity_boolean)},
+            "sorting_projection": {"hits": parity_projection.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "fields": hit.document})).collect::<Vec<_>>()},
+            "pagination": {"all_ids": ids(&parity_all_sorted), "offset_ids": ids(&parity_page), "total": parity_page.total_hits.value},
+            "builder_misuse": {
+                "observation": {"page_and_limit_rejected": page_limit_rejected, "page_and_offset_rejected": page_offset_rejected},
+                "capabilities": {
+                    "negative_limit_rejected": {"kind": "not_expressible", "reason": "SearchBuilder::limit accepts u32, so a negative limit cannot be represented."},
+                    "negative_offset_rejected": {"kind": "not_expressible", "reason": "SearchBuilder::offset accepts u32, so a negative offset cannot be represented."}
+                }
+            },
+            "sorted_search": {"ids": ids(&parity_sorted), "total": parity_sorted.total_hits.value},
+            "filtered_search": {"ids": ids(&parity_filtered), "total": parity_filtered.total_hits.value},
+            "facets": facet_entries(&parity_faceted, "brand"),
+            "root_aggregations": parity_root_aggregations.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>(),
+            "filtered_facets": facet_entries(&parity_filtered_facet, "brand"),
+            "grouping_aggregations": parity_grouping_aggregations,
+            "nested_grouping": direct_group_buckets(&parity_nested.groups).into_iter()
+                .map(|group| parity_nested_group(group, nested_count_name, nested_child_count_name, nested_child_average_name))
+                .collect::<Vec<_>>(),
+            "group_alias": direct_group_buckets(&parity_alias.groups).into_iter()
+                .map(|group| json!({"value": group.key.as_ref().map(parity_value), "fields": group.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>() })).collect::<Vec<_>>(),
+            "group_keep_filter": direct_group_buckets(&parity_keep.groups).into_iter()
+                .map(|group| json!({"value": group.key.as_ref().map(parity_value), "fields": group.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>() })).collect::<Vec<_>>(),
+            "typed_query_term": typed_observations["typed_query_term"],
+            "typed_query_contains": typed_observations["typed_query_contains"],
+            "typed_query_phrase": typed_observations["typed_query_phrase"],
+            "typed_query_near": typed_observations["typed_query_near"],
+            "typed_query_ordered_near": typed_observations["typed_query_ordered_near"],
+            "typed_query_range": typed_observations["typed_query_range"],
+            "typed_query_range_exclusive": typed_observations["typed_query_range_exclusive"],
+            "typed_query_boolean": typed_observations["typed_query_boolean"],
+            "typed_query_in": typed_observations["typed_query_in"],
+            "typed_query_equals": typed_observations["typed_query_equals"],
+            "typed_query_fuzzy": typed_observations["typed_query_fuzzy"],
+            "typed_query_weak_and": typed_observations["typed_query_weak_and"],
+            "typed_query_wand": typed_observations["typed_query_wand"],
+            "typed_query_weighted_set": typed_observations["typed_query_weighted_set"],
+            "typed_query_dot_product": typed_observations["typed_query_dot_product"],
+            "typed_query_prefix": typed_observations["typed_query_prefix"],
+            "typed_query_substring": typed_observations["typed_query_substring"],
+            "typed_query_suffix": typed_observations["typed_query_suffix"],
+            "typed_query_same_element": typed_observations["typed_query_same_element"],
+            "typed_query_geo_location": typed_observations["typed_query_geo_location"],
+            "typed_query_geo_box": typed_observations["typed_query_geo_box"],
+            "yql": {"ids": ids(&parity_yql), "total": parity_yql.total_hits.value},
+            "rank_inputs": parity_rank_input.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
+            "rank_properties": parity_rank_property.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
+            "tensor_readback": tensor_document[tensor_field]["$searchkernel_tensor"]["dense"].clone(),
+            "nearest_neighbor": {"observation": {"ids": ids(&parity_nearest), "scores": parity_nearest.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()}, "capabilities": {}},
+            "two_phase_reranking": {"ids": ids(&parity_reranked)},
+            "hybrid_text_vector": {"observation": {"ids": ids(&parity_hybrid), "top_score": parity_hybrid.hits.first().and_then(|hit| hit.score)}, "capabilities": {}},
+            "two_phase": {"ids": ids(&parity_reranked)},
+            "unknown_field_error": {
+                "code": "invalid_argument",
+                "details": parity_error.details().iter().map(|detail| detail.code.as_str()).collect::<Vec<_>>()
+            },
+            "structured_filter_error": {
+                "code": "invalid_argument",
+                "details": parity_error.details().iter().map(|detail| detail.code.as_str()).collect::<Vec<_>>()
+            }
+        });
 
         heading("3. GET BY ID");
 
@@ -268,10 +1391,7 @@ mod showcase {
         assert_eq!(
             doc["embedding"],
             json!({
-                "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(x[2])",
-                    "dense": [1.0, 0.0]
-                }
+                "$searchkernel_tensor": { "type_spec": vector_type(), "dense": corpus_vector("shoe-1")? }
             })
         );
 
@@ -678,10 +1798,10 @@ mod showcase {
             .iter()
             .map(|value| {
                 (
-                    value
-                        .value
-                        .as_str()
-                        .expect("brand facet value should be a string"),
+                    match &value.value {
+                        ResultValue::String(value) => value.as_str(),
+                        _ => panic!("brand facet value should be a string"),
+                    },
                     value.count,
                 )
             })
@@ -815,19 +1935,38 @@ mod showcase {
         let shoes_group = category_root
             .groups
             .iter()
-            .find(|group| group.key == Some(json!("shoes")))
+            .find(|group| {
+                group
+                    .key
+                    .as_ref()
+                    .is_some_and(|key| parity_value(key) == json!("shoes"))
+            })
             .expect("shoes category group");
-        assert_eq!(shoes_group.aggregations["count"], json!(5));
-        assert_eq!(shoes_group.aggregations["average(price)"], json!(107.0));
+        assert_eq!(parity_value(&shoes_group.aggregations["count"]), json!(5));
+        assert_eq!(
+            parity_value(&shoes_group.aggregations["average(price)"]),
+            json!(107.0)
+        );
         assert_eq!(shoes_group.groups.len(), 3);
         for (rating, count, average) in [(3, 1, 49.0), (4, 2, 134.0), (5, 2, 109.0)] {
             let rating_group = shoes_group
                 .groups
                 .iter()
-                .find(|group| group.key == Some(json!(rating)))
+                .find(|group| {
+                    group
+                        .key
+                        .as_ref()
+                        .is_some_and(|key| parity_value(key) == json!(rating))
+                })
                 .unwrap_or_else(|| panic!("missing rating group {rating}"));
-            assert_eq!(rating_group.aggregations["count"], json!(count));
-            assert_eq!(rating_group.aggregations["average(price)"], json!(average));
+            assert_eq!(
+                parity_value(&rating_group.aggregations["count"]),
+                json!(count)
+            );
+            assert_eq!(
+                parity_value(&rating_group.aggregations["average(price)"]),
+                json!(average)
+            );
         }
         println!("nested grouping keys, count, and average values PASS");
 
@@ -839,7 +1978,7 @@ mod showcase {
             .typed_query(Query::nearest_neighbor("embedding", "query_embedding"))
             .query_input(
                 "query_embedding",
-                Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]),
+                Tensor::dense(vector_type(), corpus_vector("shoe-1")?),
             )
             .limit(3)
             .execute::<Value>()?;
@@ -947,20 +2086,38 @@ mod showcase {
             .coverage
             .as_ref()
             .is_some_and(|coverage| coverage.full == Some(true)));
+        let degradation_intent = intent!("coverage_degradation");
+        if degradation_intent["kind"].as_str() != Some("browse") {
+            return Err("coverage_degradation requires browse intent".into());
+        }
         let degraded = index
-            .search("")
-            .typed_query(Query::equals("inventory", 18_i64))
-            .sort(Sort::asc("inventory"))
-            .rank_property("vespa.matchphase.degradation.maxfiltercoverage", "0.9")
-            .rank_property("vespa.matchphase.degradation.attribute", "inventory")
-            .rank_property("vespa.matchphase.degradation.maxhits", "10")
-            .limit(10)
+            .browse()
+            .filter((
+                degradation_intent["filter"]["source"].as_str().ok_or("degradation filter missing")?,
+                params! { "value" => degradation_intent["filter"]["bindings"]["value"].as_i64().ok_or("degradation filter binding missing")? },
+            ))
+            .sort(sort_from_intent(
+                degradation_intent["sort"][0]["field"].as_str().ok_or("degradation sort missing")?,
+                degradation_intent["sort"][0]["direction"].as_str().ok_or("degradation sort direction missing")?,
+            )?)
+            .rank_property("vespa.matchphase.degradation.maxfiltercoverage", degradation_intent["rank_properties"]["vespa.matchphase.degradation.maxfiltercoverage"].as_str().ok_or("degradation coverage property missing")?)
+            .rank_property("vespa.matchphase.degradation.attribute", degradation_intent["rank_properties"]["vespa.matchphase.degradation.attribute"].as_str().ok_or("degradation attribute property missing")?)
+            .rank_property("vespa.matchphase.degradation.maxhits", degradation_intent["rank_properties"]["vespa.matchphase.degradation.maxhits"].as_str().ok_or("degradation hits property missing")?)
+            .limit(degradation_intent["limit"].as_u64().ok_or("degradation limit missing")? as u32)
             .execute::<Value>()?;
         assert!(!degraded.hits.is_empty());
-        let coverage = degraded.coverage.expect("degraded result coverage");
+        let coverage = degraded
+            .coverage
+            .as_ref()
+            .expect("degraded result coverage");
         assert_eq!(coverage.full, Some(false));
         assert_eq!(degraded.hits.len(), 10);
-        let degradation = coverage.degraded.expect("degradation reason");
+        parity_observations["coverage_degradation"] = json!({
+            "ids": ids(&degraded),
+            "full": coverage.full,
+            "degraded": coverage.degraded.is_some()
+        });
+        let degradation = coverage.degraded.as_ref().expect("degradation reason");
         assert_eq!(degradation.match_phase, Some(true));
         assert_eq!(degradation.timeout, Some(false));
         println!("valid degraded result retains hits, coverage, and degradation reason PASS");
@@ -999,14 +2156,22 @@ mod showcase {
         assert_eq!(error.details()[0].code, "unknown_field");
         assert_eq!(
             error.details()[0].path.as_deref(),
-            Some("filters.structured[0].field")
+            Some("filters.structured[0].comparison.field")
         );
-
         heading("21A. TEXTUAL FILTER SYNTAX ERROR");
 
+        let syntax_intent = intent!("text_filter_syntax_error");
         let error = index
-            .search("shoes")
-            .filter("price <= :max AND (")
+            .search(
+                syntax_intent["query"]
+                    .as_str()
+                    .ok_or("syntax error query missing")?,
+            )
+            .filter(
+                syntax_intent["filter"]
+                    .as_str()
+                    .ok_or("syntax error filter missing")?,
+            )
             .execute::<Value>()
             .expect_err("malformed textual filter should fail in the parser");
         assert_eq!(error.code(), ErrorCode::InvalidArgument);
@@ -1019,9 +2184,154 @@ mod showcase {
             syntax_error.path.as_deref(),
             Some("filters.textual[0].source")
         );
+        parity_observations["text_filter_syntax_error"] = json!({
+            "code": "invalid_argument",
+            "details": error.details().iter().map(|detail| detail.code.as_str()).collect::<Vec<_>>()
+        });
         println!("textual filter parser, clause-local bindings, grammar, and syntax errors PASS");
 
         heading("22. PATCH SET / UNSET");
+
+        let patch_intent = intent!("patch");
+        index.insert(
+            patch_intent["document_id"]
+                .as_str()
+                .ok_or("patch document id missing")?,
+            &patch_intent["initial"],
+        )?;
+        let patch_field = patch_intent["set"]
+            .as_object()
+            .and_then(|values| values.keys().next())
+            .ok_or("patch set field missing")?;
+        index.patch(
+            patch_intent["document_id"]
+                .as_str()
+                .ok_or("patch document id missing")?,
+            Patch::new()
+                .set(
+                    patch_field,
+                    patch_intent["set"][patch_field]
+                        .as_f64()
+                        .ok_or("patch set value missing")?,
+                )
+                .unset(
+                    patch_intent["unset"][0]
+                        .as_str()
+                        .ok_or("patch unset field missing")?,
+                ),
+        )?;
+        let parity_mutated = index
+            .get::<Value>(
+                patch_intent["document_id"]
+                    .as_str()
+                    .ok_or("patch document id missing")?,
+            )?
+            .expect("parity mutation should exist");
+        parity_observations["patch"] = json!({
+            "price": parity_mutated["price"],
+            "sale_price_present": parity_mutated.get("sale_price").is_some()
+        });
+        let delete_intent = intent!("delete");
+        let parity_deleted = index.delete(
+            delete_intent["document_id"]
+                .as_str()
+                .ok_or("delete document id missing")?,
+        )?;
+        parity_observations["delete"] = json!({
+            "deleted": parity_deleted,
+            "absent_after_delete": index.get::<Value>(delete_intent["document_id"].as_str().ok_or("delete document id missing")?)?.is_none()
+        });
+        let update_intent = intent!("advanced_update");
+        index.insert(
+            update_intent["document_id"]
+                .as_str()
+                .ok_or("update document id missing")?,
+            &update_intent["initial"],
+        )?;
+        let set_field = update_intent["set"]
+            .as_object()
+            .and_then(|values| values.keys().next())
+            .ok_or("update set field missing")?;
+        let set_value = update_intent["set"][set_field]
+            .as_str()
+            .ok_or("update set value missing")?;
+        let unset_field = update_intent["unset"][0]
+            .as_str()
+            .ok_or("update unset field missing")?;
+        let increment_field = update_intent["increments"]
+            .as_object()
+            .and_then(|values| values.keys().next())
+            .ok_or("increment field missing")?;
+        let increment_value = update_intent["increments"][increment_field]
+            .as_f64()
+            .ok_or("increment amount missing")?;
+        index.update(
+            update_intent["document_id"]
+                .as_str()
+                .ok_or("update document id missing")?,
+            Update::new()
+                .set(set_field, set_value)
+                .unset(unset_field)
+                .increment(increment_field, increment_value),
+        )?;
+        let decrement_field = update_intent["decrements"]
+            .as_object()
+            .and_then(|values| values.keys().next())
+            .ok_or("decrement field missing")?;
+        let decrement_value = update_intent["decrements"][decrement_field]
+            .as_f64()
+            .ok_or("decrement amount missing")?;
+        index.update(
+            update_intent["document_id"]
+                .as_str()
+                .ok_or("update document id missing")?,
+            Update::new().decrement(decrement_field, decrement_value),
+        )?;
+        let multiplier_field = update_intent["multipliers"]
+            .as_object()
+            .and_then(|values| values.keys().next())
+            .ok_or("multiplier field missing")?;
+        let multiplier_value = update_intent["multipliers"][multiplier_field]
+            .as_f64()
+            .ok_or("multiplier amount missing")?;
+        index.update(
+            update_intent["document_id"]
+                .as_str()
+                .ok_or("update document id missing")?,
+            Update::new().multiply(multiplier_field, multiplier_value),
+        )?;
+        let divisor_field = update_intent["divisors"]
+            .as_object()
+            .and_then(|values| values.keys().next())
+            .ok_or("divisor field missing")?;
+        let divisor_value = update_intent["divisors"][divisor_field]
+            .as_f64()
+            .ok_or("divisor amount missing")?;
+        index.update(
+            update_intent["document_id"]
+                .as_str()
+                .ok_or("update document id missing")?,
+            Update::new().divide(divisor_field, divisor_value),
+        )?;
+        let advanced_update = index
+            .get::<Value>(
+                update_intent["document_id"]
+                    .as_str()
+                    .ok_or("update document id missing")?,
+            )?
+            .expect("updated document remains");
+        parity_observations["advanced_update"] = json!({
+            "title": advanced_update["title"],
+            "inventory": advanced_update["inventory"],
+            "sale_price_present": advanced_update.get("sale_price").is_some()
+        });
+        let reopen_intent = intent!("reopen_persistence");
+        index.insert(
+            reopen_intent["marker_id"]
+                .as_str()
+                .ok_or("reopen marker id missing")?,
+            &reopen_intent["marker"],
+        )?;
 
         println!("before: {:#}", index.get::<Value>("shoe-1")?.unwrap());
         index.patch(
@@ -1071,21 +2381,46 @@ mod showcase {
 
         heading("24. UPSERT REPLACEMENT");
 
-        index.upsert(
-            "shoe-2",
-            &json!({
-                "title": "Trail Running Shoes - Updated Edition",
-                "brand": "TrailCo",
-                "category": "shoes",
-                "price": 119.0,
-                "rating": 5,
-                "inventory": 4,
-                "in_stock": true,
-                "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.0, 1.0]),
-            }),
-        )?;
+        let upsert_intent = intent!("upsert_replacement");
+        let vector_document_id = upsert_intent["replacement"]["vector_document_id"]
+            .as_str()
+            .ok_or("upsert vector id missing")?;
+        let mut replacement = upsert_intent["replacement"].clone();
+        let replacement_object = replacement
+            .as_object_mut()
+            .ok_or("upsert replacement must be an object")?;
+        replacement_object.remove("vector_document_id");
+        replacement_object.insert(
+            "embedding".to_owned(),
+            serde_json::to_value(Tensor::dense(
+                vector_type(),
+                corpus_vector(vector_document_id)?,
+            ))?,
+        );
+        let upsert_id = upsert_intent["document_id"]
+            .as_str()
+            .ok_or("upsert document id missing")?;
+        index.upsert(upsert_id, &replacement)?;
 
-        let doc = index.get::<Value>("shoe-2")?.expect("shoe-2 should exist");
+        let doc = index
+            .get::<Value>(upsert_id)?
+            .expect("upsert document should exist");
+        let upsert_title_matches = doc["title"]
+            .as_str()
+            .is_some_and(|title| title.contains("Updated Edition"));
+        let upsert_search = index
+            .search(
+                upsert_intent["search_query"]
+                    .as_str()
+                    .ok_or("upsert search query missing")?,
+            )
+            .limit(20)
+            .execute::<Value>()?;
+        parity_observations["upsert_replacement"] = json!({
+            "price": doc["price"],
+            "updated_title_matches": upsert_title_matches,
+            "search_ids": ids(&upsert_search)
+        });
         println!("{doc:#}");
         assert_eq!(doc["price"], json!(119.0));
         assert!(doc["title"]
@@ -1096,8 +2431,8 @@ mod showcase {
             doc["embedding"],
             json!({
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(x[2])",
-                    "dense": [0.0, 1.0]
+                    "type_spec": vector_type(),
+                    "dense": corpus_vector("shoe-3")?
                 }
             })
         );
@@ -1135,11 +2470,67 @@ mod showcase {
             shoe1["embedding"],
             json!({
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(x[2])",
-                    "dense": [1.0, 0.0]
+                    "type_spec": vector_type(),
+                    "dense": corpus_vector("shoe-1")?
                 }
             })
         );
+        let reopen_intent = intent!("reopen_persistence");
+        let upsert_intent = intent!("upsert_replacement");
+        let delete_intent = intent!("delete");
+        let parity_persisted = index
+            .get::<Value>(
+                reopen_intent["marker_id"]
+                    .as_str()
+                    .ok_or("reopen marker id missing")?,
+            )?
+            .expect("parity document should survive reopen");
+        let persisted_shoe2 = index
+            .get::<Value>(
+                upsert_intent["document_id"]
+                    .as_str()
+                    .ok_or("upsert id missing")?,
+            )?
+            .expect("upserted document should survive reopen");
+        parity_observations["reopen_persistence"] = json!({
+            "marker": {
+                "title": parity_persisted["title"],
+                "price": parity_persisted["price"],
+                "inventory": parity_persisted["inventory"]
+            },
+            "upserted": {
+                "updated_title_matches": persisted_shoe2["title"].as_str().is_some_and(|title| title.contains("Updated Edition")),
+                "price": persisted_shoe2["price"]
+            },
+            "deleted_absent": index.get::<Value>(delete_intent["document_id"].as_str().ok_or("delete id missing")?)?.is_none()
+        });
+        for scenario in shared_inputs
+            .as_object()
+            .ok_or("scenario inputs must be an object")?
+            .keys()
+        {
+            if scenario.starts_with("typed_query_") {
+                continue;
+            }
+            let intent = consumed_intents.borrow().get(scenario).cloned().ok_or_else(|| {
+                format!("parity scenario {scenario} emitted an observation without consuming its shared intent fields")
+            })?;
+            let value = parity_observations
+                .get_mut(scenario)
+                .ok_or_else(|| format!("missing parity observation for {scenario}"))?;
+            if value.get("observation").is_some() && value.get("capabilities").is_some() {
+                value["observation"]["intent"] = intent.clone();
+            } else if let Some(observation) = value.as_object_mut() {
+                observation.insert("intent".to_owned(), intent.clone());
+            } else {
+                *value = json!({"intent": intent, "result": value.clone()});
+            }
+        }
+
+        if let Some(output) = std::env::var_os("SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT") {
+            let snapshot = json!({"version": 1, "scenarios": parity_observations});
+            std::fs::write(output, serde_json::to_vec_pretty(&snapshot)?)?;
+        }
 
         let shoe2 = index
             .get::<Value>("shoe-2")?
@@ -1154,8 +2545,8 @@ mod showcase {
             shoe2["embedding"],
             json!({
                 "$searchkernel_tensor": {
-                    "type_spec": "tensor<float>(x[2])",
-                    "dense": [0.0, 1.0]
+                    "type_spec": vector_type(),
+                    "dense": corpus_vector("shoe-3")?
                 }
             })
         );
@@ -1203,23 +2594,40 @@ mod showcase {
         let reopened_shoes_group = reopened_category_root
             .groups
             .iter()
-            .find(|group| group.key == Some(json!("shoes")))
+            .find(|group| {
+                group
+                    .key
+                    .as_ref()
+                    .is_some_and(|key| parity_value(key) == json!("shoes"))
+            })
             .expect("reopened shoes category group");
-        assert_eq!(reopened_shoes_group.aggregations["count"], json!(4));
         assert_eq!(
-            reopened_shoes_group.aggregations["average(price)"],
+            parity_value(&reopened_shoes_group.aggregations["count"]),
+            json!(4)
+        );
+        assert_eq!(
+            parity_value(&reopened_shoes_group.aggregations["average(price)"]),
             json!(116.5)
         );
         for (rating, count, average) in [(4, 3, 115.66666666666667), (5, 1, 119.0)] {
             let rating_group = reopened_shoes_group
                 .groups
                 .iter()
-                .find(|group| group.key == Some(json!(rating)))
+                .find(|group| {
+                    group
+                        .key
+                        .as_ref()
+                        .is_some_and(|key| parity_value(key) == json!(rating))
+                })
                 .unwrap_or_else(|| panic!("missing reopened rating group {rating}"));
-            assert_eq!(rating_group.aggregations["count"], json!(count));
-            let actual_average = rating_group.aggregations["average(price)"]
-                .as_f64()
-                .expect("reopened average should be numeric");
+            assert_eq!(
+                parity_value(&rating_group.aggregations["count"]),
+                json!(count)
+            );
+            let actual_average = match &rating_group.aggregations["average(price)"] {
+                ResultValue::Float64(value) => *value,
+                _ => panic!("reopened average should be numeric"),
+            };
             assert!((actual_average - average).abs() < 1e-9);
         }
 
@@ -1229,7 +2637,7 @@ mod showcase {
             .typed_query(Query::nearest_neighbor("embedding", "query_embedding"))
             .query_input(
                 "query_embedding",
-                Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]),
+                Tensor::dense(vector_type(), corpus_vector("shoe-1")?),
             )
             .limit(3)
             .execute::<Value>()?;
@@ -1318,18 +2726,19 @@ Successfully demonstrated through the public Rust facade:
   ✓ field-aware analyze request
   ✓ search-field execution, language, timeout, and inspect
 
-EXPLICITLY UNSUPPORTED / NOT YET PUBLIC:
+ADDITIONAL SHARED CLIENT-PARITY SCENARIOS:
+
+  ✓ raw YQL through the public facade
+  ✓ root aggregations and grouping output aliases / keep filters
+  ✓ page-builder conflict validation
+  ✓ set, unset, increment, decrement, multiply, and divide updates
+
+REMAINING LIMITATIONS:
 
   - sort-value readback (`Hit.sort_values`) is not exposed by the current native ABI
-  - typed sameElement requires a public array-of-struct field definition, which
-    is not currently public
-  - typed geo and predicate require public geo/predicate field definitions,
-    which are not currently public
   - typed exists query (public Filter::exists is covered)
-  - YQL/property-substitution
   - opaque tensor-backed feature output
-  - page() convenience, aliases/keep-filters, summary-hit grouping children,
-    continuation tokens, root aggregations, and advanced update/increment APIs
+  - summary-hit grouping children and continuation tokens
 
 Every check above uses only the public `searchkernel` facade and the real
 native Vespa backend.
@@ -1346,6 +2755,82 @@ native Vespa backend.
         println!("{}", "=".repeat(80));
     }
 
+    fn parity_value(value: &ResultValue) -> Value {
+        match value {
+            ResultValue::Null => Value::Null,
+            ResultValue::Bool(value) => json!(value),
+            ResultValue::Int64(value) => json!(value),
+            ResultValue::UInt64(value) => json!(value),
+            ResultValue::Float64(value) => json!(value),
+            ResultValue::String(value) => json!(value),
+            ResultValue::Bytes(value) => json!(value),
+            ResultValue::List(values) => Value::Array(values.iter().map(parity_value).collect()),
+            ResultValue::Object(values) => Value::Object(
+                values
+                    .iter()
+                    .map(|(key, value)| (key.clone(), parity_value(value)))
+                    .collect(),
+            ),
+            ResultValue::NonFiniteFloat(value) => json!(format!("{value:?}")),
+            ResultValue::Tensor(value) => json!({"type_spec": value.type_spec}),
+            _ => panic!("unsupported result value variant in parity snapshot"),
+        }
+    }
+
+    fn parity_aggregation(
+        group: &searchkernel::GroupingResult<Value>,
+        name: &str,
+    ) -> Option<Value> {
+        group.aggregations.get(name).map(parity_value)
+    }
+
+    fn direct_group_buckets<T>(
+        groups: &[searchkernel::GroupingResult<T>],
+    ) -> Vec<&searchkernel::GroupingResult<T>> {
+        if let [root] = groups {
+            if root.key.is_none() && root.aggregations.is_empty() {
+                return root.groups.iter().collect();
+            }
+        }
+        groups.iter().collect()
+    }
+
+    fn parity_grouping_aggregation(
+        group: &searchkernel::GroupingResult<Value>,
+        count_name: &str,
+        average_name: &str,
+    ) -> Value {
+        json!({
+            "brand": group.key.as_ref().map(parity_value),
+            "products": parity_aggregation(group, count_name),
+            "avg_price": parity_aggregation(group, average_name),
+        })
+    }
+
+    fn parity_nested_group(
+        group: &searchkernel::GroupingResult<Value>,
+        count_name: &str,
+        nested_count_name: &str,
+        nested_average_name: &str,
+    ) -> Value {
+        json!({
+            "category": group.key.as_ref().map(parity_value),
+            "products": parity_aggregation(group, count_name),
+            "ratings": group.groups.iter().map(|rating| json!({
+                "rating": rating.key.as_ref().map(parity_value),
+                "products": parity_aggregation(rating, nested_count_name),
+                "avg_price": parity_aggregation(rating, nested_average_name),
+            })).collect::<Vec<_>>(),
+        })
+    }
+
+    fn parity_feature(hit: &Hit<Value>, name: &str) -> Option<f64> {
+        match hit.features.get(name) {
+            Some(FeatureSet::Value(FeatureValue::Double(value))) => Some(*value),
+            _ => None,
+        }
+    }
+
     fn print_results(results: &SearchResult<Value>) {
         println!(
             "total_hits = {} relation = {:?}",
@@ -1354,7 +2839,7 @@ native Vespa backend.
 
         for hit in &results.hits {
             println!(
-                "  id={:?} score={:?} features={:?} sort_values={:?} document={}",
+                "  id={:?} score={:?} features={:?} sort_values={:?} document={:?}",
                 hit.id.as_str(),
                 hit.score,
                 hit.features,
@@ -1410,6 +2895,26 @@ native Vespa backend.
         assert_eq!(actual, expected);
     }
 
+    fn facet_entries(results: &SearchResult<Value>, field: &str) -> Vec<Value> {
+        let facet = results
+            .facets
+            .iter()
+            .find(|facet| facet.field == field)
+            .unwrap_or_else(|| panic!("missing facet {field:?}"));
+
+        facet
+            .values
+            .iter()
+            .map(|value| {
+                let key = match &value.value {
+                    ResultValue::String(value) => value.clone(),
+                    _ => panic!("facet {field:?} returned non-string value"),
+                };
+                json!({"value": key, "count": value.count})
+            })
+            .collect()
+    }
+
     fn facet_counts(results: &SearchResult<Value>, field: &str) -> BTreeMap<String, u64> {
         let facet = results
             .facets
@@ -1421,11 +2926,11 @@ native Vespa backend.
             .values
             .iter()
             .map(|value| {
-                let key = value
-                    .value
-                    .as_str()
-                    .unwrap_or_else(|| panic!("facet {field:?} returned non-string value"))
-                    .to_owned();
+                let key = &value.value;
+                let key = match key {
+                    ResultValue::String(value) => value.clone(),
+                    _ => panic!("facet {field:?} returned non-string value"),
+                };
                 (key, value.count)
             })
             .collect()

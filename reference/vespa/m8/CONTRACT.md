@@ -29,7 +29,7 @@ M8 does not reproduce any distributed query dispatch or distributed fill/result-
 The public Rust shape is frozen by:
 
 ```text
-reference/vespa/api-contract/src/bin/m8.rs
+core/crates/searchkernel-vespa-engine/examples/api-contract-m8.rs
 ```
 
 M8 adds:

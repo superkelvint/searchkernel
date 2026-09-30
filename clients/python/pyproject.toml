@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=70.1"]
+requires = ["setuptools>=70.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -28,4 +28,11 @@ where = ["."]
 include = ["searchkernel*"]
 
 [tool.setuptools.package-data]
-searchkernel = ["_wire_generated/**/*.py", "_wire_generated/**/*.pyi", "bin/*", "lib/*", "manifest.json"]
+searchkernel = [
+    "_wire_generated/**/*.py",
+    "_wire_generated/**/*.pyi",
+    "bin/*",
+    "bin/.searchkernel-native/*",
+    "lib/*",
+    "manifest.json",
+]

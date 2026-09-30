@@ -11,7 +11,7 @@ if [[ "$SKIP_WORKSPACE_QUALITY" == 1 ]]; then
 fi
 
 # Phase 9 is also invoked directly by native-full, outside verify-through.
-prepare_verifier_sdk
+prepare_native_probe_sdk
 require_pinned_vespa
 require_sdk_manifest "$SDK/manifest.json"
 

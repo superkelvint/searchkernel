@@ -13,6 +13,7 @@ from SearchKernel.V2.RelevanceKind import RelevanceKind
 from SearchKernel.V2.ResultGroup import ResultGroupT
 from SearchKernel.V2.ResultNode import ResultNodeT
 from SearchKernel.V2.UInt64Value import UInt64ValueT
+from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation
 from SearchKernel.V2.Value import ValueT
 from SearchKernel.V2.ValueEntry import ValueEntryT
 from SearchKernel.V2.ValueKind import ValueKind
@@ -45,7 +46,12 @@ def group(*, id_=None, label=None, value_=None, fields=None, children=None):
 
 
 def search_result(root):
-    return SimpleNamespace(root=result_node(root), totalHits=None, coverage=None, errors=[])
+    return SimpleNamespace(
+        root=result_node(root),
+        totalHits=SimpleNamespace(value=0, relation=TotalHitsRelation.Exact),
+        coverage=None,
+        errors=[],
+    )
 
 
 def uint64_count(count):
@@ -60,6 +66,15 @@ def int64_count(count):
         key="count",
         value=ValueT(kindType=ValueKind.Int64Value, kind=Int64ValueT(value=count)),
     )
+
+
+class SearchResultStructuralValidationTest(unittest.TestCase):
+    def test_missing_root_and_total_hits_fail_closed(self):
+        total_hits = SimpleNamespace(value=0, relation=TotalHitsRelation.Exact)
+        with self.assertRaisesRegex(ValueError, "SearchResult.root"):
+            SearchResults(SimpleNamespace(root=None, totalHits=total_hits))
+        with self.assertRaisesRegex(ValueError, "SearchResult.total_hits"):
+            SearchResults(SimpleNamespace(root=result_node(group()), totalHits=None))
 
 
 class SearchResultFacetProjectionTest(unittest.TestCase):

@@ -2,7 +2,7 @@
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 engine = (root / "core/native/vespa/engine.cc").read_text()
-driver = (root / "reference/vespa/m11/rust-driver/src/main.rs").read_text()
+driver = (root / "core/crates/searchkernel/examples/searchkernel-m11-driver.rs").read_text()
 adapter = (root / "core/crates/searchkernel-ir-adapter/src/backend.rs").read_text()
 if "_mutation_mutex" in engine or "mutation_guard" in engine:
     raise SystemExit("native adapter still globally serializes operations")
