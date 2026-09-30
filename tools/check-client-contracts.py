@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import re
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -64,43 +66,121 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
     return value
 
 
+_REFLECTION_TEMP: tempfile.TemporaryDirectory[str] | None = None
+_REFLECTION_MODULES: dict[str, Any] | None = None
+
+
+def _reflection_modules() -> dict[str, Any]:
+    """Generate official FlatBuffers reflection accessors with the pinned flatc."""
+    global _REFLECTION_TEMP, _REFLECTION_MODULES
+    if _REFLECTION_MODULES is None:
+        flatc = subprocess.check_output(
+            ["bash", str(ROOT / "tools" / "resolve-flatbuffers.sh"), "flatc"],
+            text=True,
+        ).strip()
+        _REFLECTION_TEMP = tempfile.TemporaryDirectory(
+            prefix="searchkernel-client-contract-bfbs-"
+        )
+        subprocess.run(
+            [
+                flatc,
+                "--python",
+                "-o",
+                _REFLECTION_TEMP.name,
+                str(ROOT / "tools" / "flatbuffers" / "reflection.fbs"),
+            ],
+            cwd=ROOT,
+            check=True,
+        )
+        sys.path.insert(0, _REFLECTION_TEMP.name)
+        _REFLECTION_MODULES = {
+            "Schema": importlib.import_module("reflection.Schema"),
+        }
+    return _REFLECTION_MODULES
+
+
+def _reflected_union_payloads(path: Path, union_name: str) -> tuple[str, ...]:
+    """Return fully-qualified object payload names from one reflected BFBS union."""
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        raise RegistryError(f"cannot read canonical BFBS schema {path}: {error}") from error
+
+    schema_type = _reflection_modules()["Schema"].Schema
+    if not schema_type.SchemaBufferHasIdentifier(data, 0):
+        raise RegistryError(f"canonical BFBS schema has invalid identifier: {path}")
+    schema = schema_type.GetRootAs(data, 0)
+    objects = [schema.Objects(i) for i in range(schema.ObjectsLength())]
+    for i in range(schema.EnumsLength()):
+        enum = schema.Enums(i)
+        raw_name = enum.Name()
+        name = raw_name.decode("utf-8") if raw_name else ""
+        if name != union_name:
+            continue
+        if not enum.IsUnion():
+            raise RegistryError(f"reflected declaration is not a union: {union_name}")
+        payloads: list[str] = []
+        for value_index in range(enum.ValuesLength()):
+            value = enum.Values(value_index)
+            raw_value_name = value.Name()
+            value_name = raw_value_name.decode("utf-8") if raw_value_name else ""
+            if value_name == "NONE":
+                continue
+            union_type = value.UnionType()
+            if union_type is None:
+                raise RegistryError(
+                    f"reflected union arm has no payload type: {union_name}.{value_name}"
+                )
+            object_index = union_type.Index()
+            if object_index < 0 or object_index >= len(objects):
+                raise RegistryError(
+                    f"reflected union arm payload is out of range: {union_name}.{value_name}"
+                )
+            reflected_object = objects[object_index]
+            raw_object_name = reflected_object.Name()
+            object_name = raw_object_name.decode("utf-8") if raw_object_name else ""
+            if not object_name:
+                raise RegistryError(
+                    f"reflected union arm has unnamed payload: {union_name}.{value_name}"
+                )
+            payloads.append(object_name)
+        return tuple(payloads)
+    raise RegistryError(f"canonical BFBS schema has no union {union_name}: {path}")
+
+
 def canonical_lifecycle_operations(root: Path = ROOT) -> tuple[str, ...]:
-    """Read the index lifecycle operation set from the canonical V2 unions."""
-    request_schema = root / "api" / "searchkernel_request.fbs"
-    response_schema = root / "api" / "searchkernel_response.fbs"
-    if not request_schema.is_file() or not response_schema.is_file():
+    """Read index lifecycle operations from the canonical BFBS reflection metadata."""
+    bfbs_root = root / "core" / "crates" / "searchkernel-protocol" / "bfbs"
+    request_bfbs = bfbs_root / "searchkernel_request.bfbs"
+    response_bfbs = bfbs_root / "searchkernel_response.bfbs"
+    if not request_bfbs.is_file() or not response_bfbs.is_file():
         return ()
 
-    def request_union_members(path: Path) -> list[str]:
-        source = path.read_text(encoding="utf-8")
-        match = re.search(
-            r"union\s+RequestPayload\s*\{(?P<body>.*?)\}",
-            source,
-            re.DOTALL,
-        )
-        if match is None:
-            raise RegistryError(f"cannot find RequestPayload in {path}")
-        return re.findall(
-            r"SearchKernel\.V2\.([A-Za-z][A-Za-z0-9]*Index)Request",
-            match.group("body"),
-        )
+    def lifecycle_names(payloads: tuple[str, ...], suffix: str) -> tuple[str, ...]:
+        result: list[str] = []
+        for payload in payloads:
+            name = payload.rsplit(".", 1)[-1]
+            if name.endswith(suffix) and name[:-len(suffix)].endswith("Index"):
+                result.append(name[:-len(suffix)])
+        return tuple(result)
 
-    request_operations = request_union_members(request_schema)
-    response_source = response_schema.read_text(encoding="utf-8")
-    response_match = re.search(
-        r"union\s+ResponsePayload\s*\{(?P<body>.*?)\}",
-        response_source,
-        re.DOTALL,
+    request_operations = lifecycle_names(
+        _reflected_union_payloads(
+            request_bfbs, "SearchKernel.Protocol.V2.RequestPayload"
+        ),
+        "Request",
     )
-    if response_match is None:
-        raise RegistryError(f"cannot find ResponsePayload in {response_schema}")
     response_operations = set(
-        re.findall(
-            r"SearchKernel\.V2\.([A-Za-z][A-Za-z0-9]*Index)Result",
-            response_match.group("body"),
+        lifecycle_names(
+            _reflected_union_payloads(
+                response_bfbs, "SearchKernel.Protocol.V2.ResponsePayload"
+            ),
+            "Result",
         )
     )
-    operations = tuple(operation for operation in request_operations if operation in response_operations)
+    operations = tuple(
+        operation for operation in request_operations if operation in response_operations
+    )
     required = {"CreateIndex", "OpenIndex", "DeleteIndex"}
     missing = sorted(required - set(operations))
     if missing:
@@ -121,12 +201,24 @@ def validate_client_lifecycle_parity(root: Path = ROOT) -> None:
     if not clients_root.is_dir():
         return
 
+    excluded_parts = {
+        "dist",
+        "examples",
+        "generated",
+        "_wire_generated",
+        "node_modules",
+        "test",
+        "tests",
+        "vendor",
+    }
+
     def source_for(client_root: Path) -> str:
         chunks = []
         for path in sorted(client_root.rglob("*")):
             if not path.is_file() or path.suffix not in CLIENT_SOURCE_SUFFIXES:
                 continue
-            if {"generated", "_wire_generated"}.intersection(path.parts):
+            relative_parts = set(path.relative_to(client_root).parts[:-1])
+            if excluded_parts.intersection(relative_parts):
                 continue
             chunks.append(path.read_text(encoding="utf-8"))
         return "\n".join(chunks)
@@ -134,21 +226,28 @@ def validate_client_lifecycle_parity(root: Path = ROOT) -> None:
     def supports(source: str, operation: str) -> bool:
         snake = re.sub(r"(?<!^)([A-Z])", r"_\1", operation).lower()
         camel = operation[0].lower() + operation[1:]
-        request = re.search(rf"\b{re.escape(operation)}Request(?:T)?\b", source)
-        result = re.search(rf"\b{re.escape(operation)}Result(?:T)?\b", source)
+        request = f"{operation}Request" in source
+        result = f"{operation}Result" in source
         operation_key = re.search(
             rf"(?<![A-Za-z0-9])(?:{re.escape(snake)}|{re.escape(camel)})(?![A-Za-z0-9])",
             source,
         )
-        return request is not None and result is not None and operation_key is not None
+        return request and result and operation_key is not None
 
-    for client_root in sorted(path for path in clients_root.iterdir() if (path / "src").is_dir()):
-        source = source_for(client_root / "src")
-        if supports(source, "CreateIndex") and supports(source, "OpenIndex") and not supports(source, "DeleteIndex"):
+    for client_root in sorted(path for path in clients_root.iterdir() if path.is_dir()):
+        source = source_for(client_root)
+        if not source:
+            continue
+        if (
+            supports(source, "CreateIndex")
+            and supports(source, "OpenIndex")
+            and not supports(source, "DeleteIndex")
+        ):
             raise RegistryError(
                 f"client {client_root.name} exposes CreateIndex/OpenIndex lifecycle "
                 "support but does not represent canonical DeleteIndex"
             )
+
 
 def validate_catalog(
     catalog: dict[str, Any],
