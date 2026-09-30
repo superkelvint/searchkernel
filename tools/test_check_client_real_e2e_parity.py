@@ -281,6 +281,15 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         self.assertTrue(compare({"sum": 7}, {"sum": 7.0000005}))
         self.assertEqual([], compare({"count": 7}, {"count": 7}))
 
+    def test_unsafe_javascript_integer_decimal_strings_compare_exactly(self):
+        unsafe = 9007199254740993
+        self.assertEqual([], compare(unsafe, "9007199254740993"))
+        self.assertEqual([], compare("9007199254740993", unsafe))
+        self.assertTrue(compare(unsafe, "9007199254740992"))
+        self.assertTrue(compare(42, "42"))
+        self.assertTrue(compare(True, "9007199254740993"))
+        self.assertTrue(compare(9007199254740993.0, "9007199254740993"))
+
     def test_close_float_values_pass_and_material_drift_fails(self):
         self.assertEqual([], compare({"score": 7.0}, {"score": 7.0000005}))
         self.assertTrue(compare({"score": 7.0}, {"score": 7.01}))

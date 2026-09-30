@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { paritySafe } from "./parity-json.js";
 import {
   Boolean,
   Float,
@@ -166,14 +167,10 @@ function sharedFilterBindings(source: string, bindings: Record<string, unknown>)
 
 const PARITY_OBSERVATIONS: Record<string, unknown> = {};
 
-function escapeRegexLiteral(value: string): string {
-  return value.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&");
-}
-
 function typedQueryForScenario(scenario: string, intent: any): any {
   const field = intent.field;
   switch (scenario) {
-    case "typed_query_term": return q.contains(field, intent.value);
+    case "typed_query_term": return q.term(field, intent.value);
     case "typed_query_contains": return q.contains(field, intent.value);
     case "typed_query_phrase": return q.phrase(field, ...intent.terms);
     case "typed_query_near": return q.near(field, ...intent.terms);
@@ -201,9 +198,9 @@ function typedQueryForScenario(scenario: string, intent: any): any {
     case "typed_query_wand": return q.wand(field, intent.items);
     case "typed_query_weighted_set": return q.weightedSet(field, intent.items);
     case "typed_query_dot_product": return q.dotProduct(field, intent.items);
-    case "typed_query_prefix": return q.matches(field, escapeRegexLiteral(intent.value) + ".*");
-    case "typed_query_substring": return q.matches(field, ".*" + escapeRegexLiteral(intent.value) + ".*");
-    case "typed_query_suffix": return q.matches(field, ".*" + escapeRegexLiteral(intent.value));
+    case "typed_query_prefix": return q.prefix(field, intent.value);
+    case "typed_query_substring": return q.substring(field, intent.value);
+    case "typed_query_suffix": return q.suffix(field, intent.value);
     case "typed_query_same_element":
       return q.sameElement(
         field,
@@ -244,13 +241,18 @@ async function sharedTypedQueryObservations(index: Index): Promise<Record<string
   return observations;
 }
 
-function paritySafe(value: unknown): unknown {
-  if (typeof value === "bigint") return Number(value);
-  if (Array.isArray(value)) return value.map(paritySafe);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, paritySafe(item)]));
+function aggregationExpression(spec: any): any {
+  switch (spec.kind) {
+    case "count": return agg.count();
+    case "sum": return agg.sum(spec.field);
+    case "avg": return agg.avg(spec.field);
+    default: throw new Error(`unsupported parity aggregation kind: ${spec.kind}`);
   }
-  return value;
+}
+
+function aggregationOutput(spec: any): any {
+  if (spec.kind === "alias") return g.aliasRef(spec.name).as(spec.output_name);
+  return aggregationExpression(spec).as(spec.name);
 }
 
 async function captureRealEngineParity(index: Index): Promise<Record<string, unknown>> {
@@ -264,11 +266,9 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const faceted = await index.search(facetSpec.query).facet(facetSpec.field, { name: facetSpec.name, limit: facetSpec.limit, sort: facetSpec.sort }).limit(facetSpec.page_limit).execute();
   const rootSpec = intents.root_aggregations;
   if (rootSpec.kind !== "browse") throw new Error("root_aggregations requires browse intent");
-  const root = await index.browse().filter(rootSpec.filter)
-    .aggregate(agg.count().as(rootSpec.aggregations[0].name))
-    .aggregate(agg.sum(rootSpec.aggregations[1].field).as(rootSpec.aggregations[1].name))
-    .aggregate(agg.avg(rootSpec.aggregations[2].field).as(rootSpec.aggregations[2].name))
-    .limit(rootSpec.limit).execute();
+  let rootBuilder = index.browse().filter(rootSpec.filter);
+  for (const aggregationSpec of rootSpec.aggregations) rootBuilder = rootBuilder.aggregate(aggregationOutput(aggregationSpec));
+  const root = await rootBuilder.limit(rootSpec.limit).execute();
   const groupedSpec = intents.grouping_aggregations;
   const groupedOrder = groupedSpec.order.map((order: any) => {
     const expression = order.kind === "count" ? agg.count() : g.field(order.field);
@@ -277,7 +277,7 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const grouped = await index.search(groupedSpec.query).group(
     Group.by(groupedSpec.group_by).limit(groupedSpec.limit).precision(groupedSpec.precision)
       .orderBy(...groupedOrder)
-      .output(agg.count().as(groupedSpec.outputs[0].name), agg.avg(groupedSpec.outputs[1].field).as(groupedSpec.outputs[1].name)),
+      .output(...groupedSpec.outputs.map(aggregationOutput)),
   ).execute();
   const nearestIntent = PARITY_INTENTS.nearest_neighbor;
   const nearest = await index.query(q.nearestNeighbor(nearestIntent.field, nearestIntent.query_input))
@@ -330,19 +330,22 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const nestedSpec = intents.nested_grouping;
   if (nestedSpec.kind !== "browse") throw new Error("nested_grouping requires browse intent");
   const nested = await index.browse().filter(nestedSpec.filter.source, sharedFilterBindings(nestedSpec.filter.source, nestedSpec.filter.bindings)).group(
-    Group.by(nestedSpec.group_by).limit(nestedSpec.limit).output(agg.count().as(nestedSpec.outputs[0].name)).subgroup(
-      Group.by(nestedSpec.nested.group_by).limit(nestedSpec.nested.limit).output(agg.count().as(nestedSpec.nested.outputs[0].name), agg.avg(nestedSpec.nested.outputs[1].field).as(nestedSpec.nested.outputs[1].name)),
+    Group.by(nestedSpec.group_by).limit(nestedSpec.limit).output(...nestedSpec.outputs.map(aggregationOutput)).subgroup(
+      Group.by(nestedSpec.nested.group_by).limit(nestedSpec.nested.limit).output(...nestedSpec.nested.outputs.map(aggregationOutput)),
     ),
   ).execute();
   const aliasSpec = intents.group_alias;
   const aliasOrder = aliasSpec.order_by_alias.direction === "desc" ? desc : asc;
+  let aliasGroup = Group.by(aliasSpec.group_by).limit(aliasSpec.limit);
+  for (const aliasSpecification of aliasSpec.aliases) {
+    aliasGroup = aliasGroup.alias(aliasSpecification.name, aggregationExpression(aliasSpecification));
+  }
   const aliased = await index.search(aliasSpec.query).group(
-    Group.by(aliasSpec.group_by).limit(aliasSpec.limit).alias(aliasSpec.aliases[0].name, agg.sum(aliasSpec.aliases[0].field))
-      .orderBy(aliasOrder(g.aliasRef(aliasSpec.order_by_alias.name))).output(agg.count().as(aliasSpec.outputs[0].name), g.aliasRef(aliasSpec.outputs[1].name).as(aliasSpec.outputs[1].output_name)),
+    aliasGroup.orderBy(aliasOrder(g.aliasRef(aliasSpec.order_by_alias.name))).output(...aliasSpec.outputs.map(aggregationOutput)),
   ).execute();
   const keepSpec = intents.group_keep_filter;
   const kept = await index.search(keepSpec.query).group(
-    Group.by(keepSpec.group_by).limit(keepSpec.limit).keep(gf.regex(g.field(keepSpec.keep_regex.field), keepSpec.keep_regex.pattern)).output(agg.count().as(keepSpec.outputs[0].name)),
+    Group.by(keepSpec.group_by).limit(keepSpec.limit).keep(gf.regex(g.field(keepSpec.keep_regex.field), keepSpec.keep_regex.pattern)).output(...keepSpec.outputs.map(aggregationOutput)),
   ).execute();
   const rankInputSpec = intents.rank_inputs;
   let rankInputBuilder = index.search(rankInputSpec.query).ranking(rankInputSpec.ranking_profile);
@@ -411,13 +414,13 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
   const advancedUpdate = await index.get(updateSpec.document_id);
   const observations: Record<string, any> = {
     document_crud: { id: document._id, title: document.title, brand: document.brand, price: document.price },
-    full_text_search: { ids: scenarioIds(fullText), total: Number(fullText.totalHits) },
+    full_text_search: { ids: scenarioIds(fullText), total: paritySafe(fullText.totalHits) },
     stemming: { ids: scenarioIds(stemming) },
     text_filter_binding: { ids: scenarioIds(textBinding) },
     repeated_filters: { ids: scenarioIds(repeatedFilters) },
     boolean_filter_grammar: { ids: scenarioIds(booleanFilter) },
     sorting_projection: { hits: projection.hits.map((hit) => ({ id: hit.id, fields: paritySafe(hit.fields) })) },
-    pagination: { all_ids: scenarioIds(allSorted), offset_ids: scenarioIds(page), total: Number(page.totalHits) },
+    pagination: { all_ids: scenarioIds(allSorted), offset_ids: scenarioIds(page), total: paritySafe(page.totalHits) },
     builder_misuse: {
       observation: {
         page_and_limit_rejected: pageAndLimitRejected,
@@ -430,13 +433,13 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
         negative_offset_rejected: { kind: "runtime_rejected" },
       },
     },
-    sorted_search: { ids: ordered.hits.map((hit) => hit.id), total: Number(ordered.totalHits) },
-    filtered_search: { ids: filtered.hits.map((hit) => hit.id), total: Number(filtered.totalHits) },
-    facets: Object.fromEntries(faceted.facets.brands!.map((item) => [String(item.value), Number(item.count)])),
+    sorted_search: { ids: ordered.hits.map((hit) => hit.id), total: paritySafe(ordered.totalHits) },
+    filtered_search: { ids: filtered.hits.map((hit) => hit.id), total: paritySafe(filtered.totalHits) },
+    facets: Object.fromEntries(faceted.facets.brands!.map((item) => [String(item.value), paritySafe(item.count)])),
     root_aggregations: paritySafe(root.aggregations),
     advanced_update: { title: advancedUpdate!.title, inventory: paritySafe(advancedUpdate!.inventory), sale_price_present: "sale_price" in advancedUpdate! },
     grouping_aggregations: groupsByBrand(grouped),
-    filtered_facets: Object.fromEntries(filteredFacet.facets.brand!.map((item) => [String(item.value), Number(item.count)])),
+    filtered_facets: Object.fromEntries(filteredFacet.facets.brand!.map((item) => [String(item.value), paritySafe(item.count)])),
     nested_grouping: nestedGroups,
     group_alias: groupingGroups(aliased).map((group) => ({ value: group.value, fields: paritySafe(group.fields) })),
     group_keep_filter: groupingGroups(kept).map((group) => ({ value: group.value, fields: paritySafe(group.fields) })),
@@ -453,7 +456,7 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
       full: degraded.coverage?.full,
       degraded: degraded.coverage?.degraded !== null,
     },
-    yql: { ids: scenarioIds(yql), total: Number(yql.totalHits) },
+    yql: { ids: scenarioIds(yql), total: paritySafe(yql.totalHits) },
     unknown_field_error: { code: "invalid_argument", details: errorCodes },
     structured_filter_error: { code: "invalid_argument", details: errorCodes },
     text_filter_syntax_error: {

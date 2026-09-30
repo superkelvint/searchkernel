@@ -149,6 +149,17 @@ from .client import Tensor, _decode_value_entries, _python_value, value
 from .scalars import check_uint32
 
 
+_MISSING = object()
+_REGEX_LITERAL_SPECIALS = frozenset(".^$*+?()[]{}|\\")
+
+
+def _literal_regex(value: str) -> str:
+    return "".join(
+        ("\\" + character) if character in _REGEX_LITERAL_SPECIALS else character
+        for character in value
+    )
+
+
 class _FieldSpec:
     kind = "string"
     matching = "unspecified"
@@ -550,8 +561,10 @@ class _QueryNamespace:
             ),
         )
 
-    def term(self, item: Any) -> QueryExprT:
-        return self._term(item)
+    def term(self, field_or_item: Any, item: Any = _MISSING) -> QueryExprT | QuerySourceT:
+        if item is _MISSING:
+            return self._term(field_or_item)
+        return self.contains(str(field_or_item), self._term(item))
 
     def contains(self, field: str, item: Any) -> QuerySourceT:
         if isinstance(item, str):
@@ -679,6 +692,15 @@ class _QueryNamespace:
             QueryExprKind.QueryMatches,
             QueryMatchesT(field=QueryFieldRefT(path=field), pattern=pattern),
         )
+
+    def prefix(self, field: str, item: str) -> QuerySourceT:
+        return self.matches(field, _literal_regex(item) + ".*")
+
+    def substring(self, field: str, item: str) -> QuerySourceT:
+        return self.matches(field, ".*" + _literal_regex(item) + ".*")
+
+    def suffix(self, field: str, item: str) -> QuerySourceT:
+        return self.matches(field, ".*" + _literal_regex(item))
 
     def weighted_set(self, field: str, items: Mapping[Any, int]) -> QuerySourceT:
         weighted = [WeightedQueryItemT(key=value(key), weight=weight)

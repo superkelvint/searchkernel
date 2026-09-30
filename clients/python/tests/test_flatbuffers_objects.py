@@ -731,6 +731,21 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             "fox",
         )
 
+    # SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=shared
+    def test_literal_term_prefix_substring_suffix_helpers_lower_canonically(self):
+        term = q.term("title", "quick")
+        self.assertEqual(term.source.query.exprType, QueryExprKind.QueryContains)
+        self.assertEqual(term.source.query.expr.item.exprType, QueryExprKind.TermQuery)
+
+        cases = [
+            (q.prefix("brand", "A.c+"), r"A\.c\+.*"),
+            (q.substring("brand", "A.c+"), r".*A\.c\+.*"),
+            (q.suffix("brand", "A.c+"), r".*A\.c\+"),
+        ]
+        for query, pattern in cases:
+            self.assertEqual(query.source.query.exprType, QueryExprKind.QueryMatches)
+            self.assertEqual(query.source.query.expr.pattern, pattern)
+
     def test_grouping_filter_boolean_helpers_have_readable_names(self):
         clause = gf.is_true(g.field("in_stock"))
 

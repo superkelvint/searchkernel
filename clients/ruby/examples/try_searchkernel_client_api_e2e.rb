@@ -101,7 +101,7 @@ PARITY_OBSERVATIONS = {}
 def typed_query_for_scenario(scenario, intent)
   field = intent["field"]
   case scenario
-  when "typed_query_term" then SearchKernel::Query.contains(field, SearchKernel::Query.term(intent.fetch("value")))
+  when "typed_query_term" then SearchKernel::Query.term(field, intent.fetch("value"))
   when "typed_query_contains" then SearchKernel::Query.contains(field, intent.fetch("value"))
   when "typed_query_phrase" then SearchKernel::Query.contains(field, SearchKernel::Query.phrase(*intent.fetch("terms")))
   when "typed_query_near" then SearchKernel::Query.contains(field, SearchKernel::Query.near(*intent.fetch("terms")))
@@ -134,9 +134,9 @@ def typed_query_for_scenario(scenario, intent)
   when "typed_query_wand" then SearchKernel::Query.wand(field, intent.fetch("items"))
   when "typed_query_weighted_set" then SearchKernel::Query.weighted_set(field, intent.fetch("items"))
   when "typed_query_dot_product" then SearchKernel::Query.dot_product(field, intent.fetch("items"))
-  when "typed_query_prefix" then SearchKernel::Query.matches(field, "#{Regexp.escape(intent.fetch("value"))}.*")
-  when "typed_query_substring" then SearchKernel::Query.matches(field, ".*#{Regexp.escape(intent.fetch("value"))}.*")
-  when "typed_query_suffix" then SearchKernel::Query.matches(field, ".*#{Regexp.escape(intent.fetch("value"))}")
+  when "typed_query_prefix" then SearchKernel::Query.prefix(field, intent.fetch("value"))
+  when "typed_query_substring" then SearchKernel::Query.substring(field, intent.fetch("value"))
+  when "typed_query_suffix" then SearchKernel::Query.suffix(field, intent.fetch("value"))
   when "typed_query_same_element"
     SearchKernel::Query.contains(
       field,
@@ -177,6 +177,20 @@ def shared_typed_query_observations(index)
   end.to_h
 end
 
+def parity_aggregation_expression(spec)
+  case spec.fetch("kind")
+  when "count" then SearchKernel::Agg.count
+  when "sum" then SearchKernel::Agg.sum(spec.fetch("field"))
+  when "avg" then SearchKernel::Agg.avg(spec.fetch("field"))
+  else raise "unsupported parity aggregation kind: #{spec.fetch("kind")}"
+  end
+end
+
+def parity_aggregation_output(spec)
+  return SearchKernel::Grouping.alias_ref(spec.fetch("name")).as(spec.fetch("output_name")) if spec.fetch("kind") == "alias"
+  parity_aggregation_expression(spec).as(spec.fetch("name"))
+end
+
 def capture_real_engine_parity(index)
   typed_observations = shared_typed_query_observations(index)
   intents = PARITY_INTENTS
@@ -188,11 +202,9 @@ def capture_real_engine_parity(index)
   faceted = index.search(facet_spec.fetch("query")).facet(facet_spec.fetch("field"), name: facet_spec.fetch("name"), limit: facet_spec.fetch("limit"), sort: facet_spec.fetch("sort")).limit(facet_spec.fetch("page_limit")).execute
   root_spec = intents.fetch("root_aggregations")
   raise "root_aggregations requires browse intent" unless root_spec.fetch("kind") == "browse"
-  root = index.browse.filter(root_spec.fetch("filter"))
-    .aggregate(SearchKernel::Agg.count.as(root_spec.fetch("aggregations")[0].fetch("name")))
-    .aggregate(SearchKernel::Agg.sum(root_spec.fetch("aggregations")[1].fetch("field")).as(root_spec.fetch("aggregations")[1].fetch("name")))
-    .aggregate(SearchKernel::Agg.avg(root_spec.fetch("aggregations")[2].fetch("field")).as(root_spec.fetch("aggregations")[2].fetch("name")))
-    .limit(root_spec.fetch("limit")).execute
+  root_builder = index.browse.filter(root_spec.fetch("filter"))
+  root_spec.fetch("aggregations").each { |aggregation_spec| root_builder = root_builder.aggregate(parity_aggregation_output(aggregation_spec)) }
+  root = root_builder.limit(root_spec.fetch("limit")).execute
   grouped_spec = intents.fetch("grouping_aggregations")
   group_order = grouped_spec.fetch("order").map do |order_spec|
     expression = order_spec.fetch("kind") == "count" ? SearchKernel::Agg.count : SearchKernel::Grouping.field(order_spec.fetch("field"))
@@ -201,7 +213,7 @@ def capture_real_engine_parity(index)
   grouped = index.search(grouped_spec.fetch("query")).group(
     SearchKernel::Group.by(grouped_spec.fetch("group_by")).limit(grouped_spec.fetch("limit")).precision(grouped_spec.fetch("precision"))
       .order_by(*group_order)
-      .output(SearchKernel::Agg.count.as(grouped_spec.fetch("outputs")[0].fetch("name")), SearchKernel::Agg.avg(grouped_spec.fetch("outputs")[1].fetch("field")).as(grouped_spec.fetch("outputs")[1].fetch("name")))
+      .output(*grouped_spec.fetch("outputs").map { |output| parity_aggregation_output(output) })
   ).execute
   nearest_intent = PARITY_INTENTS.fetch("nearest_neighbor")
   nearest = index.query(SearchKernel::Query.nearest_neighbor(nearest_intent.fetch("field"), nearest_intent.fetch("query_input")))
@@ -250,22 +262,25 @@ def capture_real_engine_parity(index)
   nested_spec = intents.fetch("nested_grouping")
   raise "nested_grouping requires browse intent" unless nested_spec.fetch("kind") == "browse"
   nested = index.browse.filter(nested_spec.fetch("filter").fetch("source"), nested_spec.fetch("filter").fetch("bindings")).group(
-    SearchKernel::Group.by(nested_spec.fetch("group_by")).limit(nested_spec.fetch("limit")).output(SearchKernel::Agg.count.as(nested_spec.fetch("outputs")[0].fetch("name")))
-      .subgroup(SearchKernel::Group.by(nested_spec.fetch("nested").fetch("group_by")).limit(nested_spec.fetch("nested").fetch("limit")).output(SearchKernel::Agg.count.as(nested_spec.fetch("nested").fetch("outputs")[0].fetch("name")), SearchKernel::Agg.avg(nested_spec.fetch("nested").fetch("outputs")[1].fetch("field")).as(nested_spec.fetch("nested").fetch("outputs")[1].fetch("name"))))
+    SearchKernel::Group.by(nested_spec.fetch("group_by")).limit(nested_spec.fetch("limit")).output(*nested_spec.fetch("outputs").map { |output| parity_aggregation_output(output) })
+      .subgroup(SearchKernel::Group.by(nested_spec.fetch("nested").fetch("group_by")).limit(nested_spec.fetch("nested").fetch("limit")).output(*nested_spec.fetch("nested").fetch("outputs").map { |output| parity_aggregation_output(output) }))
   ).execute
   alias_spec = intents.fetch("group_alias")
   alias_expression = SearchKernel::Grouping.alias_ref(alias_spec.fetch("order_by_alias").fetch("name"))
   alias_order = alias_spec.fetch("order_by_alias").fetch("direction") == "desc" ? SearchKernel::Grouping.desc(alias_expression) : SearchKernel::Grouping.asc(alias_expression)
+  alias_group = SearchKernel::Group.by(alias_spec.fetch("group_by")).limit(alias_spec.fetch("limit"))
+  alias_spec.fetch("aliases").each do |alias_specification|
+    alias_group = alias_group.alias(alias_specification.fetch("name"), parity_aggregation_expression(alias_specification))
+  end
   aliased = index.search(alias_spec.fetch("query")).group(
-    SearchKernel::Group.by(alias_spec.fetch("group_by")).limit(alias_spec.fetch("limit")).alias(alias_spec.fetch("aliases")[0].fetch("name"), SearchKernel::Agg.sum(alias_spec.fetch("aliases")[0].fetch("field")))
-      .order_by(alias_order)
-      .output(SearchKernel::Agg.count.as(alias_spec.fetch("outputs")[0].fetch("name")), SearchKernel::Grouping.alias_ref(alias_spec.fetch("outputs")[1].fetch("name")).as(alias_spec.fetch("outputs")[1].fetch("output_name")))
+    alias_group.order_by(alias_order)
+      .output(*alias_spec.fetch("outputs").map { |output| parity_aggregation_output(output) })
   ).execute
   keep_spec = intents.fetch("group_keep_filter")
   kept = index.search(keep_spec.fetch("query")).group(
     SearchKernel::Group.by(keep_spec.fetch("group_by")).limit(keep_spec.fetch("limit"))
       .keep(SearchKernel::GroupingFilter.regex(SearchKernel::Grouping.field(keep_spec.fetch("keep_regex").fetch("field")), keep_spec.fetch("keep_regex").fetch("pattern")))
-      .output(SearchKernel::Agg.count.as(keep_spec.fetch("outputs")[0].fetch("name")))
+      .output(*keep_spec.fetch("outputs").map { |output| parity_aggregation_output(output) })
   ).execute
   typed = index.query(typed_query_for_scenario("typed_query_contains", intents.fetch("typed_query_contains"))).ranking("default").limit(full_spec.fetch("limit")).execute
   rank_input_spec = intents.fetch("rank_inputs")

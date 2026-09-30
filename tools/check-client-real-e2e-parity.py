@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "reference/client-real-e2e-parity/corpus.json"
 CLIENTS = ("rust", "python", "typescript", "php", "ruby")
 FLOAT_TOLERANCE = 1e-6
+JS_MAX_SAFE_INTEGER = 2**53 - 1
+DECIMAL_INTEGER = re.compile(r"-?(?:0|[1-9][0-9]*)\Z")
 FLOAT_SEMANTIC_KEYS = {
     # Search scores and explicitly floating fields/aggregations. JavaScript's
     # JSON encoder can serialize a float such as 3.0 as `3`; these paths carry
@@ -54,6 +56,16 @@ REQUIRED_V1_SCENARIOS = (
 REQUIRED_SHARED_INTENT_SCENARIOS = REQUIRED_V1_SCENARIOS
 
 
+def exact_integer_semantic(value: Any) -> int | None:
+    if type(value) is int:
+        return value
+    if isinstance(value, str) and DECIMAL_INTEGER.fullmatch(value):
+        parsed = int(value)
+        if abs(parsed) > JS_MAX_SAFE_INTEGER:
+            return parsed
+    return None
+
+
 def compare(
     expected: Any,
     actual: Any,
@@ -82,9 +94,15 @@ def compare(
         if type(expected) is not type(actual) or expected != actual:
             differences.append(f"{path}: {expected!r} != {actual!r}")
         return differences
+    path_keys = set(re.split(r"[.\[\]]+", path))
+    float_semantics = path in float_semantic_paths or bool(path_keys & FLOAT_SEMANTIC_KEYS)
+    expected_integer = exact_integer_semantic(expected)
+    actual_integer = exact_integer_semantic(actual)
+    if not float_semantics and (expected_integer is not None or actual_integer is not None):
+        if expected_integer is None or actual_integer is None or expected_integer != actual_integer:
+            differences.append(f"{path}: exact integer semantics differ: {expected!r} != {actual!r}")
+        return differences
     if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-        path_keys = set(re.split(r"[.\[\]]+", path))
-        float_semantics = path in float_semantic_paths or bool(path_keys & FLOAT_SEMANTIC_KEYS)
         if type(expected) is not type(actual) and not float_semantics:
             differences.append(f"{path}: numeric types differ, got {type(expected).__name__} != {type(actual).__name__}")
             return differences

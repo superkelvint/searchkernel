@@ -124,7 +124,9 @@
           "evidence": [
             {
               "path": "clients/typescript/src/ergonomic/query.ts",
-              "symbols": ["phrase(field:"]
+              "symbols": [
+                "phrase(field:"
+              ]
             }
           ]
         }
@@ -242,11 +244,13 @@
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/query.rs",
-        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/searchkernel/ergonomic.py",
+        "clients/typescript/src/ergonomic/query.ts",
+        "clients/php/src/Query.php",
+        "clients/ruby/lib/searchkernel/query.rb"
       ],
-      "limitations": [
-        "the Python and TypeScript q facades do not yet expose"
-      ]
+      "limitations": []
     },
     {
       "id": "query.alternatives",

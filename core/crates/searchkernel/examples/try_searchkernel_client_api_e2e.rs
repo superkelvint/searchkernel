@@ -29,9 +29,10 @@ mod showcase {
     use searchkernel::params;
     use searchkernel::{
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
-        GroupingAggregation, GroupingOrder, GroupingPlan, Hit, Index, IndexDefinition, Patch,
-        Query, QueryBound, QueryValue, RankProfile, Ranking, ResultValue, SchemaStructField,
-        SearchResult, Sort, Tensor, TotalHitsRelation, Update, WandOptions, WeightedQueryItem,
+        GroupingAggregation, GroupingLevel, GroupingOrder, GroupingPlan, Hit, Index,
+        IndexDefinition, Patch, Query, QueryBound, QueryValue, RankProfile, Ranking, ResultValue,
+        SchemaStructField, SearchResult, Sort, Tensor, TotalHitsRelation, Update, WandOptions,
+        WeightedQueryItem,
     };
     use serde_json::{json, Value};
     use std::cell::RefCell;
@@ -70,6 +71,95 @@ mod showcase {
             "value_asc" => Ok(FacetSort::ValueAsc),
             "value_desc" => Ok(FacetSort::ValueDesc),
             other => Err(format!("unsupported facet sort: {other}").into()),
+        }
+    }
+
+    fn aggregation_expression_from_intent(
+        spec: &Value,
+    ) -> Result<GroupingAggregation, Box<dyn std::error::Error>> {
+        Ok(
+            match spec["kind"].as_str().ok_or("aggregation kind missing")? {
+                "count" => GroupingAggregation::count(),
+                "sum" => GroupingAggregation::sum(
+                    spec["field"]
+                        .as_str()
+                        .ok_or("sum aggregation field missing")?,
+                ),
+                "avg" => GroupingAggregation::average(
+                    spec["field"]
+                        .as_str()
+                        .ok_or("average aggregation field missing")?,
+                ),
+                kind => return Err(format!("unsupported parity aggregation kind: {kind}").into()),
+            },
+        )
+    }
+
+    fn aggregation_output_from_intent(
+        spec: &Value,
+    ) -> Result<GroupingAggregation, Box<dyn std::error::Error>> {
+        if spec["kind"] == "alias" {
+            return Ok(GroupingAggregation::named(
+                spec["output_name"]
+                    .as_str()
+                    .ok_or("alias output name missing")?,
+                GroupingAggregation::alias_ref(
+                    spec["name"]
+                        .as_str()
+                        .ok_or("alias output reference missing")?,
+                ),
+            ));
+        }
+        Ok(GroupingAggregation::named(
+            spec["name"]
+                .as_str()
+                .ok_or("aggregation output name missing")?,
+            aggregation_expression_from_intent(spec)?,
+        ))
+    }
+
+    fn add_group_outputs(
+        mut level: GroupingLevel,
+        outputs: &[Value],
+    ) -> Result<GroupingLevel, Box<dyn std::error::Error>> {
+        for output in outputs {
+            level = level.output(aggregation_output_from_intent(output)?);
+        }
+        Ok(level)
+    }
+
+    fn add_group_aliases(
+        mut level: GroupingLevel,
+        aliases: &[Value],
+    ) -> Result<GroupingLevel, Box<dyn std::error::Error>> {
+        for alias in aliases {
+            level = level.alias(
+                alias["name"].as_str().ok_or("group alias name missing")?,
+                aggregation_expression_from_intent(alias)?,
+            );
+        }
+        Ok(level)
+    }
+
+    #[cfg(test)]
+    mod parity_intent_tests {
+        use super::*;
+
+        #[test]
+        fn nested_aggregation_kind_changes_constructed_public_aggregation() {
+            let average = json!({"kind": "avg", "field": "price", "name": "metric"});
+            let sum = json!({"kind": "sum", "field": "price", "name": "metric"});
+            let average_output = aggregation_output_from_intent(&average).unwrap();
+            let sum_output = aggregation_output_from_intent(&sum).unwrap();
+            assert_eq!(
+                average_output,
+                GroupingAggregation::named("metric", GroupingAggregation::average("price"))
+            );
+            assert_eq!(
+                sum_output,
+                GroupingAggregation::named("metric", GroupingAggregation::sum("price"))
+            );
+            assert_ne!(average_output, sum_output);
         }
     }
 
@@ -292,6 +382,7 @@ mod showcase {
             "typed_query_wand" => Query::wand(field()?, weighted()?),
             "typed_query_weighted_set" => Query::weighted_set(field()?, weighted()?),
             "typed_query_dot_product" => Query::dot_product(field()?, weighted()?),
+            // SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=native
             "typed_query_prefix" => Query::prefix(field()?, text("value")?),
             "typed_query_substring" => Query::substring(field()?, text("value")?),
             "typed_query_suffix" => Query::suffix(field()?, text("value")?),
@@ -805,85 +896,89 @@ mod showcase {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let grouping_outputs = grouping_intent["outputs"]
+            .as_array()
+            .ok_or("grouping outputs missing")?;
+        let grouping_level = add_group_outputs(
+            GroupingPlan::by(
+                grouping_intent["group_by"]
+                    .as_str()
+                    .ok_or("grouping field missing")?,
+            )
+            .max_groups(
+                grouping_intent["limit"]
+                    .as_u64()
+                    .ok_or("group limit missing")? as u32,
+            )
+            .precision(
+                grouping_intent["precision"]
+                    .as_u64()
+                    .ok_or("group precision missing")? as u32,
+            )
+            .order_by(grouping_order),
+            grouping_outputs,
+        )?;
         let parity_grouped = index
             .search(
                 grouping_intent["query"]
                     .as_str()
                     .ok_or("grouping query missing")?,
             )
-            .grouping(
-                GroupingPlan::new().level(
-                    GroupingPlan::by(
-                        grouping_intent["group_by"]
-                            .as_str()
-                            .ok_or("grouping field missing")?,
-                    )
-                    .max_groups(
-                        grouping_intent["limit"]
-                            .as_u64()
-                            .ok_or("group limit missing")? as u32,
-                    )
-                    .precision(
-                        grouping_intent["precision"]
-                            .as_u64()
-                            .ok_or("group precision missing")? as u32,
-                    )
-                    .order_by(grouping_order)
-                    .output(GroupingAggregation::named(
-                        grouping_intent["outputs"][0]["name"]
-                            .as_str()
-                            .ok_or("count output missing")?,
-                        GroupingAggregation::count(),
-                    ))
-                    .output(GroupingAggregation::named(
-                        grouping_intent["outputs"][1]["name"]
-                            .as_str()
-                            .ok_or("average output missing")?,
-                        GroupingAggregation::average(
-                            grouping_intent["outputs"][1]["field"]
-                                .as_str()
-                                .ok_or("average field missing")?,
-                        ),
-                    )),
-                ),
-            )
+            .grouping(GroupingPlan::new().level(grouping_level))
             .execute::<Value>()?;
         let nested_intent = intent!("nested_grouping");
         if nested_intent["kind"].as_str() != Some("browse") {
             return Err("nested_grouping requires browse intent".into());
         }
+        let nested_child = add_group_outputs(
+            GroupingPlan::by(
+                nested_intent["nested"]["group_by"]
+                    .as_str()
+                    .ok_or("nested child field missing")?,
+            )
+            .max_groups(
+                nested_intent["nested"]["limit"]
+                    .as_u64()
+                    .ok_or("nested child limit missing")? as u32,
+            ),
+            nested_intent["nested"]["outputs"]
+                .as_array()
+                .ok_or("nested child outputs missing")?,
+        )?;
+        let nested_level = add_group_outputs(
+            GroupingPlan::by(
+                nested_intent["group_by"]
+                    .as_str()
+                    .ok_or("nested group field missing")?,
+            )
+            .max_groups(
+                nested_intent["limit"]
+                    .as_u64()
+                    .ok_or("nested group limit missing")? as u32,
+            ),
+            nested_intent["outputs"]
+                .as_array()
+                .ok_or("nested outputs missing")?,
+        )?
+        .nested(nested_child);
         let parity_nested = index
             .browse()
             .filter((
                 nested_intent["filter"]["source"].as_str().ok_or("nested filter missing")?,
                 params! { "categories" => nested_intent["filter"]["bindings"]["categories"].as_array().ok_or("nested categories missing")?.iter().map(|value| value.as_str().ok_or("nested category must be text")).collect::<Result<Vec<_>, _>>()? },
             ))
-            .grouping(
-                GroupingPlan::new().level(
-                    GroupingPlan::by(nested_intent["group_by"].as_str().ok_or("nested group field missing")?)
-                        .max_groups(nested_intent["limit"].as_u64().ok_or("nested group limit missing")? as u32)
-                        .output(GroupingAggregation::named(
-                            nested_intent["outputs"][0]["name"].as_str().ok_or("nested output name missing")?,
-                            GroupingAggregation::count(),
-                        ))
-                        .nested(
-                            GroupingPlan::by(nested_intent["nested"]["group_by"].as_str().ok_or("nested child field missing")?)
-                                .max_groups(nested_intent["nested"]["limit"].as_u64().ok_or("nested child limit missing")? as u32)
-                                .output(GroupingAggregation::named(
-                                    nested_intent["nested"]["outputs"][0]["name"].as_str().ok_or("nested child count output missing")?,
-                                    GroupingAggregation::count(),
-                                ))
-                                .output(GroupingAggregation::named(
-                                    nested_intent["nested"]["outputs"][1]["name"].as_str().ok_or("nested child average output missing")?,
-                                    GroupingAggregation::average(nested_intent["nested"]["outputs"][1]["field"].as_str().ok_or("nested child average field missing")?),
-                                )),
-                        ),
-                ),
-            )
+            .grouping(GroupingPlan::new().level(nested_level))
             .execute::<Value>()?;
         let root_intent = intent!("root_aggregations");
         if root_intent["kind"].as_str() != Some("browse") {
             return Err("root_aggregations requires browse intent".into());
+        }
+        let mut root_plan = GroupingPlan::new();
+        for aggregation in root_intent["aggregations"]
+            .as_array()
+            .ok_or("root aggregations missing")?
+        {
+            root_plan = root_plan.root_output(aggregation_output_from_intent(aggregation)?);
         }
         let parity_root_aggregations = index
             .browse()
@@ -892,35 +987,7 @@ mod showcase {
                     .as_str()
                     .ok_or("root aggregation filter missing")?,
             )
-            .grouping(
-                GroupingPlan::new()
-                    .root_output(GroupingAggregation::named(
-                        root_intent["aggregations"][0]["name"]
-                            .as_str()
-                            .ok_or("root count name missing")?,
-                        GroupingAggregation::count(),
-                    ))
-                    .root_output(GroupingAggregation::named(
-                        root_intent["aggregations"][1]["name"]
-                            .as_str()
-                            .ok_or("root sum name missing")?,
-                        GroupingAggregation::sum(
-                            root_intent["aggregations"][1]["field"]
-                                .as_str()
-                                .ok_or("root sum field missing")?,
-                        ),
-                    ))
-                    .root_output(GroupingAggregation::named(
-                        root_intent["aggregations"][2]["name"]
-                            .as_str()
-                            .ok_or("root average name missing")?,
-                        GroupingAggregation::average(
-                            root_intent["aggregations"][2]["field"]
-                                .as_str()
-                                .ok_or("root average field missing")?,
-                        ),
-                    )),
-            )
+            .grouping(root_plan)
             .limit(
                 root_intent["limit"]
                     .as_u64()
@@ -928,90 +995,67 @@ mod showcase {
             )
             .execute::<Value>()?;
         let alias_intent = intent!("group_alias");
+        let alias_level = add_group_outputs(
+            add_group_aliases(
+                GroupingPlan::by(
+                    alias_intent["group_by"]
+                        .as_str()
+                        .ok_or("alias group field missing")?,
+                )
+                .max_groups(
+                    alias_intent["limit"]
+                        .as_u64()
+                        .ok_or("alias group limit missing")? as u32,
+                ),
+                alias_intent["aliases"]
+                    .as_array()
+                    .ok_or("group aliases missing")?,
+            )?
+            .order_by_alias(
+                alias_intent["order_by_alias"]["name"]
+                    .as_str()
+                    .ok_or("alias order field missing")?,
+                alias_intent["order_by_alias"]["direction"] == "desc",
+            ),
+            alias_intent["outputs"]
+                .as_array()
+                .ok_or("alias outputs missing")?,
+        )?;
         let parity_alias = index
             .search(
                 alias_intent["query"]
                     .as_str()
                     .ok_or("alias query missing")?,
             )
-            .grouping(
-                GroupingPlan::new().level(
-                    GroupingPlan::by(
-                        alias_intent["group_by"]
-                            .as_str()
-                            .ok_or("alias group field missing")?,
-                    )
-                    .max_groups(
-                        alias_intent["limit"]
-                            .as_u64()
-                            .ok_or("alias group limit missing")? as u32,
-                    )
-                    .alias(
-                        alias_intent["aliases"][0]["name"]
-                            .as_str()
-                            .ok_or("alias name missing")?,
-                        GroupingAggregation::sum(
-                            alias_intent["aliases"][0]["field"]
-                                .as_str()
-                                .ok_or("alias field missing")?,
-                        ),
-                    )
-                    .order_by_alias(
-                        alias_intent["order_by_alias"]["name"]
-                            .as_str()
-                            .ok_or("alias order field missing")?,
-                        alias_intent["order_by_alias"]["direction"] == "desc",
-                    )
-                    .output(GroupingAggregation::named(
-                        alias_intent["outputs"][0]["name"]
-                            .as_str()
-                            .ok_or("alias count output missing")?,
-                        GroupingAggregation::count(),
-                    ))
-                    .output(GroupingAggregation::named(
-                        alias_intent["outputs"][1]["output_name"]
-                            .as_str()
-                            .ok_or("alias output name missing")?,
-                        GroupingAggregation::alias_ref(
-                            alias_intent["outputs"][1]["name"]
-                                .as_str()
-                                .ok_or("alias output reference missing")?,
-                        ),
-                    )),
-                ),
-            )
+            .grouping(GroupingPlan::new().level(alias_level))
             .execute::<Value>()?;
         let keep_intent = intent!("group_keep_filter");
+        let keep_level = add_group_outputs(
+            GroupingPlan::by(
+                keep_intent["group_by"]
+                    .as_str()
+                    .ok_or("keep group field missing")?,
+            )
+            .max_groups(
+                keep_intent["limit"]
+                    .as_u64()
+                    .ok_or("keep group limit missing")? as u32,
+            )
+            .keep_regex(
+                keep_intent["keep_regex"]["field"]
+                    .as_str()
+                    .ok_or("keep regex field missing")?,
+                keep_intent["keep_regex"]["pattern"]
+                    .as_str()
+                    .ok_or("keep regex pattern missing")?,
+            ),
+            keep_intent["outputs"]
+                .as_array()
+                .ok_or("keep outputs missing")?,
+        )?;
         let parity_keep = index
             .search(keep_intent["query"].as_str().ok_or("keep query missing")?)
-            .grouping(
-                GroupingPlan::new().level(
-                    GroupingPlan::by(
-                        keep_intent["group_by"]
-                            .as_str()
-                            .ok_or("keep group field missing")?,
-                    )
-                    .max_groups(
-                        keep_intent["limit"]
-                            .as_u64()
-                            .ok_or("keep group limit missing")? as u32,
-                    )
-                    .keep_regex(
-                        keep_intent["keep_regex"]["field"]
-                            .as_str()
-                            .ok_or("keep regex field missing")?,
-                        keep_intent["keep_regex"]["pattern"]
-                            .as_str()
-                            .ok_or("keep regex pattern missing")?,
-                    )
-                    .output(GroupingAggregation::named(
-                        keep_intent["outputs"][0]["name"]
-                            .as_str()
-                            .ok_or("keep output name missing")?,
-                        GroupingAggregation::count(),
-                    )),
-                ),
-            )
+            .grouping(GroupingPlan::new().level(keep_level))
             .execute::<Value>()?;
         let yql_intent = intent!("yql");
         let (yql_parameter_name, yql_parameter_value) = yql_intent["bindings"]

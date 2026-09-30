@@ -208,7 +208,7 @@ function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
 {
     $field = $intent['field'] ?? null;
     return match ($scenario) {
-        'typed_query_term' => Query::contains($field, Query::term($intent['value'])),
+        'typed_query_term' => Query::term($field, $intent['value']),
         'typed_query_contains' => Query::contains($field, $intent['value']),
         'typed_query_phrase' => Query::contains($field, Query::phrase(...$intent['terms'])),
         'typed_query_near' => Query::contains($field, Query::near(...$intent['terms'])),
@@ -237,9 +237,9 @@ function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
         'typed_query_wand' => Query::wand($field, $intent['items']),
         'typed_query_weighted_set' => Query::weightedSet($field, $intent['items']),
         'typed_query_dot_product' => Query::dotProduct($field, $intent['items']),
-        'typed_query_prefix' => Query::matches($field, preg_quote($intent['value']) . '.*'),
-        'typed_query_substring' => Query::matches($field, '.*' . preg_quote($intent['value']) . '.*'),
-        'typed_query_suffix' => Query::matches($field, '.*' . preg_quote($intent['value'])),
+        'typed_query_prefix' => Query::prefix($field, $intent['value']),
+        'typed_query_substring' => Query::substring($field, $intent['value']),
+        'typed_query_suffix' => Query::suffix($field, $intent['value']),
         'typed_query_same_element' => Query::contains(
             $field,
             Query::sameElement(
@@ -251,6 +251,26 @@ function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
         'typed_query_geo_box' => Query::geoBox($field, $intent['south'], $intent['west'], $intent['north'], $intent['east']),
         default => throw new InvalidArgumentException('unsupported typed parity scenario: ' . $scenario),
     };
+}
+
+/** @param array<string,mixed> $spec */
+function parityAggregationExpression(array $spec): mixed
+{
+    return match ($spec['kind']) {
+        'count' => Agg::count(),
+        'sum' => Agg::sum($spec['field']),
+        'avg' => Agg::avg($spec['field']),
+        default => throw new InvalidArgumentException('unsupported parity aggregation kind: ' . $spec['kind']),
+    };
+}
+
+/** @param array<string,mixed> $spec */
+function parityAggregationOutput(array $spec): mixed
+{
+    if ($spec['kind'] === 'alias') {
+        return G::aliasRef($spec['name'])->as($spec['output_name']);
+    }
+    return parityAggregationExpression($spec)->as($spec['name']);
 }
 
 /** @return array<string,array<string,mixed>> */
@@ -300,11 +320,11 @@ function captureRealEngineParity(Index $index): array
     $faceted = $index->search($facetSpec['query'])->facet($facetSpec['field'], name: $facetSpec['name'], limit: $facetSpec['limit'], sort: $facetSpec['sort'])->limit($facetSpec['page_limit'])->execute();
     $rootSpec = $intents['root_aggregations'];
     if ($rootSpec['kind'] !== 'browse') throw new RuntimeException('root_aggregations requires browse intent');
-    $root = $index->browse()->filter($rootSpec['filter'])
-        ->aggregate(Agg::count()->as($rootSpec['aggregations'][0]['name']))
-        ->aggregate(Agg::sum($rootSpec['aggregations'][1]['field'])->as($rootSpec['aggregations'][1]['name']))
-        ->aggregate(Agg::avg($rootSpec['aggregations'][2]['field'])->as($rootSpec['aggregations'][2]['name']))
-        ->limit($rootSpec['limit'])->execute();
+    $rootBuilder = $index->browse()->filter($rootSpec['filter']);
+    foreach ($rootSpec['aggregations'] as $aggregationSpec) {
+        $rootBuilder = $rootBuilder->aggregate(parityAggregationOutput($aggregationSpec));
+    }
+    $root = $rootBuilder->limit($rootSpec['limit'])->execute();
     $groupedSpec = $intents['grouping_aggregations'];
     $groupOrder = array_map(static function (array $order): mixed {
         $expression = $order['kind'] === 'count' ? Agg::count() : G::field($order['field']);
@@ -313,7 +333,7 @@ function captureRealEngineParity(Index $index): array
     $grouped = $index->search($groupedSpec['query'])->group(
         Group::by($groupedSpec['group_by'])->limit($groupedSpec['limit'])->precision($groupedSpec['precision'])
             ->orderBy(...$groupOrder)
-            ->output(Agg::count()->as($groupedSpec['outputs'][0]['name']), Agg::avg($groupedSpec['outputs'][1]['field'])->as($groupedSpec['outputs'][1]['name']))
+            ->output(...array_map(parityAggregationOutput(...), $groupedSpec['outputs']))
     )->execute();
     $nearestIntent = $intents['nearest_neighbor'];
     $nearest = $index->query(Query::nearestNeighbor($nearestIntent['field'], $nearestIntent['query_input']))
@@ -364,20 +384,23 @@ function captureRealEngineParity(Index $index): array
     $nestedSpec = $intents['nested_grouping'];
     if ($nestedSpec['kind'] !== 'browse') throw new RuntimeException('nested_grouping requires browse intent');
     $nested = $index->browse()->filter($nestedSpec['filter']['source'], $nestedSpec['filter']['bindings'])->group(
-        Group::by($nestedSpec['group_by'])->limit($nestedSpec['limit'])->output(Agg::count()->as($nestedSpec['outputs'][0]['name']))
-            ->subgroup(Group::by($nestedSpec['nested']['group_by'])->limit($nestedSpec['nested']['limit'])->output(Agg::count()->as($nestedSpec['nested']['outputs'][0]['name']), Agg::avg($nestedSpec['nested']['outputs'][1]['field'])->as($nestedSpec['nested']['outputs'][1]['name'])))
+        Group::by($nestedSpec['group_by'])->limit($nestedSpec['limit'])->output(...array_map(parityAggregationOutput(...), $nestedSpec['outputs']))
+            ->subgroup(Group::by($nestedSpec['nested']['group_by'])->limit($nestedSpec['nested']['limit'])->output(...array_map(parityAggregationOutput(...), $nestedSpec['nested']['outputs'])))
     )->execute();
     $aliasSpec = $intents['group_alias'];
     $aliasExpression = G::aliasRef($aliasSpec['order_by_alias']['name']);
     $aliasOrder = $aliasSpec['order_by_alias']['direction'] === 'desc' ? GroupingOrder::desc($aliasExpression) : GroupingOrder::asc($aliasExpression);
+    $aliasGroup = Group::by($aliasSpec['group_by'])->limit($aliasSpec['limit']);
+    foreach ($aliasSpec['aliases'] as $aliasSpecification) {
+        $aliasGroup = $aliasGroup->alias($aliasSpecification['name'], parityAggregationExpression($aliasSpecification));
+    }
     $aliased = $index->search($aliasSpec['query'])->group(
-        Group::by($aliasSpec['group_by'])->limit($aliasSpec['limit'])->alias($aliasSpec['aliases'][0]['name'], Agg::sum($aliasSpec['aliases'][0]['field']))
-            ->orderBy($aliasOrder)
-            ->output(Agg::count()->as($aliasSpec['outputs'][0]['name']), G::aliasRef($aliasSpec['outputs'][1]['name'])->as($aliasSpec['outputs'][1]['output_name']))
+        $aliasGroup->orderBy($aliasOrder)
+            ->output(...array_map(parityAggregationOutput(...), $aliasSpec['outputs']))
     )->execute();
     $keepSpec = $intents['group_keep_filter'];
     $kept = $index->search($keepSpec['query'])->group(
-        Group::by($keepSpec['group_by'])->limit($keepSpec['limit'])->keep(Gf::regex(G::field($keepSpec['keep_regex']['field']), $keepSpec['keep_regex']['pattern']))->output(Agg::count()->as($keepSpec['outputs'][0]['name']))
+        Group::by($keepSpec['group_by'])->limit($keepSpec['limit'])->keep(Gf::regex(G::field($keepSpec['keep_regex']['field']), $keepSpec['keep_regex']['pattern']))->output(...array_map(parityAggregationOutput(...), $keepSpec['outputs']))
     )->execute();
     $typed = $index->query(typedQueryForScenario('typed_query_contains', $intents['typed_query_contains']))->ranking('default')->limit($fullSpec['limit'])->execute();
     $rankInputSpec = $intents['rank_inputs'];

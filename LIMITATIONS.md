@@ -31,10 +31,6 @@ approximated.
 
 - The TypeScript high-level q facade does not yet expose a fuzzy helper.
 
-### Prefix, suffix, and substring queries (`query.prefix_suffix_substring`)
-
-- the Python and TypeScript q facades do not yet expose
-
 ### Alternatives queries (`query.alternatives`)
 
 - Alternatives currently executes only when every child is a term; general alternatives are rejected by the adapter. High-level Rust, Python, and TypeScript facades do not expose this node.

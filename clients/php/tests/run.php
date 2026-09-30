@@ -1268,6 +1268,19 @@ same(
 );
 same('QueryFuzzy', $queryExpr(SearchKernel\Query::fuzzy('colour'))['expr_type'], 'fuzzy query');
 same('QueryMatches', $queryExpr(SearchKernel\Query::matches('title', 'foo.*'))['expr_type'], 'matches query');
+// SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=http
+$fieldedTerm = $queryExpr(SearchKernel\Query::term('title', 'quick'));
+same('QueryContains', $fieldedTerm['expr_type'], 'fielded term query');
+same('TermQuery', $fieldedTerm['expr']['item']['expr_type'], 'fielded term canonical item');
+foreach ([
+    [SearchKernel\Query::prefix('brand', 'A.c+'), 'A\\.c\\+.*'],
+    [SearchKernel\Query::substring('brand', 'A.c+'), '.*A\\.c\\+.*'],
+    [SearchKernel\Query::suffix('brand', 'A.c+'), '.*A\\.c\\+'],
+] as [$literalQuery, $pattern]) {
+    $literalExpr = $queryExpr($literalQuery);
+    same('QueryMatches', $literalExpr['expr_type'], 'literal query canonical kind');
+    same($pattern, $literalExpr['expr']['pattern'], 'literal query escaped pattern');
+}
 same('QueryText', $queryExpr(SearchKernel\Query::text('hello'))['expr_type'], 'typed text query');
 same('QueryUserInput', $queryExpr(SearchKernel\Query::userInput('hello'))['expr_type'], 'user-input query');
 same('QueryUserQuery', $queryExpr(SearchKernel\Query::userQuery())['expr_type'], 'user-query node');

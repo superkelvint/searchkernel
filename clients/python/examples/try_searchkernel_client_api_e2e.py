@@ -9,6 +9,8 @@ import atexit
 import shutil
 import tempfile
 
+from client_real_e2e_parity_helpers import aggregation_expression, aggregation_output
+
 from searchkernel import (
     Index,
     Text,
@@ -255,7 +257,7 @@ PARITY_OBSERVATIONS: dict[str, object] = {}
 def typed_query_for_scenario(scenario, intent):
     field = intent.get("field")
     if scenario == "typed_query_term":
-        return q.contains(field, q.term(intent["value"]))
+        return q.term(field, intent["value"])
     if scenario == "typed_query_contains":
         return q.contains(field, intent["value"])
     if scenario == "typed_query_phrase":
@@ -292,11 +294,11 @@ def typed_query_for_scenario(scenario, intent):
     if scenario == "typed_query_dot_product":
         return q.dot_product(field, intent["items"])
     if scenario == "typed_query_prefix":
-        return q.matches(field, re.escape(intent["value"]) + ".*")
+        return q.prefix(field, intent["value"])
     if scenario == "typed_query_substring":
-        return q.matches(field, ".*" + re.escape(intent["value"]) + ".*")
+        return q.substring(field, intent["value"])
     if scenario == "typed_query_suffix":
-        return q.matches(field, ".*" + re.escape(intent["value"]))
+        return q.suffix(field, intent["value"])
     if scenario == "typed_query_same_element":
         return q.contains(
             field,
@@ -350,13 +352,10 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     root_spec = intents["root_aggregations"]
     if root_spec["kind"] != "browse":
         raise ValueError("root_aggregations requires browse intent")
-    root = (
-        index.browse().filter(root_spec["filter"])
-        .aggregate(agg.count().as_(root_spec["aggregations"][0]["name"]))
-        .aggregate(agg.sum(root_spec["aggregations"][1]["field"]).as_(root_spec["aggregations"][1]["name"]))
-        .aggregate(agg.avg(root_spec["aggregations"][2]["field"]).as_(root_spec["aggregations"][2]["name"]))
-        .limit(root_spec["limit"]).execute()
-    )
+    root_builder = index.browse().filter(root_spec["filter"])
+    for aggregation_spec in root_spec["aggregations"]:
+        root_builder = root_builder.aggregate(aggregation_output(aggregation_spec))
+    root = root_builder.limit(root_spec["limit"]).execute()
     grouped_spec = intents["grouping_aggregations"]
     group_order = []
     for order_spec in grouped_spec["order"]:
@@ -366,7 +365,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     grouped = index.search(grouped_spec["query"]).group(
         Group.by(grouped_spec["group_by"]).limit(grouped_spec["limit"]).precision(grouped_spec["precision"])
         .order_by(*group_order)
-        .output(agg.count().as_(grouped_spec["outputs"][0]["name"]), agg.avg(grouped_spec["outputs"][1]["field"]).as_(grouped_spec["outputs"][1]["name"]))
+        .output(*(aggregation_output(output) for output in grouped_spec["outputs"]))
     ).execute()
     nearest_intent = intents["nearest_neighbor"]
     nearest = (
@@ -425,19 +424,21 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     if nested_spec["kind"] != "browse":
         raise ValueError("nested_grouping requires browse intent")
     nested = index.browse().filter(nested_spec["filter"]["source"], nested_spec["filter"]["bindings"]).group(
-        Group.by(nested_spec["group_by"]).limit(nested_spec["limit"]).output(agg.count().as_(nested_spec["outputs"][0]["name"])).subgroup(
-            Group.by(nested_spec["nested"]["group_by"]).limit(nested_spec["nested"]["limit"]).output(agg.count().as_(nested_spec["nested"]["outputs"][0]["name"]), agg.avg(nested_spec["nested"]["outputs"][1]["field"]).as_(nested_spec["nested"]["outputs"][1]["name"]))
+        Group.by(nested_spec["group_by"]).limit(nested_spec["limit"]).output(*(aggregation_output(output) for output in nested_spec["outputs"])).subgroup(
+            Group.by(nested_spec["nested"]["group_by"]).limit(nested_spec["nested"]["limit"]).output(*(aggregation_output(output) for output in nested_spec["nested"]["outputs"]))
         )
     ).execute()
     alias_spec = intents["group_alias"]
     alias_order = desc if alias_spec["order_by_alias"]["direction"] == "desc" else asc
+    alias_group = Group.by(alias_spec["group_by"]).limit(alias_spec["limit"])
+    for alias_specification in alias_spec["aliases"]:
+        alias_group = alias_group.alias(alias_specification["name"], aggregation_expression(alias_specification))
     aliased = index.search(alias_spec["query"]).group(
-        Group.by(alias_spec["group_by"]).limit(alias_spec["limit"]).alias(alias_spec["aliases"][0]["name"], agg.sum(alias_spec["aliases"][0]["field"]))
-        .order_by(alias_order(g.alias_ref(alias_spec["order_by_alias"]["name"]))).output(agg.count().as_(alias_spec["outputs"][0]["name"]), g.alias_ref(alias_spec["outputs"][1]["name"]).as_(alias_spec["outputs"][1]["output_name"]))
+        alias_group.order_by(alias_order(g.alias_ref(alias_spec["order_by_alias"]["name"]))).output(*(aggregation_output(output) for output in alias_spec["outputs"]))
     ).execute()
     keep_spec = intents["group_keep_filter"]
     kept = index.search(keep_spec["query"]).group(
-        Group.by(keep_spec["group_by"]).limit(keep_spec["limit"]).keep(gf.regex(g.field(keep_spec["keep_regex"]["field"]), keep_spec["keep_regex"]["pattern"])).output(agg.count().as_(keep_spec["outputs"][0]["name"]))
+        Group.by(keep_spec["group_by"]).limit(keep_spec["limit"]).keep(gf.regex(g.field(keep_spec["keep_regex"]["field"]), keep_spec["keep_regex"]["pattern"])).output(*(aggregation_output(output) for output in keep_spec["outputs"]))
     ).execute()
     typed = index.query(typed_query_for_scenario("typed_query_contains", intents["typed_query_contains"])).ranking("default").limit(full_spec["limit"]).execute()
     rank_input_spec = intents["rank_inputs"]
