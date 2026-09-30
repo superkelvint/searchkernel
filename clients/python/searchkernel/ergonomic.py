@@ -68,6 +68,7 @@ from SearchKernel.V2.QueryExprKind import QueryExprKind
 from SearchKernel.V2.QueryFuzzy import QueryFuzzyT
 from SearchKernel.V2.QueryGeoBoundingBox import QueryGeoBoundingBoxT
 from SearchKernel.V2.QueryGeoLocation import QueryGeoLocationT
+from SearchKernel.V2.QueryMatches import QueryMatchesT
 from SearchKernel.V2.QueryFieldRef import QueryFieldRefT
 from SearchKernel.V2.QueryNear import QueryNearT
 from SearchKernel.V2.QueryNearestNeighbor import QueryNearestNeighborT
@@ -654,7 +655,15 @@ class _QueryNamespace:
         return self._combine(QueryExprKind.QueryIn, QueryInT(
             field=QueryFieldRefT(path=field), values=[value(item) for item in items]))
 
-    def range(self, field: str, lower: Any, upper: Any) -> QuerySourceT:
+    def range(
+        self,
+        field: str,
+        lower: Any,
+        upper: Any,
+        *,
+        include_lower: bool = True,
+        include_upper: bool = True,
+    ) -> QuerySourceT:
         def bound(item):
             return RangeBoundT(
                 boundType=RangeBoundKind.FiniteRangeBound,
@@ -662,7 +671,14 @@ class _QueryNamespace:
             )
         return self._combine(QueryExprKind.QueryRange, QueryRangeT(
             field=QueryFieldRefT(path=field), lower=bound(lower), upper=bound(upper),
-            includeLower=OptionalBoolT(value=True), includeUpper=OptionalBoolT(value=True)))
+            includeLower=OptionalBoolT(value=include_lower),
+            includeUpper=OptionalBoolT(value=include_upper)))
+
+    def matches(self, field: str, pattern: str) -> QuerySourceT:
+        return self._combine(
+            QueryExprKind.QueryMatches,
+            QueryMatchesT(field=QueryFieldRefT(path=field), pattern=pattern),
+        )
 
     def weighted_set(self, field: str, items: Mapping[Any, int]) -> QuerySourceT:
         weighted = [WeightedQueryItemT(key=value(key), weight=weight)
