@@ -27,13 +27,19 @@ function text(value: string | Uint8Array | null | undefined): string | null {
   return new TextDecoder().decode(value);
 }
 
-function entries(values: readonly ValueEntryT[] | null | undefined): Record<string, unknown> {
+function entries(
+  values: readonly (ValueEntryT | null)[] | null | undefined,
+): Record<string, unknown> {
   const decoded: Record<string, unknown> = {};
   const seen = new Set<string>();
   for (const entry of values ?? []) {
+    if (entry === null) throw new ResultDecodeError("malformed result map entry");
     const key = text(entry.key);
     if (key === null) throw new ResultDecodeError("result map entry has no key");
     if (seen.has(key)) throw new ResultDecodeError(`duplicate result map key: ${key}`);
+    if (entry.value === null) {
+      throw new ResultDecodeError(`result map entry has no Value payload: ${key}`);
+    }
     seen.add(key);
     decoded[key] = fromValue(entry.value);
   }

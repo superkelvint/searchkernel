@@ -147,6 +147,9 @@ Search Kernel development commands
   ./dev coverage              Generate Rust code coverage reports under coverage/
   ./dev lint --profile <id>   Run a canonical Clippy verification profile
   ./dev test --list           List supported test scopes from build/targets.json
+  ./dev explain <path>        Explain ownership and checks from build/targets.json
+  ./dev bookkeeping check     Validate deterministic bookkeeping artifacts
+  ./dev bookkeeping sync      Repair deterministic bookkeeping artifacts
   ./dev test --remote <scope> Dispatch exact-HEAD test through GitHub Actions
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
@@ -319,6 +322,8 @@ run_typescript_tests() {
 run_php_tests() {
     php "$ROOT/clients/php/tests/run.php"
     "$CARGO" test -p searchkernel-protocol --test php_json_contract -- --ignored
+    "$CARGO" test -p searchkerneld --test multi_index --features native \
+        php_emitted_create_index_json_reaches_multi_index_registry -- --ignored --exact
     bash "$ROOT/clients/php/tests/verify_package.sh"
     run_client_e2e php
 }
@@ -362,6 +367,9 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
     "$PYTHON" "$ROOT/tools/test_searchkernel_native_linker.py"
     "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+    "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+    "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
+    "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
     "$PYTHON" "$ROOT/tools/test_dev_universe_summary.py"
     "$CARGO" fmt --all --check
     "$CARGO" check --workspace --all-targets --no-default-features
@@ -386,6 +394,9 @@ ci_gate() {
     echo "== Docker lifecycle contract =="
     bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
 
+    echo "== bookkeeping contract =="
+    bookkeeping_command check
+
     echo "== cargo fmt =="
     "$CARGO" fmt --all -- --check
 
@@ -397,6 +408,36 @@ ci_gate() {
 
     echo "== cargo clippy =="
     "$CARGO" clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+}
+
+bookkeeping_command() {
+    local mode=${1:-check}
+    [[ "$#" -le 1 ]] || {
+        echo 'usage: ./dev bookkeeping check|sync' >&2
+        return 2
+    }
+    case "$mode" in
+        check)
+            "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+            "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+            "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
+            "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            ;;
+        sync)
+            "$PYTHON" "$ROOT/tools/check-agent-map.py" --write
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --write
+            "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+            "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+            "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
+            "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            ;;
+        *)
+            echo 'usage: ./dev bookkeeping check|sync' >&2
+            return 2
+            ;;
+    esac
 }
 
 check_protocol() {
@@ -707,6 +748,7 @@ verify_target() {
                 echo 'error: Ruby is required for client semantic parity' >&2
                 return 1
             }
+            bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
             "$PYTHON" "$ROOT/tools/check-result-response-schema.py"
             "$PYTHON" "$ROOT/tools/test_check_result_response_schema.py"
             "$PYTHON" "$ROOT/tools/test_result_response_conformance.py"
@@ -1350,6 +1392,17 @@ case "${1:-help}" in
     test)
         shift
         test_target "${1:-}"
+        ;;
+    explain)
+        [[ "$#" -eq 2 ]] || {
+            echo 'usage: ./dev explain <path>' >&2
+            exit 2
+        }
+        "$PYTHON" "$ROOT/tools/dev-targets.py" explain "$2"
+        ;;
+    bookkeeping)
+        shift
+        bookkeeping_command "$@"
         ;;
     regen)
         case "${2:-}" in

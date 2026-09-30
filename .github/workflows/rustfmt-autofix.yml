@@ -201,8 +201,29 @@ jobs:
           /usr/bin/git -c core.hooksPath=/dev/null -c commit.gpgsign=false \
             commit -m "style: apply cargo fmt"
 
-          # Never force-push. If the PR advanced while rustfmt was running,
-          # this push fails instead of overwriting the newer head.
+          push_url="https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          set +e
           /usr/bin/git -c core.hooksPath=/dev/null -c credential.helper= push \
-            "https://x-access-token:${AUTOFIX_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "$push_url" \
             "HEAD:refs/heads/${HEAD_REF}"
+          push_status=$?
+          set -e
+          if [[ "$push_status" -eq 0 ]]; then
+            exit 0
+          fi
+
+          # Another autofixer or a human may have advanced the PR after this
+          # exact-head run began. That is a successful supersession, not an
+          # autofix failure; the synchronize event for the new head takes over.
+          set +e
+          remote_head=$(/usr/bin/git -c credential.helper= ls-remote "$push_url" "refs/heads/${HEAD_REF}" | awk '{print $1}')
+          lookup_status=$?
+          set -e
+          if [[ "$lookup_status" -eq 0 && -n "$remote_head" &&
+                "${remote_head,,}" != "${EXPECTED_HEAD,,}" ]]; then
+            echo "autofix superseded by newer PR head $remote_head"
+            exit 0
+          fi
+
+          echo "::error::autofix push failed while PR head is still $EXPECTED_HEAD" >&2
+          exit "$push_status"

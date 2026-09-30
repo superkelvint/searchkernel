@@ -81,13 +81,13 @@ final class Tensor
     /** @param array<string,mixed> $payload */
     private static function denseFromWire(string $typeSpec, array $payload): self
     {
-        if (array_keys($payload) !== ['values']
-            || !is_array($payload['values'])
-            || !array_is_list($payload['values'])
+        if ((array_keys($payload) !== [] && array_keys($payload) !== ['values'])
+            || (array_key_exists('values', $payload)
+                && (!is_array($payload['values']) || !array_is_list($payload['values'])))
         ) {
             throw new InvalidArgumentException('DenseTensorValues payload must contain only values');
         }
-        return self::dense($typeSpec, $payload['values']);
+        return self::dense($typeSpec, $payload['values'] ?? []);
     }
 
     /** @param array<string,mixed> $payload */

@@ -771,7 +771,7 @@ def main(argv: list[str] | None = None) -> int:
             print("Client capability reports are stale:", file=sys.stderr)
             for path in stale:
                 print(f"- {path}", file=sys.stderr)
-            print("Run: python3 tools/check-client-contracts.py --write", file=sys.stderr)
+            print("Run: ./dev bookkeeping sync", file=sys.stderr)
             return 1
         print("Client capability evidence PASS.")
         return 0

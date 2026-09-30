@@ -24,6 +24,8 @@ use SearchKernel\Query;
 use SearchKernel\SearchKernelException;
 use SearchKernel\Tensor;
 
+require __DIR__ . '/searchkernel_client_api_e2e_schema.php';
+
 $corpusPath = dirname(__DIR__, 3) . '/reference/client-real-e2e-parity/corpus.json';
 $e2eCorpus = json_decode((string) file_get_contents($corpusPath), true, flags: JSON_THROW_ON_ERROR);
 $vectorType = $e2eCorpus['schema']['fields']['embedding']['type'];
@@ -264,11 +266,14 @@ function writeRealEngineParity(array $scenarios): void
 }
 
 $url = getenv('SEARCHKERNEL_HTTP_URL') ?: 'http://127.0.0.1:50052';
+$target = getenv('SEARCHKERNEL_E2E_TARGET') ?: 'php-e2e';
 $phase = $argv[1] ?? 'initial';
 if (!in_array($phase, ['initial', 'reopen'], true)) {
     throw new InvalidArgumentException('expected initial or reopen phase');
 }
-$index = Index::connect($url);
+$index = $phase === 'initial'
+    ? Index::create($url, $target, searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE))
+    : Index::open($url, $target);
 
 if ($phase === 'reopen') {
     heading('30. REOPEN PERSISTED INDEX');
