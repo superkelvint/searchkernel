@@ -302,6 +302,8 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     facet_spec = intents["facets"]
     faceted = index.search(facet_spec["query"]).facet(facet_spec["field"], name=facet_spec["name"], limit=facet_spec["limit"], sort=facet_spec["sort"]).limit(facet_spec["page_limit"]).execute()
     root_spec = intents["root_aggregations"]
+    if root_spec["kind"] != "browse":
+        raise ValueError("root_aggregations requires browse intent")
     root = (
         index.browse().filter(root_spec["filter"])
         .aggregate(agg.count().as_(root_spec["aggregations"][0]["name"]))
@@ -376,6 +378,8 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     page = index.search(ordered_spec["query"]).sort(ordered_spec["sort"][0]["field"], ordered_spec["sort"][0]["direction"]).offset(ordered_spec["offset"]).limit(ordered_spec["limit"]).execute()
     filtered_facet = index.search(filtered_spec["query"]).filter(filtered_spec["filter"]).facet(filtered_spec["field"], limit=filtered_spec["limit"], sort=filtered_spec["sort"]).limit(filtered_spec["page_limit"]).execute()
     nested_spec = intents["nested_grouping"]
+    if nested_spec["kind"] != "browse":
+        raise ValueError("nested_grouping requires browse intent")
     nested = index.browse().filter(nested_spec["filter"]["source"], nested_spec["filter"]["bindings"]).group(
         Group.by(nested_spec["group_by"]).limit(nested_spec["limit"]).output(agg.count().as_(nested_spec["outputs"][0]["name"])).subgroup(
             Group.by(nested_spec["nested"]["group_by"]).limit(nested_spec["nested"]["limit"]).output(agg.count().as_(nested_spec["nested"]["outputs"][0]["name"]), agg.avg(nested_spec["nested"]["outputs"][1]["field"]).as_(nested_spec["nested"]["outputs"][1]["name"]))
@@ -394,13 +398,21 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     typed = index.query(shared_typed_query(intents["typed_query_contains"]["query"])).ranking("default").limit(full_spec["limit"]).execute()
     rank_input_spec = intents["rank_inputs"]
     rank_input_builder = index.search(rank_input_spec["query"]).ranking(rank_input_spec["ranking_profile"])
-    for key, value in rank_input_spec["inputs"].items(): rank_input_builder = rank_input_builder.input(key, value)
+    for key, value in rank_input_spec["inputs"].items():
+        input_type = rank_input_spec["input_types"][key]
+        if input_type == "float64":
+            value = float(value)
+        else:
+            raise ValueError(f"unsupported parity rank input type: {input_type}")
+        rank_input_builder = rank_input_builder.input(key, value)
     rank_input = rank_input_builder.limit(rank_input_spec["limit"]).execute()
     rank_property_spec = intents["rank_properties"]
     rank_property_builder = index.search(rank_property_spec["query"]).ranking(rank_property_spec["ranking_profile"])
     for key, value in rank_property_spec["rank_properties"].items(): rank_property_builder = rank_property_builder.rank_property(key, value)
     rank_property = rank_property_builder.limit(rank_property_spec["limit"]).execute()
     degraded_spec = intents["coverage_degradation"]
+    if degraded_spec["kind"] != "browse":
+        raise ValueError("coverage_degradation requires browse intent")
     degraded = index.browse().filter(degraded_spec["filter"]["source"], degraded_spec["filter"]["bindings"]).sort(degraded_spec["sort"][0]["field"], degraded_spec["sort"][0]["direction"])
     for key, value in degraded_spec["rank_properties"].items(): degraded = degraded.rank_property(key, value)
     degraded = degraded.limit(degraded_spec["limit"]).execute()
