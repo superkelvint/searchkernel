@@ -951,6 +951,11 @@
       ],
       "malformed.response_payload_union": [
         "unknown-response-payload-union"
+      ],
+      "malformed.non_finite_tensor_cell": [
+        "tensor-dense-nan",
+        "tensor-sparse-positive-infinity",
+        "tensor-mixed-negative-infinity"
       ]
     }
   },

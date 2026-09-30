@@ -187,6 +187,11 @@ function decodeAddress(entries: readonly TensorAddressEntryT[]): DecodedTensorAd
   });
 }
 
+function finiteTensorCell(value: number): number {
+  if (!Number.isFinite(value)) throw new ValueDecodeError("tensor cells must be finite");
+  return value;
+}
+
 /** Returns a union payload only when it matches the discriminator exactly. */
 function requirePayload<T>(
   input: ValueT,
@@ -270,7 +275,12 @@ export function fromValue(input: ValueT | null): unknown {
           if (!(tensor.payload instanceof DenseTensorValuesT)) {
             throw new ValueDecodeError("dense tensor has a missing or mismatched payload");
           }
-          return { $searchkernel_tensor: { typeSpec, dense: [...tensor.payload.values] } } satisfies DecodedTensor;
+          return {
+            $searchkernel_tensor: {
+              typeSpec,
+              dense: tensor.payload.values.map(finiteTensorCell),
+            },
+          } satisfies DecodedTensor;
         }
         case TensorPayloadKind.SparseTensorCells: {
           if (!(tensor.payload instanceof SparseTensorCellsT)) {
@@ -281,7 +291,7 @@ export function fromValue(input: ValueT | null): unknown {
               typeSpec,
               sparse: tensor.payload.cells.map((cell) => ({
                 address: decodeAddress(cell.address),
-                value: cell.value,
+                value: finiteTensorCell(cell.value),
               })),
             },
           } satisfies DecodedTensor;
@@ -295,7 +305,7 @@ export function fromValue(input: ValueT | null): unknown {
               typeSpec,
               mixed: tensor.payload.blocks.map((block) => ({
                 address: decodeAddress(block.address),
-                values: [...block.values],
+                values: block.values.map(finiteTensorCell),
               })),
             },
           } satisfies DecodedTensor;

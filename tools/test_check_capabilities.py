@@ -47,6 +47,17 @@ class CapabilityLedgerTests(unittest.TestCase):
         self.assertIn("CLIENT_CAPABILITIES.md", document)
         self.assertNotIn("| TypeScript |", document)
 
+    def test_query_term_evidence_uses_split_adapter_query_tests(self) -> None:
+        capability = next(
+            capability
+            for capability in self.ledger["capabilities"]
+            if capability["id"] == "query.term"
+        )
+        self.assertIn(
+            "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs",
+            capability["verified_by"],
+        )
+
     def test_generated_documents_include_structured_facade_state(self) -> None:
         documents = MODULE.generated_documents(self.ledger)
         self.assertIn(
