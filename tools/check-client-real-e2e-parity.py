@@ -33,7 +33,21 @@ REQUIRED_TYPED_SCENARIOS = (
     "typed_query_weighted_set", "typed_query_dot_product",
     "typed_query_same_element", "typed_query_geo_location", "typed_query_geo_box",
 )
-REQUIRED_SHARED_INTENT_SCENARIOS = tuple(json.loads(CORPUS.read_text())["scenarios"])
+REQUIRED_V1_SCENARIOS = (
+    "document_crud", "full_text_search", "stemming", "text_filter_binding", "repeated_filters",
+    "boolean_filter_grammar", "sorting_projection", "pagination", "builder_misuse", "facets",
+    "filtered_facets", "root_aggregations", "grouping_aggregations", "nested_grouping",
+    "group_alias", "group_keep_filter",
+    "typed_query_contains", "typed_query_phrase", "typed_query_near", "typed_query_ordered_near",
+    "typed_query_range", "typed_query_boolean", "typed_query_in", "typed_query_equals",
+    "typed_query_fuzzy", "typed_query_weak_and", "typed_query_wand", "typed_query_weighted_set",
+    "typed_query_dot_product", "typed_query_same_element", "typed_query_geo_location",
+    "typed_query_geo_box", "rank_inputs", "rank_properties", "two_phase_reranking",
+    "tensor_readback", "nearest_neighbor", "hybrid_text_vector", "coverage_degradation", "yql",
+    "structured_filter_error", "text_filter_syntax_error", "patch", "advanced_update", "delete",
+    "upsert_replacement", "reopen_persistence",
+)
+REQUIRED_SHARED_INTENT_SCENARIOS = REQUIRED_V1_SCENARIOS
 
 
 def compare(
