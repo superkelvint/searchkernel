@@ -26,10 +26,11 @@ The classifications are the roadmap vocabulary:
 1. `./dev` is the public repository front door, but current `main` does **not**
    yet implement the complete M1 vocabulary. `build`, `ci`, `test --list`,
    `test --remote`, `verify --remote`, and `release-check` are absent.
-2. Test targets are hard-coded in `dev`; semantic verifier targets are hard-coded
-   separately in `reference/vespa/verify-through.sh`. `verification/dag.toml`
-   owns semantic verification relationships, but it is not the single public
-   test/verifier target registry required by M1.
+2. Test targets were hard-coded in `dev`; semantic verifier targets were
+   hard-coded separately in `reference/vespa/verify-through.sh`. A separate
+   semantic verification policy also existed, but it was not the single public
+   test/verifier target registry required by M1. That policy was later retired
+   when `build/targets.json` became the canonical registry.
 3. The three independently versioned Docker image axes are real and active:
    toolchain, Vespa/native, and the thin Search Kernel leaf. Their tags are
    logical coordinates; immutable execution identity is the resolved repository
@@ -86,11 +87,10 @@ The classifications are the roadmap vocabulary:
 | --- | --- | --- |
 | `dev` | **CANONICAL AUTHORITY** | Public repository command router and current test/lint command vocabulary. |
 | `BUILDING.md` | **CANONICAL AUTHORITY** | Supported build/toolchain/environment/recovery contract. |
-| `dev:test_target()` | **TEMPORARY COMPATIBILITY** | Hard-coded test scopes: `ir`, `rust-api`, `python`, `typescript`, `php`, `ruby`; no `test --list` yet. |
-| `reference/vespa/verify-through.sh` | **TEMPORARY COMPATIBILITY** | Hard-coded semantic verifier/milestone vocabulary plus legacy aliases consumed by `./dev verify`. |
+| `build/targets.json` | **CANONICAL AUTHORITY (post-snapshot)** | Current finite test/verifier/change-area registry introduced by build-system convergence. |
+| `dev:test_target()` | **TEMPORARY COMPATIBILITY** | Historical hard-coded test scopes before registry convergence. |
+| `reference/vespa/verify-through.sh` | **TEMPORARY COMPATIBILITY** | Historical semantic verifier/milestone vocabulary plus legacy aliases consumed by `./dev verify`. |
 | `reference/vespa/verifiers/**/verify.sh` | **CALLER** | Semantic lane wrappers behind `verify-through.sh`. |
-| `verification/dag.toml` | **CANONICAL AUTHORITY** | Semantic verification ownership/dependency graph. It does not currently replace the public target lists above. |
-| `verification/dag.py` and `verification/test_dag.py` | **CALLER** | Load, validate, and project the semantic verification DAG where invoked. |
 | `reference/vespa/m*/verify-m*.sh`, `reference/vespa/phase*/verify-*.sh`, `reference/vespa/searchreply/verify-searchreply.sh` | **TEMPORARY COMPATIBILITY** | Historical milestone/current-verifier orchestration retained behind semantic names during convergence. |
 | `dev:universe()` | **CALLER** | Cumulative repository qualification; currently invokes canonical `./dev` lanes plus remaining direct tooling. |
 
@@ -437,13 +437,11 @@ Confirmed missing workflow names still consumed as if present (the list excludes
 
 | Missing workflow | Tracked executable/test dependents |
 | --- | --- |
-| `abi-surface.yml` | `.github/ci/test_exact_head.py`; `.github/ci/test_native_verifier_runner.py`; `tools/test-native-build-hardening.sh`; `tools/test-native-environment-fingerprint.sh` |
-| `behavioral-verification.yml` | `.github/ci/behavioral_lanes_required.py`; `.github/ci/check-ci-evidence-ownership.py`; `.github/ci/native_verifier_required.py`; `.github/ci/test_behavioral_lanes_required.py`; `.github/ci/test_coverage_verifier_required.py`; `.github/ci/test_exact_head.py`; `.github/ci/test_native_verifier_required.py`; `.github/ci/test_tooling_invariant_required.py` |
-| `client-capabilities-autofix-apply.yml` | `.github/ci/test_exact_head.py` |
-| `client-capabilities-autofix-prepare.yml` | `.github/ci/test_exact_head.py` |
-| `client-capabilities.yml` | `.github/ci/test_exact_head.py`; `tools/test_package_consumer_release.py` |
+| `abi-surface.yml` | `.github/ci/test_native_verifier_runner.py`; `tools/test-native-build-hardening.sh`; `tools/test-native-environment-fingerprint.sh` |
+| `behavioral-verification.yml` | `.github/ci/behavioral_lanes_required.py`; `.github/ci/check-ci-evidence-ownership.py`; `.github/ci/native_verifier_required.py`; `.github/ci/test_behavioral_lanes_required.py`; `.github/ci/test_coverage_verifier_required.py`; `.github/ci/test_native_verifier_required.py`; `.github/ci/test_tooling_invariant_required.py` |
+| `client-capabilities.yml` | `tools/test_package_consumer_release.py` |
 | `issue-queue-reconcile.yml` | `tools/test_check_issue_queue.py` |
-| `native-verifier-runner.yml` | `.github/ci/native_verifier_required.py`; `.github/ci/test_exact_head.py`; `.github/ci/test_native_verifier_required.py` |
+| `native-verifier-runner.yml` | `.github/ci/native_verifier_required.py`; `.github/ci/test_native_verifier_required.py` |
 | `nightly.yml` | `.github/ci/coverage_verifier_required.py`; `.github/ci/test_coverage_verifier_required.py` |
 | `persistence-compatibility.yml` | `.github/ci/test_ci_image_runner_isolation.py`; `tools/check-release-persistence-contract.py` |
 
