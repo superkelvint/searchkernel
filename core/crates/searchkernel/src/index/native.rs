@@ -367,15 +367,7 @@ impl Index {
         let root = path.as_ref();
         let _lifecycle_lock = LifecycleLock::acquire(root).map_err(|error| {
             if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::search(
-                    crate::error::ErrorCode::Conflict,
-                    format!("index storage is in use: {}", root.display()),
-                )
-                .with_detail(
-                    "index_in_use",
-                    None::<String>,
-                    "index storage is owned by another active runtime",
-                )
+                Error::from_ir(searchkernel_ir::index_in_use_error())
             } else {
                 error
             }

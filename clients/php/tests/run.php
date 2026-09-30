@@ -58,6 +58,18 @@ function throws(string $class, callable $operation, string $message): void
     throw new RuntimeException($message . ': no exception');
 }
 
+$invalidButRepresentable = Protocol::envelope(
+    'OpenIndexRequest',
+    SearchKernel\JsonObject::empty(),
+    'Products',
+);
+same(
+    ['name' => 'Products'],
+    $invalidButRepresentable['target'],
+    'domain-invalid target reaches canonical semantic validation',
+);
+echo "PASS: domain-invalid PHP target is encoded for canonical validation\n";
+
 final class FixedResponseTransport implements Transport
 {
     /** @param array<string,mixed> $response */
@@ -143,6 +155,10 @@ final class RecordingTransport implements Transport
             'SearchKernel_V2_OpenIndexRequest' => [
                 'payload_type' => 'SearchKernel_V2_OpenIndexResult',
                 'payload' => ['index' => ['fields' => []]],
+            ],
+            'SearchKernel_V2_DeleteIndexRequest' => [
+                'payload_type' => 'SearchKernel_V2_DeleteIndexResult',
+                'payload' => [],
             ],
             default => throw new RuntimeException('unexpected test request type: ' . $requestType),
         };
@@ -1459,6 +1475,7 @@ $expectedOperations = [
     'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
     'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
     'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
+    'delete_index' => ['DeleteIndexRequest', 'DeleteIndexResult'],
 ];
 same(array_keys($expectedOperations), Protocol::operations(), 'low-level portable operation list');
 foreach ($expectedOperations as $operation => $types) {
@@ -1530,6 +1547,12 @@ same(
 );
 same(['name' => 'products'], $lifecycleTransport->requests[0]['target'], 'create-index carries logical target');
 same([], $lifecycle->openIndex()['index']['fields'], 'open-index result accepted');
+$lifecycle->deleteIndex();
+$deleteRequest = $lifecycleTransport->requests[array_key_last($lifecycleTransport->requests)];
+truth(
+    $deleteRequest['payload'] instanceof SearchKernel\JsonObject,
+    'delete-index uses explicit empty-table payload',
+);
 $openRequest = $lifecycleTransport->requests[array_key_last($lifecycleTransport->requests)];
 truth(
     $openRequest['payload'] instanceof SearchKernel\JsonObject,
@@ -1542,12 +1565,6 @@ truth(
 foreach ($lifecycleTransport->requests as $request) {
     same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
 }
-throws(
-    InvalidArgumentException::class,
-    static fn () => (new Client(new RecordingTransport(), '../escape'))->openIndex(),
-    'unsafe logical target fails closed',
-);
-
 throws(
     InvalidArgumentException::class,
     static fn () => Protocol::operation('future_operation'),

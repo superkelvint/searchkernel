@@ -63,4 +63,6 @@ final class Client
     public function createIndex(array $payload): array { return $this->execute('create_index', $payload); }
     /** @return array<string,mixed> */
     public function openIndex(): array { return $this->execute('open_index', JsonObject::empty()); }
+    /** @return array<string,mixed> */
+    public function deleteIndex(): array { return $this->execute('delete_index', JsonObject::empty()); }
 }
