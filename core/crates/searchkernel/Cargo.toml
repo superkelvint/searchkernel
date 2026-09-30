@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = []
+default = ["native"]
 native = ["dep:libc", "dep:searchkernel-vespa-bindings", "searchkernel-ir-adapter/native"]
 remote = [
     "dep:searchkernel-protocol",
