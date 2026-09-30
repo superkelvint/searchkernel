@@ -140,10 +140,26 @@ root_type SearchResult;
         errors = MODULE.verify_schema(closure, self.manifest(), wire)
         self.assertTrue(any("TotalHitsRelation wire members mismatch" in error for error in errors))
 
+    def test_scalar_default_change_fails(self) -> None:
+        closure = MODULE.result_closure(MODULE.BFBS.read_bytes())
+        wire = copy.deepcopy(MODULE.result_wire_schema(MODULE.BFBS.read_bytes()))
+        members = wire["TotalHits"]["wire_members"]
+        members[members.index("value:ulong=0")] = "value:ulong=7"
+        errors = MODULE.verify_schema(closure, self.manifest(), wire)
+        self.assertTrue(any("TotalHits wire members mismatch" in error for error in errors))
+
+    def test_union_numeric_identity_change_fails(self) -> None:
+        closure = MODULE.result_closure(MODULE.BFBS.read_bytes())
+        wire = copy.deepcopy(MODULE.result_wire_schema(MODULE.BFBS.read_bytes()))
+        members = wire["ResultNodeKind"]["wire_members"]
+        members[members.index("ResultGroup=2")] = "ResultGroup=9"
+        errors = MODULE.verify_schema(closure, self.manifest(), wire)
+        self.assertTrue(any("ResultNodeKind wire members mismatch" in error for error in errors))
+
     def test_union_reordering_fails(self) -> None:
         closure = MODULE.result_closure(MODULE.BFBS.read_bytes())
         wire = copy.deepcopy(MODULE.result_wire_schema(MODULE.BFBS.read_bytes()))
-        wire["ResultNodeKind"]["wire_members"] = ["ResultGroup", "Hit"]
+        wire["ResultNodeKind"]["wire_members"] = ["ResultGroup=2", "Hit=1"]
         errors = MODULE.verify_schema(closure, self.manifest(), wire)
         self.assertTrue(any("ResultNodeKind wire members mismatch" in error for error in errors))
 
