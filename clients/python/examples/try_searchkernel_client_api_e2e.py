@@ -338,6 +338,11 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         raise AssertionError("unknown field filter unexpectedly succeeded")
 
     document = index.get(intents["document_crud"]["document_id"])
+    tensor_spec = intents["tensor_readback"]
+    tensor_document = index.get(tensor_spec["document_id"])
+    if tensor_document is None:
+        raise RuntimeError("tensor readback document is missing")
+    tensor_value = tensor_document[tensor_spec["field"]]
     full_spec = intents["full_text_search"]
     full_text = index.search(full_spec["query"]).limit(full_spec["limit"]).execute()
     stemming_spec = intents["stemming"]
@@ -459,7 +464,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         **typed_observations,
         "rank_inputs": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_input.hits],
         "rank_properties": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_property.hits],
-        "tensor_readback": document["embedding"]["$searchkernel_tensor"]["dense"],
+        "tensor_readback": tensor_value["$searchkernel_tensor"]["dense"],
         "nearest_neighbor": {"observation": {"intent": nearest_intent, "ids": [hit.id for hit in nearest.hits], "scores": [hit.relevance for hit in nearest.hits]}, "capabilities": {}},
         "hybrid_text_vector": {"observation": {"intent": hybrid_intent, "ids": [hit.id for hit in hybrid.hits], "top_score": hybrid.hits[0].score}, "capabilities": {}},
         "hybrid": {"top_id": hybrid.hits[0].id, "has_bag": any(hit.id == "bag-1" for hit in hybrid.hits)},
