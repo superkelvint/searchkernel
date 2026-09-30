@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "authority": "SearchResult transitive closure from api/searchkernel.fbs; every member is pinned and exercised against official BFBS JSON projections.",
+  "authority": "SearchResult transitive closure reflected from the generated BFBS for api/searchkernel.fbs; every member is pinned and exercised against official BFBS JSON projections.",
   "schema": {
     "SearchResult": {
       "kind": "table",
@@ -12,20 +12,27 @@
         "timing",
         "total_hits",
         "trace"
-      ]
-    },
-    "ValueEntry": {
-      "kind": "table",
-      "members": [
-        "key",
-        "value"
-      ]
+      ],
+      "wire_members": [
+        "root:ResultNode=null(optional)",
+        "total_hits:TotalHits=null(optional)",
+        "coverage:Coverage=null(optional)",
+        "timing:SearchTiming=null(optional)",
+        "errors:vector<SearchResultError>=null(optional)",
+        "trace:Value=null(optional)",
+        "metadata:vector<ValueEntry>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "Value": {
       "kind": "table",
       "members": [
         "kind"
-      ]
+      ],
+      "wire_members": [
+        "kind:ValueKind=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "ValueKind": {
       "kind": "union",
@@ -41,14 +48,33 @@
         "UInt64Value",
         "ValueList",
         "ValueObject"
-      ]
+      ],
+      "wire_members": [
+        "NullValueValue=1",
+        "BoolValue=2",
+        "Int64Value=3",
+        "UInt64Value=4",
+        "Float64Value=5",
+        "NonFiniteFloatValue=6",
+        "StringValue=7",
+        "BytesValue=8",
+        "ValueList=9",
+        "ValueObject=10",
+        "TensorValue=11"
+      ],
+      "wire_header": "union"
     },
     "TensorValue": {
       "kind": "table",
       "members": [
         "payload",
         "type_spec"
-      ]
+      ],
+      "wire_members": [
+        "type_spec:string=null(optional)",
+        "payload:TensorPayloadKind=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "TensorPayloadKind": {
       "kind": "union",
@@ -56,76 +82,141 @@
         "DenseTensorValues",
         "MixedTensorBlocks",
         "SparseTensorCells"
-      ]
+      ],
+      "wire_members": [
+        "DenseTensorValues=1",
+        "SparseTensorCells=2",
+        "MixedTensorBlocks=3"
+      ],
+      "wire_header": "union"
     },
     "MixedTensorBlocks": {
       "kind": "table",
       "members": [
         "blocks"
-      ]
+      ],
+      "wire_members": [
+        "blocks:vector<TensorBlock>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "TensorBlock": {
       "kind": "table",
       "members": [
         "address",
         "values"
-      ]
+      ],
+      "wire_members": [
+        "address:vector<TensorAddressEntry>=null(optional)",
+        "values:vector<double>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "TensorAddressEntry": {
       "kind": "table",
       "members": [
         "dimension",
         "label"
-      ]
+      ],
+      "wire_members": [
+        "dimension:string(key)(required)",
+        "label:string=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "SparseTensorCells": {
       "kind": "table",
       "members": [
         "cells"
-      ]
+      ],
+      "wire_members": [
+        "cells:vector<TensorCell>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "TensorCell": {
       "kind": "table",
       "members": [
         "address",
         "value"
-      ]
+      ],
+      "wire_members": [
+        "address:vector<TensorAddressEntry>=null(optional)",
+        "value:double=0.0"
+      ],
+      "wire_header": "table"
     },
     "DenseTensorValues": {
       "kind": "table",
       "members": [
         "values"
-      ]
+      ],
+      "wire_members": [
+        "values:vector<double>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "ValueObject": {
       "kind": "table",
       "members": [
         "fields"
-      ]
+      ],
+      "wire_members": [
+        "fields:vector<ValueEntry>=null(optional)"
+      ],
+      "wire_header": "table"
+    },
+    "ValueEntry": {
+      "kind": "table",
+      "members": [
+        "key",
+        "value"
+      ],
+      "wire_members": [
+        "key:string(key)(required)",
+        "value:Value=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "ValueList": {
       "kind": "table",
       "members": [
         "values"
-      ]
+      ],
+      "wire_members": [
+        "values:vector<Value>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "BytesValue": {
       "kind": "table",
       "members": [
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:vector<ubyte>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "StringValue": {
       "kind": "table",
       "members": [
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:string=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "NonFiniteFloatValue": {
       "kind": "table",
       "members": [
         "kind"
-      ]
+      ],
+      "wire_members": [
+        "kind:NonFiniteFloatKind=Unspecified"
+      ],
+      "wire_header": "table"
     },
     "NonFiniteFloatKind": {
       "kind": "enum",
@@ -134,120 +225,88 @@
         "NegativeInfinity",
         "PositiveInfinity",
         "Unspecified"
-      ]
+      ],
+      "wire_members": [
+        "Unspecified=0",
+        "NaN=1",
+        "PositiveInfinity=2",
+        "NegativeInfinity=3"
+      ],
+      "wire_header": "enum:ubyte"
     },
     "Float64Value": {
       "kind": "table",
       "members": [
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:double=0.0"
+      ],
+      "wire_header": "table"
     },
     "UInt64Value": {
       "kind": "table",
       "members": [
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:ulong=0"
+      ],
+      "wire_header": "table"
     },
     "Int64Value": {
       "kind": "table",
       "members": [
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:long=0"
+      ],
+      "wire_header": "table"
     },
     "BoolValue": {
       "kind": "table",
       "members": [
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:bool=false"
+      ],
+      "wire_header": "table"
     },
     "NullValueValue": {
       "kind": "table",
       "members": [
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:NullValue=Unspecified"
+      ],
+      "wire_header": "table"
     },
     "NullValue": {
       "kind": "enum",
       "members": [
         "Null",
         "Unspecified"
-      ]
-    },
-    "SearchResultError": {
-      "kind": "table",
-      "members": [
-        "code",
-        "message",
-        "metadata",
-        "source",
-        "stack_trace",
-        "summary",
-        "transient"
-      ]
-    },
-    "OptionalBool": {
-      "kind": "struct",
-      "members": [
-        "value"
-      ]
-    },
-    "SearchTiming": {
-      "kind": "table",
-      "members": [
-        "metadata",
-        "query_time_seconds",
-        "search_time_seconds",
-        "summary_fetch_time_seconds"
-      ]
-    },
-    "OptionalDouble": {
-      "kind": "struct",
-      "members": [
-        "value"
-      ]
-    },
-    "Coverage": {
-      "kind": "table",
-      "members": [
-        "coverage_percent",
-        "degraded",
-        "documents",
-        "full",
-        "metadata",
-        "nodes",
-        "results",
-        "results_full"
-      ]
-    },
-    "CoverageDegraded": {
-      "kind": "table",
-      "members": [
-        "adaptive_timeout",
-        "ann_timeout",
-        "match_phase",
-        "metadata",
-        "non_ideal_state",
-        "timeout"
-      ]
-    },
-    "OptionalUInt64": {
-      "kind": "struct",
-      "members": [
-        "value"
-      ]
-    },
-    "OptionalUInt32": {
-      "kind": "struct",
-      "members": [
-        "value"
-      ]
+      ],
+      "wire_members": [
+        "Unspecified=0",
+        "Null=1"
+      ],
+      "wire_header": "enum:ubyte"
     },
     "TotalHits": {
       "kind": "table",
       "members": [
         "relation",
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:ulong=0",
+        "relation:TotalHitsRelation=Unspecified"
+      ],
+      "wire_header": "table"
     },
     "TotalHitsRelation": {
       "kind": "enum",
@@ -257,20 +316,63 @@
         "LowerBound",
         "Unknown",
         "Unspecified"
-      ]
+      ],
+      "wire_members": [
+        "Unspecified=0",
+        "Exact=1",
+        "LowerBound=2",
+        "Approximate=3",
+        "Unknown=4"
+      ],
+      "wire_header": "enum:ubyte"
+    },
+    "SearchTiming": {
+      "kind": "table",
+      "members": [
+        "metadata",
+        "query_time_seconds",
+        "search_time_seconds",
+        "summary_fetch_time_seconds"
+      ],
+      "wire_members": [
+        "query_time_seconds:OptionalDouble=null(optional)",
+        "search_time_seconds:OptionalDouble=null(optional)",
+        "summary_fetch_time_seconds:OptionalDouble=null(optional)",
+        "metadata:vector<ValueEntry>=null(optional)"
+      ],
+      "wire_header": "table"
+    },
+    "OptionalDouble": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ],
+      "wire_members": [
+        "value:double=0.0(offset=0,padding=0)"
+      ],
+      "wire_header": "struct:size=8,align=8"
     },
     "ResultNode": {
       "kind": "table",
       "members": [
         "node"
-      ]
+      ],
+      "wire_members": [
+        "node:ResultNodeKind=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "ResultNodeKind": {
       "kind": "union",
       "members": [
         "Hit",
         "ResultGroup"
-      ]
+      ],
+      "wire_members": [
+        "Hit=1",
+        "ResultGroup=2"
+      ],
+      "wire_header": "union"
     },
     "ResultGroup": {
       "kind": "table",
@@ -286,20 +388,31 @@
         "source",
         "types",
         "value"
-      ]
-    },
-    "ResultLimits": {
-      "kind": "table",
-      "members": [
-        "from",
-        "to"
-      ]
+      ],
+      "wire_members": [
+        "id:string=null(optional)",
+        "label:string=null(optional)",
+        "value:Value=null(optional)",
+        "fields:vector<ValueEntry>=null(optional)",
+        "children:vector<ResultNode>=null(optional)",
+        "continuations:vector<StringEntry>=null(optional)",
+        "source:string=null(optional)",
+        "types:vector<string>=null(optional)",
+        "relevance:Relevance=null(optional)",
+        "limits:ResultLimits=null(optional)",
+        "metadata:vector<ValueEntry>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "Relevance": {
       "kind": "table",
       "members": [
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:RelevanceKind=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "RelevanceKind": {
       "kind": "union",
@@ -307,28 +420,59 @@
         "FiniteRelevance",
         "NegativeInfinityRelevance",
         "PositiveInfinityRelevance"
-      ]
+      ],
+      "wire_members": [
+        "FiniteRelevance=1",
+        "NegativeInfinityRelevance=2",
+        "PositiveInfinityRelevance=3"
+      ],
+      "wire_header": "union"
     },
     "PositiveInfinityRelevance": {
       "kind": "table",
-      "members": []
+      "members": [],
+      "wire_members": [],
+      "wire_header": "table"
     },
     "NegativeInfinityRelevance": {
       "kind": "table",
-      "members": []
+      "members": [],
+      "wire_members": [],
+      "wire_header": "table"
     },
     "FiniteRelevance": {
       "kind": "table",
       "members": [
         "value"
-      ]
+      ],
+      "wire_members": [
+        "value:double=0.0"
+      ],
+      "wire_header": "table"
+    },
+    "ResultLimits": {
+      "kind": "table",
+      "members": [
+        "from",
+        "to"
+      ],
+      "wire_members": [
+        "from:Value=null(optional)",
+        "to:Value=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "StringEntry": {
       "kind": "table",
       "members": [
         "key",
         "value"
-      ]
+      ],
+      "wire_members": [
+        "key:string(key)(required)",
+        "value:string=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "Hit": {
       "kind": "table",
@@ -343,28 +487,152 @@
         "source",
         "summary_features",
         "types"
-      ]
+      ],
+      "wire_members": [
+        "id:string=null(optional)",
+        "relevance:Relevance=null(optional)",
+        "fields:vector<ValueEntry>=null(optional)",
+        "highlights:vector<HighlightResult>=null(optional)",
+        "source:string=null(optional)",
+        "types:vector<string>=null(optional)",
+        "match_features:vector<ValueEntry>=null(optional)",
+        "summary_features:vector<ValueEntry>=null(optional)",
+        "rank_features:vector<ValueEntry>=null(optional)",
+        "sort_values:vector<Value>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "HighlightResult": {
       "kind": "table",
       "members": [
         "field",
         "fragments"
-      ]
+      ],
+      "wire_members": [
+        "field:string=null(optional)",
+        "fragments:vector<HighlightFragment>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "HighlightFragment": {
       "kind": "table",
       "members": [
         "matches",
         "text"
-      ]
+      ],
+      "wire_members": [
+        "text:string=null(optional)",
+        "matches:vector<HighlightSpan>=null(optional)"
+      ],
+      "wire_header": "table"
     },
     "HighlightSpan": {
       "kind": "table",
       "members": [
         "end_byte",
         "start_byte"
-      ]
+      ],
+      "wire_members": [
+        "start_byte:uint=0",
+        "end_byte:uint=0"
+      ],
+      "wire_header": "table"
+    },
+    "SearchResultError": {
+      "kind": "table",
+      "members": [
+        "code",
+        "message",
+        "metadata",
+        "source",
+        "stack_trace",
+        "summary",
+        "transient"
+      ],
+      "wire_members": [
+        "code:long=0",
+        "summary:string=null(optional)",
+        "message:string=null(optional)",
+        "source:string=null(optional)",
+        "stack_trace:string=null(optional)",
+        "transient:OptionalBool=null(optional)",
+        "metadata:vector<ValueEntry>=null(optional)"
+      ],
+      "wire_header": "table"
+    },
+    "OptionalBool": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ],
+      "wire_members": [
+        "value:bool=false(offset=0,padding=0)"
+      ],
+      "wire_header": "struct:size=1,align=1"
+    },
+    "Coverage": {
+      "kind": "table",
+      "members": [
+        "coverage_percent",
+        "degraded",
+        "documents",
+        "full",
+        "metadata",
+        "nodes",
+        "results",
+        "results_full"
+      ],
+      "wire_members": [
+        "coverage_percent:OptionalDouble=null(optional)",
+        "documents:OptionalUInt64=null(optional)",
+        "full:OptionalBool=null(optional)",
+        "nodes:OptionalUInt32=null(optional)",
+        "results:OptionalUInt64=null(optional)",
+        "results_full:OptionalUInt64=null(optional)",
+        "degraded:CoverageDegraded=null(optional)",
+        "metadata:vector<ValueEntry>=null(optional)"
+      ],
+      "wire_header": "table"
+    },
+    "OptionalUInt64": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ],
+      "wire_members": [
+        "value:ulong=0(offset=0,padding=0)"
+      ],
+      "wire_header": "struct:size=8,align=8"
+    },
+    "OptionalUInt32": {
+      "kind": "struct",
+      "members": [
+        "value"
+      ],
+      "wire_members": [
+        "value:uint=0(offset=0,padding=0)"
+      ],
+      "wire_header": "struct:size=4,align=4"
+    },
+    "CoverageDegraded": {
+      "kind": "table",
+      "members": [
+        "adaptive_timeout",
+        "ann_timeout",
+        "match_phase",
+        "metadata",
+        "non_ideal_state",
+        "timeout"
+      ],
+      "wire_members": [
+        "match_phase:OptionalBool=null(optional)",
+        "timeout:OptionalBool=null(optional)",
+        "adaptive_timeout:OptionalBool=null(optional)",
+        "ann_timeout:OptionalBool=null(optional)",
+        "non_ideal_state:OptionalBool=null(optional)",
+        "metadata:vector<ValueEntry>=null(optional)"
+      ],
+      "wire_header": "table"
     }
   },
   "partitions": {
@@ -899,8 +1167,6 @@
         "value-variants"
       ],
       "maps.empty_populated_and_multiple_keys": [
-        "empty",
-        "canonical",
         "value-variants"
       ],
       "maps.duplicate_key_rejection": [
@@ -951,6 +1217,45 @@
       ],
       "malformed.response_payload_union": [
         "unknown-response-payload-union"
+      ],
+      "malformed.missing_search_result_root": [
+        "missing-search-result-root"
+      ],
+      "malformed.missing_search_result_total_hits": [
+        "missing-search-result-total-hits"
+      ],
+      "malformed.missing_search_result_root_and_total_hits": [
+        "missing-search-result-root-and-total-hits"
+      ],
+      "malformed.missing_continuation_key": [
+        "missing-continuation-key"
+      ],
+      "malformed.missing_continuation_value": [
+        "missing-continuation-value"
+      ],
+      "malformed.missing_sparse_address_dimension": [
+        "missing-sparse-address-dimension"
+      ],
+      "malformed.missing_sparse_address_label": [
+        "missing-sparse-address-label"
+      ],
+      "malformed.missing_mixed_address_dimension": [
+        "missing-mixed-address-dimension"
+      ],
+      "malformed.missing_mixed_address_label": [
+        "missing-mixed-address-label"
+      ],
+      "malformed.missing_value_entry_value": [
+        "missing-value-entry-value"
+      ],
+      "malformed.non_finite_dense_tensor_cell": [
+        "non-finite-dense-tensor-cell"
+      ],
+      "malformed.non_finite_sparse_tensor_cell": [
+        "non-finite-sparse-tensor-cell"
+      ],
+      "malformed.non_finite_mixed_tensor_cell": [
+        "non-finite-mixed-tensor-cell"
       ],
       "malformed.non_finite_tensor_cell": [
         "tensor-dense-nan",

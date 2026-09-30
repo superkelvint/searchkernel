@@ -35,10 +35,8 @@ expected_rows=$(wc -l < "$frozen/expected.tsv")
 mkdir -p "$build"
 rm -f "$build/kstem-rust" "$build/actual-rust.tsv"
 
-# Compile only the actual checked-in Rust KStem implementation. This deliberately
-# bypasses Cargo so KStem parity does not require the native Vespa SDK.
-rustc --edition=2021 -O "$here/rust/kstem-rust.rs" -o "$build/kstem-rust"
-"$build/kstem-rust" < "$frozen/corpus.txt" > "$build/actual-rust.tsv"
+# Compile the current implementation through its owning workspace package.
+cargo run --quiet --release -p searchkernel-vespa-engine --example searchkernel-kstem-driver < "$frozen/corpus.txt" > "$build/actual-rust.tsv"
 python3 "$here/tools/compare.py" "$frozen/expected.tsv" "$build/actual-rust.tsv"
 
 # Optional stronger check: prove the frozen golden still equals the currently

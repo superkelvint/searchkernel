@@ -84,7 +84,7 @@ rg -n 'distance_threshold' "$ROOT/core/native/vespa/abi.cc" >/dev/null || fail '
 # Acceptance drivers may not invoke the oracle or fake backend.
 if rg -n --glob '*.rs' --glob '*.toml' \
   'RecordingBackend|ScriptedBackend|searchkernel-testkit|searchkernel_testkit|Command::new|std::process::Command' \
-  "$M14/rust-driver"; then
+  "$ROOT/core/crates/searchkernel/examples/searchkernel-m14-driver.rs" "$ROOT/core/crates/searchkernel/examples/searchkernel-m14-adapter-driver.rs" "$ROOT/core/crates/searchkernel/examples/searchkernel-m14-error.rs" "$ROOT/core/crates/searchkernel/examples/support/m14.rs"; then
   fail 'M14 Rust driver uses an alternate backend/oracle path'
 fi
 

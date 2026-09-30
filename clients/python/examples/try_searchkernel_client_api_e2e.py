@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from math import isclose, isfinite
+import json
+import os
+import re
 from pathlib import Path
 import atexit
 import shutil
 import tempfile
+
+from client_real_e2e_parity_helpers import aggregation_expression, aggregation_output
 
 from searchkernel import (
     Index,
@@ -13,6 +18,9 @@ from searchkernel import (
     Integer,
     Float,
     Boolean,
+    PositionField,
+    StructField,
+    ArrayField,
     RankProfile,
     Tensor,
     TensorField,
@@ -29,7 +37,86 @@ from searchkernel import (
 
 WORKSPACE_PATH = Path(tempfile.mkdtemp(prefix="searchkernel-client-api-e2e-"))
 INDEX_PATH = WORKSPACE_PATH / "showcase-index"
-VECTOR_TYPE = "tensor<float>(x[8])"
+ROOT = Path(__file__).resolve().parents[3]
+E2E_CORPUS_PATH = ROOT / "reference/client-real-e2e-parity/corpus.json"
+E2E_CORPUS = json.loads(E2E_CORPUS_PATH.read_text())
+PARITY_CONSUMED_INTENTS: dict[str, dict[str, object]] = {}
+
+
+class _ConsumedIntent:
+    def __init__(self, scenario: str, source: dict[str, object]):
+        self._scenario = scenario
+        self._source = source
+
+    def __getitem__(self, key: str):
+        value = self._source[key]
+        PARITY_CONSUMED_INTENTS.setdefault(self._scenario, {})[key] = json.loads(json.dumps(value))
+        return value
+
+    def get(self, key: str, default=None):
+        if key not in self._source:
+            return default
+        return self[key]
+
+
+class _ConsumedIntentMap:
+    def __init__(self, source: dict[str, object]):
+        self._source = source
+
+    def __getitem__(self, key: str):
+        value = self._source[key]
+        if not isinstance(value, dict):
+            raise TypeError(f"parity scenario intent {key} must be an object")
+        return _ConsumedIntent(key, value)
+
+    def get(self, key: str, default=None):
+        if key not in self._source:
+            return default
+        return self[key]
+
+
+PARITY_INTENTS = _ConsumedIntentMap(E2E_CORPUS["scenario_inputs"])
+VECTOR_TYPE = E2E_CORPUS["schema"]["fields"]["embedding"]["type"]
+
+
+FIELD_TYPES = {"text": Text, "keyword": Keyword, "int64": Integer, "float64": Float, "bool": Boolean, "position": PositionField}
+
+
+def corpus_field(spec):
+    field_type = spec["type"]
+    options = {key: value for key, value in spec.items() if key not in {"type", "element"}}
+    if field_type == "array":
+        element = spec["element"]
+        if element["type"] != "struct":
+            raise ValueError(f"unsupported corpus array element: {element['type']}")
+        members = {name: corpus_field(member) for name, member in element["fields"].items()}
+        return ArrayField(StructField(members), **options)
+    if field_type.startswith("tensor<"):
+        return TensorField(field_type, **options)
+    return FIELD_TYPES[field_type](**options)
+
+
+def fields_from_corpus():
+    fields = {}
+    for name, spec in E2E_CORPUS["schema"]["fields"].items():
+        fields[name] = corpus_field(spec)
+    return fields
+
+
+def rank_profiles_from_corpus():
+    profiles = []
+    for spec in E2E_CORPUS["schema"]["rank_profiles"]:
+        profile = RankProfile(spec["name"]).first_phase(spec["first_phase"])
+        if "second_phase" in spec:
+            profile = profile.second_phase(spec["second_phase"])
+        if "rerank_count" in spec:
+            profile = profile.rerank_count(spec["rerank_count"])
+        for name, type_spec in spec.get("query_inputs", {}).items():
+            profile = profile.query_input(name, type_spec)
+        for feature in spec.get("match_features", []):
+            profile = profile.match_feature(feature)
+        profiles.append(profile)
+    return profiles
 
 
 def embedding(*values: float) -> Tensor:
@@ -38,12 +125,17 @@ def embedding(*values: float) -> Tensor:
     return Tensor.dense(VECTOR_TYPE, values)
 
 
-SHOE_1_VECTOR = (0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78)
-SHOE_2_VECTOR = (0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64)
-SHOE_3_VECTOR = (0.10, 0.16, 0.78, 0.12, 0.24, 0.28, 0.92, 0.16)
-SHOE_4_VECTOR = (0.82, 0.12, 0.06, 0.96, 0.72, 0.82, 0.10, 0.88)
-SHOE_5_VECTOR = (0.64, 0.82, 0.07, 0.62, 0.34, 0.92, 0.16, 0.62)
-BAG_1_VECTOR = (0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55)
+def corpus_vector(document_id: str) -> tuple[float, ...]:
+    document = next(item for item in E2E_CORPUS["documents"] if item["_id"] == document_id)
+    return tuple(document["embedding"])
+
+
+SHOE_1_VECTOR = corpus_vector("shoe-1")
+SHOE_2_VECTOR = corpus_vector("shoe-2")
+SHOE_3_VECTOR = corpus_vector("shoe-3")
+SHOE_4_VECTOR = corpus_vector("shoe-4")
+SHOE_5_VECTOR = corpus_vector("shoe-5")
+BAG_1_VECTOR = corpus_vector("bag-1")
 
 
 def cleanup_workspace() -> None:
@@ -159,6 +251,328 @@ def grouping_groups(results):
     return wrapper.groups
 
 
+PARITY_OBSERVATIONS: dict[str, object] = {}
+
+
+def typed_query_for_scenario(scenario, intent):
+    field = intent.get("field")
+    if scenario == "typed_query_term":
+        return q.term(field, intent["value"])
+    if scenario == "typed_query_contains":
+        return q.contains(field, intent["value"])
+    if scenario == "typed_query_phrase":
+        return q.contains(field, q.phrase(*intent["terms"]))
+    if scenario == "typed_query_near":
+        return q.contains(field, q.near(*intent["terms"]))
+    if scenario == "typed_query_ordered_near":
+        return q.contains(field, q.onear(*intent["terms"]))
+    if scenario in {"typed_query_range", "typed_query_range_exclusive"}:
+        return q.range(
+            field, intent["lower"], intent["upper"],
+            include_lower=intent["include_lower"],
+            include_upper=intent["include_upper"],
+        )
+    if scenario == "typed_query_boolean":
+        left, right = intent["or_terms"]
+        negative = intent["not_term"]
+        return q.all_of(
+            q.any_of(q.contains(left["field"], left["value"]), q.contains(right["field"], right["value"])),
+            q.negate(q.contains(negative["field"], negative["value"])),
+        )
+    if scenario == "typed_query_in":
+        return q.in_values(field, intent["values"])
+    if scenario == "typed_query_equals":
+        return q.equals(field, intent["value"])
+    if scenario == "typed_query_fuzzy":
+        return q.contains(field, q.fuzzy(intent["value"]))
+    if scenario == "typed_query_weak_and":
+        return q.weak_and(*(q.contains(term["field"], term["value"]) for term in intent["terms"]))
+    if scenario == "typed_query_wand":
+        return q.wand(field, intent["items"])
+    if scenario == "typed_query_weighted_set":
+        return q.weighted_set(field, intent["items"])
+    if scenario == "typed_query_dot_product":
+        return q.dot_product(field, intent["items"])
+    if scenario == "typed_query_prefix":
+        return q.prefix(field, intent["value"])
+    if scenario == "typed_query_substring":
+        return q.substring(field, intent["value"])
+    if scenario == "typed_query_suffix":
+        return q.suffix(field, intent["value"])
+    if scenario == "typed_query_same_element":
+        return q.contains(
+            field,
+            q.same_element(
+                q.contains(intent["first_field"], intent["first_value"]),
+                q.contains(intent["last_field"], intent["last_value"]),
+            ),
+        )
+    if scenario == "typed_query_geo_location":
+        return q.geo_location(field, lat=intent["latitude"], lon=intent["longitude"], radius=intent["radius"])
+    if scenario == "typed_query_geo_box":
+        return q.geo_box(field, south=intent["south"], west=intent["west"], north=intent["north"], east=intent["east"])
+    raise ValueError(f"unsupported typed parity scenario: {scenario}")
+
+
+def shared_typed_query_observations(index):
+    observations = {}
+    for scenario in E2E_CORPUS["scenario_inputs"]:
+        if not scenario.startswith("typed_query_"):
+            continue
+        intent = PARITY_INTENTS[scenario]
+        builder = index.query(typed_query_for_scenario(scenario, intent))
+        ranking_profile = intent.get("ranking_profile")
+        if ranking_profile:
+            builder = builder.ranking(ranking_profile)
+        results = builder.limit(intent["limit"]).execute()
+        result_order = intent["result_order"]
+        feature = intent.get("feature")
+        if feature:
+            query_result = [{"id": hit.id, "feature": hit.features.get(feature)} for hit in results.hits]
+        else:
+            query_result = [hit.id for hit in results.hits]
+            if result_order == "sorted_ids":
+                query_result.sort()
+        observations[scenario] = {
+            "observation": {"intent": PARITY_CONSUMED_INTENTS[scenario], "query_result": query_result},
+            "capabilities": E2E_CORPUS["client_scenario_contract"][scenario]["python"],
+        }
+    return observations
+
+
+def capture_real_engine_parity(index) -> dict[str, object]:
+    typed_observations = shared_typed_query_observations(index)
+    intents = PARITY_INTENTS
+    ordered_spec = intents["pagination"]
+    ordered = index.search(ordered_spec["query"]).sort(ordered_spec["sort"][0]["field"], ordered_spec["sort"][0]["direction"]).limit(ordered_spec["all_limit"]).execute()
+    filtered_spec = intents["filtered_facets"]
+    filtered = index.search(filtered_spec["query"]).filter(filtered_spec["filter"]).sort(ordered_spec["sort"][0]["field"], ordered_spec["sort"][0]["direction"]).limit(filtered_spec["page_limit"]).execute()
+    facet_spec = intents["facets"]
+    faceted = index.search(facet_spec["query"]).facet(facet_spec["field"], name=facet_spec["name"], limit=facet_spec["limit"], sort=facet_spec["sort"]).limit(facet_spec["page_limit"]).execute()
+    root_spec = intents["root_aggregations"]
+    if root_spec["kind"] != "browse":
+        raise ValueError("root_aggregations requires browse intent")
+    root_builder = index.browse().filter(root_spec["filter"])
+    for aggregation_spec in root_spec["aggregations"]:
+        root_builder = root_builder.aggregate(aggregation_output(aggregation_spec))
+    root = root_builder.limit(root_spec["limit"]).execute()
+    grouped_spec = intents["grouping_aggregations"]
+    group_order = []
+    for order_spec in grouped_spec["order"]:
+        expression = agg.count() if order_spec["kind"] == "count" else g.field(order_spec["field"])
+        order_function = desc if order_spec["direction"] == "desc" else asc
+        group_order.append(order_function(expression))
+    grouped = index.search(grouped_spec["query"]).group(
+        Group.by(grouped_spec["group_by"]).limit(grouped_spec["limit"]).precision(grouped_spec["precision"])
+        .order_by(*group_order)
+        .output(*(aggregation_output(output) for output in grouped_spec["outputs"]))
+    ).execute()
+    nearest_intent = intents["nearest_neighbor"]
+    nearest = (
+        index.query(q.nearest_neighbor(nearest_intent["field"], nearest_intent["query_input"]))
+        .ranking(nearest_intent["ranking_profile"])
+        .input(nearest_intent["query_input"], embedding(*corpus_vector(nearest_intent["query_input_document"])))
+        .limit(nearest_intent["limit"]).execute()
+    )
+    hybrid_intent = intents["hybrid_text_vector"]
+    hybrid = (
+        index.query(q.any_of(
+            q.contains(hybrid_intent["text_field"], hybrid_intent["text_value"]),
+            q.nearest_neighbor(hybrid_intent["vector_field"], hybrid_intent["query_input"]),
+        ))
+        .ranking(hybrid_intent["ranking_profile"])
+        .input(hybrid_intent["query_input"], embedding(*corpus_vector(hybrid_intent["query_input_document"])))
+        .limit(hybrid_intent["limit"]).execute()
+    )
+    reranked_spec = intents["two_phase_reranking"]
+    reranked = index.search(reranked_spec["query"]).ranking(reranked_spec["ranking_profile"]).limit(reranked_spec["limit"]).execute()
+    try:
+        error_spec = intents["structured_filter_error"]
+        index.search(error_spec["query"]).filter(error_spec["filter"]).execute()
+    except SearchKernelError as error:
+        assert str(error.code).lower() == "invalid_argument", error.code
+        error_codes = sorted(detail.code for detail in error.details)
+    else:
+        raise AssertionError("unknown field filter unexpectedly succeeded")
+
+    document = index.get(intents["document_crud"]["document_id"])
+    tensor_spec = intents["tensor_readback"]
+    tensor_document = index.get(tensor_spec["document_id"])
+    if tensor_document is None:
+        raise RuntimeError("tensor readback document is missing")
+    tensor_value = tensor_document[tensor_spec["field"]]
+    full_spec = intents["full_text_search"]
+    full_text = index.search(full_spec["query"]).limit(full_spec["limit"]).execute()
+    stemming_spec = intents["stemming"]
+    stemming = index.search(stemming_spec["query"]).limit(stemming_spec["limit"]).execute()
+    binding_spec = intents["text_filter_binding"]
+    text_binding = index.search(binding_spec["query"]).filter(binding_spec["filter"], binding_spec["bindings"]).sort(binding_spec["sort"][0]["field"], binding_spec["sort"][0]["direction"]).limit(binding_spec["limit"]).execute()
+    repeated_spec = intents["repeated_filters"]
+    repeated_builder = index.search(repeated_spec["query"])
+    for filter_spec in repeated_spec["filters"]:
+        repeated_builder = repeated_builder.filter(filter_spec["source"], filter_spec["bindings"])
+    repeated_filters = repeated_builder.sort(repeated_spec["sort"][0]["field"], repeated_spec["sort"][0]["direction"]).limit(repeated_spec["limit"]).execute()
+    boolean_spec = intents["boolean_filter_grammar"]
+    boolean_filter = (index.search(boolean_spec["query"]).filter(boolean_spec["filter"], boolean_spec["bindings"])
+                      .sort(boolean_spec["sort"][0]["field"], boolean_spec["sort"][0]["direction"]).limit(boolean_spec["limit"]).execute())
+    projection_spec = intents["sorting_projection"]
+    projection = index.search(projection_spec["query"]).sort(projection_spec["sort"][0]["field"], projection_spec["sort"][0]["direction"]).fields(*projection_spec["projection"]).limit(projection_spec["limit"]).execute()
+    all_sorted = index.search(ordered_spec["query"]).sort(ordered_spec["sort"][0]["field"], ordered_spec["sort"][0]["direction"]).limit(ordered_spec["all_limit"]).execute()
+    page = index.search(ordered_spec["query"]).sort(ordered_spec["sort"][0]["field"], ordered_spec["sort"][0]["direction"]).offset(ordered_spec["offset"]).limit(ordered_spec["limit"]).execute()
+    filtered_facet = index.search(filtered_spec["query"]).filter(filtered_spec["filter"]).facet(filtered_spec["field"], limit=filtered_spec["limit"], sort=filtered_spec["sort"]).limit(filtered_spec["page_limit"]).execute()
+    nested_spec = intents["nested_grouping"]
+    if nested_spec["kind"] != "browse":
+        raise ValueError("nested_grouping requires browse intent")
+    nested = index.browse().filter(nested_spec["filter"]["source"], nested_spec["filter"]["bindings"]).group(
+        Group.by(nested_spec["group_by"]).limit(nested_spec["limit"]).output(*(aggregation_output(output) for output in nested_spec["outputs"])).subgroup(
+            Group.by(nested_spec["nested"]["group_by"]).limit(nested_spec["nested"]["limit"]).output(*(aggregation_output(output) for output in nested_spec["nested"]["outputs"]))
+        )
+    ).execute()
+    alias_spec = intents["group_alias"]
+    alias_order = desc if alias_spec["order_by_alias"]["direction"] == "desc" else asc
+    alias_group = Group.by(alias_spec["group_by"]).limit(alias_spec["limit"])
+    for alias_specification in alias_spec["aliases"]:
+        alias_group = alias_group.alias(alias_specification["name"], aggregation_expression(alias_specification))
+    aliased = index.search(alias_spec["query"]).group(
+        alias_group.order_by(alias_order(g.alias_ref(alias_spec["order_by_alias"]["name"]))).output(*(aggregation_output(output) for output in alias_spec["outputs"]))
+    ).execute()
+    keep_spec = intents["group_keep_filter"]
+    kept = index.search(keep_spec["query"]).group(
+        Group.by(keep_spec["group_by"]).limit(keep_spec["limit"]).keep(gf.regex(g.field(keep_spec["keep_regex"]["field"]), keep_spec["keep_regex"]["pattern"])).output(*(aggregation_output(output) for output in keep_spec["outputs"]))
+    ).execute()
+    typed = index.query(typed_query_for_scenario("typed_query_contains", intents["typed_query_contains"])).ranking("default").limit(full_spec["limit"]).execute()
+    rank_input_spec = intents["rank_inputs"]
+    rank_input_builder = index.search(rank_input_spec["query"]).ranking(rank_input_spec["ranking_profile"])
+    for key, value in rank_input_spec["inputs"].items():
+        input_type = rank_input_spec["input_types"][key]
+        if input_type == "float64":
+            value = float(value)
+        else:
+            raise ValueError(f"unsupported parity rank input type: {input_type}")
+        rank_input_builder = rank_input_builder.input(key, value)
+    rank_input = rank_input_builder.limit(rank_input_spec["limit"]).execute()
+    rank_property_spec = intents["rank_properties"]
+    rank_property_builder = index.search(rank_property_spec["query"]).ranking(rank_property_spec["ranking_profile"])
+    for key, value in rank_property_spec["rank_properties"].items(): rank_property_builder = rank_property_builder.rank_property(key, value)
+    rank_property = rank_property_builder.limit(rank_property_spec["limit"]).execute()
+    degraded_spec = intents["coverage_degradation"]
+    if degraded_spec["kind"] != "browse":
+        raise ValueError("coverage_degradation requires browse intent")
+    degraded = index.browse().filter(degraded_spec["filter"]["source"], degraded_spec["filter"]["bindings"]).sort(degraded_spec["sort"][0]["field"], degraded_spec["sort"][0]["direction"])
+    for key, value in degraded_spec["rank_properties"].items(): degraded = degraded.rank_property(key, value)
+    degraded = degraded.limit(degraded_spec["limit"]).execute()
+    yql_spec = intents["yql"]
+    yql_builder = index.yql(yql_spec["source"])
+    for key, value in yql_spec["bindings"].items():
+        yql_builder = yql_builder.property(key, value)
+    yql = yql_builder.ranking(yql_spec["ranking_profile"]).page(yql_spec["page"], yql_spec["page_size"]).execute()
+    try:
+        syntax_spec = intents["text_filter_syntax_error"]
+        index.search(syntax_spec["query"]).filter(syntax_spec["filter"]).execute()
+    except SearchKernelError as error:
+        syntax_error = {"code": str(error.code).lower(), "details": sorted(detail.code for detail in error.details)}
+    else:
+        raise AssertionError("malformed textual filter unexpectedly succeeded")
+
+    facet_entries = [
+        {"value": str(item["value"]), "count": item["count"]}
+        for item in faceted.facets["brands"]
+    ]
+    filtered_facet_entries = [
+        {"value": str(item["value"]), "count": item["count"]}
+        for item in filtered_facet.facets["brand"]
+    ]
+    groups = grouping_groups(grouped)
+    misuse_spec = intents["builder_misuse"]
+    assert_raises((TypeError, ValueError), lambda: index.search(misuse_spec["query"]).page(misuse_spec["page"], misuse_spec["page_size"]).limit(misuse_spec["limit"]), "page plus limit rejected")
+    assert_raises((TypeError, ValueError), lambda: index.search(misuse_spec["query"]).page(misuse_spec["page"], misuse_spec["page_size"]).offset(misuse_spec["page_size"]), "page plus offset rejected")
+    assert_raises((TypeError, ValueError), lambda: index.search(misuse_spec["query"]).limit(misuse_spec["negative_limit"]), "negative limit rejected")
+    assert_raises((TypeError, ValueError), lambda: index.search(misuse_spec["query"]).offset(misuse_spec["negative_offset"]), "negative offset rejected")
+    update_spec = intents["advanced_update"]
+    index.insert(update_spec["document_id"], update_spec["initial"])
+    update_builder = index.update(update_spec["document_id"])
+    for key, value in update_spec["set"].items(): update_builder = update_builder.set(key, value)
+    for key in update_spec["unset"]: update_builder = update_builder.unset(key)
+    for key, value in update_spec["increments"].items(): update_builder = update_builder.increment(key, value)
+    update_builder.execute()
+    for key, value in update_spec["decrements"].items(): index.update(update_spec["document_id"]).decrement(key, value).execute()
+    for key, value in update_spec["multipliers"].items(): index.update(update_spec["document_id"]).multiply(key, value).execute()
+    for key, value in update_spec["divisors"].items(): index.update(update_spec["document_id"]).divide(key, value).execute()
+    advanced_update = index.get(update_spec["document_id"])
+    group_values = [
+        {"brand": group.value, "products": group.get("products"), "avg_price": group.get("avg_price")}
+        for group in groups
+    ]
+    observations = {
+        "document_crud": {"id": document["_id"], "title": document["title"], "brand": document["brand"], "price": document["price"]},
+        "full_text_search": {"ids": [hit.id for hit in full_text.hits], "total": full_text.total_hits},
+        "stemming": {"ids": [hit.id for hit in stemming.hits]},
+        "text_filter_binding": {"ids": [hit.id for hit in text_binding.hits]},
+        "repeated_filters": {"ids": [hit.id for hit in repeated_filters.hits]},
+        "boolean_filter_grammar": {"ids": [hit.id for hit in boolean_filter.hits]},
+        "sorting_projection": {"hits": [{"id": hit.id, "fields": dict(hit.fields)} for hit in projection.hits]},
+        "pagination": {"all_ids": [hit.id for hit in all_sorted.hits], "offset_ids": [hit.id for hit in page.hits], "total": page.total_hits},
+        "builder_misuse": {
+            "observation": {
+                "page_and_limit_rejected": True,
+                "page_and_offset_rejected": True,
+                "negative_limit_rejected": True,
+                "negative_offset_rejected": True,
+            },
+            "capabilities": {
+                "negative_limit_rejected": {"kind": "runtime_rejected"},
+                "negative_offset_rejected": {"kind": "runtime_rejected"},
+            },
+        },
+        "sorted_search": {"ids": [hit.id for hit in ordered.hits], "total": ordered.total_hits},
+        "filtered_search": {"ids": [hit.id for hit in filtered.hits], "total": filtered.total_hits},
+        "facets": facet_entries,
+        "root_aggregations": dict(root.aggregations),
+        "advanced_update": {"title": advanced_update["title"], "inventory": advanced_update["inventory"], "sale_price_present": "sale_price" in advanced_update},
+        "grouping_aggregations": group_values,
+        "filtered_facets": filtered_facet_entries,
+        "nested_grouping": [{
+            "category": group.value,
+            "products": group.get("products"),
+            "ratings": [{"rating": child.value, "products": child.get("products"), "avg_price": child.get("avg_price")} for child in group.groups],
+        } for group in grouping_groups(nested)],
+        "group_alias": [{"value": group.value, "fields": dict(group.fields)} for group in grouping_groups(aliased)],
+        "group_keep_filter": [{"value": group.value, "fields": dict(group.fields)} for group in grouping_groups(kept)],
+        **typed_observations,
+        "rank_inputs": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_input.hits],
+        "rank_properties": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_property.hits],
+        "tensor_readback": tensor_value["$searchkernel_tensor"]["dense"],
+        "nearest_neighbor": {"observation": {"intent": PARITY_CONSUMED_INTENTS["nearest_neighbor"], "ids": [hit.id for hit in nearest.hits], "scores": [hit.relevance for hit in nearest.hits]}, "capabilities": {}},
+        "hybrid_text_vector": {"observation": {"intent": PARITY_CONSUMED_INTENTS["hybrid_text_vector"], "ids": [hit.id for hit in hybrid.hits], "top_score": hybrid.hits[0].score}, "capabilities": {}},
+        "hybrid": {"top_id": hybrid.hits[0].id, "has_bag": any(hit.id == "bag-1" for hit in hybrid.hits)},
+        "two_phase_reranking": {"ids": [hit.id for hit in reranked.hits]},
+        "coverage_degradation": {"ids": [hit.id for hit in degraded.hits], "full": degraded.coverage.full, "degraded": degraded.coverage.degraded is not None},
+        "yql": {"ids": [hit.id for hit in yql.hits], "total": yql.total_hits},
+        "unknown_field_error": {"code": "invalid_argument", "details": error_codes},
+        "structured_filter_error": {"code": "invalid_argument", "details": error_codes},
+        "text_filter_syntax_error": syntax_error,
+    }
+    return observations
+
+
+def write_real_engine_parity(observations: dict[str, object]) -> None:
+    output = os.getenv("SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT")
+    if output:
+        for scenario, value in observations.items():
+            if scenario.startswith("typed_query_"):
+                continue
+            intent = PARITY_CONSUMED_INTENTS.get(scenario)
+            if intent is None:
+                raise RuntimeError(f"parity scenario {scenario} emitted an observation without consuming its shared intent")
+            payload = value.get("observation", value) if isinstance(value, dict) else None
+            if isinstance(payload, dict):
+                payload.setdefault("intent", intent)
+            else:
+                observations[scenario] = {"intent": intent, "result": value}
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        Path(output).write_text(json.dumps({"version": 1, "scenarios": observations}, sort_keys=True))
+
+
 def all_continuations(results) -> list[str]:
     tokens: list[str] = []
 
@@ -187,68 +601,8 @@ heading("1. CREATE INDEX")
 
 with Index.create(
     INDEX_PATH,
-    fields={
-        "title": Text(
-            stored=True,
-            searchable=True,
-        ),
-        "brand": Keyword(
-            stored=True,
-            filterable=True,
-            sortable=True,
-            facetable=True,
-        ),
-        "category": Keyword(
-            stored=True,
-            filterable=True,
-            facetable=True,
-        ),
-        "price": Float(
-            stored=True,
-            filterable=True,
-            sortable=True,
-        ),
-        "sale_price": Float(
-            stored=True,
-            filterable=True,
-            sortable=True,
-        ),
-        "rating": Integer(
-            stored=True,
-            filterable=True,
-            sortable=True,
-        ),
-        "inventory": Integer(
-            stored=True,
-            filterable=True,
-            sortable=True,
-        ),
-        "in_stock": Boolean(
-            stored=True,
-            filterable=True,
-        ),
-        "embedding": TensorField(VECTOR_TYPE, stored=True),
-    },
-    rank_profiles=[
-        RankProfile("boosted")
-        .first_phase("query(boost)")
-        .match_feature("query(boost)"),
-        RankProfile("semantic")
-        .first_phase("closeness(embedding)")
-        .query_input("query_embedding", VECTOR_TYPE)
-        .match_feature("query(query_embedding)"),
-        RankProfile("hybrid")
-        .first_phase("bm25(title) + 10 * closeness(embedding)")
-        .query_input("query_embedding", VECTOR_TYPE)
-        .match_feature("bm25(title)")
-        .match_feature("closeness(embedding)")
-        .match_feature("query(query_embedding)"),
-        RankProfile("two_phase")
-        .first_phase("attribute(rating)")
-        .second_phase("attribute(inventory)")
-        .rerank_count(3),
-        RankProfile("first_phase_only").first_phase("attribute(rating)"),
-    ],
+    fields=fields_from_corpus(),
+    rank_profiles=rank_profiles_from_corpus(),
 ) as index:
     print("created:", INDEX_PATH)
 
@@ -258,122 +612,39 @@ with Index.create(
 
     heading("2. INSERT DOCUMENTS")
 
-    documents = [
-        {
-            "_id": "shoe-1",
-            "title": "Jumped Running Shoes for Daily Training",
-            "brand": "Acme",
-            "category": "shoes",
-            "price": 89.0,
-            "sale_price": 79.0,
-            "rating": 5,
-            "inventory": 10,
-            "in_stock": True,
-            "embedding": embedding(*SHOE_1_VECTOR),
-        },
-        {
-            "_id": "shoe-2",
-            "title": "Trail Running Shoes",
-            "brand": "TrailCo",
-            "category": "shoes",
-            "price": 129.0,
-            "rating": 5,
-            "inventory": 4,
-            "in_stock": True,
-            "embedding": embedding(*SHOE_2_VECTOR),
-        },
-        {
-            "_id": "shoe-3",
-            "title": "Budget Walking Shoes",
-            "brand": "Budget",
-            "category": "shoes",
-            "price": 49.0,
-            "rating": 3,
-            "inventory": 25,
-            "in_stock": True,
-            "embedding": embedding(*SHOE_3_VECTOR),
-        },
-        {
-            "_id": "shoe-4",
-            "title": "Acme Racing Shoes",
-            "brand": "Acme",
-            "category": "shoes",
-            "price": 159.0,
-            "rating": 4,
-            "inventory": 0,
-            "in_stock": False,
-            "embedding": embedding(*SHOE_4_VECTOR),
-        },
-        {
-            "_id": "shoe-5",
-            "title": "TrailCo Hiking Shoes",
-            "brand": "TrailCo",
-            "category": "shoes",
-            "price": 109.0,
-            "rating": 4,
-            "inventory": 8,
-            "in_stock": True,
-            "embedding": embedding(*SHOE_5_VECTOR),
-        },
-        {
-            "_id": "bag-1",
-            "title": "Lightweight Running Backpack",
-            "brand": "Acme",
-            "category": "bags",
-            "price": 69.0,
-            "rating": 4,
-            "inventory": 12,
-            "in_stock": True,
-            "embedding": embedding(*BAG_1_VECTOR),
-        },
-        {
-            "_id": "rerank-a",
-            "title": "Rerank Candidate A",
-            "category": "two-phase",
-            "rating": 100,
-            "inventory": 1,
-        },
-        {
-            "_id": "rerank-b",
-            "title": "Rerank Candidate B",
-            "category": "two-phase",
-            "rating": 90,
-            "inventory": 100,
-        },
-        {
-            "_id": "rerank-c",
-            "title": "Rerank Candidate C",
-            "category": "two-phase",
-            "rating": 80,
-            "inventory": 90,
-        },
-        {
-            "_id": "rerank-d",
-            "title": "Rerank Candidate D",
-            "category": "two-phase",
-            "rating": 70,
-            "inventory": 1000,
-        },
-    ]
+    documents = []
+    for source in E2E_CORPUS["documents"]:
+        document = dict(source)
+        if "embedding" in document:
+            document["embedding"] = embedding(*document["embedding"])
+        documents.append(document)
 
     for document in documents:
         index.insert(document)
         print("insert:", document["_id"])
 
-    for probe in range(200):
-        index.insert(
-            {
-                "_id": f"degraded-{probe}",
-                "title": "Coverage Degradation Probe",
-                "category": "degradation",
-                "price": 18.0,
-                "rating": 1,
-                "inventory": 18,
-                "in_stock": True,
-                "embedding": embedding(*SHOE_3_VECTOR),
-            }
-        )
-    print("inserted 200 deterministic coverage probe documents")
+    probe_spec = E2E_CORPUS["coverage_probes"]
+    for probe in range(probe_spec["count"]):
+        document = dict(probe_spec["document"])
+        document["_id"] = f"degraded-{probe}"
+        document["embedding"] = embedding(*document["embedding"])
+        index.insert(document)
+    print(f"inserted {probe_spec['count']} deterministic coverage probe documents")
+
+    PARITY_OBSERVATIONS.update(capture_real_engine_parity(index))
+    patch_spec = PARITY_INTENTS["patch"]
+    index.insert(patch_spec["document_id"], patch_spec["initial"])
+    patch_builder = index.patch(patch_spec["document_id"])
+    for key, value in patch_spec["set"].items(): patch_builder = patch_builder.set(key, value)
+    for key in patch_spec["unset"]: patch_builder = patch_builder.unset(key)
+    patch_builder.execute()
+    mutated = index.get(patch_spec["document_id"])
+    PARITY_OBSERVATIONS["patch"] = {"price": mutated["price"], "sale_price_present": "sale_price" in mutated}
+    delete_spec = PARITY_INTENTS["delete"]
+    parity_mutation_deleted = index.delete(delete_spec["document_id"])
+    PARITY_OBSERVATIONS["delete"] = {"deleted": parity_mutation_deleted, "absent_after_delete": index.get(delete_spec["document_id"]) is None}
+    reopen_spec = PARITY_INTENTS["reopen_persistence"]
+    index.insert({"_id": reopen_spec["marker_id"], **reopen_spec["marker"]})
 
     # -----------------------------------------------------------------------
     # GET
@@ -1305,30 +1576,22 @@ with Index.create(
 
     heading("28. UPSERT REPLACEMENT")
 
-    index.upsert(
-        {
-            "_id": "shoe-2",
-            "title": "Trail Running Shoes - Updated Edition",
-            "brand": "TrailCo",
-            "category": "shoes",
-            "price": 119.0,
-            "rating": 5,
-            "inventory": 4,
-            "in_stock": True,
-            "embedding": embedding(*SHOE_2_VECTOR),
-        }
-    )
+    upsert_spec = PARITY_INTENTS["upsert_replacement"]
+    replacement = dict(upsert_spec["replacement"])
+    vector_document_id = replacement.pop("vector_document_id")
+    index.upsert({"_id": upsert_spec["document_id"], **replacement, "embedding": embedding(*corpus_vector(vector_document_id))})
 
-    doc = index.get("shoe-2")
+    doc = index.get(upsert_spec["document_id"])
     print(doc)
 
     assert doc["price"] == 119.0
     assert "Updated Edition" in doc["title"]
 
-    results = index.search("updated").limit(20).execute()
+    results = index.search(upsert_spec["search_query"]).limit(20).execute()
     print_results(results)
 
-    assert {hit.id for hit in results.hits} == {"shoe-2"}
+    assert {hit.id for hit in results.hits} == {upsert_spec["document_id"]}
+    PARITY_OBSERVATIONS["upsert_replacement"] = {"price": doc["price"], "updated_title_matches": "Updated" in doc["title"], "search_ids": [hit.id for hit in results.hits]}
 
 
 heading("29. INDEX CLOSED")
@@ -1342,6 +1605,16 @@ print("The first Engine instance has shut down.")
 heading("30. REOPEN PERSISTED INDEX")
 
 with Index.open(INDEX_PATH) as index:
+    reopen_spec = PARITY_INTENTS["reopen_persistence"]
+    upsert_spec = PARITY_INTENTS["upsert_replacement"]
+    persisted = index.get(reopen_spec["marker_id"])
+    assert persisted is not None
+    shoe2 = index.get(upsert_spec["document_id"])
+    PARITY_OBSERVATIONS["reopen_persistence"] = {
+        "marker": {"title": persisted["title"], "price": persisted["price"], "inventory": persisted["inventory"]},
+        "upserted": {"updated_title_matches": "Updated" in shoe2["title"], "price": shoe2["price"]},
+        "deleted_absent": index.get(PARITY_INTENTS["delete"]["document_id"]) is None,
+    }
     # Deleted document remains deleted.
     assert index.get("shoe-3") is None
 
@@ -1438,6 +1711,7 @@ with Index.open(INDEX_PATH) as index:
     assert categories["shoes"]["products"] == 3
     assert categories["bags"]["products"] == 1
 
+    write_real_engine_parity(PARITY_OBSERVATIONS)
 
 heading("32. ALL CLIENT API E2E CHECKS PASSED")
 

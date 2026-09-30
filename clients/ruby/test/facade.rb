@@ -67,7 +67,7 @@ class FacadeRecordingTransport
                 }
               when :search
                 {
-                  "root" => nil,
+                  "root" => { "node_type" => "ResultGroup", "node" => { "children" => [] } },
                   "total_hits" => { "value" => "0", "relation" => "Exact" }
                 }
               when :analyze
@@ -230,7 +230,7 @@ raises(RuntimeError, "owner still closes when client close fails") { failing_ind
 same(1, failing_owner.close_count, "owner cleanup runs despite client close failure")
 assert(failing_index.closed?, "index remains closed after cleanup failure")
 
-connected_index = SearchKernel::Index.connect("http://127.0.0.1:1")
+connected_index = SearchKernel::Index.connect("http://127.0.0.1:1", target: "products")
 connected_index.close
 raises(SearchKernel::TransportError, "connect-to-daemon index rejects operations after close") do
   connected_index.get("doc-1")
@@ -273,6 +273,18 @@ same(
 )
 same("QueryFuzzy", SearchKernel::Query.fuzzy("shoes").dig("source", "query", "expr_type"),
      "fuzzy query helper")
+# SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=http
+fielded_term = SearchKernel::Query.term("title", "quick").dig("source", "query")
+same("QueryContains", fielded_term.fetch("expr_type"), "fielded term query helper")
+same("TermQuery", fielded_term.dig("expr", "item", "expr_type"), "fielded term canonical item")
+{
+  "A\\.c\\+.*" => SearchKernel::Query.prefix("brand", "A.c+"),
+  ".*A\\.c\\+.*" => SearchKernel::Query.substring("brand", "A.c+"),
+  ".*A\\.c\\+" => SearchKernel::Query.suffix("brand", "A.c+")
+}.each do |pattern, query|
+  same("QueryMatches", query.dig("source", "query", "expr_type"), "literal query canonical kind")
+  same(pattern, query.dig("source", "query", "expr", "pattern"), "literal query escaped pattern")
+end
 same(
   "QueryGeoLocation",
   SearchKernel::Query.geo_location("position", lat: 37.3, lon: -121.9, radius: "10km")
@@ -382,7 +394,8 @@ same("index", index.describe.fetch("name"), "describe result")
 Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
   script = File.join(root, "fake-searchkerneld")
   log = File.join(root, "args.json")
-  index_path = File.join(root, "index")
+  request_log = File.join(root, "requests.jsonl")
+  index_path = File.join(root, "Search Index.v1")
   File.write(
     script,
     <<~'RUBY'
@@ -392,15 +405,7 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
       require "socket"
 
       args = ARGV.each_slice(2).to_h
-      index_path = args.fetch("--index")
-      definition_path = args["--definition-json"]
-      if definition_path
-        FileUtils.mkdir_p(index_path)
-        File.write(File.join(index_path, "definition.json"), File.read(definition_path))
-      elsif !Dir.exist?(index_path)
-        warn "missing index"
-        exit 3
-      end
+      FileUtils.mkdir_p(args.fetch("--data-root"))
 
       File.write(ENV.fetch("FAKE_HOST_LOG"), JSON.generate(ARGV))
       host, port = args.fetch("--web-listen").split(":", 2)
@@ -409,6 +414,29 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
       trap("TERM") { server.close rescue nil; exit 0 }
       loop do
         socket = server.accept
+        request_line = socket.gets
+        unless request_line
+          socket.close
+          next
+        end
+        headers = {}
+        while (line = socket.gets) && line != "\r\n"
+          key, value = line.split(":", 2)
+          headers[key.downcase] = value.strip
+        end
+        request = JSON.parse(socket.read(Integer(headers.fetch("content-length"), 10)))
+        File.open(ENV.fetch("FAKE_HOST_REQUEST_LOG"), "a") { |file| file.puts(JSON.generate(request)) }
+        response_name = case request.fetch("payload_type")
+                        when "SearchKernel_V2_CreateIndexRequest" then "CreateIndexResult"
+                        when "SearchKernel_V2_OpenIndexRequest" then "OpenIndexResult"
+                        else raise "unexpected lifecycle request"
+                        end
+        body = JSON.generate(
+          "protocol_version" => 2,
+          "payload_type" => "SearchKernel_V2_#{response_name}",
+          "payload" => { "index" => {} }
+        )
+        socket.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
         socket.close
       end
     RUBY
@@ -417,27 +445,63 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
 
   previous_host = ENV["SEARCHKERNEL_LOCAL_HOST"]
   previous_log = ENV["FAKE_HOST_LOG"]
+  previous_request_log = ENV["FAKE_HOST_REQUEST_LOG"]
   ENV["SEARCHKERNEL_LOCAL_HOST"] = script
   ENV["FAKE_HOST_LOG"] = log
+  ENV["FAKE_HOST_REQUEST_LOG"] = request_log
   begin
     managed = SearchKernel::Index.create(
       index_path,
       fields: { "title" => SearchKernel::Text.new(stored: true, searchable: true) }
     )
-    assert(File.exist?(File.join(index_path, "definition.json")), "managed create supplies canonical definition JSON")
     args = JSON.parse(File.read(log))
-    assert(args.include?("--definition-json"), "managed create uses definition-json bootstrap")
+    assert(args.include?("--data-root"), "managed create starts the multi-index daemon with a data root")
+    assert(!args.include?("--index"), "managed create does not select a physical index at daemon startup")
+    assert(!args.include?("--definition-json"), "managed create provisions through canonical lifecycle requests")
+    create_request = JSON.parse(File.readlines(request_log).fetch(0))
+    assert(create_request.fetch("payload_type").end_with?("CreateIndexRequest"), "managed create sends lifecycle request")
+    managed_path, managed_root, managed_target = SearchKernel::ManagedLocalHost.location(index_path)
+    same(managed_target, create_request.fetch("target").fetch("name"), "managed path hashes to a canonical logical target")
+    data_root_index = args.index("--data-root")
+    same(managed_root, args.fetch(data_root_index + 1), "managed daemon authority is confined to the dedicated data root")
+    assert(File.file?(SearchKernel::ManagedLocalHost.marker_path(managed_path)), "managed path keeps a local marker")
+    sibling_path = File.join(root, "sibling")
+    sibling = SearchKernel::Index.create(
+      sibling_path,
+      fields: { "title" => SearchKernel::Text.new(stored: true, searchable: true) }
+    )
+    same(1, SearchKernel::ManagedLocalHost.pool.length, "sibling managed indexes share one daemon data root")
     managed.close
+    same(1, SearchKernel::ManagedLocalHost.pool.length, "closing one managed handle keeps the shared daemon alive")
+
+    data_root = SearchKernel::ManagedLocalHost.location(sibling_path)[1]
+    stale_owner = sibling.instance_variable_get(:@owner)
+    stale_pid = stale_owner.instance_variable_get(:@pid)
+    Process.kill("KILL", -stale_pid)
+    begin
+      Process.waitpid(stale_pid)
+    rescue Errno::ECHILD
+      nil
+    end
+    replacement_owner = SearchKernel::ManagedLocalHost.acquire(data_root)
+    assert(!replacement_owner.equal?(stale_owner), "dead pooled daemon is replaced on the next acquire")
+    replacement_owner.close
+
+    sibling.close
     assert(managed.closed?, "managed close is idempotent state")
     managed.close
 
     reopened = SearchKernel::Index.open(index_path)
     args = JSON.parse(File.read(log))
-    assert(!args.include?("--definition-json"), "managed open does not resend a definition")
+    assert(args.include?("--data-root"), "managed open reuses multi-index daemon mode")
+    assert(!args.include?("--index"), "managed open selects a logical target after startup")
+    open_request = JSON.parse(File.readlines(request_log).last)
+    assert(open_request.fetch("payload_type").end_with?("OpenIndexRequest"), "managed open sends lifecycle request")
     reopened.close
   ensure
     ENV["SEARCHKERNEL_LOCAL_HOST"] = previous_host
     ENV["FAKE_HOST_LOG"] = previous_log
+    ENV["FAKE_HOST_REQUEST_LOG"] = previous_request_log
   end
 end
 
@@ -492,3 +556,84 @@ puts "Ruby facade/lifecycle tests PASS"
 # SKC: query.fuzzy/basic kinds=ergonomic runtime=http
 # SKC: query.geo/basic kinds=ergonomic runtime=http
 # SKC: query.weighted_and_wand/basic kinds=ergonomic runtime=http
+
+Dir.mktmpdir("searchkernel-ruby-managed-root-race-") do |root|
+  data_root = File.join(root, ".searchkernel-managed")
+  errors = []
+  mutex = Mutex.new
+  threads = 8.times.map do
+    Thread.new do
+      begin
+        SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+      rescue StandardError => error
+        mutex.synchronize { errors << error }
+      end
+    end
+  end
+  threads.each(&:join)
+  same([], errors, "concurrent managed-root first use converges")
+  same(
+    "searchkernel-managed-v1\n",
+    File.read(File.join(data_root, SearchKernel::ManagedLocalHost::MANAGED_ROOT_MARKER_NAME)),
+    "managed-root ownership marker is atomically published",
+  )
+end
+
+Dir.mktmpdir("searchkernel-ruby-unowned-empty-root-") do |root|
+  data_root = File.join(root, ".searchkernel-managed")
+  Dir.mkdir(data_root)
+  inode = File.stat(data_root).ino
+  raises(SearchKernel::ClientError, "pre-existing empty unowned managed root rejects") do
+    SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  end
+  same(inode, File.stat(data_root).ino, "unowned managed root is never replaced")
+  same([], Dir.children(data_root), "unowned managed root remains empty")
+end
+
+Dir.mktmpdir("searchkernel-ruby-managed-root-marker-") do |root|
+  data_root = File.join(root, ".searchkernel-managed")
+  Dir.mkdir(data_root)
+  marker = File.join(data_root, SearchKernel::ManagedLocalHost::MANAGED_ROOT_MARKER_NAME)
+  File.write(marker, "searchkernel-managed-v2\n")
+  raises(SearchKernel::ClientError, "wrong managed-root marker version rejects") do
+    SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  end
+  File.delete(marker)
+  Dir.mkdir(marker)
+  raises(SearchKernel::ClientError, "managed-root marker directory rejects") do
+    SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  end
+end
+
+Dir.mktmpdir("searchkernel-ruby-migrate-symlink-") do |root|
+  real = File.join(root, "real-index")
+  source = File.join(root, "legacy-index")
+  data_root = File.join(root, ".searchkernel-managed")
+  Dir.mkdir(real)
+  Dir.mkdir(data_root)
+  File.symlink(real, source)
+  raises(SearchKernel::ClientError, "legacy migration rejects a symlink source") do
+    SearchKernel::ManagedLocalHost.migrate_legacy(source, data_root, "local-test")
+  end
+  assert(File.symlink?(source), "rejected legacy symlink remains untouched")
+  assert(File.directory?(real), "rejected legacy symlink target remains untouched")
+end
+
+legacy_env = %w[
+  SEARCHKERNEL_INDEX_PATH
+  SEARCHKERNEL_INDEX_DEFINITION
+  SEARCHKERNEL_INDEX_DEFINITION_JSON
+].to_h { |key| [key, ENV[key]] }
+begin
+  ENV["SEARCHKERNEL_INDEX_PATH"] = "/legacy/index"
+  ENV["SEARCHKERNEL_INDEX_DEFINITION"] = "/legacy/definition.fb"
+  ENV["SEARCHKERNEL_INDEX_DEFINITION_JSON"] = "/legacy/definition.json"
+  child_env = SearchKernel::ManagedLocalHost.host_environment
+  same(nil, child_env["SEARCHKERNEL_INDEX_PATH"], "managed host unsets legacy index path")
+  same(nil, child_env["SEARCHKERNEL_INDEX_DEFINITION"], "managed host unsets legacy definition")
+  same(nil, child_env["SEARCHKERNEL_INDEX_DEFINITION_JSON"], "managed host unsets legacy JSON definition")
+ensure
+  legacy_env.each do |key, value|
+    value.nil? ? ENV.delete(key) : ENV[key] = value
+  end
+end

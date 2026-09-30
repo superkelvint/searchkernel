@@ -10,7 +10,7 @@ M11_BUILD="${M11_BUILD:-$ROOT/target/vespa-verifier/m11/native-build/hardening}"
 M11_SDK_CONFIG="$M11_SDK/share/embedded_crud_cfg"
 M11_CONFIG="${M11_CONFIG:-$ROOT/target/vespa-verifier/m11/config}"
 M11_CARGO_TARGET="$CARGO_TARGET_DIR"
-M11_DRIVER="$M11_CARGO_TARGET/debug/searchkernel-m11-driver"
+M11_DRIVER="$M11_CARGO_TARGET/debug/examples/searchkernel-m11-driver"
 M11_DEPS="${VESPA_DEPS:-$ROOT/vespa-deps}"
 
 m11_adapter_path_from_ldd() {
@@ -21,16 +21,22 @@ m11_adapter_path_from_ldd() {
   }'
 }
 
-stage_m11_driver_adapter() {
-  local driver="${1:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
-  local runtime_sdk="${2:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
-  local staged_dir="$(dirname "$driver")/.searchkernel-native"
+stage_m11_adapter_for_executable_dir() {
+  local executable_dir="${1:?stage_m11_adapter_for_executable_dir <dir> <runtime-sdk>}"
+  local runtime_sdk="${2:?stage_m11_adapter_for_executable_dir <dir> <runtime-sdk>}"
+  local staged_dir="$executable_dir/.searchkernel-native"
   local staged="$staged_dir/libsearchkernel_vespa.so.2"
   local runtime="$runtime_sdk/lib/libsearchkernel_vespa.so.2"
   [[ -f "$runtime" ]] || fail_verification "missing M11 runtime adapter: $runtime"
   mkdir -p "$staged_dir"
   rm -f "$staged"
-  ln -s "$runtime" "$staged"
+  cp "$runtime" "$staged"
+}
+
+stage_m11_driver_adapter() {
+  local driver="${1:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
+  local runtime_sdk="${2:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
+  stage_m11_adapter_for_executable_dir "$(dirname "$driver")" "$runtime_sdk"
 }
 
 prepare_hardening_sdk() {
@@ -75,7 +81,7 @@ build_m11_driver() {
   unset SK_NATIVE_SDK SK_NATIVE_BASE_SDK
   export CARGO_TARGET_DIR="$M11_CARGO_TARGET"
   export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,$M11_SDK/lib"
-  cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
+  cargo build --quiet -p searchkernel --features native,internal-api,m11-verifier-hardening --example searchkernel-m11-driver
   [[ -x "$M11_DRIVER" ]] || fail_verification "M11 driver was not built: $M11_DRIVER"
   # Native consumer binaries intentionally carry a slash-bearing
   # $ORIGIN/.searchkernel-native DT_NEEDED entry. LD_LIBRARY_PATH cannot

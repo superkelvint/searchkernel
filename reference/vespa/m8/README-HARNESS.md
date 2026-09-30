@@ -13,7 +13,7 @@ oracle/AUTHOR_ORACLE.md     authoring checklist for the oracle translation unit
 oracle/build-cpp-oracle.sh  builds a reviewed direct C++ oracle against pinned Vespa
 oracle/run-cpp-oracle.sh    runs only a provenance-checked oracle binary
 expected/*.json             oracle-derived goldens; absent until authoring is complete
-rust-driver/                implementation-side scenario driver
+core/crates/searchkernel-vespa-engine/examples/  implementation-side Cargo targets
 validate_scenarios.py       guards the scenario traps
 validate_expected.py        guards canonical golden shape
 compare.py                  exact canonical result comparison
@@ -24,7 +24,7 @@ check-immutable.sh          implementation-time immutability check
 verify-m8.sh                cumulative acceptance command
 ```
 
-The public API is frozen by `reference/vespa/api-contract/src/bin/m8.rs`.
+The public API is frozen by `core/crates/searchkernel-vespa-engine/examples/api-contract-m8.rs`.
 
 ## Authoring order
 

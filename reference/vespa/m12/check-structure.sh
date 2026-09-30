@@ -19,7 +19,7 @@ fi
 # Acceptance drivers may not shell out to an oracle or use fake/test backends.
 if rg -n --glob '*.rs' --glob '*.toml' \
     'searchkernel-testkit|searchkernel_testkit|RecordingBackend|ScriptedBackend|Command::new|std::process::Command' \
-    "$M12/rust-driver"; then
+    "$ROOT/core/crates/searchkernel/examples/searchkernel-m12-driver.rs"; then
   fail "M12 driver uses an alternate backend/oracle path"
 fi
 

@@ -1138,6 +1138,19 @@ mod tests {
         UnixSocketLock, UnixSocketOwnership,
     };
 
+    #[cfg(feature = "native")]
+    #[test]
+    fn native_storage_migration_api_is_available_to_daemon() {
+        fn migrate(
+            source: &std::path::Path,
+            destination: &std::path::Path,
+        ) -> searchkernel::Result<()> {
+            searchkernel::Index::migrate_storage(source, destination)
+        }
+
+        let _callable: fn(&std::path::Path, &std::path::Path) -> searchkernel::Result<()> = migrate;
+    }
+
     #[tokio::test]
     async fn blocking_work_waits_for_an_execution_permit() {
         let execution_limit = Arc::new(Semaphore::new(1));

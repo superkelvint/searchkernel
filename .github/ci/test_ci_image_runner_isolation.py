@@ -93,14 +93,14 @@ class CiImageRunnerIsolationTests(unittest.TestCase):
 
     def test_native_full_bootstraps_split_sdk_and_runs_product_integration(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        helper = source.split("prepare_native_full_verifier_sdk() {", 1)[1].split("\n          }", 1)[0]
+        helper = source.split("prepare_native_full_probe_sdk() {", 1)[1].split("\n          }", 1)[0]
         lane = source.split("            native-full)", 1)[1].split("            client-e2e)", 1)[0]
 
         self.assertIn("tools/resolve-native-sdk.sh vespa-root", helper)
-        self.assertIn("SEARCHKERNEL_VERIFIER_BASE_SDK=\"$native_base\"", helper)
-        self.assertIn("prepare_verifier_sdk", helper)
+        self.assertIn("SEARCHKERNEL_NATIVE_PROBE_BASE_SDK=\"$native_base\"", helper)
+        self.assertIn("prepare_native_probe_sdk", helper)
         self.assertNotIn("core/native/sdk/linux-x86_64", helper)
-        self.assertIn("prepare_native_full_verifier_sdk", lane)
+        self.assertIn("prepare_native_full_probe_sdk", lane)
         self.assertIn("./dev verify product.integration --baseline-already-proved", lane)
 
         common = (ROOT / "reference/vespa/common/verify-common.sh").read_text(encoding="utf-8")

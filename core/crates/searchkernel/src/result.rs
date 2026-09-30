@@ -1197,8 +1197,33 @@ mod tests {
             let bytes = std::fs::read(&path).unwrap_or_else(|error| {
                 panic!("read malformed fixture {}: {error}", path.display())
             });
-            let envelope = core::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
-                .unwrap_or_else(|error| panic!("{name} malformed envelope root: {error:?}"));
+            let failure_class = case["failure_class"].as_str().unwrap();
+            let envelope = match core::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes) {
+                Ok(envelope) => envelope,
+                Err(error) => {
+                    assert!(
+                        matches!(
+                            failure_class,
+                            "missing_continuation_key"
+                                | "missing_sparse_address_dimension"
+                                | "missing_mixed_address_dimension"
+                        ),
+                        "{name} failed FlatBuffers verification unexpectedly: {error:?}"
+                    );
+                    malformed_outcomes
+                        .insert(name.to_owned(), serde_json::Value::String("client".into()));
+                    continue;
+                }
+            };
+            assert!(
+                !matches!(
+                    failure_class,
+                    "missing_continuation_key"
+                        | "missing_sparse_address_dimension"
+                        | "missing_mixed_address_dimension"
+                ),
+                "{name} should fail FlatBuffers verification"
+            );
             if case["failure_class"] == "response_payload_union" {
                 assert!(
                     envelope

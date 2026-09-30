@@ -36,11 +36,8 @@ module SearchKernel
         "payload" => payload
       }
       unless target.nil?
-        unless target.is_a?(String) &&
-               target.bytesize.between?(1, 128) &&
-               target.match?(/\A[a-z0-9][a-z0-9_-]*\z/)
-          raise ArgumentError, "index target must match [a-z0-9][a-z0-9_-]{0,127}"
-        end
+        raise ArgumentError, "Search Kernel target must be a string" unless target.is_a?(String)
+
         envelope["target"] = { "name" => target }
       end
       envelope
