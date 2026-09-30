@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -16,6 +17,7 @@ from pathlib import Path
 
 DIST = Path(sys.argv[1]).resolve()
 MANIFEST = json.loads((DIST / "manifest.json").read_text(encoding="utf-8"))
+QUICKSTARTS = Path(__file__).resolve().parent / "quickstarts"
 
 # The regression test compares this executable registry to release-support.json.
 # Every supported surface/runtime pair must map to one packaged consumer probe.
@@ -115,6 +117,52 @@ def install_consumers(root: Path) -> dict[str, Path]:
         "--no-document", str(gem), cwd=root, env=ruby_env)
 
     return {"python": venv, "node": node, "ruby": gem_home}
+
+
+def run_python_quickstart(venv: Path, root: Path) -> None:
+    run(
+        str(venv / "bin/python"),
+        str(QUICKSTARTS / "python.py"),
+        cwd=root,
+        env={"SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-python-index")},
+    )
+
+
+def run_node_quickstart(node: Path, endpoint: str) -> None:
+    script = node / "release-quickstart.mjs"
+    shutil.copy2(QUICKSTARTS / "typescript.mjs", script)
+    run(
+        "node",
+        str(script),
+        cwd=node,
+        env={"SEARCHKERNEL_ENDPOINT": endpoint},
+    )
+
+
+def run_ruby_quickstart(gem_home: Path, root: Path, endpoint: str) -> None:
+    env = {
+        "GEM_HOME": str(gem_home),
+        "GEM_PATH": str(gem_home),
+        "SEARCHKERNEL_ENDPOINT": endpoint,
+    }
+    run("ruby", str(QUICKSTARTS / "ruby.rb"), cwd=root, env=env)
+
+
+def run_rust_quickstart(rust_root: Path, root: Path) -> None:
+    quickstart = rust_root / "release-quickstart"
+    shutil.copytree(QUICKSTARTS / "rust", quickstart)
+    run(
+        "cargo",
+        "run",
+        "--quiet",
+        "--manifest-path",
+        str(quickstart / "Cargo.toml"),
+        cwd=quickstart,
+        env={
+            "SEARCHKERNEL_BUILD_ENV": "ci",
+            "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
+        },
+    )
 
 
 def python_managed_local(venv: Path, index: Path) -> None:
@@ -243,6 +291,43 @@ def start_daemon(
             time.sleep(0.1)
     stop_daemon(proc, log)
     raise RuntimeError("packaged daemon did not become ready" + (f":\n{daemon_log(log)}" if log else ""))
+
+
+def start_multi_daemon(
+    binary: Path, data_root: Path, socket_path: Path, port: int,
+):
+    log = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+    proc = subprocess.Popen(
+        [
+            str(binary),
+            "--data-root",
+            str(data_root),
+            "--listen",
+            f"unix://{socket_path}",
+            "--web-listen",
+            f"127.0.0.1:{port}",
+        ],
+        env=clean_environment(),
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            output = daemon_log(log)
+            log.close()
+            raise RuntimeError(
+                "packaged multi-index daemon exited"
+                + (f":\n{output}" if output else "")
+            )
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                return proc, log
+        except OSError:
+            time.sleep(0.1)
+    stop_daemon(proc, log)
+    raise RuntimeError("packaged multi-index daemon did not become ready")
 
 
 def stop_daemon(proc, log) -> None:
@@ -406,6 +491,86 @@ def ruby_connect_probe(gem_home: Path, root: Path, phase: str, http: str) -> Non
     run("ruby", str(script), phase, http, cwd=root, env=env)
 
 
+MULTI_INDEX_RUBY_PROBE = r'''require "rubygems"
+gem "searchkernel"
+require "searchkernel"
+
+phase, endpoint = ARGV
+fields = {
+  "title" => SearchKernel::Text.new(stored: true, searchable: true),
+  "kind" => SearchKernel::Keyword.new(stored: true, filterable: true),
+  "score" => SearchKernel::IntegerField.new(stored: true, sortable: true)
+}
+
+if phase == "initial"
+  a = SearchKernel::Index.create(endpoint, fields: fields, target: "release-a")
+  b = SearchKernel::Index.create(endpoint, fields: fields, target: "release-b")
+  begin
+    a.insert("_id" => "a-only", "title" => "alpha registry", "kind" => "a", "score" => 1)
+    b.insert("_id" => "b-only", "title" => "beta registry", "kind" => "b", "score" => 2)
+    raise "index A cannot read its own document" unless a.get("a-only")
+    raise "index B cannot read its own document" unless b.get("b-only")
+    raise "index A leaked index B data" unless a.get("b-only").nil?
+    raise "index B leaked index A data" unless b.get("a-only").nil?
+    raise "index A search failed" unless a.search("alpha").execute.hits.map(&:id) == ["a-only"]
+    a.close
+    raise "closing A disrupted B" unless b.search("beta").execute.hits.map(&:id) == ["b-only"]
+  ensure
+    a.close rescue nil
+    b.close rescue nil
+  end
+else
+  a = SearchKernel::Index.open(endpoint, target: "release-a")
+  b = SearchKernel::Index.open(endpoint, target: "release-b")
+  begin
+    raise "index A did not persist across daemon restart" unless a.get("a-only")
+    raise "index B did not persist across daemon restart" unless b.get("b-only")
+    raise "index A leaked index B data after restart" unless a.get("b-only").nil?
+    raise "index B leaked index A data after restart" unless b.get("a-only").nil?
+  ensure
+    a.close
+    b.close
+  end
+end
+'''
+
+
+def multi_index_registry_probe(gem_home: Path, root: Path, daemon: Path) -> None:
+    data_root = root / "multi-index-data"
+    socket_path = root / "multi-index.sock"
+    script = root / "multi-index-probe.rb"
+    script.write_text(MULTI_INDEX_RUBY_PROBE, encoding="utf-8")
+    env = {"GEM_HOME": str(gem_home), "GEM_PATH": str(gem_home)}
+
+    port = free_port()
+    proc, log = start_multi_daemon(daemon, data_root, socket_path, port)
+    try:
+        run(
+            "ruby",
+            str(script),
+            "initial",
+            f"http://127.0.0.1:{port}",
+            cwd=root,
+            env=env,
+        )
+    finally:
+        stop_daemon(proc, log)
+
+    port = free_port()
+    proc, log = start_multi_daemon(daemon, data_root, socket_path, port)
+    try:
+        run(
+            "ruby",
+            str(script),
+            "reopened",
+            f"http://127.0.0.1:{port}",
+            cwd=root,
+            env=env,
+        )
+    finally:
+        stop_daemon(proc, log)
+
+
 def main() -> None:
     verify_manifest()
     with tempfile.TemporaryDirectory(prefix="searchkernel-release-qualification-") as raw:
@@ -419,24 +584,23 @@ def main() -> None:
             rust_root.mkdir()
             with tarfile.open(rust) as archive:
                 archive.extractall(rust_root, filter="data")
-            # The packaged release is produced from the CI native-base
-            # generation. Resolve that same published generation in this
-            # pristine consumer, without mounting the producer's SDK cache.
-            native_release_env = {"SEARCHKERNEL_BUILD_ENV": "ci"}
-            token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-            if token:
-                native_release_env["GH_TOKEN"] = token
+            # Resolve the public release native-base generation exactly as an
+            # ordinary unauthenticated consumer would. The clean container has
+            # no GitHub token and no producer SDK cache.
+            run_rust_quickstart(rust_root, root)
             run(
                 "cargo", "run", "--quiet", "-p", "searchkernel", "--features", "native",
                 "--example", "try_searchkernel_client_api_e2e", cwd=rust_root,
-                env=native_release_env,
+                env={"SEARCHKERNEL_BUILD_ENV": "ci"},
             )
 
         def searchkerneld_runtime_probe() -> None:
             context["daemon"] = extract_daemon(root)
             packaged_daemon_negative_probe(root)
+            multi_index_registry_probe(installs["ruby"], root, context["daemon"])
 
         def python_managed_local_probe() -> None:
+            run_python_quickstart(installs["python"], root)
             python_managed_local(installs["python"], root / "managed-local-index")
 
         def python_connect_probe_runner() -> None:
@@ -446,15 +610,23 @@ def main() -> None:
             )
 
         def typescript_node_connect_probe_runner() -> None:
+            def probe(phase, endpoint, _http):
+                if phase == "initial":
+                    run_node_quickstart(installs["node"], endpoint)
+                typescript_connect_probe(installs["node"], phase, endpoint)
+
             with_restarted_daemon(
-                root, context["daemon"], "typescript-node-index",
-                lambda phase, endpoint, _http: typescript_connect_probe(installs["node"], phase, endpoint),
+                root, context["daemon"], "typescript-node-index", probe,
             )
 
         def ruby_connect_probe_runner() -> None:
+            def probe(phase, _endpoint, http):
+                if phase == "initial":
+                    run_ruby_quickstart(installs["ruby"], root, http)
+                ruby_connect_probe(installs["ruby"], root, phase, http)
+
             with_restarted_daemon(
-                root, context["daemon"], "ruby-connect-index",
-                lambda phase, _endpoint, http: ruby_connect_probe(installs["ruby"], root, phase, http),
+                root, context["daemon"], "ruby-connect-index", probe,
             )
 
         runners = {
