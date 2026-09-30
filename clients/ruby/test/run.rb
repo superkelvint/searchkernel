@@ -496,6 +496,172 @@ negative_generic = facet_projection_result(
 ).project_facet("brands", "brands", "brand")
 same({}, negative_generic.facets, "generic facet rejects negative signed count")
 
+# Strict result-tree interpretation: generic groups remain canonical groups until
+# an explicitly requested projection proves the exact supported facet shape.
+unlabeled_bucket = { "node_type" => "ResultGroup", "node" => { "label" => "bucket" } }
+unlabeled_wrapper = { "node_type" => "ResultGroup", "node" => { "children" => [unlabeled_bucket] } }
+unlabeled_results = SearchKernel::Results::SearchResults.new(
+  canonical_search_result("root" => {
+    "node_type" => "ResultGroup",
+    "node" => { "children" => [unlabeled_wrapper] }
+  })
+)
+same(1, unlabeled_results.groups.length, "unlabeled group wrapper is preserved")
+assert(unlabeled_results.groups.first.equal?(unlabeled_results.root.children.first),
+       "top-level group is the canonical child object")
+same(nil, unlabeled_results.groups.first.label, "unlabeled wrapper is not inferred")
+same("bucket", unlabeled_results.groups.first.groups.first.label, "nested group remains nested")
+
+facet_like = facet_projection_result(SearchKernel::Value.encode(SearchKernel::Value.uint64(3)))
+same({}, facet_like.facets, "generic labeled result group is not inferred as a facet")
+same("brands", facet_like.groups.first.label, "generic labeled group remains accessible")
+
+missing_count = SearchKernel::Results::SearchResults.new(
+  canonical_search_result("root" => {
+    "node_type" => "ResultGroup", "node" => { "children" => [{
+      "node_type" => "ResultGroup", "node" => {
+        "id" => "brand", "label" => "brands", "children" => [{
+          "node_type" => "ResultGroup", "node" => {
+            "value" => SearchKernel::Value.encode("Acme"),
+            "fields" => [{ "key" => "other", "value" => SearchKernel::Value.encode(SearchKernel::Value.uint64(3)) }]
+          }
+        }]
+      }
+    }] }
+  })
+).project_facet("brands", "brands", "brand")
+same({}, missing_count.facets, "facet projection rejects missing count field")
+
+wrong_count = facet_projection_result(SearchKernel::Value.encode(3)).project_facet("brands", "brands", "brand")
+same({}, wrong_count.facets, "facet projection rejects wrong count value kind")
+
+mixed_children = SearchKernel::Results::SearchResults.new(
+  canonical_search_result("root" => {
+    "node_type" => "ResultGroup", "node" => { "children" => [{
+      "node_type" => "ResultGroup", "node" => {
+        "id" => "brand", "label" => "brands", "children" => [
+          { "node_type" => "ResultGroup", "node" => {
+              "value" => SearchKernel::Value.encode("Acme"),
+              "fields" => [{ "key" => "count", "value" => SearchKernel::Value.encode(SearchKernel::Value.uint64(3)) }]
+          } },
+          { "node_type" => "Hit", "node" => { "id" => "doc-1" } }
+        ]
+      }
+    }] }
+  })
+).project_facet("brands", "brands", "brand")
+same({}, mixed_children.facets, "facet projection rejects mixed hit/group children")
+same(2, mixed_children.groups.first.children.length, "mixed canonical result tree remains accessible")
+
+metadata_facet = SearchKernel::Results::SearchResults.new(
+  canonical_search_result("root" => {
+    "node_type" => "ResultGroup", "node" => { "children" => [{
+      "node_type" => "ResultGroup", "node" => {
+        "id" => "brand", "label" => "brands",
+        "metadata" => [{ "key" => "unexpected", "value" => SearchKernel::Value.encode(true) }],
+        "children" => [{ "node_type" => "ResultGroup", "node" => {
+          "value" => SearchKernel::Value.encode("Acme"),
+          "fields" => [{ "key" => "count", "value" => SearchKernel::Value.encode(SearchKernel::Value.uint64(3)) }]
+        } }]
+      }
+    }] }
+  })
+).project_facet("brands", "brands", "brand")
+same({}, metadata_facet.facets, "facet projection rejects ambiguous extra metadata")
+same({ "unexpected" => true }, metadata_facet.groups.first.metadata, "facet metadata remains on canonical tree")
+
+# Result union/value fidelity and fail-closed malformed states.
+fidelity_hit = SearchKernel::Results::SearchResults.new(
+  canonical_search_result("root" => {
+    "node_type" => "ResultGroup", "node" => { "children" => [
+      { "node_type" => "Hit", "node" => {
+        "id" => "doc-finite", "source" => "catalog", "types" => ["product", "featured"],
+        "relevance" => { "value_type" => "FiniteRelevance", "value" => { "value" => 2.5 } },
+        "match_features" => [{ "key" => "match", "value" => SearchKernel::Value.encode(["one", true]) }],
+        "summary_features" => [{ "key" => "summary", "value" => SearchKernel::Value.encode({ "ready" => true }) }],
+        "rank_features" => [{ "key" => "rank", "value" => SearchKernel::Value.encode(7) }],
+        "sort_values" => [SearchKernel::Value.encode("a"), SearchKernel::Value.encode(9)],
+        "highlights" => [{ "field" => "title", "fragments" => [{
+          "text" => "quick fox", "matches" => [{ "start_byte" => 6, "end_byte" => 9 }]
+        }] }]
+      } },
+      { "node_type" => "Hit", "node" => {
+        "id" => "doc-positive",
+        "relevance" => { "value_type" => "PositiveInfinityRelevance", "value" => {} }
+      } },
+      { "node_type" => "Hit", "node" => {
+        "id" => "doc-negative",
+        "relevance" => { "value_type" => "NegativeInfinityRelevance", "value" => {} }
+      } }
+    ] }
+  })
+)
+finite_hit, positive_hit, negative_hit = fidelity_hit.hits
+same("catalog", finite_hit.source, "hit source is preserved")
+same(["product", "featured"], finite_hit.types, "hit types are preserved")
+same({ "match" => ["one", true] }, finite_hit.match_features, "match feature values preserve recursive types")
+same({ "summary" => { "ready" => true } }, finite_hit.summary_features, "summary feature map is preserved")
+same({ "rank" => 7 }, finite_hit.rank_features, "rank feature map is preserved")
+same(["a", 9], finite_hit.sort_values, "sort values preserve canonical kinds")
+same(2.5, finite_hit.relevance, "finite relevance is preserved")
+same(Float::INFINITY, positive_hit.relevance, "positive infinity relevance remains distinct")
+same(-Float::INFINITY, negative_hit.relevance, "negative infinity relevance remains distinct")
+same(
+  [{ "field" => "title", "fragments" => [{ "text" => "quick fox", "matches" => [[6, 9]] }] }],
+  finite_hit.highlights,
+  "structured response highlights preserve fragments and byte spans"
+)
+
+raises(SearchKernel::ProtocolError, "finite relevance rejects non-finite payload") do
+  SearchKernel::Results::SearchResults.new(canonical_search_result("root" => {
+    "node_type" => "Hit", "node" => {
+      "relevance" => { "value_type" => "FiniteRelevance", "value" => { "value" => Float::INFINITY } }
+    }
+  }))
+end
+%w[PositiveInfinityRelevance NegativeInfinityRelevance].each do |kind|
+  raises(SearchKernel::ProtocolError, "#{kind} rejects mismatched finite payload") do
+    SearchKernel::Results::SearchResults.new(canonical_search_result("root" => {
+      "node_type" => "Hit", "node" => {
+        "relevance" => { "value_type" => kind, "value" => { "value" => 1.0 } }
+      }
+    }))
+  end
+end
+raises(SearchKernel::ProtocolError, "unknown result node union rejects") do
+  SearchKernel::Results::SearchResults.new(canonical_search_result("root" => {
+    "node_type" => "FutureNode", "node" => {}
+  }))
+end
+raises(SearchKernel::ProtocolError, "missing result node payload rejects") do
+  SearchKernel::Results::SearchResults.new(canonical_search_result("root" => {
+    "node_type" => "Hit", "node" => nil
+  }))
+end
+raises(SearchKernel::ProtocolError, "unknown value union rejects") do
+  portable.decode({ "kind_type" => "FutureValue", "kind" => {} })
+end
+raises(SearchKernel::ProtocolError, "mismatched value union payload rejects") do
+  portable.decode({ "kind_type" => "ValueList", "kind" => { "value" => [] } })
+end
+
+malformed_sparse = portable.encode(portable.tensor("tensor<float>(x{})", :sparse, []))
+malformed_sparse.fetch("kind").fetch("payload")["cells"] = [{
+  "address" => [{ "dimension" => "x" }], "value" => 0.5
+}]
+raises(SearchKernel::ProtocolError, "result tensor rejects missing address label") { portable.decode(malformed_sparse) }
+
+malformed_dense = {
+  "kind_type" => "TensorValue",
+  "kind" => {
+    "type_spec" => "tensor<float>(x[1])",
+    "payload_type" => "DenseTensorValues",
+    "payload" => { "cells" => [] }
+  }
+}
+raises(SearchKernel::ProtocolError, "tensor discriminator rejects mismatched payload shape") do
+  portable.decode(malformed_dense)
+end
 
 metadata_result = SearchKernel::Results::SearchResults.new(
   canonical_search_result("root" => {
