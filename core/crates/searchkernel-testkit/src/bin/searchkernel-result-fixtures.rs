@@ -5,6 +5,9 @@ use searchkernel_protocol::protocol::v2 as wire;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+#[path = "../malformed_tensor_fixtures.rs"]
+mod malformed_tensor_fixtures;
+
 const DEFAULT_OUTPUT: &str = "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses";
 const MALFORMED_OUTPUT: &str = "reference/result-response-conformance/fixtures";
 const RESPONSE_IDENTIFIER: &str = "SKRS";
@@ -45,6 +48,7 @@ fn main() {
     }
 
     let fixtures = searchkernel_testkit::result_fixtures();
+    let malformed_fixtures = malformed_tensor_fixtures::malformed_tensor_response_fixtures();
     let expected = fixtures
         .iter()
         .map(|fixture| format!("result-{}.skrs", fixture.name))
@@ -105,12 +109,28 @@ fn main() {
         ),
         ("duplicate-result-map-key", duplicate_result_map_key(values)),
     ];
-    let expected_malformed = malformed
+    let mut expected_malformed = malformed
         .iter()
         .map(|(name, _)| format!("result-malformed-{name}.skrs"))
         .collect::<BTreeSet<_>>();
     for (name, bytes) in malformed {
         let path = malformed_output.join(format!("result-malformed-{name}.skrs"));
+        if check {
+            let existing = std::fs::read(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            assert_eq!(
+                existing,
+                bytes,
+                "malformed fixture drifted: {}",
+                path.display()
+            );
+        } else {
+            write_fixture(&path, &bytes);
+        }
+    }
+    for (name, bytes) in malformed_fixtures {
+        expected_malformed.insert(format!("{name}.skrs"));
+        let path = malformed_output.join(format!("{name}.skrs"));
         if check {
             let existing = std::fs::read(&path)
                 .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
@@ -145,7 +165,7 @@ fn main() {
                 .file_name()
                 .to_string_lossy()
                 .into_owned();
-            if name.starts_with("result-malformed-") && name.ends_with(".skrs") {
+            if name.ends_with(".skrs") {
                 assert!(
                     expected_malformed.contains(&name),
                     "unexpected malformed fixture: {name}"

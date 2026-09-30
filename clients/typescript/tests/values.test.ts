@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Tensor, ValueDecodeError, float64, fromValue, int64, uint64, value } from "../src/client/values.js";
+import { DenseTensorValuesT } from "../src/generated/flatbuffers/search-kernel/v2/dense-tensor-values.js";
 import { MixedTensorBlocksT } from "../src/generated/flatbuffers/search-kernel/v2/mixed-tensor-blocks.js";
 import { NonFiniteFloatKind } from "../src/generated/flatbuffers/search-kernel/v2/non-finite-float-kind.js";
 import { NonFiniteFloatValueT } from "../src/generated/flatbuffers/search-kernel/v2/non-finite-float-value.js";
@@ -71,6 +72,37 @@ describe("portable values", () => {
     });
   });
 
+  it("rejects non-finite cells in every decoded tensor encoding", () => {
+    const address = [new TensorAddressEntryT("category", "books")];
+    const malformed = [
+      new TensorValueT(
+        "tensor<float>(x[1])",
+        TensorPayloadKind.DenseTensorValues,
+        new DenseTensorValuesT([Number.NaN]),
+      ),
+      new TensorValueT(
+        "tensor<float>(category{})",
+        TensorPayloadKind.SparseTensorCells,
+        new SparseTensorCellsT([new TensorCellT(address, Number.POSITIVE_INFINITY)]),
+      ),
+      new TensorValueT(
+        "tensor<float>(category{},x[1])",
+        TensorPayloadKind.MixedTensorBlocks,
+        new MixedTensorBlocksT([new TensorBlockT(address, [Number.NEGATIVE_INFINITY])]),
+      ),
+    ];
+
+    const rejected = malformed.map((tensor) => {
+      try {
+        fromValue(new ValueT(ValueKind.TensorValue, tensor));
+        return false;
+      } catch (error) {
+        return error instanceof ValueDecodeError;
+      }
+    });
+    expect(rejected).toEqual([true, true, true]);
+  });
+
   it("supports full-range signed and unsigned 64-bit values inside documents", () => {
     const signed = int64("-9223372036854775808");
     const unsigned = uint64("18446744073709551615");
@@ -108,6 +140,10 @@ describe("portable values", () => {
       ValueKind.NonFiniteFloatValue,
       new NonFiniteFloatValueT(NonFiniteFloatKind.NaN),
     )) as number)).toBe(true);
+    expect(fromValue(new ValueT(
+      ValueKind.NonFiniteFloatValue,
+      new NonFiniteFloatValueT(NonFiniteFloatKind.NegativeInfinity),
+    ))).toBe(Number.NEGATIVE_INFINITY);
   });
 
   it("fails closed for missing or unknown value/tensor discriminators", () => {
