@@ -36,6 +36,7 @@ pub enum GroupingAggregation {
     Sum(GroupingExpression),
     Min(GroupingExpression),
     Max(GroupingExpression),
+    AliasRef(String),
     Named(String, Box<GroupingAggregation>),
 }
 
@@ -54,6 +55,9 @@ impl GroupingAggregation {
     }
     pub fn max(field: impl Into<String>) -> Self {
         Self::Max(GroupingExpression::attribute(field))
+    }
+    pub fn alias_ref(name: impl Into<String>) -> Self {
+        Self::AliasRef(name.into())
     }
     pub fn named(name: impl Into<String>, aggregation: GroupingAggregation) -> Self {
         Self::Named(name.into(), Box::new(aggregation))
@@ -309,6 +313,7 @@ fn aggregation_expression(output: GroupingAggregation) -> Result<GroupingExpress
         GroupingAggregation::Max(expression) => {
             GroupingAggregationIr::Max(expression_to_ir(expression)?)
         }
+        GroupingAggregation::AliasRef(name) => return Ok(GroupingExpressionIr::Alias(name)),
         GroupingAggregation::Named(_, _) => {
             return Err(Error::search(
                 crate::ErrorCode::InvalidArgument,
