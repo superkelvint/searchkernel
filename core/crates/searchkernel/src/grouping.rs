@@ -29,6 +29,30 @@ pub enum GroupingAggregation {
     Summary(Option<String>),
 }
 
+/// One root grouping output, optionally named for stable result lookup.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupingOutput {
+    aggregation: GroupingAggregation,
+    label: Option<String>,
+}
+
+impl GroupingOutput {
+    /// Assign a stable result label to this aggregation output.
+    pub fn as_(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+}
+
+impl From<GroupingAggregation> for GroupingOutput {
+    fn from(aggregation: GroupingAggregation) -> Self {
+        Self {
+            aggregation,
+            label: None,
+        }
+    }
+}
+
 impl GroupingAggregation {
     pub fn count() -> Self {
         Self::Count
@@ -68,6 +92,11 @@ impl GroupingAggregation {
     }
     pub fn summary_named(name: impl Into<String>) -> Self {
         Self::Summary(Some(name.into()))
+    }
+
+    /// Name this aggregation when it is used as a root-level output.
+    pub fn as_(self, label: impl Into<String>) -> GroupingOutput {
+        GroupingOutput::from(self).as_(label)
     }
 }
 
@@ -210,14 +239,20 @@ fn output_to_ir(output: GroupingAggregation) -> Result<GroupingOutputIr> {
     })
 }
 
-pub(crate) fn aggregate_request(outputs: &[GroupingAggregation]) -> Result<GroupingRequestIr> {
+fn grouping_output_to_ir(output: GroupingOutput) -> Result<GroupingOutputIr> {
+    let mut resolved = output_to_ir(output.aggregation)?;
+    resolved.label = output.label;
+    Ok(resolved)
+}
+
+pub(crate) fn aggregate_request(outputs: &[GroupingOutput]) -> Result<GroupingRequestIr> {
     Ok(GroupingRequestIr {
         root: GroupingAllIr {
             operations: vec![GroupingOperationIr::Output(
                 outputs
                     .iter()
                     .cloned()
-                    .map(output_to_ir)
+                    .map(grouping_output_to_ir)
                     .collect::<Result<Vec<_>>>()?,
             )],
             label: None,
