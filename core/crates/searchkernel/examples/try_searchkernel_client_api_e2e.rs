@@ -1047,7 +1047,9 @@ mod showcase {
             .ok_or("group average output name missing")?;
         let parity_grouping_aggregations = parity_group_buckets
             .into_iter()
-            .map(|group| parity_grouping_aggregation(group, grouping_count_name, grouping_average_name))
+            .map(|group| {
+                parity_grouping_aggregation(group, grouping_count_name, grouping_average_name)
+            })
             .collect::<Vec<_>>();
         let nested_count_name = nested_intent["outputs"][0]["name"]
             .as_str()
