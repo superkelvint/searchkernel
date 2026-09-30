@@ -83,7 +83,7 @@ approximated.
 
 ### YQL query source (`query.yql`)
 
-- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. The public Rust Index has search()/browse() but no yql() entry point.
+- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. Rust exposes YQL source and scalar/tensor parameter bindings through Index::yql().
 
 ### Analyzed text search with default WeakAnd semantics (`query.text_weak_and`)
 
@@ -185,15 +185,15 @@ approximated.
 
 ### Structured grouping and faceting (`grouping.structured`)
 
-- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree.
+- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. The Rust facade exposes root outputs, nested grouping, aggregation aliases, and regex keep filters.
 
 ### Executable grouping expression/function subset (`grouping.functions`)
 
-- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust's public GroupingExpression currently exposes attributes only; Python exposes the richer expression facade.
+- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust exposes attribute classifiers, named aggregation aliases, and regex keep filters; Python exposes the richer expression facade.
 
 ### Grouping aggregations (`grouping.aggregations`)
 
-- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust's high-level GroupingAggregation exposes count/average/sum/min/max; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete.
+- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust's high-level GroupingAggregation exposes count/average/sum/min/max, named outputs, and root-scope outputs; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete.
 
 ### Summary aggregation (`grouping.summary_aggregation`)
 
@@ -216,11 +216,11 @@ approximated.
 
 ### Arithmetic document updates (`update.arithmetic`)
 
-- Increment, decrement, multiply, and divide execute through canonical FlatBuffers -> IR -> native DocumentUpdate in Python. The high-level Rust product API currently has Patch set/unset only and no advanced UpdateBuilder.
+- Increment, decrement, multiply, and divide execute through canonical FlatBuffers -> IR -> native DocumentUpdate. Rust exposes assignment, clear, and each arithmetic operator; multiple updates to the same field in one request remain unsupported by the shared resolver.
 
 ### Create-if-nonexistent document updates (`update.create_if_nonexistent`)
 
-- Python UpdateBuilder.create() is proven through the real native path. The high-level Rust product API does not yet expose advanced document updates.
+- Python UpdateBuilder.create() is proven through the real native path. Create-if-missing remains unavailable through the high-level Rust Update facade.
 
 ### Conditional document mutations (`update.conditional`)
 

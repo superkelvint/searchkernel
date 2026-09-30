@@ -111,12 +111,12 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                         .unwrap_or_else(|| panic!("{name}: create-index definition missing"));
                     assert_eq!(
                         definition.fields().map(|fields| fields.len()),
-                        Some(11),
+                        Some(12),
                         "{name}: exact PHP E2E field count"
                     );
                     assert_eq!(
                         definition.rank_profiles().map(|profiles| profiles.len()),
-                        Some(5),
+                        Some(6),
                         "{name}: exact PHP E2E rank-profile count"
                     );
                     assert_eq!(

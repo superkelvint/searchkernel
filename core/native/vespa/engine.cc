@@ -2000,6 +2000,25 @@ class EmbeddedEngine {
                 const bool observed_has_value = observed_value &&
                     (observed->hasValue(schema_field) || manifest_field.type == "tensor");
                 if (!observed_has_value) {
+                    // Boolean attributes have no undefined sentinel in Vespa:
+                    // an unset field reads as false. GET exposes that default
+                    // so callers can distinguish a known boolean field from
+                    // a missing schema field.
+                    if (observed_value &&
+                        observed_value->type() == document::FieldValue::Type::BOOL &&
+                        observed_value->getAsLong() == 0) {
+                        DocumentFieldState state{
+                            manifest_field.name,
+                            owned_value(*observed_value, manifest_field.name),
+                            {},
+                            {}};
+                        if (existing != result.fields.end()) {
+                            *existing = std::move(state);
+                        } else {
+                            result.fields.push_back(std::move(state));
+                        }
+                        continue;
+                    }
                     if (manifest_field.attribute && existing != result.fields.end() &&
                         existing->value.kind == SK_VALUE_STRING &&
                         existing->value.string.empty()) {
@@ -2027,13 +2046,6 @@ class EmbeddedEngine {
                         continue;
                     }
                     if (existing != result.fields.end()) result.fields.erase(existing);
-                    continue;
-                }
-                // Vespa's boolean attribute has no undefined sentinel and reads as false for
-                // every document. Do not turn that storage default into a document field when
-                // the source document never contained the field.
-                if (existing == result.fields.end() && observed_value->type() == document::FieldValue::Type::BOOL &&
-                    observed_value->getAsLong() == 0) {
                     continue;
                 }
                 DocumentFieldState state{manifest_field.name, owned_value(*observed_value, manifest_field.name), {}, {}};

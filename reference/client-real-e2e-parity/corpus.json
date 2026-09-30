@@ -46,12 +46,34 @@
     "tensor_readback", "nearest_neighbor", "hybrid_text_vector", "coverage_degradation", "yql", "structured_filter_error",
     "text_filter_syntax_error", "patch", "advanced_update", "delete", "upsert_replacement", "reopen_persistence"
   ],
-  "non_comparable": {
-    "builder_misuse": "The Rust facade has no page() builder; negative limit and offset values are excluded by its unsigned types at compile time, so there is no shared runtime result to compare.",
-    "root_aggregations": "The Rust facade exposes grouping plans but no standalone root aggregation builder.",
-    "group_alias": "The Rust GroupingPlan facade exposes attribute and nested grouping but no grouping aliases.",
-    "group_keep_filter": "The Rust GroupingPlan facade exposes attribute and nested grouping but no keep-filter operation.",
-    "yql": "The Rust facade does not expose YQL or YQL property substitution.",
-    "advanced_update": "The Rust facade does not expose the portable advanced update operator set."
+  "client_scenario_contract": {
+    "builder_misuse": {
+      "rust": {
+        "negative_limit_rejected": {
+          "kind": "not_expressible",
+          "reason": "SearchBuilder::limit accepts u32, so a negative limit cannot be represented."
+        },
+        "negative_offset_rejected": {
+          "kind": "not_expressible",
+          "reason": "SearchBuilder::offset accepts u32, so a negative offset cannot be represented."
+        }
+      },
+      "python": {
+        "negative_limit_rejected": {"kind": "runtime_rejected"},
+        "negative_offset_rejected": {"kind": "runtime_rejected"}
+      },
+      "typescript": {
+        "negative_limit_rejected": {"kind": "runtime_rejected"},
+        "negative_offset_rejected": {"kind": "runtime_rejected"}
+      },
+      "php": {
+        "negative_limit_rejected": {"kind": "runtime_rejected"},
+        "negative_offset_rejected": {"kind": "runtime_rejected"}
+      },
+      "ruby": {
+        "negative_limit_rejected": {"kind": "runtime_rejected"},
+        "negative_offset_rejected": {"kind": "runtime_rejected"}
+      }
+    }
   }
 }

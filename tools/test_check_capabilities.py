@@ -64,6 +64,17 @@ class CapabilityLedgerTests(unittest.TestCase):
             "Structured facade support",
             documents[ROOT / "docs" / "CAPABILITIES.md"],
         )
+
+    def test_query_term_evidence_uses_current_adapter_test_module(self) -> None:
+        capability = next(
+            capability
+            for capability in self.ledger["capabilities"]
+            if capability["id"] == "query.term"
+        )
+        self.assertIn(
+            "core/crates/searchkernel-ir-adapter/src/tests/mod.rs",
+            capability["verified_by"],
+        )
         self.assertIn(
             "machine-checked structured support state",
             documents[ROOT / "LIMITATIONS.md"],

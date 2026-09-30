@@ -13,6 +13,21 @@ scenario_ids = PARITY.scenario_ids
 scenario_contract = PARITY.scenario_contract
 scenario_observations = PARITY.scenario_observations
 
+MISUSE_CASES = ("negative_limit_rejected", "negative_offset_rejected")
+MISUSE_CONTRACT = {
+    "builder_misuse": {
+        client: {
+            case: (
+                {"kind": "not_expressible", "reason": "Rust public API accepts u32."}
+                if client == "rust"
+                else {"kind": "runtime_rejected"}
+            )
+            for case in MISUSE_CASES
+        }
+        for client in PARITY.CLIENTS
+    }
+}
+
 
 class RealE2EParityComparatorTests(unittest.TestCase):
     def test_checker_uses_the_shared_scenario_list(self):
@@ -31,17 +46,32 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "non-empty scenario IDs"):
             scenario_ids({"scenarios": ["facets", ""]})
 
-    def test_only_explicitly_classified_scenarios_are_excluded(self):
-        comparable, excluded = scenario_contract({
+    def test_global_non_comparable_exclusions_are_rejected(self):
+        with self.assertRaisesRegex(SystemExit, "global non_comparable"):
+            scenario_contract({"scenarios": ["facets"], "non_comparable": {"facets": "reason"}})
+
+    def test_capability_contract_is_per_client_and_keeps_the_scenario_required(self):
+        scenarios, capabilities = scenario_contract({
             "scenarios": ["full_text_search", "yql"],
-            "non_comparable": {"yql": "Rust facade does not expose YQL."},
+            "client_scenario_contract": {
+                "yql": {
+                    client: {
+                        "negative_limit": (
+                            {"kind": "not_expressible", "reason": "Rust type system prevents this input."}
+                            if client == "rust"
+                            else {"kind": "runtime_rejected"}
+                        )
+                    }
+                    for client in PARITY.CLIENTS
+                }
+            },
         })
-        self.assertEqual(["full_text_search"], comparable)
-        self.assertEqual({"yql": "Rust facade does not expose YQL."}, excluded)
+        self.assertEqual(["full_text_search", "yql"], scenarios)
+        self.assertEqual("not_expressible", capabilities["yql"]["rust"]["negative_limit"]["kind"])
         with self.assertRaisesRegex(SystemExit, "unknown scenarios"):
-            scenario_contract({"scenarios": ["facets"], "non_comparable": {"yql": "reason"}})
-        with self.assertRaisesRegex(SystemExit, "non-empty rationales"):
-            scenario_contract({"scenarios": ["facets"], "non_comparable": {"facets": " "}})
+            scenario_contract({"scenarios": ["facets"], "client_scenario_contract": {"yql": {}}})
+        with self.assertRaisesRegex(SystemExit, "every required client"):
+            scenario_contract({"scenarios": ["facets"], "client_scenario_contract": {"facets": {"rust": {"negative_limit": {"kind": "not_expressible", "reason": " "}}}}})
 
     def test_every_shared_scenario_is_required_in_each_snapshot(self):
         with self.assertRaisesRegex(SystemExit, "python snapshot is missing scenarios: facets"):
@@ -49,7 +79,56 @@ class RealE2EParityComparatorTests(unittest.TestCase):
                 "python",
                 {"version": 1, "scenarios": {"full_text_search": {"ids": ["shoe-1"]}}},
                 ["full_text_search", "facets"],
+                {},
             )
+        with self.assertRaisesRegex(SystemExit, "silently skipped"):
+            scenario_observations("python", {"version": 1, "scenarios": {"facets": {}}}, ["facets"], {})
+        with self.assertRaisesRegex(SystemExit, "silently skipped"):
+            scenario_observations("python", {"version": 1, "scenarios": {"facets": []}}, ["facets"], {})
+        self.assertEqual(
+            {"facets": ["Acme", "TrailCo"], "runtime_flag": False},
+            scenario_observations(
+                "python",
+                {"version": 1, "scenarios": {"facets": ["Acme", "TrailCo"], "runtime_flag": False}},
+                ["facets", "runtime_flag"],
+                {},
+            ),
+        )
+
+    def test_not_expressible_requires_exact_contract_observation(self):
+        contract = MISUSE_CONTRACT
+        observation = {"version": 1, "scenarios": {
+            "builder_misuse": {
+                "observation": {"page_and_limit_rejected": True},
+                "capabilities": contract["builder_misuse"]["rust"],
+            }
+        }}
+        self.assertEqual(
+            observation["scenarios"],
+            scenario_observations("rust", observation, ["builder_misuse"], contract),
+        )
+        python_observation = {"version": 1, "scenarios": {
+            "builder_misuse": {
+                "observation": {
+                    "page_and_limit_rejected": True,
+                    "negative_limit_rejected": True,
+                    "negative_offset_rejected": True,
+                },
+                "capabilities": contract["builder_misuse"]["python"],
+            }
+        }}
+        self.assertEqual(
+            python_observation["scenarios"],
+            scenario_observations("python", python_observation, ["builder_misuse"], contract),
+        )
+        python_observation["scenarios"]["builder_misuse"]["observation"]["negative_limit_rejected"] = False
+        with self.assertRaisesRegex(SystemExit, "runtime rejection was not observed"):
+            scenario_observations("python", python_observation, ["builder_misuse"], contract)
+        with self.assertRaisesRegex(SystemExit, "unchecked"):
+            scenario_observations("python", {"version": 1, "scenarios": {"builder_misuse": {
+                "observation": {"negative_limit_rejected": True},
+                "capabilities": {"negative_limit_rejected": {"kind": "not_expressible", "reason": "unknown"}},
+            }}}, ["builder_misuse"], contract)
 
     def test_equal_structures_pass(self):
         self.assertEqual([], compare({"ids": ["a", "b"], "count": 2}, {"ids": ["a", "b"], "count": 2}))
@@ -58,9 +137,21 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         self.assertEqual([], compare({"score": 100.0}, {"score": 100.00005}))
         self.assertTrue(compare({"score": 100.0}, {"score": 100.01}))
 
+    def test_integer_semantics_reject_float_drift_and_float_kind(self):
+        self.assertTrue(compare({"total": 7}, {"total": 7.0000005}))
+        self.assertTrue(compare({"total": 7}, {"total": 7.0}))
+        self.assertEqual([], compare({"count": 7}, {"count": 7}))
+
+    def test_close_float_values_pass_and_material_drift_fails(self):
+        self.assertEqual([], compare({"score": 7.0}, {"score": 7.0000005}))
+        self.assertTrue(compare({"score": 7.0}, {"score": 7.01}))
+        for invalid in (float("nan"), float("inf"), float("-inf")):
+            self.assertTrue(compare({"score": 1.0}, {"score": invalid}))
+
     def test_integer_and_boolean_kinds_remain_exact(self):
         self.assertTrue(compare({"count": 1}, {"count": 2}))
         self.assertTrue(compare({"count": 1}, {"count": True}))
+        self.assertTrue(compare({"count": 0}, {"count": False}))
 
     def test_missing_fields_and_ordered_ids_fail(self):
         self.assertTrue(compare({"ids": ["a", "b"]}, {"ids": ["a"]}))

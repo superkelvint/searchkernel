@@ -211,6 +211,20 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
       avg_price: paritySafe(group.get("avg_price")),
     })),
   }));
+  let pageAndLimitRejected = false;
+  try { await index.search("shoes").page(2, 20).limit(20).execute(); } catch { pageAndLimitRejected = true; }
+  let pageAndOffsetRejected = false;
+  try { await index.search("shoes").page(2, 20).offset(20).execute(); } catch { pageAndOffsetRejected = true; }
+  assertThrows(() => index.search("shoes").limit(-1), "negative limit rejected");
+  assertThrows(() => index.search("shoes").offset(-1), "negative offset rejected");
+  const negativeLimitRejected = true;
+  const negativeOffsetRejected = true;
+  await index.insert(documentInput({ _id: "parity-advanced-update", title: "before", inventory: 10n, sale_price: float64(1) }));
+  await index.update("parity-advanced-update").set("title", "after").unset("sale_price").increment("inventory", 3n).execute();
+  await index.update("parity-advanced-update").decrement("inventory", 1n).execute();
+  await index.update("parity-advanced-update").multiply("inventory", 2n).execute();
+  await index.update("parity-advanced-update").divide("inventory", 4n).execute();
+  const advancedUpdate = await index.get("parity-advanced-update");
   return {
     document_crud: { id: document._id, title: document.title, brand: document.brand, price: document.price },
     full_text_search: { ids: scenarioIds(fullText), total: Number(fullText.totalHits) },
@@ -220,15 +234,28 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
     boolean_filter_grammar: { ids: scenarioIds(booleanFilter) },
     sorting_projection: { hits: projection.hits.map((hit) => ({ id: hit.id, fields: paritySafe(hit.fields) })) },
     pagination: { all_ids: scenarioIds(allSorted), offset_ids: scenarioIds(page), total: Number(page.totalHits) },
+    builder_misuse: {
+      observation: {
+        page_and_limit_rejected: pageAndLimitRejected,
+        page_and_offset_rejected: pageAndOffsetRejected,
+        negative_limit_rejected: negativeLimitRejected,
+        negative_offset_rejected: negativeOffsetRejected,
+      },
+      capabilities: {
+        negative_limit_rejected: { kind: "runtime_rejected" },
+        negative_offset_rejected: { kind: "runtime_rejected" },
+      },
+    },
     sorted_search: { ids: ordered.hits.map((hit) => hit.id), total: Number(ordered.totalHits) },
     filtered_search: { ids: filtered.hits.map((hit) => hit.id), total: Number(filtered.totalHits) },
     facets: Object.fromEntries(faceted.facets.brands!.map((item) => [String(item.value), Number(item.count)])),
-    aggregations: paritySafe(root.aggregations),
+    root_aggregations: paritySafe(root.aggregations),
+    advanced_update: { title: advancedUpdate!.title, inventory: paritySafe(advancedUpdate!.inventory), sale_price_present: "sale_price" in advancedUpdate! },
     grouping_aggregations: groupsByBrand(grouped),
     filtered_facets: Object.fromEntries(filteredFacet.facets.brand!.map((item) => [String(item.value), Number(item.count)])),
     nested_grouping: nestedGroups,
-    group_alias: groupsByBrand(aliased),
-    group_keep_filter: groupsByBrand(kept),
+    group_alias: groupingGroups(aliased).map((group) => ({ value: group.value, fields: paritySafe(group.fields) })),
+    group_keep_filter: groupingGroups(kept).map((group) => ({ value: group.value, fields: paritySafe(group.fields) })),
     typed_query: { ids: scenarioIds(typed) },
     rank_inputs: rankInput.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
     rank_properties: rankProperty.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),

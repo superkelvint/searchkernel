@@ -34,6 +34,8 @@ class BookkeepingAutofixWorkflowTests(unittest.TestCase):
     def test_patch_scope_is_fail_closed(self):
         for path in (
             "build/targets.json",
+            "LIMITATIONS.md",
+            "docs/CAPABILITIES.md",
             "docs/client-capabilities.json",
             "docs/CLIENT_CAPABILITIES.md",
         ):

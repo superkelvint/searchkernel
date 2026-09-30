@@ -201,7 +201,12 @@ $decoded = Protocol::decodeDocument($document);
 same('doc-1', $decoded['_id'], 'decode document id');
 same(PHP_INT_MAX, $decoded['count'], 'decode int');
 same(['one', 'two'], $decoded['tags'], 'decode list');
-same(['a' => 1, 'z' => 2], $decoded['meta'], 'decode object');
+truth($decoded['meta'] instanceof ValueObject, 'decoded objects preserve the ValueObject type');
+same(
+    [['key' => 'a', 'value' => 1], ['key' => 'z', 'value' => 2]],
+    $decoded['meta']->entries,
+    'decode object entries in canonical key order',
+);
 
 $bytes = new Bytes("\x00\xffA");
 $encodedBytes = Protocol::value($bytes);
@@ -1520,6 +1525,69 @@ $locationField = current(array_values(array_filter(
 )));
 truth(is_array($locationField), 'location field present in index definition');
 same('PositionDataType', $locationField['data_type']['kind_type'], 'location field keeps position type');
+
+require_once dirname(__DIR__) . '/examples/searchkernel_client_api_e2e_schema.php';
+$parityCorpus = json_decode(
+    (string) file_get_contents(dirname(__DIR__, 3) . '/reference/client-real-e2e-parity/corpus.json'),
+    true,
+    flags: JSON_THROW_ON_ERROR,
+);
+$parityDefinition = searchkernelPhpClientApiE2eDefinition($parityCorpus)->toWire();
+$parityFieldNames = array_column($parityDefinition['fields'], 'name');
+$expectedParityFieldNames = array_merge(array_keys($parityCorpus['schema']['fields']), ['people', 'location']);
+sort($expectedParityFieldNames, SORT_STRING);
+same($expectedParityFieldNames, $parityFieldNames, 'PHP E2E schema contains every corpus field plus typed-query extensions');
+same(
+    array_column($parityCorpus['schema']['rank_profiles'], 'name'),
+    array_column($parityDefinition['rank_profiles'], 'name'),
+    'PHP E2E rank profiles follow the shared corpus',
+);
+foreach ($parityCorpus['schema']['rank_profiles'] as $position => $spec) {
+    $actualProfile = $parityDefinition['rank_profiles'][$position];
+    foreach (['first_phase', 'second_phase'] as $phase) {
+        if (isset($spec[$phase])) {
+            same($spec[$phase], $actualProfile[$phase]['expression'], 'PHP rank profile phase follows corpus: ' . $spec['name'] . '.' . $phase);
+        }
+    }
+    same($spec['match_features'] ?? [], $actualProfile['match_features'] ?? [], 'PHP rank profile match features follow corpus: ' . $spec['name']);
+    if (isset($spec['rerank_count'])) {
+        same($spec['rerank_count'], $actualProfile['second_phase']['rerank_count']['value'], 'PHP rerank count follows corpus: ' . $spec['name']);
+    }
+    if (isset($spec['query_inputs'])) {
+        same(array_keys($spec['query_inputs']), array_column($actualProfile['inputs'], 'name'), 'PHP rank profile inputs follow corpus: ' . $spec['name']);
+    }
+}
+$parityEmbedding = current(array_values(array_filter(
+    $parityDefinition['fields'],
+    static fn (array $field): bool => $field['name'] === 'embedding',
+)));
+same(
+    $parityCorpus['schema']['fields']['embedding']['type'],
+    $parityEmbedding['data_type']['kind']['type_spec'],
+    'PHP E2E tensor schema follows the shared corpus type',
+);
+foreach ($parityCorpus['schema']['fields'] as $name => $spec) {
+    $actual = current(array_values(array_filter(
+        $parityDefinition['fields'],
+        static fn (array $field): bool => $field['name'] === $name,
+    )));
+    $expectedType = match (true) {
+        $spec['type'] === 'text', $spec['type'] === 'keyword' => [
+            'kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'String'],
+        ],
+        $spec['type'] === 'float64' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Float64']],
+        $spec['type'] === 'int64' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Int64']],
+        $spec['type'] === 'bool' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Bool']],
+        str_starts_with($spec['type'], 'tensor<') => ['kind_type' => 'TensorDataType', 'kind' => ['type_spec' => $spec['type']]],
+        default => throw new RuntimeException('unhandled shared corpus field type'),
+    };
+    same($expectedType, $actual['data_type'], 'PHP field data type follows shared corpus: ' . $name);
+    foreach (['stored', 'searchable', 'filterable', 'sortable', 'facetable'] as $capability) {
+        if (array_key_exists($capability, $spec)) {
+            same(['value' => $spec[$capability]], $actual[$capability] ?? null, 'PHP field capability follows shared corpus: ' . $name . '.' . $capability);
+        }
+    }
+}
 
 $lifecycleTransport = new RecordingTransport();
 $lifecycle = new Client($lifecycleTransport, 'products');

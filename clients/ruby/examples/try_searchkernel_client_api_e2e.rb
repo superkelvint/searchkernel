@@ -123,6 +123,38 @@ def capture_real_engine_parity(index)
     syntax_error = {"code" => error.code.downcase, "details" => error.details.map { |detail| detail["code"] }.sort}
   end
   groups = grouping_buckets(grouped)
+  negative_limit_rejected = begin
+    index.search("shoes").limit(-1)
+    false
+  rescue ArgumentError, TypeError
+    true
+  end
+  page_and_limit_rejected = begin
+    index.search("shoes").page(2, 20).limit(20)
+    false
+  rescue ArgumentError, TypeError
+    true
+  end
+  page_and_offset_rejected = begin
+    index.search("shoes").page(2, 20).offset(20)
+    false
+  rescue ArgumentError, TypeError
+    true
+  end
+  negative_offset_rejected = begin
+    index.search("shoes").offset(-1)
+    false
+  rescue ArgumentError, TypeError
+    true
+  end
+  check(negative_limit_rejected && negative_offset_rejected && page_and_limit_rejected && page_and_offset_rejected,
+        "builder misuse inputs are rejected")
+  index.insert("_id" => "parity-advanced-update", "title" => "before", "inventory" => 10, "sale_price" => 1.0)
+  index.update("parity-advanced-update").set("title", "after").unset("sale_price").increment("inventory", 3).execute
+  index.update("parity-advanced-update").decrement("inventory", 1).execute
+  index.update("parity-advanced-update").multiply("inventory", 2).execute
+  index.update("parity-advanced-update").divide("inventory", 4).execute
+  advanced_update = index.get("parity-advanced-update")
   {
     "document_crud" => {"id" => document.fetch("_id"), "title" => document.fetch("title"), "brand" => document.fetch("brand"), "price" => document.fetch("price")},
     "full_text_search" => {"ids" => ids(full_text), "total" => full_text.total_hits},
@@ -132,10 +164,23 @@ def capture_real_engine_parity(index)
     "boolean_filter_grammar" => {"ids" => ids(boolean_filter)},
     "sorting_projection" => {"hits" => projection.hits.map { |hit| {"id" => hit.id, "fields" => hit.fields} }},
     "pagination" => {"all_ids" => ids(all_sorted), "offset_ids" => ids(page), "total" => page.total_hits},
+    "builder_misuse" => {
+      "observation" => {
+        "page_and_limit_rejected" => page_and_limit_rejected,
+        "page_and_offset_rejected" => page_and_offset_rejected,
+        "negative_limit_rejected" => negative_limit_rejected,
+        "negative_offset_rejected" => negative_offset_rejected
+      },
+      "capabilities" => {
+        "negative_limit_rejected" => {"kind" => "runtime_rejected"},
+        "negative_offset_rejected" => {"kind" => "runtime_rejected"}
+      }
+    },
     "sorted_search" => {"ids" => ids(ordered), "total" => ordered.total_hits},
     "filtered_search" => {"ids" => ids(filtered), "total" => filtered.total_hits},
     "facets" => faceted.facets.fetch("brands").to_h { |item| [item.fetch("value"), item.fetch("count")] },
-    "aggregations" => root.aggregations,
+    "root_aggregations" => root.aggregations,
+    "advanced_update" => {"title" => advanced_update.fetch("title"), "inventory" => advanced_update.fetch("inventory"), "sale_price_present" => advanced_update.key?("sale_price")},
     "grouping_aggregations" => groups.map { |group| {"brand" => group.value, "products" => group.fields.fetch("products"), "avg_price" => group.fields.fetch("avg_price")} },
     "filtered_facets" => filtered_facet.facets.fetch("brand").to_h { |item| [item.fetch("value"), item.fetch("count")] },
     "nested_grouping" => grouping_buckets(nested).map { |group|

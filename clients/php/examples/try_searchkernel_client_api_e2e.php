@@ -209,6 +209,12 @@ function captureRealEngineParity(Index $index): array
     }
 
     $groups = groupingGroups($grouped);
+    $index->insert(['_id' => 'parity-advanced-update', 'title' => 'before', 'inventory' => 10, 'sale_price' => 1.0]);
+    $index->update('parity-advanced-update')->set('title', 'after')->unset('sale_price')->increment('inventory', 3)->execute();
+    $index->update('parity-advanced-update')->decrement('inventory', 1)->execute();
+    $index->update('parity-advanced-update')->multiply('inventory', 2)->execute();
+    $index->update('parity-advanced-update')->divide('inventory', 4)->execute();
+    $advancedUpdate = $index->get('parity-advanced-update');
     return [
         'document_crud' => ['id' => $document['_id'], 'title' => $document['title'], 'brand' => $document['brand'], 'price' => $document['price']],
         'full_text_search' => ['ids' => ids($fullText), 'total' => $fullText->totalHits],
@@ -221,7 +227,26 @@ function captureRealEngineParity(Index $index): array
         'sorted_search' => ['ids' => ids($ordered), 'total' => $ordered->totalHits],
         'filtered_search' => ['ids' => ids($filtered), 'total' => $filtered->totalHits],
         'facets' => array_column($faceted->facets['brands'], 'count', 'value'),
-        'aggregations' => $root->aggregations,
+        'root_aggregations' => $root->aggregations,
+        'advanced_update' => ['title' => $advancedUpdate['title'], 'inventory' => $advancedUpdate['inventory'], 'sale_price_present' => array_key_exists('sale_price', $advancedUpdate)],
+        'builder_misuse' => (function () use ($index): array {
+            expectInvalid(static fn () => $index->search('shoes')->page(2, 20)->limit(20), 'page plus limit rejected');
+            expectInvalid(static fn () => $index->search('shoes')->page(2, 20)->offset(20), 'page plus offset rejected');
+            expectInvalid(static fn () => $index->search('shoes')->limit(-1), 'negative limit rejected');
+            expectInvalid(static fn () => $index->search('shoes')->offset(-1), 'negative offset rejected');
+            return [
+                'observation' => [
+                    'page_and_limit_rejected' => true,
+                    'page_and_offset_rejected' => true,
+                    'negative_limit_rejected' => true,
+                    'negative_offset_rejected' => true,
+                ],
+                'capabilities' => [
+                    'negative_limit_rejected' => ['kind' => 'runtime_rejected'],
+                    'negative_offset_rejected' => ['kind' => 'runtime_rejected'],
+                ],
+            ];
+        })(),
         'grouping_aggregations' => array_map(static fn ($group): array => [
             'brand' => $group->value,
             'products' => $group->fields['products'],
@@ -272,7 +297,7 @@ if (!in_array($phase, ['initial', 'reopen'], true)) {
     throw new InvalidArgumentException('expected initial or reopen phase');
 }
 $index = $phase === 'initial'
-    ? Index::create($url, $target, searchkernelPhpClientApiE2eDefinition(VECTOR_TYPE))
+    ? Index::create($url, $target, searchkernelPhpClientApiE2eDefinition($e2eCorpus))
     : Index::open($url, $target);
 
 if ($phase === 'reopen') {
@@ -639,6 +664,44 @@ $results = $index->query(Query::contains('title', 'shoes'))
     ->execute();
 same(5, $results->totalHits, 'query input and rank-property namespaces');
 
+heading('21A. TYPED QUERY FAMILY PARITY');
+foreach ([
+    ['_id' => 'typed-d1', 'title' => 'quick brown fox', 'category' => 'fox'],
+    ['_id' => 'typed-d2', 'title' => 'brown quick fox', 'category' => 'fox'],
+    ['_id' => 'typed-d3', 'title' => 'quick fox', 'category' => 'fox'],
+    ['_id' => 'typed-d4', 'title' => 'fox', 'category' => 'fox'],
+    ['_id' => 'typed-d5', 'title' => 'cat', 'category' => 'cat'],
+    ['_id' => 'typed-d6', 'title' => 'quick agile brown fox', 'category' => 'fox'],
+    ['_id' => 'people-1', 'people' => [['first' => 'Ada', 'last' => 'Lovelace'], ['first' => 'Grace', 'last' => 'Hopper']]],
+    ['_id' => 'people-2', 'people' => [['first' => 'Ada', 'last' => 'Hopper'], ['first' => 'Grace', 'last' => 'Lovelace']]],
+    ['_id' => 'geo-inside', 'location' => ['latitude' => 37.3, 'longitude' => -121.9]],
+    ['_id' => 'geo-outside', 'location' => ['latitude' => 40.7, 'longitude' => -74.0]],
+] as $document) $index->upsert($document);
+
+$phrase = $index->query(Query::contains('title', Query::phrase('quick', 'brown')))->limit(20)->execute();
+assertIds($phrase, ['typed-d1']);
+$nearIds = ids($index->query(Query::contains('title', Query::near('quick', 'brown')))->limit(20)->execute());
+sort($nearIds);
+same(['typed-d1', 'typed-d2', 'typed-d6'], $nearIds, 'typed near accepts reverse order and one-gap proximity');
+$orderedNearIds = ids($index->query(Query::contains('title', Query::onear('quick', 'brown')))->limit(20)->execute());
+sort($orderedNearIds);
+same(['typed-d1', 'typed-d6'], $orderedNearIds, 'typed ordered-near rejects reverse order');
+$fuzzyIds = ids($index->query(Query::contains('category', Query::fuzzy('foxx')))->limit(20)->execute());
+sort($fuzzyIds);
+same(['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'], $fuzzyIds, 'typed fuzzy excludes unrelated terms');
+$weakAndIds = ids($index->query(Query::weakAnd(Query::contains('title', 'quick'), Query::contains('title', 'fox')))->limit(20)->execute());
+sort($weakAndIds);
+same(['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'], $weakAndIds, 'typed weak-and keeps one-term-only matches');
+$wandIds = ids($index->query(Query::wand('title', ['quick' => 10, 'fox' => 1]))->limit(20)->execute());
+sort($wandIds);
+same(['typed-d1', 'typed-d2', 'typed-d3', 'typed-d4', 'typed-d6'], $wandIds, 'typed WAND keeps one-term-only matches');
+$sameElement = $index->query(Query::contains('people', Query::sameElement(Query::contains('first', 'Ada'), Query::contains('last', 'Lovelace'))))->limit(20)->execute();
+assertIds($sameElement, ['people-1']);
+$geoLocation = $index->query(Query::geoLocation('location', 37.3, -121.9, '10km'))->limit(10)->execute();
+assertIds($geoLocation, ['geo-inside']);
+$geoBox = $index->query(Query::geoBox('location', 37.0, -122.2, 37.6, -121.5))->limit(10)->execute();
+assertIds($geoBox, ['geo-inside']);
+
 heading('RANKING, SCALAR FEATURES, AND OPAQUE FEATURES');
 $ranked = $index->search('shoes')
     ->ranking('boosted')
@@ -869,6 +932,12 @@ echo "Real-engine PHP facade scenario complete; harness will restart searchkerne
 Executable capability evidence from this real-engine showcase.
 
 SKC: query.term/basic kinds=ergonomic,e2e runtime=http
+SKC: query.phrase/basic kinds=ergonomic,e2e runtime=http
+SKC: query.proximity/basic kinds=ergonomic,e2e runtime=http
+SKC: query.fuzzy/basic kinds=ergonomic,e2e runtime=http
+SKC: query.same_element/basic kinds=ergonomic,e2e runtime=http
+SKC: query.geo/basic kinds=ergonomic,e2e runtime=http
+SKC: query.weighted_and_wand/basic kinds=ergonomic,e2e runtime=http
 SKC: query.boolean/basic kinds=ergonomic,e2e runtime=http
 SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=http
 SKC: filter.textual/basic kinds=ergonomic,e2e runtime=http
