@@ -269,7 +269,7 @@ ranking, grouping, or query semantics.
 
 ## Managed local Node.js usage
 
-Browser and Node clients select a logical index through canonical V2 request envelopes. Use `Index.create(endpoint, target, definition)`, `Index.open(endpoint, target)`, or `Index.connect(endpoint, target)` with an externally managed daemon. Node also retains path-based `create(path, options)` and `open(path)` helpers; they start `searchkerneld --data-root`, derive a stable internal logical target from the local path, and send the same canonical lifecycle requests. Installed npm packages do not bundle the daemon, so managed-local calls require `SEARCHKERNEL_LOCAL_HOST` to name an existing binary. A source checkout may use the development fallback `target/host/debug/searchkerneld`.
+Browser and Node clients select a logical index through canonical V2 request envelopes. Use `Index.create(endpoint, target, definition)`, `Index.open(endpoint, target)`, or `Index.connect(endpoint, target)` with an externally managed daemon. Node also retains path-based `create(path, options)` and `open(path)` helpers; sibling index paths share one `searchkerneld --data-root` process, the existing directory basename is the logical target, and the on-disk index stays at the caller-provided path. Installed npm packages do not bundle the daemon, so managed-local calls require `SEARCHKERNEL_LOCAL_HOST` to name an existing binary. A source checkout may use the development fallback `target/host/debug/searchkerneld`.
 
 The complete managed-local showcase lives at `examples/try_searchkernel_client_api_e2e.ts`. After building `searchkerneld`, run it with:
 
