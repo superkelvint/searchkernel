@@ -40,8 +40,8 @@ class M11VerifierRuntimeTests(unittest.TestCase):
                 "[[ -z \"${SK_NATIVE_SDK:-}\" ]] || { echo explicit-sdk-leaked >&2; exit 41; }\n"
                 "[[ -z \"${SK_NATIVE_BASE_SDK:-}\" ]] || { echo base-sdk-leaked >&2; exit 42; }\n"
                 "case \"${RUSTFLAGS:-}\" in *target/vespa-verifier/m11/sdk/hardening/lib*) ;; *) echo hardening-rpath-missing >&2; exit 46 ;; esac\n"
-                "mkdir -p \"$CARGO_TARGET_DIR/debug/.searchkernel-native\"\n"
-                "printf normal-adapter > \"$CARGO_TARGET_DIR/debug/.searchkernel-native/libsearchkernel_vespa.so.2\"\n"
+                "mkdir -p \"$CARGO_TARGET_DIR/debug/examples/.searchkernel-native\"\n"
+                "printf normal-adapter > \"$CARGO_TARGET_DIR/debug/examples/.searchkernel-native/libsearchkernel_vespa.so.2\"\n"
                 "cat > \"$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver\" <<'DRIVER'\n"
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
@@ -74,10 +74,11 @@ class M11VerifierRuntimeTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertTrue((target / "debug/searchkernel-m11-driver").is_file())
-            staged = target / "debug/.searchkernel-native/libsearchkernel_vespa.so.2"
-            self.assertTrue(staged.is_symlink())
-            self.assertEqual(staged.resolve(), (sdk / "lib/libsearchkernel_vespa.so.2").resolve())
+            self.assertTrue((target / "debug/examples/searchkernel-m11-driver").is_file())
+            staged = target / "debug/examples/.searchkernel-native/libsearchkernel_vespa.so.2"
+            self.assertTrue(staged.is_file())
+            self.assertFalse(staged.is_symlink())
+            self.assertEqual(staged.read_bytes(), (sdk / "lib/libsearchkernel_vespa.so.2").read_bytes())
 
     def test_sanitizer_verifier_repoints_driver_before_resolver_check(self):
         sanitizer = Path(__file__).with_name("verify-m11-sanitizers.sh").read_text()
@@ -85,6 +86,7 @@ class M11VerifierRuntimeTests(unittest.TestCase):
         resolve = sanitizer.index('resolved_adapter=$(LD_LIBRARY_PATH=')
         self.assertLess(stage, resolve)
         self.assertIn("m11_adapter_path_from_ldd", sanitizer)
+        self.assertIn('cmp -s "$resolved_adapter" "$sdk/lib/libsearchkernel_vespa.so.2"', sanitizer)
 
     def test_ldd_parser_accepts_origin_and_legacy_shapes(self):
         with tempfile.TemporaryDirectory() as raw:

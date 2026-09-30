@@ -21,16 +21,22 @@ m11_adapter_path_from_ldd() {
   }'
 }
 
-stage_m11_driver_adapter() {
-  local driver="${1:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
-  local runtime_sdk="${2:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
-  local staged_dir="$(dirname "$driver")/.searchkernel-native"
+stage_m11_adapter_for_executable_dir() {
+  local executable_dir="${1:?stage_m11_adapter_for_executable_dir <dir> <runtime-sdk>}"
+  local runtime_sdk="${2:?stage_m11_adapter_for_executable_dir <dir> <runtime-sdk>}"
+  local staged_dir="$executable_dir/.searchkernel-native"
   local staged="$staged_dir/libsearchkernel_vespa.so.2"
   local runtime="$runtime_sdk/lib/libsearchkernel_vespa.so.2"
   [[ -f "$runtime" ]] || fail_verification "missing M11 runtime adapter: $runtime"
   mkdir -p "$staged_dir"
   rm -f "$staged"
   cp "$runtime" "$staged"
+}
+
+stage_m11_driver_adapter() {
+  local driver="${1:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
+  local runtime_sdk="${2:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
+  stage_m11_adapter_for_executable_dir "$(dirname "$driver")" "$runtime_sdk"
 }
 
 prepare_hardening_sdk() {

@@ -138,12 +138,14 @@ run_lane() {
   require_native_driver "$binary" sk_test_failpoint_set sk_test_failpoint_is_blocked
   stage_m11_driver_adapter "$binary" "$sdk"
   local runtime_sdk_path="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  local staged_adapter="$(dirname "$binary")/.searchkernel-native/libsearchkernel_vespa.so.2"
   local resolved_adapter
   resolved_adapter=$(LD_LIBRARY_PATH="$runtime_sdk_path" ldd "$binary" |
     m11_adapter_path_from_ldd)
   if [[ -z "$resolved_adapter" ||
-        "$(readlink -f "$resolved_adapter")" != "$(readlink -f "$sdk/lib/libsearchkernel_vespa.so.2")" ]]; then
-    fail_verification "M11 $lane driver does not resolve the sanitizer adapter from $sdk/lib"
+        "$(readlink -f "$resolved_adapter")" != "$(readlink -f "$staged_adapter")" ]] ||
+        ! cmp -s "$resolved_adapter" "$sdk/lib/libsearchkernel_vespa.so.2"; then
+    fail_verification "M11 $lane driver does not resolve an exact copy of the sanitizer adapter from $sdk/lib"
   fi
 
   # Scenario state is disposable even when build products are reusable.
