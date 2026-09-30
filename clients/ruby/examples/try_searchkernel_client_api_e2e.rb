@@ -148,6 +148,7 @@ def capture_real_engine_parity(index)
   facet_spec = intents.fetch("facets")
   faceted = index.search(facet_spec.fetch("query")).facet(facet_spec.fetch("field"), name: facet_spec.fetch("name"), limit: facet_spec.fetch("limit"), sort: facet_spec.fetch("sort")).limit(facet_spec.fetch("page_limit")).execute
   root_spec = intents.fetch("root_aggregations")
+  raise "root_aggregations requires browse intent" unless root_spec.fetch("kind") == "browse"
   root = index.browse.filter(root_spec.fetch("filter"))
     .aggregate(SearchKernel::Agg.count.as(root_spec.fetch("aggregations")[0].fetch("name")))
     .aggregate(SearchKernel::Agg.sum(root_spec.fetch("aggregations")[1].fetch("field")).as(root_spec.fetch("aggregations")[1].fetch("name")))
@@ -210,6 +211,7 @@ def capture_real_engine_parity(index)
   page = index.search(ordered_spec.fetch("query")).sort(ordered_spec.fetch("sort")[0].fetch("field"), ordered_spec.fetch("sort")[0].fetch("direction")).offset(ordered_spec.fetch("offset")).limit(ordered_spec.fetch("limit")).execute
   filtered_facet = index.search(filtered_spec.fetch("query")).filter(filtered_spec.fetch("filter")).facet(filtered_spec.fetch("field"), limit: filtered_spec.fetch("limit"), sort: filtered_spec.fetch("sort")).limit(filtered_spec.fetch("page_limit")).execute
   nested_spec = intents.fetch("nested_grouping")
+  raise "nested_grouping requires browse intent" unless nested_spec.fetch("kind") == "browse"
   nested = index.browse.filter(nested_spec.fetch("filter").fetch("source"), nested_spec.fetch("filter").fetch("bindings")).group(
     SearchKernel::Group.by(nested_spec.fetch("group_by")).limit(nested_spec.fetch("limit")).output(SearchKernel::Agg.count.as(nested_spec.fetch("outputs")[0].fetch("name")))
       .subgroup(SearchKernel::Group.by(nested_spec.fetch("nested").fetch("group_by")).limit(nested_spec.fetch("nested").fetch("limit")).output(SearchKernel::Agg.count.as(nested_spec.fetch("nested").fetch("outputs")[0].fetch("name")), SearchKernel::Agg.avg(nested_spec.fetch("nested").fetch("outputs")[1].fetch("field")).as(nested_spec.fetch("nested").fetch("outputs")[1].fetch("name"))))
@@ -241,6 +243,7 @@ def capture_real_engine_parity(index)
   rank_property_spec.fetch("rank_properties").each { |key, value| rank_property_builder = rank_property_builder.rank_property(key, value) }
   rank_property = rank_property_builder.limit(rank_property_spec.fetch("limit")).execute
   degraded_spec = intents.fetch("coverage_degradation")
+  raise "coverage_degradation requires browse intent" unless degraded_spec.fetch("kind") == "browse"
   degraded_builder = index.browse.filter(degraded_spec.fetch("filter").fetch("source"), degraded_spec.fetch("filter").fetch("bindings")).sort(degraded_spec.fetch("sort")[0].fetch("field"), degraded_spec.fetch("sort")[0].fetch("direction"))
   degraded_spec.fetch("rank_properties").each { |key, value| degraded_builder = degraded_builder.rank_property(key, value) }
   degraded = degraded_builder.limit(degraded_spec.fetch("limit")).execute
