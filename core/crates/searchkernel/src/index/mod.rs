@@ -177,13 +177,8 @@ impl Index {
         })
     }
 
-    /// Start an advanced update for one document.
-    pub fn update(&self, id: impl Into<DocumentId>) -> UpdateBuilder {
-        UpdateBuilder::new(self.clone(), id.into())
-    }
-
     /// Apply a reusable sequence of typed field updates to an existing document.
-    pub fn apply_update(&self, id: impl Into<DocumentId>, update: crate::Update) -> Result<()> {
+    pub fn update(&self, id: impl Into<DocumentId>, update: crate::Update) -> Result<()> {
         self.with_backend(|backend| {
             let operations = update.into_resolver()?;
             let request = searchkernel_ir::resolve_update(
@@ -197,6 +192,11 @@ impl Index {
             backend.update(request).map_err(Error::from_ir)?;
             Ok(())
         })
+    }
+
+    /// Start a fluent advanced update for one document.
+    pub fn update_builder(&self, id: impl Into<DocumentId>) -> UpdateBuilder {
+        UpdateBuilder::new(self.clone(), id.into())
     }
 
     pub(crate) fn execute_update(
