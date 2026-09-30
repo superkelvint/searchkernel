@@ -232,7 +232,7 @@
         "PositiveInfinity=2",
         "NegativeInfinity=3"
       ],
-      "wire_header": "enum:NonFiniteFloatKind"
+      "wire_header": "enum:ubyte"
     },
     "Float64Value": {
       "kind": "table",
@@ -294,7 +294,7 @@
         "Unspecified=0",
         "Null=1"
       ],
-      "wire_header": "enum:NullValue"
+      "wire_header": "enum:ubyte"
     },
     "TotalHits": {
       "kind": "table",
@@ -324,7 +324,7 @@
         "Approximate=3",
         "Unknown=4"
       ],
-      "wire_header": "enum:TotalHitsRelation"
+      "wire_header": "enum:ubyte"
     },
     "SearchTiming": {
       "kind": "table",
@@ -348,9 +348,9 @@
         "value"
       ],
       "wire_members": [
-        "value:double=0.0"
+        "value:double=0.0(offset=0,padding=0)"
       ],
-      "wire_header": "struct"
+      "wire_header": "struct:size=8,align=8"
     },
     "ResultNode": {
       "kind": "table",
@@ -566,9 +566,9 @@
         "value"
       ],
       "wire_members": [
-        "value:bool=false"
+        "value:bool=false(offset=0,padding=0)"
       ],
-      "wire_header": "struct"
+      "wire_header": "struct:size=1,align=1"
     },
     "Coverage": {
       "kind": "table",
@@ -600,9 +600,9 @@
         "value"
       ],
       "wire_members": [
-        "value:ulong=0"
+        "value:ulong=0(offset=0,padding=0)"
       ],
-      "wire_header": "struct"
+      "wire_header": "struct:size=8,align=8"
     },
     "OptionalUInt32": {
       "kind": "struct",
@@ -610,9 +610,9 @@
         "value"
       ],
       "wire_members": [
-        "value:uint=0"
+        "value:uint=0(offset=0,padding=0)"
       ],
-      "wire_header": "struct"
+      "wire_header": "struct:size=4,align=4"
     },
     "CoverageDegraded": {
       "kind": "table",

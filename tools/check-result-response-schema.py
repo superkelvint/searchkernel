@@ -145,6 +145,8 @@ class ReflectedSchema:
         bt = self.base.BaseType()
         base = field_type.BaseType()
         enum_index = field_type.Index()
+        if field.Optional():
+            return "null"
         if (
             enum_index >= 0
             and base not in (bt.Obj, bt.Union)
@@ -201,11 +203,14 @@ class ReflectedSchema:
                     underlying = enum.UnderlyingType()
                     if underlying is None:
                         raise ValueError(f"enum has no underlying type: {name}")
-                    header = f"enum:{self._type_signature(underlying)}"
+                    header = f"enum:{self._base_type_token(underlying.BaseType())}"
                 result[name] = {"wire_header": header, "wire_members": members}
                 continue
             reflected = self.objects[self.object_indices[name]]
             fields = [reflected.Fields(i) for i in range(reflected.FieldsLength())]
+            header = kind
+            if kind == "struct":
+                header = f"struct:size={reflected.Bytesize()},align={reflected.Minalign()}"
             by_name = {self._name(field): field for field in fields}
             members: list[str] = []
             for field in sorted(fields, key=lambda value: value.Id()):
@@ -227,8 +232,10 @@ class ReflectedSchema:
                     signature += "(optional)"
                 if field.Offset64():
                     signature += "(offset64)"
+                if kind == "struct":
+                    signature += f"(offset={field.Offset()},padding={field.Padding()})"
                 members.append(signature)
-            result[name] = {"wire_header": kind, "wire_members": members}
+            result[name] = {"wire_header": header, "wire_members": members}
         return result
 
     def _references(self, reflected_type: Any) -> list[tuple[str, int]]:

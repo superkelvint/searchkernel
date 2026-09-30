@@ -27,6 +27,11 @@ struct FixedValues {
   values:[int:4];
 }
 
+struct LayoutValues {
+  head:ubyte;
+  tail:uint;
+}
+
 table SearchResult {
   bool_value:bool = false;
   int_value:long = 0;
@@ -36,6 +41,7 @@ table SearchResult {
   wide:[int] (vector64);
   offset:[int] (offset64);
   fixed:FixedValues;
+  layout:LayoutValues;
   presence:bool = null;
   required_text:string (required);
   key_text:string (key);
@@ -137,6 +143,9 @@ root_type SearchResult;
             )
             changed = self.compile_bfbs(changed_schema, directory, "enum_changed")
             changed_reflection = MODULE.ReflectedSchema(changed)
+            self.assertEqual(
+                baseline_reflection.wire["Relation"]["wire_header"], "enum:ubyte"
+            )
             self.assertIn(
                 "Unspecified=4", changed_reflection.wire["Relation"]["wire_members"]
             )
@@ -147,6 +156,35 @@ root_type SearchResult;
             )
             self.assertTrue(
                 any("Relation wire members mismatch" in error for error in errors)
+            )
+
+
+    def test_bfbs_extraction_pins_enum_storage_type(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            baseline = self.compile_bfbs(self.MINIMAL_SCHEMA, directory, "enum_storage_base")
+            changed_schema = self.MINIMAL_SCHEMA.replace(
+                "enum Relation:ubyte {", "enum Relation:ushort {"
+            )
+            changed = self.compile_bfbs(
+                changed_schema, directory, "enum_storage_changed"
+            )
+            baseline_reflection = MODULE.ReflectedSchema(baseline)
+            changed_reflection = MODULE.ReflectedSchema(changed)
+            self.assertEqual(
+                baseline_reflection.wire["Relation"]["wire_header"], "enum:ubyte"
+            )
+            self.assertEqual(
+                changed_reflection.wire["Relation"]["wire_header"], "enum:ushort"
+            )
+            errors = MODULE.verify_schema(
+                changed_reflection.closure,
+                self.manifest_for(baseline),
+                changed_reflection.wire,
+            )
+            self.assertTrue(
+                any("Relation wire header mismatch" in error for error in errors),
+                errors,
             )
 
     def test_bfbs_extraction_distinguishes_vector_and_vector64(self) -> None:
@@ -184,6 +222,50 @@ root_type SearchResult;
                     )
                     self.assert_extracted_drift(baseline, changed, expected)
 
+
+    def test_bfbs_extraction_pins_struct_layout_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            baseline = self.compile_bfbs(self.MINIMAL_SCHEMA, directory, "struct_layout_base")
+            baseline_reflection = MODULE.ReflectedSchema(baseline)
+            self.assertEqual(
+                baseline_reflection.wire["FixedValues"]["wire_header"],
+                "struct:size=16,align=4",
+            )
+            self.assertEqual(
+                baseline_reflection.wire["LayoutValues"]["wire_header"],
+                "struct:size=8,align=4",
+            )
+            self.assertIn(
+                "head:ubyte=0(offset=0,padding=3)",
+                baseline_reflection.wire["LayoutValues"]["wire_members"],
+            )
+            self.assertIn(
+                "tail:uint=0(offset=4,padding=0)",
+                baseline_reflection.wire["LayoutValues"]["wire_members"],
+            )
+
+            changed_schema = self.MINIMAL_SCHEMA.replace(
+                "struct FixedValues {", "struct FixedValues (force_align: 16) {"
+            )
+            changed = self.compile_bfbs(
+                changed_schema, directory, "struct_layout_changed"
+            )
+            changed_reflection = MODULE.ReflectedSchema(changed)
+            self.assertEqual(
+                changed_reflection.wire["FixedValues"]["wire_header"],
+                "struct:size=16,align=16",
+            )
+            errors = MODULE.verify_schema(
+                changed_reflection.closure,
+                self.manifest_for(baseline),
+                changed_reflection.wire,
+            )
+            self.assertTrue(
+                any("FixedValues wire header mismatch" in error for error in errors),
+                errors,
+            )
+
     def test_bfbs_extraction_pins_presence_and_offset_flags(self) -> None:
         cases = (
             ("presence:bool = null;", "presence:bool = false;", "presence:bool=false"),
@@ -205,7 +287,7 @@ root_type SearchResult;
             baseline_members = MODULE.ReflectedSchema(baseline).wire[
                 "SearchResult"
             ]["wire_members"]
-            self.assertIn("presence:bool=false(optional)", baseline_members)
+            self.assertIn("presence:bool=null(optional)", baseline_members)
             self.assertIn("wide:vector64<int>(optional)(offset64)", baseline_members)
             self.assertIn("offset:vector<int>(optional)(offset64)", baseline_members)
             self.assertIn("required_text:string(required)", baseline_members)
