@@ -109,6 +109,9 @@ def check_manifests_and_runners() -> None:
     private_trees = sorted(path for path in REFERENCE.rglob("rust-driver") if path.is_dir())
     if private_trees:
         fail("retired rust-driver source trees remain: " + ", ".join(str(p.relative_to(ROOT)) for p in private_trees))
+    retained_rust = sorted(path.relative_to(ROOT).as_posix() for path in REFERENCE.rglob("*.rs"))
+    if retained_rust:
+        fail("active Rust verifier sources remain under reference/vespa: " + ", ".join(retained_rust))
     root_manifest = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
     if "reference/vespa/" in root_manifest:
         fail("root Cargo workspace still excludes or names a reference verifier tree")
