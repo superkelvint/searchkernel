@@ -62,17 +62,17 @@
         "ValueObject"
       ],
       "wire_members": [
-        "NullValueValue",
-        "BoolValue",
-        "Int64Value",
-        "UInt64Value",
-        "Float64Value",
-        "NonFiniteFloatValue",
-        "StringValue",
-        "BytesValue",
-        "ValueList",
-        "ValueObject",
-        "TensorValue"
+        "NullValueValue=1",
+        "BoolValue=2",
+        "Int64Value=3",
+        "UInt64Value=4",
+        "Float64Value=5",
+        "NonFiniteFloatValue=6",
+        "StringValue=7",
+        "BytesValue=8",
+        "ValueList=9",
+        "ValueObject=10",
+        "TensorValue=11"
       ],
       "wire_header": "union"
     },
@@ -96,9 +96,9 @@
         "SparseTensorCells"
       ],
       "wire_members": [
-        "DenseTensorValues",
-        "SparseTensorCells",
-        "MixedTensorBlocks"
+        "DenseTensorValues=1",
+        "SparseTensorCells=2",
+        "MixedTensorBlocks=3"
       ],
       "wire_header": "union"
     },
@@ -154,7 +154,7 @@
       ],
       "wire_members": [
         "address:[TensorAddressEntry]",
-        "value:double"
+        "value:double=0.0"
       ],
       "wire_header": "table"
     },
@@ -240,7 +240,7 @@
         "value"
       ],
       "wire_members": [
-        "value:double"
+        "value:double=0.0"
       ],
       "wire_header": "table"
     },
@@ -250,7 +250,7 @@
         "value"
       ],
       "wire_members": [
-        "value:ulong"
+        "value:ulong=0"
       ],
       "wire_header": "table"
     },
@@ -260,7 +260,7 @@
         "value"
       ],
       "wire_members": [
-        "value:long"
+        "value:long=0"
       ],
       "wire_header": "table"
     },
@@ -270,7 +270,7 @@
         "value"
       ],
       "wire_members": [
-        "value:bool"
+        "value:bool=false"
       ],
       "wire_header": "table"
     },
@@ -308,7 +308,7 @@
         "transient"
       ],
       "wire_members": [
-        "code:long",
+        "code:long=0",
         "summary:string",
         "message:string",
         "source:string",
@@ -324,7 +324,7 @@
         "value"
       ],
       "wire_members": [
-        "value:bool"
+        "value:bool=false"
       ],
       "wire_header": "struct"
     },
@@ -350,7 +350,7 @@
         "value"
       ],
       "wire_members": [
-        "value:double"
+        "value:double=0.0"
       ],
       "wire_header": "struct"
     },
@@ -404,7 +404,7 @@
         "value"
       ],
       "wire_members": [
-        "value:ulong"
+        "value:ulong=0"
       ],
       "wire_header": "struct"
     },
@@ -414,7 +414,7 @@
         "value"
       ],
       "wire_members": [
-        "value:uint"
+        "value:uint=0"
       ],
       "wire_header": "struct"
     },
@@ -425,7 +425,7 @@
         "value"
       ],
       "wire_members": [
-        "value:ulong",
+        "value:ulong=0",
         "relation:TotalHitsRelation=Unspecified"
       ],
       "wire_header": "table"
@@ -465,8 +465,8 @@
         "ResultGroup"
       ],
       "wire_members": [
-        "Hit",
-        "ResultGroup"
+        "Hit=1",
+        "ResultGroup=2"
       ],
       "wire_header": "union"
     },
@@ -530,9 +530,9 @@
         "PositiveInfinityRelevance"
       ],
       "wire_members": [
-        "FiniteRelevance",
-        "NegativeInfinityRelevance",
-        "PositiveInfinityRelevance"
+        "FiniteRelevance=1",
+        "NegativeInfinityRelevance=2",
+        "PositiveInfinityRelevance=3"
       ],
       "wire_header": "union"
     },
@@ -554,7 +554,7 @@
         "value"
       ],
       "wire_members": [
-        "value:double"
+        "value:double=0.0"
       ],
       "wire_header": "table"
     },
@@ -629,8 +629,8 @@
         "start_byte"
       ],
       "wire_members": [
-        "start_byte:uint",
-        "end_byte:uint"
+        "start_byte:uint=0",
+        "end_byte:uint=0"
       ],
       "wire_header": "table"
     }
