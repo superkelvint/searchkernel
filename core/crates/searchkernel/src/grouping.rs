@@ -17,7 +17,6 @@ impl GroupingExpression {
 pub enum GroupingOrder {
     Field(GroupingExpression, bool),
     Aggregation(GroupingAggregation, bool),
-    Alias(String, bool),
 }
 
 impl GroupingOrder {
@@ -27,10 +26,6 @@ impl GroupingOrder {
 
     pub fn aggregation(aggregation: GroupingAggregation, descending: bool) -> Self {
         Self::Aggregation(aggregation, descending)
-    }
-
-    pub fn alias(name: impl Into<String>, descending: bool) -> Self {
-        Self::Alias(name.into(), descending)
     }
 }
 
@@ -250,9 +245,6 @@ fn level_to_scope(level: GroupingLevel) -> Result<GroupingAllIr> {
                         }
                         GroupingOrder::Aggregation(aggregation, descending) => {
                             (aggregation_expression(aggregation)?, descending)
-                        }
-                        GroupingOrder::Alias(name, descending) => {
-                            (GroupingExpressionIr::Alias(name), descending)
                         }
                     };
                     Ok(if descending {
