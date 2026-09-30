@@ -27,21 +27,25 @@ FLOAT_SEMANTIC_KEYS = {
     "latitude", "longitude", "south", "west", "north", "east",
 }
 REQUIRED_TYPED_SCENARIOS = (
-    "typed_query_contains", "typed_query_phrase", "typed_query_near", "typed_query_ordered_near", "typed_query_range",
-    "typed_query_boolean", "typed_query_in", "typed_query_equals",
-    "typed_query_fuzzy", "typed_query_weak_and", "typed_query_wand",
-    "typed_query_weighted_set", "typed_query_dot_product",
-    "typed_query_same_element", "typed_query_geo_location", "typed_query_geo_box",
+    "typed_query_term", "typed_query_contains", "typed_query_phrase", "typed_query_near",
+    "typed_query_ordered_near", "typed_query_range", "typed_query_range_exclusive",
+    "typed_query_boolean", "typed_query_in", "typed_query_equals", "typed_query_fuzzy",
+    "typed_query_weak_and", "typed_query_wand", "typed_query_weighted_set",
+    "typed_query_dot_product", "typed_query_prefix", "typed_query_substring",
+    "typed_query_suffix", "typed_query_same_element", "typed_query_geo_location",
+    "typed_query_geo_box",
 )
 REQUIRED_V1_SCENARIOS = (
     "document_crud", "full_text_search", "stemming", "text_filter_binding", "repeated_filters",
     "boolean_filter_grammar", "sorting_projection", "pagination", "builder_misuse", "facets",
     "filtered_facets", "root_aggregations", "grouping_aggregations", "nested_grouping",
     "group_alias", "group_keep_filter",
-    "typed_query_contains", "typed_query_phrase", "typed_query_near", "typed_query_ordered_near",
-    "typed_query_range", "typed_query_boolean", "typed_query_in", "typed_query_equals",
-    "typed_query_fuzzy", "typed_query_weak_and", "typed_query_wand", "typed_query_weighted_set",
-    "typed_query_dot_product", "typed_query_same_element", "typed_query_geo_location",
+    "typed_query_term", "typed_query_contains", "typed_query_phrase", "typed_query_near",
+    "typed_query_ordered_near", "typed_query_range", "typed_query_range_exclusive",
+    "typed_query_boolean", "typed_query_in", "typed_query_equals", "typed_query_fuzzy",
+    "typed_query_weak_and", "typed_query_wand", "typed_query_weighted_set",
+    "typed_query_dot_product", "typed_query_prefix", "typed_query_substring",
+    "typed_query_suffix", "typed_query_same_element", "typed_query_geo_location",
     "typed_query_geo_box", "rank_inputs", "rank_properties", "two_phase_reranking",
     "tensor_readback", "nearest_neighbor", "hybrid_text_vector", "coverage_degradation", "yql",
     "structured_filter_error", "text_filter_syntax_error", "patch", "advanced_update", "delete",
@@ -164,17 +168,24 @@ def validate_shared_typed_inputs(corpus: dict[str, Any], scenarios: list[str]) -
         raise SystemExit(f"shared corpus defines intents for unknown scenarios: {', '.join(extra_inputs)}")
     for scenario in REQUIRED_TYPED_SCENARIOS:
         entry = inputs[scenario]
-        if (not isinstance(entry, dict) or not isinstance(entry.get("query"), dict)
+        if (not isinstance(entry, dict)
+                or "query" in entry or "kind" in entry or "clauses" in entry
                 or entry.get("result_order") not in {"sorted_ids", "ranked"}
                 or type(entry.get("limit")) is not int or entry["limit"] < 1):
-            raise SystemExit(f"{scenario}: shared query intent or result ordering is invalid")
-    for scenario in ("nearest_neighbor", "hybrid_text_vector"):
-        entry = inputs[scenario]
-        if (not isinstance(entry, dict) or not isinstance(entry.get("query"), dict)
-                or not isinstance(entry.get("ranking_profile"), str)
-                or not isinstance(entry.get("query_input_document"), str)
-                or type(entry.get("limit")) is not int or entry["limit"] < 1):
-            raise SystemExit(f"{scenario}: query, ranking, vector document, and limit intent are required")
+            raise SystemExit(f"{scenario}: flat scenario-specific query inputs and result ordering are required")
+    nearest = inputs["nearest_neighbor"]
+    if (not isinstance(nearest, dict) or "query" in nearest
+            or not all(isinstance(nearest.get(key), str) for key in
+                       ("field", "query_input", "ranking_profile", "query_input_document"))
+            or type(nearest.get("limit")) is not int or nearest["limit"] < 1):
+        raise SystemExit("nearest_neighbor: flat field/query-input/ranking/vector inputs are required")
+    hybrid = inputs["hybrid_text_vector"]
+    if (not isinstance(hybrid, dict) or "query" in hybrid or "clauses" in hybrid
+            or not all(isinstance(hybrid.get(key), str) for key in
+                       ("text_field", "text_value", "vector_field", "query_input",
+                        "ranking_profile", "query_input_document"))
+            or type(hybrid.get("limit")) is not int or hybrid["limit"] < 1):
+        raise SystemExit("hybrid_text_vector: flat lexical/vector/ranking inputs are required")
     return inputs
 
 
@@ -255,17 +266,15 @@ def float_semantic_paths_for_scenario(
 ) -> frozenset[str]:
     """Return schema-derived floating paths in shared scenario intents."""
     spec = inputs.get(scenario, {})
-    intent = spec.get("query")
-    kind = intent.get("kind") if isinstance(intent, dict) else None
-    field = intent.get("field") if isinstance(intent, dict) else None
+    field = spec.get("field") if isinstance(spec, dict) else None
     field_type = schema.get("fields", {}).get(field, {}).get("type")
     paths: set[str] = set()
-    if kind == "range" and field_type == "float64":
-        paths.update(("$.intent.query.lower", "$.intent.query.upper"))
-    if kind == "geo_location":
-        paths.update(("$.intent.query.latitude", "$.intent.query.longitude"))
-    elif kind == "geo_box":
-        paths.update(("$.intent.query.south", "$.intent.query.west", "$.intent.query.north", "$.intent.query.east"))
+    if scenario in {"typed_query_range", "typed_query_range_exclusive"} and field_type == "float64":
+        paths.update(("$.intent.lower", "$.intent.upper"))
+    if scenario == "typed_query_geo_location":
+        paths.update(("$.intent.latitude", "$.intent.longitude"))
+    elif scenario == "typed_query_geo_box":
+        paths.update(("$.intent.south", "$.intent.west", "$.intent.north", "$.intent.east"))
 
     def add_filter_binding_paths(source: Any, bindings: Any, base_path: str) -> None:
         if not isinstance(source, str) or not isinstance(bindings, dict):
