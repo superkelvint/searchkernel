@@ -9,7 +9,7 @@ use searchkernel_ir::{index_definition_to_ir, IndexContext};
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use searchkernel_vespa_engine::{Engine, Error as EngineError};
 use serde_json::{json, Value as Json};
-use std::{env, fs, path::PathBuf, sync::Arc};
+use std::{env, fs, path::{Path, PathBuf}, sync::Arc};
 
 fn main() {
     if let Err(error) = run() {
@@ -56,8 +56,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_low_level(
-    config: &PathBuf,
-    data: &PathBuf,
+    config: &Path,
+    data: &Path,
     baseline: &Json,
     mutation: &Json,
 ) -> Result<&'static str, Box<dyn std::error::Error>> {
@@ -74,9 +74,9 @@ fn run_low_level(
 }
 
 fn run_portable(
-    config: &PathBuf,
-    data: &PathBuf,
-    definition: &PathBuf,
+    config: &Path,
+    data: &Path,
+    definition: &Path,
     baseline: &Json,
     mutation: &Json,
 ) -> Result<&'static str, Box<dyn std::error::Error>> {
