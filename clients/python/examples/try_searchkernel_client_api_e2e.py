@@ -474,10 +474,14 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     else:
         raise AssertionError("malformed textual filter unexpectedly succeeded")
 
-    brand_counts = {
-        str(item["value"]): item["count"]
+    facet_entries = [
+        {"value": str(item["value"]), "count": item["count"]}
         for item in faceted.facets["brands"]
-    }
+    ]
+    filtered_facet_entries = [
+        {"value": str(item["value"]), "count": item["count"]}
+        for item in filtered_facet.facets["brand"]
+    ]
     groups = grouping_groups(grouped)
     misuse_spec = intents["builder_misuse"]
     assert_raises((TypeError, ValueError), lambda: index.search(misuse_spec["query"]).page(misuse_spec["page"], misuse_spec["page_size"]).limit(misuse_spec["limit"]), "page plus limit rejected")
@@ -522,11 +526,11 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         },
         "sorted_search": {"ids": [hit.id for hit in ordered.hits], "total": ordered.total_hits},
         "filtered_search": {"ids": [hit.id for hit in filtered.hits], "total": filtered.total_hits},
-        "facets": brand_counts,
+        "facets": facet_entries,
         "root_aggregations": dict(root.aggregations),
         "advanced_update": {"title": advanced_update["title"], "inventory": advanced_update["inventory"], "sale_price_present": "sale_price" in advanced_update},
         "grouping_aggregations": group_values,
-        "filtered_facets": {str(item["value"]): item["count"] for item in filtered_facet.facets["brand"]},
+        "filtered_facets": filtered_facet_entries,
         "nested_grouping": [{
             "category": group.value,
             "products": group.get("products"),
