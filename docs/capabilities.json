@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "snapshot": "2026-09-21",
+  "snapshot": "2026-09-30",
   "capabilities": [
     {
       "id": "query.term",
@@ -39,7 +39,7 @@
         "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs"
       ],
       "limitations": [
-        "No high-level Rust, Python, or TypeScript facade helper currently constructs these constants."
+        "Rust exposes true/false query constants; the Python and TypeScript q facades do not yet expose equivalent helpers."
       ]
     },
     {
@@ -58,7 +58,7 @@
         "core/crates/searchkernel/src/query.rs"
       ],
       "limitations": [
-        "The Python and TypeScript q facades do not yet expose comparison constructors."
+        "Python and TypeScript expose equality comparison helpers, but their high-level q facades do not yet expose the full comparison-operator surface."
       ]
     },
     {
@@ -76,9 +76,7 @@
         "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs",
         "core/crates/searchkernel/src/query.rs"
       ],
-      "limitations": [
-        "The Python and TypeScript q facades do not yet expose range constructors."
-      ]
+      "limitations": []
     },
     {
       "id": "query.boolean",
@@ -207,8 +205,7 @@
         "core/crates/searchkernel/src/query.rs"
       ],
       "limitations": [
-        "Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. The Rust query helper exists, but the current high-level Rust schema facade cannot itself define the required array-of-struct field.",
-        "The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available."
+        "Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. Python and TypeScript expose the supported array-of-struct schema/query path; the high-level Rust schema facade still cannot define the required array-of-struct field."
       ]
     },
     {
@@ -227,9 +224,7 @@
         "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
-      "limitations": [
-        "The TypeScript high-level q facade does not yet expose a fuzzy helper."
-      ]
+      "limitations": []
     },
     {
       "id": "query.prefix_suffix_substring",
@@ -310,8 +305,7 @@
         "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
       "limitations": [
-        "Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end schema-and-query ergonomic SDK capability.",
-        "The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available."
+        "Real Vespa execution is verified, including inclusive bounding-box edges. Python and TypeScript expose position-field schema builders and geo query helpers; the high-level Rust schema facade does not yet expose position fields."
       ]
     },
     {
@@ -350,9 +344,7 @@
         "core/crates/searchkernel/src/query.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
-      "limitations": [
-        "The Python and TypeScript q facades do not yet expose"
-      ]
+      "limitations": []
     },
     {
       "id": "query.weighted_set_dot_product",
@@ -371,9 +363,7 @@
         "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs",
         "core/crates/searchkernel/src/query.rs"
       ],
-      "limitations": [
-        "The Python and TypeScript q facades do not yet expose weighted-set or dot-product helpers."
-      ]
+      "limitations": []
     },
     {
       "id": "query.equivalence",
@@ -503,7 +493,7 @@
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
       "limitations": [
-        "Python and TypeScript high-level sort() helpers"
+        "Missing-value placement is represented and executable, but the Python and TypeScript high-level field-sort helpers do not yet expose first/last placement controls."
       ]
     },
     {
@@ -743,7 +733,7 @@
         "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
       ],
       "limitations": [
-        "The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust exposes count/average/sum/min/max, named outputs, and root-scope outputs; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete."
+        "The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust exposes those aggregation constructors, aliases, ordering, precision, and root outputs; richer grouping expression/filter ergonomics remain narrower than the portable model. Summary aggregation is tracked separately because grouped docsum payloads are incomplete."
       ]
     },
     {
@@ -760,7 +750,7 @@
         "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
       ],
       "limitations": [
-        "The native grouping skeleton preserves summary() and finite max propagation, and the Python and TypeScript facades can construct agg.summary(), but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant."
+        "The native grouping skeleton preserves summary() and finite max propagation, and the Rust, Python, and TypeScript facades can construct summary aggregation, but grouped docsum payloads do not cross the native ABI; production real-engine use remains explicitly blocked."
       ]
     },
     {
@@ -1008,9 +998,7 @@
         "core/crates/searchkernel-ir-adapter/src/tests/query_lowering.rs",
         "core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs"
       ],
-      "limitations": [
-        "The Python and TypeScript q facades do not yet expose"
-      ]
+      "limitations": []
     },
     {
       "id": "query.non_empty",
@@ -1079,7 +1067,7 @@
         "core/crates/searchkernel-ir-adapter/src/tests/schema.rs"
       ],
       "limitations": [
-        "The portable/native path supports the existing array<object> shape used by SameElement. The high-level Rust Field, Python field-spec, and TypeScript schema facades expose only primitive/tensor kinds today; nested structs, maps, and heterogeneous object members remain unsupported."
+        "The portable/native path supports the existing array<object> shape used by SameElement. Python and TypeScript expose the supported array-of-struct schema shape; the high-level Rust schema facade does not yet define it. Nested maps and arbitrary heterogeneous object models remain unsupported."
       ]
     },
     {
@@ -1094,7 +1082,7 @@
         "core/crates/searchkernel-ir-adapter/src/tests/schema.rs"
       ],
       "limitations": [
-        "The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Position is not exposed by the high-level Rust, Python, or TypeScript schema builders."
+        "The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Python and TypeScript expose position fields; the high-level Rust schema builder does not yet."
       ]
     },
     {
@@ -1211,7 +1199,7 @@
         "core/crates/searchkernel/src/result.rs"
       ],
       "limitations": [
-        "The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Rust now preserves nested Hit children with the same Hit decoder used at the root, but its GroupingResult convenience separates nested groups and hits into distinct vectors and does not expose the canonical mixed-child ordering or canonical root directly."
+        "The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Rust now publicly exports SearchResult.root plus ResultNode, ResultGroup, ResultHit, and ResultLimits with mixed child ordering preserved; convenience hit/group projections intentionally separate node kinds and should not be used when canonical interleaving matters."
       ]
     },
     {
