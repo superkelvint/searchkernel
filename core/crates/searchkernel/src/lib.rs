@@ -49,8 +49,8 @@ pub use schema::{
     StructFieldConfig, SummaryConfig,
 };
 pub use search::{
-    Facet, FacetSort, InspectedQuery, MissingPlacement, QueryInputValue, Ranking, SearchBuilder,
-    Sort, SortDirection,
+    Facet, FacetSort, InspectedQuery, MissingPlacement, QueryInputValue, QueryModelType, Ranking,
+    SearchBuilder, Sort, SortDirection, YqlBuilder,
 };
 pub use tensor::Tensor;
 pub use update::Update;
