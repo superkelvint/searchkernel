@@ -166,31 +166,53 @@ function sharedFilterBindings(source: string, bindings: Record<string, unknown>)
 
 const PARITY_OBSERVATIONS: Record<string, unknown> = {};
 
-function sharedTypedQuery(spec: any): any {
-  switch (spec.kind) {
-    case "contains": return q.contains(spec.field, spec.value);
-    case "phrase": return q.phrase(spec.field, ...spec.terms);
-    case "near": return q.near(spec.field, ...spec.terms);
-    case "ordered_near": return q.orderedNear(spec.field, ...spec.terms);
-    case "range": {
-      const fieldType = E2E_CORPUS.schema.fields[spec.field].type;
+function escapeRegexLiteral(value: string): string {
+  return value.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&");
+}
+
+function typedQueryForScenario(scenario: string, intent: any): any {
+  const field = intent.field;
+  switch (scenario) {
+    case "typed_query_term": return q.contains(field, intent.value);
+    case "typed_query_contains": return q.contains(field, intent.value);
+    case "typed_query_phrase": return q.phrase(field, ...intent.terms);
+    case "typed_query_near": return q.near(field, ...intent.terms);
+    case "typed_query_ordered_near": return q.orderedNear(field, ...intent.terms);
+    case "typed_query_range":
+    case "typed_query_range_exclusive": {
+      const fieldType = E2E_CORPUS.schema.fields[field].type;
       const bound = (input: number) => fieldType === "float64" ? float64(input) : input;
-      return q.range(spec.field, bound(spec.lower), bound(spec.upper));
+      return q.range(field, bound(intent.lower), bound(intent.upper), {
+        includeLower: intent.include_lower,
+        includeUpper: intent.include_upper,
+      });
     }
-    case "and": return q.allOf(...spec.clauses.map(sharedTypedQuery));
-    case "or": return q.anyOf(...spec.clauses.map(sharedTypedQuery));
-    case "not": return q.not(sharedTypedQuery(spec.clause));
-    case "in": return q.inValues(spec.field, spec.values);
-    case "equals": return q.equals(spec.field, spec.value);
-    case "fuzzy": return q.fuzzy(spec.field, spec.value);
-    case "weak_and": return q.weakAnd(...spec.clauses.map(sharedTypedQuery));
-    case "wand": return q.wand(spec.field, spec.items);
-    case "weighted_set": return q.weightedSet(spec.field, spec.items);
-    case "dot_product": return q.dotProduct(spec.field, spec.items);
-    case "same_element": return q.sameElement(spec.field, ...spec.clauses.map(sharedTypedQuery));
-    case "geo_location": return q.geoLocation(spec.field, spec.latitude, spec.longitude, spec.radius);
-    case "geo_box": return q.geoBox(spec.field, spec.south, spec.west, spec.north, spec.east);
-    default: throw new Error(`unsupported shared typed query kind: ${spec.kind}`);
+    case "typed_query_boolean": {
+      const [left, right] = intent.or_terms;
+      return q.allOf(
+        q.anyOf(q.contains(left.field, left.value), q.contains(right.field, right.value)),
+        q.not(q.contains(intent.not_term.field, intent.not_term.value)),
+      );
+    }
+    case "typed_query_in": return q.inValues(field, intent.values);
+    case "typed_query_equals": return q.equals(field, intent.value);
+    case "typed_query_fuzzy": return q.fuzzy(field, intent.value);
+    case "typed_query_weak_and": return q.weakAnd(...intent.terms.map((term: any) => q.contains(term.field, term.value)));
+    case "typed_query_wand": return q.wand(field, intent.items);
+    case "typed_query_weighted_set": return q.weightedSet(field, intent.items);
+    case "typed_query_dot_product": return q.dotProduct(field, intent.items);
+    case "typed_query_prefix": return q.matches(field, escapeRegexLiteral(intent.value) + ".*");
+    case "typed_query_substring": return q.matches(field, ".*" + escapeRegexLiteral(intent.value) + ".*");
+    case "typed_query_suffix": return q.matches(field, ".*" + escapeRegexLiteral(intent.value));
+    case "typed_query_same_element":
+      return q.sameElement(
+        field,
+        q.contains(intent.first_field, intent.first_value),
+        q.contains(intent.last_field, intent.last_value),
+      );
+    case "typed_query_geo_location": return q.geoLocation(field, intent.latitude, intent.longitude, intent.radius);
+    case "typed_query_geo_box": return q.geoBox(field, intent.south, intent.west, intent.north, intent.east);
+    default: throw new Error("unsupported typed parity scenario: " + scenario);
   }
 }
 
@@ -200,21 +222,23 @@ async function sharedTypedQueryObservations(index: Index): Promise<Record<string
     if (!scenario.startsWith("typed_query_")) continue;
     const input = PARITY_INTENTS[scenario];
     const capabilities = E2E_CORPUS.client_scenario_contract[scenario].typescript;
-    const supported = capabilities.query_result.kind === "comparable";
-    const observation: Record<string, unknown> = {};
-    if (supported) {
-      let results;
-      try {
-        results = await index.query(sharedTypedQuery(input.query)).limit(input.limit).execute();
-      } catch (error) {
-        throw new Error(`${scenario} failed through the TypeScript public facade`, { cause: error });
-      }
+    let builder = index.query(typedQueryForScenario(scenario, input));
+    const rankingProfile = input.ranking_profile;
+    if (rankingProfile) builder = builder.ranking(rankingProfile);
+    const results = await builder.limit(input.limit).execute();
+    const feature = input.feature;
+    let queryResult: unknown;
+    if (feature) {
+      queryResult = results.hits.map((hit) => ({ id: hit.id, feature: paritySafe(hit.features[feature]) }));
+    } else {
       const ids = results.hits.map((hit) => hit.id);
       if (input.result_order === "sorted_ids") ids.sort();
-      observation.query_result = ids;
+      queryResult = ids;
     }
-    observation.intent = PARITY_CONSUMED_INTENTS.get(scenario);
-    observations[scenario] = { observation, capabilities };
+    observations[scenario] = {
+      observation: { intent: PARITY_CONSUMED_INTENTS.get(scenario), query_result: queryResult },
+      capabilities,
+    };
   }
   return observations;
 }
