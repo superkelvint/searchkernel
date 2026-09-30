@@ -297,6 +297,8 @@ def write_real_engine_parity(observations)
   path = ENV["SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT"]
   return unless path
 
+  # SDK result maps can be frozen; the parity writer adds intent metadata.
+  observations = JSON.parse(JSON.generate(observations))
   observations.each do |scenario, value|
     intent = E2E_CORPUS.fetch("scenario_inputs")[scenario]
     next unless intent && !scenario.start_with?("typed_query_")
