@@ -746,6 +746,7 @@ verify_target() {
                 echo 'error: Ruby is required for client semantic parity' >&2
                 return 1
             }
+            bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
             "$PYTHON" "$ROOT/tools/check-result-response-schema.py"
             "$PYTHON" "$ROOT/tools/test_check_result_response_schema.py"
             "$PYTHON" "$ROOT/tools/test_result_response_conformance.py"

@@ -120,10 +120,10 @@ class BuildSystemCiTest(unittest.TestCase):
     def test_pr_workflow_delegates_without_owning_gate_semantics(self):
         workflow = RUST_CI.read_text(encoding="utf-8")
         self.assertIn("permissions:\n  contents: read", workflow)
-        self.assertIn("actions/checkout@v4", workflow)
+        self.assertIn("actions/checkout@v7", workflow)
         self.assertIn("run: ./dev ci", workflow)
         checkout = workflow[
-            workflow.index("- uses: actions/checkout@v4"):
+            workflow.index("- uses: actions/checkout@v7"):
             workflow.index("- name: Run authoritative PR gate")
         ]
         run = workflow[workflow.index("- name: Run authoritative PR gate"):]
