@@ -161,12 +161,13 @@ def shared_typed_query_observations(index)
     builder = index.query(typed_query_for_scenario(scenario, intent))
     builder = builder.ranking(intent.fetch("ranking_profile")) if intent["ranking_profile"]
     result = builder.limit(intent.fetch("limit")).execute
+    result_order = intent.fetch("result_order")
     query_result = if intent["feature"]
       feature = intent.fetch("feature")
       result.hits.map { |hit| {"id" => hit.id, "feature" => hit.features[feature]} }
     else
       result_ids = ids(result)
-      result_ids.sort! if intent.fetch("result_order") == "sorted_ids"
+      result_ids.sort! if result_order == "sorted_ids"
       result_ids
     end
     [scenario, {
