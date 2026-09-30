@@ -98,29 +98,59 @@ end
 
 PARITY_OBSERVATIONS = {}
 
-def shared_typed_query(spec)
-  field = spec["field"]
-  children = -> { spec.fetch("clauses", []).map { |clause| shared_typed_query(clause) } }
-  case spec.fetch("kind")
-  when "contains" then SearchKernel::Query.contains(field, spec.fetch("value"))
-  when "phrase" then SearchKernel::Query.contains(field, SearchKernel::Query.phrase(*spec.fetch("terms")))
-  when "near" then SearchKernel::Query.contains(field, SearchKernel::Query.near(*spec.fetch("terms")))
-  when "ordered_near" then SearchKernel::Query.contains(field, SearchKernel::Query.onear(*spec.fetch("terms")))
-  when "range" then SearchKernel::Query.range(field, gte: spec.fetch("lower"), lte: spec.fetch("upper"))
-  when "and" then SearchKernel::Query.all_of(*children.call)
-  when "or" then SearchKernel::Query.any_of(*children.call)
-  when "not" then SearchKernel::Query.negate(shared_typed_query(spec.fetch("clause")))
-  when "in" then SearchKernel::Query.in_values(field, spec.fetch("values"))
-  when "equals" then SearchKernel::Query.eq(field, spec.fetch("value"))
-  when "fuzzy" then SearchKernel::Query.contains(field, SearchKernel::Query.fuzzy(spec.fetch("value")))
-  when "weak_and" then SearchKernel::Query.weak_and(*children.call)
-  when "wand" then SearchKernel::Query.wand(field, spec.fetch("items"))
-  when "weighted_set" then SearchKernel::Query.weighted_set(field, spec.fetch("items"))
-  when "dot_product" then SearchKernel::Query.dot_product(field, spec.fetch("items"))
-  when "same_element" then SearchKernel::Query.contains(field, SearchKernel::Query.same_element(*children.call))
-  when "geo_location" then SearchKernel::Query.geo_location(field, lat: spec.fetch("latitude"), lon: spec.fetch("longitude"), radius: spec.fetch("radius"))
-  when "geo_box" then SearchKernel::Query.geo_box(field, south: spec.fetch("south"), west: spec.fetch("west"), north: spec.fetch("north"), east: spec.fetch("east"))
-  else raise ArgumentError, "unsupported shared typed query kind: #{spec.fetch('kind')}"
+def typed_query_for_scenario(scenario, intent)
+  field = intent["field"]
+  case scenario
+  when "typed_query_term" then SearchKernel::Query.contains(field, SearchKernel::Query.term(intent.fetch("value")))
+  when "typed_query_contains" then SearchKernel::Query.contains(field, intent.fetch("value"))
+  when "typed_query_phrase" then SearchKernel::Query.contains(field, SearchKernel::Query.phrase(*intent.fetch("terms")))
+  when "typed_query_near" then SearchKernel::Query.contains(field, SearchKernel::Query.near(*intent.fetch("terms")))
+  when "typed_query_ordered_near" then SearchKernel::Query.contains(field, SearchKernel::Query.onear(*intent.fetch("terms")))
+  when "typed_query_range", "typed_query_range_exclusive"
+    SearchKernel::Query.range(
+      field,
+      gte: intent.fetch("include_lower") ? intent.fetch("lower") : nil,
+      gt: intent.fetch("include_lower") ? nil : intent.fetch("lower"),
+      lte: intent.fetch("include_upper") ? intent.fetch("upper") : nil,
+      lt: intent.fetch("include_upper") ? nil : intent.fetch("upper")
+    )
+  when "typed_query_boolean"
+    left, right = intent.fetch("or_terms")
+    negative = intent.fetch("not_term")
+    SearchKernel::Query.all_of(
+      SearchKernel::Query.any_of(
+        SearchKernel::Query.contains(left.fetch("field"), left.fetch("value")),
+        SearchKernel::Query.contains(right.fetch("field"), right.fetch("value"))
+      ),
+      SearchKernel::Query.negate(
+        SearchKernel::Query.contains(negative.fetch("field"), negative.fetch("value"))
+      )
+    )
+  when "typed_query_in" then SearchKernel::Query.in_values(field, intent.fetch("values"))
+  when "typed_query_equals" then SearchKernel::Query.eq(field, intent.fetch("value"))
+  when "typed_query_fuzzy" then SearchKernel::Query.contains(field, SearchKernel::Query.fuzzy(intent.fetch("value")))
+  when "typed_query_weak_and"
+    SearchKernel::Query.weak_and(*intent.fetch("terms").map { |term| SearchKernel::Query.contains(term.fetch("field"), term.fetch("value")) })
+  when "typed_query_wand" then SearchKernel::Query.wand(field, intent.fetch("items"))
+  when "typed_query_weighted_set" then SearchKernel::Query.weighted_set(field, intent.fetch("items"))
+  when "typed_query_dot_product" then SearchKernel::Query.dot_product(field, intent.fetch("items"))
+  when "typed_query_prefix" then SearchKernel::Query.matches(field, "#{Regexp.escape(intent.fetch("value"))}.*")
+  when "typed_query_substring" then SearchKernel::Query.matches(field, ".*#{Regexp.escape(intent.fetch("value"))}.*")
+  when "typed_query_suffix" then SearchKernel::Query.matches(field, ".*#{Regexp.escape(intent.fetch("value"))}")
+  when "typed_query_same_element"
+    SearchKernel::Query.contains(
+      field,
+      SearchKernel::Query.same_element(
+        SearchKernel::Query.contains(intent.fetch("first_field"), intent.fetch("first_value")),
+        SearchKernel::Query.contains(intent.fetch("last_field"), intent.fetch("last_value"))
+      )
+    )
+  when "typed_query_geo_location"
+    SearchKernel::Query.geo_location(field, lat: intent.fetch("latitude"), lon: intent.fetch("longitude"), radius: intent.fetch("radius"))
+  when "typed_query_geo_box"
+    SearchKernel::Query.geo_box(field, south: intent.fetch("south"), west: intent.fetch("west"), north: intent.fetch("north"), east: intent.fetch("east"))
+  else
+    raise ArgumentError, "unsupported typed parity scenario: #{scenario}"
   end
 end
 
@@ -128,11 +158,19 @@ def shared_typed_query_observations(index)
   E2E_CORPUS.fetch("scenario_inputs").filter_map do |scenario, _raw_intent|
     next unless scenario.start_with?("typed_query_")
     intent = PARITY_INTENTS.fetch(scenario)
-    result = index.query(shared_typed_query(intent.fetch("query"))).limit(intent.fetch("limit")).execute
-    result_ids = ids(result)
-    result_ids.sort! if intent.fetch("result_order") == "sorted_ids"
+    builder = index.query(typed_query_for_scenario(scenario, intent))
+    builder = builder.ranking(intent.fetch("ranking_profile")) if intent["ranking_profile"]
+    result = builder.limit(intent.fetch("limit")).execute
+    query_result = if intent["feature"]
+      feature = intent.fetch("feature")
+      result.hits.map { |hit| {"id" => hit.id, "feature" => hit.features[feature]} }
+    else
+      result_ids = ids(result)
+      result_ids.sort! if intent.fetch("result_order") == "sorted_ids"
+      result_ids
+    end
     [scenario, {
-      "observation" => {"intent" => PARITY_CONSUMED_INTENTS.fetch(scenario), "query_result" => result_ids},
+      "observation" => {"intent" => PARITY_CONSUMED_INTENTS.fetch(scenario), "query_result" => query_result},
       "capabilities" => E2E_CORPUS.fetch("client_scenario_contract").fetch(scenario).fetch("ruby")
     }]
   end.to_h
