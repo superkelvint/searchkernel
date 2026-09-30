@@ -365,7 +365,15 @@ mod showcase {
 
         let scenario_inputs: Value = serde_json::from_str(E2E_CORPUS)?;
         let shared_inputs = &scenario_inputs["scenario_inputs"];
-        let pagination_intent = &shared_inputs["pagination"];
+        let mut consumed_intents = serde_json::Map::new();
+        macro_rules! intent {
+            ($name:literal) => {{
+                let value = &shared_inputs[$name];
+                consumed_intents.insert($name.to_owned(), value.clone());
+                value
+            }};
+        }
+        let pagination_intent = intent!("pagination");
         let pagination_query = pagination_intent["query"]
             .as_str()
             .ok_or("pagination query missing")?;
@@ -375,7 +383,7 @@ mod showcase {
         let pagination_all_limit = pagination_intent["all_limit"]
             .as_u64()
             .ok_or("pagination all limit missing")? as u32;
-        let filtered_facets_intent = &shared_inputs["filtered_facets"];
+        let filtered_facets_intent = intent!("filtered_facets");
         let parity_sorted = index
             .search(pagination_query)
             .sort(Sort::asc(pagination_sort))
@@ -399,7 +407,7 @@ mod showcase {
                     .ok_or("filtered search page limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let facet_intent = &shared_inputs["facets"];
+        let facet_intent = intent!("facets");
         let parity_faceted = index
             .search(
                 facet_intent["query"]
@@ -418,7 +426,7 @@ mod showcase {
                     .ok_or("facet page limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let nearest_intent = &shared_inputs["nearest_neighbor"];
+        let nearest_intent = intent!("nearest_neighbor");
         let parity_nearest = index
             .search("")
             .ranking(Ranking::named(
@@ -453,7 +461,7 @@ mod showcase {
                     .ok_or("nearest limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let rerank_intent = &shared_inputs["two_phase_reranking"];
+        let rerank_intent = intent!("two_phase_reranking");
         let parity_reranked = index
             .search(
                 rerank_intent["query"]
@@ -471,7 +479,7 @@ mod showcase {
                     .ok_or("rerank limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let structured_error_intent = &shared_inputs["structured_filter_error"];
+        let structured_error_intent = intent!("structured_filter_error");
         let parity_error = index
             .search(
                 structured_error_intent["query"]
@@ -485,7 +493,7 @@ mod showcase {
             )
             .execute::<Value>()
             .expect_err("unknown field must fail");
-        let document_intent = &shared_inputs["document_crud"];
+        let document_intent = intent!("document_crud");
         let parity_document = index
             .get::<Value>(
                 document_intent["document_id"]
@@ -493,7 +501,18 @@ mod showcase {
                     .ok_or("document id missing")?,
             )?
             .expect("shoe-1 exists");
-        let full_text_intent = &shared_inputs["full_text_search"];
+        let tensor_intent = intent!("tensor_readback");
+        let tensor_document = index
+            .get::<Value>(
+                tensor_intent["document_id"]
+                    .as_str()
+                    .ok_or("tensor readback document id missing")?,
+            )?
+            .ok_or("tensor readback document missing")?;
+        let tensor_field = tensor_intent["field"]
+            .as_str()
+            .ok_or("tensor readback field missing")?;
+        let full_text_intent = intent!("full_text_search");
         let parity_full_text = index
             .search(
                 full_text_intent["query"]
@@ -506,7 +525,7 @@ mod showcase {
                     .ok_or("full-text limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let stemming_intent = &shared_inputs["stemming"];
+        let stemming_intent = intent!("stemming");
         let parity_stemming = index
             .search(
                 stemming_intent["query"]
@@ -519,14 +538,14 @@ mod showcase {
                     .ok_or("stemming limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let binding_intent = &shared_inputs["text_filter_binding"];
+        let binding_intent = intent!("text_filter_binding");
         let parity_text_binding = index
             .search(binding_intent["query"].as_str().ok_or("binding query missing")?)
             .filter((binding_intent["filter"].as_str().ok_or("binding filter missing")?, params! { "max" => binding_intent["bindings"]["max"].as_f64().ok_or("max binding missing")? }))
             .sort(Sort::asc(binding_intent["sort"][0]["field"].as_str().ok_or("binding sort missing")?))
             .limit(binding_intent["limit"].as_u64().ok_or("binding limit missing")? as u32)
             .execute::<Value>()?;
-        let repeated_intent = &shared_inputs["repeated_filters"];
+        let repeated_intent = intent!("repeated_filters");
         let parity_repeated = index
             .search(repeated_intent["query"].as_str().ok_or("repeated filter query missing")?)
             .filter((repeated_intent["filters"][0]["source"].as_str().ok_or("first repeated filter missing")?, params! { "value" => repeated_intent["filters"][0]["bindings"]["value"].as_f64().ok_or("repeated float binding missing")? }))
@@ -535,7 +554,7 @@ mod showcase {
             .sort(Sort::asc(repeated_intent["sort"][0]["field"].as_str().ok_or("repeated sort missing")?))
             .limit(repeated_intent["limit"].as_u64().ok_or("repeated limit missing")? as u32)
             .execute::<Value>()?;
-        let boolean_intent = &shared_inputs["boolean_filter_grammar"];
+        let boolean_intent = intent!("boolean_filter_grammar");
         let parity_boolean = index
             .search(boolean_intent["query"].as_str().ok_or("boolean filter query missing")?)
             .filter((
@@ -548,7 +567,7 @@ mod showcase {
             .sort(Sort::asc(boolean_intent["sort"][0]["field"].as_str().ok_or("boolean sort missing")?))
             .limit(boolean_intent["limit"].as_u64().ok_or("boolean limit missing")? as u32)
             .execute::<Value>()?;
-        let projection_intent = &shared_inputs["sorting_projection"];
+        let projection_intent = intent!("sorting_projection");
         let parity_projection = index
             .search(
                 projection_intent["query"]
@@ -623,7 +642,7 @@ mod showcase {
                     .ok_or("filtered facet page limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let grouping_intent = &shared_inputs["grouping_aggregations"];
+        let grouping_intent = intent!("grouping_aggregations");
         let grouping_order = grouping_intent["order"]
             .as_array()
             .ok_or("grouping order missing")?
@@ -686,7 +705,7 @@ mod showcase {
                 ),
             )
             .execute::<Value>()?;
-        let nested_intent = &shared_inputs["nested_grouping"];
+        let nested_intent = intent!("nested_grouping");
         let parity_nested = index
             .browse()
             .filter((
@@ -716,7 +735,7 @@ mod showcase {
                 ),
             )
             .execute::<Value>()?;
-        let root_intent = &shared_inputs["root_aggregations"];
+        let root_intent = intent!("root_aggregations");
         let parity_root_aggregations = index
             .browse()
             .filter(
@@ -759,7 +778,7 @@ mod showcase {
                     .ok_or("root aggregation limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let alias_intent = &shared_inputs["group_alias"];
+        let alias_intent = intent!("group_alias");
         let parity_alias = index
             .search(
                 alias_intent["query"]
@@ -813,7 +832,7 @@ mod showcase {
                 ),
             )
             .execute::<Value>()?;
-        let keep_intent = &shared_inputs["group_keep_filter"];
+        let keep_intent = intent!("group_keep_filter");
         let parity_keep = index
             .search(keep_intent["query"].as_str().ok_or("keep query missing")?)
             .grouping(
@@ -843,7 +862,7 @@ mod showcase {
                 ),
             )
             .execute::<Value>()?;
-        let yql_intent = &shared_inputs["yql"];
+        let yql_intent = intent!("yql");
         let parity_yql = index
             .yql(yql_intent["source"].as_str().ok_or("YQL source missing")?)
             .yql_parameter(
@@ -859,7 +878,7 @@ mod showcase {
                     .ok_or("YQL page size missing")? as u32,
             )
             .execute::<Value>()?;
-        let misuse_intent = &shared_inputs["builder_misuse"];
+        let misuse_intent = intent!("builder_misuse");
         let misuse_query = misuse_intent["query"]
             .as_str()
             .ok_or("builder misuse query missing")?;
@@ -922,7 +941,7 @@ mod showcase {
                 }),
             );
         }
-        let rank_input_intent = &shared_inputs["rank_inputs"];
+        let rank_input_intent = intent!("rank_inputs");
         let (rank_input_name, rank_input_value) = rank_input_intent["inputs"]
             .as_object()
             .and_then(|inputs| inputs.iter().next())
@@ -950,7 +969,7 @@ mod showcase {
                     .ok_or("rank input limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let rank_property_intent = &shared_inputs["rank_properties"];
+        let rank_property_intent = intent!("rank_properties");
         let (rank_property_name, rank_property_value) = rank_property_intent["rank_properties"]
             .as_object()
             .and_then(|properties| properties.iter().next())
@@ -978,7 +997,7 @@ mod showcase {
                     .ok_or("rank property limit missing")? as u32,
             )
             .execute::<Value>()?;
-        let hybrid_intent = &scenario_inputs["scenario_inputs"]["hybrid_text_vector"];
+        let hybrid_intent = intent!("hybrid_text_vector");
         let hybrid_query = &hybrid_intent["query"];
         let nearest_clause = hybrid_query["clauses"]
             .as_array()
@@ -1108,7 +1127,7 @@ mod showcase {
             "yql": {"ids": ids(&parity_yql), "total": parity_yql.total_hits.value},
             "rank_inputs": parity_rank_input.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
             "rank_properties": parity_rank_property.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
-            "tensor_readback": parity_document["embedding"]["$searchkernel_tensor"]["dense"],
+            "tensor_readback": tensor_document[tensor_field]["$searchkernel_tensor"]["dense"].clone(),
             "nearest_neighbor": {"observation": {"intent": nearest_intent, "ids": ids(&parity_nearest), "scores": parity_nearest.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()}, "capabilities": {}},
             "two_phase_reranking": {"ids": ids(&parity_reranked)},
             "hybrid_text_vector": {"observation": {"intent": hybrid_intent, "ids": ids(&parity_hybrid), "top_score": parity_hybrid.hits.first().and_then(|hit| hit.score)}, "capabilities": {}},
@@ -1827,7 +1846,7 @@ mod showcase {
             .coverage
             .as_ref()
             .is_some_and(|coverage| coverage.full == Some(true)));
-        let degradation_intent = &shared_inputs["coverage_degradation"];
+        let degradation_intent = intent!("coverage_degradation");
         let degraded = index
             .browse()
             .filter((
@@ -1895,7 +1914,7 @@ mod showcase {
         );
         heading("21A. TEXTUAL FILTER SYNTAX ERROR");
 
-        let syntax_intent = &shared_inputs["text_filter_syntax_error"];
+        let syntax_intent = intent!("text_filter_syntax_error");
         let error = index
             .search(
                 syntax_intent["query"]
@@ -1927,7 +1946,7 @@ mod showcase {
 
         heading("22. PATCH SET / UNSET");
 
-        let patch_intent = &shared_inputs["patch"];
+        let patch_intent = intent!("patch");
         index.insert(
             patch_intent["document_id"]
                 .as_str()
@@ -1966,7 +1985,7 @@ mod showcase {
             "price": parity_mutated["price"],
             "sale_price_present": parity_mutated.get("sale_price").is_some()
         });
-        let delete_intent = &shared_inputs["delete"];
+        let delete_intent = intent!("delete");
         let parity_deleted = index.delete(
             delete_intent["document_id"]
                 .as_str()
@@ -1976,7 +1995,7 @@ mod showcase {
             "deleted": parity_deleted,
             "absent_after_delete": index.get::<Value>(delete_intent["document_id"].as_str().ok_or("delete document id missing")?)?.is_none()
         });
-        let update_intent = &shared_inputs["advanced_update"];
+        let update_intent = intent!("advanced_update");
         index.insert(
             update_intent["document_id"]
                 .as_str()
@@ -2060,7 +2079,7 @@ mod showcase {
             "inventory": advanced_update["inventory"],
             "sale_price_present": advanced_update.get("sale_price").is_some()
         });
-        let reopen_intent = &shared_inputs["reopen_persistence"];
+        let reopen_intent = intent!("reopen_persistence");
         index.insert(
             reopen_intent["marker_id"]
                 .as_str()
@@ -2116,7 +2135,7 @@ mod showcase {
 
         heading("24. UPSERT REPLACEMENT");
 
-        let upsert_intent = &shared_inputs["upsert_replacement"];
+        let upsert_intent = intent!("upsert_replacement");
         let vector_document_id = upsert_intent["replacement"]["vector_document_id"]
             .as_str()
             .ok_or("upsert vector id missing")?;
@@ -2210,9 +2229,9 @@ mod showcase {
                 }
             })
         );
-        let reopen_intent = &shared_inputs["reopen_persistence"];
-        let upsert_intent = &shared_inputs["upsert_replacement"];
-        let delete_intent = &shared_inputs["delete"];
+        let reopen_intent = intent!("reopen_persistence");
+        let upsert_intent = intent!("upsert_replacement");
+        let delete_intent = intent!("delete");
         let parity_persisted = index
             .get::<Value>(
                 reopen_intent["marker_id"]
@@ -2239,13 +2258,17 @@ mod showcase {
             },
             "deleted_absent": index.get::<Value>(delete_intent["document_id"].as_str().ok_or("delete id missing")?)?.is_none()
         });
-        for (scenario, intent) in shared_inputs
+        for scenario in shared_inputs
             .as_object()
             .ok_or("scenario inputs must be an object")?
+            .keys()
         {
             if scenario.starts_with("typed_query_") {
                 continue;
             }
+            let intent = consumed_intents.get(scenario).ok_or_else(|| {
+                format!("parity scenario {scenario} emitted an observation without consuming its shared intent")
+            })?;
             let value = parity_observations
                 .get_mut(scenario)
                 .ok_or_else(|| format!("missing parity observation for {scenario}"))?;
