@@ -71,6 +71,9 @@
     },
     "client-real-e2e-parity": {
       "description": "Cross-client real-engine showcase parity"
+    },
+    "consumer-release": {
+      "description": "Publishable consumer artifacts and fresh-project package qualification"
     }
   },
   "verify": {
@@ -750,7 +753,8 @@
       ],
       "architecture": "docs/architecture.md#native-boundary",
       "test": [
-        "test:rust-api"
+        "test:rust-api",
+        "test:consumer-release"
       ],
       "verify": [
         "verify:abi",
@@ -860,7 +864,9 @@
         "docs/release-quickstart.md"
       ],
       "architecture": "docs/architecture.md#non-rust-client-apis",
-      "test": [],
+      "test": [
+        "test:consumer-release"
+      ],
       "verify": [
         "verify:contracts"
       ],
@@ -1016,7 +1022,9 @@
         "BUILDING.md"
       ],
       "architecture": "docs/architecture.md#development-model",
-      "test": [],
+      "test": [
+        "test:consumer-release"
+      ],
       "verify": [
         "verify:contracts"
       ],

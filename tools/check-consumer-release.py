@@ -98,69 +98,34 @@ def verify_daemon_tree(root: Path, expected_runtime: dict[str, object]) -> None:
 with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
     temp = Path(raw)
 
-    rust = next(out.glob("searchkernel-rust-*.tar.gz"))
-    rust_root = temp / "rust"
-    rust_root.mkdir()
-    with tarfile.open(rust) as archive:
-        names = set(archive.getnames())
-        required = {
-            "LICENSE",
-            "core/crates/searchkernel/Cargo.toml",
-            "core/crates/searchkernel-rpc/Cargo.toml",
-            "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs",
-            "searchkerneld/Cargo.toml",
-        }
-        missing = sorted(required - names)
-        assert not missing, f"Rust consumer bundle missing required entries: {missing}"
-        assert "tools/resolve-native-sdk.sh" not in names
-        archive.extractall(rust_root)
-
-    cargo = subprocess.check_output(
-        ["bash", str(ROOT / "tools" / "resolve-rust.sh"), "cargo"],
-        text=True,
-    ).strip()
-    environment = clean_runtime_env()
-    environment["CARGO_TARGET_DIR"] = str(temp / "cargo-target")
-    # In the CI producer, validate the released Rust bundle against the
-    # immutable native-base cache already provisioned for packaging. This
-    # validation runs before the pristine consumer container; the qualification
-    # runner itself never receives this cache.
-    native_cache = Path("/opt/searchkernel/native-sdk-cache")
-    if (
-        native_cache.is_dir()
-        and Path("/opt/searchkernel/native-validation-pass").is_file()
-    ):
-        environment["SK_NATIVE_CACHE_DIR"] = str(native_cache)
-        environment["SEARCHKERNEL_BUILD_ENV"] = "ci"
-    subprocess.run(
-        [
-            cargo,
-            "metadata",
-            "--no-deps",
-            "--format-version",
-            "1",
-            "--manifest-path",
-            str(rust_root / "Cargo.toml"),
-        ],
-        check=True,
-        env=environment,
-        stdout=subprocess.DEVNULL,
+    crates = {path.name: path for path in out.glob("*.crate")}
+    assert "searchkernel-0.1.0.crate" in crates, (
+        "release is missing the publishable searchkernel Cargo crate"
     )
-    subprocess.run(
-        [
-            cargo,
-            "check",
-            "-p",
-            "searchkernel",
-            "--features",
-            "native",
-            "--manifest-path",
-            str(rust_root / "Cargo.toml"),
-        ],
-        cwd=rust_root,
-        check=True,
-        env=environment,
-    )
+    bindings = crates.get("searchkernel-vespa-bindings-0.1.0.crate")
+    assert bindings is not None, "release is missing the publishable Vespa bindings Cargo crate"
+    with tarfile.open(bindings, "r:gz") as archive:
+        descriptor_member = next(
+            (member for member in archive.getmembers() if member.name.endswith("/runtime.json")),
+            None,
+        )
+        bundle_member = next(
+            (member for member in archive.getmembers() if member.name.endswith("/consumer_bundle.rs")),
+            None,
+        )
+        assert descriptor_member is not None, (
+            "publishable searchkernel-vespa-bindings .crate omits runtime.json"
+        )
+        assert bundle_member is not None, (
+            "publishable searchkernel-vespa-bindings .crate omits consumer_bundle.rs"
+        )
+        packaged_descriptor = json.load(archive.extractfile(descriptor_member))
+        packaged_support = archive.extractfile(bundle_member).read().decode("utf-8")
+        assert packaged_descriptor == manifest["runtime_descriptor"], (
+            "Cargo crate runtime descriptor differs from release metadata"
+        )
+        assert "tools/resolve-native-sdk.sh" not in packaged_support
+        assert "core/native/vespa/build-sdk.sh" not in packaged_support
 
     daemon = next(out.glob("searchkernel-runtime-*.tar.gz"))
     daemon_root = temp / "daemon"

@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class QualificationPolicyTests(unittest.TestCase):
+    def test_daemon_probe_uses_release_runtime_artifact_name(self) -> None:
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text(encoding="utf-8")
+        self.assertIn('artifact("searchkernel-runtime-", ".tar.gz")', gate)
+        self.assertNotIn('artifact("searchkerneld-", ".tar.gz")', gate)
+
     def test_gate_runs_in_consumer_container_without_producer_state(self):
         runner = (ROOT / ".github/ci/ci-image-runner.yml").read_text()
         marker = 'echo "==> Qualify packaged release in clean consumer"'
@@ -70,8 +75,13 @@ class QualificationPolicyTests(unittest.TestCase):
             self.assertIn(variable, gate)
         self.assertNotIn('"--no-index"', gate)
         rust_runner = gate.split("def run_rust_quickstart", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn('os.environ.get("GH_TOKEN")', rust_runner)
-        self.assertIn('os.environ.get("GITHUB_TOKEN")', rust_runner)
+        self.assertIn('"SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri()', rust_runner)
+        self.assertNotIn('os.environ.get("GH_TOKEN")', rust_runner)
+        self.assertNotIn('os.environ.get("GITHUB_TOKEN")', rust_runner)
+        self.assertIn('"cargo", "add", "searchkernel"', rust_runner)
+        self.assertIn('run("cargo", "build", cwd=project, env=environment)', rust_runner)
+        self.assertIn('item["file"].endswith(".crate")', rust_runner)
+        self.assertNotIn('"path": "../core/crates/searchkernel"', gate)
         self.assertNotIn("SEARCHKERNEL_BUILD_ENV", gate)
 
     def test_packaged_supported_rows_own_clean_consumer_gate(self):
