@@ -61,6 +61,11 @@ class GrpcTransportTest(unittest.TestCase):
         request = RequestEnvelope.GetRootAs(payload)
         self.assertEqual(request.Target().Name().decode(), "products")
 
+    def test_domain_invalid_target_is_encoded_for_canonical_server_validation(self):
+        payload = pack_request("insert", InsertRequestT(), target="Products")
+        request = RequestEnvelope.GetRootAs(payload)
+        self.assertEqual(request.Target().Name().decode(), "Products")
+
     def test_lifecycle_success_requires_index_definition(self):
         malformed_create = _response(
             ResponsePayload.SearchKernel_V2_CreateIndexResult,

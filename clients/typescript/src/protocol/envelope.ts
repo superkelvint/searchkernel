@@ -84,9 +84,6 @@ export function packRequest<K extends Operation>(
 ): Uint8Array {
   let indexTarget: IndexTargetT | null = null;
   if (target !== undefined) {
-    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(target)) {
-      throw new TypeError("index target must match [a-z0-9][a-z0-9_-]{0,127}");
-    }
     indexTarget = new IndexTargetT(target);
   }
   const envelope = new RequestEnvelopeT(

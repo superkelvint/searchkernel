@@ -278,7 +278,7 @@ approximated.
 
 ### Targeted multi-index daemon lifecycle protocol (`daemon.multi_index_lifecycle`)
 
-- The direct targeted request-envelope and create/open wire contract is the #848 forward-compatibility baseline, but daemon registry/data-root execution lands in #846. Target-less envelopes remain valid only for embedded/per-index callers.
+- Target-less envelopes remain valid only for embedded/per-index callers; multi-index daemon ingress reports a canonical missing-target error.
 
 ## Evidence and versioning
 
