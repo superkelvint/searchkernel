@@ -44,6 +44,14 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "omits required shared scenario intents"):
             validate_shared_typed_inputs({"scenario_inputs": {key: value for key, value in inputs.items() if key != "typed_query_geo_box"}}, scenarios)
 
+
+    def test_v1_required_inventory_is_independent_from_the_corpus(self):
+        corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
+        self.assertTrue(set(PARITY.REQUIRED_V1_SCENARIOS).issubset(set(corpus["scenarios"])))
+        shrunken = [scenario for scenario in corpus["scenarios"] if scenario != "advanced_update"]
+        with self.assertRaisesRegex(SystemExit, "scenario inventory omits required shared-intent scenarios: advanced_update"):
+            validate_shared_typed_inputs({"scenario_inputs": corpus["scenario_inputs"]}, shrunken)
+
     def test_client_snapshot_must_echo_the_shared_scenario_intent(self):
         inputs = {scenario: {"query": {"kind": "contains", "value": scenario}, "result_order": "sorted_ids", "limit": 100} for scenario in PARITY.REQUIRED_TYPED_SCENARIOS}
         for scenario in set(PARITY.REQUIRED_SHARED_INTENT_SCENARIOS) - set(inputs):
