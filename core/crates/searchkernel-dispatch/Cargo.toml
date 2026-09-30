@@ -11,8 +11,8 @@ categories.workspace = true
 
 [dependencies]
 flatbuffers = "=25.12.19"
-searchkernel-ir = { path = "../searchkernel-ir" }
-searchkernel-protocol = { path = "../searchkernel-protocol" }
+searchkernel-ir = { path = "../searchkernel-ir", version = "=0.1.0" }
+searchkernel-protocol = { path = "../searchkernel-protocol", version = "=0.1.0" }
 
 [dev-dependencies]
-searchkernel-testkit = { path = "../searchkernel-testkit" }
+searchkernel-testkit = { path = "../searchkernel-testkit", version = "=0.1.0" }

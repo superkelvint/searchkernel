@@ -10,6 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 links = "searchkernel_vespa"
 build = "build.rs"
+include = ["Cargo.toml", "README.md", "build.rs", "consumer_bundle.rs", "runtime.json", "src/**"]
 
 [features]
 default = ["native"]

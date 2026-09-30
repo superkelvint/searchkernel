@@ -33,6 +33,13 @@ fn main() {
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let support_root = support_root(&manifest_dir);
+    #[cfg(feature = "native")]
+    if manifest_dir.join("runtime.json").is_file() && env::var_os("SK_NATIVE_SDK").is_none() {
+        configure_packaged_consumer_runtime(&manifest_dir, &support_root).unwrap_or_else(|error| {
+            panic!("Search Kernel packaged native runtime provisioning failed: {error}")
+        });
+        return;
+    }
     env::set_var("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT", &support_root);
     #[cfg(feature = "native")]
     let target = env::var("TARGET").expect("Cargo must provide TARGET to native build scripts");
@@ -410,6 +417,109 @@ fn resolve_shared_native_sdk(
         .find(|line| !line.trim().is_empty())
         .ok_or_else(|| "shared native SDK resolver returned no path".to_owned())?;
     Ok(PathBuf::from(path))
+}
+
+#[cfg(feature = "native")]
+fn configure_packaged_consumer_runtime(
+    manifest_dir: &Path,
+    support_root: &Path,
+) -> Result<(), String> {
+    if env::var_os("CARGO_FEATURE_HARDENING").is_some() {
+        return Err("hardening is a maintainer-only native build mode and is unavailable from the consumer runtime".to_owned());
+    }
+    let resolver = support_root.join("tools/consumer_runtime.py");
+    let descriptor = manifest_dir.join("runtime.json");
+    let output = Command::new("python3")
+        .arg(&resolver)
+        .arg("ensure")
+        .arg(&descriptor)
+        .output()
+        .map_err(|error| {
+            format!(
+                "start consumer-runtime resolver '{}': {error}",
+                resolver.display()
+            )
+        })?;
+    if !output.status.success() {
+        return Err(format!(
+            "consumer-runtime resolver exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let runtime = PathBuf::from(
+        String::from_utf8(output.stdout)
+            .map_err(|error| format!("resolver returned non-UTF-8 path: {error}"))?
+            .trim(),
+    );
+    let lib_dir = runtime.join("lib");
+    let adapter = lib_dir.join("libsearchkernel_vespa.so.2");
+    if !adapter.is_file() {
+        return Err(format!(
+            "validated consumer runtime is missing '{}'",
+            adapter.display()
+        ));
+    }
+    let out_dir = PathBuf::from(
+        env::var_os("OUT_DIR").ok_or_else(|| "Cargo did not provide OUT_DIR".to_owned())?,
+    );
+    stage_consumer_runtime_for_cargo_outputs(&out_dir, &lib_dir)?;
+    // The immutable runtime intentionally carries the ABI library by SONAME only
+    // (`.so.2`). Give the linker its conventional unversioned filename without
+    // mutating the validated runtime object.
+    let link_dir = out_dir.join("consumer-runtime-link");
+    fs::create_dir_all(&link_dir)
+        .map_err(|error| format!("create consumer runtime link directory: {error}"))?;
+    fs::copy(&adapter, link_dir.join("libsearchkernel_vespa.so"))
+        .map_err(|error| format!("stage consumer runtime linker input: {error}"))?;
+    println!("cargo:rustc-link-search=native={}", link_dir.display());
+    println!("cargo:rustc-link-lib=dylib=searchkernel_vespa");
+    println!("cargo:rerun-if-changed={}", descriptor.display());
+    println!("cargo:rerun-if-env-changed=SEARCHKERNEL_RUNTIME_DIR");
+    println!("cargo:rerun-if-env-changed=SEARCHKERNEL_RUNTIME_CACHE");
+    println!("cargo:rerun-if-env-changed=SEARCHKERNEL_RUNTIME_ORIGIN");
+    Ok(())
+}
+
+#[cfg(feature = "native")]
+fn stage_consumer_runtime_for_cargo_outputs(out_dir: &Path, lib_dir: &Path) -> Result<(), String> {
+    let profile_dir = out_dir
+        .ancestors()
+        .nth(3)
+        .ok_or_else(|| format!("unexpected Cargo OUT_DIR layout: {}", out_dir.display()))?;
+    for executable_dir in [
+        profile_dir.to_path_buf(),
+        profile_dir.join("deps"),
+        profile_dir.join("examples"),
+    ] {
+        let runtime_dir = executable_dir.join(".searchkernel-native");
+        fs::create_dir_all(&runtime_dir).map_err(|error| {
+            format!(
+                "create packaged native runtime directory '{}': {error}",
+                runtime_dir.display()
+            )
+        })?;
+        for entry in fs::read_dir(lib_dir)
+            .map_err(|error| format!("read consumer runtime '{}': {error}", lib_dir.display()))?
+        {
+            let entry = entry.map_err(|error| format!("read consumer runtime entry: {error}"))?;
+            let ty = entry
+                .file_type()
+                .map_err(|error| format!("inspect consumer runtime entry: {error}"))?;
+            if !ty.is_file() && !ty.is_symlink() {
+                continue;
+            }
+            let destination = runtime_dir.join(entry.file_name());
+            fs::copy(entry.path(), &destination).map_err(|error| {
+                format!(
+                    "stage consumer runtime '{}' -> '{}': {error}",
+                    entry.path().display(),
+                    destination.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "native")]

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import ast
+import json
 import importlib.util
 import os
 import subprocess
@@ -21,6 +22,10 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ConsumerReleaseTests(unittest.TestCase):
+    def test_ci_toolchain_provides_patchelf(self) -> None:
+        dockerfile = (ROOT / "docker/searchkernel-ci-toolchain/Dockerfile").read_text(encoding="utf-8")
+        self.assertRegex(dockerfile, r"(?m)^\s*patchelf \\$")
+
     def test_packaged_build_sdk_reexecs_through_bash_under_flock(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
@@ -216,49 +221,48 @@ class ConsumerReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "developer-only"):
                 MODULE.assert_consumer_runtime_surface(stage)
 
-    def test_rust_bundle_is_self_contained_workspace(self) -> None:
+    def test_cargo_release_contains_real_publishable_crates(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
-            bundle = Path(tempdir) / "searchkernel-rust-test.tar.gz"
-            MODULE.build_rust_bundle(bundle)
-            with tarfile.open(bundle) as archive:
-                names = set(archive.getnames())
-                self.assertIn("LICENSE", names)
-                self.assertIn("core/crates/searchkernel/Cargo.toml", names)
-                self.assertIn("core/crates/searchkernel-rpc/Cargo.toml", names)
-                self.assertIn("searchkerneld/Cargo.toml", names)
-                self.assertIn(
-                    "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs", names
-                )
-                self.assertNotIn("tools/resolve-native-sdk.sh", names)
+            out = Path(tempdir)
+            descriptor = {"runtime_identity": "skrt-v1-" + "a" * 64, "artifact_sha256": "b" * 64}
+            artifacts = MODULE.build_rust_crates(out, descriptor)
+            names = {path.name for path in artifacts}
+            self.assertIn("searchkernel-0.1.0.crate", names)
+            self.assertIn("searchkernel-vespa-bindings-0.1.0.crate", names)
+            self.assertNotIn("searchkernel-rust-0.1.0.tar.gz", names)
 
-    def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
+    def test_publishable_bindings_crate_carries_consumer_runtime_descriptor(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            out = Path(tempdir)
+            descriptor = {"runtime_identity": "skrt-v1-" + "a" * 64, "artifact_sha256": "b" * 64}
+            artifacts = MODULE.build_rust_crates(out, descriptor)
+            binding_crate = next(path for path in artifacts if path.name == "searchkernel-vespa-bindings-0.1.0.crate")
+            with tarfile.open(binding_crate, "r:gz") as archive:
+                member = next(member for member in archive.getmembers() if member.name.endswith("/runtime.json"))
+                self.assertIsNotNone(member)
+                self.assertEqual(json.loads(archive.extractfile(member).read()), descriptor)
+                bundle = next(member for member in archive.getmembers() if member.name.endswith("/consumer_bundle.rs"))
+                self.assertIsNotNone(bundle)
+                packaged_support = archive.extractfile(bundle).read().decode("utf-8")
+                self.assertIn("tools/consumer_runtime.py", packaged_support)
+                self.assertNotIn("tools/resolve-native-sdk.sh", packaged_support)
+                self.assertNotIn("core/native/vespa/build-sdk.sh", packaged_support)
+        self.assertFalse((ROOT / "core/crates/searchkernel-vespa-bindings/runtime.json").exists())
+
+    def test_publishable_rust_crates_pin_internal_dependency_versions(self) -> None:
+        for manifest in (ROOT / "core/crates").glob("*/Cargo.toml"):
+            data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+            for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+                for name, dependency in data.get(section, {}).items():
+                    if name.startswith("searchkernel-") and isinstance(dependency, dict) and "path" in dependency:
+                        self.assertEqual(dependency.get("version"), "=0.1.0", f"{manifest}: {name}")
+
+    def test_release_verifier_checks_actual_cargo_crate_artifacts(self) -> None:
         verifier = RELEASE_VERIFIER.read_text(encoding="utf-8")
-        tree = ast.parse(verifier)
-        commands = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not node.args:
-                continue
-            func = node.func
-            if not (
-                isinstance(func, ast.Attribute)
-                and isinstance(func.value, ast.Name)
-                and func.value.id == "subprocess"
-                and func.attr == "run"
-                and isinstance(node.args[0], ast.List)
-            ):
-                continue
-            commands.append(
-                [element.value for element in node.args[0].elts if isinstance(element, ast.Constant)]
-            )
-        self.assertTrue(
-            any(
-                command[:5] == ["check", "-p", "searchkernel", "--features", "native"]
-                for command in commands
-            )
-        )
-        self.assertIn('"CARGO_TARGET_DIR"', verifier)
-        self.assertIn('"SK_NATIVE_CACHE_DIR"', verifier)
-        self.assertIn('"SEARCHKERNEL_BUILD_ENV"', verifier)
+        self.assertIn('"searchkernel-0.1.0.crate"', verifier)
+        self.assertIn('"searchkernel-vespa-bindings-0.1.0.crate"', verifier)
+        self.assertIn('member.name.endswith("/runtime.json")', verifier)
+        self.assertIn('"Cargo crate runtime descriptor differs from release metadata"', verifier)
 
 
 
