@@ -73,7 +73,7 @@ pub fn prepare_fixture(
     config: &Path,
     data: &Path,
 ) -> searchkernel_vespa_engine::Result<()> {
-    ConfigCompiler::default().compile_to(&fixture_schema(root), config)?;
+    ConfigCompiler.compile_to(&fixture_schema(root), config)?;
     let engine = Engine::open(data, config)?;
     let field = root["fixture"]["tensor_field"]["name"]
         .as_str()
