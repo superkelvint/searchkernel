@@ -398,8 +398,9 @@ def main() -> None:
         try:
             descriptor = runtime_descriptor(identity, daemon_bundle)
             created.extend(stage_python_runtime_support(ROOT / "clients/python/searchkernel", descriptor))
-            # TypeScript remains on the transitional embedded runtime until its M4 slice.
-            created.extend(copy_runtime_into(ROOT / "clients/typescript", stage))
+            ts_descriptor = ROOT / "clients/typescript/runtime.json"
+            ts_descriptor.write_text(json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            created.append(ts_descriptor)
             run(
                 sys.executable,
                 "-m",

@@ -311,7 +311,7 @@ describe("managed-local host binary resolution", () => {
 
     const { resolveHostBinary } = await import("../src/node/managed-local-host.js");
 
-    expect(() => resolveHostBinary()).toThrow(/SEARCHKERNEL_LOCAL_HOST/);
+    await expect(resolveHostBinary()).rejects.toThrow(/SEARCHKERNEL_LOCAL_HOST/);
   });
 
   it("uses the repository host target only for a positively identified source checkout", async () => {
@@ -328,7 +328,7 @@ describe("managed-local host binary resolution", () => {
     });
 
     const { resolveHostBinary } = await import("../src/node/managed-local-host.js");
-    expect(resolveHostBinary()).toMatch(/\/target\/host\/debug\/searchkerneld$/);
+    expect(await resolveHostBinary()).toMatch(/\/target\/host\/debug\/searchkerneld$/);
   });
 
   it("does not make managed-local execution depend on a repository working directory", async () => {
@@ -363,9 +363,9 @@ describe("managed-local host binary resolution", () => {
     const Host = ManagedLocalHost as unknown as new (
       dataRoot: string,
       temporaryDirectory: string,
-    ) => { spawn(): void };
+    ) => { spawn(): Promise<void> };
     const host = new Host("relative-index", "/tmp/searchkernel-test");
-    host.spawn();
+    await host.spawn();
 
     expect(spawnMock).toHaveBeenCalledOnce();
     const args = spawnMock.mock.calls[0]?.[1];

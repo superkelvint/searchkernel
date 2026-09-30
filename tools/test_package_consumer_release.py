@@ -67,6 +67,12 @@ class ConsumerReleaseTests(unittest.TestCase):
         self.assertNotIn("lib/*", package_data)
         self.assertNotIn("bin/*", package_data)
 
+    def test_node_and_ruby_packages_do_not_embed_runtime_closure(self) -> None:
+        node = __import__("json").loads((ROOT / "clients/typescript/package.json").read_text())
+        self.assertNotIn("bin", node["files"]); self.assertNotIn("lib", node["files"]); self.assertIn("runtime.json", node["files"])
+        gemspec = (ROOT / "clients/ruby/searchkernel.gemspec").read_text()
+        self.assertIn('"lib/**/*.json"', gemspec)
+
     def test_python_runtime_descriptor_uses_exact_artifact_digest(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             archive = Path(raw) / "runtime.tar.gz"
