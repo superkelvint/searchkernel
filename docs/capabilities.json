@@ -687,7 +687,9 @@
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/tests/facade.test.ts",
-        "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
+        "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+        "core/crates/searchkernel/src/grouping.rs",
+        "core/crates/searchkernel/tests/native_e2e.rs"
       ],
       "limitations": [
         "The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree."
@@ -705,10 +707,12 @@
         "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
         "clients/python/searchkernel/ergonomic.py",
         "clients/typescript/tests/facade.test.ts",
-        "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
+        "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+        "core/crates/searchkernel/src/grouping.rs",
+        "core/crates/searchkernel/tests/native_e2e.rs"
       ],
       "limitations": [
-        "The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust's public GroupingExpression currently exposes attributes only; Python exposes the richer expression facade."
+        "The native adapter and Rust facade support attributes, scalar literals, unary/binary arithmetic, aggregation/alias references in executable positions, and the verified function subset. Member, MapLookup, and Bucket remain rejected by native lowering and are intentionally not exposed as Rust grouping classifiers."
       ]
     },
     {
@@ -724,10 +728,12 @@
         "core/native/vespa/abi.cc",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/tests/facade.test.ts",
-        "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
+        "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+        "core/crates/searchkernel/src/grouping.rs",
+        "core/crates/searchkernel/tests/native_e2e.rs"
       ],
       "limitations": [
-        "The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust's high-level GroupingAggregation exposes count/average/sum/min/max; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete."
+        "The native layer and Rust facade support count, average, sum, min, max, stddev, xor, and quantiles. Summary aggregation is tracked separately because grouped docsum payloads do not cross the native ABI."
       ]
     },
     {

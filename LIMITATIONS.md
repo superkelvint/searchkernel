@@ -189,11 +189,11 @@ approximated.
 
 ### Executable grouping expression/function subset (`grouping.functions`)
 
-- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust's public GroupingExpression currently exposes attributes only; Python exposes the richer expression facade.
+- The native adapter and Rust facade support attributes, scalar literals, unary/binary arithmetic, aggregation/alias references in executable positions, and the verified function subset. Member, MapLookup, and Bucket remain rejected by native lowering and are intentionally not exposed as Rust grouping classifiers.
 
 ### Grouping aggregations (`grouping.aggregations`)
 
-- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust's high-level GroupingAggregation exposes count/average/sum/min/max; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete.
+- The native layer and Rust facade support count, average, sum, min, max, stddev, xor, and quantiles. Summary aggregation is tracked separately because grouped docsum payloads do not cross the native ABI.
 
 ### Summary aggregation (`grouping.summary_aggregation`)
 

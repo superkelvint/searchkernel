@@ -347,7 +347,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 415
+              "line": 416
             }
           ],
           "overrides": []
@@ -451,7 +451,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 416
+              "line": 417
             }
           ],
           "overrides": []
@@ -649,7 +649,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 417
+              "line": 418
             }
           ],
           "overrides": []
@@ -991,7 +991,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 418
+              "line": 419
             }
           ],
           "overrides": []
@@ -1268,7 +1268,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 217
+              "line": 218
             },
             {
               "capability": "search.sorting",
@@ -1385,7 +1385,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 218
+              "line": 219
             },
             {
               "capability": "search.pagination",
@@ -1543,7 +1543,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 219
+              "line": 220
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1768,7 +1768,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 220
+              "line": 221
             },
             {
               "capability": "result.highlighting",
@@ -1926,6 +1926,16 @@
             {
               "capability": "grouping.structured",
               "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 695
+            },
+            {
+              "capability": "grouping.structured",
+              "scenario": "basic",
               "surface": "typescript",
               "runtime": "node",
               "kind": "e2e",
@@ -1976,6 +1986,16 @@
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
               "line": 1430
+            },
+            {
+              "capability": "grouping.functions",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 696
             }
           ],
           "overrides": []
@@ -2040,6 +2060,16 @@
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
               "line": 576
+            },
+            {
+              "capability": "grouping.aggregations",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 697
             },
             {
               "capability": "grouping.aggregations",
@@ -2265,7 +2295,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 14
+              "line": 15
             },
             {
               "capability": "update.document_crud",
