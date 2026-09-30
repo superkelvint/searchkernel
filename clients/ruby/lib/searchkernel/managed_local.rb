@@ -27,6 +27,49 @@ module SearchKernel
         registry.delete(host.object_id)
       end
 
+      def pool
+        @pool ||= {}
+      end
+
+      def pool_mutex
+        @pool_mutex ||= Mutex.new
+      end
+
+      def acquire(data_root)
+        key = File.expand_path(data_root.to_s)
+        pool_mutex.synchronize do
+          entry = pool[key]
+          if entry
+            entry[:refs] += 1
+            return entry[:host]
+          end
+
+          host = new(key)
+          host.instance_variable_set(:@pool_key, key)
+          pool[key] = { host: host, refs: 1 }
+          host
+        end
+      end
+
+      def release(host, force:)
+        key = host.instance_variable_get(:@pool_key)
+        return true unless key
+
+        pool_mutex.synchronize do
+          entry = pool[key]
+          return true unless entry && entry[:host].equal?(host)
+
+          if !force && entry[:refs] > 1
+            entry[:refs] -= 1
+            return false
+          end
+
+          pool.delete(key)
+          host.instance_variable_set(:@pool_key, nil)
+          true
+        end
+      end
+
       def close_all
         registry.values.each do |host|
           begin
@@ -57,6 +100,7 @@ module SearchKernel
 
     def close(force: false)
       return if @closed
+      return nil unless self.class.release(self, force: force)
 
       @closed = true
       self.class.unregister(self)
