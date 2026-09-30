@@ -17,19 +17,19 @@ CORPUS = ROOT / "reference/client-real-e2e-parity/corpus.json"
 CLIENTS = ("rust", "python", "typescript", "php", "ruby")
 FLOAT_TOLERANCE = 1e-6
 FLOAT_SEMANTIC_KEYS = {
-    # Search scores and explicitly floating fields/aggregations. JavaScript's
-    # JSON encoder can serialize a float such as 3.0 as `3`; these paths carry
-    # the domain type that the wire representation no longer preserves.
+    # Explicitly floating output paths. JavaScript can serialize an integral
+    # float (3.0) as the JSON number 3, so these paths use their domain type.
     "price", "sale_price", "avg_price", "sum_price", "min_price", "max_price",
     "revenue", "score", "scores", "top_score", "feature", "relevance",
 }
 REQUIRED_TYPED_SCENARIOS = (
-    "typed_query_contains", "typed_query_phrase", "typed_query_range",
+    "typed_query_contains", "typed_query_phrase", "typed_query_near", "typed_query_ordered_near", "typed_query_range",
     "typed_query_boolean", "typed_query_in", "typed_query_equals",
     "typed_query_fuzzy", "typed_query_weak_and", "typed_query_wand",
     "typed_query_weighted_set", "typed_query_dot_product",
     "typed_query_same_element", "typed_query_geo_location", "typed_query_geo_box",
 )
+REQUIRED_SHARED_INTENT_SCENARIOS = (*REQUIRED_TYPED_SCENARIOS, "nearest_neighbor", "hybrid_text_vector")
 
 
 def compare(
@@ -132,28 +132,36 @@ def scenario_contract(corpus: dict[str, Any]) -> tuple[list[str], dict[str, dict
 
 
 def validate_shared_typed_inputs(corpus: dict[str, Any], scenarios: list[str]) -> dict[str, Any]:
-    missing = sorted(set(REQUIRED_TYPED_SCENARIOS) - set(scenarios))
+    missing = sorted(set(REQUIRED_SHARED_INTENT_SCENARIOS) - set(scenarios))
     if missing:
-        raise SystemExit(f"shared corpus omits required typed-query scenarios: {', '.join(missing)}")
+        raise SystemExit(f"shared corpus omits required shared-intent scenarios: {', '.join(missing)}")
     inputs = corpus.get("scenario_inputs")
     if not isinstance(inputs, dict):
         raise SystemExit("shared corpus scenario_inputs must be an object")
-    missing_inputs = sorted(set(REQUIRED_TYPED_SCENARIOS) - inputs.keys())
+    missing_inputs = sorted(set(REQUIRED_SHARED_INTENT_SCENARIOS) - inputs.keys())
     if missing_inputs:
-        raise SystemExit(f"shared corpus omits typed-query intents: {', '.join(missing_inputs)}")
+        raise SystemExit(f"shared corpus omits required shared scenario intents: {', '.join(missing_inputs)}")
     for scenario in REQUIRED_TYPED_SCENARIOS:
         entry = inputs[scenario]
         if not isinstance(entry, dict) or not isinstance(entry.get("query"), dict) or entry.get("result_order") not in {"sorted_ids", "ranked"}:
             raise SystemExit(f"{scenario}: shared query intent or result ordering is invalid")
+    for scenario in ("nearest_neighbor", "hybrid_text_vector"):
+        entry = inputs[scenario]
+        if (not isinstance(entry, dict) or not isinstance(entry.get("query"), dict)
+                or not isinstance(entry.get("ranking_profile"), str)
+                or not isinstance(entry.get("query_input_document"), str)
+                or type(entry.get("limit")) is not int or entry["limit"] < 1):
+            raise SystemExit(f"{scenario}: query, ranking, vector document, and limit intent are required")
     return inputs
 
 
 def validate_observed_intents(client: str, observations: dict[str, Any], inputs: dict[str, Any]) -> None:
-    for scenario in REQUIRED_TYPED_SCENARIOS:
+    for scenario in REQUIRED_SHARED_INTENT_SCENARIOS:
         value = observations.get(scenario)
         payload = value.get("observation", value) if isinstance(value, dict) else None
-        if not isinstance(payload, dict) or payload.get("intent") != inputs[scenario]["query"]:
-            raise SystemExit(f"{client}.{scenario} did not consume the shared query intent")
+        expected = inputs[scenario]["query"] if scenario in REQUIRED_TYPED_SCENARIOS else inputs[scenario]
+        if not isinstance(payload, dict) or payload.get("intent") != expected:
+            raise SystemExit(f"{client}.{scenario} did not consume the shared scenario intent")
 
 
 def scenario_observations(
