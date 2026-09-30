@@ -309,6 +309,15 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         nested = envelope.payload.document.fields[0].value.kind.fields[0].value.kind.values
         self.assertEqual([item.kind.value for item in nested], [1, True])
 
+    def test_request_target_round_trip(self):
+        raw = pack_request(
+            "insert",
+            InsertRequestT(document=DocumentT(id="doc:1", fields=[])),
+            target="catalog-a",
+        )
+        envelope = RequestEnvelopeT.InitFromPackedBuf(raw)
+        self.assertEqual(envelope.target.name, "catalog-a")
+
     def test_semantic_maps_use_canonical_key_order(self):
         self.assertEqual(
             [entry.key for entry in value({"zeta": 1, "alpha": 2}).kind.fields],

@@ -10,6 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEV = ROOT / "dev"
 RUST_CI = ROOT / ".github" / "workflows" / "rust-ci.yml"
 TARGETS = ROOT / "build" / "targets.json"
+CAPABILITIES_DOC = ROOT / "docs" / "CAPABILITIES.md"
 
 
 class BuildSystemCiTest(unittest.TestCase):
@@ -97,6 +98,21 @@ class BuildSystemCiTest(unittest.TestCase):
             '"$PYTHON" "$ROOT/tools/check-capabilities.py" --write',
             bookkeeping,
         )
+
+    def test_ci_rejects_stale_global_capability_documents(self):
+        original = CAPABILITIES_DOC.read_text(encoding="utf-8")
+        try:
+            CAPABILITIES_DOC.write_text(
+                original + "\n<!-- deliberate stale capability document -->\n",
+                encoding="utf-8",
+            )
+            result = self.run_ci()
+        finally:
+            CAPABILITIES_DOC.write_text(original, encoding="utf-8")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Capability documents are stale:", result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_ci_rejects_extra_arguments(self):
         result = self.run_ci("unexpected")

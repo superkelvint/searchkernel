@@ -23,6 +23,11 @@ mod native_main {
         Multi {
             data_root: PathBuf,
         },
+        Migrate {
+            source_path: PathBuf,
+            data_root: PathBuf,
+            target: String,
+        },
         LegacySingle {
             index_path: PathBuf,
             definition_path: Option<PathBuf>,
@@ -39,6 +44,8 @@ mod native_main {
     fn config() -> Result<Config, Box<dyn Error>> {
         let mut args = env::args_os().skip(1);
         let mut data_root = None;
+        let mut migrate_index_path = None;
+        let mut migrate_target = None;
         let mut index_path = None;
         let mut definition_path = None;
         let mut definition_json_path = None;
@@ -54,6 +61,21 @@ mod native_main {
                         args.next()
                             .ok_or("--data-root requires a path")
                             .map(PathBuf::from)?,
+                    )
+                }
+                "--migrate-index" => {
+                    migrate_index_path = Some(
+                        args.next()
+                            .ok_or("--migrate-index requires a path")
+                            .map(PathBuf::from)?,
+                    )
+                }
+                "--target" => {
+                    migrate_target = Some(
+                        args.next()
+                            .ok_or("--target requires a logical index name")?
+                            .to_string_lossy()
+                            .into_owned(),
                     )
                 }
                 "--index" => {
@@ -115,28 +137,53 @@ mod native_main {
         if definition_path.is_some() && definition_json_path.is_some() {
             return Err("--definition and --definition-json are mutually exclusive".into());
         }
-        if data_root.is_some()
-            && (index_path.is_some() || definition_path.is_some() || definition_json_path.is_some())
-        {
-            return Err(
-                "--data-root cannot be combined with legacy --index/--definition options".into(),
-            );
-        }
-
-        let mode = match (data_root, index_path) {
-            (Some(data_root), None) => Mode::Multi { data_root },
-            (None, Some(index_path)) => Mode::LegacySingle {
-                index_path,
-                definition_path,
-                definition_json_path,
-            },
-            (None, None) => {
+        let mode = if migrate_index_path.is_some() || migrate_target.is_some() {
+            if index_path.is_some() || definition_path.is_some() || definition_json_path.is_some() {
                 return Err(
-                    "--data-root/SEARCHKERNEL_DATA_ROOT is required for multi-index mode; legacy --index/SEARCHKERNEL_INDEX_PATH remains temporarily supported"
+                    "--migrate-index cannot be combined with legacy --index/--definition options"
                         .into(),
-                )
+                );
             }
-            (Some(_), Some(_)) => unreachable!("mixed daemon modes rejected above"),
+            let source_path =
+                migrate_index_path.ok_or("--migrate-index is required with --target")?;
+            let data_root = data_root.ok_or("--data-root is required with --migrate-index")?;
+            let target = migrate_target.ok_or("--target is required with --migrate-index")?;
+            searchkernel_protocol::target::validate_index_target(&target)?;
+            Mode::Migrate {
+                source_path,
+                data_root,
+                target,
+            }
+        } else {
+            if migrate_target.is_some() {
+                return Err("--target is only valid with --migrate-index".into());
+            }
+            if data_root.is_some()
+                && (index_path.is_some()
+                    || definition_path.is_some()
+                    || definition_json_path.is_some())
+            {
+                return Err(
+                    "--data-root cannot be combined with legacy --index/--definition options"
+                        .into(),
+                );
+            }
+
+            match (data_root, index_path) {
+                (Some(data_root), None) => Mode::Multi { data_root },
+                (None, Some(index_path)) => Mode::LegacySingle {
+                    index_path,
+                    definition_path,
+                    definition_json_path,
+                },
+                (None, None) => {
+                    return Err(
+                        "--data-root/SEARCHKERNEL_DATA_ROOT is required for multi-index mode; legacy --index/SEARCHKERNEL_INDEX_PATH remains temporarily supported"
+                            .into(),
+                    )
+                }
+                (Some(_), Some(_)) => unreachable!("mixed daemon modes rejected above"),
+            }
         };
 
         let server = match listen {
@@ -300,6 +347,14 @@ mod native_main {
                 let result = wait_for_shutdown(server).await;
                 registry.close_all()?;
                 result?;
+            }
+            Mode::Migrate {
+                source_path,
+                data_root,
+                target,
+            } => {
+                std::fs::create_dir_all(&data_root)?;
+                Index::migrate_storage(&source_path, data_root.join(&target))?;
             }
             Mode::LegacySingle {
                 index_path,

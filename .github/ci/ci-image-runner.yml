@@ -639,9 +639,14 @@ jobs:
 
             client-e2e)
               run_phase client-e2e-release-support "$PYTHON" tools/check-release-support.py
+              run_phase client-e2e-qualification-policy "$PYTHON" tools/test_qualify_consumer_release.py
+              run_phase client-e2e-quickstart-docs "$PYTHON" tools/render-release-quickstarts.py --check
               "$PYTHON" tools/check-python-dependencies.py
-              run_phase client-release-build "$PYTHON" tools/package-consumer-release.py --output /tmp/searchkernel-consumer-release
-              run_phase client-release-verify "$PYTHON" tools/check-consumer-release.py /tmp/searchkernel-consumer-release
+              run_phase client-release-build "$PYTHON" tools/package-consumer-release.py --output /artifacts/consumer-release
+              run_phase client-release-verify "$PYTHON" tools/check-consumer-release.py /artifacts/consumer-release
+              mkdir -p /artifacts/consumer-release-tools
+              cp tools/qualify-consumer-release.py /artifacts/consumer-release-tools/
+              cp -R examples/release-quickstart /artifacts/consumer-release-tools/quickstarts
               build_native_searchkerneld client-e2e-build
               run_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e
               ;;
@@ -728,6 +733,16 @@ jobs:
           if [[ "$receipt" != "$EXPECTED_HEAD $CI_TARGET" ]]; then
             echo "::error::CI container exited without executing the exact-head lane preflight"
             exit 1
+          fi
+
+          if [[ "$CI_TARGET" == "client-e2e" ]]; then
+            echo "==> Qualify packaged release in clean consumer"
+            docker run --rm \
+              -v "$ARTIFACT_DIR/consumer-release:/release:ro" \
+              -v "$ARTIFACT_DIR/consumer-release-tools:/qualification:ro" \
+              -e GH_TOKEN="${GH_TOKEN:-}" \
+              "$CI_IMAGE_ID" \
+              /bin/bash -lc 'python3 /qualification/qualify-consumer-release.py /release'
           fi
 
       - name: Upload nightly coverage

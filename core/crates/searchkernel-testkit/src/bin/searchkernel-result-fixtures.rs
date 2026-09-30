@@ -339,7 +339,7 @@ fn clear_table_field(bytes: &mut Vec<u8>, table: usize, slot: usize) {
     // FlatBuffers tables can share vtables. Copy before changing the selected
     // slot so one malformed fixture does not clear the same field on every
     // table with an identical layout.
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         bytes.push(0);
     }
     let copied_vtable = bytes[vtable..vtable + vtable_size].to_vec();
