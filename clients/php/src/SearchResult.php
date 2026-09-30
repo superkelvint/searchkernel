@@ -103,13 +103,13 @@ final class SearchResult
     /** @param array<string, mixed> $payload */
     public static function fromPayload(array $payload): self
     {
-        $root = null;
-        if (array_key_exists('root', $payload) && $payload['root'] !== null) {
-            if (!is_array($payload['root'])) {
-                throw new ProtocolException('SearchResult.root must be a ResultNode object');
-            }
-            $root = ResultGroup::decodeNode($payload['root']);
+        if (!array_key_exists('root', $payload) || $payload['root'] === null) {
+            throw new ProtocolException('SearchResult.root is required');
         }
+        if (!is_array($payload['root'])) {
+            throw new ProtocolException('SearchResult.root must be a ResultNode object');
+        }
+        $root = ResultGroup::decodeNode($payload['root']);
 
         if ($root instanceof ResultGroup) {
             $hits = $root->hits;
@@ -128,21 +128,20 @@ final class SearchResult
             $continuations = [];
         }
 
-        $totalHits = 0;
-        $relation = 'Unknown';
-        if (array_key_exists('total_hits', $payload) && $payload['total_hits'] !== null) {
-            if (!is_array($payload['total_hits'])) {
-                throw new ProtocolException('SearchResult.total_hits must be an object');
-            }
-            $totalHits = array_key_exists('value', $payload['total_hits'])
-                ? Protocol::decodeUInt64Scalar($payload['total_hits']['value'], 'TotalHits.value')
-                : 0;
-            $relation = array_key_exists('relation', $payload['total_hits'])
-                ? Protocol::decodeStringScalar($payload['total_hits']['relation'], 'TotalHits.relation')
-                : 'Unspecified';
-            if (!in_array($relation, self::TOTAL_HIT_RELATIONS, true)) {
-                throw new ProtocolException('unsupported TotalHits.relation: ' . $relation);
-            }
+        if (!array_key_exists('total_hits', $payload) || $payload['total_hits'] === null) {
+            throw new ProtocolException('SearchResult.total_hits is required');
+        }
+        if (!is_array($payload['total_hits'])) {
+            throw new ProtocolException('SearchResult.total_hits must be an object');
+        }
+        $totalHits = array_key_exists('value', $payload['total_hits'])
+            ? Protocol::decodeUInt64Scalar($payload['total_hits']['value'], 'TotalHits.value')
+            : 0;
+        $relation = array_key_exists('relation', $payload['total_hits'])
+            ? Protocol::decodeStringScalar($payload['total_hits']['relation'], 'TotalHits.relation')
+            : 'Unspecified';
+        if (!in_array($relation, self::TOTAL_HIT_RELATIONS, true)) {
+            throw new ProtocolException('unsupported TotalHits.relation: ' . $relation);
         }
 
         if (array_key_exists('coverage', $payload) && $payload['coverage'] !== null && !is_array($payload['coverage'])) {

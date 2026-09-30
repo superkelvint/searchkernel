@@ -1016,6 +1016,8 @@ class ResultLimits:
 
 class ResultContinuation:
     def __init__(self, node):
+        if not isinstance(node.key, str) or not isinstance(node.value, str):
+            raise ValueError("result continuation has a missing key or value")
         self.key = node.key
         self.value = node.value
 
@@ -1113,7 +1115,11 @@ def _node(node):
 class SearchResults:
     def __init__(self, result):
         self._result = result
-        self.root = _node(result.root) if result.root is not None else None
+        if result.root is None:
+            raise ValueError("missing SearchResult.root")
+        if result.totalHits is None:
+            raise ValueError("missing SearchResult.total_hits")
+        self.root = _node(result.root)
         if isinstance(self.root, ResultGroup):
             children = self.root.children
             self.hits = [child for child in children if isinstance(child, Hit)]
@@ -1128,8 +1134,8 @@ class SearchResults:
         # shape; request-derived conveniences (such as facets) are projected
         # separately by the builder that knows the request.
         self.groups = [child for child in children if isinstance(child, ResultGroup)]
-        self.total_hits = result.totalHits.value if result.totalHits is not None else 0
-        self.total_hits_relation = result.totalHits.relation if result.totalHits is not None else "unknown"
+        self.total_hits = result.totalHits.value
+        self.total_hits_relation = result.totalHits.relation
         coverage = getattr(result, "coverage", None)
         self.coverage = Coverage(coverage) if coverage is not None else None
         timing = getattr(result, "timing", None)

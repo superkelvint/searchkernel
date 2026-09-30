@@ -7,7 +7,7 @@ import { ValueEntryT } from "../src/generated/flatbuffers/search-kernel/v2/value
 import type { GrpcWebTransport } from "../src/transport/grpc-web.js";
 
 function indexWith(fields: Array<ValueEntryT | null>): Index {
-  const index = Index.connect("unused", { execute: async () => new Uint8Array() } as unknown as GrpcWebTransport);
+  const index = Index.connect("unused", "test", { execute: async () => new Uint8Array() } as unknown as GrpcWebTransport);
   index.client.get = async () => new GetResultT(new DocumentT("doc:1", fields as ValueEntryT[]));
   return index;
 }

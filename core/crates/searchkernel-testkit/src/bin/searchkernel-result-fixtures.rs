@@ -101,7 +101,59 @@ fn main() {
         ),
         (
             "unknown-tensor-payload-union",
-            unknown_tensor_payload_union(tensors),
+            unknown_tensor_payload_union(tensors.clone()),
+        ),
+        (
+            "missing-search-result-root",
+            missing_search_result_root(canonical.clone()),
+        ),
+        (
+            "missing-search-result-total-hits",
+            missing_search_result_total_hits(canonical.clone()),
+        ),
+        (
+            "missing-search-result-root-and-total-hits",
+            missing_search_result_root_and_total_hits(canonical.clone()),
+        ),
+        (
+            "missing-continuation-key",
+            missing_continuation_key(canonical.clone()),
+        ),
+        (
+            "missing-continuation-value",
+            missing_continuation_value(canonical.clone()),
+        ),
+        (
+            "missing-sparse-address-dimension",
+            missing_sparse_address_dimension(tensors.clone()),
+        ),
+        (
+            "missing-sparse-address-label",
+            missing_sparse_address_label(tensors.clone()),
+        ),
+        (
+            "missing-mixed-address-dimension",
+            missing_mixed_address_dimension(tensors.clone()),
+        ),
+        (
+            "missing-mixed-address-label",
+            missing_mixed_address_label(tensors.clone()),
+        ),
+        (
+            "missing-value-entry-value",
+            missing_value_entry_value(values.clone()),
+        ),
+        (
+            "non-finite-dense-tensor-cell",
+            non_finite_dense_tensor_cell(tensors.clone()),
+        ),
+        (
+            "non-finite-sparse-tensor-cell",
+            non_finite_sparse_tensor_cell(tensors.clone()),
+        ),
+        (
+            "non-finite-mixed-tensor-cell",
+            non_finite_mixed_tensor_cell(tensors),
         ),
         (
             "unknown-response-payload-union",
@@ -272,6 +324,203 @@ fn duplicate_result_map_key(mut bytes: Vec<u8>) -> Vec<u8> {
     let length = read_u32(&bytes, string) as usize;
     assert_eq!(length, b"int64_min".len());
     bytes[string + 4..string + 4 + length].copy_from_slice(b"int64_max");
+    bytes
+}
+
+fn clear_table_field(bytes: &mut Vec<u8>, table: usize, slot: usize) {
+    let vtable = (table as isize - read_i32(bytes, table) as isize) as usize;
+    let vtable_size = read_u16(bytes, vtable) as usize;
+    let field_offset = 4 + slot * 2;
+    assert!(
+        field_offset + 2 <= vtable_size,
+        "fixture field slot is outside its vtable"
+    );
+
+    // FlatBuffers tables can share vtables. Copy before changing the selected
+    // slot so one malformed fixture does not clear the same field on every
+    // table with an identical layout.
+    if !bytes.len().is_multiple_of(2) {
+        bytes.push(0);
+    }
+    let copied_vtable = bytes[vtable..vtable + vtable_size].to_vec();
+    let copied_vtable_position = bytes.len();
+    bytes.extend_from_slice(&copied_vtable);
+    let vtable_distance = table as isize - copied_vtable_position as isize;
+    bytes[table..table + 4].copy_from_slice(&(vtable_distance as i32).to_le_bytes());
+
+    let offset = copied_vtable_position + field_offset;
+    assert_ne!(
+        read_u16(bytes, offset),
+        0,
+        "fixture field is already absent"
+    );
+    bytes[offset..offset + 2].copy_from_slice(&0u16.to_le_bytes());
+}
+
+fn search_result_table(bytes: &[u8]) -> usize {
+    response_payload(bytes)
+}
+
+fn root_group(bytes: &[u8]) -> usize {
+    let node = result_root(bytes);
+    indirect(bytes, table_field(bytes, node, 1))
+}
+
+fn missing_search_result_root(mut bytes: Vec<u8>) -> Vec<u8> {
+    let table = search_result_table(&bytes);
+    clear_table_field(&mut bytes, table, 0);
+    bytes
+}
+
+fn missing_search_result_total_hits(mut bytes: Vec<u8>) -> Vec<u8> {
+    let table = search_result_table(&bytes);
+    clear_table_field(&mut bytes, table, 1);
+    bytes
+}
+
+fn missing_search_result_root_and_total_hits(mut bytes: Vec<u8>) -> Vec<u8> {
+    let table = search_result_table(&bytes);
+    clear_table_field(&mut bytes, table, 0);
+    clear_table_field(&mut bytes, table, 1);
+    bytes
+}
+
+fn first_continuation(bytes: &[u8]) -> usize {
+    let group = root_group(bytes);
+    vector_table(bytes, table_field(bytes, group, 5), 0)
+}
+
+fn missing_continuation_key(mut bytes: Vec<u8>) -> Vec<u8> {
+    let entry = first_continuation(&bytes);
+    clear_table_field(&mut bytes, entry, 0);
+    bytes
+}
+
+fn missing_continuation_value(mut bytes: Vec<u8>) -> Vec<u8> {
+    let entry = first_continuation(&bytes);
+    clear_table_field(&mut bytes, entry, 1);
+    bytes
+}
+
+fn tensor_from_value(bytes: &[u8], value: usize) -> usize {
+    indirect(bytes, table_field(bytes, value, 1))
+}
+
+fn mixed_tensor(bytes: &[u8]) -> usize {
+    let group = root_group(bytes);
+    let value = indirect(bytes, table_field(bytes, group, 2));
+    tensor_from_value(bytes, value)
+}
+
+fn sparse_tensor(bytes: &[u8]) -> usize {
+    let group = root_group(bytes);
+    let child = vector_table(bytes, table_field(bytes, group, 4), 0);
+    let hit = indirect(bytes, table_field(bytes, child, 1));
+    let entry = vector_table(bytes, table_field(bytes, hit, 2), 0);
+    let value = indirect(bytes, table_field(bytes, entry, 1));
+    tensor_from_value(bytes, value)
+}
+
+fn dense_tensor(bytes: &[u8]) -> usize {
+    let group = root_group(bytes);
+    let entry = vector_table(bytes, table_field(bytes, group, 3), 0);
+    let value = indirect(bytes, table_field(bytes, entry, 1));
+    tensor_from_value(bytes, value)
+}
+
+fn first_sparse_address(bytes: &[u8]) -> usize {
+    let tensor = sparse_tensor(bytes);
+    let payload = indirect(bytes, table_field(bytes, tensor, 2));
+    let cell = vector_table(bytes, table_field(bytes, payload, 0), 0);
+    vector_table(bytes, table_field(bytes, cell, 0), 0)
+}
+
+fn first_mixed_address(bytes: &[u8]) -> usize {
+    let tensor = mixed_tensor(bytes);
+    let payload = indirect(bytes, table_field(bytes, tensor, 2));
+    let block = vector_table(bytes, table_field(bytes, payload, 0), 0);
+    vector_table(bytes, table_field(bytes, block, 0), 0)
+}
+
+fn missing_sparse_address_dimension(mut bytes: Vec<u8>) -> Vec<u8> {
+    let entry = first_sparse_address(&bytes);
+    let group = root_group(&bytes);
+    clear_table_field(&mut bytes, group, 2);
+    clear_table_field(&mut bytes, group, 3);
+    clear_table_field(&mut bytes, entry, 0);
+    bytes
+}
+
+fn missing_sparse_address_label(mut bytes: Vec<u8>) -> Vec<u8> {
+    let entry = first_sparse_address(&bytes);
+    let group = root_group(&bytes);
+    clear_table_field(&mut bytes, group, 2);
+    clear_table_field(&mut bytes, group, 3);
+    clear_table_field(&mut bytes, entry, 1);
+    bytes
+}
+
+fn missing_mixed_address_dimension(mut bytes: Vec<u8>) -> Vec<u8> {
+    let entry = first_mixed_address(&bytes);
+    let group = root_group(&bytes);
+    clear_table_field(&mut bytes, group, 3);
+    clear_table_field(&mut bytes, group, 4);
+    clear_table_field(&mut bytes, entry, 0);
+    bytes
+}
+
+fn missing_mixed_address_label(mut bytes: Vec<u8>) -> Vec<u8> {
+    let entry = first_mixed_address(&bytes);
+    let group = root_group(&bytes);
+    clear_table_field(&mut bytes, group, 3);
+    clear_table_field(&mut bytes, group, 4);
+    clear_table_field(&mut bytes, entry, 1);
+    bytes
+}
+
+fn missing_value_entry_value(mut bytes: Vec<u8>) -> Vec<u8> {
+    let group = root_group(&bytes);
+    let entry = vector_table(&bytes, table_field(&bytes, group, 3), 0);
+    clear_table_field(&mut bytes, entry, 1);
+    bytes
+}
+
+fn write_f64(bytes: &mut [u8], offset: usize, value: f64) {
+    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+fn non_finite_dense_tensor_cell(mut bytes: Vec<u8>) -> Vec<u8> {
+    let tensor = dense_tensor(&bytes);
+    let payload = indirect(&bytes, table_field(&bytes, tensor, 2));
+    let vector = indirect(&bytes, table_field(&bytes, payload, 0));
+    let group = root_group(&bytes);
+    clear_table_field(&mut bytes, group, 2);
+    clear_table_field(&mut bytes, group, 4);
+    write_f64(&mut bytes, vector + 4, f64::NAN);
+    bytes
+}
+
+fn non_finite_sparse_tensor_cell(mut bytes: Vec<u8>) -> Vec<u8> {
+    let tensor = sparse_tensor(&bytes);
+    let payload = indirect(&bytes, table_field(&bytes, tensor, 2));
+    let cell = vector_table(&bytes, table_field(&bytes, payload, 0), 0);
+    let value = table_field(&bytes, cell, 1);
+    let group = root_group(&bytes);
+    clear_table_field(&mut bytes, group, 2);
+    clear_table_field(&mut bytes, group, 3);
+    write_f64(&mut bytes, value, f64::INFINITY);
+    bytes
+}
+
+fn non_finite_mixed_tensor_cell(mut bytes: Vec<u8>) -> Vec<u8> {
+    let tensor = mixed_tensor(&bytes);
+    let payload = indirect(&bytes, table_field(&bytes, tensor, 2));
+    let block = vector_table(&bytes, table_field(&bytes, payload, 0), 0);
+    let vector = indirect(&bytes, table_field(&bytes, block, 1));
+    let group = root_group(&bytes);
+    clear_table_field(&mut bytes, group, 3);
+    clear_table_field(&mut bytes, group, 4);
+    write_f64(&mut bytes, vector + 4, f64::NEG_INFINITY);
     bytes
 }
 

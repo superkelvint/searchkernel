@@ -44,20 +44,13 @@ class QualificationPolicyTests(unittest.TestCase):
             "cp tools/qualify-consumer-release.py /artifacts/consumer-release-tools/",
             runner,
         )
-        self.assertIn(
-            "mkdir -p /artifacts/consumer-release-tools/quickstarts",
-            runner,
-        )
+        self.assertIn("mkdir -p /artifacts/consumer-release-tools/quickstarts", runner)
         self.assertIn(
             "cp -R examples/release-quickstart/. /artifacts/consumer-release-tools/quickstarts/",
             runner,
         )
         self.assertIn(
             'run_phase client-e2e-qualification-policy "$PYTHON" tools/test_qualify_consumer_release.py',
-            runner,
-        )
-        self.assertIn(
-            'run_phase client-e2e-quickstart-docs "$PYTHON" tools/render-release-quickstarts.py --check',
             runner,
         )
 
@@ -115,6 +108,10 @@ class QualificationPolicyTests(unittest.TestCase):
                     (destination / relative).read_bytes(),
                     (canonical / relative).read_bytes(),
                 )
+        self.assertIn(
+            'run_phase client-e2e-quickstart-docs "$PYTHON" tools/render-release-quickstarts.py --check',
+            runner,
+        )
 
     def test_gate_scrubs_repository_and_native_runtime_overrides(self):
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
