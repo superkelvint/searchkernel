@@ -278,6 +278,10 @@ function captureRealEngineParity(Index $index): array
     }
 
     $document = $index->get($intents['document_crud']['document_id']);
+    $tensorSpec = $intents['tensor_readback'];
+    $tensorDocument = $index->get($tensorSpec['document_id']);
+    check($tensorDocument !== null, 'tensor readback document is missing');
+    $tensorValue = $tensorDocument[$tensorSpec['field']];
     $fullSpec = $intents['full_text_search'];
     $fullText = $index->search($fullSpec['query'])->limit($fullSpec['limit'])->execute();
     $stemmingSpec = $intents['stemming'];
@@ -400,7 +404,7 @@ function captureRealEngineParity(Index $index): array
         ...$typedObservations,
         'rank_inputs' => array_values(array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankInput->hits)),
         'rank_properties' => array_values(array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankProperty->hits)),
-        'tensor_readback' => array_values($document['embedding']->payload['values']),
+        'tensor_readback' => array_values($tensorValue->payload['values']),
         'nearest_neighbor' => ['observation' => ['intent' => $nearestIntent, 'ids' => ids($nearest), 'scores' => array_map(static fn ($hit): float => (float) $hit->relevance, $nearest->hits)], 'capabilities' => (object) []],
         'hybrid_text_vector' => ['observation' => ['intent' => $hybridIntent, 'ids' => ids($hybrid), 'top_score' => $hybrid->hits[0]->score()], 'capabilities' => (object) []],
         'hybrid' => ['top_id' => $hybrid->hits[0]->id, 'has_bag' => in_array('bag-1', ids($hybrid), true)],
