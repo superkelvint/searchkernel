@@ -3,27 +3,27 @@
 `searchkerneld` is the local gRPC transport host for the canonical Search
 Kernel FlatBuffers protocol.
 
-Run it against an existing index with:
+Start one daemon for a data root that can own multiple logical indexes:
 
 ```text
-searchkerneld --index /path/to/index --listen unix:///tmp/searchkerneld.sock
+searchkerneld --data-root /var/lib/searchkernel \
+  --listen unix:///tmp/searchkerneld.sock
 ```
 
-For a new index, pass its canonical FlatBuffers definition with `--definition`.
-Clients that use the standard FlatBuffers JSON edge may instead pass a canonical
-`IndexDefinition` JSON document with `--definition-json`; the daemon converts
-it with the same official FlatBuffers parser before entering the shared IR path.
-The two definition flags are mutually exclusive and are only valid during
-creation. On Unix, omitting `--listen` uses
-`/tmp/searchkerneld.sock`. TCP addresses are also supported, for example
-`--listen 127.0.0.1:50051`.
+Clients create and open indexes with canonical `CreateIndexRequest` and
+`OpenIndexRequest` envelopes. The schema belongs to the create request, and
+every ordinary request carries the selected logical `IndexTarget`. The daemon
+owns physical index locations beneath `--data-root`.
+
+On Unix, omitting `--listen` uses `/tmp/searchkerneld.sock`. TCP addresses are
+also supported, for example `--listen 127.0.0.1:50051`.
 
 To expose the HTTP/1 edge, add `--web-listen`. The same listener serves
 browser gRPC-Web clients and the standard FlatBuffers JSON endpoint used by the
 first HTTP clients:
 
 ```text
-searchkerneld --index /path/to/index \
+searchkerneld --data-root /var/lib/searchkernel \
   --listen unix:///tmp/searchkerneld.sock \
   --web-listen 127.0.0.1:50052
 ```

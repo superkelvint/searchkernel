@@ -161,7 +161,8 @@ At a high level, every new first-class SDK should:
 1. Select one architecture-sanctioned representation/transport path before implementation.
 2. For binary clients, generate FlatBuffers models and standard gRPC/gRPC-Web plumbing; for explicitly HTTP-first clients, use only standard FlatBuffers JSON and prove it mechanically through the official BFBS bridge.
 3. Implement managed local `searchkerneld` lifecycle only when that runtime claims it:
-   resolve the daemon binary, start it against the requested index, use a private local
+   resolve the daemon binary, confine it to a SearchKernel-owned managed data root,
+   select the requested logical target through the canonical envelope, use a private local
    endpoint, wait for readiness, and own graceful shutdown and cleanup.
 4. Reuse the same selected transport/client stack for connection to an already-running daemon.
 5. Add the thin idiomatic facade for the language.

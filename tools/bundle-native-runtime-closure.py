@@ -11,7 +11,12 @@ import shutil
 import subprocess
 import sys
 
-from native_runtime_closure import SYSTEM_BASELINE, is_elf, needed_libraries
+from native_runtime_closure import (
+    SYSTEM_BASELINE,
+    is_elf,
+    needed_libraries,
+    resolve_origin_dependency,
+)
 
 
 LDD_ARROW_RE = re.compile(r"^\s*(?P<name>\S+)\s+=>\s+(?P<path>/\S+)")
@@ -134,6 +139,16 @@ def bundle(
 
         for needed in sorted(needed_names):
             if needed in SYSTEM_BASELINE or needed in available:
+                continue
+
+            if needed.startswith(("$ORIGIN/", "${ORIGIN}/")):
+                origin_dependency = resolve_origin_dependency(resolved_payload, needed)
+                if origin_dependency is None:
+                    die(
+                        f"{resolved_payload.name}: unresolved origin-relative "
+                        f"runtime dependency {needed}"
+                    )
+                queue.append(origin_dependency)
                 continue
 
             source = ldd_resolution(

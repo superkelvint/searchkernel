@@ -178,6 +178,14 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
       same(2, index.get("package-1").fetch("inventory"), "installed gem patch through external daemon")
       same(["package-1"], index.search("updated").limit(10).execute.hits.map(&:id),
            "updated document is searchable through external daemon")
+
+      sibling = SearchKernel::Index.open(base_url, target: "products")
+      index.close
+      same(2, sibling.get("package-1").fetch("inventory"),
+           "closing one package handle leaves an already-open sibling usable")
+      same(["package-1"], sibling.search("updated").limit(10).execute.hits.map(&:id),
+           "sibling handle can search after the first handle closes")
+      sibling.close
     ensure
       index.close
     end
