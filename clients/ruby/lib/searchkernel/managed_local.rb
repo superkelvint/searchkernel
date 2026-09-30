@@ -16,6 +16,12 @@ module SearchKernel
     MANAGED_DATA_ROOT_NAME = ".searchkernel-managed"
     MANAGED_MARKER_NAME = ".searchkernel-managed-target"
     MANAGED_ROOT_MARKER_NAME = ".searchkernel-data-root"
+    MANAGED_ROOT_MARKER_VALUE = "searchkernel-managed-v1"
+    LEGACY_HOST_ENV_KEYS = %w[
+      SEARCHKERNEL_INDEX_PATH
+      SEARCHKERNEL_INDEX_DEFINITION
+      SEARCHKERNEL_INDEX_DEFINITION_JSON
+    ].freeze
 
     attr_reader :base_url
 
@@ -80,27 +86,71 @@ module SearchKernel
         File.join(index_path, MANAGED_MARKER_NAME)
       end
 
-      def prepare_data_root(data_root)
-        FileUtils.mkdir_p(File.dirname(data_root))
-        marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
-        if File.exist?(data_root) || File.symlink?(data_root)
-          unless !File.symlink?(data_root) && File.directory?(data_root) && File.file?(marker)
-            raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
-          end
-          return
-        end
+      def lstat_or_nil(path)
+        File.lstat(path)
+      rescue Errno::ENOENT
+        nil
+      end
 
+      def validate_data_root(data_root)
+        marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
+        root_stat = lstat_or_nil(data_root)
+        marker_stat = lstat_or_nil(marker)
+        unless root_stat&.directory? && !root_stat.symlink? && marker_stat&.file? && !marker_stat.symlink?
+          raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+        end
+        value = File.read(marker)
+        unless [
+          MANAGED_ROOT_MARKER_VALUE,
+          "#{MANAGED_ROOT_MARKER_VALUE}\n",
+          "#{MANAGED_ROOT_MARKER_VALUE}\r\n"
+        ].include?(value)
+          raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+        end
+      rescue SystemCallError => error
+        raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}: #{error.message}"
+      end
+
+      def prepare_data_root(data_root)
+        parent = File.dirname(data_root)
+        FileUtils.mkdir_p(parent)
+        marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
         created = false
         begin
           Dir.mkdir(data_root)
           created = true
-          File.write(marker, "searchkernel-managed-v1\n", mode: "wx")
-        rescue StandardError
-          if created && File.directory?(data_root)
+        rescue Errno::EEXIST
+          nil
+        end
+
+        if created
+          begin
+            File.write(marker, "#{MANAGED_ROOT_MARKER_VALUE}\n", mode: "wx")
+            validate_data_root(data_root)
+            return
+          rescue StandardError
             File.delete(marker) if File.file?(marker)
-            Dir.rmdir(data_root) if Dir.empty?(data_root)
+            Dir.rmdir(data_root) if File.directory?(data_root) && Dir.empty?(data_root)
+            raise
           end
-          raise
+        end
+
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2.0
+        loop do
+          root_stat = lstat_or_nil(data_root)
+          unless root_stat&.directory? && !root_stat.symlink?
+            raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+          end
+          marker_stat = lstat_or_nil(marker)
+          if marker_stat.nil?
+            if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+              raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+            end
+            sleep 0.025
+            next
+          end
+          validate_data_root(data_root)
+          return
         end
       end
 
@@ -135,25 +185,68 @@ module SearchKernel
         nil
       end
 
-      def ensure_marker(index_path, target)
-        return if File.exist?(index_path)
-
-        Dir.mkdir(index_path)
-        File.write(marker_path(index_path), "#{target}\n", mode: "wx")
+      def marker_matches?(index_path, target)
+        marker = marker_path(index_path)
+        marker_stat = lstat_or_nil(marker)
+        return false unless marker_stat
+        if marker_stat.symlink? || !marker_stat.file?
+          raise ClientError, "unsafe managed-local marker: #{marker}"
+        end
+        value = File.read(marker).strip
+        raise ClientError, "managed-local marker target mismatch at #{marker}" unless value == target
+        true
       end
 
-      def migrate_legacy(index_path, data_root, target)
-        destination = File.join(data_root, target)
-        return if File.directory?(destination)
-        return if File.file?(marker_path(index_path))
-        return unless File.exist?(index_path)
+      def ensure_marker(index_path, target)
+        begin
+          Dir.mkdir(index_path)
+        rescue Errno::EEXIST
+          path_stat = lstat_or_nil(index_path)
+          if !path_stat || path_stat.symlink? || !path_stat.directory?
+            raise ClientError, "managed-local identity path is not a real directory: #{index_path}"
+          end
+        end
 
-        env = {}
+        marker = marker_path(index_path)
+        begin
+          File.write(marker, "#{target}\n", mode: "wx")
+        rescue Errno::EEXIST
+          nil
+        end
+        unless marker_matches?(index_path, target)
+          raise ClientError, "managed-local identity path is not owned by Search Kernel: #{index_path}"
+        end
+      end
+
+      def host_environment
+        env = LEGACY_HOST_ENV_KEYS.to_h { |key| [key, nil] }
         sdk_lib = ENV["SEARCHKERNEL_SDK_LIB"]
         if sdk_lib && !sdk_lib.empty?
           existing = ENV["LD_LIBRARY_PATH"]
           env["LD_LIBRARY_PATH"] = existing && !existing.empty? ? "#{sdk_lib}:#{existing}" : sdk_lib
         end
+        env
+      end
+
+      def migrate_legacy(index_path, data_root, target)
+        destination = File.join(data_root, target)
+        source_stat = lstat_or_nil(index_path)
+        if source_stat && (source_stat.symlink? || !source_stat.directory?)
+          raise ClientError, "legacy managed-local index must be a real directory: #{index_path}"
+        end
+
+        marker_matches = source_stat ? marker_matches?(index_path, target) : false
+        destination_stat = lstat_or_nil(destination)
+        if destination_stat
+          if destination_stat.symlink? || !destination_stat.directory?
+            raise ClientError, "unsafe managed-local destination: #{destination}"
+          end
+          return if source_stat.nil? || marker_matches
+          raise ClientError, "managed-local destination already exists while legacy source remains: #{destination}"
+        end
+        return if marker_matches || source_stat.nil?
+
+        env = host_environment
         stdout, stderr, status = Open3.capture3(
           env,
           host_binary,
@@ -162,6 +255,12 @@ module SearchKernel
           "--target", target
         )
         unless status.success?
+          final_destination = lstat_or_nil(destination)
+          final_source = lstat_or_nil(index_path)
+          if final_destination&.directory? && !final_destination.symlink? && final_source.nil?
+            ensure_marker(index_path, target)
+            return
+          end
           output = [stdout, stderr].reject(&:empty?).join("\n").strip
           suffix = output.empty? ? "" : "\nsearchkerneld output:\n#{output}"
           raise ClientError, "managed-local legacy index migration failed for #{index_path}#{suffix}"
@@ -259,12 +358,7 @@ module SearchKernel
       end
 
       port = free_port
-      env = {}
-      sdk_lib = ENV["SEARCHKERNEL_SDK_LIB"]
-      if sdk_lib && !sdk_lib.empty?
-        existing = ENV["LD_LIBRARY_PATH"]
-        env["LD_LIBRARY_PATH"] = existing && !existing.empty? ? "#{sdk_lib}:#{existing}" : sdk_lib
-      end
+      env = self.class.host_environment
 
       command = [
         binary,
