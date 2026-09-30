@@ -40,7 +40,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| format!("unknown M12 error case {case_id}"))?;
     let mutation = &case["mutation"];
     let baseline = load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scenarios/01-exact-near-far.json"),
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../reference/vespa/m12/scenarios/01-exact-near-far.json"),
     );
     let step = &baseline["steps"][0];
 

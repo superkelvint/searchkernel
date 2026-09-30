@@ -1,3 +1,7 @@
+// This module is included by separate driver, error, and regression examples,
+// which use different subsets of the shared verifier helpers.
+#![allow(dead_code)]
+
 use searchkernel_vespa_engine::{
     ConfigCompiler, Document, DocumentAnalysis, DocumentTerm, Engine, Field, FieldType, Query,
     RankProfile, Schema, SearchRequest, TensorValue,

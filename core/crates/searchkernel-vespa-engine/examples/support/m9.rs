@@ -1,3 +1,7 @@
+// This module is included by separate driver and error examples, which use
+// different subsets of the shared verifier helpers.
+#![allow(dead_code)]
+
 use searchkernel_vespa_engine::{
     AttributeBound, ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType,
     GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOutput, GroupingPlan,
@@ -48,7 +52,7 @@ pub fn compile_schema(root: &Json, config_dir: &Path) {
         assert_eq!(profile["name"], "attribute_price");
         assert_eq!(profile["expression"], "attribute(price)");
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixture/rank-profiles.attribute-price.cfg");
+            .join("../../../reference/vespa/m9/fixture/rank-profiles.attribute-price.cfg");
         fs::copy(fixture, config_dir.join("rank-profiles.cfg")).unwrap();
     }
 }

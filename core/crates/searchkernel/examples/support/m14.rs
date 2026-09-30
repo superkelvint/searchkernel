@@ -1,3 +1,7 @@
+// These helpers are shared by the M14 driver, adapter, and error examples,
+// which use different subsets of the module.
+#![allow(dead_code)]
+
 use searchkernel_vespa_engine::{
     ConfigCompiler, DistanceMetric, Document, DocumentUpdate, Engine, Field, FieldType, FieldValue,
     HnswIndexConfig, NearestNeighborOptions, Query, RankProfile, Schema, SearchRequest,

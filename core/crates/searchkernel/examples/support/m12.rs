@@ -1,10 +1,13 @@
-use serde_json::{json, Value as Json};
-use std::{collections::BTreeMap, fs, path::Path};
+// These helpers are shared by the M12 driver, adapter, error, and fixture
+// examples, which use different subsets of the module.
+#![allow(dead_code)]
 
 use searchkernel_vespa_engine::{
     ConfigCompiler, DistanceMetric, Document, Engine, Field, FieldType, Query, RankProfile, Schema,
     SearchRequest, TensorValue,
 };
+use serde_json::{json, Value as Json};
+use std::{collections::BTreeMap, fs, path::Path};
 
 pub fn load(path: &Path) -> Json {
     serde_json::from_slice(&fs::read(path).expect("read scenario")).expect("parse scenario")

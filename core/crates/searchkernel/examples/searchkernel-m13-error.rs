@@ -196,8 +196,10 @@ fn main() {
         .iter()
         .find(|case| case["id"] == case_id)
         .expect("case id");
-    let root =
-        load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scenarios/01-dense-crud.json"));
+    let root = load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../reference/vespa/m13/scenarios/01-dense-crud.json"),
+    );
     let category = if case["path"] == "low_level" {
         low_level(&root, case, &config, &data)
     } else {

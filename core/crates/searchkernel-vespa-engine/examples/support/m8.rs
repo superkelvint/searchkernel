@@ -1,3 +1,7 @@
+// This module is included by separate driver and error examples, which use
+// different subsets of the shared verifier helpers.
+#![allow(dead_code)]
+
 use searchkernel_vespa_engine::{
     ConfigCompiler, Document, Engine, Field, FieldType, FieldValue, Query, RangeBound, ScalarValue,
     Schema, SearchRequest, SortField, SummaryRequest,

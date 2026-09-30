@@ -1,3 +1,7 @@
+// These helpers are shared by the M13 driver, adapter, and error examples,
+// which use different subsets of the module.
+#![allow(dead_code)]
+
 use searchkernel_vespa_engine::{
     ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, Query, QueryInput,
     RankProfile, Schema, SearchRequest, TensorValue,
