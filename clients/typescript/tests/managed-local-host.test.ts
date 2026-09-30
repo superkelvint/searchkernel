@@ -257,6 +257,28 @@ describe("managed-local host binary resolution", () => {
     await replacement.close();
   });
 
+  it("does not commandeer a pre-existing empty unowned managed root", async () => {
+    const root = mkdtempSync(join(tmpdir(), "searchkernel-ts-unowned-root-"));
+    try {
+      const dataRoot = join(root, ".searchkernel-managed");
+      mkdirSync(dataRoot);
+      const inode = lstatSync(dataRoot).ino;
+
+      const { Index } = await import("../src/node/index.js");
+      const { IndexDefinitionT } = await import(
+        "../src/generated/flatbuffers/search-kernel/v2/index-definition.js"
+      );
+      await expect(
+        Index.create(join(root, "index"), { fields: new IndexDefinitionT() }),
+      ).rejects.toThrow(/not owned by Search Kernel/);
+
+      expect(lstatSync(dataRoot).ino).toBe(inode);
+      expect(readFileSync(resolve(dataRoot, "..", ".keep-missing"), { flag: "a+" })).toBeDefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a symlink legacy source before spawning the migration helper", async () => {
     const root = mkdtempSync(join(tmpdir(), "searchkernel-ts-migrate-symlink-"));
     try {
