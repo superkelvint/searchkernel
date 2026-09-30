@@ -1725,10 +1725,12 @@ foreach ($lifecycleTransport->requests as $request) {
     same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
 }
 
-throws(
-    InvalidArgumentException::class,
-    static fn () => (new Client(new RecordingTransport(), '../escape'))->openIndex(),
-    'unsafe logical target fails closed',
+$unsafeTargetTransport = new RecordingTransport();
+(new Client($unsafeTargetTransport, '../escape'))->openIndex();
+same(
+    ['name' => '../escape'],
+    $unsafeTargetTransport->requests[0]['target'],
+    'domain-invalid target reaches canonical semantic validation',
 );
 
 throws(
