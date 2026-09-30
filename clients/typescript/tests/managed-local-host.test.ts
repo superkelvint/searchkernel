@@ -185,9 +185,9 @@ describe("managed-local host binary resolution", () => {
       indexPath: string,
       temporaryDirectory: string,
       definitionPath: string | null,
-    ) => { spawn(): void };
+    ) => { spawn(): Promise<void> };
     const host = new Host("relative-index", "/tmp/searchkernel-test", null);
-    host.spawn();
+    await host.spawn();
 
     expect(spawnMock).toHaveBeenCalledOnce();
     const options = spawnMock.mock.calls[0]?.[2];
