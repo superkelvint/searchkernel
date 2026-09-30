@@ -28,7 +28,7 @@ mod showcase {
     use searchkernel::{
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
         GroupingAggregation, GroupingPlan, Hit, Index, IndexDefinition, Patch, Query, QueryBound,
-        QueryValue, RankProfile, Ranking, SearchResult, Sort, Tensor, TotalHitsRelation,
+        QueryValue, RankProfile, Ranking, ResultValue, SearchResult, Sort, Tensor, TotalHitsRelation,
         WandOptions, WeightedQueryItem,
     };
     use serde_json::{json, Value};
@@ -678,10 +678,10 @@ mod showcase {
             .iter()
             .map(|value| {
                 (
-                    value
-                        .value
-                        .as_str()
-                        .expect("brand facet value should be a string"),
+                    match &value.value {
+                        ResultValue::String(value) => value.as_str(),
+                        other => panic!("brand facet value should be a string, got {other:?}"),
+                    },
                     value.count,
                 )
             })
@@ -815,19 +815,19 @@ mod showcase {
         let shoes_group = category_root
             .groups
             .iter()
-            .find(|group| group.key == Some(json!("shoes")))
+            .find(|group| group.key == Some(ResultValue::String("shoes".to_owned())))
             .expect("shoes category group");
-        assert_eq!(shoes_group.aggregations["count"], json!(5));
-        assert_eq!(shoes_group.aggregations["average(price)"], json!(107.0));
+        assert_eq!(shoes_group.aggregations["count"], ResultValue::UInt64(5));
+        assert_eq!(shoes_group.aggregations["average(price)"], ResultValue::Float64(107.0));
         assert_eq!(shoes_group.groups.len(), 3);
         for (rating, count, average) in [(3, 1, 49.0), (4, 2, 134.0), (5, 2, 109.0)] {
             let rating_group = shoes_group
                 .groups
                 .iter()
-                .find(|group| group.key == Some(json!(rating)))
+                .find(|group| group.key == Some(ResultValue::Int64(rating)))
                 .unwrap_or_else(|| panic!("missing rating group {rating}"));
-            assert_eq!(rating_group.aggregations["count"], json!(count));
-            assert_eq!(rating_group.aggregations["average(price)"], json!(average));
+            assert_eq!(rating_group.aggregations["count"], ResultValue::UInt64(count));
+            assert_eq!(rating_group.aggregations["average(price)"], ResultValue::Float64(average));
         }
         println!("nested grouping keys, count, and average values PASS");
 
@@ -1203,23 +1203,24 @@ mod showcase {
         let reopened_shoes_group = reopened_category_root
             .groups
             .iter()
-            .find(|group| group.key == Some(json!("shoes")))
+            .find(|group| group.key == Some(ResultValue::String("shoes".to_owned())))
             .expect("reopened shoes category group");
-        assert_eq!(reopened_shoes_group.aggregations["count"], json!(4));
+        assert_eq!(reopened_shoes_group.aggregations["count"], ResultValue::UInt64(4));
         assert_eq!(
             reopened_shoes_group.aggregations["average(price)"],
-            json!(116.5)
+            ResultValue::Float64(116.5)
         );
         for (rating, count, average) in [(4, 3, 115.66666666666667), (5, 1, 119.0)] {
             let rating_group = reopened_shoes_group
                 .groups
                 .iter()
-                .find(|group| group.key == Some(json!(rating)))
+                .find(|group| group.key == Some(ResultValue::Int64(rating)))
                 .unwrap_or_else(|| panic!("missing reopened rating group {rating}"));
-            assert_eq!(rating_group.aggregations["count"], json!(count));
-            let actual_average = rating_group.aggregations["average(price)"]
-                .as_f64()
-                .expect("reopened average should be numeric");
+            assert_eq!(rating_group.aggregations["count"], ResultValue::UInt64(count));
+            let actual_average = match rating_group.aggregations["average(price)"] {
+                ResultValue::Float64(value) => value,
+                ref other => panic!("reopened average should be numeric, got {other:?}"),
+            };
             assert!((actual_average - average).abs() < 1e-9);
         }
 
@@ -1354,7 +1355,7 @@ native Vespa backend.
 
         for hit in &results.hits {
             println!(
-                "  id={:?} score={:?} features={:?} sort_values={:?} document={}",
+                "  id={:?} score={:?} features={:?} sort_values={:?} document={:?}",
                 hit.id.as_str(),
                 hit.score,
                 hit.features,
@@ -1421,11 +1422,10 @@ native Vespa backend.
             .values
             .iter()
             .map(|value| {
-                let key = value
-                    .value
-                    .as_str()
-                    .unwrap_or_else(|| panic!("facet {field:?} returned non-string value"))
-                    .to_owned();
+                let key = match &value.value {
+                    ResultValue::String(value) => value.clone(),
+                    other => panic!("facet {field:?} returned non-string value {other:?}"),
+                };
                 (key, value.count)
             })
             .collect()
