@@ -173,6 +173,64 @@ describe("managed-local host binary resolution", () => {
     expect((second as unknown as { closed: boolean }).closed).toBe(true);
   });
 
+  it("evicts a pooled daemon that exited unexpectedly before the next acquire", async () => {
+    let nextPid = 900000;
+    const spawnMock = vi.fn(() => {
+      const child = new EventEmitter() as EventEmitter & {
+        pid: number;
+        exitCode: number | null;
+        signalCode: NodeJS.Signals | null;
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+      child.pid = nextPid++;
+      child.exitCode = null;
+      child.signalCode = null;
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      return child;
+    });
+    vi.doMock("node:child_process", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:child_process")>();
+      return { ...actual, spawn: spawnMock };
+    });
+    vi.doMock("node:net", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:net")>();
+      return {
+        ...actual,
+        createConnection: () => {
+          const socket = new EventEmitter() as unknown as import("node:net").Socket;
+          socket.setTimeout = vi.fn(() => socket);
+          socket.destroy = vi.fn(() => socket);
+          queueMicrotask(() => socket.emit("connect"));
+          return socket;
+        },
+      };
+    });
+    vi.doMock("node:fs", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs")>();
+      return { ...actual, existsSync: vi.fn(() => true) };
+    });
+    process.env.SEARCHKERNEL_LOCAL_HOST = "/tmp/searchkerneld";
+
+    const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");
+    const first = await ManagedLocalHost.start("/tmp/searchkernel-dead-root");
+    const firstChild = (first as unknown as {
+      child: { exitCode: number | null; signalCode: NodeJS.Signals | null };
+    }).child;
+    firstChild.exitCode = 23;
+
+    const replacement = await ManagedLocalHost.start("/tmp/searchkernel-dead-root");
+    expect(replacement).not.toBe(first);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+
+    const replacementChild = (replacement as unknown as {
+      child: { exitCode: number | null; signalCode: NodeJS.Signals | null };
+    }).child;
+    replacementChild.exitCode = 0;
+    await replacement.close();
+  });
+
   it("fails closed outside a Search Kernel source checkout when no host is configured or bundled", async () => {
     vi.doMock("node:fs", async (importOriginal) => {
       const actual = await importOriginal<typeof import("node:fs")>();
