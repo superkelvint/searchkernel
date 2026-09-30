@@ -67,6 +67,8 @@ trap cleanup EXIT
 BUNDLE=$STAGE/searchkernel-vespa-base
 mkdir -p "$BUNDLE/base" "$BUNDLE/toolchain/upstream/vespa" "$BUNDLE/toolchain/vespa-deps/include" "$BUNDLE/toolchain/vespa-deps/lib64"
 cp -aL "$BASE/." "$BUNDLE/base/"
+# The installed cache is immutable; this copy is the mutable packaging stage.
+bash "$ROOT/tools/make-writable-tree.sh" "$BUNDLE/base"
 
 # The immutable base builder intentionally owns Vespa DSOs, but the producer
 # host may satisfy ordinary transitive dependencies (for example libxml2) from
