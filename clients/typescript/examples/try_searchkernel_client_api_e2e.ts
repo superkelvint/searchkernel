@@ -410,7 +410,8 @@ function writeRealEngineParity(observations: Record<string, unknown>): void {
       const intent = E2E_CORPUS.scenario_inputs[scenario];
       if (!intent || scenario.startsWith("typed_query_")) continue;
       const payload = value && value.observation ? value.observation : value;
-      if (payload && typeof payload === "object" && !("intent" in payload)) payload.intent = intent;
+      if (Array.isArray(payload)) observations[scenario] = { intent, result: value };
+      else if (payload && typeof payload === "object" && !("intent" in payload)) payload.intent = intent;
       else if (!payload || typeof payload !== "object") observations[scenario] = { intent, result: value };
     }
     writeFileSync(path, JSON.stringify({ version: 1, scenarios: paritySafe(observations) }));
