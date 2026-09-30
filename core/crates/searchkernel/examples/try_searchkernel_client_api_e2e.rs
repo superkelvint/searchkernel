@@ -1319,9 +1319,9 @@ mod showcase {
             "rank_inputs": parity_rank_input.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
             "rank_properties": parity_rank_property.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
             "tensor_readback": tensor_document[tensor_field]["$searchkernel_tensor"]["dense"].clone(),
-            "nearest_neighbor": {"observation": {"intent": nearest_intent, "ids": ids(&parity_nearest), "scores": parity_nearest.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()}, "capabilities": {}},
+            "nearest_neighbor": {"observation": {"ids": ids(&parity_nearest), "scores": parity_nearest.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()}, "capabilities": {}},
             "two_phase_reranking": {"ids": ids(&parity_reranked)},
-            "hybrid_text_vector": {"observation": {"intent": hybrid_intent, "ids": ids(&parity_hybrid), "top_score": parity_hybrid.hits.first().and_then(|hit| hit.score)}, "capabilities": {}},
+            "hybrid_text_vector": {"observation": {"ids": ids(&parity_hybrid), "top_score": parity_hybrid.hits.first().and_then(|hit| hit.score)}, "capabilities": {}},
             "two_phase": {"ids": ids(&parity_reranked)},
             "unknown_field_error": {
                 "code": "invalid_argument",
