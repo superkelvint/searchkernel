@@ -37,7 +37,23 @@ INDEX_PATH = WORKSPACE_PATH / "showcase-index"
 ROOT = Path(__file__).resolve().parents[3]
 E2E_CORPUS_PATH = ROOT / "reference/client-real-e2e-parity/corpus.json"
 E2E_CORPUS = json.loads(E2E_CORPUS_PATH.read_text())
-PARITY_CONSUMED_INTENTS: dict[str, object] = {}
+PARITY_CONSUMED_INTENTS: dict[str, dict[str, object]] = {}
+
+
+class _ConsumedIntent:
+    def __init__(self, scenario: str, source: dict[str, object]):
+        self._scenario = scenario
+        self._source = source
+
+    def __getitem__(self, key: str):
+        value = self._source[key]
+        PARITY_CONSUMED_INTENTS.setdefault(self._scenario, {})[key] = json.loads(json.dumps(value))
+        return value
+
+    def get(self, key: str, default=None):
+        if key not in self._source:
+            return default
+        return self[key]
 
 
 class _ConsumedIntentMap:
@@ -46,17 +62,14 @@ class _ConsumedIntentMap:
 
     def __getitem__(self, key: str):
         value = self._source[key]
-        PARITY_CONSUMED_INTENTS[key] = json.loads(json.dumps(value))
-        return value
+        if not isinstance(value, dict):
+            raise TypeError(f"parity scenario intent {key} must be an object")
+        return _ConsumedIntent(key, value)
 
     def get(self, key: str, default=None):
         if key not in self._source:
             return default
         return self[key]
-
-    def items(self):
-        for key in self._source:
-            yield key, self[key]
 
 
 PARITY_INTENTS = _ConsumedIntentMap(E2E_CORPUS["scenario_inputs"])
@@ -273,7 +286,7 @@ def shared_typed_query_observations(index):
         ids = [hit.id for hit in results.hits]
         if intent["result_order"] == "sorted_ids": ids.sort()
         observations[scenario] = {
-            "observation": {"intent": intent, "query_result": ids},
+            "observation": {"intent": PARITY_CONSUMED_INTENTS[scenario], "query_result": ids},
             "capabilities": E2E_CORPUS["client_scenario_contract"][scenario]["python"],
         }
     return observations
