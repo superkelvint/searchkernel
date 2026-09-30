@@ -301,6 +301,7 @@ impl Index {
                     ));
                 }
             };
+            ensure_inspected_query_can_represent(&normalized)?;
             let highlighting = match normalized.highlighting() {
                 searchkernel_ir::HighlightingIr::Disabled => None,
                 searchkernel_ir::HighlightingIr::Requested { fields, .. } => Some(
@@ -403,6 +404,70 @@ impl Index {
             result::search_result(backend_result, &requested_facets)
         })
     }
+}
+
+fn ensure_inspected_query_can_represent(
+    request: &searchkernel_ir::SearchRequestIr,
+) -> Result<()> {
+    let unsupported = |path: &'static str| {
+        Err(Error::search(
+            crate::error::ErrorCode::Unsupported,
+            "inspect cannot faithfully represent the complete search request",
+        )
+        .with_detail(
+            "inspect_not_representable",
+            Some(path),
+            "this resolved request control is not represented by InspectedQuery",
+        ))
+    };
+
+    if !request.inputs().is_empty() {
+        return unsupported("inputs");
+    }
+    if !request.ranking_request().properties.is_empty() {
+        return unsupported("ranking.properties");
+    }
+    if request
+        .grouping()
+        .iter()
+        .any(|grouping| facet_from_grouping(grouping).is_none())
+    {
+        return unsupported("grouping");
+    }
+
+    let model = request.query_model();
+    if model.query_string.is_some()
+        || model.default_index.is_some()
+        || model.encoding.is_some()
+        || model.filter.is_some()
+        || model.locale.is_some()
+        || model.query_type.is_some()
+        || !model.sources.is_empty()
+        || !model.restrict.is_empty()
+        || model.search_path.is_some()
+        || model.search_group.is_some()
+    {
+        return unsupported("query_model");
+    }
+
+    let presentation = request.presentation();
+    if presentation.summary.is_some()
+        || presentation.format.is_some()
+        || presentation.bolding.is_some()
+        || presentation.timing.is_some()
+    {
+        return unsupported("presentation");
+    }
+    if !request.properties().is_empty() {
+        return unsupported("properties");
+    }
+    if request.query_profile().is_some() {
+        return unsupported("query_profile");
+    }
+    if request.search_chain().is_some() {
+        return unsupported("search_chain");
+    }
+    Ok(())
 }
 
 fn document_input(id: &str, value: &serde_json::Value) -> Result<searchkernel_ir::DocumentInput> {
