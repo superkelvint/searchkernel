@@ -7,16 +7,16 @@ use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexCont
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use serde_json::{json, Value as Json};
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, path::{Path, PathBuf}, sync::Arc};
 
-fn definition_ir(path: &PathBuf) -> searchkernel_ir::IndexDefinitionIr {
+fn definition_ir(path: &Path) -> searchkernel_ir::IndexDefinitionIr {
     let bytes = fs::read(path).expect("read M14 definition");
     let root =
         searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
             .expect("parse M14 definition");
     index_definition_to_ir(root).expect("definition to IR")
 }
-fn open(definition: &PathBuf, config: &PathBuf, data: &PathBuf) -> Dispatcher {
+fn open(definition: &Path, config: &Path, data: &Path) -> Dispatcher {
     let ir = definition_ir(definition);
     if !config.join("searchkernel-schema.json").exists() {
         searchkernel_ir_adapter::compile_index_definition(&ir, config)
@@ -124,7 +124,7 @@ fn patch(d: &Dispatcher, root: &Json, id: &str, values: &Json) {
     );
     assert_eq!(response["payload_type"], "SearchKernel_V2_PatchResult");
 }
-fn run(root: &Json, definition: &PathBuf, config: &PathBuf, data: &PathBuf) -> Json {
+fn run(root: &Json, definition: &Path, config: &Path, data: &Path) -> Json {
     if root["id"] == "hnsw-query-controls" {
         let d = open(definition, config, data);
         feed(&d, root);
