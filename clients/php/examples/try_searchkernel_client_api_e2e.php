@@ -204,45 +204,81 @@ function detailCodes(SearchKernelException $error): array
 }
 
 /** @param array<string,mixed> $spec @return array<string,mixed> */
-function sharedTypedQuery(array $spec): array
+function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
 {
-    $field = $spec['field'] ?? null;
-    return match ($spec['kind']) {
-        'contains' => Query::contains($field, $spec['value']),
-        'phrase' => Query::contains($field, Query::phrase(...$spec['terms'])),
-        'near' => Query::contains($field, Query::near(...$spec['terms'])),
-        'ordered_near' => Query::contains($field, Query::onear(...$spec['terms'])),
-        'range' => Query::range($field, gte: $spec['lower'], lte: $spec['upper']),
-        'and' => Query::allOf(...array_map('sharedTypedQuery', $spec['clauses'])),
-        'or' => Query::anyOf(...array_map('sharedTypedQuery', $spec['clauses'])),
-        'not' => Query::negate(sharedTypedQuery($spec['clause'])),
-        'in' => Query::inValues($field, $spec['values']),
-        'equals' => Query::eq($field, $spec['value']),
-        'fuzzy' => Query::contains($field, Query::fuzzy($spec['value'])),
-        'weak_and' => Query::weakAnd(...array_map('sharedTypedQuery', $spec['clauses'])),
-        'wand' => Query::wand($field, $spec['items']),
-        'weighted_set' => Query::weightedSet($field, $spec['items']),
-        'dot_product' => Query::dotProduct($field, $spec['items']),
-        'same_element' => Query::contains($field, Query::sameElement(...array_map('sharedTypedQuery', $spec['clauses']))),
-        'geo_location' => Query::geoLocation($field, $spec['latitude'], $spec['longitude'], $spec['radius']),
-        'geo_box' => Query::geoBox($field, $spec['south'], $spec['west'], $spec['north'], $spec['east']),
-        default => throw new InvalidArgumentException('unsupported shared typed query kind: ' . $spec['kind']),
+    $field = $intent['field'] ?? null;
+    return match ($scenario) {
+        'typed_query_term' => Query::contains($field, Query::term($intent['value'])),
+        'typed_query_contains' => Query::contains($field, $intent['value']),
+        'typed_query_phrase' => Query::contains($field, Query::phrase(...$intent['terms'])),
+        'typed_query_near' => Query::contains($field, Query::near(...$intent['terms'])),
+        'typed_query_ordered_near' => Query::contains($field, Query::onear(...$intent['terms'])),
+        'typed_query_range', 'typed_query_range_exclusive' => Query::range(
+            $field,
+            gte: $intent['include_lower'] ? $intent['lower'] : null,
+            gt: $intent['include_lower'] ? null : $intent['lower'],
+            lte: $intent['include_upper'] ? $intent['upper'] : null,
+            lt: $intent['include_upper'] ? null : $intent['upper'],
+        ),
+        'typed_query_boolean' => Query::allOf(
+            Query::anyOf(
+                Query::contains($intent['or_terms'][0]['field'], $intent['or_terms'][0]['value']),
+                Query::contains($intent['or_terms'][1]['field'], $intent['or_terms'][1]['value']),
+            ),
+            Query::negate(Query::contains($intent['not_term']['field'], $intent['not_term']['value'])),
+        ),
+        'typed_query_in' => Query::inValues($field, $intent['values']),
+        'typed_query_equals' => Query::eq($field, $intent['value']),
+        'typed_query_fuzzy' => Query::contains($field, Query::fuzzy($intent['value'])),
+        'typed_query_weak_and' => Query::weakAnd(...array_map(
+            static fn (array $term): array => Query::contains($term['field'], $term['value']),
+            $intent['terms'],
+        )),
+        'typed_query_wand' => Query::wand($field, $intent['items']),
+        'typed_query_weighted_set' => Query::weightedSet($field, $intent['items']),
+        'typed_query_dot_product' => Query::dotProduct($field, $intent['items']),
+        'typed_query_prefix' => Query::matches($field, preg_quote($intent['value']) . '.*'),
+        'typed_query_substring' => Query::matches($field, '.*' . preg_quote($intent['value']) . '.*'),
+        'typed_query_suffix' => Query::matches($field, '.*' . preg_quote($intent['value'])),
+        'typed_query_same_element' => Query::contains(
+            $field,
+            Query::sameElement(
+                Query::contains($intent['first_field'], $intent['first_value']),
+                Query::contains($intent['last_field'], $intent['last_value']),
+            ),
+        ),
+        'typed_query_geo_location' => Query::geoLocation($field, $intent['latitude'], $intent['longitude'], $intent['radius']),
+        'typed_query_geo_box' => Query::geoBox($field, $intent['south'], $intent['west'], $intent['north'], $intent['east']),
+        default => throw new InvalidArgumentException('unsupported typed parity scenario: ' . $scenario),
     };
 }
 
-/** @return array<string,array{ids:list<string>}> */
+/** @return array<string,array<string,mixed>> */
 function sharedTypedQueryObservations(Index $index): array
 {
-    global $parityIntents;
+    global $parityIntents, $parityConsumedIntents;
     $corpus = searchkernelPhpClientApiE2eCorpus();
     $observations = [];
     foreach ($corpus['scenario_inputs'] as $scenario => $_rawInput) {
         if (!str_starts_with($scenario, 'typed_query_')) continue;
         $input = $parityIntents[$scenario];
-        $ids = ids($index->query(sharedTypedQuery($input['query']))->limit($input['limit'])->execute());
-        if ($input['result_order'] === 'sorted_ids') sort($ids, SORT_STRING);
+        $builder = $index->query(typedQueryForScenario($scenario, $input));
+        if (isset($input['ranking_profile'])) {
+            $builder = $builder->ranking($input['ranking_profile']);
+        }
+        $results = $builder->limit($input['limit'])->execute();
+        if (isset($input['feature'])) {
+            $feature = $input['feature'];
+            $queryResult = array_map(
+                static fn ($hit): array => ['id' => $hit->id, 'feature' => $hit->matchFeatures[$feature] ?? null],
+                $results->hits,
+            );
+        } else {
+            $queryResult = ids($results);
+            if ($input['result_order'] === 'sorted_ids') sort($queryResult, SORT_STRING);
+        }
         $observations[$scenario] = [
-            'observation' => ['intent' => $parityConsumedIntents[$scenario], 'query_result' => $ids],
+            'observation' => ['intent' => $parityConsumedIntents[$scenario], 'query_result' => $queryResult],
             'capabilities' => $corpus['client_scenario_contract'][$scenario]['php'],
         ];
     }
