@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -10,7 +11,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel.ergonomic import SearchBuilder  # noqa: E402
+from searchkernel.ergonomic import SearchBuilder, YqlBuilder  # noqa: E402
 from SearchKernel.V2.GroupingSourceKind import GroupingSourceKind  # noqa: E402
 from SearchKernel.V2.MissingPolicyKind import MissingPolicyKind  # noqa: E402
 from SearchKernel.V2.QueryInputKind import QueryInputKind  # noqa: E402
@@ -24,9 +25,9 @@ FACADE_COVERAGE = {
     "filter": ("executable", None),
     "search_field": ("executable_with_limit", "non-default weights are backend-deferred"),
     "search_fields": ("executable", None),
-    "sort": ("executable", None),
-    "sort_relevance": ("executable", None),
-    "sort_feature": ("executable", None),
+    "sort": ("executable_with_limit", "native field sort supports missing first/last; missing-as is backend-deferred"),
+    "sort_relevance": ("represented_backend_rejected", "native adapter rejects relevance sort targets"),
+    "sort_feature": ("represented_backend_rejected", "native adapter rejects rank-feature sort targets"),
     "raw_sort": ("represented_backend_rejected", "raw sort has no canonical resolved form"),
     "facet": ("executable", None),
     "facets": ("executable", None),
@@ -35,8 +36,7 @@ FACADE_COVERAGE = {
     "raw_grouping": ("represented_backend_rejected", "raw grouping normalization is deferred"),
     "ranking": ("executable", None),
     "rank_property": ("executable", None),
-    "rank_properties": ("executable", None),
-    "input": ("executable", None),
+    "input": ("executable_with_limit", "native adapter executes finite scalar numeric and dense tensor inputs; other values are rejected"),
     "input_expr": ("represented_backend_rejected", "expression inputs require a container-aware path"),
     "fields": ("executable", None),
     "summary": ("executable_with_limit", "custom named summary definitions are backend-limited"),
@@ -57,8 +57,8 @@ FACADE_COVERAGE = {
     "search_group": ("represented_backend_rejected", "search group requires a container-aware path"),
     "query_string": ("executable", None),
     "query_model_type": ("represented_backend_rejected", "model type controls are backend-deferred"),
-    "property": ("represented_backend_rejected", "generic properties are not native text-search controls"),
-    "properties": ("represented_backend_rejected", "generic properties are not native text-search controls"),
+    "property": ("executable_with_limit", "generic properties execute for YQL substitution; non-YQL properties are rejected"),
+    "properties": ("executable_with_limit", "generic properties execute for YQL substitution; non-YQL properties are rejected"),
     "query_profile": ("represented_backend_rejected", "query profiles require a container-aware path"),
     "search_chain": ("represented_backend_rejected", "search chains require a container-aware path"),
     "execute": ("executable", None),
@@ -68,6 +68,11 @@ FACADE_COVERAGE = {
 
 class SearchBuilderFacadeCoverageTest(unittest.TestCase):
     def test_every_normative_concept_is_exposed_and_classified(self):
+        spec = (Path(__file__).resolve().parents[3] / "docs" / "client-api-spec.md").read_text()
+        conceptual = spec.split("## 15. Conceptual surface", 1)[1].split("# Part V — Filtering", 1)[0]
+        normative = set(re.findall(r"^\.([a-z_]+)\(.*\)$", conceptual, flags=re.MULTILINE))
+        self.assertEqual(set(FACADE_COVERAGE), normative)
+
         allowed = {"executable", "executable_with_limit", "represented_backend_rejected"}
         for concept, (status, reason) in FACADE_COVERAGE.items():
             with self.subTest(concept=concept):
@@ -168,6 +173,31 @@ class SearchBuilderFacadeCoverageTest(unittest.TestCase):
 
         facet = request.grouping[2].source.root.operations[1].operation.operations
         self.assertTrue(any(op.operation.value == 200 for op in facet if hasattr(op.operation, "value")))
+
+    def test_limited_controls_preserve_caller_intent_for_shared_rejection_or_yql_execution(self):
+        missing_as = SearchBuilder(SimpleNamespace(), "wireless").sort(
+            "price", "asc", missing=0
+        )._request()
+        self.assertEqual(
+            missing_as.sort[0].missing.policyType,
+            MissingPolicyKind.MissingAs,
+        )
+
+        yql = (
+            YqlBuilder(SimpleNamespace(), "select * from sources * where title contains text(@q)")
+            .property("q", "running shoes")
+            .properties({"min_price": 10})
+            ._request()
+        )
+        self.assertEqual([entry.key for entry in yql.properties], ["min_price", "q"])
+
+    def test_rank_properties_convenience_lowers_to_normative_rank_property_state(self):
+        request = (
+            SearchBuilder(SimpleNamespace(), "wireless")
+            .rank_properties({"zeta": "2", "alpha": "1"})
+            ._request()
+        )
+        self.assertEqual([entry.key for entry in request.ranking.properties], ["alpha", "zeta"])
 
     def test_builder_inspect_uses_same_request_assembly_without_search_execution(self):
         class Index:
