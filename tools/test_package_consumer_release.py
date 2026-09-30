@@ -243,6 +243,14 @@ class ConsumerReleaseTests(unittest.TestCase):
                 self.assertEqual(json.loads(member.read()), descriptor)
         self.assertFalse((ROOT / "core/crates/searchkernel-vespa-bindings/runtime.json").exists())
 
+    def test_publishable_rust_crates_pin_internal_dependency_versions(self) -> None:
+        for manifest in (ROOT / "core/crates").glob("*/Cargo.toml"):
+            data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+            for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+                for name, dependency in data.get(section, {}).items():
+                    if name.startswith("searchkernel-") and isinstance(dependency, dict) and "path" in dependency:
+                        self.assertEqual(dependency.get("version"), "=0.1.0", f"{manifest}: {name}")
+
     def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
         verifier = RELEASE_VERIFIER.read_text(encoding="utf-8")
         tree = ast.parse(verifier)
