@@ -749,6 +749,9 @@ impl SearchBuilder {
     }
 
     /// Select a one-based page and page size.
+    ///
+    /// The page end must fit the portable u32 range, matching the other
+    /// first-party clients.
     pub fn page(mut self, page: i64, size: i64) -> Self {
         if self.page.is_some() {
             self.page_repeated = true;
