@@ -210,6 +210,28 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         ))
         self.assertEqual(surviving.totalHits.value, 1)
 
+    def test_search_builder_inspect_returns_canonical_resolved_request(self):
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
+        index = Index(self.client, ergonomic=True)
+
+        resolved = (
+            index.search("hello")
+            .search_fields("title")
+            .sort("price", "asc", missing="last")
+            .timeout(250)
+            .language("en")
+            .limit(3)
+            .inspect()
+        )
+
+        self.assertEqual(resolved.limit, 3)
+        self.assertEqual(resolved.offset, 0)
+        self.assertEqual(resolved.timeoutMs.value, 250)
+        self.assertEqual([field.field for field in resolved.searchFields], ["title"])
+        self.assertEqual(resolved.queryModel.language, "en")
+        self.assertEqual(len(resolved.sort), 1)
+
     def test_focused_updates_survive_restart_and_change_search_visibility(self):
         endpoint = self._start_server(definition=True)
         self.client = Client(GrpcTransport(endpoint))

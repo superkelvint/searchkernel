@@ -36,9 +36,9 @@ has real-runtime evidence.
 | Structured filters (filter.structured) | filter | — | — | — | — | — | — |
 | Textual filter expressions (filter.textual) | filter | — | — | — | ergonomic · real-runtime (node, shared) | ergonomic · conformance · real-runtime (http) | ergonomic · real-runtime (managed-local) |
 | Field sorting (search.sorting) | search | — | ergonomic (native) | — | ergonomic · real-runtime (node, shared) | ergonomic · conformance · real-runtime (http) | ergonomic · real-runtime (managed-local) |
-| First/last missing-value sort placement (search.sort_missing_placement) | search | — | — | — | — | — | — |
+| First/last missing-value sort placement (search.sort_missing_placement) | search | — | — | ergonomic (shared) | — | — | — |
 | Limit and offset pagination (search.pagination) | search | — | ergonomic (native) | — | ergonomic · real-runtime (node, shared) | ergonomic · conformance · real-runtime (http) | ergonomic · real-runtime (managed-local) |
-| Text search-field selection (search.search_fields) | search | — | — | — | — | ergonomic · conformance · real-runtime (http) | — |
+| Text search-field selection (search.search_fields) | search | — | — | ergonomic (shared) | — | ergonomic · conformance · real-runtime (http) | — |
 | Document-summary field projection (result.docsum_field_projection) | result | — | ergonomic (native) | ergonomic · real-runtime (grpc) | ergonomic · real-runtime (node, shared) | ergonomic · real-runtime (http) | ergonomic · real-runtime (managed-local) |
 | Named summary-class selection (result.named_summary_class) | result | — | — | — | — | ergonomic · real-runtime (http) | ergonomic · real-runtime (managed-local) |
 | Rich document-summary values (scalar subset) (result.rich_docsum_values) | result | — | — | — | — | — | — |
@@ -252,6 +252,11 @@ has real-runtime evidence.
   - typescript / node / ergonomic / builder — [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts#L41)
   - typescript / shared / ergonomic / builder — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L90)
 
+### First/last missing-value sort placement (search.sort_missing_placement)
+
+- **Basic behavior** (basic)
+  - python / shared / ergonomic / builder — [clients/python/tests/test_flatbuffers_objects.py](../clients/python/tests/test_flatbuffers_objects.py#L239)
+
 ### Limit and offset pagination (search.pagination)
 
 - **Basic behavior** (basic)
@@ -271,6 +276,7 @@ has real-runtime evidence.
   - php / http / conformance / conformance — [clients/php/tests/run.php](../clients/php/tests/run.php#L1427)
   - php / http / e2e / runtime — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L888)
   - php / http / ergonomic / builder — [clients/php/examples/try_searchkernel_client_api_e2e.php](../clients/php/examples/try_searchkernel_client_api_e2e.php#L888)
+  - python / shared / ergonomic / builder — [clients/python/tests/test_flatbuffers_objects.py](../clients/python/tests/test_flatbuffers_objects.py#L238)
 
 ### Document-summary field projection (result.docsum_field_projection)
 

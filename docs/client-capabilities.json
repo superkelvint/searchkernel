@@ -1313,7 +1313,18 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "search.sort_missing_placement",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "shared",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/python/tests/test_flatbuffers_objects.py",
+              "line": 239
+            }
+          ],
           "overrides": []
         }
       ]
@@ -1460,6 +1471,16 @@
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 888
+            },
+            {
+              "capability": "search.search_fields",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "shared",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/python/tests/test_flatbuffers_objects.py",
+              "line": 238
             }
           ],
           "overrides": []
