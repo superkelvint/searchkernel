@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import isclose, isfinite
 import json
 import os
+import re
 from pathlib import Path
 import atexit
 import shutil
@@ -251,29 +252,64 @@ def grouping_groups(results):
 PARITY_OBSERVATIONS: dict[str, object] = {}
 
 
-def shared_typed_query(spec):
-    kind = spec["kind"]
-    field = spec.get("field")
-    clauses = lambda: [shared_typed_query(clause) for clause in spec.get("clauses", [])]
-    if kind == "contains": return q.contains(field, spec["value"])
-    if kind == "phrase": return q.contains(field, q.phrase(*spec["terms"]))
-    if kind == "near": return q.contains(field, q.near(*spec["terms"]))
-    if kind == "ordered_near": return q.contains(field, q.onear(*spec["terms"]))
-    if kind == "range": return q.range(field, spec["lower"], spec["upper"])
-    if kind == "and": return q.all_of(*clauses())
-    if kind == "or": return q.any_of(*clauses())
-    if kind == "not": return q.negate(shared_typed_query(spec["clause"]))
-    if kind == "in": return q.in_values(field, spec["values"])
-    if kind == "equals": return q.equals(field, spec["value"])
-    if kind == "fuzzy": return q.contains(field, q.fuzzy(spec["value"]))
-    if kind == "weak_and": return q.weak_and(*clauses())
-    if kind == "wand": return q.wand(field, spec["items"])
-    if kind == "weighted_set": return q.weighted_set(field, spec["items"])
-    if kind == "dot_product": return q.dot_product(field, spec["items"])
-    if kind == "same_element": return q.contains(field, q.same_element(*clauses()))
-    if kind == "geo_location": return q.geo_location(field, lat=spec["latitude"], lon=spec["longitude"], radius=spec["radius"])
-    if kind == "geo_box": return q.geo_box(field, south=spec["south"], west=spec["west"], north=spec["north"], east=spec["east"])
-    raise ValueError(f"unsupported shared typed query kind: {kind}")
+def typed_query_for_scenario(scenario, intent):
+    field = intent.get("field")
+    if scenario == "typed_query_term":
+        return q.contains(field, q.term(intent["value"]))
+    if scenario == "typed_query_contains":
+        return q.contains(field, intent["value"])
+    if scenario == "typed_query_phrase":
+        return q.contains(field, q.phrase(*intent["terms"]))
+    if scenario == "typed_query_near":
+        return q.contains(field, q.near(*intent["terms"]))
+    if scenario == "typed_query_ordered_near":
+        return q.contains(field, q.onear(*intent["terms"]))
+    if scenario in {"typed_query_range", "typed_query_range_exclusive"}:
+        return q.range(
+            field, intent["lower"], intent["upper"],
+            include_lower=intent["include_lower"],
+            include_upper=intent["include_upper"],
+        )
+    if scenario == "typed_query_boolean":
+        left, right = intent["or_terms"]
+        negative = intent["not_term"]
+        return q.all_of(
+            q.any_of(q.contains(left["field"], left["value"]), q.contains(right["field"], right["value"])),
+            q.negate(q.contains(negative["field"], negative["value"])),
+        )
+    if scenario == "typed_query_in":
+        return q.in_values(field, intent["values"])
+    if scenario == "typed_query_equals":
+        return q.equals(field, intent["value"])
+    if scenario == "typed_query_fuzzy":
+        return q.contains(field, q.fuzzy(intent["value"]))
+    if scenario == "typed_query_weak_and":
+        return q.weak_and(*(q.contains(term["field"], term["value"]) for term in intent["terms"]))
+    if scenario == "typed_query_wand":
+        return q.wand(field, intent["items"])
+    if scenario == "typed_query_weighted_set":
+        return q.weighted_set(field, intent["items"])
+    if scenario == "typed_query_dot_product":
+        return q.dot_product(field, intent["items"])
+    if scenario == "typed_query_prefix":
+        return q.matches(field, re.escape(intent["value"]) + ".*")
+    if scenario == "typed_query_substring":
+        return q.matches(field, ".*" + re.escape(intent["value"]) + ".*")
+    if scenario == "typed_query_suffix":
+        return q.matches(field, ".*" + re.escape(intent["value"]))
+    if scenario == "typed_query_same_element":
+        return q.contains(
+            field,
+            q.same_element(
+                q.contains(intent["first_field"], intent["first_value"]),
+                q.contains(intent["last_field"], intent["last_value"]),
+            ),
+        )
+    if scenario == "typed_query_geo_location":
+        return q.geo_location(field, lat=intent["latitude"], lon=intent["longitude"], radius=intent["radius"])
+    if scenario == "typed_query_geo_box":
+        return q.geo_box(field, south=intent["south"], west=intent["west"], north=intent["north"], east=intent["east"])
+    raise ValueError(f"unsupported typed parity scenario: {scenario}")
 
 
 def shared_typed_query_observations(index):
@@ -282,11 +318,20 @@ def shared_typed_query_observations(index):
         if not scenario.startswith("typed_query_"):
             continue
         intent = PARITY_INTENTS[scenario]
-        results = index.query(shared_typed_query(intent["query"])).limit(intent["limit"]).execute()
-        ids = [hit.id for hit in results.hits]
-        if intent["result_order"] == "sorted_ids": ids.sort()
+        builder = index.query(typed_query_for_scenario(scenario, intent))
+        ranking_profile = intent.get("ranking_profile")
+        if ranking_profile:
+            builder = builder.ranking(ranking_profile)
+        results = builder.limit(intent["limit"]).execute()
+        feature = intent.get("feature")
+        if feature:
+            query_result = [{"id": hit.id, "feature": hit.features.get(feature)} for hit in results.hits]
+        else:
+            query_result = [hit.id for hit in results.hits]
+            if intent["result_order"] == "sorted_ids":
+                query_result.sort()
         observations[scenario] = {
-            "observation": {"intent": PARITY_CONSUMED_INTENTS[scenario], "query_result": ids},
+            "observation": {"intent": PARITY_CONSUMED_INTENTS[scenario], "query_result": query_result},
             "capabilities": E2E_CORPUS["client_scenario_contract"][scenario]["python"],
         }
     return observations
