@@ -33,28 +33,62 @@ fn public_schema_signatures_use_searchkernel_owned_types() {
 
 #[test]
 fn canonical_result_tree_types_are_public_to_downstream_crates() {
-    use searchkernel::{ResultGroup, ResultHit, ResultLimits, ResultNode};
+    use searchkernel::{ResultGroup, ResultHit, ResultLimits, ResultNode, ResultValue};
+
+    fn inspect_hit(hit: &ResultHit) {
+        let _: &DocumentId = &hit.id;
+        let _: Option<f64> = hit.relevance;
+        let _: Option<f64> = hit.score;
+        let _: &BTreeMap<String, ResultValue> = &hit.fields;
+        let _: &[searchkernel::HighlightResult] = &hit.highlights;
+        let _: &Option<String> = &hit.source;
+        let _: &[String] = &hit.types;
+        let _: &BTreeMap<String, ResultValue> = &hit.match_features;
+        let _: &BTreeMap<String, ResultValue> = &hit.summary_features;
+        let _: &BTreeMap<String, ResultValue> = &hit.rank_features;
+        let _: &[ResultValue] = &hit.sort_values;
+    }
+
+    fn inspect_limits(limits: &ResultLimits) {
+        let _: &Option<ResultValue> = &limits.from;
+        let _: &Option<ResultValue> = &limits.to;
+    }
+
+    fn inspect_group(group: &ResultGroup) {
+        let _: &Option<String> = &group.id;
+        let _: &Option<String> = &group.label;
+        let _: &Option<ResultValue> = &group.value;
+        let _: &BTreeMap<String, ResultValue> = &group.fields;
+        let _: &[ResultNode] = &group.children;
+        let _: &BTreeMap<String, String> = &group.continuations;
+        let _: &Option<String> = &group.source;
+        let _: &[String] = &group.types;
+        let _: Option<f64> = group.relevance;
+        let _: &Option<ResultLimits> = &group.limits;
+        let _: &BTreeMap<String, ResultValue> = &group.metadata;
+    }
 
     fn visit(node: &ResultNode) -> usize {
         match node {
             ResultNode::Hit(hit) => {
-                let _: &ResultHit = hit;
+                inspect_hit(hit);
                 1
             }
             ResultNode::Group(group) => {
-                let _: &ResultGroup = group;
+                inspect_group(group);
+                if let Some(limits) = &group.limits {
+                    inspect_limits(limits);
+                }
                 group.children.iter().map(visit).sum()
             }
             _ => 0,
         }
     }
 
-    fn inspect_limits(limits: Option<&ResultLimits>) -> bool {
-        limits.is_some_and(|limits| limits.from.is_some() || limits.to.is_some())
-    }
-
+    let _ = inspect_hit as fn(&ResultHit);
+    let _ = inspect_limits as fn(&ResultLimits);
+    let _ = inspect_group as fn(&ResultGroup);
     let _ = visit as fn(&ResultNode) -> usize;
-    let _ = inspect_limits as fn(Option<&ResultLimits>) -> bool;
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -608,6 +642,34 @@ fn result_variants_map_to_owned_product_values() {
         result.total_hits.relation,
         searchkernel::TotalHitsRelation::Exact
     );
+    backend.finish().unwrap();
+}
+
+#[test]
+fn canonical_result_tree_preserves_interleaved_child_order_through_public_api() {
+    let backend = Arc::new(ScriptedBackend::new(vec![ExpectedCall::success(
+        OperationIr::Search(expected_search()),
+        ScriptedResult::Search(Box::new(
+            searchkernel_testkit::mixed_hit_and_group_children_result(),
+        )),
+    )]));
+    let index = index_with(backend.clone());
+
+    let result = index.browse().execute::<serde_json::Value>().unwrap();
+    let searchkernel::ResultNode::Group(root) = &result.root else {
+        panic!("mixed fixture root must remain a canonical result group");
+    };
+
+    assert_eq!(root.children.len(), 4);
+    assert!(matches!(
+        root.children.as_slice(),
+        [
+            searchkernel::ResultNode::Hit(_),
+            searchkernel::ResultNode::Group(_),
+            searchkernel::ResultNode::Hit(_),
+            searchkernel::ResultNode::Group(_)
+        ]
+    ));
     backend.finish().unwrap();
 }
 
