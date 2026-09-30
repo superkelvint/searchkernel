@@ -4,9 +4,12 @@ use std::{
     process::{Command, Stdio},
 };
 
-use searchkernel_protocol::json::{
-    request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
-    response_json_to_flatbuffer,
+use searchkernel_protocol::{
+    json::{
+        request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
+        response_json_to_flatbuffer,
+    },
+    protocol::v2::{RequestEnvelope, RequestPayload},
 };
 
 fn assert_php_consumes_printed_response(repo_root: &std::path::Path, name: &str, json: &[u8]) {
@@ -88,6 +91,57 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                 let buffer = request_json_to_flatbuffer(json)
                     .unwrap_or_else(|error| panic!("{name}: BFBS request parse failed: {error}"));
                 assert_eq!(&buffer[4..8], b"SKRQ", "{name}: request identifier");
+                let envelope =
+                    flatbuffers::root::<RequestEnvelope<'_>>(&buffer).unwrap_or_else(|error| {
+                        panic!("{name}: daemon request verifier rejected PHP JSON: {error}")
+                    });
+                if name == "create-index-e2e-schema" {
+                    assert_eq!(
+                        envelope.payload_type(),
+                        RequestPayload::SearchKernel_V2_CreateIndexRequest,
+                        "{name}: daemon sees create-index discriminator"
+                    );
+                    let payload = envelope
+                        .payload_as_search_kernel_v2_create_index_request()
+                        .unwrap_or_else(|| {
+                            panic!("{name}: daemon cannot access create-index payload")
+                        });
+                    let definition = payload
+                        .definition()
+                        .unwrap_or_else(|| panic!("{name}: create-index definition missing"));
+                    assert_eq!(
+                        definition.fields().map(|fields| fields.len()),
+                        Some(11),
+                        "{name}: exact PHP E2E field count"
+                    );
+                    assert_eq!(
+                        definition.rank_profiles().map(|profiles| profiles.len()),
+                        Some(5),
+                        "{name}: exact PHP E2E rank-profile count"
+                    );
+                    assert_eq!(
+                        envelope.target().map(|target| target.name()),
+                        Some(Some("php-e2e")),
+                        "{name}: exact PHP E2E target"
+                    );
+                }
+                if name == "open-index-empty-table" {
+                    assert_eq!(
+                        envelope.payload_type(),
+                        RequestPayload::SearchKernel_V2_OpenIndexRequest,
+                        "{name}: daemon sees open-index discriminator"
+                    );
+                    envelope
+                        .payload_as_search_kernel_v2_open_index_request()
+                        .unwrap_or_else(|| {
+                            panic!("{name}: daemon cannot access open-index payload")
+                        });
+                    assert_eq!(
+                        envelope.target().map(|target| target.name()),
+                        Some(Some("php-e2e")),
+                        "{name}: exact PHP E2E target"
+                    );
+                }
                 request_flatbuffer_to_json(&buffer)
                     .unwrap_or_else(|error| panic!("{name}: request print failed: {error}"))
             }

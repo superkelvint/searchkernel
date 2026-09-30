@@ -321,6 +321,8 @@ run_typescript_tests() {
 run_php_tests() {
     php "$ROOT/clients/php/tests/run.php"
     "$CARGO" test -p searchkernel-protocol --test php_json_contract -- --ignored
+    "$CARGO" test -p searchkerneld --test multi_index --features native \
+        php_emitted_create_index_json_reaches_multi_index_registry -- --ignored --exact
     bash "$ROOT/clients/php/tests/verify_package.sh"
     run_client_e2e php
 }
@@ -741,6 +743,7 @@ verify_target() {
                 echo 'error: Ruby is required for client semantic parity' >&2
                 return 1
             }
+            bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
             "$PYTHON" "$ROOT/tools/check-result-response-schema.py"
             "$PYTHON" "$ROOT/tools/test_check_result_response_schema.py"
             "$PYTHON" "$ROOT/tools/test_result_response_conformance.py"
