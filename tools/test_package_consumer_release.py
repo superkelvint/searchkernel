@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import ast
+import json
 import importlib.util
 import os
 import subprocess
@@ -230,6 +231,17 @@ class ConsumerReleaseTests(unittest.TestCase):
                     "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs", names
                 )
                 self.assertNotIn("tools/resolve-native-sdk.sh", names)
+
+    def test_rust_bundle_carries_exact_consumer_runtime_descriptor(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            bundle = Path(tempdir) / "searchkernel-rust-test.tar.gz"
+            descriptor = {"runtime_identity": "skrt-v1-" + "a" * 64, "artifact_sha256": "b" * 64}
+            MODULE.build_rust_bundle(bundle, descriptor)
+            with tarfile.open(bundle) as archive:
+                member = archive.extractfile("core/crates/searchkernel-vespa-bindings/runtime.json")
+                self.assertIsNotNone(member)
+                self.assertEqual(json.loads(member.read()), descriptor)
+        self.assertFalse((ROOT / "core/crates/searchkernel-vespa-bindings/runtime.json").exists())
 
     def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
         verifier = RELEASE_VERIFIER.read_text(encoding="utf-8")

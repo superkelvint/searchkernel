@@ -150,15 +150,25 @@ RUST_BUNDLE_PATHS = [
 ]
 
 
-def build_rust_bundle(rust_bundle: Path) -> None:
+def build_rust_bundle(rust_bundle: Path, descriptor: dict[str, object] | None = None) -> None:
     missing = [relative for relative in RUST_BUNDLE_PATHS if not (ROOT / relative).exists()]
     if missing:
         raise FileNotFoundError(
             f"missing Rust consumer bundle inputs: {', '.join(missing)}"
         )
-    with tarfile.open(rust_bundle, "w:gz") as archive:
-        for relative in RUST_BUNDLE_PATHS:
-            archive.add(ROOT / relative, arcname=relative)
+    runtime_descriptor_path = ROOT / "core/crates/searchkernel-vespa-bindings/runtime.json"
+    if runtime_descriptor_path.exists():
+        raise RuntimeError(f"refusing to overwrite source runtime descriptor: {runtime_descriptor_path}")
+    try:
+        if descriptor is not None:
+            runtime_descriptor_path.write_text(
+                json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        with tarfile.open(rust_bundle, "w:gz") as archive:
+            for relative in RUST_BUNDLE_PATHS:
+                archive.add(ROOT / relative, arcname=relative)
+    finally:
+        runtime_descriptor_path.unlink(missing_ok=True)
 
 
 def build_release_daemon(target: Path) -> tuple[Path, Path]:
@@ -258,6 +268,10 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path, identity: dict[s
         adapter_lib / "libsearchkernel_vespa.so.2",
         libdir / "libsearchkernel_vespa.so.2",
     )
+    patchelf = shutil.which("patchelf")
+    if patchelf is None:
+        raise RuntimeError("consumer runtime packaging requires patchelf for relocatable native RPATH")
+    run(patchelf, "--force-rpath", "--set-rpath", "$ORIGIN", str(libdir / "libsearchkernel_vespa.so.2"))
     cargo_adapter = bindir / ".searchkernel-native"
     cargo_adapter.mkdir()
     (cargo_adapter / "libsearchkernel_vespa.so.2").symlink_to(
@@ -364,7 +378,6 @@ def main() -> None:
     # The generated bindings consumer bundle owns native provisioning support,
     # so the source artifact must not depend on repository-only native helpers.
     rust_bundle = out / f"searchkernel-rust-{VERSION}.tar.gz"
-    build_rust_bundle(rust_bundle)
 
     target = target_dir(metadata)
     daemon, adapter_lib = build_release_daemon(target)
@@ -397,6 +410,7 @@ def main() -> None:
         created: list[Path] = []
         try:
             descriptor = runtime_descriptor(identity, daemon_bundle)
+            build_rust_bundle(rust_bundle, descriptor)
             created.extend(stage_python_runtime_support(ROOT / "clients/python/searchkernel", descriptor))
             ts_descriptor = ROOT / "clients/typescript/runtime.json"
             ts_descriptor.write_text(json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8")

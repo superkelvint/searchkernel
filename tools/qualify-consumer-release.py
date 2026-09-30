@@ -163,13 +163,11 @@ def run_rust_quickstart(rust_root: Path, root: Path) -> None:
     shutil.copytree(QUICKSTARTS / "rust", quickstart)
     environment = {
         "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
+        # Qualification uses the exact just-built immutable artifact through the
+        # normal origin override; no producer SDK/repository path is exposed.
+        "SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri(),
+        "SEARCHKERNEL_RUNTIME_CACHE": str(root / "rust-runtime-cache"),
     }
-    # Rust embedded builds resolve the published native base from GitHub.
-    # Pass consumer authentication only to this build; runtime probes still
-    # receive the ordinary scrubbed clean environment.
-    github_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if github_token:
-        environment["GH_TOKEN"] = github_token
     run(
         "cargo",
         "run",
