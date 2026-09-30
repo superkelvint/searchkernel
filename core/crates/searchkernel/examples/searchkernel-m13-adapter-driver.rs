@@ -7,9 +7,9 @@ use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexCont
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use serde_json::{json, Value as Json};
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, path::{Path, PathBuf}, sync::Arc};
 
-fn context(path: &PathBuf) -> Arc<IndexContext> {
+fn context(path: &Path) -> Arc<IndexContext> {
     let bytes = fs::read(path).expect("read M13 portable definition");
     let root =
         searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
@@ -19,7 +19,7 @@ fn context(path: &PathBuf) -> Arc<IndexContext> {
     ))
 }
 
-fn create_dispatcher(definition: &PathBuf, config: &PathBuf, data: &PathBuf) -> Dispatcher {
+fn create_dispatcher(definition: &Path, config: &Path, data: &Path) -> Dispatcher {
     if !config.join("searchkernel-schema.json").exists() {
         let definition_bytes = fs::read(definition).expect("read M13 portable definition");
         let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(
@@ -172,7 +172,7 @@ fn search(dispatcher: &Dispatcher, root: &Json) -> Json {
     Json::Array(ids)
 }
 
-fn run(root: &Json, definition: &PathBuf, config: &PathBuf, data: &PathBuf) -> Json {
+fn run(root: &Json, definition: &Path, config: &Path, data: &Path) -> Json {
     let field = root["tensor_field"]["name"].as_str().expect("tensor field");
     let id_a = "id:ns:typea::a";
     let id_b = "id:ns:typea::b";
