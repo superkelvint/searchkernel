@@ -75,8 +75,9 @@ class QualificationPolicyTests(unittest.TestCase):
             self.assertIn(variable, gate)
         self.assertNotIn('"--no-index"', gate)
         rust_runner = gate.split("def run_rust_quickstart", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn('os.environ.get("GH_TOKEN")', rust_runner)
-        self.assertIn('os.environ.get("GITHUB_TOKEN")', rust_runner)
+        self.assertIn('"SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri()', rust_runner)
+        self.assertNotIn('os.environ.get("GH_TOKEN")', rust_runner)
+        self.assertNotIn('os.environ.get("GITHUB_TOKEN")', rust_runner)
         self.assertNotIn("SEARCHKERNEL_BUILD_ENV", gate)
 
     def test_packaged_supported_rows_own_clean_consumer_gate(self):
