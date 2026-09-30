@@ -406,6 +406,8 @@
     "group_keep_filter",
     "typed_query_contains",
     "typed_query_phrase",
+    "typed_query_near",
+    "typed_query_ordered_near",
     "typed_query_range",
     "typed_query_boolean",
     "typed_query_in",
@@ -532,6 +534,20 @@
           "kind": "comparable"
         }
       }
+    },
+    "typed_query_near": {
+      "rust": {"query_result": {"kind": "comparable"}},
+      "python": {"query_result": {"kind": "comparable"}},
+      "typescript": {"query_result": {"kind": "comparable"}},
+      "php": {"query_result": {"kind": "comparable"}},
+      "ruby": {"query_result": {"kind": "comparable"}}
+    },
+    "typed_query_ordered_near": {
+      "rust": {"query_result": {"kind": "comparable"}},
+      "python": {"query_result": {"kind": "comparable"}},
+      "typescript": {"query_result": {"kind": "comparable"}},
+      "php": {"query_result": {"kind": "comparable"}},
+      "ruby": {"query_result": {"kind": "comparable"}}
     },
     "typed_query_range": {
       "rust": {
@@ -859,12 +875,38 @@
     }
   },
   "scenario_inputs": {
+    "nearest_neighbor": {
+      "query": {"kind": "nearest_neighbor", "field": "embedding", "query_input": "query_embedding"},
+      "ranking_profile": "semantic",
+      "query_input_document": "shoe-1",
+      "limit": 3
+    },
+    "hybrid_text_vector": {
+      "query": {
+        "kind": "or",
+        "clauses": [
+          {"kind": "contains", "field": "title", "value": "shoes"},
+          {"kind": "nearest_neighbor", "field": "embedding", "query_input": "query_embedding"}
+        ]
+      },
+      "ranking_profile": "hybrid",
+      "query_input_document": "bag-1",
+      "limit": 20
+    },
     "typed_query_contains": {
       "query": {
         "kind": "contains",
         "field": "title",
         "value": "quick"
       },
+      "result_order": "sorted_ids"
+    },
+    "typed_query_near": {
+      "query": {"kind": "near", "field": "title", "terms": ["quick", "brown"]},
+      "result_order": "sorted_ids"
+    },
+    "typed_query_ordered_near": {
+      "query": {"kind": "ordered_near", "field": "title", "terms": ["quick", "brown"]},
       "result_order": "sorted_ids"
     },
     "typed_query_phrase": {
@@ -890,13 +932,12 @@
     },
     "typed_query_boolean": {
       "query": {
-        "kind": "and",
-        "clauses": [
-          {
-            "kind": "contains",
-            "field": "title",
-            "value": "fox"
-          },
+      "kind": "and",
+      "clauses": [
+        {"kind": "or", "clauses": [
+          {"kind": "contains", "field": "title", "value": "quick"},
+          {"kind": "contains", "field": "title", "value": "fox"}
+        ]},
           {
             "kind": "not",
             "clause": {

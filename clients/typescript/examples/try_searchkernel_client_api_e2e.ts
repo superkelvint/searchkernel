@@ -131,12 +131,9 @@ function sharedTypedQuery(spec: any): any {
   switch (spec.kind) {
     case "contains": return q.contains(spec.field, spec.value);
     case "phrase": return q.phrase(spec.field, ...spec.terms);
-    case "range": {
-      const fieldType = E2E_CORPUS.schema.fields[spec.field]?.type;
-      const lower = fieldType === "float64" ? float64(spec.lower) : spec.lower;
-      const upper = fieldType === "float64" ? float64(spec.upper) : spec.upper;
-      return q.range(spec.field, lower, upper);
-    }
+    case "near": return q.near(spec.field, ...spec.terms);
+    case "ordered_near": return q.orderedNear(spec.field, ...spec.terms);
+    case "range": return q.range(spec.field, spec.lower, spec.upper);
     case "and": return q.allOf(...spec.clauses.map(sharedTypedQuery));
     case "or": return q.anyOf(...spec.clauses.map(sharedTypedQuery));
     case "not": return q.not(sharedTypedQuery(spec.clause));
@@ -196,10 +193,20 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
       .orderBy(desc(agg.count()), asc(g.field("brand")))
       .output(agg.count().as("products"), agg.avg("price").as("avg_price")),
   ).execute();
-  const nearest = await index.query(q.nearestNeighbor("embedding", "query_embedding"))
-    .ranking("semantic").input("query_embedding", embedding(...SHOE_1_VECTOR)).limit(3).execute();
-  const hybrid = await index.query(q.anyOf(q.contains("title", "shoes"), q.nearestNeighbor("embedding", "query_embedding")))
-    .ranking("hybrid").input("query_embedding", embedding(...BAG_1_VECTOR)).limit(20).execute();
+  const nearestIntent = E2E_CORPUS.scenario_inputs.nearest_neighbor;
+  const nearestSpec = nearestIntent.query;
+  const nearest = await index.query(q.nearestNeighbor(nearestSpec.field, nearestSpec.query_input))
+    .ranking(nearestIntent.ranking_profile)
+    .input(nearestSpec.query_input, embedding(...corpusVector(nearestIntent.query_input_document)))
+    .limit(nearestIntent.limit).execute();
+  const hybridIntent = E2E_CORPUS.scenario_inputs.hybrid_text_vector;
+  const [hybridText, hybridVector] = hybridIntent.query.clauses;
+  const hybrid = await index.query(q.anyOf(
+    q.contains(hybridText.field, hybridText.value),
+    q.nearestNeighbor(hybridVector.field, hybridVector.query_input),
+  )).ranking(hybridIntent.ranking_profile)
+    .input(hybridVector.query_input, embedding(...corpusVector(hybridIntent.query_input_document)))
+    .limit(hybridIntent.limit).execute();
   const reranked = await index.search("candidate").ranking("two_phase").limit(4).execute();
   let errorCodes: string[];
   try {
@@ -317,8 +324,8 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
     rank_inputs: rankInput.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
     rank_properties: rankProperty.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
     tensor_readback: paritySafe((document.embedding as { $searchkernel_tensor: { dense: number[] } }).$searchkernel_tensor.dense),
-    nearest_neighbor: { ids: nearest.hits.map((hit) => hit.id), scores: nearest.hits.map((hit) => hit.relevance) },
-    hybrid_text_vector: { ids: hybrid.hits.map((hit) => hit.id), top_score: hybrid.hits[0]!.score },
+    nearest_neighbor: { observation: { intent: nearestIntent, ids: nearest.hits.map((hit) => hit.id), scores: nearest.hits.map((hit) => hit.relevance) }, capabilities: {} },
+    hybrid_text_vector: { observation: { intent: hybridIntent, ids: hybrid.hits.map((hit) => hit.id), top_score: hybrid.hits[0]!.score }, capabilities: {} },
     hybrid: { top_id: hybrid.hits[0]!.id, has_bag: hybrid.hits.some((hit) => hit.id === "bag-1") },
     two_phase_reranking: { ids: reranked.hits.map((hit) => hit.id) },
     coverage_degradation: {

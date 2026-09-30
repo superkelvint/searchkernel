@@ -30,8 +30,8 @@ mod showcase {
     use searchkernel::{
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
         GroupingAggregation, GroupingPlan, Hit, Index, IndexDefinition, Patch, Query, QueryBound,
-        QueryValue, RankProfile, Ranking, ResultValue, SchemaStructField, SearchResult, Sort, Tensor,
-        TotalHitsRelation, Update, WandOptions, WeightedQueryItem,
+        QueryValue, RankProfile, Ranking, ResultValue, SchemaStructField, SearchResult, Sort,
+        Tensor, TotalHitsRelation, Update, WandOptions, WeightedQueryItem,
     };
     use serde_json::{json, Value};
     use std::collections::{BTreeMap, BTreeSet};
@@ -106,30 +106,77 @@ mod showcase {
         };
         Ok(match kind {
             "contains" => Query::contains(field()?, Query::term_value(text("value")?)),
-            "phrase" => Query::phrase(field()?, spec["terms"].as_array()
-                .ok_or("phrase terms missing")?.iter()
-                .map(|term| term.as_str().ok_or("phrase term must be a string"))
-                .collect::<Result<Vec<_>, _>>()?.join(" ")),
+            "phrase" => Query::phrase(
+                field()?,
+                spec["terms"]
+                    .as_array()
+                    .ok_or("phrase terms missing")?
+                    .iter()
+                    .map(|term| term.as_str().ok_or("phrase term must be a string"))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(" "),
+            ),
+            "near" | "ordered_near" => {
+                let field = field()?;
+                let terms = spec["terms"]
+                    .as_array()
+                    .ok_or("proximity terms missing")?
+                    .iter()
+                    .map(|term| {
+                        term.as_str()
+                            .ok_or("proximity term must be text")
+                            .map(|term| Query::term(field, term))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                if kind == "near" {
+                    Query::near(field, terms)
+                } else {
+                    Query::onear(field, terms)
+                }
+            }
             "range" => {
                 let lower = spec["lower"].as_f64().ok_or("range lower bound missing")?;
                 let upper = spec["upper"].as_f64().ok_or("range upper bound missing")?;
-                Query::range(field()?, QueryBound::Included(lower.into()), QueryBound::Included(upper.into()))
+                Query::range(
+                    field()?,
+                    QueryBound::Included(lower.into()),
+                    QueryBound::Included(upper.into()),
+                )
             }
             "and" => Query::and(children()?),
             "or" => Query::or(children()?),
             "not" => Query::not(query_from_spec(&spec["clause"])?),
-            "in" => Query::in_values(field()?, spec["values"].as_array()
-                .ok_or("IN values missing")?.iter()
-                .map(|value| value.as_str().map(QueryValue::from).ok_or("IN value must be a string"))
-                .collect::<Result<Vec<_>, _>>()?),
+            "in" => Query::in_values(
+                field()?,
+                spec["values"]
+                    .as_array()
+                    .ok_or("IN values missing")?
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(QueryValue::from)
+                            .ok_or("IN value must be a string")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
             "equals" => Query::equals(field()?, text("value")?),
             "fuzzy" => Query::fuzzy(field()?, text("value")?),
             "weak_and" => Query::weak_and(children()?, 100),
             "wand" | "weighted_set" | "dot_product" => {
-                let items = spec["items"].as_object().ok_or("weighted query items missing")?
-                    .iter().map(|(key, weight)| Ok(WeightedQueryItem::new(
-                        key.as_str(), weight.as_i64().ok_or("weighted query weight must be an integer")?,
-                    ))).collect::<Result<Vec<_>, String>>()?;
+                let items = spec["items"]
+                    .as_object()
+                    .ok_or("weighted query items missing")?
+                    .iter()
+                    .map(|(key, weight)| {
+                        Ok(WeightedQueryItem::new(
+                            key.as_str(),
+                            weight
+                                .as_i64()
+                                .ok_or("weighted query weight must be an integer")?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
                 match kind {
                     "wand" => Query::wand(field()?, items),
                     "weighted_set" => Query::weighted_set(field()?, items),
@@ -187,9 +234,16 @@ mod showcase {
                                 Some("int64") => searchkernel::DataType::Primitive(
                                     searchkernel::PrimitiveDataType::Int64,
                                 ),
-                                _ => return Err(format!("unsupported corpus struct field {member}").into()),
+                                _ => {
+                                    return Err(
+                                        format!("unsupported corpus struct field {member}").into()
+                                    )
+                                }
                             };
-                            Ok(SchemaStructField { name: member.clone(), data_type })
+                            Ok(SchemaStructField {
+                                name: member.clone(),
+                                data_type,
+                            })
                         })
                         .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
                     Field::array_of_struct(name, members)
@@ -313,15 +367,41 @@ mod showcase {
             .facet("brand".into())
             .limit(20)
             .execute::<Value>()?;
+        let scenario_inputs: Value = serde_json::from_str(E2E_CORPUS)?;
+        let nearest_intent = &scenario_inputs["scenario_inputs"]["nearest_neighbor"];
         let parity_nearest = index
             .search("")
-            .ranking(Ranking::named("semantic"))
-            .typed_query(Query::nearest_neighbor("embedding", "query_embedding"))
+            .ranking(Ranking::named(
+                nearest_intent["ranking_profile"]
+                    .as_str()
+                    .ok_or("nearest ranking profile missing")?,
+            ))
+            .typed_query(Query::nearest_neighbor(
+                nearest_intent["query"]["field"]
+                    .as_str()
+                    .ok_or("nearest field missing")?,
+                nearest_intent["query"]["query_input"]
+                    .as_str()
+                    .ok_or("nearest query input missing")?,
+            ))
             .query_input(
-                "query_embedding",
-                Tensor::dense(VECTOR_TYPE, corpus_vector("shoe-1")?),
+                nearest_intent["query"]["query_input"]
+                    .as_str()
+                    .ok_or("nearest query input missing")?,
+                Tensor::dense(
+                    VECTOR_TYPE,
+                    corpus_vector(
+                        nearest_intent["query_input_document"]
+                            .as_str()
+                            .ok_or("nearest vector document missing")?,
+                    )?,
+                ),
             )
-            .limit(3)
+            .limit(
+                nearest_intent["limit"]
+                    .as_u64()
+                    .ok_or("nearest limit missing")? as u32,
+            )
             .execute::<Value>()?;
         let parity_reranked = index
             .search("candidate")
@@ -479,24 +559,42 @@ mod showcase {
             .execute::<Value>()
             .is_err();
         let typed_scenarios = [
-            "typed_query_contains", "typed_query_phrase", "typed_query_range",
-            "typed_query_boolean", "typed_query_in", "typed_query_equals",
-            "typed_query_fuzzy", "typed_query_weak_and", "typed_query_wand",
-            "typed_query_weighted_set", "typed_query_dot_product",
-            "typed_query_same_element", "typed_query_geo_location", "typed_query_geo_box",
+            "typed_query_contains",
+            "typed_query_phrase",
+            "typed_query_near",
+            "typed_query_ordered_near",
+            "typed_query_range",
+            "typed_query_boolean",
+            "typed_query_in",
+            "typed_query_equals",
+            "typed_query_fuzzy",
+            "typed_query_weak_and",
+            "typed_query_wand",
+            "typed_query_weighted_set",
+            "typed_query_dot_product",
+            "typed_query_same_element",
+            "typed_query_geo_location",
+            "typed_query_geo_box",
         ];
         let mut typed_observations = serde_json::Map::new();
         for scenario in typed_scenarios {
-            let mut results = index.search("").typed_query(corpus_typed_query(scenario)?).limit(100).execute::<Value>()?;
+            let mut results = index
+                .search("")
+                .typed_query(corpus_typed_query(scenario)?)
+                .limit(100)
+                .execute::<Value>()?;
             let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
             let input = corpus["scenario_inputs"][scenario].clone();
             if input["result_order"] == "sorted_ids" {
                 results.hits.sort_by(|left, right| left.id.cmp(&right.id));
             }
-            typed_observations.insert(scenario.to_owned(), json!({
-                "observation": {"intent": input["query"], "query_result": ids(&results)},
-                "capabilities": corpus["client_scenario_contract"][scenario]["rust"],
-            }));
+            typed_observations.insert(
+                scenario.to_owned(),
+                json!({
+                    "observation": {"intent": input["query"], "query_result": ids(&results)},
+                    "capabilities": corpus["client_scenario_contract"][scenario]["rust"],
+                }),
+            );
         }
         let parity_rank_input = index
             .search("shoes")
@@ -510,18 +608,65 @@ mod showcase {
             .rank_property("boost", "4.0")
             .limit(20)
             .execute::<Value>()?;
+        let hybrid_intent = &scenario_inputs["scenario_inputs"]["hybrid_text_vector"];
+        let hybrid_query = &hybrid_intent["query"];
+        let nearest_clause = hybrid_query["clauses"]
+            .as_array()
+            .ok_or("hybrid clauses missing")?
+            .iter()
+            .find(|clause| clause["kind"] == "nearest_neighbor")
+            .ok_or("hybrid nearest clause missing")?;
+        let text_clause = hybrid_query["clauses"]
+            .as_array()
+            .ok_or("hybrid clauses missing")?
+            .iter()
+            .find(|clause| clause["kind"] == "contains")
+            .ok_or("hybrid text clause missing")?;
         let parity_hybrid = index
             .search("")
-            .ranking(Ranking::named("hybrid"))
+            .ranking(Ranking::named(
+                hybrid_intent["ranking_profile"]
+                    .as_str()
+                    .ok_or("hybrid ranking profile missing")?,
+            ))
             .typed_query(Query::or([
-                Query::contains("title", Query::term_value("shoes")),
-                Query::nearest_neighbor("embedding", "query_embedding"),
+                Query::contains(
+                    text_clause["field"]
+                        .as_str()
+                        .ok_or("hybrid text field missing")?,
+                    Query::term_value(
+                        text_clause["value"]
+                            .as_str()
+                            .ok_or("hybrid text value missing")?,
+                    ),
+                ),
+                Query::nearest_neighbor(
+                    nearest_clause["field"]
+                        .as_str()
+                        .ok_or("hybrid vector field missing")?,
+                    nearest_clause["query_input"]
+                        .as_str()
+                        .ok_or("hybrid query input missing")?,
+                ),
             ]))
             .query_input(
-                "query_embedding",
-                Tensor::dense(VECTOR_TYPE, corpus_vector("bag-1")?),
+                nearest_clause["query_input"]
+                    .as_str()
+                    .ok_or("hybrid query input missing")?,
+                Tensor::dense(
+                    VECTOR_TYPE,
+                    corpus_vector(
+                        hybrid_intent["query_input_document"]
+                            .as_str()
+                            .ok_or("hybrid vector document missing")?,
+                    )?,
+                ),
             )
-            .limit(20)
+            .limit(
+                hybrid_intent["limit"]
+                    .as_u64()
+                    .ok_or("hybrid limit missing")? as u32,
+            )
             .execute::<Value>()?;
         let parity_group_buckets = direct_group_buckets(&parity_grouped.groups);
         let mut parity_grouping_aggregations = parity_group_buckets
@@ -581,12 +726,9 @@ mod showcase {
             "rank_inputs": parity_rank_input.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
             "rank_properties": parity_rank_property.hits.iter().map(|hit| json!({"id": hit.id.as_str(), "score": hit.score, "feature": parity_feature(hit, "query(boost)")})).collect::<Vec<_>>(),
             "tensor_readback": parity_document["embedding"]["$searchkernel_tensor"]["dense"],
-            "nearest_neighbor": {
-                "ids": ids(&parity_nearest),
-                "scores": parity_nearest.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()
-            },
+            "nearest_neighbor": {"observation": {"intent": nearest_intent, "ids": ids(&parity_nearest), "scores": parity_nearest.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()}, "capabilities": {}},
             "two_phase_reranking": {"ids": ids(&parity_reranked)},
-            "hybrid_text_vector": {"ids": ids(&parity_hybrid), "top_score": parity_hybrid.hits.first().and_then(|hit| hit.score)},
+            "hybrid_text_vector": {"observation": {"intent": hybrid_intent, "ids": ids(&parity_hybrid), "top_score": parity_hybrid.hits.first().and_then(|hit| hit.score)}, "capabilities": {}},
             "two_phase": {"ids": ids(&parity_reranked)},
             "unknown_field_error": {
                 "code": "invalid_argument",

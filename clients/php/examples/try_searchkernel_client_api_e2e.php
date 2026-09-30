@@ -143,6 +143,8 @@ function sharedTypedQuery(array $spec): array
     return match ($spec['kind']) {
         'contains' => Query::contains($field, $spec['value']),
         'phrase' => Query::contains($field, Query::phrase(...$spec['terms'])),
+        'near' => Query::contains($field, Query::near(...$spec['terms'])),
+        'ordered_near' => Query::contains($field, Query::onear(...$spec['terms'])),
         'range' => Query::range($field, gte: $spec['lower'], lte: $spec['upper']),
         'and' => Query::allOf(...array_map('sharedTypedQuery', $spec['clauses'])),
         'or' => Query::anyOf(...array_map('sharedTypedQuery', $spec['clauses'])),
@@ -180,6 +182,7 @@ function sharedTypedQueryObservations(Index $index): array
 
 function captureRealEngineParity(Index $index): array
 {
+    $corpus = searchkernelPhpClientApiE2eCorpus();
     $typedObservations = sharedTypedQueryObservations($index);
     $ordered = $index->search('shoes')->sort('price', 'asc')->limit(20)->execute();
     $filtered = $index->search('shoes')->filter('in_stock = true')->sort('price', 'asc')->limit(20)->execute();
@@ -194,12 +197,20 @@ function captureRealEngineParity(Index $index): array
             ->orderBy(GroupingOrder::desc(Agg::count()), GroupingOrder::asc(G::field('brand')))
             ->output(Agg::count()->as('products'), Agg::avg('price')->as('avg_price'))
     )->execute();
-    $nearest = $index->query(Query::nearestNeighbor('embedding', 'query_embedding'))
-        ->ranking('semantic')->input('query_embedding', embedding(SHOE_1_VECTOR))->limit(3)->execute();
+    $nearestIntent = $corpus['scenario_inputs']['nearest_neighbor'];
+    $nearestSpec = $nearestIntent['query'];
+    $nearest = $index->query(Query::nearestNeighbor($nearestSpec['field'], $nearestSpec['query_input']))
+        ->ranking($nearestIntent['ranking_profile'])
+        ->input($nearestSpec['query_input'], embedding(corpusVector($nearestIntent['query_input_document'])))
+        ->limit($nearestIntent['limit'])->execute();
+    $hybridIntent = $corpus['scenario_inputs']['hybrid_text_vector'];
+    [$hybridText, $hybridVector] = $hybridIntent['query']['clauses'];
     $hybrid = $index->query(Query::anyOf(
-        Query::contains('title', 'shoes'),
-        Query::nearestNeighbor('embedding', 'query_embedding')
-    ))->ranking('hybrid')->input('query_embedding', embedding(BAG_1_VECTOR))->limit(20)->execute();
+        Query::contains($hybridText['field'], $hybridText['value']),
+        Query::nearestNeighbor($hybridVector['field'], $hybridVector['query_input'])
+    ))->ranking($hybridIntent['ranking_profile'])
+        ->input($hybridVector['query_input'], embedding(corpusVector($hybridIntent['query_input_document'])))
+        ->limit($hybridIntent['limit'])->execute();
     $reranked = $index->search('candidate')->ranking('two_phase')->limit(4)->execute();
     try {
         $index->search('shoes')->filter('prcie = 1')->execute();
@@ -307,8 +318,8 @@ function captureRealEngineParity(Index $index): array
         'rank_inputs' => array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankInput->hits),
         'rank_properties' => array_map(static fn ($hit): array => ['id' => $hit->id, 'score' => $hit->score(), 'feature' => $hit->matchFeatures['query(boost)'] ?? null], $rankProperty->hits),
         'tensor_readback' => $document['embedding']->payload['values'],
-        'nearest_neighbor' => ['ids' => ids($nearest), 'scores' => array_map(static fn ($hit): float => (float) $hit->relevance, $nearest->hits)],
-        'hybrid_text_vector' => ['ids' => ids($hybrid), 'top_score' => $hybrid->hits[0]->score()],
+        'nearest_neighbor' => ['observation' => ['intent' => $nearestIntent, 'ids' => ids($nearest), 'scores' => array_map(static fn ($hit): float => (float) $hit->relevance, $nearest->hits)], 'capabilities' => []],
+        'hybrid_text_vector' => ['observation' => ['intent' => $hybridIntent, 'ids' => ids($hybrid), 'top_score' => $hybrid->hits[0]->score()], 'capabilities' => []],
         'hybrid' => ['top_id' => $hybrid->hits[0]->id, 'has_bag' => in_array('bag-1', ids($hybrid), true)],
         'two_phase_reranking' => ['ids' => ids($reranked)],
         'coverage_degradation' => ['ids' => ids($degraded), 'full' => $degraded->coverage->full, 'degraded' => $degraded->coverage->degraded !== null],

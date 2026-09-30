@@ -5,15 +5,16 @@ vectors, and coverage probe used by each full public-client E2E showcase. The
 showcases keep their language-specific examples, but their primary index now
 starts from this common corpus.
 
-The corpus also defines language-neutral inputs for each shared typed-query
-case. Rust, Python, TypeScript, PHP, and Ruby build those requests through their
-public query facades and emit the consumed intent beside the ordered result
-IDs. The checker rejects missing typed-query IDs or an emitted intent that
-differs from the shared definition. The typed-query inventory includes
-contains, phrase, range, boolean composition, IN, equality, fuzzy, WeakAnd,
-WAND, weighted set, dot product, SameElement, geo location, and geo box.
-`people` and `location`, plus the deterministic documents needed by SameElement
-and geo queries, are part of the shared schema and corpus.
+The corpus also defines language-neutral inputs for each shared typed-query,
+nearest-neighbor, and hybrid text/vector case. Rust, Python, TypeScript, PHP,
+and Ruby build those requests through their public query facades and emit the
+consumed intent beside the ordered result IDs. The checker rejects missing
+query IDs or an emitted intent that differs from the shared definition. The
+typed-query inventory includes contains, phrase, near, ordered-near, range,
+AND/OR/NOT composition, IN, equality, fuzzy, WeakAnd, WAND, weighted set, dot
+product, SameElement, geo location, and geo box. `people` and `location`, plus
+the deterministic documents needed by SameElement and geo queries, are part of
+the shared schema and corpus.
 
 `scenarios` is the required inventory for all five public-client showcases and
 `tools/check-client-real-e2e-parity.py`. Every client must emit an observation
@@ -27,18 +28,10 @@ alongside its observations. The checker validates runtime results, compares
 the remaining shared observations, and fails on absent clients, absent
 scenarios, uncontracted skips, or differing comparable observations.
 
-In the current corpus, the only `not_expressible` cases are Rust's negative
-limit and offset inputs: the public `SearchBuilder` methods take `u32`. The
-other four clients must show that those inputs are rejected at runtime. All
-typed-query result cases are declared comparable for all five clients.
-
-Numeric comparison preserves JSON integer and float kinds: integers require
-exact equality, and an integer never compares equal to a float. Booleans remain
-distinct from both. Finite floats use relative and absolute tolerance `1e-6`;
-NaN and infinity never compare successfully. A small explicit set of result
-paths whose domain type is floating (prices, scores, and floating aggregation
-outputs) uses float semantics even when a client encoder writes an integral
-float such as `3.0` as the JSON token `3`.
+Integer-semantic fields (counts, totals, integer document fields, and related
+values) require an integer JSON representation and exact equality. Booleans are
+distinct. Other finite numeric fields use relative and absolute tolerance
+`1e-6`; NaN and infinity never compare successfully.
 
 Snapshots contain observable results from the shared showcase scenarios,
 including search order and counts, document and tensor values, groups and

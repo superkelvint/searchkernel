@@ -7,6 +7,8 @@ import { QueryNearestNeighborT } from "../generated/flatbuffers/search-kernel/v2
 import { QueryNotT } from "../generated/flatbuffers/search-kernel/v2/query-not.js";
 import { QueryOrT } from "../generated/flatbuffers/search-kernel/v2/query-or.js";
 import { QueryPhraseT } from "../generated/flatbuffers/search-kernel/v2/query-phrase.js";
+import { QueryNearT } from "../generated/flatbuffers/search-kernel/v2/query-near.js";
+import { QueryONearT } from "../generated/flatbuffers/search-kernel/v2/query-o-near.js";
 import { QueryComparisonT } from "../generated/flatbuffers/search-kernel/v2/query-comparison.js";
 import { ComparisonOp } from "../generated/flatbuffers/search-kernel/v2/comparison-op.js";
 import { QueryRangeT } from "../generated/flatbuffers/search-kernel/v2/query-range.js";
@@ -28,7 +30,6 @@ import { QuerySourceKind } from "../generated/flatbuffers/search-kernel/v2/query
 import { QuerySourceT } from "../generated/flatbuffers/search-kernel/v2/query-source.js";
 import { TermQueryT } from "../generated/flatbuffers/search-kernel/v2/term-query.js";
 import { TypedQueryT } from "../generated/flatbuffers/search-kernel/v2/typed-query.js";
-import type { ValueT } from "../generated/flatbuffers/search-kernel/v2/value.js";
 import { value } from "../client/values.js";
 export type TypedQuery = QuerySourceT;
 function typed(expression: QueryExprT): QuerySourceT { return new QuerySourceT(QuerySourceKind.TypedQuery, new TypedQueryT(expression)); }
@@ -37,14 +38,16 @@ function term(item: string): QueryExprT { return new QueryExprT(QueryExprKind.Te
 function weightedItems(items: Record<string, number>): WeightedQueryItemT[] {
   return Object.entries(items).sort(([left], [right]) => left.localeCompare(right)).map(([key, weight]) => {
     if (!Number.isSafeInteger(weight)) throw new RangeError("weighted query weights must be safe integers");
-    return new WeightedQueryItemT(value(key), BigInt(weight));
+    return new WeightedQueryItemT(value(key), weight);
   });
 }
 export const q = {
   contains(field: string, text: string): TypedQuery { return typed(new QueryExprT(QueryExprKind.QueryContains, new QueryContainsT(new QueryFieldRefT(field), term(text)))); },
   phrase(field: string, ...terms: string[]): TypedQuery { if (!terms.length) throw new TypeError("q.phrase requires at least one term"); return typed(new QueryExprT(QueryExprKind.QueryContains, new QueryContainsT(new QueryFieldRefT(field), new QueryExprT(QueryExprKind.QueryPhrase, new QueryPhraseT(terms.map(term)))))); },
-  range(field: string, lower: number | ValueT, upper: number | ValueT): TypedQuery {
-    const bound = (input: number | ValueT) => new RangeBoundT(RangeBoundKind.FiniteRangeBound, new FiniteRangeBoundT(value(input)));
+  near(field: string, ...terms: string[]): TypedQuery { if (!terms.length) throw new TypeError("q.near requires at least one term"); return typed(new QueryExprT(QueryExprKind.QueryContains, new QueryContainsT(new QueryFieldRefT(field), new QueryExprT(QueryExprKind.QueryNear, new QueryNearT(terms.map(term)))))); },
+  orderedNear(field: string, ...terms: string[]): TypedQuery { if (!terms.length) throw new TypeError("q.orderedNear requires at least one term"); return typed(new QueryExprT(QueryExprKind.QueryContains, new QueryContainsT(new QueryFieldRefT(field), new QueryExprT(QueryExprKind.QueryONear, new QueryONearT(terms.map(term)))))); },
+  range(field: string, lower: number, upper: number): TypedQuery {
+    const bound = (input: number) => new RangeBoundT(RangeBoundKind.FiniteRangeBound, new FiniteRangeBoundT(value(input)));
     return typed(new QueryExprT(QueryExprKind.QueryRange, new QueryRangeT(new QueryFieldRefT(field), bound(lower), bound(upper), new OptionalBoolT(true), new OptionalBoolT(true))));
   },
   inValues(field: string, values: Array<string | number | boolean>): TypedQuery { if (!values.length) throw new TypeError("q.inValues requires at least one value"); return typed(new QueryExprT(QueryExprKind.QueryIn, new QueryInT(new QueryFieldRefT(field), values.map(value)))); },

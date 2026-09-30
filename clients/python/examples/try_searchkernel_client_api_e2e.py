@@ -221,6 +221,8 @@ def shared_typed_query(spec):
     clauses = lambda: [shared_typed_query(clause) for clause in spec.get("clauses", [])]
     if kind == "contains": return q.contains(field, spec["value"])
     if kind == "phrase": return q.contains(field, q.phrase(*spec["terms"]))
+    if kind == "near": return q.contains(field, q.near(*spec["terms"]))
+    if kind == "ordered_near": return q.contains(field, q.onear(*spec["terms"]))
     if kind == "range": return q.range(field, spec["lower"], spec["upper"])
     if kind == "and": return q.all_of(*clauses())
     if kind == "or": return q.any_of(*clauses())
@@ -270,14 +272,24 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         .order_by(desc(agg.count()), asc(g.field("brand")))
         .output(agg.count().as_("products"), agg.avg("price").as_("avg_price"))
     ).execute()
+    nearest_intent = E2E_CORPUS["scenario_inputs"]["nearest_neighbor"]
+    nearest_spec = nearest_intent["query"]
     nearest = (
-        index.query(q.nearest_neighbor("embedding", "query_embedding"))
-        .ranking("semantic").input("query_embedding", embedding(*SHOE_1_VECTOR))
-        .limit(3).execute()
+        index.query(q.nearest_neighbor(nearest_spec["field"], nearest_spec["query_input"]))
+        .ranking(nearest_intent["ranking_profile"])
+        .input(nearest_spec["query_input"], embedding(*corpus_vector(nearest_intent["query_input_document"])))
+        .limit(nearest_intent["limit"]).execute()
     )
+    hybrid_intent = E2E_CORPUS["scenario_inputs"]["hybrid_text_vector"]
+    hybrid_text, hybrid_vector = hybrid_intent["query"]["clauses"]
     hybrid = (
-        index.query(q.any_of(q.contains("title", "shoes"), q.nearest_neighbor("embedding", "query_embedding")))
-        .ranking("hybrid").input("query_embedding", embedding(*BAG_1_VECTOR)).limit(20).execute()
+        index.query(q.any_of(
+            q.contains(hybrid_text["field"], hybrid_text["value"]),
+            q.nearest_neighbor(hybrid_vector["field"], hybrid_vector["query_input"]),
+        ))
+        .ranking(hybrid_intent["ranking_profile"])
+        .input(hybrid_vector["query_input"], embedding(*corpus_vector(hybrid_intent["query_input_document"])))
+        .limit(hybrid_intent["limit"]).execute()
     )
     reranked = index.search("candidate").ranking("two_phase").limit(4).execute()
     try:
@@ -386,8 +398,8 @@ def capture_real_engine_parity(index) -> dict[str, object]:
         "rank_inputs": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_input.hits],
         "rank_properties": [{"id": hit.id, "score": hit.score, "feature": hit.features.get("query(boost)")} for hit in rank_property.hits],
         "tensor_readback": document["embedding"]["$searchkernel_tensor"]["dense"],
-        "nearest_neighbor": {"ids": [hit.id for hit in nearest.hits], "scores": [hit.relevance for hit in nearest.hits]},
-        "hybrid_text_vector": {"ids": [hit.id for hit in hybrid.hits], "top_score": hybrid.hits[0].score},
+        "nearest_neighbor": {"observation": {"intent": nearest_intent, "ids": [hit.id for hit in nearest.hits], "scores": [hit.relevance for hit in nearest.hits]}, "capabilities": {}},
+        "hybrid_text_vector": {"observation": {"intent": hybrid_intent, "ids": [hit.id for hit in hybrid.hits], "top_score": hybrid.hits[0].score}, "capabilities": {}},
         "hybrid": {"top_id": hybrid.hits[0].id, "has_bag": any(hit.id == "bag-1" for hit in hybrid.hits)},
         "two_phase_reranking": {"ids": [hit.id for hit in reranked.hits]},
         "coverage_degradation": {"ids": [hit.id for hit in degraded.hits], "full": degraded.coverage.full, "degraded": degraded.coverage.degraded is not None},

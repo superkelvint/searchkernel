@@ -59,6 +59,8 @@ def shared_typed_query(spec)
   case spec.fetch("kind")
   when "contains" then SearchKernel::Query.contains(field, spec.fetch("value"))
   when "phrase" then SearchKernel::Query.contains(field, SearchKernel::Query.phrase(*spec.fetch("terms")))
+  when "near" then SearchKernel::Query.contains(field, SearchKernel::Query.near(*spec.fetch("terms")))
+  when "ordered_near" then SearchKernel::Query.contains(field, SearchKernel::Query.onear(*spec.fetch("terms")))
   when "range" then SearchKernel::Query.range(field, gte: spec.fetch("lower"), lte: spec.fetch("upper"))
   when "and" then SearchKernel::Query.all_of(*children.call)
   when "or" then SearchKernel::Query.any_of(*children.call)
@@ -105,12 +107,20 @@ def capture_real_engine_parity(index)
       .order_by(SearchKernel::Grouping.desc(SearchKernel::Agg.count), SearchKernel::Grouping.asc(SearchKernel::Grouping.field("brand")))
       .output(SearchKernel::Agg.count.as("products"), SearchKernel::Agg.avg("price").as("avg_price"))
   ).execute
-  nearest = index.query(SearchKernel::Query.nearest_neighbor("embedding", "query_embedding"))
-    .ranking("semantic").input("query_embedding", embedding(*SHOE_1_VECTOR)).limit(3).execute
+  nearest_intent = E2E_CORPUS.fetch("scenario_inputs").fetch("nearest_neighbor")
+  nearest_spec = nearest_intent.fetch("query")
+  nearest = index.query(SearchKernel::Query.nearest_neighbor(nearest_spec.fetch("field"), nearest_spec.fetch("query_input")))
+    .ranking(nearest_intent.fetch("ranking_profile"))
+    .input(nearest_spec.fetch("query_input"), embedding(*corpus_vector(nearest_intent.fetch("query_input_document"))))
+    .limit(nearest_intent.fetch("limit")).execute
+  hybrid_intent = E2E_CORPUS.fetch("scenario_inputs").fetch("hybrid_text_vector")
+  hybrid_text, hybrid_vector = hybrid_intent.fetch("query").fetch("clauses")
   hybrid = index.query(SearchKernel::Query.any_of(
-    SearchKernel::Query.contains("title", "shoes"),
-    SearchKernel::Query.nearest_neighbor("embedding", "query_embedding")
-  )).ranking("hybrid").input("query_embedding", embedding(*BAG_1_VECTOR)).limit(20).execute
+    SearchKernel::Query.contains(hybrid_text.fetch("field"), hybrid_text.fetch("value")),
+    SearchKernel::Query.nearest_neighbor(hybrid_vector.fetch("field"), hybrid_vector.fetch("query_input"))
+  )).ranking(hybrid_intent.fetch("ranking_profile"))
+    .input(hybrid_vector.fetch("query_input"), embedding(*corpus_vector(hybrid_intent.fetch("query_input_document"))))
+    .limit(hybrid_intent.fetch("limit")).execute
   reranked = index.search("candidate").ranking("two_phase").limit(4).execute
   begin
     index.search("shoes").filter("prcie = 1").execute
@@ -231,8 +241,8 @@ def capture_real_engine_parity(index)
     "rank_inputs" => rank_input.hits.map { |hit| {"id" => hit.id, "score" => hit.score, "feature" => hit.features["query(boost)"]} },
     "rank_properties" => rank_property.hits.map { |hit| {"id" => hit.id, "score" => hit.score, "feature" => hit.features["query(boost)"]} },
     "tensor_readback" => document.fetch("embedding").fetch("$searchkernel_tensor").fetch("dense"),
-    "nearest_neighbor" => {"ids" => ids(nearest), "scores" => nearest.hits.map(&:relevance)},
-    "hybrid_text_vector" => {"ids" => ids(hybrid), "top_score" => hybrid.hits.first.score},
+    "nearest_neighbor" => {"observation" => {"intent" => nearest_intent, "ids" => ids(nearest), "scores" => nearest.hits.map(&:relevance)}, "capabilities" => {}},
+    "hybrid_text_vector" => {"observation" => {"intent" => hybrid_intent, "ids" => ids(hybrid), "top_score" => hybrid.hits.first.score}, "capabilities" => {}},
     "hybrid" => {"top_id" => hybrid.hits.first.id, "has_bag" => ids(hybrid).include?("bag-1")},
     "two_phase_reranking" => {"ids" => ids(reranked)},
     "coverage_degradation" => {"ids" => ids(degraded), "full" => degraded.coverage.full, "degraded" => !degraded.coverage.degraded.nil?},

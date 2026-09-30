@@ -362,8 +362,9 @@ mod tests {
             .into_ir()
             .expect("alias grouping should lower");
 
-        let [GroupingOperationIr::Group(GroupingExpressionIr::Attribute(field)),
-        GroupingOperationIr::Each(each)] = request.root.operations.as_slice() else {
+        let [GroupingOperationIr::Group(GroupingExpressionIr::Attribute(field)), GroupingOperationIr::Each(each)] =
+            request.root.operations.as_slice()
+        else {
             panic!("grouping level should lower to group and each operations");
         };
         assert_eq!(field, "brand");
