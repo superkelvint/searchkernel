@@ -59,6 +59,72 @@ describe("managed-local native runtime contract", () => {
   });
 });
 
+describe("managed data-root bootstrap", () => {
+  it("publishes one owned root for concurrent sibling first use", async () => {
+    const { mkdtemp, readFile, lstat } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const parent = await mkdtemp(join(tmpdir(), "searchkernel-bootstrap-test-"));
+    try {
+      const { prepareManagedDataRoot } = await import("../src/node/index.js");
+      const root = join(parent, ".searchkernel-managed");
+      await Promise.all([
+        prepareManagedDataRoot(root),
+        prepareManagedDataRoot(root),
+      ]);
+      expect((await lstat(root)).isDirectory()).toBe(true);
+      expect(await readFile(join(root, ".searchkernel-data-root"), "utf8"))
+        .toBe("searchkernel-managed-v1\n");
+    } finally {
+      const { rm } = await import("node:fs/promises");
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects pre-existing unowned and symlink roots", async () => {
+    const { mkdtemp, mkdir, symlink, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const parent = await mkdtemp(join(tmpdir(), "searchkernel-bootstrap-boundary-"));
+    try {
+      const { prepareManagedDataRoot } = await import("../src/node/index.js");
+      const root = join(parent, ".searchkernel-managed");
+      await mkdir(root);
+      await expect(prepareManagedDataRoot(root)).rejects.toThrow(/not owned/);
+      await rm(root, { recursive: true });
+      const outside = join(parent, "outside");
+      await mkdir(outside);
+      await symlink(outside, root, "dir");
+      await expect(prepareManagedDataRoot(root)).rejects.toThrow(/not owned/);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a symlink legacy source before invoking searchkerneld", async () => {
+    const { mkdtemp, mkdir, writeFile, symlink, rm, readFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const parent = await mkdtemp(join(tmpdir(), "searchkernel-migration-boundary-"));
+    try {
+      const root = join(parent, ".searchkernel-managed");
+      await mkdir(root);
+      await writeFile(join(root, ".searchkernel-data-root"), "searchkernel-managed-v1\n");
+      const outside = join(parent, "outside");
+      await mkdir(outside);
+      await writeFile(join(outside, "keep"), "untouched");
+      const source = join(parent, "legacy");
+      await symlink(outside, source, "dir");
+      const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");
+      await expect(ManagedLocalHost.migrateLegacy(source, root, "local-test"))
+        .rejects.toThrow(/not a real directory/);
+      expect(await readFile(join(outside, "keep"), "utf8")).toBe("untouched");
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("managed-local host binary resolution", () => {
   it("includes captured daemon output in startup errors", async () => {
     const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");

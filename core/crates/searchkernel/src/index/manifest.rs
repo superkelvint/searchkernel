@@ -113,14 +113,22 @@ impl IndexManifest {
     }
 
     pub(crate) fn read(root: &std::path::Path) -> Result<Self> {
+        let manifest_directory = root.join("manifest");
+        let directory_metadata =
+            std::fs::symlink_metadata(&manifest_directory).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    Error::corrupt_index(manifest_directory.display().to_string())
+                } else {
+                    Error::Infrastructure(error.to_string())
+                }
+            })?;
+        if directory_metadata.file_type().is_symlink() || !directory_metadata.is_dir() {
+            return Err(Error::corrupt_index(
+                "index manifest path must be a real directory",
+            ));
+        }
         let path = root.join("manifest/index.json");
-        let bytes = std::fs::read(&path).map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                Error::corrupt_index(path.display().to_string())
-            } else {
-                Error::Infrastructure(error.to_string())
-            }
-        })?;
+        let bytes = read_regular_file(&path)?;
         let value: serde_json::Value = serde_json::from_slice(&bytes)
             .map_err(|error| Error::corrupt_index(error.to_string()))?;
         let version = value
@@ -135,13 +143,7 @@ impl IndexManifest {
         ) {
             let read_definition = |name: &str| {
                 let path = root.join("manifest").join(name);
-                std::fs::read(&path).map_err(|error| {
-                    if error.kind() == std::io::ErrorKind::NotFound {
-                        Error::corrupt_index(path.display().to_string())
-                    } else {
-                        Error::Infrastructure(error.to_string())
-                    }
-                })
+                read_regular_file(&path)
             };
             (
                 read_definition("index-definition.bfbs")?,
@@ -486,6 +488,23 @@ impl IndexManifest {
         }
         Ok(resolved)
     }
+}
+
+fn read_regular_file(path: &std::path::Path) -> Result<Vec<u8>> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            Error::corrupt_index(path.display().to_string())
+        } else {
+            Error::Infrastructure(error.to_string())
+        }
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(Error::corrupt_index(format!(
+            "index manifest entry must be a regular file: {}",
+            path.display()
+        )));
+    }
+    std::fs::read(path).map_err(|error| Error::Infrastructure(error.to_string()))
 }
 
 #[cfg(feature = "native")]

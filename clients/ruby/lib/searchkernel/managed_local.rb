@@ -81,26 +81,45 @@ module SearchKernel
       end
 
       def prepare_data_root(data_root)
-        FileUtils.mkdir_p(File.dirname(data_root))
+        parent = File.dirname(data_root)
+        FileUtils.mkdir_p(parent)
         marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
-        if File.exist?(data_root) || File.symlink?(data_root)
-          unless !File.symlink?(data_root) && File.directory?(data_root) && File.file?(marker)
-            raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
-          end
+        root_stat = lstat_optional(data_root)
+        if root_stat
+          validate_data_root(data_root, marker, root_stat)
           return
         end
 
-        created = false
+        staging = Dir.mktmpdir(".searchkernel-managed-bootstrap-", parent)
         begin
-          Dir.mkdir(data_root)
-          created = true
-          File.write(marker, "searchkernel-managed-v1\n", mode: "wx")
-        rescue StandardError
-          if created && File.directory?(data_root)
-            File.delete(marker) if File.file?(marker)
-            Dir.rmdir(data_root) if Dir.empty?(data_root)
+          File.write(File.join(staging, MANAGED_ROOT_MARKER_NAME), "searchkernel-managed-v1\n", mode: "wx")
+          begin
+            File.rename(staging, data_root)
+          rescue SystemCallError
+            winner = lstat_optional(data_root)
+            raise unless winner
+
+            validate_data_root(data_root, marker, winner)
           end
-          raise
+        ensure
+          FileUtils.remove_entry(staging) if File.exist?(staging)
+        end
+      end
+
+      def lstat_optional(path)
+        File.lstat(path)
+      rescue Errno::ENOENT
+        nil
+      end
+
+      def validate_data_root(data_root, marker, root_stat)
+        unless root_stat.directory? && !root_stat.symlink?
+          raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
+        end
+        marker_stat = lstat_optional(marker)
+        unless marker_stat&.file? && !marker_stat.symlink? &&
+               File.read(marker) == "searchkernel-managed-v1\n"
+          raise ClientError, "managed-local data root is not owned by Search Kernel: #{data_root}"
         end
       end
 
@@ -144,9 +163,29 @@ module SearchKernel
 
       def migrate_legacy(index_path, data_root, target)
         destination = File.join(data_root, target)
-        return if File.directory?(destination)
-        return if File.file?(marker_path(index_path))
-        return unless File.exist?(index_path)
+        require_real_directory(data_root, "managed data root")
+        root_marker = File.join(data_root, MANAGED_ROOT_MARKER_NAME)
+        require_regular_file(root_marker, "managed data-root ownership marker")
+        unless File.read(root_marker) == "searchkernel-managed-v1\n"
+          raise ClientError, "managed data-root ownership marker is invalid: #{data_root}"
+        end
+        destination_stat = lstat_optional(destination)
+        if destination_stat
+          require_index_directory(destination)
+          return
+        end
+        source_stat = lstat_optional(index_path)
+        if source_stat && (!source_stat.directory? || source_stat.symlink?)
+          raise ClientError, "managed-local legacy index path is not a real directory: #{index_path}"
+        end
+        marker_stat = source_stat && lstat_optional(marker_path(index_path))
+        if marker_stat
+          unless marker_stat.file? && !marker_stat.symlink?
+            raise ClientError, "managed-local index marker is not a regular file: #{marker_path(index_path)}"
+          end
+          return
+        end
+        return unless source_stat
 
         env = {}
         sdk_lib = ENV["SEARCHKERNEL_SDK_LIB"]
@@ -167,6 +206,34 @@ module SearchKernel
           raise ClientError, "managed-local legacy index migration failed for #{index_path}#{suffix}"
         end
         ensure_marker(index_path, target)
+      end
+
+      def lstat_optional(path)
+        File.lstat(path)
+      rescue Errno::ENOENT
+        nil
+      end
+
+      def require_real_directory(path, label)
+        stat = lstat_optional(path)
+        unless stat&.directory? && !stat.symlink?
+          raise ClientError, "#{label} must be a real directory: #{path}"
+        end
+      end
+
+      def require_regular_file(path, label)
+        stat = lstat_optional(path)
+        unless stat&.file? && !stat.symlink?
+          raise ClientError, "#{label} must be a regular file: #{path}"
+        end
+      end
+
+      def require_index_directory(path)
+        require_real_directory(path, "managed index target")
+        %w[data config manifest].each do |component|
+          require_real_directory(File.join(path, component), "managed index component")
+        end
+        require_regular_file(File.join(path, "manifest", "index.json"), "managed index manifest")
       end
 
       def host_binary

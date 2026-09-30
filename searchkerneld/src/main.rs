@@ -354,7 +354,7 @@ mod native_main {
                 target,
             } => {
                 std::fs::create_dir_all(&data_root)?;
-                Index::migrate_storage(&source_path, data_root.join(&target))?;
+                Index::migrate_storage(&source_path, &data_root, &target)?;
             }
             Mode::LegacySingle {
                 index_path,

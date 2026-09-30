@@ -1304,6 +1304,114 @@ fn legacy_manifest_with_old_abi_is_still_readable() {
     );
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[cfg(all(feature = "native", feature = "internal-api"))]
+#[test]
+fn legacy_migration_rejects_symlinks_and_preserves_their_targets() {
+    use std::os::unix::fs::symlink;
+
+    let temp = temporary_path("migration-symlink");
+    std::fs::create_dir_all(&temp).unwrap();
+    let managed_root = temp.join(".searchkernel-managed");
+    std::fs::create_dir(&managed_root).unwrap();
+    std::fs::write(
+        managed_root.join(".searchkernel-data-root"),
+        b"searchkernel-managed-v1\n",
+    )
+    .unwrap();
+    let outside = temp.join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("keep"), b"unchanged").unwrap();
+
+    let source_link = temp.join("legacy-link");
+    symlink(&outside, &source_link).unwrap();
+    let source_link_error = Index::migrate_storage(&source_link, &managed_root, "source")
+        .expect_err("symlink legacy sources must be rejected");
+    assert_eq!(source_link_error.code(), crate::ErrorCode::InvalidArgument);
+    assert!(source_link.is_symlink());
+    assert_eq!(std::fs::read(outside.join("keep")).unwrap(), b"unchanged");
+
+    let destination_link = managed_root.join("destination");
+    symlink(&outside, &destination_link).unwrap();
+    let ordinary_source = temp.join("legacy");
+    let index = Index::create(
+        &ordinary_source,
+        IndexDefinition::new().field(Field::text("title")),
+    )
+    .unwrap();
+    index.close().unwrap();
+    let destination_error = Index::migrate_storage(&ordinary_source, &managed_root, "destination")
+        .expect_err("symlink managed destinations must be rejected");
+    assert_eq!(destination_error.code(), crate::ErrorCode::InvalidArgument);
+    assert!(ordinary_source.is_dir());
+    assert_eq!(std::fs::read(outside.join("keep")).unwrap(), b"unchanged");
+
+    let root_link = temp.join("managed-root-link");
+    symlink(&managed_root, &root_link).unwrap();
+    let root_error = Index::migrate_storage(&ordinary_source, &root_link, "other")
+        .expect_err("symlink managed roots must be rejected");
+    assert_eq!(root_error.code(), crate::ErrorCode::InvalidArgument);
+
+    let marker_root = temp.join("marker-root");
+    std::fs::create_dir(&marker_root).unwrap();
+    symlink(
+        outside.join("keep"),
+        marker_root.join(".searchkernel-data-root"),
+    )
+    .unwrap();
+    let marker_error = Index::migrate_storage(&ordinary_source, &marker_root, "other")
+        .expect_err("symlink ownership markers must be rejected");
+    assert_eq!(marker_error.code(), crate::ErrorCode::InvalidArgument);
+    assert!(ordinary_source.is_dir());
+    assert_eq!(std::fs::read(outside.join("keep")).unwrap(), b"unchanged");
+
+    let _ = std::fs::remove_dir_all(temp);
+}
+
+#[cfg(all(feature = "native", feature = "internal-api"))]
+#[test]
+fn legacy_migration_moves_a_real_index_and_concurrent_callers_converge() {
+    let temp = temporary_path("migration-concurrent");
+    std::fs::create_dir_all(&temp).unwrap();
+    let managed_root = temp.join(".searchkernel-managed");
+    std::fs::create_dir(&managed_root).unwrap();
+    std::fs::write(
+        managed_root.join(".searchkernel-data-root"),
+        b"searchkernel-managed-v1\n",
+    )
+    .unwrap();
+    let source = temp.join("legacy");
+    let destination = managed_root.join("local-test");
+    let index = Index::create(&source, IndexDefinition::new().field(Field::text("title"))).unwrap();
+    index.close().unwrap();
+
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let mut workers = Vec::new();
+    for _ in 0..2 {
+        let source = source.clone();
+        let managed_root = managed_root.clone();
+        let barrier = barrier.clone();
+        workers.push(std::thread::spawn(move || {
+            barrier.wait();
+            Index::migrate_storage(source, managed_root, "local-test")
+        }));
+    }
+    barrier.wait();
+    for worker in workers {
+        worker
+            .join()
+            .unwrap()
+            .expect("equivalent migrations converge");
+    }
+    assert!(!source.exists(), "the physical source is moved once");
+    assert!(destination.join("manifest/index.json").is_file());
+    let first = Index::open(&destination).unwrap();
+    let second = Index::open(&destination).unwrap();
+    first.close().unwrap();
+    second.close().unwrap();
+
+    let _ = std::fs::remove_dir_all(temp);
+}
 #[cfg(feature = "native")]
 #[cfg(feature = "native")]
 #[test]

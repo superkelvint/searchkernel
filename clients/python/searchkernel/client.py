@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+import shutil
 import signal
 import socket
+import stat
 import subprocess
 import tempfile
 import threading
@@ -353,21 +355,38 @@ def _managed_marker(path: Path) -> Path:
 def _prepare_managed_data_root(data_root: Path) -> None:
     data_root.parent.mkdir(parents=True, exist_ok=True)
     marker = data_root / _MANAGED_ROOT_MARKER_NAME
-    if data_root.exists() or data_root.is_symlink():
-        if data_root.is_symlink() or not data_root.is_dir() or not marker.is_file():
-            raise ClientError(
-                f"managed-local data root is not owned by Search Kernel: {data_root}"
-            )
+    root_stat = _lstat_optional(data_root)
+    if root_stat is not None:
+        _validate_managed_data_root(data_root, marker, root_stat)
         return
-    data_root.mkdir(parents=False)
+
+    staging = Path(tempfile.mkdtemp(prefix=".searchkernel-managed-bootstrap-", dir=data_root.parent))
     try:
-        marker.write_text("searchkernel-managed-v1\n", encoding="utf-8")
-    except Exception:
+        (staging / _MANAGED_ROOT_MARKER_NAME).write_text(
+            "searchkernel-managed-v1\n", encoding="utf-8"
+        )
         try:
-            data_root.rmdir()
+            os.rename(staging, data_root)
         except OSError:
-            pass
-        raise
+            # Another publisher may have atomically placed its complete root.
+            winner = _lstat_optional(data_root)
+            if winner is None:
+                raise
+            _validate_managed_data_root(data_root, marker, winner)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def _validate_managed_data_root(data_root: Path, marker: Path, root_stat: os.stat_result) -> None:
+    if not stat.S_ISDIR(root_stat.st_mode):
+        raise ClientError(f"managed-local data root is not owned by Search Kernel: {data_root}")
+    marker_stat = _lstat_optional(marker)
+    if (
+        marker_stat is None
+        or not stat.S_ISREG(marker_stat.st_mode)
+        or marker.read_text(encoding="utf-8") != "searchkernel-managed-v1\n"
+    ):
+        raise ClientError(f"managed-local data root is not owned by Search Kernel: {data_root}")
 
 
 def _write_managed_marker(path: Path, target: str) -> None:
@@ -414,7 +433,23 @@ def _managed_host_environment() -> dict[str, str]:
 
 def _migrate_legacy_managed_path(path: Path, data_root: Path, target: str) -> None:
     destination = data_root / target
-    if destination.is_dir() or _managed_marker(path).is_file() or not path.exists():
+    _require_real_directory(data_root, "managed data root")
+    _require_regular_file(data_root / _MANAGED_ROOT_MARKER_NAME, "managed data-root ownership marker")
+    if (data_root / _MANAGED_ROOT_MARKER_NAME).read_text(encoding="utf-8") != "searchkernel-managed-v1\n":
+        raise ClientError(f"managed data-root ownership marker is invalid: {data_root}")
+    destination_stat = _lstat_optional(destination)
+    if destination_stat is not None:
+        _require_index_directory(destination)
+        return
+    source_stat = _lstat_optional(path)
+    if source_stat is not None and (stat.S_ISLNK(source_stat.st_mode) or not stat.S_ISDIR(source_stat.st_mode)):
+        raise ClientError(f"managed-local legacy index path is not a real directory: {path}")
+    marker = _lstat_optional(_managed_marker(path)) if source_stat is not None else None
+    if marker is not None:
+        if stat.S_ISLNK(marker.st_mode) or not stat.S_ISREG(marker.st_mode):
+            raise ClientError(f"managed-local index marker is not a regular file: {_managed_marker(path)}")
+        return
+    if source_stat is None:
         return
 
     binary = _host_binary()
@@ -445,6 +480,32 @@ def _migrate_legacy_managed_path(path: Path, data_root: Path, target: str) -> No
             f"managed-local legacy index migration failed for {path}{suffix}"
         )
     _write_managed_marker(path, target)
+
+
+def _lstat_optional(path: Path) -> os.stat_result | None:
+    try:
+        return path.lstat()
+    except FileNotFoundError:
+        return None
+
+
+def _require_real_directory(path: Path, label: str) -> None:
+    metadata = _lstat_optional(path)
+    if metadata is None or stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise ClientError(f"{label} must be a real directory: {path}")
+
+
+def _require_regular_file(path: Path, label: str) -> None:
+    metadata = _lstat_optional(path)
+    if metadata is None or stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise ClientError(f"{label} must be a regular file: {path}")
+
+
+def _require_index_directory(path: Path) -> None:
+    _require_real_directory(path, "managed index target")
+    for child in ("data", "config", "manifest"):
+        _require_real_directory(path / child, "managed index component")
+    _require_regular_file(path / "manifest" / "index.json", "managed index manifest")
 
 
 def _host_binary() -> Path:
@@ -606,7 +667,7 @@ class _ManagedLocalHost:
 
     @classmethod
     def acquire(cls, data_root: Path) -> "_ManagedLocalHost":
-        key = str(data_root.expanduser().resolve(strict=False))
+        key = os.path.abspath(os.path.expanduser(os.fspath(data_root)))
         with _MANAGED_HOST_POOL_LOCK:
             existing = _MANAGED_HOST_POOL.get(key)
             if (

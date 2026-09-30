@@ -8,8 +8,10 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -353,15 +355,28 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         legacy.close()
         self._stop_server()
 
-        reopened = Index.open(self.index_path)
+        barrier = threading.Barrier(2)
+
+        def open_legacy():
+            barrier.wait()
+            return Index.open(self.index_path)
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            opened = list(workers.map(lambda _: open_legacy(), range(2)))
+        reopened, sibling = opened
         try:
             self.assertEqual(reopened.get("legacy-doc")["title"], "legacy layout")
+            self.assertEqual(sibling.get("legacy-doc")["title"], "legacy layout")
+            self.assertEqual(reopened._owner, sibling._owner)
             self.assertEqual(reopened._owner.path, root / ".searchkernel-managed")
             self.assertTrue((self.index_path / ".searchkernel-managed-target").is_file())
+            managed_targets = list((root / ".searchkernel-managed").glob("local-*"))
+            self.assertEqual(len(managed_targets), 1, "both openers converge on one physical migration target")
             self.assertEqual((unrelated / "keep.txt").read_text(encoding="utf-8"), "untouched")
             self.assertFalse((root / ".searchkernel-managed" / "projects").exists())
         finally:
             reopened.close()
+            sibling.close()
 
     def test_shared_daemon_lifecycle_isolates_indexes_and_handle_close(self):
         endpoint = self._start_server(definition=False)

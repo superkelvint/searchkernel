@@ -1,7 +1,7 @@
 import { Index as RemoteIndex, Client, SearchKernelError } from "../client/index.js";
 import type { ClientTransport } from "../client/index.js";
-import { existsSync, lstatSync } from "node:fs";
-import { mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
@@ -56,29 +56,52 @@ function localLocation(path: string): { indexPath: string; dataRoot: string; tar
   };
 }
 
-async function prepareManagedDataRoot(dataRoot: string): Promise<void> {
-  await mkdir(dirname(dataRoot), { recursive: true });
+export async function prepareManagedDataRoot(dataRoot: string): Promise<void> {
+  const parent = dirname(dataRoot);
+  await mkdir(parent, { recursive: true });
   const marker = join(dataRoot, MANAGED_ROOT_MARKER_NAME);
-  if (existsSync(dataRoot)) {
-    if (lstatSync(dataRoot).isSymbolicLink() || !existsSync(marker)) {
-      throw new SearchKernelError(
-        `managed-local data root is not owned by Search Kernel: ${dataRoot}`,
-      );
-    }
+  const rootStat = await lstatOptional(dataRoot);
+  if (rootStat !== undefined) {
+    await validateManagedDataRoot(dataRoot, marker, rootStat);
     return;
   }
 
-  let created = false;
+  const staging = await mkdtemp(join(parent, ".searchkernel-managed-bootstrap-"));
   try {
-    await mkdir(dataRoot);
-    created = true;
-    await writeFile(marker, "searchkernel-managed-v1\n", { flag: "wx" });
-  } catch (error) {
-    if (created) {
-      await unlink(marker).catch(() => undefined);
-      await rmdir(dataRoot).catch(() => undefined);
+    await writeFile(join(staging, MANAGED_ROOT_MARKER_NAME), "searchkernel-managed-v1\n", { flag: "wx" });
+    try {
+      await rename(staging, dataRoot);
+    } catch (error) {
+      const winner = await lstatOptional(dataRoot);
+      if (winner === undefined) throw error;
+      await validateManagedDataRoot(dataRoot, marker, winner);
     }
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+}
+
+async function lstatOptional(path: string) {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
+  }
+}
+
+async function validateManagedDataRoot(
+  dataRoot: string,
+  marker: string,
+  rootStat: Awaited<ReturnType<typeof lstat>>,
+): Promise<void> {
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new SearchKernelError(`managed-local data root is not owned by Search Kernel: ${dataRoot}`);
+  }
+  const markerStat = await lstatOptional(marker);
+  if (markerStat === undefined || !markerStat.isFile() || markerStat.isSymbolicLink()
+    || await readFile(marker, "utf8") !== "searchkernel-managed-v1\n") {
+    throw new SearchKernelError(`managed-local data root is not owned by Search Kernel: ${dataRoot}`);
   }
 }
 

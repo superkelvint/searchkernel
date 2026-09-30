@@ -338,14 +338,25 @@ impl Index {
                 Err(error) => return Err(error),
             }
         };
-        if !root.is_dir() {
-            return Err(Error::not_found(root.display().to_string()));
+        let root_metadata = match std::fs::symlink_metadata(root) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(Error::not_found(root.display().to_string()));
+            }
+            Err(error) => return Err(Error::Infrastructure(error.to_string())),
+        };
+        if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
+            return Err(Error::corrupt_index("index root must be a real directory"));
         }
         let manifest = super::manifest::IndexManifest::read(root)?;
         let config = root.join("config");
-        if !root.join("data").is_dir() || !config.is_dir() {
+        let data_metadata = std::fs::symlink_metadata(root.join("data"));
+        let config_metadata = std::fs::symlink_metadata(&config);
+        if !matches!(data_metadata, Ok(ref metadata) if metadata.is_dir() && !metadata.file_type().is_symlink())
+            || !matches!(config_metadata, Ok(ref metadata) if metadata.is_dir() && !metadata.file_type().is_symlink())
+        {
             return Err(Error::corrupt_index(
-                "index data/config directories are missing",
+                "index data/config directories are missing or unsafe",
             ));
         }
         let resolved_context = manifest.resolved_context_with_config(&config)?;
@@ -358,80 +369,113 @@ impl Index {
         )
     }
 
-    /// Move one validated path-owned index into a daemon-owned storage path.
+    /// Move one legacy path-owned index into a daemon-owned storage path.
     ///
-    /// This is local control-plane plumbing for the managed-local transition
-    /// from legacy `--index PATH` ownership to canonical logical targets.
-    /// Both lifecycle locks are held across validation and rename.
+    /// This is intentionally local control-plane plumbing used by managed-local
+    /// clients during the one-time transition from `--index PATH` to canonical
+    /// logical targets. Both source and destination lifecycle locks are held
+    /// across validation and rename so an active legacy process cannot be moved
+    /// out from underneath itself.
     #[doc(hidden)]
     #[cfg(feature = "internal-api")]
     pub fn migrate_storage(
         source: impl AsRef<std::path::Path>,
-        destination: impl AsRef<std::path::Path>,
+        managed_data_root: impl AsRef<std::path::Path>,
+        target: &str,
     ) -> Result<()> {
         let source = source.as_ref();
-        let destination = destination.as_ref();
+        let destination_parent = managed_data_root.as_ref();
+        let target_path = std::path::Path::new(target);
+        if target.is_empty()
+            || target_path.components().count() != 1
+            || !matches!(
+                target_path.components().next(),
+                Some(std::path::Component::Normal(_))
+            )
+        {
+            return Err(Error::search(
+                crate::error::ErrorCode::InvalidArgument,
+                "managed index target must be one path component",
+            ));
+        }
+        let destination = destination_parent.join(target_path);
 
-        if destination.is_dir() {
+        // The daemon is allowed to migrate only into an explicitly marked,
+        // real Search Kernel root. Check with lstat semantics before creating
+        // or traversing any managed path.
+        Self::require_real_directory(destination_parent, "managed data root")?;
+        Self::require_regular_file(
+            &destination_parent.join(".searchkernel-data-root"),
+            "managed data-root ownership marker",
+        )?;
+        let marker_contents = std::fs::read(destination_parent.join(".searchkernel-data-root"))
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        if marker_contents != b"searchkernel-managed-v1\n" {
+            return Err(Error::search(
+                crate::error::ErrorCode::InvalidArgument,
+                "managed data-root ownership marker has an unsupported value",
+            ));
+        }
+        Self::reject_symlink(source, "legacy index source")?;
+        Self::reject_symlink(&destination, "managed index destination")?;
+
+        if Self::migration_is_complete(source, &destination)? {
             return Ok(());
         }
 
-        let _source_lock = LifecycleLock::acquire(source).map_err(|error| {
-            if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::search(
-                    crate::error::ErrorCode::Conflict,
-                    format!("legacy index storage is in use: {}", source.display()),
-                )
-                .with_detail(
-                    "index_in_use",
-                    None::<String>,
-                    "legacy index storage is owned by another active runtime",
-                )
-            } else {
-                error
+        // Transparent legacy migration may race with another opener doing the
+        // same move. Retry the lifecycle locks briefly and recognize the
+        // published destination after the winner releases its source lock.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let _source_lock = loop {
+            match LifecycleLock::acquire(source) {
+                Ok(lock) => break lock,
+                Err(error) if error.code() == crate::error::ErrorCode::AlreadyExists => {
+                    if Self::migration_is_complete(source, &destination)? {
+                        return Ok(());
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        return Err(Self::legacy_in_use(source));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => return Err(error),
             }
-        })?;
+        };
 
-        if !source.is_dir() {
-            return Err(Error::not_found(source.display().to_string()));
+        Self::reject_symlink(source, "legacy index source")?;
+        Self::reject_symlink(&destination, "managed index destination")?;
+        if Self::migration_is_complete(source, &destination)? {
+            return Ok(());
         }
+        Self::require_real_directory(source, "legacy index source")?;
+        Self::validate_index_tree(source)?;
 
-        let manifest = super::manifest::IndexManifest::read(source)?;
-        let config = source.join("config");
-        if !source.join("data").is_dir() || !config.is_dir() {
-            return Err(Error::corrupt_index(
-                "index data/config directories are missing",
-            ));
-        }
-        manifest.validate_config(&config)?;
-
-        let destination_parent = destination
-            .parent()
-            .ok_or_else(|| Error::infrastructure("managed index path has no parent directory"))?;
-        std::fs::create_dir_all(destination_parent)
-            .map_err(|error| Error::Infrastructure(error.to_string()))?;
-
-        let _destination_lock = LifecycleLock::acquire(destination).map_err(|error| {
-            if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::search(
-                    crate::error::ErrorCode::Conflict,
-                    format!("managed index storage is in use: {}", destination.display()),
-                )
-                .with_detail(
-                    "index_in_use",
-                    None::<String>,
-                    "managed index storage is owned by another active runtime",
-                )
-            } else {
-                error
+        let _destination_lock = loop {
+            match LifecycleLock::acquire(&destination) {
+                Ok(lock) => break lock,
+                Err(error) if error.code() == crate::error::ErrorCode::AlreadyExists => {
+                    if Self::migration_is_complete(source, &destination)? {
+                        return Ok(());
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        return Err(Self::managed_index_in_use(&destination));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => return Err(error),
             }
-        })?;
+        };
 
-        if destination.exists() {
+        Self::reject_symlink(&destination, "managed index destination")?;
+        if Self::migration_is_complete(source, &destination)? {
+            return Ok(());
+        }
+        if Self::path_metadata(&destination)?.is_some() {
             return Err(Error::already_exists(destination.display().to_string()));
         }
 
-        std::fs::rename(source, destination).map_err(|error| {
+        std::fs::rename(source, &destination).map_err(|error| {
             Error::Infrastructure(format!(
                 "migrate legacy index '{}' to '{}': {error}",
                 source.display(),
@@ -443,6 +487,8 @@ impl Index {
         if let Err(error) = sync_published_parent(source_parent)
             .and_then(|_| sync_published_parent(destination_parent))
         {
+            // The data is already fully present at the destination. Surface the
+            // durability uncertainty without attempting a lossy rollback.
             return Err(Error::search(
                 crate::error::ErrorCode::Unavailable,
                 format!(
@@ -458,6 +504,149 @@ impl Index {
         }
 
         Ok(())
+    }
+
+    #[cfg(feature = "internal-api")]
+    fn legacy_in_use(source: &std::path::Path) -> Error {
+        Error::search(
+            crate::error::ErrorCode::Conflict,
+            format!("legacy index storage is in use: {}", source.display()),
+        )
+        .with_detail(
+            "index_in_use",
+            None::<String>,
+            "legacy index storage is owned by another active runtime",
+        )
+    }
+
+    #[cfg(feature = "internal-api")]
+    fn managed_index_in_use(destination: &std::path::Path) -> Error {
+        Error::search(
+            crate::error::ErrorCode::Conflict,
+            format!("managed index storage is in use: {}", destination.display()),
+        )
+        .with_detail(
+            "index_in_use",
+            None::<String>,
+            "managed index storage is owned by another active runtime",
+        )
+    }
+
+    #[cfg(feature = "internal-api")]
+    fn path_metadata(path: &std::path::Path) -> Result<Option<std::fs::Metadata>> {
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) => Ok(Some(metadata)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(Error::Infrastructure(error.to_string())),
+        }
+    }
+
+    #[cfg(feature = "internal-api")]
+    fn reject_symlink(path: &std::path::Path, label: &str) -> Result<()> {
+        if Self::path_metadata(path)?.is_some_and(|metadata| metadata.file_type().is_symlink()) {
+            return Err(Error::search(
+                crate::error::ErrorCode::InvalidArgument,
+                format!("{label} must not be a symlink: {}", path.display()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "internal-api")]
+    fn require_real_directory(path: &std::path::Path, label: &str) -> Result<()> {
+        let metadata = Self::path_metadata(path)?
+            .ok_or_else(|| Error::not_found(path.display().to_string()))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(Error::search(
+                crate::error::ErrorCode::InvalidArgument,
+                format!("{label} must be a real directory: {}", path.display()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "internal-api")]
+    fn require_regular_file(path: &std::path::Path, label: &str) -> Result<()> {
+        let metadata = Self::path_metadata(path)?.ok_or_else(|| {
+            Error::search(
+                crate::error::ErrorCode::InvalidArgument,
+                format!("{label} is missing: {}", path.display()),
+            )
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(Error::search(
+                crate::error::ErrorCode::InvalidArgument,
+                format!("{label} must be a regular file: {}", path.display()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "internal-api")]
+    fn validate_index_tree(root: &std::path::Path) -> Result<()> {
+        Self::validate_real_tree(root)?;
+        for name in ["data", "config", "manifest"] {
+            Self::require_real_directory(&root.join(name), "index component")?;
+        }
+        for name in [
+            "manifest/index.json",
+            "manifest/index-definition.bfbs",
+            "manifest/portable-index-definition.bfbs",
+        ] {
+            Self::require_regular_file(&root.join(name), "index manifest file")?;
+        }
+        let manifest = super::manifest::IndexManifest::read(root)?;
+        manifest.validate_config(&root.join("config"))
+    }
+
+    #[cfg(feature = "internal-api")]
+    fn validate_real_tree(root: &std::path::Path) -> Result<()> {
+        let metadata = std::fs::symlink_metadata(root)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        if metadata.file_type().is_symlink() || (!metadata.is_dir() && !metadata.is_file()) {
+            return Err(Error::search(
+                crate::error::ErrorCode::InvalidArgument,
+                format!(
+                    "index tree contains an unsafe filesystem entry: {}",
+                    root.display()
+                ),
+            ));
+        }
+        if metadata.is_dir() {
+            for entry in
+                std::fs::read_dir(root).map_err(|error| Error::Infrastructure(error.to_string()))?
+            {
+                let entry = entry.map_err(|error| Error::Infrastructure(error.to_string()))?;
+                Self::validate_real_tree(&entry.path())?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "internal-api")]
+    fn migration_is_complete(
+        source: &std::path::Path,
+        destination: &std::path::Path,
+    ) -> Result<bool> {
+        Self::reject_symlink(source, "legacy index source")?;
+        Self::reject_symlink(destination, "managed index destination")?;
+        let source_exists = Self::path_metadata(source)?.is_some();
+        let destination_exists = Self::path_metadata(destination)?.is_some();
+        if !source_exists && !destination_exists {
+            return Ok(false);
+        }
+        if source_exists && !destination_exists {
+            return Ok(false);
+        }
+        if source_exists {
+            return Err(Error::search(
+                crate::error::ErrorCode::Conflict,
+                "legacy source and managed destination both exist",
+            ));
+        }
+        Self::require_real_directory(destination, "managed index destination")?;
+        Self::validate_index_tree(destination)?;
+        Ok(true)
     }
 
     /// Delete a persisted index after proving that no other process owns its

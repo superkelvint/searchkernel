@@ -379,6 +379,46 @@ same("AnalyzeFieldTarget", analyze_request.fetch("target_type"), "analysis targe
 same({ "field" => "title" }, analyze_request.fetch("target"), "analysis target payload")
 same("index", index.describe.fetch("name"), "describe result")
 
+Dir.mktmpdir("searchkernel-ruby-root-bootstrap-") do |root|
+  data_root = File.join(root, SearchKernel::ManagedLocalHost::MANAGED_DATA_ROOT_NAME)
+  ready = Queue.new
+  release = Queue.new
+  workers = 2.times.map do
+    Thread.new do
+      ready << true
+      release.pop
+      SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+    end
+  end
+  2.times { ready.pop }
+  2.times { release << true }
+  workers.each(&:value)
+  marker = File.join(data_root, SearchKernel::ManagedLocalHost::MANAGED_ROOT_MARKER_NAME)
+  same("searchkernel-managed-v1\n", File.read(marker), "concurrent sibling first use publishes the owned root marker")
+end
+
+Dir.mktmpdir("searchkernel-ruby-root-boundary-") do |root|
+  data_root = File.join(root, SearchKernel::ManagedLocalHost::MANAGED_DATA_ROOT_NAME)
+  Dir.mkdir(data_root)
+  raises(SearchKernel::ClientError, "pre-existing unowned managed root is rejected") do
+    SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  end
+  FileUtils.rmdir(data_root)
+  outside = File.join(root, "outside")
+  Dir.mkdir(outside)
+  File.symlink(outside, data_root)
+  raises(SearchKernel::ClientError, "symlink managed root is rejected") do
+    SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  end
+  File.unlink(data_root)
+  SearchKernel::ManagedLocalHost.prepare_data_root(data_root)
+  source = File.join(root, "legacy-link")
+  File.symlink(outside, source)
+  raises(SearchKernel::ClientError, "symlink migration source is rejected") do
+    SearchKernel::ManagedLocalHost.migrate_legacy(source, data_root, "local-test")
+  end
+end
+
 Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
   script = File.join(root, "fake-searchkerneld")
   log = File.join(root, "args.json")

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { existsSync, lstatSync } from "node:fs";
+import { lstat, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -118,6 +118,15 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   });
 }
 
+async function lstatOptional(path: string) {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
 export class ManagedLocalHost {
   private static readonly pool = new Map<
     string,
@@ -180,7 +189,43 @@ export class ManagedLocalHost {
   ): Promise<void> {
     const destination = resolve(dataRoot, target);
     const marker = resolve(indexPath, ".searchkernel-managed-target");
-    if (existsSync(destination) || existsSync(marker) || !existsSync(indexPath)) return;
+    const rootStat = lstatSync(dataRoot);
+    const rootMarker = resolve(dataRoot, ".searchkernel-data-root");
+    const rootMarkerStat = lstatSync(rootMarker);
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()
+      || !rootMarkerStat.isFile() || rootMarkerStat.isSymbolicLink()
+      || await readFile(rootMarker, "utf8") !== "searchkernel-managed-v1\n") {
+      throw new SearchKernelError(`managed-local data root is not owned by Search Kernel: ${dataRoot}`);
+    }
+    const destinationStat = await lstatOptional(destination);
+    if (destinationStat !== undefined) {
+      if (!destinationStat.isDirectory() || destinationStat.isSymbolicLink()) {
+        throw new SearchKernelError(`managed index target is not a real directory: ${destination}`);
+      }
+      for (const component of ["data", "config", "manifest"]) {
+        const componentStat = await lstatOptional(resolve(destination, component));
+        if (componentStat === undefined || !componentStat.isDirectory() || componentStat.isSymbolicLink()) {
+          throw new SearchKernelError(`managed index component is not a real directory: ${resolve(destination, component)}`);
+        }
+      }
+      const manifestStat = await lstatOptional(resolve(destination, "manifest", "index.json"));
+      if (manifestStat === undefined || !manifestStat.isFile() || manifestStat.isSymbolicLink()) {
+        throw new SearchKernelError(`managed index manifest is not a regular file: ${resolve(destination, "manifest", "index.json")}`);
+      }
+      return;
+    }
+    const sourceStat = await lstatOptional(indexPath);
+    if (sourceStat !== undefined && (!sourceStat.isDirectory() || sourceStat.isSymbolicLink())) {
+      throw new SearchKernelError(`managed-local legacy index path is not a real directory: ${indexPath}`);
+    }
+    const markerStat = sourceStat === undefined ? undefined : await lstatOptional(marker);
+    if (markerStat !== undefined) {
+      if (!markerStat.isFile() || markerStat.isSymbolicLink()) {
+        throw new SearchKernelError(`managed-local index marker is not a regular file: ${marker}`);
+      }
+      return;
+    }
+    if (sourceStat === undefined) return;
 
     const binary = resolveHostBinary();
     if (!existsSync(binary)) {
@@ -234,7 +279,6 @@ export class ManagedLocalHost {
     const host = new ManagedLocalHost(dataRoot, temporaryDirectory);
 
     try {
-      await mkdir(resolve(dataRoot), { recursive: true });
       host.spawn();
       await host.waitUntilReady();
       return host;

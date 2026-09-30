@@ -7,7 +7,9 @@ import os
 import signal
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,6 +38,58 @@ class _Process:
 
 
 class ManagedLocalHostTest(unittest.TestCase):
+    def test_sibling_first_use_publishes_root_and_marker_atomically(self):
+        with tempfile.TemporaryDirectory(prefix="searchkernel-root-bootstrap-") as temporary:
+            parent = Path(temporary)
+            barrier = threading.Barrier(2)
+            roots = [parent / ".searchkernel-managed", parent / ".searchkernel-managed"]
+
+            def prepare(root):
+                barrier.wait()
+                client_module._prepare_managed_data_root(root)
+
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                futures = [workers.submit(prepare, root) for root in roots]
+                for future in futures:
+                    future.result(timeout=5)
+
+            self.assertTrue(roots[0].is_dir())
+            self.assertEqual(
+                (roots[0] / ".searchkernel-data-root").read_text(),
+                "searchkernel-managed-v1\n",
+            )
+
+    def test_managed_root_rejects_unowned_and_symlink_roots_and_markers(self):
+        with tempfile.TemporaryDirectory(prefix="searchkernel-root-boundary-") as temporary:
+            parent = Path(temporary)
+            unowned = parent / ".searchkernel-managed"
+            unowned.mkdir()
+            with self.assertRaises(client_module.ClientError):
+                client_module._prepare_managed_data_root(unowned)
+            unowned.rmdir()
+            outside = parent / "outside"
+            outside.mkdir()
+            unowned.symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(client_module.ClientError):
+                client_module._prepare_managed_data_root(unowned)
+
+    def test_legacy_migration_rejects_symlink_source_before_starting_daemon(self):
+        with tempfile.TemporaryDirectory(prefix="searchkernel-migration-symlink-") as temporary:
+            parent = Path(temporary)
+            data_root = parent / ".searchkernel-managed"
+            client_module._prepare_managed_data_root(data_root)
+            outside = parent / "outside"
+            outside.mkdir()
+            sentinel = outside / "keep"
+            sentinel.write_text("untouched")
+            source = parent / "legacy"
+            source.symlink_to(outside, target_is_directory=True)
+            with patch.object(client_module.subprocess, "run") as run:
+                with self.assertRaises(client_module.ClientError):
+                    client_module._migrate_legacy_managed_path(source, data_root, "local-test")
+            run.assert_not_called()
+            self.assertEqual(sentinel.read_text(), "untouched")
+
     def _host(self):
         temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-host-test-")
         root = Path(temporary.name)

@@ -89,8 +89,17 @@ pub struct IndexRegistry {
 impl IndexRegistry {
     pub fn new(data_root: impl Into<PathBuf>) -> Result<Self, RegistryInitError> {
         let data_root = data_root.into();
+        match std::fs::symlink_metadata(&data_root) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                return Err(RegistryInitError::NotDirectory(data_root));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(RegistryInitError::Io(error)),
+        }
         std::fs::create_dir_all(&data_root).map_err(RegistryInitError::Io)?;
-        if !data_root.is_dir() {
+        let metadata = std::fs::symlink_metadata(&data_root).map_err(RegistryInitError::Io)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
             return Err(RegistryInitError::NotDirectory(data_root));
         }
         Ok(Self {
@@ -310,9 +319,24 @@ impl IndexRegistry {
             Ok(path) => path,
             Err(error) => return Ok(encode_error(error)),
         };
-        let index = match Index::open(&path) {
-            Ok(index) => index,
-            Err(error) => return Ok(encode_error(lifecycle_index_error_to_portable(error))),
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let index = loop {
+            match Index::open(&path) {
+                Ok(index) => break index,
+                Err(error)
+                    if error.code() == IndexErrorCode::AlreadyExists
+                        && std::time::Instant::now() < deadline =>
+                {
+                    // A local managed-open may have just published a migrated
+                    // index and still hold its lifecycle lock through parent
+                    // directory sync. Wait for that publication transaction;
+                    // the lock remains authoritative and is never bypassed.
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => {
+                    return Ok(encode_error(lifecycle_index_error_to_portable(error)));
+                }
+            }
         };
         let (context, session) = index.clone().into_session_parts();
         let entry = Arc::new(RegistryEntry {
