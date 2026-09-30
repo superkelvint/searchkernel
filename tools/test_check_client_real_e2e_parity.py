@@ -34,16 +34,25 @@ MISUSE_CONTRACT = {
 
 class RealE2EParityComparatorTests(unittest.TestCase):
     def test_shared_typed_query_scenarios_are_required_and_have_intents(self):
-        scenarios = list(PARITY.REQUIRED_SHARED_INTENT_SCENARIOS)
-        inputs = {scenario: {"query": {"kind": "contains"}, "result_order": "sorted_ids", "limit": 100} for scenario in scenarios}
-        for scenario in ("nearest_neighbor", "hybrid_text_vector"):
-            inputs[scenario] = {"query": {"kind": "nearest_neighbor"}, "ranking_profile": "semantic", "query_input_document": "shoe-1", "limit": 3}
+        corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
+        scenarios = list(corpus["scenarios"])
+        inputs = dict(corpus["scenario_inputs"])
         self.assertEqual(inputs, validate_shared_typed_inputs({"scenario_inputs": inputs}, scenarios))
         with self.assertRaisesRegex(SystemExit, "scenario inventory omits required shared-intent scenarios"):
             validate_shared_typed_inputs({"scenario_inputs": inputs}, scenarios[:-1])
         with self.assertRaisesRegex(SystemExit, "omits required shared scenario intents"):
-            validate_shared_typed_inputs({"scenario_inputs": {key: value for key, value in inputs.items() if key != "typed_query_geo_box"}}, scenarios)
-
+            validate_shared_typed_inputs(
+                {"scenario_inputs": {key: value for key, value in inputs.items() if key != "typed_query_geo_box"}},
+                scenarios,
+            )
+        ast_inputs = dict(inputs)
+        ast_inputs["typed_query_contains"] = {
+            "query": {"kind": "contains", "field": "title", "value": "quick"},
+            "result_order": "sorted_ids",
+            "limit": 100,
+        }
+        with self.assertRaisesRegex(SystemExit, "flat scenario-specific"):
+            validate_shared_typed_inputs({"scenario_inputs": ast_inputs}, scenarios)
 
     def test_v1_required_inventory_is_independent_from_the_corpus(self):
         corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
@@ -53,17 +62,25 @@ class RealE2EParityComparatorTests(unittest.TestCase):
             validate_shared_typed_inputs({"scenario_inputs": corpus["scenario_inputs"]}, shrunken)
 
     def test_client_snapshot_must_echo_the_shared_scenario_intent(self):
-        inputs = {scenario: {"query": {"kind": "contains", "value": scenario}, "result_order": "sorted_ids", "limit": 100} for scenario in PARITY.REQUIRED_TYPED_SCENARIOS}
-        for scenario in set(PARITY.REQUIRED_SHARED_INTENT_SCENARIOS) - set(inputs):
-            inputs[scenario] = {"query": {"kind": "search", "value": scenario}}
-        for scenario in ("nearest_neighbor", "hybrid_text_vector"):
-            inputs[scenario] = {"query": {"kind": "nearest_neighbor"}, "ranking_profile": "semantic", "query_input_document": "shoe-1", "limit": 3}
-        observations = {scenario: {"observation": {"intent": entry, "query_result": ["a"]}}
-                       for scenario, entry in inputs.items()}
+        corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
+        inputs = corpus["scenario_inputs"]
+        observations = {
+            scenario: {"observation": {"intent": entry, "query_result": ["a"]}}
+            for scenario, entry in inputs.items()
+        }
         validate_observed_intents("rust", observations, inputs)
         observations[PARITY.REQUIRED_TYPED_SCENARIOS[0]]["observation"]["intent"] = {"value": "hard-coded"}
         with self.assertRaisesRegex(SystemExit, "did not consume the shared scenario intent"):
             validate_observed_intents("rust", observations, inputs)
+
+    def test_shared_intent_sentinels_expose_hard_coded_request_defaults(self):
+        corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
+        inputs = corpus["scenario_inputs"]
+        self.assertEqual("asc", inputs["sorting_projection"]["sort"][0]["direction"])
+        self.assertEqual("desc", inputs["pagination"]["sort"][0]["direction"])
+        self.assertEqual("kept_products", inputs["group_keep_filter"]["outputs"][0]["name"])
+        self.assertEqual({"needle": "shoes"}, inputs["yql"]["bindings"])
+        self.assertFalse(inputs["typed_query_range_exclusive"]["include_upper"])
 
     def test_parity_writers_use_execution_consumed_intents_not_corpus_decoration(self):
         root = Path(__file__).parents[1]
@@ -93,6 +110,23 @@ class RealE2EParityComparatorTests(unittest.TestCase):
             source = (root / relative).read_text()
             self.assertIn(consumed_marker, source, relative)
             self.assertNotIn(forbidden, source, relative)
+
+        generic_interpreters = {
+            "clients/python/examples/try_searchkernel_client_api_e2e.py": "def shared_typed_query(spec)",
+            "clients/typescript/examples/try_searchkernel_client_api_e2e.ts": "function sharedTypedQuery(spec",
+            "clients/ruby/examples/try_searchkernel_client_api_e2e.rb": "def shared_typed_query(spec)",
+            "clients/php/examples/try_searchkernel_client_api_e2e.php": "function sharedTypedQuery(array $spec)",
+            "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs": "fn query_from_spec(",
+        }
+        for relative, forbidden in generic_interpreters.items():
+            self.assertNotIn(forbidden, (root / relative).read_text(), relative)
+
+        corpus = PARITY.json.loads(PARITY.CORPUS.read_text())
+        for scenario in PARITY.REQUIRED_TYPED_SCENARIOS:
+            intent = corpus["scenario_inputs"][scenario]
+            self.assertNotIn("query", intent, scenario)
+            self.assertNotIn("kind", intent, scenario)
+            self.assertNotIn("clauses", intent, scenario)
 
     def test_incomplete_executed_intent_fails_even_when_results_match(self):
         inputs = {
@@ -254,14 +288,14 @@ class RealE2EParityComparatorTests(unittest.TestCase):
             self.assertTrue(compare({"score": 1.0}, {"score": invalid}))
 
     def test_float_semantics_for_typed_query_intents_come_from_the_schema(self):
-        inputs = {"typed_query_range": {"query": {"kind": "range", "field": "price"}}}
+        inputs = {"typed_query_range": {"field": "price", "lower": 50.0, "upper": 110.0}}
         schema = {"fields": {"price": {"type": "float64"}}}
         paths = float_semantic_paths_for_scenario("typed_query_range", inputs, schema)
         self.assertEqual(
             [],
             compare(
-                {"intent": {"query": {"lower": 50.0}}},
-                {"intent": {"query": {"lower": 50}}},
+                {"intent": {"lower": 50.0}},
+                {"intent": {"lower": 50}},
                 float_semantic_paths=paths,
             ),
         )
@@ -270,8 +304,8 @@ class RealE2EParityComparatorTests(unittest.TestCase):
         self.assertFalse(paths)
         self.assertTrue(
             compare(
-                {"intent": {"query": {"lower": 7}}},
-                {"intent": {"query": {"lower": 7.0000005}}},
+                {"intent": {"lower": 7}},
+                {"intent": {"lower": 7.0000005}},
                 float_semantic_paths=paths,
             )
         )
