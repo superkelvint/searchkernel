@@ -771,6 +771,9 @@ mod showcase {
             )
             .execute::<Value>()?;
         let nested_intent = intent!("nested_grouping");
+        if nested_intent["kind"].as_str() != Some("browse") {
+            return Err("nested_grouping requires browse intent".into());
+        }
         let parity_nested = index
             .browse()
             .filter((
@@ -801,6 +804,9 @@ mod showcase {
             )
             .execute::<Value>()?;
         let root_intent = intent!("root_aggregations");
+        if root_intent["kind"].as_str() != Some("browse") {
+            return Err("root_aggregations requires browse intent".into());
+        }
         let parity_root_aggregations = index
             .browse()
             .filter(
@@ -967,6 +973,15 @@ mod showcase {
         let misuse_limit = misuse_intent["limit"]
             .as_u64()
             .ok_or("builder misuse limit missing")? as u32;
+        let negative_limit = misuse_intent["negative_limit"]
+            .as_i64()
+            .ok_or("builder misuse negative limit missing")?;
+        let negative_offset = misuse_intent["negative_offset"]
+            .as_i64()
+            .ok_or("builder misuse negative offset missing")?;
+        if negative_limit >= 0 || negative_offset >= 0 {
+            return Err("builder misuse negative cases must remain negative".into());
+        }
         let page_limit_rejected = index
             .search(misuse_query)
             .page(page_number, page_size)
@@ -1031,6 +1046,12 @@ mod showcase {
             .as_object()
             .and_then(|inputs| inputs.iter().next())
             .ok_or("rank input missing")?;
+        let rank_input_type = rank_input_intent["input_types"][rank_input_name]
+            .as_str()
+            .ok_or("rank input type missing")?;
+        if rank_input_type != "float64" {
+            return Err(format!("unsupported parity rank input type: {rank_input_type}").into());
+        }
         let parity_rank_input = index
             .search(
                 rank_input_intent["query"]
@@ -1932,13 +1953,19 @@ mod showcase {
             .as_ref()
             .is_some_and(|coverage| coverage.full == Some(true)));
         let degradation_intent = intent!("coverage_degradation");
+        if degradation_intent["kind"].as_str() != Some("browse") {
+            return Err("coverage_degradation requires browse intent".into());
+        }
         let degraded = index
             .browse()
             .filter((
                 degradation_intent["filter"]["source"].as_str().ok_or("degradation filter missing")?,
                 params! { "value" => degradation_intent["filter"]["bindings"]["value"].as_i64().ok_or("degradation filter binding missing")? },
             ))
-            .sort(Sort::asc(degradation_intent["sort"][0]["field"].as_str().ok_or("degradation sort missing")?))
+            .sort(sort_from_intent(
+                degradation_intent["sort"][0]["field"].as_str().ok_or("degradation sort missing")?,
+                degradation_intent["sort"][0]["direction"].as_str().ok_or("degradation sort direction missing")?,
+            )?)
             .rank_property("vespa.matchphase.degradation.maxfiltercoverage", degradation_intent["rank_properties"]["vespa.matchphase.degradation.maxfiltercoverage"].as_str().ok_or("degradation coverage property missing")?)
             .rank_property("vespa.matchphase.degradation.attribute", degradation_intent["rank_properties"]["vespa.matchphase.degradation.attribute"].as_str().ok_or("degradation attribute property missing")?)
             .rank_property("vespa.matchphase.degradation.maxhits", degradation_intent["rank_properties"]["vespa.matchphase.degradation.maxhits"].as_str().ok_or("degradation hits property missing")?)
