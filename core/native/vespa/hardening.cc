@@ -1,7 +1,6 @@
 // Search Kernel native adapter: hardening and timing support.
 #include <thread>
 #include <type_traits>
-#include <deque>
 // This file is included by abi.cc so the private adapter remains one native
 // boundary while responsibilities stay physically searchable by subsystem.
 
@@ -76,8 +75,6 @@ class FailpointController {
     }
 
 public:
-    enum class DeferredBlock { NotBlocking, Continue, Deferred };
-
     explicit FailpointController(bool thread_affine = false) noexcept
         : _thread_affine(thread_affine) {}
 
@@ -134,27 +131,6 @@ public:
         return entry != _entries.end() && entry->second.blocked;
     }
 
-    DeferredBlock defer_blocking_hit(std::string_view name) const {
-        auto *self = const_cast<FailpointController *>(this);
-        std::lock_guard<std::mutex> guard(self->_mutex);
-        auto entry = self->_entries.find(std::string(name));
-        if (entry == self->_entries.end() ||
-            entry->second.action != SK_TEST_FAILPOINT_BLOCK ||
-            (self->_thread_affine && entry->second.owner != std::this_thread::get_id())) {
-            return DeferredBlock::NotBlocking;
-        }
-        if (entry->second.blocked) return DeferredBlock::Deferred;
-        if (!entry->second.armed) return DeferredBlock::NotBlocking;
-        ++entry->second.hits;
-        if (entry->second.hits != entry->second.trigger) {
-            return DeferredBlock::Continue;
-        }
-        entry->second.armed = false;
-        entry->second.blocked = true;
-        self->_condition.notify_all();
-        return DeferredBlock::Deferred;
-    }
-
     void hit(std::string_view name) const {
         auto *self = const_cast<FailpointController *>(this);
         std::unique_lock<std::mutex> guard(self->_mutex);
@@ -200,8 +176,6 @@ public:
 class PublicationGateFeedView final : public proton::IFeedView {
     proton::IFeedView::SP _delegate;
     std::shared_ptr<FailpointController> _failpoints;
-    std::mutex _pending_mutex;
-    std::deque<std::pair<CommitParam, DoneCallback>> _pending_commits;
 
 public:
     PublicationGateFeedView(proton::IFeedView::SP delegate,
@@ -244,34 +218,8 @@ public:
         _delegate->heartBeat(serial, on_done);
     }
     void forceCommit(const CommitParam& param, const DoneCallback& on_done) override {
-        // A blocking failpoint must not hold FeedHandler's master thread: the
-        // accepted feed operation may still need that thread to publish its
-        // source document. Keep the real commit pending while allowing feed
-        // processing to continue, then delegate it from the master thread on
-        // release.
-        constexpr std::string_view name =
-            "matcher_publication_before_feedview_force_commit";
-        const auto decision = _failpoints->defer_blocking_hit(name);
-        if (decision == FailpointController::DeferredBlock::Deferred) {
-            std::lock_guard<std::mutex> guard(_pending_mutex);
-            _pending_commits.emplace_back(param, on_done);
-            return;
-        }
-        if (decision == FailpointController::DeferredBlock::NotBlocking) {
-            _failpoints->hit(name);
-        }
+        _failpoints->hit("matcher_publication_before_feedview_force_commit");
         _delegate->forceCommit(param, on_done);
-    }
-
-    void release_pending_commits() {
-        std::deque<std::pair<CommitParam, DoneCallback>> pending;
-        {
-            std::lock_guard<std::mutex> guard(_pending_mutex);
-            pending.swap(_pending_commits);
-        }
-        for (const auto& [param, on_done] : pending) {
-            _delegate->forceCommit(param, on_done);
-        }
     }
     void handlePruneRemovedDocuments(const proton::PruneRemovedDocumentsOperation& op,
                                      const DoneCallback& on_done) override {
