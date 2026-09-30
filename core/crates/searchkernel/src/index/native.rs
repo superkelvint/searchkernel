@@ -424,15 +424,9 @@ impl Index {
             match LifecycleLock::acquire(source) {
                 Ok(lock) => break lock,
                 Err(error) if error.code() == crate::error::ErrorCode::AlreadyExists => {
-                    if metadata_no_follow("legacy migration source", source)?.is_none() {
-                        if let Some(metadata) =
-                            metadata_no_follow("managed migration destination", destination)?
-                        {
-                            if metadata.is_dir() {
-                                return Ok(());
-                            }
-                        }
-                    }
+                    // Do not accept the destination while the winning migrator
+                    // still owns the source lifecycle lock: it may still be
+                    // completing parent-directory durability sync.
                     if Instant::now() >= source_deadline {
                         return Err(Error::search(
                             crate::error::ErrorCode::Conflict,
