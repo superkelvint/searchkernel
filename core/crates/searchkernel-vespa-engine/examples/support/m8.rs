@@ -45,7 +45,7 @@ pub fn compile_schema(root: &Json, config_dir: &Path) {
         schema = schema.field(field);
     }
     fs::create_dir_all(config_dir).unwrap();
-    ConfigCompiler::default()
+    ConfigCompiler
         .compile_to(&schema, config_dir)
         .unwrap();
 }

@@ -2,7 +2,7 @@ use searchkernel_vespa_engine::{Language, Linguistics, LinguisticsOptions, StemM
 use std::io::{self, BufRead};
 
 fn from_hex(hex: &str) -> Vec<u8> {
-    assert!(hex.len() % 2 == 0, "odd hex length");
+    assert!(hex.len().is_multiple_of(2), "odd hex length");
     (0..hex.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("invalid hex"))
@@ -50,7 +50,7 @@ fn main() {
         .nth(1)
         .expect("usage: driver document|query");
     assert!(mode == "document" || mode == "query", "invalid mode");
-    let linguistics = Linguistics::default();
+    let linguistics = Linguistics;
 
     for line in io::stdin().lock().lines() {
         let line = line.expect("stdin read failed");

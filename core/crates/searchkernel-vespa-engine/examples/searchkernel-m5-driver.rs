@@ -46,16 +46,16 @@ fn update(engine: &Engine, id: &str, value: i64) -> Result<()> {
 }
 
 fn graceful_seed(data_dir: &Path, config_dir: &Path) -> Result<()> {
-    let mut engine = open(data_dir, config_dir)?;
-    put(&mut engine, DOC1, 10)?;
-    put(&mut engine, DOC2, 20)?;
-    put(&mut engine, DOC3, 30)?;
+    let engine = open(data_dir, config_dir)?;
+    put(&engine, DOC1, 10)?;
+    put(&engine, DOC2, 20)?;
+    put(&engine, DOC3, 30)?;
 
     let after_put_10 = search(&engine, 10)?;
     let after_put_20 = search(&engine, 20)?;
     let after_put_30 = search(&engine, 30)?;
 
-    update(&mut engine, DOC2, 10)?;
+    update(&engine, DOC2, 10)?;
     let was_found = engine.delete(DOC3)?;
     let after_update_delete_10 = search(&engine, 10)?;
     let after_update_delete_20 = search(&engine, 20)?;
@@ -89,9 +89,9 @@ fn graceful_verify(data_dir: &Path, config_dir: &Path) -> Result<()> {
 }
 
 fn graceful_mutate(data_dir: &Path, config_dir: &Path) -> Result<()> {
-    let mut engine = open(data_dir, config_dir)?;
-    update(&mut engine, DOC1, 40)?;
-    put(&mut engine, DOC4, 10)?;
+    let engine = open(data_dir, config_dir)?;
+    update(&engine, DOC1, 40)?;
+    put(&engine, DOC4, 10)?;
     let search_10 = search(&engine, 10)?;
     let search_40 = search(&engine, 40)?;
     println!(
@@ -124,14 +124,14 @@ fn repeated_reopen(data_dir: &Path, config_dir: &Path, cycles: usize) -> Result<
     }
 
     {
-        let mut engine = open(data_dir, config_dir)?;
-        put(&mut engine, REPEAT_DOC, 0)?;
+        let engine = open(data_dir, config_dir)?;
+        put(&engine, REPEAT_DOC, 0)?;
     }
 
     for cycle in 1..=cycles {
-        let mut engine = open(data_dir, config_dir)?;
+        let engine = open(data_dir, config_dir)?;
         let value = i64::try_from(cycle)?;
-        update(&mut engine, REPEAT_DOC, value)?;
+        update(&engine, REPEAT_DOC, value)?;
         let hits = search(&engine, value)?;
         if hits != [REPEAT_DOC.to_owned()] {
             return Err(format!("cycle {cycle} returned unexpected hits: {hits:?}").into());
@@ -149,8 +149,8 @@ fn repeated_reopen(data_dir: &Path, config_dir: &Path, cycles: usize) -> Result<
 }
 
 fn crash_update(data_dir: &Path, config_dir: &Path) -> Result<()> {
-    let mut engine = open(data_dir, config_dir)?;
-    update(&mut engine, DOC1, 40)?;
+    let engine = open(data_dir, config_dir)?;
+    update(&engine, DOC1, 40)?;
     std::io::stdout().flush()?;
     std::process::abort();
 }

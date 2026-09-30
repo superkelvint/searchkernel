@@ -82,7 +82,7 @@ pub fn schema(root: &Json) -> Schema {
 
 pub fn compile_schema(root: &Json, config: &Path) -> searchkernel_vespa_engine::Result<()> {
     fs::create_dir_all(config).expect("create verifier config dir");
-    ConfigCompiler::default().compile_to(&schema(root), config)
+    ConfigCompiler.compile_to(&schema(root), config)
 }
 
 // The verifier never evaluates linguistics itself. It merely reconstructs the

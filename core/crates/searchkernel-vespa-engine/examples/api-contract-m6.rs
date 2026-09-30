@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .summary(),
         );
 
-    let compiler = ConfigCompiler::default();
+    let compiler = ConfigCompiler;
     let dir = std::env::temp_dir().join("searchkernel-m6-api-contract");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir)?;

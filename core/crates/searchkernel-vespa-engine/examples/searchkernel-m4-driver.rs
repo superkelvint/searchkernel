@@ -8,7 +8,7 @@ use searchkernel_vespa_engine::{Document, DocumentUpdate, Engine, Query, SearchR
 use std::io::{self, BufRead, Write};
 
 fn from_hex(hex: &str) -> String {
-    assert!(hex.len() % 2 == 0, "odd hex length");
+    assert!(hex.len().is_multiple_of(2), "odd hex length");
     let bytes: Vec<u8> = (0..hex.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("invalid hex"))

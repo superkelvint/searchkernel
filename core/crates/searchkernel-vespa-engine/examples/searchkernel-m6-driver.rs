@@ -81,7 +81,7 @@ fn main() {
     match args[1].as_str() {
         "compile" => {
             let schema = build_schema(&scenario);
-            ConfigCompiler::default()
+            ConfigCompiler
                 .compile_to(&schema, &config_dir)
                 .expect("compile schema");
         }

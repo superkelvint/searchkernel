@@ -28,9 +28,8 @@ fn classify(s: &str) -> &'static str {
         "wrong_field_type"
     } else if (x.contains("unsupported") && x.contains("yql"))
         || x.contains("unsupported query source")
+        || x.contains("field is not an attribute")
     {
-        "unsupported_yql"
-    } else if x.contains("field is not an attribute") {
         "unsupported_yql"
     } else if x.contains("yql") || x.contains("parse") {
         "invalid_yql"
@@ -66,7 +65,7 @@ fn main() {
     }
     let cfg = PathBuf::from(&a[4]);
     let data = PathBuf::from(&a[5]);
-    ConfigCompiler::default().compile_to(&s, &cfg).unwrap();
+    ConfigCompiler.compile_to(&s, &cfg).unwrap();
     let e = Engine::open(&data, &cfg).unwrap();
     let path = &a[1];
     let r = if path == "typed" {

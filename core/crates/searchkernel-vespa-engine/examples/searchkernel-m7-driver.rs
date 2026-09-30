@@ -177,7 +177,7 @@ fn main() {
             let s = load(&a[2]);
             let cfg = PathBuf::from(&a[3]);
             let data = PathBuf::from(&a[4]);
-            ConfigCompiler::default()
+            ConfigCompiler
                 .compile_to(&schema(&s), &cfg)
                 .expect("compile");
             let mut e = Engine::open(&data, &cfg).expect("open");
