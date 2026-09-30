@@ -37,6 +37,32 @@ end
 
 E2E_CORPUS_PATH = File.expand_path("../../../reference/client-real-e2e-parity/corpus.json", __dir__)
 E2E_CORPUS = JSON.parse(File.read(E2E_CORPUS_PATH))
+PARITY_CONSUMED_INTENTS = {}
+
+class ConsumedIntentMap
+  include Enumerable
+
+  def initialize(source)
+    @source = source
+  end
+
+  def fetch(key)
+    value = @source.fetch(key)
+    PARITY_CONSUMED_INTENTS[key] = JSON.parse(JSON.generate(value))
+    value
+  end
+
+  def [](key)
+    fetch(key)
+  end
+
+  def each
+    return enum_for(:each) unless block_given?
+    @source.each_key { |key| yield key, fetch(key) }
+  end
+end
+
+PARITY_INTENTS = ConsumedIntentMap.new(E2E_CORPUS.fetch("scenario_inputs"))
 VECTOR_TYPE = E2E_CORPUS.fetch("schema").fetch("fields").fetch("embedding").fetch("type")
 
 def corpus_vector(document_id)
@@ -80,7 +106,7 @@ def shared_typed_query(spec)
 end
 
 def shared_typed_query_observations(index)
-  E2E_CORPUS.fetch("scenario_inputs").filter_map do |scenario, intent|
+  PARITY_INTENTS.filter_map do |scenario, intent|
     next unless scenario.start_with?("typed_query_")
     result = index.query(shared_typed_query(intent.fetch("query"))).limit(intent.fetch("limit")).execute
     result_ids = ids(result)
@@ -94,7 +120,7 @@ end
 
 def capture_real_engine_parity(index)
   typed_observations = shared_typed_query_observations(index)
-  intents = E2E_CORPUS.fetch("scenario_inputs")
+  intents = PARITY_INTENTS
   ordered_spec = intents.fetch("pagination")
   ordered = index.search(ordered_spec.fetch("query")).sort(ordered_spec.fetch("sort")[0].fetch("field"), ordered_spec.fetch("sort")[0].fetch("direction")).limit(ordered_spec.fetch("all_limit")).execute
   filtered_spec = intents.fetch("filtered_facets")
@@ -117,13 +143,13 @@ def capture_real_engine_parity(index)
       .order_by(*group_order)
       .output(SearchKernel::Agg.count.as(grouped_spec.fetch("outputs")[0].fetch("name")), SearchKernel::Agg.avg(grouped_spec.fetch("outputs")[1].fetch("field")).as(grouped_spec.fetch("outputs")[1].fetch("name")))
   ).execute
-  nearest_intent = E2E_CORPUS.fetch("scenario_inputs").fetch("nearest_neighbor")
+  nearest_intent = PARITY_INTENTS.fetch("nearest_neighbor")
   nearest_spec = nearest_intent.fetch("query")
   nearest = index.query(SearchKernel::Query.nearest_neighbor(nearest_spec.fetch("field"), nearest_spec.fetch("query_input")))
     .ranking(nearest_intent.fetch("ranking_profile"))
     .input(nearest_spec.fetch("query_input"), embedding(*corpus_vector(nearest_intent.fetch("query_input_document"))))
     .limit(nearest_intent.fetch("limit")).execute
-  hybrid_intent = E2E_CORPUS.fetch("scenario_inputs").fetch("hybrid_text_vector")
+  hybrid_intent = PARITY_INTENTS.fetch("hybrid_text_vector")
   hybrid_text, hybrid_vector = hybrid_intent.fetch("query").fetch("clauses")
   hybrid = index.query(SearchKernel::Query.any_of(
     SearchKernel::Query.contains(hybrid_text.fetch("field"), hybrid_text.fetch("value")),
@@ -300,8 +326,9 @@ def write_real_engine_parity(observations)
   # SDK result maps can be frozen; the parity writer adds intent metadata.
   observations = JSON.parse(JSON.generate(observations))
   observations.each do |scenario, value|
-    intent = E2E_CORPUS.fetch("scenario_inputs")[scenario]
-    next unless intent && !scenario.start_with?("typed_query_")
+    next if scenario.start_with?("typed_query_")
+    intent = PARITY_CONSUMED_INTENTS[scenario]
+    raise "parity scenario #{scenario} emitted an observation without consuming its shared intent" unless intent
 
     payload = value.is_a?(Hash) && value.key?("observation") ? value.fetch("observation") : value
     payload["intent"] = intent if payload.is_a?(Hash) && !payload.key?("intent")
@@ -372,7 +399,7 @@ begin
   end
 
   PARITY_OBSERVATIONS.merge!(capture_real_engine_parity(index))
-  patch_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("patch")
+  patch_spec = PARITY_INTENTS.fetch("patch")
   index.insert(patch_spec.fetch("initial").merge("_id" => patch_spec.fetch("document_id")))
   patch_builder = index.patch(patch_spec.fetch("document_id"))
   patch_spec.fetch("set").each { |key, value| patch_builder = patch_builder.set(key, value) }
@@ -380,10 +407,10 @@ begin
   patch_builder.execute
   mutated = index.get(patch_spec.fetch("document_id"))
   PARITY_OBSERVATIONS["patch"] = {"price" => mutated.fetch("price"), "sale_price_present" => mutated.key?("sale_price")}
-  delete_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("delete")
+  delete_spec = PARITY_INTENTS.fetch("delete")
   parity_mutation_deleted = index.delete(delete_spec.fetch("document_id"))
   PARITY_OBSERVATIONS["delete"] = {"deleted" => parity_mutation_deleted, "absent_after_delete" => index.get(delete_spec.fetch("document_id")).nil?}
-  reopen_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("reopen_persistence")
+  reopen_spec = PARITY_INTENTS.fetch("reopen_persistence")
   index.insert(reopen_spec.fetch("marker").merge("_id" => reopen_spec.fetch("marker_id")))
 
   results = index.search("shoes")
@@ -663,7 +690,7 @@ begin
   rescue SearchKernel::SearchKernelError => error
     same("Unsupported", error.code, "conditional mutation returns typed Unsupported")
   end
-  upsert_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("upsert_replacement")
+  upsert_spec = PARITY_INTENTS.fetch("upsert_replacement")
   replacement = upsert_spec.fetch("replacement").reject { |key, _value| key == "vector_document_id" }
   replacement["embedding"] = embedding(*corpus_vector(upsert_spec.fetch("replacement").fetch("vector_document_id")))
   index.upsert(upsert_spec.fetch("document_id"), replacement)
@@ -703,15 +730,15 @@ begin
   same("shoe-1", reopened_nearest.hits.first.id, "nearest-neighbor survives reopen")
 
   same(%w[shoe-3 shoe-1 shoe-5 shoe-2 shoe-4], ids(reopened.search("shoes").sort("price", "asc").limit(10).execute), "reopen search")
-  reopen_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("reopen_persistence")
-  upsert_spec = E2E_CORPUS.fetch("scenario_inputs").fetch("upsert_replacement")
+  reopen_spec = PARITY_INTENTS.fetch("reopen_persistence")
+  upsert_spec = PARITY_INTENTS.fetch("upsert_replacement")
   persisted = reopened.get(reopen_spec.fetch("marker_id"))
   raise "parity-reopen document missing after reopen" unless persisted
   persisted_shoe2 = reopened.get(upsert_spec.fetch("document_id"))
   PARITY_OBSERVATIONS["reopen_persistence"] = {
     "marker" => {"title" => persisted.fetch("title"), "price" => persisted.fetch("price"), "inventory" => persisted.fetch("inventory")},
     "upserted" => {"updated_title_matches" => persisted_shoe2.fetch("title").include?("Updated"), "price" => persisted_shoe2.fetch("price")},
-    "deleted_absent" => reopened.get(E2E_CORPUS.fetch("scenario_inputs").fetch("delete").fetch("document_id")).nil?
+    "deleted_absent" => reopened.get(PARITY_INTENTS.fetch("delete").fetch("document_id")).nil?
   }
   check(reopened.delete("shoe-2"), "delete after reopen")
   same(false, reopened.delete("shoe-2"), "duplicate delete is false")
