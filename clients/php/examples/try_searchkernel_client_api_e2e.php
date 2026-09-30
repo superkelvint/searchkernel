@@ -781,33 +781,6 @@ $results = $index->query(Query::contains('title', 'shoes'))
 same(5, $results->totalHits, 'query input and rank-property namespaces');
 
 heading('21A. TYPED QUERY FAMILY PARITY');
-foreach ([
-    ['_id' => 'typed-d1', 'title' => 'quick brown fox', 'category' => 'fox'],
-    ['_id' => 'typed-d2', 'title' => 'brown quick fox', 'category' => 'fox'],
-    ['_id' => 'typed-d3', 'title' => 'quick fox', 'category' => 'fox'],
-    ['_id' => 'typed-d4', 'title' => 'fox', 'category' => 'fox'],
-    ['_id' => 'typed-d5', 'title' => 'cat', 'category' => 'cat'],
-    ['_id' => 'typed-d6', 'title' => 'quick agile brown fox', 'category' => 'fox'],
-    [
-        '_id' => 'people-1',
-        'people' => [
-            ['first' => 'Ada', 'last' => 'Lovelace'],
-            ['first' => 'Grace', 'last' => 'Hopper'],
-        ],
-    ],
-    [
-        '_id' => 'people-2',
-        'people' => [
-            ['first' => 'Ada', 'last' => 'Hopper'],
-            ['first' => 'Grace', 'last' => 'Lovelace'],
-        ],
-    ],
-    ['_id' => 'geo-inside', 'location' => ['latitude' => 37.3, 'longitude' => -121.9]],
-    ['_id' => 'geo-outside', 'location' => ['latitude' => 40.7, 'longitude' => -74.0]],
-] as $document) {
-    $index->upsert($document);
-}
-
 $phrase = $index->query(Query::contains('title', Query::phrase('quick', 'brown')))->limit(20)->execute();
 assertIds($phrase, ['typed-d1']);
 $nearIds = ids($index->query(Query::contains('title', Query::near('quick', 'brown')))->limit(20)->execute());
