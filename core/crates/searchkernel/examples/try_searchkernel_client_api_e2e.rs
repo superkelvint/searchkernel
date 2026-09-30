@@ -1332,9 +1332,9 @@ mod showcase {
             },
             "sorted_search": {"ids": ids(&parity_sorted), "total": parity_sorted.total_hits.value},
             "filtered_search": {"ids": ids(&parity_filtered), "total": parity_filtered.total_hits.value},
-            "facets": facet_counts(&parity_faceted, "brand"),
+            "facets": facet_entries(&parity_faceted, "brand"),
             "root_aggregations": parity_root_aggregations.aggregations.iter().map(|(key, value)| (key.clone(), parity_value(value))).collect::<serde_json::Map<_, _>>(),
-            "filtered_facets": facet_counts(&parity_filtered_facet, "brand"),
+            "filtered_facets": facet_entries(&parity_filtered_facet, "brand"),
             "grouping_aggregations": parity_grouping_aggregations,
             "nested_grouping": direct_group_buckets(&parity_nested.groups).into_iter()
                 .map(|group| parity_nested_group(group, nested_count_name, nested_child_count_name, nested_child_average_name))
@@ -2893,6 +2893,26 @@ native Vespa backend.
         let actual: BTreeSet<String> = ids(results).into_iter().collect();
         let expected: BTreeSet<String> = expected.into_iter().map(str::to_owned).collect();
         assert_eq!(actual, expected);
+    }
+
+    fn facet_entries(results: &SearchResult<Value>, field: &str) -> Vec<Value> {
+        let facet = results
+            .facets
+            .iter()
+            .find(|facet| facet.field == field)
+            .unwrap_or_else(|| panic!("missing facet {field:?}"));
+
+        facet
+            .values
+            .iter()
+            .map(|value| {
+                let key = match &value.value {
+                    ResultValue::String(value) => value.clone(),
+                    _ => panic!("facet {field:?} returned non-string value"),
+                };
+                json!({"value": key, "count": value.count})
+            })
+            .collect()
     }
 
     fn facet_counts(results: &SearchResult<Value>, field: &str) -> BTreeMap<String, u64> {
