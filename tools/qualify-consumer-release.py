@@ -15,29 +15,60 @@ import time
 from pathlib import Path
 
 DIST = Path(sys.argv[1]).resolve()
-MANIFEST = json.loads((DIST / "manifest.json").read_text())
+MANIFEST = json.loads((DIST / "manifest.json").read_text(encoding="utf-8"))
+
+# The regression test compares this executable registry to release-support.json.
+# Every supported surface/runtime pair must map to one packaged consumer probe.
+QUALIFICATION_PROBES = {
+    "rust-embedded/native": "rust_embedded",
+    "searchkerneld/native": "searchkerneld_runtime",
+    "python/managed-local": "python_managed_local",
+    "python/connect": "python_connect",
+    "typescript-node/connect": "typescript_node_connect",
+    "ruby/connect": "ruby_connect",
+}
 
 
 def clean_environment() -> dict[str, str]:
     environment = os.environ.copy()
     for key in list(environment):
         if key.startswith(("SEARCHKERNEL_", "SK_NATIVE_", "VESPA_")) or key in {
+            "BUNDLE_GEMFILE",
             "CARGO_MANIFEST_DIR",
             "CARGO_TARGET_DIR",
+            "GEM_HOME",
+            "GEM_PATH",
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
             "LD_LIBRARY_PATH",
             "LIBRARY_PATH",
             "NODE_PATH",
             "PYTHONPATH",
+            "RUBYLIB",
+            "RUBYOPT",
         }:
             environment.pop(key, None)
     return environment
 
 
-def run(*cmd: str, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
+def run(
+    *cmd: str,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
     environment = clean_environment()
     if env:
         environment.update(env)
-    subprocess.run(cmd, cwd=cwd, env=environment, check=True)
+    result = subprocess.run(
+        cmd, cwd=cwd, env=environment, check=False, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if check and result.returncode:
+        raise RuntimeError(
+            f"command failed ({result.returncode}): {cmd!r}\n{result.stdout}{result.stderr}"
+        )
+    return result
 
 
 def artifact(prefix: str, suffix: str) -> Path:
@@ -47,9 +78,7 @@ def artifact(prefix: str, suffix: str) -> Path:
         if item["file"].startswith(prefix) and item["file"].endswith(suffix)
     ]
     if len(matches) != 1:
-        raise SystemExit(
-            f"expected one {prefix}*{suffix} artifact, got {matches}"
-        )
+        raise SystemExit(f"expected one {prefix}*{suffix} artifact, got {matches}")
     return matches[0]
 
 
@@ -61,20 +90,58 @@ def verify_manifest() -> None:
             raise SystemExit(f"checksum mismatch: {path.name}")
 
 
-def python_probe(venv: Path, index: Path) -> None:
-    code = r'''from searchkernel import Index,Text,Keyword,Integer,Tensor,TensorField,q
+def install_consumers(root: Path) -> dict[str, Path]:
+    wheel = artifact("searchkernel-", ".whl")
+    venv = root / "python-venv"
+    run(sys.executable, "-m", "venv", str(venv))
+    run(str(venv / "bin/pip"), "install", str(wheel), cwd=root)
+
+    npm = artifact("searchkernel-client-", ".tgz")
+    node = root / "node-consumer"
+    node.mkdir()
+    (node / "package.json").write_text(
+        '{"private":true,"type":"module"}', encoding="utf-8"
+    )
+    run(
+        "npm", "install", "--ignore-scripts", "--no-audit", "--no-fund",
+        "--package-lock=false", str(npm), cwd=node,
+    )
+
+    gem = artifact("searchkernel-", ".gem")
+    gem_home = root / "ruby-gems"
+    gem_home.mkdir()
+    ruby_env = {"GEM_HOME": str(gem_home), "GEM_PATH": str(gem_home)}
+    run("gem", "install", "--local", "--install-dir", str(gem_home),
+        "--no-document", str(gem), cwd=root, env=ruby_env)
+
+    return {"python": venv, "node": node, "ruby": gem_home}
+
+
+def python_managed_local(venv: Path, index: Path) -> None:
+    code = r'''from searchkernel import Index,Text,Keyword,Integer,Tensor,TensorField,HnswIndexConfig,RankProfile,q
 p=r"''' + str(index) + r'''"
-with Index.create(p, fields={"title":Text(stored=True,searchable=True),"kind":Keyword(stored=True,filterable=True,sortable=True),"score":Integer(stored=True,filterable=True,sortable=True),"embedding":TensorField("tensor<float>(x[2])",stored=True)}) as x:
- x.insert({"_id":"a","title":"alpha running shoe","kind":"shoe","score":2,"embedding":Tensor.dense("tensor<float>(x[2])",[1,0])})
- x.insert({"_id":"b","title":"beta running shoe","kind":"shoe","score":1,"embedding":Tensor.dense("tensor<float>(x[2])",[0,1])})
- assert x.get("a")["score"]==2
- x.update("a").set("score",3).execute(); assert x.get("a")["score"]==3
- assert [h.id for h in x.search("running").filter("kind = :k",{"k":"shoe"}).sort("score","asc").execute().hits]==["b","a"]
- r=x.query(q.nearest_neighbor("embedding","qt",target_hits=2)).input("qt",Tensor.dense("tensor<float>(x[2])",[1,0])).limit(2).execute(); assert r.hits[0].id=="a"
- assert x.delete("b") is True; assert x.get("b") is None
+fields={"title":Text(stored=True,searchable=True),"kind":Keyword(stored=True,filterable=True,sortable=True),"score":Integer(stored=True,filterable=True,sortable=True),"embedding":TensorField("tensor<float>(x[2])",stored=True,distance_metric="angular",hnsw=HnswIndexConfig())}
+profiles=[RankProfile("semantic").first_phase("closeness(embedding)").query_input("query_embedding","tensor<float>(x[2])")]
+with Index.create(p,fields=fields,rank_profiles=profiles) as x:
+ x.insert({"_id":"managed-a","title":"alpha running shoe","kind":"shoe","score":2,"embedding":Tensor.dense("tensor<float>(x[2])",[1,0])})
+ x.insert({"_id":"managed-b","title":"beta running shoe","kind":"shoe","score":1,"embedding":Tensor.dense("tensor<float>(x[2])",[0,1])})
+ x.insert({"_id":"managed-deleted","title":"deleted running shoe","kind":"shoe","score":0,"embedding":Tensor.dense("tensor<float>(x[2])",[.5,.5])})
+ assert {f.name for f in x.describe().index.fields}>={"title","kind","score","embedding"}
+ assert x.get("managed-a")["score"]==2
+ x.update("managed-a").set("score",3).set("title","persisted alpha running shoe").execute()
+ assert x.get("managed-a")["score"]==3
+ assert [h.id for h in x.query(q.contains("title","running")).filter("kind = :k",{"k":"shoe"}).sort("score","asc").execute().hits]==["managed-deleted","managed-b","managed-a"]
+ result=x.query(q.nearest_neighbor("embedding","query_embedding",target_hits=3)).ranking("semantic").input("query_embedding",Tensor.dense("tensor<float>(x[2])",[1,0])).limit(3).execute()
+ assert result.hits[0].id=="managed-a"
+ assert x.delete("managed-deleted") is True
+ assert x.get("managed-deleted") is None
 with Index.open(p) as x:
- assert x.get("a")["score"]==3 and x.get("b") is None
- assert any(h.id=="a" for h in x.search("running").execute().hits)
+ assert x.get("managed-a")["score"]==3 and x.get("managed-a")["title"]=="persisted alpha running shoe"
+ assert x.get("managed-deleted") is None
+ assert [h.id for h in x.query(q.contains("title","running")).filter("kind = :k",{"k":"shoe"}).sort("score","asc").execute().hits]==["managed-b","managed-a"]
+ assert [h.id for h in x.query(q.contains("title","persisted")).execute().hits]==["managed-a"]
+ result=x.query(q.nearest_neighbor("embedding","query_embedding",target_hits=2)).ranking("semantic").input("query_embedding",Tensor.dense("tensor<float>(x[2])",[1,0])).limit(2).execute()
+ assert result.hits[0].id=="managed-a"
 '''
     run(str(venv / "bin/python"), "-c", code, cwd=venv.parent)
 
@@ -85,7 +152,7 @@ def free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def daemon_log(log: tempfile._TemporaryFileWrapper | object) -> str:
+def daemon_log(log) -> str:
     try:
         log.flush()
         log.seek(0)
@@ -94,167 +161,319 @@ def daemon_log(log: tempfile._TemporaryFileWrapper | object) -> str:
         return ""
 
 
+SCHEMA_JSON = {
+    "name": "release_qualification",
+    "fields": [
+        {
+            "name": "title",
+            "data_type": {"kind_type": "PrimitiveDataType", "kind": {"kind": "String"}},
+            "stored": {"value": True}, "searchable": {"value": True},
+            "matching": {"mode": "Text"},
+        },
+        {
+            "name": "kind",
+            "data_type": {"kind_type": "PrimitiveDataType", "kind": {"kind": "String"}},
+            "stored": {"value": True}, "filterable": {"value": True},
+            "sortable": {"value": True}, "matching": {"mode": "Exact"},
+        },
+        {
+            "name": "score",
+            "data_type": {"kind_type": "PrimitiveDataType", "kind": {"kind": "Int64"}},
+            "stored": {"value": True}, "filterable": {"value": True},
+            "sortable": {"value": True},
+        },
+        {
+            "name": "embedding",
+            "data_type": {"kind_type": "TensorDataType", "kind": {"type_spec": "tensor<float>(x[2])"}},
+            "stored": {"value": True},
+            "index": {"enabled": {"value": True}, "hnsw": {}},
+            "attribute": {"enabled": {"value": True}, "distance_metric": "Angular"},
+        },
+    ],
+    "rank_profiles": [
+        {
+            "name": "semantic",
+            "inputs": [
+                {
+                    "name": "query_embedding",
+                    "data_type": {
+                        "kind_type": "TensorDataType",
+                        "kind": {"type_spec": "tensor<float>(x[2])"},
+                    },
+                    "default_value": {
+                        "kind_type": "TensorValue",
+                        "kind": {
+                            "type_spec": "tensor<float>(x[2])",
+                            "payload_type": "DenseTensorValues",
+                            "payload": {"values": []},
+                        },
+                    },
+                }
+            ],
+            "first_phase": {"expression": "closeness(embedding)"},
+        }
+    ],
+}
+
+
 def start_daemon(
-    binary: Path, index: Path, port: int
-) -> tuple[subprocess.Popen[str], object]:
+    binary: Path, index: Path, socket_path: Path, port: int,
+    definition_path: Path | None = None,
+):
     log = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+    command = [
+        str(binary), "--index", str(index), "--listen", f"unix://{socket_path}",
+        "--web-listen", f"127.0.0.1:{port}",
+    ]
+    if definition_path is not None:
+        command.extend(["--definition-json", str(definition_path)])
     proc = subprocess.Popen(
-        [
-            str(binary),
-            "--index",
-            str(index),
-            "--listen",
-            f"127.0.0.1:{port}",
-        ],
-        env=clean_environment(),
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        text=True,
+        command, env=clean_environment(), stdout=log, stderr=subprocess.STDOUT, text=True,
     )
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         if proc.poll() is not None:
             output = daemon_log(log)
             log.close()
-            raise RuntimeError(
-                "packaged daemon exited"
-                + (f":\n{output}" if output else f" with {proc.returncode}")
-            )
+            raise RuntimeError("packaged daemon exited" + (f":\n{output}" if output else ""))
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.2):
                 return proc, log
         except OSError:
             time.sleep(0.1)
-    proc.terminate()
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=10)
-    output = daemon_log(log)
-    log.close()
-    raise RuntimeError(
-        "packaged daemon did not become ready"
-        + (f":\n{output}" if output else "")
-    )
+    stop_daemon(proc, log)
+    raise RuntimeError("packaged daemon did not become ready" + (f":\n{daemon_log(log)}" if log else ""))
 
 
-def stop_daemon(proc: subprocess.Popen[str], log: object) -> None:
+def stop_daemon(proc, log) -> None:
     if proc.poll() is None:
         proc.terminate()
         try:
-            proc.wait(timeout=10)
+            proc.wait(timeout=15)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.wait(timeout=10)
+            proc.wait(timeout=5)
     log.close()
 
 
-def node_probe(node: Path, endpoint: str) -> None:
-    code = '''import {Index,Tensor,q} from "@searchkernel/client/node";
-const x=Index.connect(process.argv[1]);
-await x.insert({_id:"c",title:"gamma running shoe",kind:"shoe",score:4n,embedding:Tensor.dense("tensor<float>(x[2])",[.9,.1])});
-if((await x.get("c")).score!==4n) throw new Error("get failed");
-await x.update("c").set("score",5n).execute();
-let r=await x.search("running").filter("kind = :k",{k:"shoe"}).sort("score","asc").execute();
-if(!r.hits.some(h=>h.id==="c")) throw new Error("text/filter/sort failed");
-r=await x.query(q.nearestNeighbor("embedding","qt")).input("qt",Tensor.dense("tensor<float>(x[2])",[1,0])).limit(3).execute();
-if(!r.hits.some(h=>h.id==="c")) throw new Error("nearest-neighbor failed");
-if(!await x.delete("c") || await x.get("c")!==null) throw new Error("delete failed");
-await x.close();'''
-    run("node", "--input-type=module", "-e", code, endpoint, cwd=node)
+def extract_daemon(root: Path) -> Path:
+    bundle = artifact("searchkerneld-", ".tar.gz")
+    daemon_root = root / "daemon"
+    daemon_root.mkdir()
+    with tarfile.open(bundle) as archive:
+        archive.extractall(daemon_root, filter="data")
+    daemon = daemon_root / "bin/searchkerneld"
+    daemon.chmod(0o755)
+    return daemon
 
 
-def python_connect_probe(venv: Path, endpoint: str) -> None:
-    code = f'''from searchkernel import Index
+def packaged_daemon_negative_probe(root: Path) -> None:
+    bundle = artifact("searchkerneld-", ".tar.gz")
+    broken_root = root / "incomplete-daemon"
+    broken_root.mkdir()
+    with tarfile.open(bundle) as archive:
+        archive.extractall(broken_root, filter="data")
+    broken_daemon = broken_root / "bin/searchkerneld"
+    adapter = broken_root / "lib/libsearchkernel_vespa.so.2"
+    adapter.unlink()
+    broken_daemon.chmod(0o755)
+    result = run(str(broken_daemon), "--searchkernel-runtime-probe", check=False)
+    diagnostic = result.stderr + result.stdout
+    if result.returncode == 0 or "libsearchkernel_vespa.so.2" not in diagnostic:
+        raise RuntimeError(
+            "incomplete packaged daemon runtime did not fail at the missing native adapter: "
+            f"exit={result.returncode}, output={diagnostic!r}"
+        )
+
+
+def with_restarted_daemon(root: Path, daemon: Path, index_name: str, probe) -> None:
+    index = root / index_name
+    socket_path = root / f"{index_name}.sock"
+    definition = root / f"{index_name}.json"
+    definition.write_text(json.dumps(SCHEMA_JSON), encoding="utf-8")
+    port = free_port()
+    endpoint = f"unix://{socket_path}"
+    http = f"http://127.0.0.1:{port}"
+    proc, log = start_daemon(daemon, index, socket_path, port, definition)
+    try:
+        probe("initial", endpoint, http)
+    finally:
+        stop_daemon(proc, log)
+
+    port = free_port()
+    proc, log = start_daemon(daemon, index, socket_path, port)
+    try:
+        probe("reopened", endpoint, f"http://127.0.0.1:{port}")
+    finally:
+        stop_daemon(proc, log)
+
+
+def python_connect_probe(venv: Path, phase: str, endpoint: str) -> None:
+    code = f'''from searchkernel import Index,Tensor,q
 x=Index.connect({endpoint!r})
-assert x.get("a")["score"] == 3
-assert any(h.id == "a" for h in x.search("running").execute().hits)
-x.close()
+try:
+ fields={{f.name for f in x.describe().index.fields}}
+ assert {{"title","kind","score","embedding"}} <= fields
+ if {phase!r} == "initial":
+  x.insert({{"_id":"python-kept","title":"alpha running shoe","kind":"shoe","score":4,"embedding":Tensor.dense("tensor<float>(x[2])",[1,0])}})
+  x.insert({{"_id":"python-sort","title":"beta running shoe","kind":"shoe","score":2,"embedding":Tensor.dense("tensor<float>(x[2])",[0,1])}})
+  x.insert({{"_id":"python-deleted","title":"gamma running shoe","kind":"shoe","score":1,"embedding":Tensor.dense("tensor<float>(x[2])",[.5,.5])}})
+  x.update("python-kept").set("score",8).set("title","persisted python alpha running shoe").execute()
+  assert x.get("python-kept")["score"] == 8
+  assert x.delete("python-deleted") is True and x.get("python-deleted") is None
+ expected=["python-sort","python-kept"]
+ hits=x.query(q.contains("title","running")).filter("kind = :k",{{"k":"shoe"}}).sort("score","asc").execute().hits
+ assert [h.id for h in hits] == expected
+ assert x.get("python-kept")["title"] == "persisted python alpha running shoe"
+ assert x.get("python-deleted") is None
+ assert [h.id for h in x.query(q.contains("title","persisted")).execute().hits] == ["python-kept"]
+ nearest=x.query(q.nearest_neighbor("embedding","query_embedding",target_hits=2)).ranking("semantic").input("query_embedding",Tensor.dense("tensor<float>(x[2])",[1,0])).limit(2).execute()
+ assert nearest.hits[0].id == "python-kept"
+finally:
+ x.close()
 '''
     run(str(venv / "bin/python"), "-c", code, cwd=venv.parent)
 
 
+def typescript_connect_probe(node: Path, phase: str, endpoint: str) -> None:
+    code = f'''import {{Index,Tensor,q}} from "@searchkernel/client/node";
+const x=Index.connect({json.dumps(endpoint)});
+try {{
+ const schema=(await x.describe()).index;
+ const fields=new Set(schema.fields.map(f=>f.name));
+ for(const f of ["title","kind","score","embedding"]) if(!fields.has(f)) throw new Error("schema missing "+f);
+ if({json.dumps(phase)}==="initial") {{
+  await x.insert({{_id:"typescript-kept",title:"delta running shoe",kind:"shoe",score:4n,embedding:Tensor.dense("tensor<float>(x[2])",[1,0])}});
+  await x.insert({{_id:"typescript-sort",title:"epsilon running shoe",kind:"shoe",score:2n,embedding:Tensor.dense("tensor<float>(x[2])",[0,1])}});
+  await x.insert({{_id:"typescript-deleted",title:"zeta running shoe",kind:"shoe",score:1n,embedding:Tensor.dense("tensor<float>(x[2])",[.5,.5])}});
+  await x.update("typescript-kept").set("score",8n).set("title","persisted typescript delta running shoe").execute();
+  if((await x.get("typescript-kept")).score!==8n) throw new Error("updated get failed");
+  if(!await x.delete("typescript-deleted") || await x.get("typescript-deleted")!==null) throw new Error("delete failed");
+ }}
+ const hits=(await x.query(q.contains("title","running")).filter("kind = :k",{{k:"shoe"}}).sort("score","asc").execute()).hits;
+ if(hits.map(h=>h.id).join(",")!=="typescript-sort,typescript-kept") throw new Error("text/filter/sort failed: "+hits.map(h=>h.id));
+ if((await x.get("typescript-kept")).title!=="persisted typescript delta running shoe") throw new Error("persisted update failed");
+ if(await x.get("typescript-deleted")!==null) throw new Error("deleted document returned after reopen");
+ if((await x.query(q.contains("title","persisted")).execute()).hits.map(h=>h.id).join(",")!=="typescript-kept") throw new Error("updated document is not searchable");
+ const nearest=await x.query(q.nearestNeighbor("embedding","query_embedding")).ranking("semantic").input("query_embedding",Tensor.dense("tensor<float>(x[2])",[1,0])).limit(2).execute();
+ if(nearest.hits[0].id!=="typescript-kept") throw new Error("nearest-neighbor failed");
+}} finally {{ await x.close(); }}
+'''
+    run("node", "--input-type=module", "-e", code, cwd=node)
+
+
+RUBY_PROBE = r'''require "json"
+require "rubygems"
+gem "searchkernel"
+require "searchkernel"
+
+spec = Gem.loaded_specs.fetch("searchkernel")
+entry = $LOADED_FEATURES.find { |path| File.basename(path) == "searchkernel.rb" }
+raise "installed gem entry point was not loaded" unless entry
+raise "Ruby client did not load from installed gem" unless File.expand_path(entry) == File.join(File.expand_path(spec.full_gem_path), "lib", "searchkernel.rb")
+
+phase, endpoint = ARGV
+index = SearchKernel::Index.connect(endpoint)
+begin
+  names = index.describe.fetch("fields").map { |field| field.fetch("name") }
+  raise "schema missing release fields: #{names.inspect}" unless %w[title kind score embedding].all? { |name| names.include?(name) }
+  if phase == "initial"
+    index.insert("ruby-kept", {"title" => "eta running shoe", "kind" => "shoe", "score" => 4, "embedding" => SearchKernel::Tensor.dense("tensor<float>(x[2])", [1, 0])})
+    index.insert("ruby-sort", {"title" => "theta running shoe", "kind" => "shoe", "score" => 2, "embedding" => SearchKernel::Tensor.dense("tensor<float>(x[2])", [0, 1])})
+    index.insert("ruby-deleted", {"title" => "iota running shoe", "kind" => "shoe", "score" => 1, "embedding" => SearchKernel::Tensor.dense("tensor<float>(x[2])", [0.5, 0.5])})
+    index.patch("ruby-kept").set("score", 8).set("title", "persisted ruby eta running shoe").execute
+    raise "updated get failed" unless index.get("ruby-kept").fetch("score") == 8
+    raise "delete failed" unless index.delete("ruby-deleted") && index.get("ruby-deleted").nil?
+  end
+  hits = index.query(SearchKernel::Query.contains("title", "running")).filter("kind = :k", "k" => "shoe").sort("score", "asc").execute.hits.map(&:id)
+  raise "text/filter/sort failed: #{hits.inspect}" unless hits == %w[ruby-sort ruby-kept]
+  raise "updated field did not persist" unless index.get("ruby-kept").fetch("title") == "persisted ruby eta running shoe"
+  raise "deleted document returned after reopen" unless index.get("ruby-deleted").nil?
+  raise "updated document is not searchable" unless index.query(SearchKernel::Query.contains("title", "persisted")).execute.hits.map(&:id) == ["ruby-kept"]
+  query = SearchKernel::Query.nearest_neighbor("embedding", "query_embedding", target_hits: 2)
+  nearest = index.query(query).ranking("semantic").input("query_embedding", SearchKernel::Tensor.dense("tensor<float>(x[2])", [1, 0])).limit(2).execute
+  raise "nearest-neighbor failed" unless nearest.hits.first.id == "ruby-kept"
+ensure
+  index.close
+end
+'''
+
+
+def ruby_connect_probe(gem_home: Path, root: Path, phase: str, http: str) -> None:
+    script = root / "ruby-connect-probe.rb"
+    script.write_text(RUBY_PROBE, encoding="utf-8")
+    env = {"GEM_HOME": str(gem_home), "GEM_PATH": str(gem_home)}
+    run("ruby", str(script), phase, http, cwd=root, env=env)
+
+
 def main() -> None:
     verify_manifest()
-    with tempfile.TemporaryDirectory(
-        prefix="searchkernel-release-qualification-"
-    ) as raw:
+    with tempfile.TemporaryDirectory(prefix="searchkernel-release-qualification-") as raw:
         root = Path(raw)
+        installs = install_consumers(root)
+        context = {"daemon": None}
 
-        rust = artifact("searchkernel-rust-", ".tar.gz")
-        rust_root = root / "rust"
-        rust_root.mkdir()
-        with tarfile.open(rust) as archive:
-            archive.extractall(rust_root, filter="data")
-        run(
-            "cargo",
-            "run",
-            "--quiet",
-            "-p",
-            "searchkernel",
-            "--features",
-            "native",
-            "--example",
-            "try_searchkernel_client_api_e2e",
-            cwd=rust_root,
-        )
+        def rust_embedded_probe() -> None:
+            rust = artifact("searchkernel-rust-", ".tar.gz")
+            rust_root = root / "rust"
+            rust_root.mkdir()
+            with tarfile.open(rust) as archive:
+                archive.extractall(rust_root, filter="data")
+            native_release_env = {}
+            token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+            if token:
+                native_release_env["GH_TOKEN"] = token
+            run(
+                "cargo", "run", "--quiet", "-p", "searchkernel", "--features", "native",
+                "--example", "try_searchkernel_client_api_e2e", cwd=rust_root,
+                env=native_release_env,
+            )
 
-        wheel = artifact("searchkernel-", ".whl")
-        venv = root / "py"
-        run(sys.executable, "-m", "venv", str(venv))
-        run(str(venv / "bin/pip"), "install", str(wheel))
-        python_probe(venv, root / "managed-index")
+        def searchkerneld_runtime_probe() -> None:
+            context["daemon"] = extract_daemon(root)
+            packaged_daemon_negative_probe(root)
 
-        npm = artifact("searchkernel-client-", ".tgz")
-        node = root / "node"
-        node.mkdir()
-        (node / "package.json").write_text(
-            '{"private":true,"type":"module"}',
-            encoding="utf-8",
-        )
-        run(
-            "npm",
-            "install",
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-            "--package-lock=false",
-            str(npm),
-            cwd=node,
-        )
+        def python_managed_local_probe() -> None:
+            python_managed_local(installs["python"], root / "managed-local-index")
 
-        negative = (
-            'import("@searchkernel/client/node").then(async m=>{'
-            'process.env.SEARCHKERNEL_LOCAL_HOST="/definitely/missing-searchkerneld";'
-            'try{await m.Index.open("missing");process.exit(2)}'
-            'catch(e){if(!String(e).match(/ENOENT|not found|spawn/))throw e}})'
-        )
-        run("node", "-e", negative, cwd=node)
+        def python_connect_probe_runner() -> None:
+            with_restarted_daemon(
+                root, context["daemon"], "python-connect-index",
+                lambda phase, endpoint, _http: python_connect_probe(installs["python"], phase, endpoint),
+            )
 
-        daemon_bundle = artifact("searchkerneld-", ".tar.gz")
-        daemon_root = root / "daemon"
-        daemon_root.mkdir()
-        with tarfile.open(daemon_bundle) as archive:
-            archive.extractall(daemon_root, filter="data")
-        daemon = daemon_root / "bin/searchkerneld"
-        daemon.chmod(0o755)
+        def typescript_node_connect_probe_runner() -> None:
+            with_restarted_daemon(
+                root, context["daemon"], "typescript-node-index",
+                lambda phase, endpoint, _http: typescript_connect_probe(installs["node"], phase, endpoint),
+            )
 
-        port = free_port()
-        proc, log = start_daemon(daemon, root / "managed-index", port)
-        endpoint = f"http://127.0.0.1:{port}"
-        try:
-            python_connect_probe(venv, endpoint)
-            node_probe(node, endpoint)
-        finally:
-            stop_daemon(proc, log)
+        def ruby_connect_probe_runner() -> None:
+            with_restarted_daemon(
+                root, context["daemon"], "ruby-connect-index",
+                lambda phase, _endpoint, http: ruby_connect_probe(installs["ruby"], root, phase, http),
+            )
 
-        port = free_port()
-        proc, log = start_daemon(daemon, root / "managed-index", port)
-        try:
-            python_connect_probe(venv, f"http://127.0.0.1:{port}")
-        finally:
-            stop_daemon(proc, log)
+        runners = {
+            "rust_embedded": rust_embedded_probe,
+            "searchkerneld_runtime": searchkerneld_runtime_probe,
+            "python_managed_local": python_managed_local_probe,
+            "python_connect": python_connect_probe_runner,
+            "typescript_node_connect": typescript_node_connect_probe_runner,
+            "ruby_connect": ruby_connect_probe_runner,
+        }
+        failures = []
+        for row, probe_name in QUALIFICATION_PROBES.items():
+            try:
+                runners[probe_name]()
+                print(f"packaged qualification PASS: {row}")
+            except Exception as exc:
+                failures.append(f"{row} ({probe_name}): {exc}")
+        if failures:
+            raise SystemExit(
+                "clean-machine consumer release qualification failed:\n  "
+                + "\n  ".join(failures)
+            )
 
     print("clean-machine consumer release qualification PASS")
 

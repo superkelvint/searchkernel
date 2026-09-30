@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import ast
 import unittest
 from pathlib import Path
 
@@ -56,15 +57,75 @@ class QualificationPolicyTests(unittest.TestCase):
 
     def test_packaged_supported_rows_own_clean_consumer_gate(self):
         authority = json.loads((ROOT / "docs/release-support.json").read_text())
-        packaged = {"rust-embedded", "searchkerneld", "python", "typescript-node"}
-        rows = [row for row in authority["supported"] if row["surface"] in packaged]
-        self.assertTrue(rows)
+        source = ast.parse((ROOT / "tools/qualify-consumer-release.py").read_text())
+        registry = next(
+            ast.literal_eval(node.value)
+            for node in source.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "QUALIFICATION_PROBES"
+                for target in node.targets
+            )
+        )
+        supported = {
+            f"{row['surface']}/{row['runtime']}": row
+            for row in authority["supported"]
+        }
+        self.assertEqual(set(supported), set(registry))
+        self.assertEqual(len(registry), len(set(registry.values())))
+        self.assertTrue(all(isinstance(probe, str) and probe for probe in registry.values()))
+        runners = next(
+            {key.value for key in node.value.keys if isinstance(key, ast.Constant)}
+            for node in ast.walk(source)
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "runners"
+                for target in node.targets
+            )
+        )
+        self.assertEqual(set(runners), set(registry.values()))
         self.assertEqual(
             {"tools/qualify-consumer-release.py dist/release"},
-            {row.get("qualification") for row in rows},
+            {row.get("qualification") for row in supported.values()},
         )
-        ruby = [row for row in authority["supported"] if row["surface"] == "ruby"]
-        self.assertTrue(ruby, "Ruby connect release support must remain intact")
+        self.assertEqual(registry["ruby/connect"], "ruby_connect")
+        main = next(
+            node for node in source.body
+            if isinstance(node, ast.FunctionDef) and node.name == "main"
+        )
+        self.assertTrue(any(
+            isinstance(node, ast.For)
+            and isinstance(node.iter, ast.Call)
+            and isinstance(node.iter.func, ast.Attribute)
+            and isinstance(node.iter.func.value, ast.Name)
+            and node.iter.func.value.id == "QUALIFICATION_PROBES"
+            and node.iter.func.attr == "items"
+            for node in ast.walk(main)
+        ), "main must dispatch each row from the structured support registry")
+        self.assertTrue(any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Subscript)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "runners"
+            for node in ast.walk(main)
+        ), "registry entries must resolve through the runtime probe dispatch map")
+
+    def test_release_packager_builds_the_real_ruby_gem(self):
+        source = ast.parse((ROOT / "tools/package-consumer-release.py").read_text())
+        gem_builds = [
+            node for node in ast.walk(source)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "run"
+            and len(node.args) >= 2
+            and all(isinstance(arg, ast.Constant) for arg in node.args[:2])
+            and [arg.value for arg in node.args[:2]] == ["gem", "build"]
+        ]
+        self.assertEqual(len(gem_builds), 1)
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        self.assertIn('run("gem", "install", "--local", "--install-dir"', gate)
+        self.assertIn('"ruby/connect": "ruby_connect"', gate)
 
 
 if __name__ == "__main__":
