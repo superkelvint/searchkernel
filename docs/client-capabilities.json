@@ -2017,6 +2017,16 @@
             {
               "capability": "grouping.structured",
               "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "core/crates/searchkernel/tests/grouping_native_e2e.rs",
+              "line": 9
+            },
+            {
+              "capability": "grouping.structured",
+              "scenario": "basic",
               "surface": "typescript",
               "runtime": "node",
               "kind": "e2e",
@@ -2067,6 +2077,16 @@
               "strength": "conformance",
               "path": "clients/php/tests/run.php",
               "line": 1506
+            },
+            {
+              "capability": "grouping.functions",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "core/crates/searchkernel/tests/grouping_native_e2e.rs",
+              "line": 10
             }
           ],
           "overrides": []
@@ -2131,6 +2151,16 @@
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
               "line": 970
+            },
+            {
+              "capability": "grouping.aggregations",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "core/crates/searchkernel/tests/grouping_native_e2e.rs",
+              "line": 11
             },
             {
               "capability": "grouping.aggregations",

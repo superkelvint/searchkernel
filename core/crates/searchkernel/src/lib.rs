@@ -22,8 +22,8 @@ pub use document::DocumentId;
 pub use error::{Error, ErrorCode, ErrorDetail, Result};
 pub use filter::{field, FieldRef, Filter, FilterBindings, Range, SearchFilterInput};
 pub use grouping::{
-    GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOrder, GroupingOutput,
-    GroupingPlan,
+    GroupingAggregation, GroupingExpression, GroupingFilter, GroupingLevel, GroupingOrder,
+    GroupingOutput, GroupingPlan,
 };
 pub use index::{Index, IndexRuntime};
 pub use patch::Patch;
