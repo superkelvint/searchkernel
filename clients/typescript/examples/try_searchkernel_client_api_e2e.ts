@@ -444,8 +444,8 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
     rank_inputs: rankInput.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
     rank_properties: rankProperty.hits.map((hit) => ({ id: hit.id, score: hit.score, feature: paritySafe(hit.features["query(boost)"]) })),
     tensor_readback: paritySafe(tensorValue.$searchkernel_tensor.dense),
-    nearest_neighbor: { observation: { intent: nearestIntent, ids: nearest.hits.map((hit) => hit.id), scores: nearest.hits.map((hit) => hit.relevance) }, capabilities: {} },
-    hybrid_text_vector: { observation: { intent: hybridIntent, ids: hybrid.hits.map((hit) => hit.id), top_score: hybrid.hits[0]!.score }, capabilities: {} },
+    nearest_neighbor: { observation: { intent: PARITY_CONSUMED_INTENTS.get("nearest_neighbor"), ids: nearest.hits.map((hit) => hit.id), scores: nearest.hits.map((hit) => hit.relevance) }, capabilities: {} },
+    hybrid_text_vector: { observation: { intent: PARITY_CONSUMED_INTENTS.get("hybrid_text_vector"), ids: hybrid.hits.map((hit) => hit.id), top_score: hybrid.hits[0]!.score }, capabilities: {} },
     hybrid: { top_id: hybrid.hits[0]!.id, has_bag: hybrid.hits.some((hit) => hit.id === "bag-1") },
     two_phase_reranking: { ids: reranked.hits.map((hit) => hit.id) },
     coverage_degradation: {
