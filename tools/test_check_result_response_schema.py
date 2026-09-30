@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,32 +16,108 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ResultResponseSchemaTest(unittest.TestCase):
-    def test_current_response_fields_are_classified(self) -> None:
-        self.assertEqual(MODULE.verify(MODULE.SCHEMA.read_text()), [])
+    def test_checked_in_response_bfbs_is_the_schema_authority(self) -> None:
+        closure = MODULE.result_closure(MODULE.BFBS.read_bytes())
+        self.assertEqual(MODULE.verify(MODULE.BFBS.read_bytes()), [])
+        self.assertIn("TensorCell", closure)
+        self.assertIn("ValueKind", closure)
 
-    def test_new_field_fails_until_classified(self) -> None:
-        schema = MODULE.SCHEMA.read_text().replace(
-            "table Hit {", "table Hit {\n  future_result_field:string;", 1
-        )
-        self.assertTrue(any("Hit members mismatch" in error for error in MODULE.verify(schema)))
+    def test_corrupt_non_bfbs_input_fails_closed(self) -> None:
+        with self.assertRaises(ValueError):
+            MODULE.result_closure(b"not a BFBS reflection schema")
 
-    def test_new_nested_result_field_fails(self) -> None:
-        schema = MODULE.SCHEMA.read_text().replace(
-            "table TensorCell {", "table TensorCell {\n  future_cell_field:string;", 1
-        )
-        self.assertTrue(any("TensorCell members mismatch" in error for error in MODULE.verify(schema)))
+    def test_synthetic_union_discriminators_are_not_logical_fields(self) -> None:
+        closure = MODULE.result_closure(MODULE.BFBS.read_bytes())
+        self.assertEqual(set(closure["ResultNode"][1]), {"node"})
+        self.assertEqual(set(closure["Value"][1]), {"kind"})
+        self.assertNotIn("NONE", closure["ResultNodeKind"][1])
+        self.assertEqual(set(closure["ResultNodeKind"][1]), {"Hit", "ResultGroup"})
 
-    def test_new_enum_value_fails(self) -> None:
-        schema = MODULE.SCHEMA.read_text().replace(
-            "Unknown = 4", "Unknown = 4,\n  FutureRelation = 5", 1
-        )
-        self.assertTrue(any("TotalHitsRelation members mismatch" in error for error in MODULE.verify(schema)))
+    def test_vector_union_discriminator_is_not_a_logical_field(self) -> None:
+        schema = """namespace SearchKernel.V2;
 
-    def test_new_union_arm_fails(self) -> None:
-        schema = MODULE.SCHEMA.read_text().replace(
-            "  ResultGroup\n}", "  ResultGroup,\n  FutureNode\n}", 1
+table Hit {
+  id:string;
+}
+
+table ResultGroup {
+  id:string;
+}
+
+union ResultNodeKind {
+  Hit,
+  ResultGroup
+}
+
+table SearchResult {
+  nodes:[ResultNodeKind];
+}
+
+root_type SearchResult;
+"""
+        flatc = subprocess.check_output(
+            ["bash", str(ROOT / "tools/resolve-flatbuffers.sh"), "flatc"],
+            text=True,
+        ).strip()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "vector_union.fbs"
+            source.write_text(schema)
+            subprocess.run(
+                [
+                    flatc,
+                    "--binary",
+                    "--schema",
+                    "-o",
+                    directory,
+                    str(source),
+                ],
+                check=True,
+                cwd=ROOT,
+            )
+            closure = MODULE.result_closure(
+                (Path(directory) / "vector_union.bfbs").read_bytes()
+            )
+
+        self.assertEqual(set(closure["SearchResult"][1]), {"nodes"})
+        self.assertNotIn("nodes_type", closure["SearchResult"][1])
+        self.assertEqual(
+            set(closure["ResultNodeKind"][1]),
+            {"Hit", "ResultGroup"},
         )
-        self.assertTrue(any("ResultNodeKind members mismatch" in error for error in MODULE.verify(schema)))
+
+    def test_new_hit_field_fails_until_coverage_is_updated(self) -> None:
+        closure = copy.deepcopy(MODULE.result_closure(MODULE.BFBS.read_bytes()))
+        closure["Hit"][1]["future_result_field"] = "future_result_field"
+        errors = MODULE.verify_schema(closure, self.manifest())
+        self.assertTrue(any("Hit members mismatch" in error for error in errors))
+
+    def test_new_reachable_result_type_fails_until_coverage_is_updated(self) -> None:
+        closure = copy.deepcopy(MODULE.result_closure(MODULE.BFBS.read_bytes()))
+        closure["FutureResultMetadata"] = ("table", {})
+        errors = MODULE.verify_schema(closure, self.manifest())
+        self.assertTrue(any("result schema declarations mismatch" in error for error in errors))
+
+    def test_new_deeply_nested_field_fails_until_coverage_is_updated(self) -> None:
+        closure = copy.deepcopy(MODULE.result_closure(MODULE.BFBS.read_bytes()))
+        closure["TensorCell"][1]["future_cell_field"] = "future_cell_field"
+        errors = MODULE.verify_schema(closure, self.manifest())
+        self.assertTrue(any("TensorCell members mismatch" in error for error in errors))
+
+    def test_new_total_hits_relation_value_fails_until_coverage_is_updated(self) -> None:
+        closure = copy.deepcopy(MODULE.result_closure(MODULE.BFBS.read_bytes()))
+        closure["TotalHitsRelation"][1]["FutureRelation"] = 5
+        errors = MODULE.verify_schema(closure, self.manifest())
+        self.assertTrue(any("TotalHitsRelation members mismatch" in error for error in errors))
+
+    def test_new_result_node_union_arm_fails_until_coverage_is_updated(self) -> None:
+        closure = copy.deepcopy(MODULE.result_closure(MODULE.BFBS.read_bytes()))
+        closure["ResultNodeKind"][1]["FutureNode"] = 3
+        errors = MODULE.verify_schema(closure, self.manifest())
+        self.assertTrue(any("ResultNodeKind members mismatch" in error for error in errors))
+
+    @staticmethod
+    def manifest():
+        return MODULE.json.loads(MODULE.MANIFEST.read_text())
 
     def test_classified_field_must_be_populated_by_its_scenario(self) -> None:
         envelope = {
@@ -83,13 +162,13 @@ class ResultResponseSchemaTest(unittest.TestCase):
         )
 
     def test_manifest_scenario_must_really_populate_field(self) -> None:
-        manifest = MODULE.json.loads(MODULE.MANIFEST.read_text())
+        manifest = self.manifest()
         manifest["partitions"]["fields"]["Hit"]["highlights"] = ["empty"]
         errors = MODULE.verify_partitions(manifest, {"empty": {"payload": {}}})
         self.assertTrue(any("Hit.highlights is not exercised" in error for error in errors))
 
     def test_malformed_manifest_scenario_must_match_failure_class(self) -> None:
-        manifest = MODULE.json.loads(MODULE.MANIFEST.read_text())
+        manifest = self.manifest()
         manifest["partitions"]["semantic"]["malformed.unknown_value_union"] = [
             "unknown-result-node-union"
         ]
@@ -103,7 +182,7 @@ class ResultResponseSchemaTest(unittest.TestCase):
         )
 
     def test_manifest_missing_scenario_fails(self) -> None:
-        manifest = MODULE.json.loads(MODULE.MANIFEST.read_text())
+        manifest = self.manifest()
         manifest["partitions"]["semantic"]["test.missing"] = ["does-not-exist"]
         errors = MODULE.verify_partitions(manifest, {})
         self.assertIn("test.missing references missing scenario does-not-exist", errors)
