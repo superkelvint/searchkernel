@@ -369,23 +369,80 @@ impl Index {
         source: impl AsRef<std::path::Path>,
         destination: impl AsRef<std::path::Path>,
     ) -> Result<()> {
+        use std::time::{Duration, Instant};
+
+        const LOCK_WAIT: Duration = Duration::from_secs(5);
+        const LOCK_RETRY: Duration = Duration::from_millis(10);
+
+        fn unsafe_path(label: &str, path: &std::path::Path) -> Error {
+            Error::search(
+                crate::error::ErrorCode::FailedPrecondition,
+                format!("unsafe {label} path: {}", path.display()),
+            )
+        }
+
+        fn metadata_no_follow(
+            label: &str,
+            path: &std::path::Path,
+        ) -> Result<Option<std::fs::Metadata>> {
+            match std::fs::symlink_metadata(path) {
+                Ok(metadata) if metadata.file_type().is_symlink() => Err(unsafe_path(label, path)),
+                Ok(metadata) => Ok(Some(metadata)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(error) => Err(Error::Infrastructure(format!(
+                    "inspect {label} path '{}': {error}",
+                    path.display()
+                ))),
+            }
+        }
+
         let source = source.as_ref();
         let destination = destination.as_ref();
 
-        if destination.is_dir() {
-            return Ok(());
+        if let Some(metadata) = metadata_no_follow("managed migration destination", destination)? {
+            if !metadata.is_dir() {
+                return Err(unsafe_path("managed migration destination", destination));
+            }
+            if metadata_no_follow("legacy migration source", source)?.is_none() {
+                return Ok(());
+            }
+            return Err(Error::already_exists(destination.display().to_string()));
+        }
+        if let Some(metadata) = metadata_no_follow("legacy migration source", source)? {
+            if !metadata.is_dir() {
+                return Err(unsafe_path("legacy migration source", source));
+            }
+        } else {
+            return Err(Error::not_found(source.display().to_string()));
         }
 
-        let _source_lock = LifecycleLock::acquire(source).map_err(|error| {
-            if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::from_ir(searchkernel_ir::index_in_use_error())
-            } else {
-                error
+        let source_deadline = Instant::now() + LOCK_WAIT;
+        let _source_lock = loop {
+            match LifecycleLock::acquire(source) {
+                Ok(lock) => break lock,
+                Err(error) if error.code() == crate::error::ErrorCode::AlreadyExists => {
+                    if Instant::now() >= source_deadline {
+                        return Err(Error::from_ir(searchkernel_ir::index_in_use_error()));
+                    }
+                    std::thread::sleep(LOCK_RETRY);
+                }
+                Err(error) => return Err(error),
             }
-        })?;
+        };
 
-        if !source.is_dir() {
-            return Err(Error::not_found(source.display().to_string()));
+        match metadata_no_follow("legacy migration source", source)? {
+            Some(metadata) if metadata.is_dir() => {}
+            Some(_) => return Err(unsafe_path("legacy migration source", source)),
+            None => {
+                if let Some(metadata) =
+                    metadata_no_follow("managed migration destination", destination)?
+                {
+                    if metadata.is_dir() {
+                        return Ok(());
+                    }
+                }
+                return Err(Error::not_found(source.display().to_string()));
+            }
         }
 
         let manifest = super::manifest::IndexManifest::read(source)?;
@@ -403,16 +460,31 @@ impl Index {
         std::fs::create_dir_all(destination_parent)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
 
-        let _destination_lock = LifecycleLock::acquire(destination).map_err(|error| {
-            if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::from_ir(searchkernel_ir::index_in_use_error())
-            } else {
-                error
+        let destination_deadline = Instant::now() + LOCK_WAIT;
+        let _destination_lock = loop {
+            match LifecycleLock::acquire(destination) {
+                Ok(lock) => break lock,
+                Err(error) if error.code() == crate::error::ErrorCode::AlreadyExists => {
+                    if Instant::now() >= destination_deadline {
+                        return Err(Error::from_ir(searchkernel_ir::index_in_use_error()));
+                    }
+                    std::thread::sleep(LOCK_RETRY);
+                }
+                Err(error) => return Err(error),
             }
-        })?;
+        };
 
-        if destination.exists() {
-            return Err(Error::already_exists(destination.display().to_string()));
+        match metadata_no_follow("managed migration destination", destination)? {
+            None => {}
+            Some(metadata) => {
+                if !metadata.is_dir() {
+                    return Err(unsafe_path("managed migration destination", destination));
+                }
+                if metadata_no_follow("legacy migration source", source)?.is_none() {
+                    return Ok(());
+                }
+                return Err(Error::already_exists(destination.display().to_string()));
+            }
         }
 
         std::fs::rename(source, destination).map_err(|error| {

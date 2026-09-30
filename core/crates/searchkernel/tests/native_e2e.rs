@@ -690,3 +690,99 @@ fn unique_suffix() -> u128 {
         .expect("system clock after epoch")
         .as_nanos()
 }
+
+#[cfg(all(feature = "internal-api", unix))]
+#[test]
+fn native_storage_migration_rejects_symlink_source_and_destination() {
+    use std::os::unix::fs::symlink;
+
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-native-migrate-symlink-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    std::fs::create_dir_all(&root).expect("create migration test root");
+
+    let real_source = root.join("real-source");
+    let source_link = root.join("source-link");
+    let destination = root.join("managed-target");
+    let runtime = IndexRuntime::create(
+        &real_source,
+        IndexDefinition::new().field(Field::text("title")),
+    )
+    .expect("create source index");
+    runtime.close().expect("close source index");
+    symlink(&real_source, &source_link).expect("create source symlink");
+
+    let error = searchkernel::Index::migrate_storage(&source_link, &destination)
+        .expect_err("symlink source must be rejected");
+    assert_eq!(error.code(), ErrorCode::FailedPrecondition);
+    assert!(std::fs::symlink_metadata(&source_link)
+        .expect("source link metadata")
+        .file_type()
+        .is_symlink());
+    assert!(real_source.is_dir());
+    assert!(!destination.exists());
+
+    let source = root.join("source");
+    let external = root.join("external");
+    let destination_link = root.join("destination-link");
+    let runtime = IndexRuntime::create(&source, IndexDefinition::new().field(Field::text("title")))
+        .expect("create second source index");
+    runtime.close().expect("close second source index");
+    std::fs::create_dir(&external).expect("create external directory");
+    symlink(&external, &destination_link).expect("create destination symlink");
+
+    let error = searchkernel::Index::migrate_storage(&source, &destination_link)
+        .expect_err("symlink destination must be rejected");
+    assert_eq!(error.code(), ErrorCode::FailedPrecondition);
+    assert!(source.is_dir());
+    assert!(std::fs::symlink_metadata(&destination_link)
+        .expect("destination link metadata")
+        .file_type()
+        .is_symlink());
+    assert!(external.is_dir());
+
+    std::fs::remove_dir_all(&root).expect("remove migration test root");
+}
+
+#[cfg(feature = "internal-api")]
+#[test]
+fn native_storage_migration_concurrent_equivalent_calls_converge() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-native-migrate-race-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    std::fs::create_dir_all(&root).expect("create migration race root");
+    let source = root.join("source");
+    let destination = root.join("managed-target");
+    let runtime = IndexRuntime::create(&source, IndexDefinition::new().field(Field::text("title")))
+        .expect("create migration source");
+    runtime.close().expect("close migration source");
+
+    let barrier = Arc::new(Barrier::new(3));
+    let workers = (0..2)
+        .map(|_| {
+            let barrier = Arc::clone(&barrier);
+            let source = source.clone();
+            let destination = destination.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                searchkernel::Index::migrate_storage(source, destination)
+            })
+        })
+        .collect::<Vec<_>>();
+    barrier.wait();
+
+    for worker in workers {
+        worker
+            .join()
+            .expect("migration worker")
+            .expect("equivalent concurrent migration converges");
+    }
+    assert!(!source.exists());
+    assert!(destination.is_dir());
+
+    std::fs::remove_dir_all(&root).expect("remove migration race root");
+}
