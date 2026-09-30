@@ -195,8 +195,8 @@ public:
 
 // Hardening builds install this forwarding view as FeedHandler's active view.
 // Automatic FeedHandler commits and Search Kernel's explicit publication fence
-// therefore pass through the same gate. The delegate remains Vespa's real
-// ready feed view; only forceCommit scheduling is held by the failpoint.
+// therefore pass through the same gate. The delegate preserves Vespa's real
+// DocumentSubDBCollection feed topology; only forceCommit scheduling is held.
 class PublicationGateFeedView final : public proton::IFeedView {
     proton::IFeedView::SP _delegate;
     std::shared_ptr<FailpointController> _failpoints;

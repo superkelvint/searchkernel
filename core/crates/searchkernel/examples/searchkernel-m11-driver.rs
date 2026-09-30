@@ -405,6 +405,33 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
         return Err("DELETE returned before matcher removal was published".into());
     }
 
+    // DELETE -> reinsert must traverse the same combined ready/removed routing
+    // as production. A hardening view that delegates only to the ready sub-DB
+    // can leave placement metadata inconsistent even when a plain delete looks green.
+    engine.put(
+        Document::new("publication-gated-reinsert")
+            .field("title", "gatedreinsertold")
+            .field("qty", 92),
+    )?;
+    if !engine.delete("publication-gated-reinsert")? {
+        return Err("DELETE before reinsert did not find the document".into());
+    }
+    engine.put(
+        Document::new("publication-gated-reinsert")
+            .field("title", "gatedreinsertnew")
+            .field("qty", 93),
+    )?;
+    if engine.get("publication-gated-reinsert")?.is_none()
+        || term_search_ids(engine, "title", "gatedreinsertold")?
+            .iter()
+            .any(|id| id == "publication-gated-reinsert")
+        || !term_search_ids(engine, "title", "gatedreinsertnew")?
+            .iter()
+            .any(|id| id == "publication-gated-reinsert")
+    {
+        return Err("DELETE -> reinsert did not preserve production feed routing".into());
+    }
+
     Ok(())
 }
 
