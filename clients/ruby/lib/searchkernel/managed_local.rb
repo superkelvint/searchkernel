@@ -73,7 +73,7 @@ module SearchKernel
       def close_all
         registry.values.each do |host|
           begin
-            host.close
+            host.close(force: true)
           rescue StandardError
             nil
           end
