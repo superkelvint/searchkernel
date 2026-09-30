@@ -23,8 +23,8 @@ SK_NATIVE_REGENERATE_BINDINGS=0 \
 echo "building M11 native driver against coverage SDK"
 export CARGO_TARGET_DIR="$CARGO_TARGET"
 export SK_NATIVE_SDK="$SDK"
-cargo build --quiet --manifest-path "$ROOT/reference/vespa/m11/rust-driver/Cargo.toml"
-DRIVER="$CARGO_TARGET/debug/searchkernel-m11-driver"
+cargo build --quiet -p searchkernel --features native,internal-api,m11-verifier-hardening --example searchkernel-m11-driver
+DRIVER="$CARGO_TARGET/debug/examples/searchkernel-m11-driver"
 CONFIG="$RUN/config"
 LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     "$DRIVER" compile "$CONFIG"

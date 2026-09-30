@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
+prepare_native_probe_sdk
 require_pinned_vespa
 RUN_LIVE_ORACLE=0
 if live_oracle_enabled; then
@@ -27,9 +28,9 @@ grep -q 'SK_DEGRADATION_TIMEOUT' "$ROOT/core/native/vespa/search.cc"
 grep -q 'was_degraded_by_ann_timeout' "$ROOT/core/native/vespa/search.cc"
 grep -q 'SK_DEGRADATION_ANN_TIMEOUT' "$ROOT/core/native/vespa/search.cc"
 
-cargo fmt --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" -- --check
-cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml"
-CONFIG_BIN="$CARGO_TARGET_DIR/debug/searchkernel-searchreply-config"
+cargo fmt --all -- --check
+cargo build --quiet -p searchkernel-vespa-engine --example searchkernel-searchreply-config
+CONFIG_BIN="$CARGO_TARGET_DIR/debug/examples/searchkernel-searchreply-config"
 [[ -x "$CONFIG_BIN" ]] || fail_verification "SearchReply config compiler was not built: $CONFIG_BIN"
 
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -38,7 +39,7 @@ fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-"$CONFIG_BIN" "$TMP/config"
+cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-searchreply-config -- "$TMP/config"
 
 PROBE="$TMP/searchreply_probe"
 "${CXX:-c++}" -std=gnu++23 -O0 -g -Wall -Wextra -Werror -pthread \

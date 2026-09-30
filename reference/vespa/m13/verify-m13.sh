@@ -14,14 +14,12 @@ if live_oracle_enabled; then
 else
   announce_frozen_oracle_replay
 fi
-require_sdk_manifest "$SDK/manifest.json"
-
 # M13 is cumulative: the previous dense-query milestone must remain green.
 "$ROOT/reference/vespa/m12/verify-m12.sh" --skip-workspace-quality
 run_workspace_quality
 
 cargo fmt --all --check
-cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m13
+cargo check --quiet -p searchkernel-vespa-engine --example api-contract-m13
 
 for symbol in \
     sk_document_add_tensor_dense \
@@ -45,14 +43,16 @@ if rg -n 'FieldValue::Tensor\(_\)\s*=>\s*Value::Null|shadow state|fake tensor da
   fail_verification 'M13 contains a lossy adapter path or parallel tensor state'
 fi
 if rg -n 'serde_json.*tensor.*(store|database)|sort_by.*document_id|fake.*NN' \
-    "$M13/rust-driver"; then
+    "$ROOT/core/crates/searchkernel/examples/searchkernel-m13-driver.rs" "$ROOT/core/crates/searchkernel/examples/searchkernel-m13-adapter-driver.rs" "$ROOT/core/crates/searchkernel/examples/searchkernel-m13-error.rs" "$ROOT/core/crates/searchkernel/examples/support/m13.rs"; then
   fail_verification 'M13 verifier contains a tensor storage or fake-NN shortcut'
 fi
 
-cargo build --quiet --manifest-path "$M13/rust-driver/Cargo.toml" --bins
-LOW="$CARGO_TARGET_DIR/debug/searchkernel-m13-driver"
-ADAPTER="$CARGO_TARGET_DIR/debug/searchkernel-m13-adapter-driver"
-ERROR="$CARGO_TARGET_DIR/debug/searchkernel-m13-error"
+cargo build --quiet -p searchkernel --features native --example searchkernel-m13-driver
+cargo build --quiet -p searchkernel --features native --example searchkernel-m13-adapter-driver
+cargo build --quiet -p searchkernel --features native --example searchkernel-m13-error
+LOW="$CARGO_TARGET_DIR/debug/examples/searchkernel-m13-driver"
+ADAPTER="$CARGO_TARGET_DIR/debug/examples/searchkernel-m13-adapter-driver"
+ERROR="$CARGO_TARGET_DIR/debug/examples/searchkernel-m13-error"
 ORACLE="$M13/oracle/target/m13_cpp_oracle"
 if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
   [[ -x "$ORACLE" ]] || fail_verification \
@@ -89,8 +89,8 @@ for scenario in "$M13"/scenarios/[0-9][0-9]-*.json; do
 
   low_config="$TMP/$id-low-config"
   low_data="$TMP/$id-low-data"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$LOW" "$scenario" "$low_config" "$low_data" >"$TMP/$id-low.json"
+  cargo run --quiet -p searchkernel --features native --example searchkernel-m13-driver -- \
+    "$scenario" "$low_config" "$low_data" >"$TMP/$id-low.json"
   "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-low.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
     "$M13/compare.py" "$TMP/$id-oracle.json" <"$TMP/$id-low.json"
@@ -98,8 +98,8 @@ for scenario in "$M13"/scenarios/[0-9][0-9]-*.json; do
 
   adapter_config="$TMP/$id-adapter-config"
   adapter_data="$TMP/$id-adapter-data"
-  LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$ADAPTER" "$scenario" "$DEFINITION_BIN" "$adapter_config" "$adapter_data" \
+  cargo run --quiet -p searchkernel --features native --example searchkernel-m13-adapter-driver -- \
+    "$scenario" "$DEFINITION_BIN" "$adapter_config" "$adapter_data" \
     >"$TMP/$id-adapter.json"
   "$M13/compare.py" "$M13/expected/$id.json" <"$TMP/$id-adapter.json"
   if [[ "$RUN_LIVE_ORACLE" == 1 ]]; then
@@ -111,8 +111,8 @@ ERRORS="$M13/scenarios/errors.json"
 while read -r id expected path; do
   config="$TMP/error-$id-config"
   data="$TMP/error-$id-data"
-  actual="$(LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$ERROR" "$ERRORS" "$id" "$DEFINITION_BIN" "$config" "$data" 2>/dev/null || true)"
+  actual="$(cargo run --quiet -p searchkernel --features native --example searchkernel-m13-error -- \
+    "$ERRORS" "$id" "$DEFINITION_BIN" "$config" "$data" 2>/dev/null || true)"
   [[ "$actual" == "$expected" ]] || {
     echo "M13 error category mismatch $id ($path): expected=$expected actual=${actual:-<empty>}" >&2
     exit 1

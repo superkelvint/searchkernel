@@ -16,13 +16,13 @@ if rg -n --glob '*.rs' --glob '*.toml' \
 fi
 
 if rg -n --glob '*.rs' --glob '*.toml' \
-    'searchkernel-testkit|searchkernel_testkit' "$M11/rust-driver"; then
+    'searchkernel-testkit|searchkernel_testkit' "$ROOT/core/crates/searchkernel/examples/searchkernel-m11-driver.rs"; then
   fail "M11 driver uses a testkit or alternate backend"
 fi
 
 if rg -n --glob '*.rs' \
     'Command::new|std::process::Command|ProcessBuilder|JNI_CreateJavaVM|libjvm' \
-    "$M11/rust-driver" "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src"; then
+    "$ROOT/core/crates/searchkernel/examples/searchkernel-m11-driver.rs" "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src"; then
   fail "test driver or production wrapper has an alternate runtime/oracle path"
 fi
 
@@ -30,7 +30,7 @@ fi
 # Raw bindings must remain free of a second data path. The engine may decode
 # JSON field values before passing them to Vespa.
 if rg -n --glob '*.rs' --glob '*.toml' 'serde_json' \
-    "$M11/rust-driver" "$ROOT/core/crates/searchkernel-vespa-bindings/src"; then
+    "$ROOT/core/crates/searchkernel/examples/searchkernel-m11-driver.rs" "$ROOT/core/crates/searchkernel-vespa-bindings/src"; then
   fail "test driver or production wrapper has an alternate runtime/oracle path"
 fi
 

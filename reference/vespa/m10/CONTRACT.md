@@ -31,7 +31,7 @@ Ranking execution remains entirely in Vespa C++.
 The compile-only contract is:
 
 ```text
-reference/vespa/api-contract/src/bin/m10.rs
+core/crates/searchkernel-vespa-engine/examples/api-contract-m10.rs
 ```
 
 M10 adds the following low-level concepts to the generic M-series API:

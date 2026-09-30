@@ -372,6 +372,8 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
     "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
     "$PYTHON" "$ROOT/tools/test_dev_universe_summary.py"
+    "$PYTHON" "$ROOT/tools/test_check_verifier_build_ownership.py"
+    "$PYTHON" "$ROOT/tools/check-verifier-build-ownership.py"
     "$CARGO" fmt --all --check
     "$CARGO" check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
@@ -397,6 +399,9 @@ ci_gate() {
 
     echo "== bookkeeping contract =="
     bookkeeping_command check
+
+    echo "== verifier build ownership =="
+    "$PYTHON" "$ROOT/tools/check-verifier-build-ownership.py"
 
     echo "== cargo fmt =="
     "$CARGO" fmt --all -- --check
