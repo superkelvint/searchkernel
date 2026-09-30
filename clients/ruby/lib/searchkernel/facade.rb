@@ -515,6 +515,7 @@ module SearchKernel
       end
 
       index_path, data_root, local_target = ManagedLocalHost.location(location)
+      ManagedLocalHost.prepare_data_root(data_root)
       reserved = false
       ManagedLocalHost.reserve_path(index_path, local_target)
       reserved = true
@@ -544,6 +545,7 @@ module SearchKernel
       end
 
       index_path, data_root, local_target = ManagedLocalHost.location(location)
+      ManagedLocalHost.prepare_data_root(data_root)
       ManagedLocalHost.migrate_legacy(index_path, data_root, local_target)
       ManagedLocalHost.ensure_marker(index_path, local_target) if
         File.directory?(File.join(data_root, local_target)) && !File.exist?(index_path)
