@@ -334,6 +334,7 @@ _MANAGED_HOST_POOL: dict[str, "_ManagedLocalHost"] = {}
 
 _MANAGED_DATA_ROOT_NAME = ".searchkernel-managed"
 _MANAGED_MARKER_NAME = ".searchkernel-managed-target"
+_MANAGED_ROOT_MARKER_NAME = ".searchkernel-data-root"
 
 
 def _managed_location(path: Path) -> tuple[Path, Path, str]:
@@ -347,6 +348,25 @@ def _managed_location(path: Path) -> tuple[Path, Path, str]:
 
 def _managed_marker(path: Path) -> Path:
     return path / _MANAGED_MARKER_NAME
+
+
+def _prepare_managed_data_root(data_root: Path) -> None:
+    marker = data_root / _MANAGED_ROOT_MARKER_NAME
+    if data_root.exists():
+        if not data_root.is_dir() or not marker.is_file():
+            raise ClientError(
+                f"managed-local data root is not owned by Search Kernel: {data_root}"
+            )
+        return
+    data_root.mkdir(parents=False)
+    try:
+        marker.write_text("searchkernel-managed-v1\n", encoding="utf-8")
+    except Exception:
+        try:
+            data_root.rmdir()
+        except OSError:
+            pass
+        raise
 
 
 def _write_managed_marker(path: Path, target: str) -> None:
@@ -772,6 +792,7 @@ class Index:
                 raise
             return cls(client, ergonomic=True)
         canonical_path, data_root, target = _managed_location(Path(path))
+        _prepare_managed_data_root(data_root)
         _reserve_managed_path(canonical_path, target)
         owner = None
         client = None
@@ -799,6 +820,7 @@ class Index:
                 raise
             return cls(client, ergonomic=True)
         canonical_path, data_root, target = _managed_location(Path(path))
+        _prepare_managed_data_root(data_root)
         _migrate_legacy_managed_path(canonical_path, data_root, target)
         if (data_root / target).is_dir() and not canonical_path.exists():
             _write_managed_marker(canonical_path, target)
