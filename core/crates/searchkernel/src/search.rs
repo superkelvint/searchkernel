@@ -1460,7 +1460,8 @@ mod tests {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum Coverage {
         Executable,
-        ExplicitUnsupported,
+        RepresentedUnsupported,
+        BackendDeferred,
     }
 
     const SEARCH_BUILDER_COVERAGE: &[(&str, Coverage)] = &[
@@ -1470,114 +1471,100 @@ mod tests {
         ("sort", Coverage::Executable),
         ("sort_relevance", Coverage::Executable),
         ("sort_feature", Coverage::Executable),
-        ("raw_sort", Coverage::ExplicitUnsupported),
+        ("raw_sort", Coverage::BackendDeferred),
         ("facet", Coverage::Executable),
         ("facets", Coverage::Executable),
         ("aggregate", Coverage::Executable),
         ("group", Coverage::Executable),
-        ("raw_grouping", Coverage::ExplicitUnsupported),
+        ("raw_grouping", Coverage::BackendDeferred),
         ("ranking", Coverage::Executable),
         ("rank_property", Coverage::Executable),
         ("input", Coverage::Executable),
-        ("input_expr", Coverage::Executable),
+        ("input_expr", Coverage::RepresentedUnsupported),
         ("fields", Coverage::Executable),
         ("summary", Coverage::Executable),
         ("highlight", Coverage::Executable),
-        ("format", Coverage::ExplicitUnsupported),
-        ("bolding", Coverage::ExplicitUnsupported),
-        ("timing", Coverage::ExplicitUnsupported),
+        ("format", Coverage::RepresentedUnsupported),
+        ("bolding", Coverage::RepresentedUnsupported),
+        ("timing", Coverage::RepresentedUnsupported),
         ("offset", Coverage::Executable),
         ("limit", Coverage::Executable),
         ("page", Coverage::Executable),
         ("timeout", Coverage::Executable),
         ("language", Coverage::Executable),
-        ("locale", Coverage::ExplicitUnsupported),
+        ("locale", Coverage::RepresentedUnsupported),
         ("default_index", Coverage::Executable),
-        ("sources", Coverage::ExplicitUnsupported),
-        ("restrict", Coverage::ExplicitUnsupported),
-        ("search_path", Coverage::ExplicitUnsupported),
-        ("search_group", Coverage::ExplicitUnsupported),
+        ("sources", Coverage::RepresentedUnsupported),
+        ("restrict", Coverage::RepresentedUnsupported),
+        ("search_path", Coverage::RepresentedUnsupported),
+        ("search_group", Coverage::RepresentedUnsupported),
         ("query_string", Coverage::Executable),
-        ("query_model_type", Coverage::ExplicitUnsupported),
+        ("query_model_type", Coverage::RepresentedUnsupported),
         ("property", Coverage::Executable),
         ("properties", Coverage::Executable),
-        ("query_profile", Coverage::ExplicitUnsupported),
-        ("search_chain", Coverage::ExplicitUnsupported),
+        ("query_profile", Coverage::RepresentedUnsupported),
+        ("search_chain", Coverage::RepresentedUnsupported),
         ("execute", Coverage::Executable),
         ("inspect", Coverage::Executable),
-        ("Index::search", Coverage::Executable),
-        ("Index::browse", Coverage::Executable),
-        ("Index::query", Coverage::Executable),
-        ("Index::yql", Coverage::Executable),
     ];
 
-    // `raw_sort` stays unsupported because SortTargetInput::Raw carries no
-    // source text and resolve_sort deliberately rejects it. Raw grouping keeps
-    // its source in GroupingInput::Raw, but the shared resolver deliberately
-    // rejects it until a canonical normalizer exists. Other explicit entries
-    // are represented in IR and explicitly rejected by the current embedded
-    // adapter (for example container-only query profiles and query controls).
+    const INDEX_ENTRYPOINT_COVERAGE: &[(&str, Coverage)] = &[
+        ("search", Coverage::Executable),
+        ("browse", Coverage::Executable),
+        ("query", Coverage::Executable),
+        ("yql", Coverage::Executable),
+    ];
 
     #[test]
     fn checked_in_search_builder_coverage_map_matches_the_normative_union() {
-        let concepts = SEARCH_BUILDER_COVERAGE
+        let spec = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../docs/client-api-spec.md"
+        ));
+        let section = spec
+            .split_once("## 15. Conceptual surface")
+            .expect("client API spec must contain SearchBuilder conceptual surface")
+            .1;
+        let block = section
+            .split_once("```text")
+            .expect("conceptual surface must contain a text code block")
+            .1
+            .split_once("```")
+            .expect("conceptual surface code block must be closed")
+            .0;
+
+        let expected = block
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                let method = line.strip_prefix('.')?.split_once('(')?.0;
+                Some(method.to_owned())
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let covered = SEARCH_BUILDER_COVERAGE
+            .iter()
+            .map(|(concept, _)| (*concept).to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(
+            SEARCH_BUILDER_COVERAGE.len(),
+            covered.len(),
+            "SearchBuilder coverage rows must be unique"
+        );
+        assert_eq!(
+            expected, covered,
+            "docs/client-api-spec.md SearchBuilder surface drifted without a Rust coverage disposition"
+        );
+
+        let entrypoints = INDEX_ENTRYPOINT_COVERAGE
             .iter()
             .map(|(concept, _)| *concept)
             .collect::<std::collections::BTreeSet<_>>();
-        let expected = [
-            "filter",
-            "search_field",
-            "search_fields",
-            "sort",
-            "sort_relevance",
-            "sort_feature",
-            "raw_sort",
-            "facet",
-            "facets",
-            "aggregate",
-            "group",
-            "raw_grouping",
-            "ranking",
-            "rank_property",
-            "input",
-            "input_expr",
-            "fields",
-            "summary",
-            "highlight",
-            "format",
-            "bolding",
-            "timing",
-            "offset",
-            "limit",
-            "page",
-            "timeout",
-            "language",
-            "locale",
-            "default_index",
-            "sources",
-            "restrict",
-            "search_path",
-            "search_group",
-            "query_string",
-            "query_model_type",
-            "property",
-            "properties",
-            "query_profile",
-            "search_chain",
-            "execute",
-            "inspect",
-            "Index::search",
-            "Index::browse",
-            "Index::query",
-            "Index::yql",
-        ]
-        .into_iter()
-        .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(concepts, expected);
-        assert!(SEARCH_BUILDER_COVERAGE.iter().all(|(_, coverage)| matches!(
-            coverage,
-            Coverage::Executable | Coverage::ExplicitUnsupported
-        )));
+        assert_eq!(INDEX_ENTRYPOINT_COVERAGE.len(), entrypoints.len());
+        assert_eq!(
+            entrypoints,
+            ["browse", "query", "search", "yql"].into_iter().collect()
+        );
     }
 
     #[test]
