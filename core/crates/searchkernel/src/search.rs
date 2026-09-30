@@ -1073,6 +1073,28 @@ fn lower_pagination(request: &SearchBuilder) -> Result<(Option<u32>, Option<u32>
                 "page size must not be negative",
             ));
         }
+        let page_end = page.checked_mul(size).ok_or_else(|| {
+            crate::Error::search(
+                crate::ErrorCode::InvalidArgument,
+                "page range exceeds the supported range",
+            )
+            .with_detail(
+                "pagination_overflow",
+                Some("page"),
+                "page number multiplied by page size exceeds u32",
+            )
+        })?;
+        if page_end > i64::from(u32::MAX) {
+            return Err(crate::Error::search(
+                crate::ErrorCode::InvalidArgument,
+                "page range exceeds the supported range",
+            )
+            .with_detail(
+                "pagination_overflow",
+                Some("page"),
+                "page number multiplied by page size exceeds u32",
+            ));
+        }
         let offset = page
             .checked_sub(1)
             .and_then(|value| value.checked_mul(size))
