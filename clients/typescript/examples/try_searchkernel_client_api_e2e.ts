@@ -52,6 +52,16 @@ let INDEX_PATH = "";
 // SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=node
 // SKC: grouping.aggregations/basic kinds=ergonomic,e2e runtime=node
 const E2E_CORPUS: any = JSON.parse(readFileSync(resolve(process.cwd(), "../../reference/client-real-e2e-parity/corpus.json"), "utf8"));
+const PARITY_CONSUMED_INTENTS = new Map<string, any>();
+const PARITY_INTENTS = new Proxy(E2E_CORPUS.scenario_inputs as Record<string, any>, {
+  get(target, property, receiver) {
+    const value = Reflect.get(target, property, receiver);
+    if (typeof property === "string" && Object.prototype.hasOwnProperty.call(target, property)) {
+      PARITY_CONSUMED_INTENTS.set(property, structuredClone(value));
+    }
+    return value;
+  },
+});
 const VECTOR_TYPE: string = E2E_CORPUS.schema.fields.embedding.type;
 
 function embedding(...values: number[]): Tensor {
@@ -170,7 +180,7 @@ function sharedTypedQuery(spec: any): any {
 
 async function sharedTypedQueryObservations(index: Index): Promise<Record<string, unknown>> {
   const observations: Record<string, unknown> = {};
-  for (const [scenario, input] of Object.entries<any>(E2E_CORPUS.scenario_inputs)) {
+  for (const [scenario, input] of Object.entries<any>(PARITY_INTENTS)) {
     if (!scenario.startsWith("typed_query_")) continue;
     const capabilities = E2E_CORPUS.client_scenario_contract[scenario].typescript;
     const supported = capabilities.query_result.kind === "comparable";
@@ -202,7 +212,7 @@ function paritySafe(value: unknown): unknown {
 
 async function captureRealEngineParity(index: Index): Promise<Record<string, unknown>> {
   const typedQueryObservations = await sharedTypedQueryObservations(index);
-  const intents = E2E_CORPUS.scenario_inputs;
+  const intents = PARITY_INTENTS;
   const orderedSpec = intents.pagination;
   const ordered = await index.search(orderedSpec.query).sort(orderedSpec.sort[0].field, orderedSpec.sort[0].direction).limit(orderedSpec.all_limit).execute();
   const filteredSpec = intents.filtered_facets;
@@ -225,13 +235,13 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
       .orderBy(...groupedOrder)
       .output(agg.count().as(groupedSpec.outputs[0].name), agg.avg(groupedSpec.outputs[1].field).as(groupedSpec.outputs[1].name)),
   ).execute();
-  const nearestIntent = E2E_CORPUS.scenario_inputs.nearest_neighbor;
+  const nearestIntent = PARITY_INTENTS.nearest_neighbor;
   const nearestSpec = nearestIntent.query;
   const nearest = await index.query(q.nearestNeighbor(nearestSpec.field, nearestSpec.query_input))
     .ranking(nearestIntent.ranking_profile)
     .input(nearestSpec.query_input, embedding(...corpusVector(nearestIntent.query_input_document)))
     .limit(nearestIntent.limit).execute();
-  const hybridIntent = E2E_CORPUS.scenario_inputs.hybrid_text_vector;
+  const hybridIntent = PARITY_INTENTS.hybrid_text_vector;
   const [hybridText, hybridVector] = hybridIntent.query.clauses;
   const hybrid = await index.query(q.anyOf(
     q.contains(hybridText.field, hybridText.value),
@@ -407,8 +417,9 @@ function writeRealEngineParity(observations: Record<string, unknown>): void {
   const path = process.env.SEARCHKERNEL_REAL_E2E_PARITY_OUTPUT;
   if (path) {
     for (const [scenario, value] of Object.entries<any>(observations)) {
-      const intent = E2E_CORPUS.scenario_inputs[scenario];
-      if (!intent || scenario.startsWith("typed_query_")) continue;
+      if (scenario.startsWith("typed_query_")) continue;
+      const intent = PARITY_CONSUMED_INTENTS.get(scenario);
+      if (intent === undefined) throw new Error(`parity scenario ${scenario} emitted an observation without consuming its shared intent`);
       const payload = value && value.observation ? value.observation : value;
       if (Array.isArray(payload)) observations[scenario] = { intent, result: value };
       else if (payload && typeof payload === "object" && !("intent" in payload)) payload.intent = intent;
@@ -557,7 +568,7 @@ async function main(): Promise<void> {
       console.log(`inserted ${probeSpec.count} deterministic coverage probe documents`);
 
       Object.assign(PARITY_OBSERVATIONS, await captureRealEngineParity(index));
-      const patchSpec = E2E_CORPUS.scenario_inputs.patch;
+      const patchSpec = PARITY_INTENTS.patch;
       await index.insert(documentInput({ _id: patchSpec.document_id, ...patchSpec.initial }));
       let patchBuilder = index.patch(patchSpec.document_id);
       for (const [key, value] of Object.entries<any>(patchSpec.set)) patchBuilder = patchBuilder.set(key, corpusValue(key, value));
@@ -566,10 +577,10 @@ async function main(): Promise<void> {
       const mutated = await index.get(patchSpec.document_id);
       assert(mutated !== null);
       PARITY_OBSERVATIONS.patch = { price: mutated.price, sale_price_present: "sale_price" in mutated };
-      const deleteSpec = E2E_CORPUS.scenario_inputs.delete;
+      const deleteSpec = PARITY_INTENTS.delete;
       const parityMutationDeleted = await index.delete(deleteSpec.document_id);
       PARITY_OBSERVATIONS.delete = { deleted: parityMutationDeleted, absent_after_delete: (await index.get(deleteSpec.document_id)) === null };
-      const reopenSpec = E2E_CORPUS.scenario_inputs.reopen_persistence;
+      const reopenSpec = PARITY_INTENTS.reopen_persistence;
       await index.insert(documentInput({ _id: reopenSpec.marker_id, ...reopenSpec.marker }));
 
       heading("3. GET BY ID");
@@ -917,7 +928,7 @@ async function main(): Promise<void> {
       console.log("DELETE PASS");
 
       heading("28. UPSERT REPLACEMENT");
-      const upsertSpec = E2E_CORPUS.scenario_inputs.upsert_replacement;
+      const upsertSpec = PARITY_INTENTS.upsert_replacement;
       const replacement = { ...upsertSpec.replacement };
       const vectorDocumentId = replacement.vector_document_id;
       delete replacement.vector_document_id;
@@ -938,8 +949,8 @@ async function main(): Promise<void> {
     const reopened = await Index.open(INDEX_PATH);
     try {
       assert(await reopened.get("shoe-3") === null);
-      const reopenSpec = E2E_CORPUS.scenario_inputs.reopen_persistence;
-      const upsertSpec = E2E_CORPUS.scenario_inputs.upsert_replacement;
+      const reopenSpec = PARITY_INTENTS.reopen_persistence;
+      const upsertSpec = PARITY_INTENTS.upsert_replacement;
       const persistedParity = await reopened.get(reopenSpec.marker_id);
       assert(persistedParity !== null);
       const persistedShoe1 = await reopened.get("shoe-1");
@@ -947,7 +958,7 @@ async function main(): Promise<void> {
       PARITY_OBSERVATIONS.reopen_persistence = {
         marker: { title: persistedParity.title, price: persistedParity.price, inventory: persistedParity.inventory },
         upserted: { updated_title_matches: String(persistedShoe2?.title).includes("Updated"), price: persistedShoe2?.price },
-        deleted_absent: (await reopened.get(E2E_CORPUS.scenario_inputs.delete.document_id)) === null,
+        deleted_absent: (await reopened.get(PARITY_INTENTS.delete.document_id)) === null,
       };
       const shoe1 = await reopened.get("shoe-1");
       assert(shoe1 !== null);
