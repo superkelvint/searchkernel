@@ -353,8 +353,8 @@ def _managed_marker(path: Path) -> Path:
 def _prepare_managed_data_root(data_root: Path) -> None:
     data_root.parent.mkdir(parents=True, exist_ok=True)
     marker = data_root / _MANAGED_ROOT_MARKER_NAME
-    if data_root.exists():
-        if not data_root.is_dir() or not marker.is_file():
+    if data_root.exists() or data_root.is_symlink():
+        if data_root.is_symlink() or not data_root.is_dir() or not marker.is_file():
             raise ClientError(
                 f"managed-local data root is not owned by Search Kernel: {data_root}"
             )
