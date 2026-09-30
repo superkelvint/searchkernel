@@ -141,26 +141,92 @@ export class ManagedLocalHost {
 
   static async start(dataRoot: string): Promise<ManagedLocalHost> {
     const key = resolve(dataRoot);
-    let entry = this.pool.get(key);
-    if (entry === undefined) {
-      const promise = this.startUnpooled(key);
-      const newEntry = { promise, refs: 0 };
-      entry = newEntry;
-      this.pool.set(key, newEntry);
-      promise.catch(() => {
-        if (this.pool.get(key) === newEntry) this.pool.delete(key);
-      });
-    }
+    for (;;) {
+      let entry = this.pool.get(key);
+      if (entry === undefined) {
+        const promise = this.startUnpooled(key);
+        const newEntry = { promise, refs: 0 };
+        entry = newEntry;
+        this.pool.set(key, newEntry);
+        promise.catch(() => {
+          if (this.pool.get(key) === newEntry) this.pool.delete(key);
+        });
+      }
 
-    entry.refs += 1;
-    try {
-      const host = await entry.promise;
+      let host: ManagedLocalHost;
+      try {
+        host = await entry.promise;
+      } catch (error) {
+        if (this.pool.get(key) === entry) this.pool.delete(key);
+        throw error;
+      }
+
+      if (!host.isAlive()) {
+        if (this.pool.get(key) === entry) this.pool.delete(key);
+        await host.close({ force: true });
+        continue;
+      }
+
+      entry.refs += 1;
       host.poolKey = key;
       return host;
-    } catch (error) {
-      entry.refs -= 1;
-      throw error;
     }
+  }
+
+  static async migrateLegacy(
+    indexPath: string,
+    dataRoot: string,
+    target: string,
+  ): Promise<void> {
+    const destination = resolve(dataRoot, target);
+    const marker = resolve(indexPath, ".searchkernel-managed-target");
+    if (existsSync(destination) || existsSync(marker) || !existsSync(indexPath)) return;
+
+    const binary = resolveHostBinary();
+    if (!existsSync(binary)) {
+      throw new SearchKernelError(
+        `managed local host binary not found at ${binary}; set SEARCHKERNEL_LOCAL_HOST to an existing searchkerneld binary`,
+      );
+    }
+
+    await new Promise<void>((resolveMigration, rejectMigration) => {
+      const child = spawn(
+        binary,
+        [
+          "--migrate-index",
+          resolve(indexPath),
+          "--data-root",
+          resolve(dataRoot),
+          "--target",
+          target,
+        ],
+        {
+          env: environmentForHost(),
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let output = "";
+      const capture = (chunk: Buffer | string) => {
+        output = `${output}${chunk.toString()}`.slice(-MAX_HOST_OUTPUT_LENGTH);
+      };
+      child.stdout?.on("data", capture);
+      child.stderr?.on("data", capture);
+      child.once("error", (error) => rejectMigration(
+        new SearchKernelError(`managed-local legacy index migration failed: ${error.message}`),
+      ));
+      child.once("exit", (code, signal) => {
+        if (code === 0) {
+          resolveMigration();
+          return;
+        }
+        const suffix = output.trim()
+          ? `\nsearchkerneld output:\n${output.trim()}`
+          : "";
+        rejectMigration(new SearchKernelError(
+          `managed-local legacy index migration failed (code=${String(code)}, signal=${String(signal)})${suffix}`,
+        ));
+      });
+    });
   }
 
   private static async startUnpooled(dataRoot: string): Promise<ManagedLocalHost> {
@@ -243,6 +309,13 @@ export class ManagedLocalHost {
     return new SearchKernelError(
       output ? `${message}\nmanaged local host output:\n${output}` : message,
     );
+  }
+
+  private isAlive(): boolean {
+    return !this.closed
+      && this.child !== null
+      && this.child.exitCode === null
+      && this.child.signalCode === null;
   }
 
   async close(options: { force?: boolean } = {}): Promise<void> {
