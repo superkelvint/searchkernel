@@ -11,6 +11,7 @@ use crate::schema::{
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
 };
+use crate::update::UpdateBuilder;
 use searchkernel_ir::{Backend, BackendSession, IndexContext};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -171,6 +172,31 @@ impl Index {
             )
             .map_err(Error::from_ir)?;
             backend.patch(ir_request).map_err(Error::from_ir)?;
+            Ok(())
+        })
+    }
+
+    /// Start an advanced update for one document.
+    pub fn update(&self, id: impl Into<DocumentId>) -> UpdateBuilder {
+        UpdateBuilder::new(self.clone(), id.into())
+    }
+
+    pub(crate) fn execute_update(
+        &self,
+        id: &DocumentId,
+        operations: &[searchkernel_ir::UpdateOperationInput],
+        create: Option<bool>,
+    ) -> Result<()> {
+        self.with_backend(|backend| {
+            let request = searchkernel_ir::resolve_update(
+                &self.inner.context,
+                id.as_str(),
+                operations,
+                None,
+                create,
+            )
+            .map_err(Error::from_ir)?;
+            backend.update(request).map_err(Error::from_ir)?;
             Ok(())
         })
     }

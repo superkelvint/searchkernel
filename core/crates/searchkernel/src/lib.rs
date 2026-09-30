@@ -16,6 +16,7 @@ mod result;
 mod schema;
 mod search;
 mod tensor;
+mod update;
 pub use analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 pub use document::DocumentId;
 pub use error::{Error, ErrorCode, ErrorDetail, Result};
@@ -49,6 +50,7 @@ pub use search::{
     Sort, SortDirection,
 };
 pub use tensor::Tensor;
+pub use update::UpdateBuilder;
 
 /// Build clause-local typed values for a textual filter.
 #[macro_export]

@@ -171,6 +171,115 @@ fn fluent_requests_cross_the_core_boundary() {
 }
 
 #[test]
+fn update_builder_crosses_the_same_canonical_ir_boundary() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = index_with(backend.clone());
+
+    assert!(index
+        .update("sku-42")
+        .assign("title", "Updated headphones")
+        .clear("brand")
+        .increment("price", 5.0)
+        .create(true)
+        .execute()
+        .is_err());
+
+    let OperationIr::Update(request) = backend.last_call().expect("recorded update") else {
+        panic!("expected update operation");
+    };
+    assert_eq!(request.id().as_str(), "sku-42");
+    assert_eq!(request.create(), Some(true));
+    assert_eq!(request.condition(), None);
+    assert!(matches!(
+        request.operations(),
+        [
+            searchkernel_ir::UpdateOperationIr::Assign { target, .. },
+            searchkernel_ir::UpdateOperationIr::Clear { target: clear_target },
+            searchkernel_ir::UpdateOperationIr::Arithmetic {
+                target: arithmetic_target,
+                operator: searchkernel_ir::UpdateArithmeticOperatorIr::Increment,
+                operand: 5.0,
+            },
+        ] if target.as_str() == "title"
+            && clear_target.as_str() == "brand"
+            && arithmetic_target.as_str() == "price"
+    ));
+
+    for (builder, expected) in [
+        (
+            index.update("sku-42").decrement("price", 2_i64),
+            searchkernel_ir::UpdateArithmeticOperatorIr::Decrement,
+        ),
+        (
+            index.update("sku-42").multiply("price", 3_u32),
+            searchkernel_ir::UpdateArithmeticOperatorIr::Multiply,
+        ),
+        (
+            index.update("sku-42").divide("price", 4.0_f64),
+            searchkernel_ir::UpdateArithmeticOperatorIr::Divide,
+        ),
+    ] {
+        assert!(builder.execute().is_err());
+        let OperationIr::Update(request) = backend.last_call().expect("recorded arithmetic update")
+        else {
+            panic!("expected update operation");
+        };
+        assert!(matches!(
+            request.operations(),
+            [searchkernel_ir::UpdateOperationIr::Arithmetic { operator, .. }] if *operator == expected
+        ));
+    }
+}
+
+#[test]
+fn update_builder_defers_semantic_validation_to_the_canonical_resolver() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = index_with(backend.clone());
+
+    let empty = index.update("sku-42").execute().expect_err("empty update");
+    assert_eq!(empty.code(), ErrorCode::InvalidArgument);
+    assert_eq!(empty.details()[0].code, "empty_update");
+    assert!(backend.calls().is_empty());
+
+    let wrong_type = index
+        .update("sku-42")
+        .increment("brand", 1_i64)
+        .execute()
+        .expect_err("arithmetic on a keyword field");
+    assert_eq!(wrong_type.code(), ErrorCode::InvalidArgument);
+    assert_eq!(
+        wrong_type.details()[0].code,
+        "arithmetic_requires_numeric_field"
+    );
+    assert!(backend.calls().is_empty());
+
+    let duplicate = index
+        .update("sku-42")
+        .set("price", 100.0)
+        .unset("price")
+        .execute()
+        .expect_err("multiple operations on one target remain unsupported");
+    assert_eq!(duplicate.code(), ErrorCode::Unsupported);
+    assert_eq!(
+        duplicate.details()[0].code,
+        "multiple_updates_per_target_not_supported"
+    );
+    assert!(backend.calls().is_empty());
+
+    assert!(index
+        .update("sku-42")
+        .set("price", 100.0)
+        .create(false)
+        .execute()
+        .is_err());
+    let OperationIr::Update(request) = backend.last_call().expect("recorded create=false update")
+    else {
+        panic!("expected update operation");
+    };
+    assert_eq!(request.create(), Some(false));
+}
+
+#[test]
 fn ranking_controls_cross_the_core_boundary() {
     let backend = Arc::new(RecordingBackend::new());
     let index = index_with(backend.clone());
