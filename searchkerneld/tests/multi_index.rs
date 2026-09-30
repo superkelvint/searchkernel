@@ -4,15 +4,14 @@ use flatbuffers::root;
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, Request as HttpRequest};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use searchkernel_ir::{
+    CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE, INDEX_NOT_FOUND_DETAIL_CODE,
+    INVALID_INDEX_TARGET_DETAIL_CODE, MISSING_INDEX_DEFINITION_DETAIL_CODE,
+    MISSING_INDEX_TARGET_DETAIL_CODE, TARGET_NAME_PATH, TARGET_PATH,
+};
 use searchkernel_protocol::{
     json::{request_flatbuffer_to_json, request_json_to_flatbuffer, response_json_to_flatbuffer},
     protocol::v2 as wire,
-    target::{
-        CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE,
-        INDEX_NOT_FOUND_DETAIL_CODE, INVALID_INDEX_TARGET_DETAIL_CODE,
-        MISSING_INDEX_DEFINITION_DETAIL_CODE, MISSING_INDEX_TARGET_DETAIL_CODE, TARGET_NAME_PATH,
-        TARGET_PATH,
-    },
     v2 as api, PROTOCOL_VERSION,
 };
 use searchkerneld::{rpc, start_multi, IndexRegistry, ServerConfig, JSON_EXECUTE_PATH};
@@ -58,6 +57,14 @@ fn target<'a>(
 }
 
 fn create_request(target_name: &str, field_name: &str) -> Vec<u8> {
+    create_request_with_definition_name(target_name, field_name, target_name)
+}
+
+fn create_request_with_definition_name(
+    target_name: &str,
+    field_name: &str,
+    definition_name: &str,
+) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let field_name = builder.create_string(field_name);
     let primitive = api::PrimitiveDataType::create(
@@ -86,7 +93,7 @@ fn create_request(target_name: &str, field_name: &str) -> Vec<u8> {
         },
     );
     let fields = builder.create_vector(&[field]);
-    let definition_name = builder.create_string(target_name);
+    let definition_name = builder.create_string(definition_name);
     let definition = api::IndexDefinition::create(
         &mut builder,
         &api::IndexDefinitionArgs {
@@ -296,7 +303,16 @@ fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {
 }
 
 fn assert_lifecycle(bytes: &[u8], kind: wire::ResponsePayload) {
-    assert_eq!(response(bytes).payload_type(), kind);
+    let envelope = response(bytes);
+    let error_message = envelope
+        .payload_as_search_kernel_v2_error()
+        .and_then(|error| error.message())
+        .unwrap_or_default();
+    assert_eq!(
+        envelope.payload_type(),
+        kind,
+        "unexpected lifecycle response error: {error_message}"
+    );
 }
 
 fn assert_portable_error(
@@ -321,6 +337,56 @@ fn assert_portable_error(
     assert_eq!(detail.path(), path);
 }
 
+fn portable_error_semantics(
+    bytes: &[u8],
+) -> (api::ErrorCode, String, Option<String>, String, String) {
+    let envelope = response(bytes);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
+    );
+    let error = envelope
+        .payload_as_search_kernel_v2_error()
+        .expect("error payload");
+    let details = error.details().expect("portable error details");
+    assert_eq!(details.len(), 1);
+    let detail = details.get(0);
+    (
+        error.code(),
+        error.message().unwrap_or_default().to_owned(),
+        detail.path().map(ToOwned::to_owned),
+        detail.code().unwrap_or_default().to_owned(),
+        detail.message().unwrap_or_default().to_owned(),
+    )
+}
+
+fn ir_portable_error_semantics(
+    error: searchkernel_ir::PortableError,
+) -> (api::ErrorCode, String, Option<String>, String, String) {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let error = searchkernel_ir::error_offset(&mut builder, &error);
+    builder.finish(error, None);
+    let error = root::<api::Error<'_>>(builder.finished_data()).expect("canonical IR error");
+    let details = error.details().expect("canonical IR error details");
+    assert_eq!(details.len(), 1);
+    let detail = details.get(0);
+    (
+        error.code(),
+        error.message().unwrap_or_default().to_owned(),
+        detail.path().map(ToOwned::to_owned),
+        detail.code().unwrap_or_default().to_owned(),
+        detail.message().unwrap_or_default().to_owned(),
+    )
+}
+
+fn resolved_ir_request_error(request: &[u8]) -> searchkernel_ir::PortableError {
+    let envelope = root::<wire::RequestEnvelope<'_>>(request).expect("request envelope");
+    match searchkernel_ir::resolve_control_plane_request(envelope) {
+        Err(searchkernel_ir::ControlPlaneResolutionError::Semantic(error)) => error,
+        result => panic!("expected canonical IR semantic error, got {result:?}"),
+    }
+}
+
 fn assert_upsert(bytes: &[u8]) {
     assert_eq!(
         response(bytes).payload_type(),
@@ -343,7 +409,6 @@ fn total_hits(bytes: &[u8]) -> u64 {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires PHP; run through ./dev test php"]
 async fn php_emitted_create_index_json_reaches_multi_index_registry() {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -430,6 +495,20 @@ async fn php_emitted_create_index_json_reaches_multi_index_registry() {
         "PHP HttpTransport create-index failed:\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&php_http.stdout),
         String::from_utf8_lossy(&php_http.stderr)
+    );
+
+    let php_lifecycle = repo_root.join("clients/php/tests/lifecycle_http_smoke.php");
+    let php_lifecycle_result = Command::new("php")
+        .arg(&php_lifecycle)
+        .arg(format!("http://{http_address}"))
+        .current_dir(&repo_root)
+        .output()
+        .expect("run PHP lifecycle semantic smoke");
+    assert!(
+        php_lifecycle_result.status.success(),
+        "PHP lifecycle semantics failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&php_lifecycle_result.stdout),
+        String::from_utf8_lossy(&php_lifecycle_result.stderr)
     );
 
     server.shutdown().await.expect("shutdown daemon");
@@ -693,6 +772,41 @@ fn delete_rejects_storage_owned_by_another_runtime() {
         wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
     );
     assert!(!path.exists());
+}
+
+#[test]
+fn open_rejects_storage_owned_by_another_runtime_as_conflict() {
+    let temp = TempDir::new("open-owned");
+    let path = temp.0.join("products");
+    let owner = searchkernel::Index::create(
+        &path,
+        searchkernel::IndexDefinition::new().field(
+            searchkernel::Field::text("title")
+                .stored(true)
+                .searchable(true),
+        ),
+    )
+    .expect("create externally owned index");
+
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    assert_portable_error(
+        &registry
+            .dispatch(&open_request(Some("products")))
+            .expect("open owned target"),
+        api::ErrorCode::Conflict,
+        searchkernel_ir::INDEX_IN_USE_DETAIL_CODE,
+        None,
+    );
+    assert!(path.is_dir(), "failed open must preserve owned storage");
+
+    owner.close().expect("close external owner");
+    assert_lifecycle(
+        &registry
+            .dispatch(&open_request(Some("products")))
+            .expect("open after owner close"),
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+    );
+    registry.close_all().expect("close registry");
 }
 
 #[test]
@@ -1121,6 +1235,207 @@ async fn grpc_and_http_json_preserve_portable_control_errors() {
         INVALID_INDEX_TARGET_DETAIL_CODE,
         Some(TARGET_NAME_PATH),
     );
+
+    server.shutdown().await.expect("shutdown daemon");
+    registry.close_all().expect("close registry");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn direct_grpc_and_http_share_lifecycle_semantics() {
+    let temp = TempDir::new("lifecycle-semantic-parity");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().expect("gRPC address"))
+            .with_web_listen_addr("127.0.0.1:0".parse().expect("HTTP address")),
+        registry.clone(),
+    )
+    .await
+    .expect("start multi-index daemon");
+    let grpc_address = server.tcp_addr().expect("gRPC listener");
+    let http_address = server.web_tcp_addr().expect("HTTP listener");
+    let mut grpc =
+        rpc::search_kernel_client::SearchKernelClient::connect(format!("http://{grpc_address}"))
+            .await
+            .expect("connect gRPC client");
+
+    let mut invalid_targets = vec![
+        String::new(),
+        "Products".to_owned(),
+        "../products".to_owned(),
+        "products/v2".to_owned(),
+        "a".repeat(129),
+    ];
+    for invalid in invalid_targets.drain(..) {
+        for request in [
+            open_request(Some(&invalid)),
+            create_request(&invalid, "title"),
+            delete_index_request(&invalid),
+        ] {
+            let expected = ir_portable_error_semantics(resolved_ir_request_error(&request));
+            let direct = registry
+                .dispatch(&request)
+                .expect("direct semantic response");
+            let grpc_response = grpc
+                .execute(Request::new(rpc::FlatBufferFrame {
+                    payload: request.clone(),
+                }))
+                .await
+                .expect("gRPC semantic response")
+                .into_inner()
+                .payload;
+            let http = execute_http_json(http_address, &request).await;
+            assert_eq!(
+                portable_error_semantics(&direct),
+                expected,
+                "direct invalid target {invalid:?} must match IR semantics"
+            );
+            assert_eq!(
+                portable_error_semantics(&grpc_response),
+                expected,
+                "gRPC invalid target {invalid:?} must match IR semantics"
+            );
+            assert_eq!(
+                portable_error_semantics(&http),
+                expected,
+                "HTTP invalid target {invalid:?} must match IR semantics"
+            );
+        }
+    }
+
+    let missing = open_request(None);
+    let missing_expected = ir_portable_error_semantics(resolved_ir_request_error(&missing));
+    let direct = registry.dispatch(&missing).expect("direct missing target");
+    let grpc_missing = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: missing.clone(),
+        }))
+        .await
+        .expect("gRPC missing target")
+        .into_inner()
+        .payload;
+    let http_missing = execute_http_json(http_address, &missing).await;
+    assert_eq!(portable_error_semantics(&direct), missing_expected);
+    assert_eq!(portable_error_semantics(&grpc_missing), missing_expected);
+    assert_eq!(portable_error_semantics(&http_missing), missing_expected);
+
+    let boundary_target = "a".repeat(128);
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request_with_definition_name(
+                &boundary_target,
+                "title",
+                "boundary_schema",
+            ))
+            .expect("create exactly 128-byte target"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    assert_lifecycle(
+        &grpc
+            .execute(Request::new(rpc::FlatBufferFrame {
+                payload: open_request(Some(&boundary_target)),
+            }))
+            .await
+            .expect("open boundary target via gRPC")
+            .into_inner()
+            .payload,
+        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+    );
+    assert_lifecycle(
+        &execute_http_json(http_address, &delete_index_request(&boundary_target)).await,
+        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+    );
+
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request_with_definition_name(
+                "already-there",
+                "title",
+                "already_there",
+            ))
+            .expect("seed duplicate target"),
+        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+    );
+    let already_exists_expected =
+        ir_portable_error_semantics(searchkernel_ir::already_exists_error());
+    for request in [
+        create_request_with_definition_name("already-there", "title", "already_there"),
+        create_request_with_definition_name("already-there", "title", "already_there"),
+        create_request_with_definition_name("already-there", "title", "already_there"),
+    ] {
+        let direct = registry
+            .dispatch(&request)
+            .expect("direct duplicate create");
+        let grpc_response = grpc
+            .execute(Request::new(rpc::FlatBufferFrame {
+                payload: request.clone(),
+            }))
+            .await
+            .expect("gRPC duplicate create")
+            .into_inner()
+            .payload;
+        let http = execute_http_json(http_address, &request).await;
+        assert_eq!(portable_error_semantics(&direct), already_exists_expected);
+        assert_eq!(
+            portable_error_semantics(&grpc_response),
+            already_exists_expected
+        );
+        assert_eq!(portable_error_semantics(&http), already_exists_expected);
+    }
+
+    let not_found_expected = ir_portable_error_semantics(searchkernel_ir::not_found_error());
+    for request in [
+        open_request(Some("not-there")),
+        delete_index_request("not-there"),
+    ] {
+        let direct = registry
+            .dispatch(&request)
+            .expect("direct missing lifecycle target");
+        let grpc_response = grpc
+            .execute(Request::new(rpc::FlatBufferFrame {
+                payload: request.clone(),
+            }))
+            .await
+            .expect("gRPC missing lifecycle target")
+            .into_inner()
+            .payload;
+        let http = execute_http_json(http_address, &request).await;
+        assert_eq!(portable_error_semantics(&direct), not_found_expected);
+        assert_eq!(portable_error_semantics(&grpc_response), not_found_expected);
+        assert_eq!(portable_error_semantics(&http), not_found_expected);
+    }
+
+    let owned_path = temp.0.join("external_owner");
+    let owner = searchkernel::Index::create(
+        &owned_path,
+        searchkernel::IndexDefinition::new().field(
+            searchkernel::Field::text("title")
+                .stored(true)
+                .searchable(true),
+        ),
+    )
+    .expect("create externally owned index");
+    let conflict_expected = ir_portable_error_semantics(searchkernel_ir::index_in_use_error());
+    for request in [
+        open_request(Some("external_owner")),
+        delete_index_request("external_owner"),
+    ] {
+        let direct = registry
+            .dispatch(&request)
+            .expect("direct active-owner failure");
+        let grpc_response = grpc
+            .execute(Request::new(rpc::FlatBufferFrame {
+                payload: request.clone(),
+            }))
+            .await
+            .expect("gRPC active-owner failure")
+            .into_inner()
+            .payload;
+        let http = execute_http_json(http_address, &request).await;
+        assert_eq!(portable_error_semantics(&direct), conflict_expected);
+        assert_eq!(portable_error_semantics(&grpc_response), conflict_expected);
+        assert_eq!(portable_error_semantics(&http), conflict_expected);
+    }
+    owner.close().expect("close external owner");
 
     server.shutdown().await.expect("shutdown daemon");
     registry.close_all().expect("close registry");

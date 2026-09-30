@@ -399,9 +399,6 @@ impl Index {
         let source = source.as_ref();
         let destination = destination.as_ref();
 
-        // Validate both endpoints without following symlinks before taking any
-        // lock. A completed equivalent migration is idempotent only when the
-        // legacy source disappeared and the real destination directory exists.
         if let Some(metadata) = metadata_no_follow("managed migration destination", destination)? {
             if !metadata.is_dir() {
                 return Err(unsafe_path("managed migration destination", destination));
@@ -424,19 +421,8 @@ impl Index {
             match LifecycleLock::acquire(source) {
                 Ok(lock) => break lock,
                 Err(error) if error.code() == crate::error::ErrorCode::AlreadyExists => {
-                    // Do not accept the destination while the winning migrator
-                    // still owns the source lifecycle lock: it may still be
-                    // completing parent-directory durability sync.
                     if Instant::now() >= source_deadline {
-                        return Err(Error::search(
-                            crate::error::ErrorCode::Conflict,
-                            format!("legacy index storage is in use: {}", source.display()),
-                        )
-                        .with_detail(
-                            "index_in_use",
-                            None::<String>,
-                            "legacy index storage is owned by another active runtime",
-                        ));
+                        return Err(Error::from_ir(searchkernel_ir::index_in_use_error()));
                     }
                     std::thread::sleep(LOCK_RETRY);
                 }
@@ -444,7 +430,6 @@ impl Index {
             }
         };
 
-        // Recheck after acquiring the source lock to close the preflight race.
         match metadata_no_follow("legacy migration source", source)? {
             Some(metadata) if metadata.is_dir() => {}
             Some(_) => return Err(unsafe_path("legacy migration source", source)),
@@ -481,15 +466,7 @@ impl Index {
                 Ok(lock) => break lock,
                 Err(error) if error.code() == crate::error::ErrorCode::AlreadyExists => {
                     if Instant::now() >= destination_deadline {
-                        return Err(Error::search(
-                            crate::error::ErrorCode::Conflict,
-                            format!("managed index storage is in use: {}", destination.display()),
-                        )
-                        .with_detail(
-                            "index_in_use",
-                            None::<String>,
-                            "managed index storage is owned by another active runtime",
-                        ));
+                        return Err(Error::from_ir(searchkernel_ir::index_in_use_error()));
                     }
                     std::thread::sleep(LOCK_RETRY);
                 }
@@ -548,15 +525,7 @@ impl Index {
         let root = path.as_ref();
         let _lifecycle_lock = LifecycleLock::acquire(root).map_err(|error| {
             if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::search(
-                    crate::error::ErrorCode::Conflict,
-                    format!("index storage is in use: {}", root.display()),
-                )
-                .with_detail(
-                    "index_in_use",
-                    None::<String>,
-                    "index storage is owned by another active runtime",
-                )
+                Error::from_ir(searchkernel_ir::index_in_use_error())
             } else {
                 error
             }
