@@ -1165,16 +1165,16 @@
       "query": "shoes",
       "field": "brand",
       "name": "brands",
-      "limit": 10,
-      "sort": "count_desc",
+      "limit": 2,
+      "sort": "value_asc",
       "page_limit": 20
     },
     "filtered_facets": {
       "query": "shoes",
       "filter": "in_stock = true",
       "field": "brand",
-      "limit": 10,
-      "sort": "count_desc",
+      "limit": 2,
+      "sort": "value_asc",
       "page_limit": 20
     },
     "root_aggregations": {
