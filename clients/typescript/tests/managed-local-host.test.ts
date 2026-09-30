@@ -132,7 +132,7 @@ describe("managed-local host binary resolution", () => {
 
     const { resolveHostBinary } = await import("../src/node/managed-local-host.js");
 
-    expect(() => resolveHostBinary()).toThrow(/SEARCHKERNEL_LOCAL_HOST/);
+    await expect(resolveHostBinary()).rejects.toThrow(/SEARCHKERNEL_LOCAL_HOST/);
   });
 
   it("uses the repository host target only for a positively identified source checkout", async () => {
@@ -149,7 +149,7 @@ describe("managed-local host binary resolution", () => {
     });
 
     const { resolveHostBinary } = await import("../src/node/managed-local-host.js");
-    expect(resolveHostBinary()).toMatch(/\/target\/host\/debug\/searchkerneld$/);
+    expect(await resolveHostBinary()).toMatch(/\/target\/host\/debug\/searchkerneld$/);
   });
 
   it("does not make managed-local execution depend on a repository working directory", async () => {
