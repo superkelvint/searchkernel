@@ -297,7 +297,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 492
+              "line": 505
             },
             {
               "capability": "query.phrase",
@@ -307,7 +307,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 492
+              "line": 505
             },
             {
               "capability": "query.phrase",
@@ -401,7 +401,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 493
+              "line": 506
             },
             {
               "capability": "query.proximity",
@@ -411,7 +411,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 493
+              "line": 506
             },
             {
               "capability": "query.proximity",
@@ -505,7 +505,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 522
+              "line": 535
             },
             {
               "capability": "query.same_element",
@@ -515,7 +515,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 522
+              "line": 535
             },
             {
               "capability": "query.same_element",
@@ -599,7 +599,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 494
+              "line": 507
             },
             {
               "capability": "query.fuzzy",
@@ -609,7 +609,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 494
+              "line": 507
             },
             {
               "capability": "query.fuzzy",
@@ -823,7 +823,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 587
+              "line": 600
             },
             {
               "capability": "query.geo",
@@ -833,7 +833,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 587
+              "line": 600
             },
             {
               "capability": "query.geo",
@@ -941,7 +941,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 495
+              "line": 508
             },
             {
               "capability": "query.weighted_and_wand",
@@ -951,7 +951,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 495
+              "line": 508
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1503,7 +1503,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 627
+              "line": 640
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1513,7 +1513,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 627
+              "line": 640
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1728,7 +1728,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 628
+              "line": 641
             },
             {
               "capability": "result.highlighting",
@@ -1738,7 +1738,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 628
+              "line": 641
             },
             {
               "capability": "result.highlighting",
