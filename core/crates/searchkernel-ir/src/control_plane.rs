@@ -177,6 +177,8 @@ impl std::fmt::Display for TargetValidationError {
     }
 }
 
+impl std::error::Error for TargetValidationError {}
+
 pub fn lifecycle_failure(
     operation: LifecycleOperation,
     failure: LifecycleFailure,
