@@ -649,6 +649,7 @@ jobs:
               cp -R examples/release-quickstart /artifacts/consumer-release-tools/quickstarts
               build_native_searchkerneld client-e2e-build
               run_phase client-e2e-run env                 SEARCHKERNEL_LOCAL_HOST="$CARGO_TARGET_DIR/debug/searchkerneld"                 SEARCHKERNEL_SDK_LIB="$NATIVE_ADAPTER_LIB"                 "$PYTHON" tools/check-client-contracts.py --run-e2e
+              run_phase client-real-e2e-parity ./dev test client-real-e2e-parity
               ;;
 
             closure-422)

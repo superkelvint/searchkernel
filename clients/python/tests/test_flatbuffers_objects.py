@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel import Boolean, ClientError, Float, Group, Hit, HnswIndexConfig, Integer, Keyword, RankProfile, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
+from searchkernel import Boolean, ClientError, Float, Group, Hit, HnswIndexConfig, Integer, Keyword, RankProfile, StructField, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
 from searchkernel.client import _document, _python_value, value  # noqa: E402
 from searchkernel.ergonomic import (  # noqa: E402
     SearchBuilder,
@@ -476,6 +476,23 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "uint32"):
             RankProfile("two-phase").rerank_count(0x1_0000_0000)
 
+
+    def test_struct_field_preserves_capability_options(self):
+        definition = StructField(
+            {"first": Keyword(), "last": Keyword()},
+            stored=True,
+            searchable=False,
+            filterable=True,
+            sortable=False,
+            facetable=True,
+        ).definition("person")
+        self.assertTrue(definition.stored.value)
+        self.assertFalse(definition.searchable.value)
+        self.assertTrue(definition.filterable.value)
+        self.assertFalse(definition.sortable.value)
+        self.assertTrue(definition.facetable.value)
+        self.assertEqual([field.name for field in definition.dataType.kind.fields], ["first", "last"])
+
     def test_dense_tensor_values_round_trip_through_python_value(self):
         tensor = Tensor.dense("tensor<float>(x[2])", [1, 0])
         encoded = value(tensor)
@@ -749,6 +766,21 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             queries[5].source.query.expr.items[0].key.kind.value,
             "fox",
         )
+
+    # SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=shared
+    def test_literal_term_prefix_substring_suffix_helpers_lower_canonically(self):
+        term = q.term("title", "quick")
+        self.assertEqual(term.source.query.exprType, QueryExprKind.QueryContains)
+        self.assertEqual(term.source.query.expr.item.exprType, QueryExprKind.TermQuery)
+
+        cases = [
+            (q.prefix("brand", "A.c+"), r"A\.c\+.*"),
+            (q.substring("brand", "A.c+"), r".*A\.c\+.*"),
+            (q.suffix("brand", "A.c+"), r".*A\.c\+"),
+        ]
+        for query, pattern in cases:
+            self.assertEqual(query.source.query.exprType, QueryExprKind.QueryMatches)
+            self.assertEqual(query.source.query.expr.pattern, pattern)
 
     def test_grouping_filter_boolean_helpers_have_readable_names(self):
         clause = gf.is_true(g.field("in_stock"))
