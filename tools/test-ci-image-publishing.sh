@@ -12,6 +12,7 @@ for script in \
     "$ROOT/tools/ensure-ci-vespa-volume.sh" \
     "$ROOT/tools/ensure-ci-sccache.sh" \
     "$ROOT/tools/run-in-ci-image.sh" \
+    "$ROOT/tools/ci-runtime-ownership.sh" \
     "$ROOT/tools/generate-typescript-grpc-web.sh"; do
     bash -n "$script"
 done
@@ -27,8 +28,7 @@ python3 - \
     "$ROOT/tools/ensure-ci-vespa-volume.sh" \
     "$ROOT/tools/ensure-ci-sccache.sh" \
     "$ROOT/tools/run-in-ci-image.sh" \
-    "$ROOT/tools/generate-typescript-grpc-web.sh" \
-    "$ROOT/.github/workflows/ci-image-runner.yml" <<'PY'
+    "$ROOT/tools/generate-typescript-grpc-web.sh" <<'PY'
 from pathlib import Path
 import sys
 
@@ -44,7 +44,6 @@ import sys
     ensure_sccache_path,
     local_runner_path,
     typescript_generator_path,
-    workflow_path,
 ) = map(Path, sys.argv[1:])
 
 toolchain = toolchain_path.read_text(encoding="utf-8")
@@ -58,7 +57,6 @@ ensure_volume = ensure_volume_path.read_text(encoding="utf-8")
 ensure_sccache = ensure_sccache_path.read_text(encoding="utf-8")
 local_runner = local_runner_path.read_text(encoding="utf-8")
 typescript_generator = typescript_generator_path.read_text(encoding="utf-8")
-workflow = workflow_path.read_text(encoding="utf-8")
 
 for fragment in (
     "ARG BASE_IMAGE=",
@@ -217,19 +215,20 @@ for fragment in (
     if fragment not in ensure_sccache:
         raise SystemExit(f"sccache server helper is missing {fragment!r}")
 
-for surface, text in (("local runner", local_runner), ("CI workflow", workflow)):
-    for fragment in (
-        "ensure-ci-vespa-volume.sh",
-        "io.searchkernel.vespa-image-digest",
-        "/opt/searchkernel/native-sdk-cache:ro",
-        "ensure-ci-sccache.sh",
-        "RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache",
-        "/opt/searchkernel/sccache:ro",
-        "SCCACHE_SERVER_UDS=/sccache/sccache.sock",
-        "SCCACHE_CLIENT_SIDE=1",
-    ):
-        if fragment not in text:
-            raise SystemExit(f"{surface} does not externalize Vespa correctly: missing {fragment!r}")
+for fragment in (
+    "ensure-ci-vespa-volume.sh",
+    "io.searchkernel.vespa-image-digest",
+    "/opt/searchkernel/native-sdk-cache:ro",
+    "ensure-ci-sccache.sh",
+    "RUSTC_WRAPPER=/opt/searchkernel/sccache/sccache",
+    "/opt/searchkernel/sccache:ro",
+    "SCCACHE_SERVER_UDS=/sccache/sccache.sock",
+    "SCCACHE_CLIENT_SIDE=1",
+):
+    if fragment not in local_runner:
+        raise SystemExit(
+            f"local runner does not externalize Vespa correctly: missing {fragment!r}"
+        )
 
 print("external Vespa CI image publishing contract: PASS")
 PY

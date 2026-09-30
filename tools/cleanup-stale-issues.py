@@ -11,6 +11,7 @@ import sys
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 
@@ -39,8 +40,16 @@ query($owner: String!, $name: String!, $endCursor: String) {
         number
         state
         baseRefName
+        mergedAt
         closingIssuesReferences(first: 100) {
-          nodes { number }
+          nodes {
+            number
+            timelineItems(last: 1, itemTypes: [REOPENED_EVENT]) {
+              nodes {
+                ... on ReopenedEvent { createdAt }
+              }
+            }
+          }
           pageInfo { hasNextPage }
         }
       }
@@ -86,6 +95,17 @@ def _issue_number(issue: dict[str, Any]) -> int:
     return number
 
 
+def _github_time(value: Any, context: str) -> datetime | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise CleanupError(f"{context} has invalid timestamp")
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise CleanupError(f"{context} has invalid timestamp: {value!r}") from error
+
+
 def plan_cleanup(
     issues: Sequence[dict[str, Any]],
     pull_requests: Sequence[dict[str, Any]],
@@ -100,6 +120,8 @@ def plan_cleanup(
         state = pr.get("state")
         refs = pr.get("closing_issue_numbers", [])
         base_ref_name = pr.get("base_ref_name")
+        merged_at = pr.get("merged_at")
+        reopened_at_by_issue = pr.get("closing_issue_reopened_at", {})
         if not isinstance(number, int) or number <= 0:
             raise CleanupError(f"pull request has invalid number: {number!r}")
         if state not in {"OPEN", "CLOSED", "MERGED"}:
@@ -110,7 +132,21 @@ def plan_cleanup(
             isinstance(ref, int) and ref > 0 for ref in refs
         ):
             raise CleanupError(f"pull request #{number} has invalid closing issue references")
+        if state == "MERGED" and _github_time(
+            merged_at, f"pull request #{number} merged_at"
+        ) is None:
+            raise CleanupError(f"pull request #{number} is merged without merged_at")
+        if not isinstance(reopened_at_by_issue, dict):
+            raise CleanupError(
+                f"pull request #{number} has invalid closing issue reopen chronology"
+            )
         for issue_number in refs:
+            reopened_at = reopened_at_by_issue.get(str(issue_number))
+            if reopened_at is not None:
+                _github_time(
+                    reopened_at,
+                    f"issue #{issue_number} latest reopen from pull request #{number}",
+                )
             prs_by_issue[issue_number].append(pr)
 
     actions: list[CleanupAction] = []
@@ -145,10 +181,24 @@ def plan_cleanup(
         if not linked_prs or any(pr["state"] == "OPEN" for pr in linked_prs):
             continue
 
-        if any(
-            pr["state"] == "MERGED" and pr["base_ref_name"] == default_branch
+        default_branch_merges = [
+            pr
             for pr in linked_prs
-        ):
+            if pr["state"] == "MERGED" and pr["base_ref_name"] == default_branch
+        ]
+        qualifying_merges = []
+        for pr in default_branch_merges:
+            merged_at = _github_time(
+                pr.get("merged_at"), f"pull request #{pr['number']} merged_at"
+            )
+            reopened_at = _github_time(
+                pr.get("closing_issue_reopened_at", {}).get(str(number)),
+                f"issue #{number} latest reopen from pull request #{pr['number']}",
+            )
+            if reopened_at is None or (merged_at is not None and merged_at > reopened_at):
+                qualifying_merges.append(pr)
+
+        if qualifying_merges:
             actions.append(
                 CleanupAction(
                     "close-issue",
@@ -160,6 +210,12 @@ def plan_cleanup(
                     ),
                 )
             )
+            continue
+
+        # A deliberate reopen after every default-branch fixing merge supersedes
+        # those old closing references. Leave both issue state and queue labels
+        # untouched until a newer qualifying merge exists.
+        if default_branch_merges:
             continue
 
         if in_progress:
@@ -257,6 +313,7 @@ def _graphql_pages(repo: str) -> list[dict[str, Any]]:
                 state = pr["state"]
                 number = pr["number"]
                 base_ref_name = pr["baseRefName"]
+                merged_at = pr.get("mergedAt")
             except (KeyError, TypeError) as error:
                 raise CleanupError("gh GraphQL response omitted PR closing references") from error
             if has_more:
@@ -270,12 +327,41 @@ def _graphql_pages(repo: str) -> list[dict[str, Any]]:
                 for node in nodes
             ):
                 raise CleanupError(f"pull request #{number} has invalid closing references")
+            reopened_at_by_issue: dict[str, str | None] = {}
+            for node in nodes:
+                timeline = node.get("timelineItems")
+                if not isinstance(timeline, dict):
+                    raise CleanupError(
+                        f"pull request #{number} closing issue chronology is missing"
+                    )
+                events = timeline.get("nodes")
+                if not isinstance(events, list) or len(events) > 1:
+                    raise CleanupError(
+                        f"pull request #{number} closing issue chronology is invalid"
+                    )
+                reopened_at = None
+                if events:
+                    event = events[0]
+                    if not isinstance(event, dict):
+                        raise CleanupError(
+                            f"pull request #{number} closing issue reopen event is invalid"
+                        )
+                    reopened_at = event.get("createdAt")
+                    _github_time(
+                        reopened_at,
+                        f"issue #{node['number']} latest reopen from pull request #{number}",
+                    )
+                reopened_at_by_issue[str(node["number"])] = reopened_at
+            if state == "MERGED":
+                _github_time(merged_at, f"pull request #{number} mergedAt")
             result.append(
                 {
                     "number": number,
                     "state": state,
                     "base_ref_name": base_ref_name,
+                    "merged_at": merged_at,
                     "closing_issue_numbers": [node["number"] for node in nodes],
+                    "closing_issue_reopened_at": reopened_at_by_issue,
                 }
             )
 

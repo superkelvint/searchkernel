@@ -9,7 +9,7 @@ INTEGRATION="$ROOT/reference/vespa/i/verify-i.sh"
 PHASE9="$ROOT/reference/vespa/phase9/verify-phase9.sh"
 HNSW="$ROOT/reference/vespa/verifiers/nearest-neighbor/hnsw/verify.sh"
 M14="$ROOT/reference/vespa/m14/verify-m14.sh"
-CI_IMAGE_RUNNER="$ROOT/.github/workflows/ci-image-runner.yml"
+CI_IMAGE_RUNNER="$ROOT/.github/ci/ci-image-runner.yml"
 
 bash -n "$VERIFY"
 bash -n "$DEV"
@@ -166,8 +166,8 @@ set -e
     echo "unknown semantic target returned $unknown_status instead of 2" >&2
     exit 1
 }
-grep -F "unknown verifier target: vespa.this-target-does-not-exist" <<<"$unknown_output" >/dev/null || {
-    echo "unknown semantic target did not fail with the expected diagnostic" >&2
+grep -F "unknown verify target: vespa.this-target-does-not-exist" <<<"$unknown_output" >/dev/null || {
+    echo "unknown semantic target did not fail through the canonical registry" >&2
     exit 1
 }
 

@@ -18,9 +18,16 @@ module SearchKernel
       @execute_uri = build_execute_uri(base_url)
       @timeout = normalize_timeout(timeout)
       @max_message_bytes = normalize_message_limit(max_message_bytes)
+      @closed = false
+    end
+
+    def close
+      @closed = true
+      nil
     end
 
     def execute(envelope)
+      raise TransportError, "Search Kernel HTTP transport is closed" if @closed
       raise ProtocolError, "Search Kernel request envelope must be an object" unless envelope.is_a?(Hash)
 
       body = encode_json(envelope)
@@ -126,7 +133,7 @@ module SearchKernel
     rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Net::HTTPBadResponse,
            Net::HTTPHeaderSyntaxError, Net::ProtocolError, OpenSSL::SSL::SSLError,
            IOError, EOFError, SystemCallError, SocketError => error
-      raise TransportError, "Search Kernel HTTP transport failed: #{error.message}"
+      raise TransportError, "Search Kernel HTTP transport failed: #{@execute_uri}: #{error.message}"
     end
 
     def read_response_body(response)

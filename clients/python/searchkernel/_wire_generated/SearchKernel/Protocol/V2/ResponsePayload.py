@@ -17,6 +17,9 @@ class ResponsePayload(object):
     SearchKernel_V2_DescribeResult = 9
     SearchKernel_V2_InspectQueryResult = 10
     SearchKernel_V2_UpdateResult = 11
+    SearchKernel_V2_CreateIndexResult = 12
+    SearchKernel_V2_OpenIndexResult = 13
+    SearchKernel_V2_DeleteIndexResult = 14
 
 def ResponsePayloadCreator(unionType, table):
     from flatbuffers.table import Table
@@ -55,4 +58,13 @@ def ResponsePayloadCreator(unionType, table):
     if unionType == ResponsePayload.SearchKernel_V2_UpdateResult:
         import SearchKernel.V2.UpdateResult
         return SearchKernel.V2.UpdateResult.UpdateResultT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == ResponsePayload.SearchKernel_V2_CreateIndexResult:
+        import SearchKernel.V2.CreateIndexResult
+        return SearchKernel.V2.CreateIndexResult.CreateIndexResultT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == ResponsePayload.SearchKernel_V2_OpenIndexResult:
+        import SearchKernel.V2.OpenIndexResult
+        return SearchKernel.V2.OpenIndexResult.OpenIndexResultT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == ResponsePayload.SearchKernel_V2_DeleteIndexResult:
+        import SearchKernel.V2.DeleteIndexResult
+        return SearchKernel.V2.DeleteIndexResult.DeleteIndexResultT.InitFromBuf(table.Bytes, table.Pos)
     return None

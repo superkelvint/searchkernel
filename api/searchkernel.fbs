@@ -5,8 +5,8 @@
 //
 // This is a deliberate V2 semantic contract boundary. V2 is NOT sent through a
 // V1 request envelope and MUST NOT rely on an older FlatBuffers reader ignoring
-// unknown fields: several V2 fields are authoritative query semantics. Native/HTTP
-// envelopes must negotiate/require protocol_version >= 2 before dispatching a
+// unknown fields: several V2 fields are authoritative query semantics. Protocol
+// envelopes must require protocol_version >= 2 before dispatching a
 // SearchKernel.V2 request. A V1 runtime must reject V2 rather than execute a
 // partially understood request.
 //
@@ -18,9 +18,12 @@
 //   * binary FlatBuffers are the interchange format; JSON is not the durable
 //     compatibility contract.
 //
-// No root_type is declared intentionally. Requests are scoped to an already-open
-// Index handle; transport framing/version negotiation lives in the FFI/HTTP
-// envelope.
+// No root_type is declared intentionally. Payload tables are framed by the
+// versioned request/response envelopes in searchkernel_request.fbs and
+// searchkernel_response.fbs. Embedded/per-index data operations execute against
+// an already-bound Index handle. Multi-index daemon routing and CreateIndex /
+// OpenIndex / DeleteIndex lifecycle operations are control-plane semantics handled above the
+// per-index dispatcher.
 
 namespace SearchKernel.V2;
 
@@ -553,6 +556,43 @@ table RankProfileDefinition {
   rank_properties:[StringEntry];
   strict:OptionalBool;
   properties:[ValueEntry];
+}
+
+// Logical daemon index identity. This is deliberately not a filesystem path.
+// Multi-index daemon callers use the same target for lifecycle and ordinary
+// operations. The protocol validator accepts only lowercase ASCII slugs.
+table IndexTarget {
+  name:string;
+}
+
+// Strict lifecycle semantics: create fails with AlreadyExists when the target
+// already exists; open and delete fail with NotFound when the target does not exist. The logical
+// daemon target is carried by the enclosing request envelope. IndexDefinition.name
+// is independent schema identity (and contributes to document-type resolution);
+// it is not an alternate target and need not equal the logical target.
+// Client-handle close is local and does not implicitly unload a shared daemon index.
+table CreateIndexRequest {
+  definition:IndexDefinition;
+}
+
+table CreateIndexResult {
+  index:IndexDefinition;
+}
+
+table OpenIndexRequest {
+}
+
+table OpenIndexResult {
+  index:IndexDefinition;
+}
+
+// Delete removes the logical target from the daemon registry and deletes its
+// persisted directory beneath the configured data root. Client-handle close is
+// still local-only and never implies index deletion.
+table DeleteIndexRequest {
+}
+
+table DeleteIndexResult {
 }
 
 table IndexDefinition {
@@ -1975,6 +2015,6 @@ table Error {
   retryable:bool;
 }
 
-// Transport framing deliberately does not live in this schema. A later native
-// ABI layer may add an operation envelope or per-operation root schemas once the
-// create/open/call lifecycle is frozen.
+// Transport framing deliberately does not live in this schema. Index lifecycle
+// is part of the canonical request/response envelopes; gRPC and HTTP remain
+// framing/representation layers around the same domain operations.

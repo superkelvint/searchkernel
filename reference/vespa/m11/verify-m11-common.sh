@@ -13,6 +13,26 @@ M11_CARGO_TARGET="$CARGO_TARGET_DIR"
 M11_DRIVER="$M11_CARGO_TARGET/debug/searchkernel-m11-driver"
 M11_DEPS="${VESPA_DEPS:-$ROOT/vespa-deps}"
 
+m11_adapter_path_from_ldd() {
+  awk '/libsearchkernel_vespa\.so/ {
+    for (i = 1; i <= NF; ++i) {
+      if ($i ~ /^\//) { print $i; exit }
+    }
+  }'
+}
+
+stage_m11_driver_adapter() {
+  local driver="${1:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
+  local runtime_sdk="${2:?stage_m11_driver_adapter <driver> <runtime-sdk>}"
+  local staged_dir="$(dirname "$driver")/.searchkernel-native"
+  local staged="$staged_dir/libsearchkernel_vespa.so.2"
+  local runtime="$runtime_sdk/lib/libsearchkernel_vespa.so.2"
+  [[ -f "$runtime" ]] || fail_verification "missing M11 runtime adapter: $runtime"
+  mkdir -p "$staged_dir"
+  rm -f "$staged"
+  ln -s "$runtime" "$staged"
+}
+
 prepare_hardening_sdk() {
   if [[ -f "$M11_SDK/manifest.json" ]]; then
     python3 - "$M11_SDK/manifest.json" <<'PY'
@@ -48,16 +68,24 @@ PY
 }
 
 build_m11_driver() {
-  export SK_NATIVE_SDK="$M11_SDK"
+  # M11_SDK is an adapter-only hardening runtime override, not a full SDK
+  # package accepted by Cargo's explicit-SDK provenance contract. Build the
+  # Rust driver through the normal pinned-base resolver; after Cargo stages its
+  # self-resolving adapter, repoint that staged path to the hardening runtime.
+  unset SK_NATIVE_SDK SK_NATIVE_BASE_SDK
   export CARGO_TARGET_DIR="$M11_CARGO_TARGET"
   export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,$M11_SDK/lib"
   cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
   [[ -x "$M11_DRIVER" ]] || fail_verification "M11 driver was not built: $M11_DRIVER"
+  # Native consumer binaries intentionally carry a slash-bearing
+  # $ORIGIN/.searchkernel-native DT_NEEDED entry. LD_LIBRARY_PATH cannot
+  # override such an entry, so repoint the staged adapter explicitly for M11.
+  stage_m11_driver_adapter "$M11_DRIVER" "$M11_SDK"
   require_native_driver "$M11_DRIVER" \
-    sk_engine_open sk_engine_close sk_engine_destroy sk_engine_search \
-    sk_engine_search_generic sk_engine_group_generic \
+    sk_engine_open sk_engine_close sk_engine_destroy \
+    sk_engine_search_generic sk_engine_group_tree \
     sk_generic_search_request_add_grouping \
-    sk_generic_search_result_match_feature_value \
+    sk_generic_search_result_match_feature_value_ref \
     sk_test_failpoint_set sk_test_failpoint_is_blocked
   rm -rf "$M11_CONFIG"
   mkdir -p "$(dirname "$M11_CONFIG")"

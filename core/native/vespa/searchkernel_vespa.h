@@ -174,9 +174,9 @@ typedef struct sk_grouping_filter sk_grouping_filter;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* ABI revision 13 adds structured grouping-plan input and structured grouping
-   tree output to the generic search surface. */
-#define SK_NATIVE_ABI_VERSION 14U
+/* ABI revision 15 makes predicate-query packed byte descriptors self-bounding
+   by carrying exact totals for feature keys, feature values, and range keys. */
+#define SK_NATIVE_ABI_VERSION 15U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -617,11 +617,13 @@ SK_API int32_t sk_query_add_geo_bounding_box(
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_predicate(
     sk_query *query, const char *field,
-    const uint8_t *feature_key_bytes, const uint32_t *feature_key_lengths,
-    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    const uint8_t *feature_key_bytes, uint32_t feature_key_bytes_length,
+    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
+    uint32_t feature_value_bytes_length, const uint32_t *feature_value_lengths,
     const uint64_t *feature_masks, uint32_t feature_count,
-    const uint8_t *range_key_bytes, const uint32_t *range_key_lengths,
-    const uint64_t *range_values, const uint64_t *range_masks,
+    const uint8_t *range_key_bytes, uint32_t range_key_bytes_length,
+    const uint32_t *range_key_lengths, const uint64_t *range_values,
+    const uint64_t *range_masks,
     uint32_t range_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_query_destroy(sk_query *query) SK_NOEXCEPT;

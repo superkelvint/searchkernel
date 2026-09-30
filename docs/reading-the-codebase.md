@@ -173,7 +173,7 @@ Read:
 
 - `core/crates/searchkernel-ir/src/model.rs`
 - `core/crates/searchkernel-ir/src/api_to_ir/mod.rs`
-- `core/crates/searchkernel-ir/src/api_to_ir/resolve.rs`
+- `core/crates/searchkernel-ir/src/api_to_ir/resolve/mod.rs`
 - `core/crates/searchkernel-ir/src/backend.rs`
 
 This is the key boundary in the whole project:

@@ -44,7 +44,19 @@
           "path": "clients/python/tests/test_grpc_e2e.py",
           "command": [
             "bash",
-            "tools/run-python-native-e2e.sh"
+            "tools/run-python-native-e2e.sh",
+            "--include-facade"
+          ]
+        },
+        {
+          "runtimes": [
+            "managed-local"
+          ],
+          "path": "clients/python/examples/try_searchkernel_client_api_e2e.py",
+          "command": [
+            "bash",
+            "tools/run-python-native-e2e.sh",
+            "--include-facade"
           ]
         }
       ]
@@ -109,6 +121,7 @@
         "clients/ruby/examples"
       ],
       "required_e2e_runtimes": [
+        "http",
         "managed-local"
       ],
       "e2e_lanes": [
@@ -121,10 +134,49 @@
             "bash",
             "clients/ruby/examples/run_searchkernel_client_api_e2e.sh"
           ]
+        },
+        {
+          "runtimes": [
+            "http"
+          ],
+          "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
+          "command": [
+            "bash",
+            "clients/ruby/examples/run_searchkernel_package_daemon_e2e.sh"
+          ]
         }
       ]
     }
   },
+  "parity_requirements": [
+    {
+      "source_surface": "python",
+      "target_surface": "ruby",
+      "minimum_strength": "runtime",
+      "source_runtimes": [
+        "grpc",
+        "managed-local"
+      ],
+      "target_runtimes": [
+        "managed-local"
+      ],
+      "required_kinds": [
+        "ergonomic",
+        "e2e"
+      ],
+      "required_contracts": [
+        "update.document_crud/basic",
+        "query.phrase/basic",
+        "query.proximity/basic",
+        "query.fuzzy/basic",
+        "query.weighted_and_wand/basic",
+        "query.same_element/basic",
+        "query.geo/basic",
+        "result.docsum_field_projection/basic",
+        "result.highlighting/basic"
+      ]
+    }
+  ],
   "scenarios": [
     {
       "capability": "result.highlighting",
@@ -141,5 +193,6 @@
       "id": "continuation-fragments",
       "title": "Disjoint Juniper continuation regions become separate fragments"
     }
-  ]
+  ],
+  "overrides": []
 }

@@ -48,6 +48,11 @@ from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
 from SearchKernel.V2.FilterClause import FilterClauseT  # noqa: E402
 from SearchKernel.V2.FilterRequest import FilterRequestT  # noqa: E402
 from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
+from SearchKernel.V2.SortDirection import SortDirection  # noqa: E402
+from SearchKernel.V2.SortExpr import SortExprT  # noqa: E402
+from SearchKernel.V2.SortTarget import SortTargetT  # noqa: E402
+from SearchKernel.V2.SortTargetKind import SortTargetKind  # noqa: E402
+from SearchKernel.V2.FieldSortTarget import FieldSortTargetT  # noqa: E402
 from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
 from SearchKernel.V2.QuerySource import QuerySourceT  # noqa: E402
 from SearchKernel.V2.QuerySourceKind import QuerySourceKind  # noqa: E402
@@ -122,6 +127,61 @@ def _canonical_snapshot(request):
 
 
 class FlatBuffersObjectApiTest(unittest.TestCase):
+    def test_field_sort_requires_an_explicit_direction(self):
+        class Index:
+            client = None
+
+        with self.assertRaises(TypeError):
+            SearchBuilder(Index(), "wireless").sort("price")
+
+        self.assertEqual(
+            SearchBuilder(Index(), "wireless").sort("price", "asc")._sort[0].direction,
+            SortDirection.Asc,
+        )
+        self.assertEqual(
+            SearchBuilder(Index(), "wireless").sort("price", "desc")._sort[0].direction,
+            SortDirection.Desc,
+        )
+
+    def test_field_sorts_match_canonical_rust_ir(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        for direction, enum_value in (("asc", SortDirection.Asc), ("desc", SortDirection.Desc)):
+            index = Index()
+            SearchBuilder(index, None).sort("price", direction).execute()
+            canonical = SearchRequestT(
+                query=QuerySourceT(
+                    sourceType=QuerySourceKind.MatchAllQuery,
+                    source=MatchAllQueryT(),
+                ),
+                sort=[SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.FieldSortTarget,
+                        target=FieldSortTargetT(field="price"),
+                    ),
+                    direction=enum_value,
+                )],
+            )
+            with self.subTest(direction=direction):
+                self.assertEqual(
+                    _canonical_snapshot(index.client.request),
+                    _canonical_snapshot(canonical),
+                )
+
     def test_nested_grouping_uses_structural_all_scope(self):
         request = Group.by("category").output(agg.count()).subgroup(
             Group.by("brand").output(agg.count())
@@ -443,6 +503,41 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
         self.assertEqual(sparse["$searchkernel_tensor"]["sparse"][0]["value"], 0.5)
         self.assertEqual(mixed["$searchkernel_tensor"]["mixed"][0]["values"], [0.25, 0.75])
+
+    def test_result_value_decoder_rejects_nonfinite_tensor_cells(self):
+        address = [TensorAddressEntryT(dimension="category", label="books")]
+        malformed = [
+            TensorValueT(
+                typeSpec="tensor<float>(x[1])",
+                payloadType=TensorPayloadKind.DenseTensorValues,
+                payload=DenseTensorValuesT(values=[math.nan]),
+            ),
+            TensorValueT(
+                typeSpec="tensor<float>(category{})",
+                payloadType=TensorPayloadKind.SparseTensorCells,
+                payload=SparseTensorCellsT(
+                    cells=[TensorCellT(address=address, value=math.inf)]
+                ),
+            ),
+            TensorValueT(
+                typeSpec="tensor<float>(category{},x[1])",
+                payloadType=TensorPayloadKind.MixedTensorBlocks,
+                payload=MixedTensorBlocksT(
+                    blocks=[
+                        TensorBlockT(
+                            address=address,
+                            values=[-math.inf],
+                        )
+                    ]
+                ),
+            ),
+        ]
+
+        for tensor in malformed:
+            with self.subTest(payloadType=tensor.payloadType):
+                encoded = ValueT(kindType=ValueKind.TensorValue, kind=tensor)
+                with self.assertRaisesRegex(ValueError, "finite"):
+                    _python_value(encoded)
 
     def test_result_decoding_rejects_ambiguous_and_unknown_unions(self):
         entries = [
@@ -787,7 +882,19 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(request.inputs[0].name, "freshness")
         self.assertEqual(request.inputs[0].input.value.kind.value, 0.8)
 
-    def test_ergonomic_rank_properties_use_default_profile(self):
+    def test_ergonomic_rank_property_rejects_non_string_values(self):
+        class Index:
+            client = None
+
+        for item in (False, None, 7, {}, []):
+            with self.subTest(item=item):
+                with self.assertRaises(TypeError):
+                    SearchBuilder(Index(), "wireless").rank_property("enabled", item)
+
+        builder = SearchBuilder(Index(), "wireless").rank_property("source", "catalog")
+        self.assertEqual(builder._rank_properties, {"source": "catalog"})
+
+    def test_ergonomic_rank_properties_preserve_absent_profile(self):
         class EmptyResult:
             root = None
             totalHits = None
@@ -809,6 +916,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             .rank_property("source", "catalog") \
             .execute()
 
+        ranking = index.client.request.ranking
+        self.assertIsNone(ranking.profile)
+        self.assertEqual(ranking.properties[0].value, "catalog")
+
+        SearchBuilder(index, "wireless").ranking("default") \
+            .rank_property("source", "catalog") \
+            .execute()
         self.assertEqual(index.client.request.ranking.profile, "default")
 
     def test_ergonomic_ranking_properties_and_inputs_are_canonical_order(self):

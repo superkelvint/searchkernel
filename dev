@@ -3,9 +3,17 @@ set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
+if [[ ("${1:-}" == "test" || "${1:-}" == "verify") && "${2:-}" == "--remote" ]]; then
+    [[ "$#" -eq 3 ]] || {
+        echo "usage: ./dev ${1:-test} --remote <target>" >&2
+        exit 2
+    }
+    exec bash "$ROOT/tools/remote-verification.sh" "$1" "$3"
+fi
+
 should_use_ci_image() {
     case "${1:-}" in
-        check|universe|check-fast|check-protocol|coverage|lint|test|verify|precommit-verify)
+        ci|check|galaxy|universe|check-fast|check-protocol|coverage|lint|test|verify)
             return 0
             ;;
         native-sdk)
@@ -28,9 +36,6 @@ if [[ "${SEARCHKERNEL_DEV_USE_CI_IMAGE:-1}" != "0" &&
       "${SEARCHKERNEL_IN_CI_IMAGE:-0}" != "1" &&
       ! -f /opt/searchkernel/native-validation-pass ]] &&
    should_use_ci_image "$@"; then
-    if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        git -C "$ROOT" config --local core.hooksPath .githooks
-    fi
     if [[ "${1:-}" == "universe" ]]; then
         UNIVERSE_LOG=${SEARCHKERNEL_UNIVERSE_LOG:-/tmp/searchkernel-universe-$(date +%Y%m%d-%H%M%S).log}
         echo "Search Kernel universe log: $UNIVERSE_LOG"
@@ -127,28 +132,25 @@ configure_ca_bundle() {
 # uses the trust store that actually exists in this environment.
 configure_ca_bundle
 
-ensure_hooks() {
-    local configured
-    configured=$(git config --local --get core.hooksPath 2>/dev/null || true)
-    if [[ "$configured" != ".githooks" ]]; then
-        git config --local core.hooksPath .githooks
-        echo 'Configured repository-managed Git hooks at .githooks' >&2
-    fi
-}
-
-# Any normal use of ./dev should leave the clone correctly configured.
-ensure_hooks
-
 usage() {
     cat <<'EOF'
 Search Kernel development commands
 
+  ./dev build                 Build the supported Search Kernel product (M1 convergence pending)
+  ./dev ci                    Run the intentionally cheap mandatory PR gate
   ./dev check                 Run the full repository quality and test suite
+  ./dev galaxy                Run broad routine checks without exhaustive verifiers
   ./dev universe              Run every repository test, E2E lane, and verifier
+  ./dev release-check         Run distributable release qualification (implemented in M5)
   ./dev check-fast            Run formatting, compile, and boundary checks
   ./dev check-protocol        Verify generated FlatBuffers/gRPC artifacts
   ./dev coverage              Generate Rust code coverage reports under coverage/
   ./dev lint --profile <id>   Run a canonical Clippy verification profile
+  ./dev test --list           List supported test scopes from build/targets.json
+  ./dev explain <path>        Explain ownership and checks from build/targets.json
+  ./dev bookkeeping check     Validate deterministic bookkeeping artifacts
+  ./dev bookkeeping sync      Repair deterministic bookkeeping artifacts
+  ./dev test --remote <scope> Dispatch exact-HEAD test through GitHub Actions
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
   ./dev test python           Test the Python client, including real E2E
@@ -161,6 +163,7 @@ Search Kernel development commands
   ./dev verify milestone.m14       Run a frozen cumulative milestone closure
   ./dev verify product.integration Run the cross-entry-point integration verifier
   ./dev verify --list              List semantic and legacy Vespa verifier targets
+  ./dev verify --remote <lane>      Dispatch exact-HEAD verifier through GitHub Actions
   ./dev verify contracts      Verify capability/client contract tooling
   ./dev verify abi            Verify the public native ABI contract
   ./dev verify persistence    Verify persistence compatibility
@@ -171,12 +174,12 @@ Search Kernel development commands
   ./dev image publish         Build/push the thin CI image and update :latest
   ./dev image toolchain publish  Publish reusable language/compiler tooling
   ./dev image vespa publish      Publish reusable pinned Vespa/native bundle
-  ./dev hooks install        Install the repository-managed Git hooks
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Repair and verify local build/verification prerequisites
 
-Build/test/verify commands run in docker.io/superkelvint/searchkernel-ci:latest
-by default, using disposable source and Cargo-target volumes. Set
+Build/ci/test/verify commands run in docker.io/superkelvint/searchkernel-ci:latest
+by default, using a disposable source snapshot and worktree-scoped compatible
+Cargo target state. Set
 SEARCHKERNEL_DEV_USE_CI_IMAGE=0 for an intentional host execution,
 SEARCHKERNEL_CI_IMAGE to override the image, or SEARCHKERNEL_CI_PULL=never
 for an offline run against an already-pulled image.
@@ -318,6 +321,8 @@ run_typescript_tests() {
 run_php_tests() {
     php "$ROOT/clients/php/tests/run.php"
     "$CARGO" test -p searchkernel-protocol --test php_json_contract -- --ignored
+    "$CARGO" test -p searchkerneld --test multi_index --features native \
+        php_emitted_create_index_json_reaches_multi_index_registry -- --ignored --exact
     bash "$ROOT/clients/php/tests/verify_package.sh"
     run_client_e2e php
 }
@@ -343,18 +348,28 @@ run_ruby_tests() {
                 {"node_type" => "Hit", "node" => {"id" => "from-installed-gem"}}]}};
               results = SearchKernel::Results::SearchResults.new({"root" => root});
               abort unless results.hits.map(&:id) == ["from-installed-gem"]'
+        GEM_HOME="$gem_home" GEM_PATH="$gem_home" SEARCHKERNEL_RUBY_USE_INSTALLED_GEM=1 \
+            run_client_e2e ruby
     ) || status=$?
     rm -rf -- "$package_dir" "$gem_home"
     [[ "$status" -eq 0 ]] || return "$status"
-    run_client_e2e ruby
 }
 
 check_fast() {
     bash "$ROOT/tools/check-shell-syntax.sh"
     bash "$ROOT/tools/test-shell-syntax.sh"
     bash "$ROOT/tools/test-dev-ci-image.sh"
+    bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
+    "$PYTHON" "$ROOT/tools/test_on_demand_verification_workflow.py"
+    "$PYTHON" "$ROOT/tools/test_remote_verification.py"
     bash "$ROOT/tools/test-ci-image-publishing.sh"
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
+    "$PYTHON" "$ROOT/tools/test_searchkernel_native_linker.py"
+    "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+    "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+    "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
+    "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+    "$PYTHON" "$ROOT/tools/test_dev_universe_summary.py"
     "$CARGO" fmt --all --check
     "$CARGO" check --workspace --all-targets --no-default-features
     bash "$ROOT/tools/check-layout.sh"
@@ -371,6 +386,57 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
     run_typescript_generation_check
     "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
+    "$PYTHON" "$ROOT/tools/test_build_system_ci.py"
+}
+
+ci_gate() {
+    echo "== Docker lifecycle contract =="
+    bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
+
+    echo "== bookkeeping contract =="
+    bookkeeping_command check
+
+    echo "== cargo fmt =="
+    "$CARGO" fmt --all -- --check
+
+    echo "== cargo check =="
+    "$CARGO" check --workspace --all-targets --no-default-features --locked
+
+    echo "== native test compile smoke =="
+    "$CARGO" check -p searchkerneld --tests --features native --locked
+
+    echo "== cargo clippy =="
+    "$CARGO" clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+}
+
+bookkeeping_command() {
+    local mode=${1:-check}
+    [[ "$#" -le 1 ]] || {
+        echo 'usage: ./dev bookkeeping check|sync' >&2
+        return 2
+    }
+    case "$mode" in
+        check)
+            "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+            "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+            "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
+            "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            ;;
+        sync)
+            "$PYTHON" "$ROOT/tools/check-agent-map.py" --write
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --write
+            "$PYTHON" "$ROOT/tools/test_dev_targets.py"
+            "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
+            "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
+            "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
+            "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            ;;
+        *)
+            echo 'usage: ./dev bookkeeping check|sync' >&2
+            return 2
+            ;;
+    esac
 }
 
 check_protocol() {
@@ -484,6 +550,8 @@ universe_print_summary() {
 
 universe() {
     local target
+    local failures_before_m14
+    local m14_baseline_proved=0
     local -a targets=()
     local -a UNIVERSE_PASSED=()
     local -a UNIVERSE_FAILED=()
@@ -513,28 +581,62 @@ universe() {
 
     universe_dev_step 'API conformance verifier' verify api-conformance
     universe_dev_step 'capability/client contract verifiers' verify contracts
+    universe_dev_step 'client semantic parity verifier' verify client-semantic-parity
     universe_dev_step 'native ABI verifier' verify abi
     universe_dev_step 'persistence compatibility verifier' verify persistence
     universe_dev_step 'issue queue verifier' verify issue-queue
 
-    mapfile -t targets < <(
-        "$ROOT/reference/vespa/verify-through.sh" --list |
-            awk '
-                /^Semantic verifier targets:/ { semantic = 1; next }
-                /^Milestone aggregate targets:/ { semantic = 0 }
-                semantic && NF { print $1 }
-            '
-    )
+    mapfile -t targets < <("$PYTHON" "$ROOT/tools/dev-targets.py" list universe)
     if (("${#targets[@]}" == 0)); then
         UNIVERSE_FAILED+=('semantic verifier discovery (no targets)')
         UNIVERSE_FAILED_REPRO+=('./dev verify --list')
-    else
-        for target in "${targets[@]}"; do
-            universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
-        done
     fi
 
+    # Run the cumulative M14 verifier once. Its chain proves the hardening
+    # (M11) and HNSW (M14) baselines before later semantic lanes run. Product
+    # integration can then use the existing baseline-reuse option to avoid
+    # replaying M13 while still running its Phase 10 checks.
+    failures_before_m14=${#UNIVERSE_FAILED[@]}
     universe_dev_step 'cumulative milestone.m14 closure' verify milestone.m14 --skip-workspace-quality
+    if (("${#UNIVERSE_FAILED[@]}" == failures_before_m14)); then
+        m14_baseline_proved=1
+    fi
+
+    for target in "${targets[@]}"; do
+        case "$target" in
+            vespa.nearest-neighbor.hnsw)
+                # This public verifier is an alias for verify-m14.sh. The
+                # cumulative lane above ran that exact verifier already.
+                echo "==> universe: semantic verifier $target covered by cumulative milestone.m14 closure"
+                if ((m14_baseline_proved)); then
+                    UNIVERSE_PASSED+=("semantic verifier $target (covered by cumulative milestone.m14 closure)")
+                else
+                    UNIVERSE_FAILED+=("semantic verifier $target (cumulative milestone.m14 closure failed)")
+                    UNIVERSE_FAILED_REPRO+=("./dev verify $target --skip-workspace-quality")
+                fi
+                ;;
+            vespa.hardening|vespa.hardening.core|vespa.hardening.stress|vespa.hardening.sanitizers)
+                if ((m14_baseline_proved)); then
+                    # M14's cumulative chain ran M11 and all three hardening
+                    # components. Do not execute those same scripts again.
+                    echo "==> universe: semantic verifier $target covered by cumulative milestone.m14 closure"
+                    UNIVERSE_PASSED+=("semantic verifier $target (covered by cumulative milestone.m14 closure)")
+                else
+                    universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
+                fi
+                ;;
+            product.integration)
+                if ((m14_baseline_proved)); then
+                    universe_dev_step "semantic verifier $target" verify "$target" --baseline-already-proved --skip-workspace-quality
+                else
+                    universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
+                fi
+                ;;
+            *)
+                universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
+                ;;
+        esac
+    done
 
     universe_print_summary "${#UNIVERSE_PASSED[@]}" UNIVERSE_FAILED UNIVERSE_FAILED_REPRO
 }
@@ -566,11 +668,17 @@ lint_target() {
 }
 
 test_target() {
-    case "${1:-}" in
+    if [[ "${1:-}" == "--list" || "${1:-}" == "list" ]]; then
+        "$PYTHON" "$ROOT/tools/dev-targets.py" list test
+        return
+    fi
+    local requested=${1:-} target
+    target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
+    case "$target" in
         ir)
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
-        rust-api|rust)
+        rust-api)
             "$CARGO" test -p searchkernel --all-targets --no-default-features
             ;;
         python)
@@ -585,8 +693,11 @@ test_target() {
         ruby)
             run_ruby_tests
             ;;
+        searchkerneld-multi-index)
+            "$CARGO" test -p searchkerneld --features native --test multi_index --test process_shutdown
+            ;;
         *)
-            echo "usage: ./dev test ir|rust-api|python|typescript|php|ruby" >&2
+            echo "registry error: test target '$target' has no dispatcher" >&2
             return 2
             ;;
     esac
@@ -598,8 +709,17 @@ verify_target() {
     # SEARCHKERNEL_VERIFY_VESPA_LOG_LEVEL is forwarded into the canonical CI image.
     export VESPA_LOG_LEVEL="${SEARCHKERNEL_VERIFY_VESPA_LOG_LEVEL:-${VESPA_LOG_LEVEL:-all -info -event -config -debug -spam}}"
 
-    case "${1:-}" in
-        integration|i|product.integration)
+    if [[ "${1:-}" == "--list" || "${1:-}" == "list" ]]; then
+        "$PYTHON" "$ROOT/tools/dev-targets.py" list verify
+        return
+    fi
+    local requested=${1:-} target
+    target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve verify "$requested") || return $?
+    shift || true
+    set -- "$target" "$@"
+
+    case "$target" in
+        product.integration)
             "$ROOT/reference/vespa/verify-through.sh" "$@"
             ;;
         api-conformance)
@@ -611,6 +731,24 @@ verify_target() {
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
             "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
+            ;;
+        client-semantic-parity)
+            doctor_repair_python
+            doctor_repair_typescript
+            command -v php >/dev/null 2>&1 || {
+                echo 'error: PHP is required for client semantic parity' >&2
+                return 1
+            }
+            command -v ruby >/dev/null 2>&1 || {
+                echo 'error: Ruby is required for client semantic parity' >&2
+                return 1
+            }
+            bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
+            "$PYTHON" "$ROOT/tools/check-result-response-schema.py"
+            "$PYTHON" "$ROOT/tools/test_check_result_response_schema.py"
+            "$PYTHON" "$ROOT/tools/test_result_response_conformance.py"
+            "$PYTHON" "$ROOT/tools/check-client-semantic-parity.py"
+            "$PYTHON" "$ROOT/tools/check-result-response-conformance.py"
             ;;
         abi)
             local_baseline=$(mktemp)
@@ -641,12 +779,11 @@ verify_target() {
         issue-queue)
             "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
             ;;
-        m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|m14|milestone.*|vespa.*|product.rust-real-engine|phase10|searchreply|--list|list)
+        milestone.*|vespa.*|product.rust-real-engine)
             "$ROOT/reference/vespa/verify-through.sh" "$@"
             ;;
         *)
-            echo "usage: ./dev verify <semantic-target>|milestone.mN|mN|integration|api-conformance|contracts|abi|persistence|issue-queue" >&2
-            echo "       ./dev verify --list" >&2
+            echo "registry error: verify target '$target' has no dispatcher" >&2
             return 2
             ;;
     esac
@@ -1122,11 +1259,6 @@ doctor_searchkerneld() {
     [[ -x "$binary" ]]
 }
 
-doctor_hooks() {
-    ensure_hooks
-    [[ "$(git config --local --get core.hooksPath 2>/dev/null || true)" == ".githooks" ]]
-}
-
 doctor_toolchain_authorities() {
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
 }
@@ -1159,8 +1291,6 @@ doctor() {
 
     echo "Search Kernel doctor"
 
-    doctor_hooks >/dev/null 2>&1 || status=1
-
     repair 'Rust toolchain' doctor_repair_rust
     if doctor_rust >/dev/null 2>&1; then
         repair 'Node.js toolchain' doctor_repair_node
@@ -1175,7 +1305,6 @@ doctor() {
 
     echo
     echo 'Verification'
-    doctor_check 'repository Git hooks configured' doctor_hooks
     doctor_check 'toolchain authority contract' doctor_toolchain_authorities
     doctor_check 'Rust toolchain present' doctor_rust
     doctor_check 'Node.js toolchain present' doctor_node
@@ -1205,25 +1334,30 @@ doctor() {
     return "$status"
 }
 
-hooks_install() {
-    ensure_hooks
-    echo 'Repository-managed Git hooks are configured at .githooks'
-}
-
-precommit_verify() {
-    if [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" != "1" &&
-          ! -f /opt/searchkernel/native-validation-pass ]]; then
-        echo 'error: precommit-verify must execute inside searchkernel-ci' >&2
-        return 1
-    fi
-    SEARCHKERNEL_PRECOMMIT_IN_CONTAINER=1         bash "$ROOT/.githooks/pre-commit"
+planned_command() {
+    local command=$1 milestone=$2
+    echo "./dev $command is part of the public build vocabulary but is not implemented until $milestone" >&2
+    return 2
 }
 
 case "${1:-help}" in
     help|-h|--help)
         usage
         ;;
+    build)
+        planned_command build M1
+        ;;
+    ci)
+        [[ $# -eq 1 ]] || {
+            echo 'usage: ./dev ci' >&2
+            exit 2
+        }
+        ci_gate
+        ;;
     check)
+        check_all
+        ;;
+    galaxy)
         check_all
         ;;
     universe)
@@ -1254,6 +1388,17 @@ case "${1:-help}" in
         shift
         test_target "${1:-}"
         ;;
+    explain)
+        [[ "$#" -eq 2 ]] || {
+            echo 'usage: ./dev explain <path>' >&2
+            exit 2
+        }
+        "$PYTHON" "$ROOT/tools/dev-targets.py" explain "$2"
+        ;;
+    bookkeeping)
+        shift
+        bookkeeping_command "$@"
+        ;;
     regen)
         case "${2:-}" in
             protocol) regen_protocol ;;
@@ -1267,9 +1412,6 @@ case "${1:-help}" in
     verify)
         shift
         verify_target "$@"
-        ;;
-    precommit-verify)
-        precommit_verify
         ;;
     install)
         shift
@@ -1294,12 +1436,8 @@ case "${1:-help}" in
     doctor)
         doctor
         ;;
-    hooks)
-        [[ "${2:-}" == install ]] || {
-            echo 'usage: ./dev hooks install' >&2
-            exit 2
-        }
-        hooks_install
+    release-check)
+        planned_command release-check M5
         ;;
     *)
         echo "unknown command: $1" >&2

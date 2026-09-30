@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=70.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -28,4 +28,4 @@ where = ["."]
 include = ["searchkernel*"]
 
 [tool.setuptools.package-data]
-searchkernel = ["_wire_generated/**/*.py", "_wire_generated/**/*.pyi", "bin/searchkerneld"]
+searchkernel = ["_wire_generated/**/*.py", "_wire_generated/**/*.pyi", "bin/*", "lib/*"]

@@ -1,18 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+PYTHON=$("$ROOT/tools/resolve-python.sh")
+CARGO=$("$ROOT/tools/resolve-rust.sh" cargo)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 cd "$ROOT"
-python3 tools/generate-native-consumer-bundle.py --check
-cargo package -p searchkernel-vespa-bindings --allow-dirty --no-verify >/dev/null
-CRATE=$(find "${CARGO_TARGET_DIR:-target}" -path '*/package/searchkernel-vespa-bindings-*.crate' -print | head -1)
-[[ -n "$CRATE" && -f "$CRATE" ]] || { echo "packaged bindings crate not found" >&2; exit 1; }
-tar -xf "$CRATE" -C "$TMP"
-PKG=$(find "$TMP" -mindepth 1 -maxdepth 1 -type d -name 'searchkernel-vespa-bindings-*' -print -quit)
-[[ -n "$PKG" ]] || { echo "extracted bindings package not found" >&2; exit 1; }
+"$PYTHON" tools/generate-native-consumer-bundle.py --check
+CONSUMER="$TMP/consumer"
+mkdir -p "$CONSUMER/src"
+case "$CONSUMER" in
+  "$ROOT"/*)
+    echo "external consumer unexpectedly lives inside the Search Kernel repository" >&2
+    exit 1
+    ;;
+esac
+cat > "$CONSUMER/Cargo.toml" <<EOF
+[package]
+name = "searchkernel-native-consumer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+searchkernel = { path = "$ROOT/core/crates/searchkernel", features = ["native"] }
+EOF
+cat > "$CONSUMER/src/main.rs" <<'EOF'
+fn main() {
+    let missing = std::env::var_os("SEARCHKERNEL_CONSUMER_MISSING_INDEX")
+        .expect("missing isolated index path");
+    assert!(searchkernel::Index::open(missing).is_err());
+}
+EOF
 (
-  cd "$PKG"
-  env -u SK_NATIVE_SDK -u SK_NATIVE_CACHE_DIR -u SK_NATIVE_DISABLE_PUBLISHED_BASE XDG_CACHE_HOME="$TMP/cache" cargo check --features native
+  cd "$CONSUMER"
+  env -u LD_LIBRARY_PATH -u SK_NATIVE_SDK -u SK_NATIVE_CACHE_DIR \
+    -u SK_NATIVE_DISABLE_PUBLISHED_BASE XDG_CACHE_HOME="$TMP/cache" "$CARGO" build
 )
-echo "Packaged native consumer PASS: clean extracted crate provisions and builds without monorepo files"
+case "${CARGO_TARGET_DIR:-}" in
+  /*) CONSUMER_TARGET=$CARGO_TARGET_DIR ;;
+  "") CONSUMER_TARGET="$CONSUMER/target" ;;
+  *) CONSUMER_TARGET="$CONSUMER/$CARGO_TARGET_DIR" ;;
+esac
+BIN="$CONSUMER_TARGET/debug/searchkernel-native-consumer"
+readelf -d "$BIN" | grep -Fq '$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2' || {
+  echo "public Search Kernel Rust consumer lacks self-resolving adapter DT_NEEDED entry" >&2
+  readelf -d "$BIN" >&2
+  exit 1
+}
+[[ -f "$CONSUMER_TARGET/debug/.searchkernel-native/libsearchkernel_vespa.so.2" ]] || {
+  echo "public Search Kernel Rust consumer did not stage its native adapter beside the executable" >&2
+  exit 1
+}
+(
+  cd /
+  env -u LD_LIBRARY_PATH SEARCHKERNEL_CONSUMER_MISSING_INDEX="$TMP/missing-index" "$BIN"
+)
+echo "Public native consumer PASS: external Search Kernel Rust binary links and runs without LD_LIBRARY_PATH or repository Cargo config"

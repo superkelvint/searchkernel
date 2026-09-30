@@ -88,7 +88,7 @@ pub const SK_FEATURE_VALUE_KIND_INVALID: u32 = 0;
 pub const SK_FEATURE_VALUE_DOUBLE: u32 = 1;
 pub const SK_FEATURE_VALUE_DATA: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 14;
+pub const SK_NATIVE_ABI_VERSION: u32 = 15;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -1240,12 +1240,15 @@ unsafe extern "C" {
         query: *mut sk_query,
         field: *const ::std::os::raw::c_char,
         feature_key_bytes: *const u8,
+        feature_key_bytes_length: u32,
         feature_key_lengths: *const u32,
         feature_value_bytes: *const u8,
+        feature_value_bytes_length: u32,
         feature_value_lengths: *const u32,
         feature_masks: *const u64,
         feature_count: u32,
         range_key_bytes: *const u8,
+        range_key_bytes_length: u32,
         range_key_lengths: *const u32,
         range_values: *const u64,
         range_masks: *const u64,

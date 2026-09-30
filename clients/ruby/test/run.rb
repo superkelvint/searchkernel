@@ -149,6 +149,13 @@ end
 raises(ArgumentError, "reject signed overflow") { portable.encode(2**63) }
 raises(ArgumentError, "reject unsigned overflow") { portable.uint64(2**64) }
 raises(ArgumentError, "reject non-finite request") { portable.encode(Float::INFINITY) }
+empty_dense = portable.encode(portable.tensor("tensor<float>(x[8])", :dense, []))
+same({}, empty_dense.fetch("kind").fetch("payload"), "empty dense tensor omits zero-length vector for BFBS JSON alignment")
+same(
+  [],
+  portable.decode(empty_dense).fetch("$searchkernel_tensor").fetch("dense"),
+  "empty dense tensor round-trips through public Value API"
+)
 raises(ArgumentError, "reject non-finite tensor") { portable.encode(portable.tensor("tensor(x[1])", :dense, [Float::NAN])) }
 raises(ArgumentError, "reject overflowing tensor conversion") { portable.encode(portable.tensor("tensor(x[1])", :dense, [10**400])) }
 raises(SearchKernel::ProtocolError, "reject missing discriminator") { portable.decode({"kind" => {"value" => 1}}) }
@@ -182,7 +189,10 @@ expected_operations = {
   search: %w[SearchRequest SearchResult],
   analyze: %w[AnalyzeRequest AnalyzeResult],
   describe: %w[DescribeRequest DescribeResult],
-  inspect_query: %w[InspectQueryRequest InspectQueryResult]
+  inspect_query: %w[InspectQueryRequest InspectQueryResult],
+  create_index: %w[CreateIndexRequest CreateIndexResult],
+  open_index: %w[OpenIndexRequest OpenIndexResult],
+  delete_index: %w[DeleteIndexRequest DeleteIndexResult]
 }
 
 same(expected_operations.keys.sort, SearchKernel::Protocol::OPERATIONS.keys.sort, "all portable operations are mapped")
@@ -202,6 +212,12 @@ expected_operations.each do |operation, (request_type, response_type)|
     }
   )
   same({ "ok" => operation.to_s }, result, "#{operation} response discriminator")
+end
+
+targeted = SearchKernel::Protocol.request_envelope(:search, { "query" => {} }, target: "products")
+same({ "name" => "products" }, targeted["target"], "targeted request carries logical daemon target")
+raises(ArgumentError, "path-like target rejects locally") do
+  SearchKernel::Protocol.request_envelope(:search, {}, target: "../products")
 end
 
 raises(ArgumentError, "unknown operation rejects") do
@@ -333,6 +349,49 @@ recording = RecordingTransport.new
 client = SearchKernel::Client.new(recording)
 same({ "root" => nil }, client.search({ "query" => { "source_type" => "MatchAllQuery" } }), "client returns operation payload")
 same([], client.search_results({}).hits, "client result wrapper derives hits from root")
+
+empty_results = SearchKernel::Results::SearchResults.new({})
+same([], empty_results.hits, "empty result hits match Python facade semantics")
+same([], empty_results.groups, "empty result groups match Python facade semantics")
+same(0, empty_results.total_hits, "absent total hits defaults to zero")
+same("unknown", empty_results.total_hits_relation, "absent total-hit relation is unknown")
+same([], empty_results.errors, "absent result errors default to an empty list")
+same({}, empty_results.metadata, "absent result metadata defaults to an empty map")
+same([], empty_results.continuations, "absent result continuations default to an empty list")
+same({}, empty_results.aggregations, "absent result aggregations default to an empty map")
+same({}, empty_results.facets, "absent result facets default to an empty map")
+
+empty_hit = SearchKernel::Results::SearchResults.new(
+  "root" => {"node_type" => "Hit", "node" => {}}
+).hits.first
+same("", empty_hit.id, "absent hit id defaults to an empty string")
+same({}, empty_hit.fields, "absent hit fields default to an empty map")
+same([], empty_hit.highlights, "absent hit highlights default to an empty list")
+same([], empty_hit.types, "absent hit types default to an empty list")
+same({}, empty_hit.match_features, "absent match features default to an empty map")
+same({}, empty_hit.summary_features, "absent summary features default to an empty map")
+same({}, empty_hit.rank_features, "absent rank features default to an empty map")
+same([], empty_hit.sort_values, "absent hit sort values default to an empty list")
+
+empty_group = SearchKernel::Results::SearchResults.new(
+  "root" => {"node_type" => "ResultGroup", "node" => {}}
+).root
+same({}, empty_group.fields, "absent group fields default to an empty map")
+same([], empty_group.children, "absent group children default to an empty list")
+same([], empty_group.groups, "absent nested groups default to an empty list")
+same([], empty_group.hits, "absent grouped hits default to an empty list")
+same([], empty_group.continuations, "absent group continuations default to an empty list")
+same([], empty_group.types, "absent group types default to an empty list")
+same({}, empty_group.metadata, "absent group metadata defaults to an empty map")
+
+empty_result_metadata = SearchKernel::Results::SearchResults.new(
+  "coverage" => {},
+  "timing" => {},
+  "errors" => [{"code" => "0"}]
+)
+same({}, empty_result_metadata.coverage.metadata, "absent coverage metadata defaults to an empty map")
+same({}, empty_result_metadata.timing.metadata, "absent timing metadata defaults to an empty map")
+same({}, empty_result_metadata.errors.first.metadata, "absent issue metadata defaults to an empty map")
 same(false, SearchKernel::Results::SearchResults.new({"coverage" => {"full" => {}}}).coverage.full,
      "present OptionalBool retains omitted default false")
 same(nil, SearchKernel::Results::SearchResults.new({"coverage" => {}}).coverage.full,
@@ -345,6 +404,111 @@ integer_result = SearchKernel::Results::SearchResults.new(
 same(2**64 - 1, integer_result.total_hits, "total hits decode canonical uint64 text")
 same(2**64 - 1, integer_result.coverage.documents, "coverage decodes canonical uint64 text")
 same(-(2**63), integer_result.errors.first.code, "result errors decode canonical int64 text")
+
+def facet_projection_result(count_value, generic: false)
+  bucket = {
+    "value" => SearchKernel::Value.encode("Acme"),
+    "fields" => [{ "key" => "count", "value" => count_value }]
+  }
+  if generic
+    bucket["id"] = "grouping-0"
+    bucket["label"] = "brands"
+  end
+
+  SearchKernel::Results::SearchResults.new(
+    "root" => {
+      "node_type" => "ResultGroup",
+      "node" => {
+        "children" => [{
+          "node_type" => "ResultGroup",
+          "node" => {
+            "id" => "brand",
+            "label" => "brands",
+            "children" => [{ "node_type" => "ResultGroup", "node" => bucket }]
+          }
+        }]
+      }
+    }
+  )
+end
+
+unsigned_facet = facet_projection_result(
+  SearchKernel::Value.encode(SearchKernel::Value.uint64(2))
+).project_facet("brands", "brands", "brand")
+same(
+  { "brands" => [{ "value" => "Acme", "count" => 2 }] },
+  unsigned_facet.facets,
+  "optimized facet accepts canonical uint64 count"
+)
+assert(unsigned_facet.frozen?, "projected SearchResults remains read-only")
+assert(unsigned_facet.facets.frozen?, "facet projection map is frozen")
+assert(unsigned_facet.facets.fetch("brands").frozen?, "facet bucket list is frozen")
+assert(unsigned_facet.facets.fetch("brands").first.frozen?, "facet bucket entries are frozen")
+
+signed_optimized = facet_projection_result(
+  SearchKernel::Value.encode(2)
+).project_facet("brands", "brands", "brand")
+same({}, signed_optimized.facets, "optimized facet rejects signed Int64 count")
+
+negative_optimized = facet_projection_result(
+  SearchKernel::Value.encode(-1)
+).project_facet("brands", "brands", "brand")
+same({}, negative_optimized.facets, "optimized facet rejects negative signed count")
+
+generic_facet = facet_projection_result(
+  SearchKernel::Value.encode(2),
+  generic: true
+).project_facet("brands", "brands", "brand")
+same(
+  { "brands" => [{ "value" => "Acme", "count" => 2 }] },
+  generic_facet.facets,
+  "generic facet accepts non-negative signed Int64 count"
+)
+
+negative_generic = facet_projection_result(
+  SearchKernel::Value.encode(-1),
+  generic: true
+).project_facet("brands", "brands", "brand")
+same({}, negative_generic.facets, "generic facet rejects negative signed count")
+
+
+metadata_result = SearchKernel::Results::SearchResults.new(
+  "root" => {
+    "node_type" => "ResultGroup",
+    "node" => {
+      "continuations" => [{ "key" => "next", "value" => "opaque-token" }],
+      "children" => [{
+        "node_type" => "Hit",
+        "node" => {
+          "id" => "doc-1",
+          "fields" => [{ "key" => "title", "value" => SearchKernel::Value.encode("Running Shoes") }],
+          "match_features" => [{ "key" => "match", "value" => SearchKernel::Value.encode(1.5) }],
+          "summary_features" => [{ "key" => "summary", "value" => SearchKernel::Value.encode(2.5) }],
+          "rank_features" => [{ "key" => "rank", "value" => SearchKernel::Value.encode(3.5) }],
+          "sort_values" => [SearchKernel::Value.encode(99.0)]
+        }
+      }]
+    }
+  },
+  "timing" => {
+    "query_time_seconds" => { "value" => 0.01 },
+    "search_time_seconds" => { "value" => 0.02 },
+    "summary_fetch_time_seconds" => { "value" => 0.03 }
+  },
+  "trace" => SearchKernel::Value.encode("trace-token"),
+  "metadata" => [{ "key" => "origin", "value" => SearchKernel::Value.encode("fixture") }],
+  "errors" => [{ "code" => "7", "summary" => "warning", "message" => "fixture issue" }]
+)
+metadata_hit = metadata_result.hits.first
+same({ "match" => 1.5 }, metadata_hit.match_features, "match features decode")
+same({ "summary" => 2.5 }, metadata_hit.summary_features, "summary features decode")
+same({ "rank" => 3.5 }, metadata_hit.rank_features, "rank features decode")
+same([99.0], metadata_hit.sort_values, "sort values decode")
+same(0.01, metadata_result.timing.query_time_seconds, "query timing decodes")
+same("trace-token", metadata_result.trace, "trace value decodes")
+same({ "origin" => "fixture" }, metadata_result.metadata, "result metadata decodes")
+same("opaque-token", metadata_result.continuations.first.value, "continuation remains opaque")
+same("fixture issue", metadata_result.issues.first.message, "result issues decode")
 same("SearchKernel_V2_SearchRequest", recording.last_request["payload_type"], "client uses centralized operation mapping")
 raw = { "protocol_version" => 2, "payload_type" => "Custom", "payload" => {} }
 same(recording.execute(raw), client.execute_raw(raw), "raw envelope escape hatch delegates unchanged")
@@ -401,9 +565,13 @@ end
 closed = TCPServer.new("127.0.0.1", 0)
 closed_port = closed.addr[1]
 closed.close
-raises(SearchKernel::TransportError, "connection failure is transport error") do
+connection_error = raises(SearchKernel::TransportError, "connection failure is transport error") do
   SearchKernel::HttpTransport.new("http://127.0.0.1:#{closed_port}", timeout: 0.1).execute({})
 end
+assert(
+  connection_error.message.include?("http://127.0.0.1:#{closed_port}/v1/execute"),
+  "connection failure identifies the target execute endpoint"
+)
 
 raises(ArgumentError, "client rejects objects that do not implement transport execute") do
   SearchKernel::Client.new(Object.new)
@@ -484,5 +652,7 @@ with_http_server(status: 503, body: "bad\r\ninjected\x00\xff".b, content_type: "
 end
 
 puts "Ruby protocol/transport tests PASS"
+
+# SKC: result.summary_features/basic kinds=conformance runtime=http
 
 require_relative "facade"

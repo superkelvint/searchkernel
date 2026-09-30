@@ -254,7 +254,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         response_frame = self.client.transport.call(request_frame)
         self.assertGreater(len(response_frame), 4 * 1024 * 1024)
 
-    # SKC: update.document_crud/basic kinds=ergonomic runtime=managed-local
+    # SKC: update.document_crud/basic kinds=ergonomic,e2e runtime=managed-local
     def test_managed_local_mode_uses_production_daemon_over_uds(self):
         index = Index.create(self.index_path, fields=self.definition)
         try:
@@ -367,10 +367,10 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         )
         self.assertEqual(surviving.root.node.children[0].node.id, "d1")
 
-    # SKC: query.phrase/basic kinds=ergonomic runtime=grpc
-    # SKC: query.proximity/basic kinds=ergonomic runtime=grpc
-    # SKC: query.fuzzy/basic kinds=ergonomic runtime=grpc
-    # SKC: query.weighted_and_wand/basic kinds=ergonomic runtime=grpc
+    # SKC: query.phrase/basic kinds=ergonomic,e2e runtime=grpc
+    # SKC: query.proximity/basic kinds=ergonomic,e2e runtime=grpc
+    # SKC: query.fuzzy/basic kinds=ergonomic,e2e runtime=grpc
+    # SKC: query.weighted_and_wand/basic kinds=ergonomic,e2e runtime=grpc
     def test_typed_query_families_reach_vespa(self):
         endpoint = self._start_server(definition=True)
         self.client = Client(GrpcTransport(endpoint))
@@ -397,7 +397,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             {"d1", "d2", "d3", "d4"},
         )
 
-    # SKC: query.same_element/basic kinds=ergonomic runtime=grpc
+    # SKC: query.same_element/basic kinds=ergonomic,e2e runtime=grpc
     def test_same_element_query_reaches_vespa(self):
         self.definition = IndexDefinitionT(
             name="same_element_e2e",
@@ -463,7 +463,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         )
         self.assertEqual([child.node.id for child in result.root.node.children], ["d1"])
 
-    # SKC: query.geo/basic kinds=ergonomic runtime=grpc
+    # SKC: query.geo/basic kinds=ergonomic,e2e runtime=grpc
     def test_geo_queries_reach_vespa(self):
         self.definition = IndexDefinitionT(
             name="geo_e2e",
@@ -504,8 +504,8 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self.assertEqual([child.node.id for child in location.root.node.children], ["inside"])
         self.assertEqual([child.node.id for child in box.root.node.children], ["inside"])
 
-    # SKC: result.docsum_field_projection/basic kinds=ergonomic runtime=grpc
-    # SKC: result.highlighting/basic kinds=ergonomic runtime=grpc
+    # SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=grpc
+    # SKC: result.highlighting/basic kinds=ergonomic,e2e runtime=grpc
     def test_ergonomic_summary_projection_and_highlighting_reach_native_docsums(self):
         endpoint = self._start_server(definition=True)
         self.client = Client(GrpcTransport(endpoint))

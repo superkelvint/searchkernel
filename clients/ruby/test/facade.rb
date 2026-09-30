@@ -5,6 +5,38 @@ require "json"
 require "tempfile"
 require "tmpdir"
 
+class CloseCountingOwner
+  attr_reader :close_count
+
+  def initialize
+    @close_count = 0
+  end
+
+  def close
+    @close_count += 1
+  end
+end
+
+class FailingCloseTransport
+  def execute(_request)
+    raise "unexpected execute"
+  end
+
+  def close
+    raise "client close boom"
+  end
+end
+
+class FacadeFixedResponseTransport
+  def initialize(response)
+    @response = response
+  end
+
+  def execute(_request)
+    @response
+  end
+end
+
 class FacadeRecordingTransport
   attr_reader :requests
 
@@ -69,6 +101,51 @@ same("doc-1", insert_request.dig("document", "id"), "facade insert document id")
 same(%w[price title], insert_request.dig("document", "fields").map { |entry| entry.fetch("key") }, "document fields are deterministic")
 
 same("Running Shoes", index.get("doc-1").fetch("title"), "facade get decodes portable fields")
+
+malformed_get_fields = {
+  "duplicate key" => [
+    { "key" => "same", "value" => SearchKernel::Value.encode(1) },
+    { "key" => "same", "value" => SearchKernel::Value.encode(2) }
+  ],
+  "null entry" => [nil],
+  "missing key" => [{ "value" => SearchKernel::Value.encode(1) }],
+  "missing value" => [{ "key" => "missing" }]
+}
+malformed_get_fields.each do |label, fields|
+  response = {
+    "protocol_version" => 2,
+    "payload_type" => "SearchKernel_V2_GetResult",
+    "payload" => { "document" => { "id" => "doc-1", "fields" => fields } }
+  }
+  malformed = SearchKernel::Index.new(
+    SearchKernel::Client.new(FacadeFixedResponseTransport.new(response))
+  )
+  raises(SearchKernel::ProtocolError, "GET rejects malformed semantic map: #{label}") do
+    malformed.get("doc-1")
+  end
+end
+valid_response = {
+  "protocol_version" => 2,
+  "payload_type" => "SearchKernel_V2_GetResult",
+  "payload" => {
+    "document" => {
+      "id" => "doc-1",
+      "fields" => [
+        { "key" => "nothing", "value" => SearchKernel::Value.encode(nil) },
+        { "key" => "count", "value" => SearchKernel::Value.encode(3) }
+      ]
+    }
+  }
+}
+valid_get = SearchKernel::Index.new(
+  SearchKernel::Client.new(FacadeFixedResponseTransport.new(valid_response))
+)
+same(
+  { "_id" => "doc-1", "nothing" => nil, "count" => 3 },
+  valid_get.get("doc-1"),
+  "GET preserves explicit canonical null and valid semantic-map values"
+)
+
 assert(index.delete("doc-1"), "facade delete decodes boolean")
 
 search = index.search("shoes")
@@ -83,6 +160,10 @@ search = index.search("shoes")
   .property("trace.level", 1)
   .page(2, 3)
 
+raises(ArgumentError, "field sort direction is required") do
+  index.search("shoes").sort("price")
+end
+
 request = search.request
 same("SearchKernelTextQuery", request.dig("query", "source_type"), "text search query source")
 same(2, request.dig("filters", "textual").length, "filter clauses remain clause-local")
@@ -90,13 +171,70 @@ same(["max"], request.dig("filters", "textual", 0, "bindings").map { |entry| ent
 same(["min"], request.dig("filters", "textual", 1, "bindings").map { |entry| entry.fetch("key") }, "second filter bindings do not leak")
 same(3, request.dig("offset", "value"), "page computes offset")
 same(3, request.dig("limit", "value"), "page sets limit")
+same("yes", request.dig("ranking", "properties", 0, "value"), "rank property values stay strings")
+[false, nil, 7, [], {}].each do |value|
+  raises(TypeError, "rank property values reject #{value.inspect}") do
+    index.search("shoes").rank_property("enabled", value)
+  end
+end
+raises(TypeError, "rank_properties rejects non-string values") do
+  index.search("shoes").rank_properties("enabled" => false)
+end
+atomic_rank_properties = index.search("shoes").rank_property("existing", "keep")
+raises(TypeError, "rank_properties failure is atomic") do
+  atomic_rank_properties.rank_properties("valid" => "yes", "invalid" => false)
+end
+same(
+  [{ "key" => "existing", "value" => "keep" }],
+  atomic_rank_properties.request.dig("ranking", "properties"),
+  "failed rank_properties does not partially mutate builder",
+)
+implicit_ranking = index.search("shoes").rank_property("source", "catalog").request.fetch("ranking")
+same(false, implicit_ranking.key?("profile"), "rank properties preserve absent ranking profile")
+same([{ "key" => "source", "value" => "catalog" }], implicit_ranking.fetch("properties"), "rank properties remain present")
+explicit_ranking = index.search("shoes").ranking("default").rank_property("source", "catalog").request.fetch("ranking")
+same("default", explicit_ranking.fetch("profile"), "explicit default ranking profile remains explicit")
 raises(ArgumentError, "page zero rejects") { index.search("shoes").page(0, 3) }
 raises(ArgumentError, "page offset overflow rejects") { index.search("shoes").page(0xffff_ffff, 2) }
 raises(ArgumentError, "page size outside uint32 rejects") { index.search("shoes").page(1, 0x1_0000_0000) }
+raises(ArgumentError, "page then offset rejects") { index.search("shoes").page(1, 3).offset(1) }
+raises(ArgumentError, "offset then page rejects") { index.search("shoes").offset(1).page(1, 3) }
+raises(ArgumentError, "page then limit rejects") { index.search("shoes").page(1, 3).limit(3) }
+raises(ArgumentError, "limit then page rejects") { index.search("shoes").limit(3).page(1, 3) }
+raises(ArgumentError, "page range overflow rejects") { index.search("shoes").page(0x8000_0000, 2) }
 same("Asc", request.dig("sort", 0, "direction"), "sort direction")
 same(%w[title price], request.dig("presentation", "fields", "fields"), "projection fields retain caller order")
 same(["title"], request.dig("presentation", "highlighting", "fields"), "highlight fields retained")
 assert(search.execute.is_a?(SearchKernel::Results::SearchResults), "search executes into canonical SearchResults")
+closed_transport = FacadeRecordingTransport.new
+closed_index = SearchKernel::Index.new(SearchKernel::Client.new(closed_transport))
+closed_index.close
+closed_index.close
+raises(SearchKernel::TransportError, "operation after close rejects") { closed_index.get("doc-1") }
+
+owned_owner = CloseCountingOwner.new
+owned_index = SearchKernel::Index.new(
+  SearchKernel::Client.new(FacadeRecordingTransport.new),
+  owner: owned_owner
+)
+owned_index.close
+owned_index.close
+same(1, owned_owner.close_count, "managed owner closes exactly once")
+
+failing_owner = CloseCountingOwner.new
+failing_index = SearchKernel::Index.new(
+  SearchKernel::Client.new(FailingCloseTransport.new),
+  owner: failing_owner
+)
+raises(RuntimeError, "owner still closes when client close fails") { failing_index.close }
+same(1, failing_owner.close_count, "owner cleanup runs despite client close failure")
+assert(failing_index.closed?, "index remains closed after cleanup failure")
+
+connected_index = SearchKernel::Index.connect("http://127.0.0.1:1")
+connected_index.close
+raises(SearchKernel::TransportError, "connect-to-daemon index rejects operations after close") do
+  connected_index.get("doc-1")
+end
 
 nearest = SearchKernel::Query.nearest_neighbor(
   "embedding",
@@ -119,6 +257,61 @@ combined = SearchKernel::Query.any_of(
 )
 same("QueryOr", combined.dig("source", "query", "expr_type"), "boolean typed query")
 
+same("QueryPhrase", SearchKernel::Query.phrase("running", "shoes").dig("source", "query", "expr_type"),
+     "phrase query helper")
+same("QueryNear", SearchKernel::Query.near("running", "shoes").dig("source", "query", "expr_type"),
+     "near query helper")
+same("QueryONear", SearchKernel::Query.onear("running", "shoes").dig("source", "query", "expr_type"),
+     "ordered-near query helper")
+same(
+  "QuerySameElement",
+  SearchKernel::Query.same_element(
+    SearchKernel::Query.contains("title", "running"),
+    SearchKernel::Query.contains("title", "shoes")
+  ).dig("source", "query", "expr_type"),
+  "sameElement query helper"
+)
+same("QueryFuzzy", SearchKernel::Query.fuzzy("shoes").dig("source", "query", "expr_type"),
+     "fuzzy query helper")
+same(
+  "QueryGeoLocation",
+  SearchKernel::Query.geo_location("position", lat: 37.3, lon: -121.9, radius: "10km")
+    .dig("source", "query", "expr_type"),
+  "geo-location query helper"
+)
+same(
+  "QueryGeoBoundingBox",
+  SearchKernel::Query.geo_box("position", south: 37.0, west: -122.0, north: 38.0, east: -121.0)
+    .dig("source", "query", "expr_type"),
+  "geo bounding-box query helper"
+)
+same(
+  "QueryWeakAnd",
+  SearchKernel::Query.weak_and(
+    SearchKernel::Query.contains("title", "running"),
+    SearchKernel::Query.contains("title", "shoes")
+  ).dig("source", "query", "expr_type"),
+  "WeakAnd query helper"
+)
+same(
+  "QueryWand",
+  SearchKernel::Query.wand("title", "running" => 10, "shoes" => 5)
+    .dig("source", "query", "expr_type"),
+  "WAND query helper"
+)
+weighted_queries = {
+  "WAND" => SearchKernel::Query.wand("title", "running" => 10, "shoes" => 5),
+  "dot-product" => SearchKernel::Query.dot_product("title", "running" => 10, "shoes" => 5),
+  "weighted-set" => SearchKernel::Query.weighted_set("title", "running" => 10, "shoes" => 5)
+}
+weighted_queries.each do |label, query|
+  items = query.dig("source", "query", "expr", "items")
+  assert(items.all? { |item| item.fetch("weight").is_a?(String) }, "#{label} weights use FlatBuffers int64 JSON strings")
+end
+raises(ArgumentError, "weighted query rejects int64 overflow") do
+  SearchKernel::Query.wand("title", "running" => 2**63)
+end
+
 group = SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count.as("products"))
 grouping_request = group.to_request
 same("StructuredGroupingSource", grouping_request.fetch("source_type"), "structured grouping source")
@@ -135,6 +328,35 @@ definition = SearchKernel::Schema.index_definition(
 same(%w[active price title], definition.fetch("fields").map { |field| field.fetch("name") }, "schema fields are deterministic")
 same("Float64", definition.fetch("fields")[1].dig("data_type", "kind", "kind"), "float schema kind")
 same("custom", definition.dig("rank_profiles", 0, "name"), "rank profile schema")
+
+nested_definition = SearchKernel::Schema.index_definition(
+  {
+    "people" => SearchKernel::ArrayField.new(
+      SearchKernel::StructField.new(
+        {
+          "first" => SearchKernel::Keyword.new,
+          "last" => SearchKernel::Keyword.new
+        }
+      ),
+      stored: false,
+      searchable: false
+    )
+  }
+)
+people_type = nested_definition.fetch("fields").first.fetch("data_type")
+same("ArrayDataType", people_type.fetch("kind_type"), "array schema kind")
+struct_type = people_type.dig("kind", "element_type")
+same("StructDataType", struct_type.fetch("kind_type"), "struct element schema kind")
+same(
+  %w[first last],
+  struct_type.dig("kind", "fields").map { |field| field.fetch("name") },
+  "struct fields are deterministic"
+)
+same(
+  %w[String String],
+  struct_type.dig("kind", "fields").map { |field| field.dig("data_type", "kind", "kind") },
+  "struct child data types are preserved"
+)
 
 same("doc-1", index.patch("doc-1").set("price", 79.0).unset("sale_price").execute, "patch builder executes")
 patch = transport.requests.last.fetch("payload")
@@ -261,3 +483,12 @@ Dir.mktmpdir("searchkernel-ruby-startup-race-") do |root|
 end
 
 puts "Ruby facade/lifecycle tests PASS"
+
+# Executable ergonomic evidence for typed-query families that share Ruby's
+# standard FlatBuffers-JSON/HTTP facade path.
+# SKC: query.phrase/basic kinds=ergonomic runtime=http
+# SKC: query.proximity/basic kinds=ergonomic runtime=http
+# SKC: query.same_element/basic kinds=ergonomic runtime=http
+# SKC: query.fuzzy/basic kinds=ergonomic runtime=http
+# SKC: query.geo/basic kinds=ergonomic runtime=http
+# SKC: query.weighted_and_wand/basic kinds=ergonomic runtime=http

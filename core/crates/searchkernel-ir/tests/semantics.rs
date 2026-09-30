@@ -1554,6 +1554,10 @@ fn v2_result_direct_hit_and_nonfinite_value_variants_are_encoded() {
             fields: BTreeMap::from([
                 ("nan".to_owned(), Value::Float64(f64::NAN)),
                 ("infinity".to_owned(), Value::Float64(f64::INFINITY)),
+                (
+                    "negative_infinity".to_owned(),
+                    Value::Float64(f64::NEG_INFINITY),
+                ),
                 ("bytes".to_owned(), Value::Bytes(vec![1, 2, 255])),
                 (
                     "list".to_owned(),

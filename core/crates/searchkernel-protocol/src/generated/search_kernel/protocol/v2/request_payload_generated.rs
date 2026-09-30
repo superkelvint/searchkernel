@@ -11,13 +11,13 @@ pub const ENUM_MIN_REQUEST_PAYLOAD: u8 = 0;
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
-pub const ENUM_MAX_REQUEST_PAYLOAD: u8 = 10;
+pub const ENUM_MAX_REQUEST_PAYLOAD: u8 = 13;
 #[deprecated(
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 11] = [
+pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 14] = [
     RequestPayload::NONE,
     RequestPayload::SearchKernel_V2_InsertRequest,
     RequestPayload::SearchKernel_V2_UpsertRequest,
@@ -29,6 +29,9 @@ pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 11] = [
     RequestPayload::SearchKernel_V2_DescribeRequest,
     RequestPayload::SearchKernel_V2_InspectQueryRequest,
     RequestPayload::SearchKernel_V2_UpdateRequest,
+    RequestPayload::SearchKernel_V2_CreateIndexRequest,
+    RequestPayload::SearchKernel_V2_OpenIndexRequest,
+    RequestPayload::SearchKernel_V2_DeleteIndexRequest,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -47,9 +50,12 @@ impl RequestPayload {
     pub const SearchKernel_V2_DescribeRequest: Self = Self(8);
     pub const SearchKernel_V2_InspectQueryRequest: Self = Self(9);
     pub const SearchKernel_V2_UpdateRequest: Self = Self(10);
+    pub const SearchKernel_V2_CreateIndexRequest: Self = Self(11);
+    pub const SearchKernel_V2_OpenIndexRequest: Self = Self(12);
+    pub const SearchKernel_V2_DeleteIndexRequest: Self = Self(13);
 
     pub const ENUM_MIN: u8 = 0;
-    pub const ENUM_MAX: u8 = 10;
+    pub const ENUM_MAX: u8 = 13;
     pub const ENUM_VALUES: &'static [Self] = &[
         Self::NONE,
         Self::SearchKernel_V2_InsertRequest,
@@ -62,6 +68,9 @@ impl RequestPayload {
         Self::SearchKernel_V2_DescribeRequest,
         Self::SearchKernel_V2_InspectQueryRequest,
         Self::SearchKernel_V2_UpdateRequest,
+        Self::SearchKernel_V2_CreateIndexRequest,
+        Self::SearchKernel_V2_OpenIndexRequest,
+        Self::SearchKernel_V2_DeleteIndexRequest,
     ];
     /// Returns the variant's name or "" if unknown.
     pub fn variant_name(self) -> Option<&'static str> {
@@ -79,6 +88,9 @@ impl RequestPayload {
                 Some("SearchKernel_V2_InspectQueryRequest")
             }
             Self::SearchKernel_V2_UpdateRequest => Some("SearchKernel_V2_UpdateRequest"),
+            Self::SearchKernel_V2_CreateIndexRequest => Some("SearchKernel_V2_CreateIndexRequest"),
+            Self::SearchKernel_V2_OpenIndexRequest => Some("SearchKernel_V2_OpenIndexRequest"),
+            Self::SearchKernel_V2_DeleteIndexRequest => Some("SearchKernel_V2_DeleteIndexRequest"),
             _ => None,
         }
     }

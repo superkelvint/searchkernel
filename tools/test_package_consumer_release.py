@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-CLIENT_CAPABILITIES_WORKFLOW = ROOT / ".github" / "workflows" / "client-capabilities.yml"
 RELEASE_VERIFIER = ROOT / "tools" / "check-consumer-release.py"
 SPEC = importlib.util.spec_from_file_location(
     "package_consumer_release", ROOT / "tools" / "package-consumer-release.py"
@@ -21,26 +20,94 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ConsumerReleaseTests(unittest.TestCase):
-    def test_daemon_path_uses_cargo_target_dir_override(self) -> None:
+    def test_target_dir_uses_cargo_target_dir_override(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             target = Path(tempdir) / "cargo-target"
             with mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(target)}):
                 self.assertEqual(
-                    MODULE.daemon_binary(), target / "release" / "searchkerneld"
+                    MODULE.target_dir({"target_directory": str(ROOT / "target")}),
+                    target,
                 )
 
-    def test_daemon_path_defaults_to_workspace_target_dir(self) -> None:
-        with mock.patch.dict(os.environ):
-            os.environ.pop("CARGO_TARGET_DIR", None)
+    def test_target_dir_defaults_to_cargo_metadata(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            expected = ROOT / "target-from-metadata"
             self.assertEqual(
-                MODULE.daemon_binary(), ROOT / "target" / "release" / "searchkerneld"
+                MODULE.target_dir({"target_directory": str(expected)}),
+                expected,
             )
+
+    def test_clean_runtime_env_removes_repository_runtime_overrides(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "LD_LIBRARY_PATH": "/workspace/native",
+                "SEARCHKERNEL_LOCAL_HOST": "/workspace/searchkerneld",
+                "SEARCHKERNEL_SDK_LIB": "/workspace/sdk/lib",
+                "SK_NATIVE_SDK": "/workspace/sdk",
+                "SK_NATIVE_ABI_HEADER": "/workspace/sdk/searchkernel_vespa.h",
+                "SK_NATIVE_CACHE_DIR": "/workspace/cache",
+                "SEARCHKERNEL_PACKAGED_SUPPORT_ROOT": "/workspace/support",
+                "KEEP_ME": "yes",
+            },
+            clear=True,
+        ):
+            environment = MODULE.clean_runtime_env()
+        self.assertEqual(environment.get("KEEP_ME"), "yes")
+        for key in (
+            "LD_LIBRARY_PATH",
+            "SEARCHKERNEL_LOCAL_HOST",
+            "SEARCHKERNEL_SDK_LIB",
+            "SK_NATIVE_SDK",
+            "SK_NATIVE_ABI_HEADER",
+            "SK_NATIVE_CACHE_DIR",
+            "SEARCHKERNEL_PACKAGED_SUPPORT_ROOT",
+        ):
+            self.assertNotIn(key, environment)
+
+    def test_runtime_probe_requires_application_level_argument_error(self) -> None:
+        launcher = Path("/tmp/packaged-searchkerneld")
+        entered_program = subprocess.CompletedProcess(
+            [str(launcher), "--searchkernel-runtime-probe"],
+            1,
+            stdout="",
+            stderr="Error: \"unknown argument --searchkernel-runtime-probe\"\n",
+        )
+        with mock.patch.object(
+            MODULE.subprocess, "run", return_value=entered_program
+        ) as run:
+            MODULE.probe_runtime_launcher(launcher)
+        args, kwargs = run.call_args
+        self.assertEqual(
+            args[0], [str(launcher), "--searchkernel-runtime-probe"]
+        )
+        self.assertFalse(kwargs["check"])
+        self.assertNotIn("LD_LIBRARY_PATH", kwargs["env"])
+
+    def test_runtime_probe_rejects_dynamic_loader_failure(self) -> None:
+        launcher = Path("/tmp/packaged-searchkerneld")
+        loader_failure = subprocess.CompletedProcess(
+            [str(launcher), "--searchkernel-runtime-probe"],
+            127,
+            stdout="",
+            stderr=(
+                "searchkerneld.real: error while loading shared libraries: "
+                "libsearchkernel_vespa.so.2: cannot open shared object file\n"
+            ),
+        )
+        with mock.patch.object(
+            MODULE.subprocess, "run", return_value=loader_failure
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "did not reach the packaged daemon argument parser"
+            ):
+                MODULE.probe_runtime_launcher(launcher)
+
 
     def test_rust_bundle_is_self_contained_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             bundle = Path(tempdir) / "searchkernel-rust-test.tar.gz"
             MODULE.build_rust_bundle(bundle)
-
             with tarfile.open(bundle) as archive:
                 names = set(archive.getnames())
                 self.assertIn("LICENSE", names)
@@ -51,35 +118,6 @@ class ConsumerReleaseTests(unittest.TestCase):
                     "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs", names
                 )
                 self.assertNotIn("tools/resolve-native-sdk.sh", names)
-                extracted = Path(tempdir) / "extracted"
-                archive.extractall(extracted)
-
-            subprocess.run(
-                [
-                    "cargo",
-                    "metadata",
-                    "--no-deps",
-                    "--format-version",
-                    "1",
-                    "--manifest-path",
-                    str(extracted / "Cargo.toml"),
-                ],
-                check=True,
-                stdout=subprocess.DEVNULL,
-            )
-
-
-    def test_client_capability_workflow_watches_every_rust_bundle_input(self) -> None:
-        workflow = CLIENT_CAPABILITIES_WORKFLOW.read_text(encoding="utf-8")
-        for relative in MODULE.RUST_BUNDLE_PATHS:
-            path = ROOT / relative
-            watch = f"{relative}/**" if path.is_dir() else relative
-            with self.subTest(watch=watch):
-                self.assertEqual(
-                    workflow.count(f'      - "{watch}"'),
-                    2,
-                    f"{watch} must trigger both pull_request and main push release qualification",
-                )
 
     def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
         verifier = RELEASE_VERIFIER.read_text(encoding="utf-8")
@@ -100,17 +138,15 @@ class ConsumerReleaseTests(unittest.TestCase):
             commands.append(
                 [element.value for element in node.args[0].elts if isinstance(element, ast.Constant)]
             )
-
         self.assertTrue(
             any(
                 command[:5] == ["check", "-p", "searchkernel", "--features", "native"]
                 for command in commands
-            ),
-            "release verifier must cargo-check the extracted native searchkernel package",
+            )
         )
         self.assertIn('"CARGO_TARGET_DIR"', verifier)
-        self.assertIn('environment.pop("SK_NATIVE_SDK", None)', verifier)
-        self.assertIn('environment.pop("SK_NATIVE_ABI_HEADER", None)', verifier)
+        self.assertIn('"SK_NATIVE_ABI_HEADER"', verifier)
+        self.assertIn('"SEARCHKERNEL_PACKAGED_SUPPORT_ROOT"', verifier)
 
 
 

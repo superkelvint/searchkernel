@@ -26,11 +26,32 @@ case "$SDK_PACKAGE" in
     /*) ;;
     *) SDK_PACKAGE=$ROOT/$SDK_PACKAGE ;;
 esac
-# Assemble the package away from the published path. This prevents a failed
-# compile or a concurrent Cargo build from observing a half-updated SDK and,
-# importantly, means stale files cannot survive from an older package layout.
-SDK_STAGING=${SK_NATIVE_STAGING_SDK:-${SDK_PACKAGE}.staging.$$}
-SDK=$SDK_STAGING
+
+# Multiple canonical ./dev containers intentionally share one writable Cargo
+# target volume for warm builds. Container PIDs are not globally unique, so
+# PID-derived staging paths alone cannot protect an SDK package from concurrent
+# builders in different containers. Serialize every mutation of one published
+# SDK path with a filesystem lock that is shared through that target volume.
+SDK_LOCK="${SDK_PACKAGE}.build.lock"
+mkdir -p "$(dirname -- "$SDK_LOCK")"
+if [ "${SK_NATIVE_SDK_PACKAGE_LOCK_HELD:-}" != "$SDK_PACKAGE" ]; then
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "native SDK build requires flock for package publication locking" >&2
+        exit 1
+    fi
+    # Re-exec under flock instead of taking a fixed descriptor in this shell.
+    # Callers such as resolve-native-sdk.sh already hold their own inherited
+    # lock descriptors; replacing one here would silently release that lock.
+    SK_NATIVE_SDK_PACKAGE_LOCK_HELD="$SDK_PACKAGE"
+    export SK_NATIVE_SDK_PACKAGE_LOCK_HELD
+    exec flock "$SDK_LOCK" "$0" "$@"
+fi
+
+# Assemble the package away from the published path. The private staging path
+# is allocated immediately before the build so failed prerequisite checks do
+# not leave empty staging directories behind.
+SDK_STAGING=
+SDK=
 BUILD=${SK_NATIVE_BUILD_DIR:-$TARGET_ROOT/native-sdk-build}
 case "$BUILD" in
     /*) ;;
@@ -43,6 +64,7 @@ EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
 SANITIZER=${SK_NATIVE_SANITIZER:-none}
 REGENERATE_BINDINGS=${SK_NATIVE_REGENERATE_BINDINGS:-1}
 ADAPTER_ONLY=${SK_NATIVE_ADAPTER_ONLY:-0}
+ADAPTER_SONAME=${SK_NATIVE_ADAPTER_SONAME:-libsearchkernel_vespa.so.2}
 BASE_ONLY=${SK_NATIVE_BASE_ONLY:-0}
 BASE_SDK=${SK_NATIVE_BASE_SDK:-}
 if [ "$ADAPTER_ONLY" = 1 ] && [ "$BASE_ONLY" = 1 ]; then
@@ -204,16 +226,27 @@ if [ -f "$VESPA_EXTRA_LIB_DIR/libxxhash.so" ]; then
     EXTRA_LINK_FLAGS="$EXTRA_LINK_FLAGS -L$VESPA_EXTRA_LIB_DIR"
 fi
 
+if [ -n "${SK_NATIVE_STAGING_SDK:-}" ]; then
+    SDK_STAGING=$SK_NATIVE_STAGING_SDK
+    if [ -e "$SDK_STAGING" ]; then
+        echo "SDK staging directory already exists: $SDK_STAGING" >&2
+        exit 1
+    fi
+    mkdir -p "$SDK_STAGING"
+else
+    # $$ is only unique within one PID namespace. Canonical ./dev invocations
+    # run in separate containers while sharing /cargo-target, so use mktemp's
+    # random suffix to make the staging path unique across containers as well.
+    SDK_STAGING=$(mktemp -d "${SDK_PACKAGE}.staging.XXXXXX")
+fi
+SDK=$SDK_STAGING
+
 cleanup_staging() {
     if [ -d "$SDK_STAGING" ]; then
         rm -rf "$SDK_STAGING"
     fi
 }
 trap cleanup_staging EXIT
-if [ -e "$SDK_STAGING" ]; then
-    echo "SDK staging directory already exists: $SDK_STAGING" >&2
-    exit 1
-fi
 
 mkdir -p "$BUILD" "$SDK/include" "$SDK/lib" "$SDK/share/embedded_crud_cfg"
 rm -f "$BUILD/searchkernel_vespa.o" \
@@ -243,7 +276,7 @@ LINK_LINE=$(sed \
     "$LINK_FILE")
 LINK_LINE=$(printf '%s\n' "$LINK_LINE" | sed \
     "s#CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o#$BUILD/searchkernel_vespa.o#; \
-     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,libsearchkernel_vespa.so.2 -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.2#")
+     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,'$ADAPTER_SONAME' -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.2#")
 LINK_ARGS=${LINK_LINE#*c++   }
 LINK_ARGS=${LINK_ARGS#*c++ }
 # The harvested command targets an executable and requests a complete dynamic
@@ -264,6 +297,13 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LIB_DIR/l
 MAP_FILE=$ROOT/core/native/vespa/searchkernel_vespa.map
 if [ "$ENABLE_FAILPOINTS" = 1 ]; then
     MAP_FILE=$ROOT/core/native/vespa/searchkernel_vespa_test.map
+fi
+if [ "$ADAPTER_ONLY" = 1 ]; then
+    # Keep the local adapter export surface identical without assigning a named
+    # ELF symbol version. glibc cannot reconcile a version-need filename that
+    # contains $ORIGIN after expanding that token in DT_NEEDED.
+    MAP_FILE=$BUILD/searchkernel_vespa_local.map
+    printf '%s\n' '{ global: sk_*; local: *; };' > "$MAP_FILE"
 fi
 LINK_ARGS="$LINK_ARGS -Wl,--exclude-libs,ALL -Wl,--version-script=$MAP_FILE"
 LINK_ARGS="$LINK_ARGS $EXTRA_LINK_FLAGS $COVERAGE_LINK_FLAGS"
@@ -368,7 +408,8 @@ PY
         --scope full \
         --output "$SDK/native-build-fingerprint-v2.txt"
 
-    SDK_BACKUP="${SDK_PACKAGE}.old.$"
+    SDK_BACKUP=$(mktemp -d "${SDK_PACKAGE}.old.XXXXXX")
+    rmdir "$SDK_BACKUP"
     if [ -e "$SDK_BACKUP" ]; then
         echo "adapter backup path already exists: $SDK_BACKUP" >&2
         exit 1
@@ -571,7 +612,8 @@ fi
 # Publish only after every build, ABI, binding, and package check succeeded.
 # A uniquely named backup keeps the replacement recoverable until the new
 # directory is in place; the old generated package is then removed explicitly.
-SDK_BACKUP="${SDK_PACKAGE}.old.$$"
+SDK_BACKUP=$(mktemp -d "${SDK_PACKAGE}.old.XXXXXX")
+rmdir "$SDK_BACKUP"
 if [ -e "$SDK_BACKUP" ]; then
     echo "SDK backup path already exists: $SDK_BACKUP" >&2
     exit 1

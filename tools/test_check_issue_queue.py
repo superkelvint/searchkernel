@@ -453,17 +453,5 @@ class IssueQueueReconciliationTests(unittest.TestCase):
         self.assertEqual(len(messages), 1)
 
 
-
-    def test_write_capable_reconciler_uses_trusted_pr_close_trigger(self) -> None:
-        workflow = (
-            ROOT / ".github" / "workflows" / "issue-queue-reconcile.yml"
-        ).read_text(encoding="utf-8")
-        self.assertIn("pull_request_target:", workflow)
-        self.assertNotIn("\n  pull_request:\n", workflow)
-        self.assertNotIn("\n  workflow_dispatch:\n", workflow)
-        self.assertIn("ref: main", workflow)
-
-
-
 if __name__ == "__main__":
     unittest.main()

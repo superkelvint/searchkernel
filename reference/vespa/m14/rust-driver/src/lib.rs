@@ -1,6 +1,6 @@
 use searchkernel_vespa_engine::{
     ConfigCompiler, DistanceMetric, Document, DocumentUpdate, Engine, Field, FieldType,
-    HnswIndexConfig, NearestNeighborOptions, Query, RankProfile, Schema, SearchRequest,
+    FieldValue, HnswIndexConfig, NearestNeighborOptions, Query, RankProfile, Schema, SearchRequest,
     TensorValue,
 };
 use serde_json::{Value as Json, json};
@@ -108,8 +108,26 @@ fn document(root: &Json, doc: &Json) -> Document {
 }
 
 pub fn feed(engine: &Engine, root: &Json) -> searchkernel_vespa_engine::Result<()> {
+    let field = root["tensor_field"]["name"].as_str().unwrap();
+    let type_spec = root["tensor_field"]["type_spec"].as_str().unwrap();
+    let options = json!({
+        "target_hits": 1,
+        "approximate": true,
+        "explore_additional_hits": 4,
+        "distance_threshold": null,
+        "limit": 1
+    });
     for doc in root["documents"].as_array().expect("documents") {
         engine.put(document(root, doc))?;
+        let id = doc["id"].as_str().unwrap();
+        let expected = FieldValue::Tensor(tensor(type_spec, &doc["values"]));
+        let fetched = engine.get(id)?.expect("new HNSW document is visible to GET");
+        assert_eq!(fetched.fields().get(field), Some(&expected));
+        let result = engine.search(query_request(root, &options, &doc["values"]))?;
+        assert!(
+            result.hits.iter().any(|hit| hit.document_id == id),
+            "new HNSW document {id} is absent from its immediate nearest-neighbor search"
+        );
     }
     Ok(())
 }
@@ -210,6 +228,11 @@ pub fn run_lifecycle(
         DocumentUpdate::new(update_id)
             .assign(field, tensor(type_spec, &root["mutation"]["update_values"])),
     )?;
+    let expected = FieldValue::Tensor(tensor(type_spec, &root["mutation"]["update_values"]));
+    let fetched = engine
+        .get(update_id)?
+        .expect("updated HNSW document remains visible to GET");
+    assert_eq!(fetched.fields().get(field), Some(&expected));
     let (after_update, trace) =
         search_with_evidence(&engine, root, options, &root["query"], &mut traces)?;
     evidence.push(json!({"id":"after_update","trace":trace}));
@@ -221,6 +244,7 @@ pub fn run_lifecycle(
     evidence.push(json!({"id":"after_reopen","trace":trace}));
     let deleted = engine.delete(delete_id)?;
     assert!(deleted, "M14 delete did not find document");
+    assert!(engine.get(delete_id)?.is_none(), "deleted HNSW document remains visible to GET");
     let (after_delete, trace) =
         search_with_evidence(&engine, root, options, &root["query"], &mut traces)?;
     evidence.push(json!({"id":"after_delete","trace":trace}));

@@ -5,6 +5,7 @@ use searchkernel_ir::{
 };
 use serde::Deserialize;
 use std::{collections::BTreeMap, fs, path::PathBuf};
+
 #[derive(Deserialize)]
 struct Corpus {
     index: String,
@@ -126,7 +127,10 @@ fn main() {
             offset: i.offset,
         };
         let ir = searchkernel_ir::resolve_search(&ctx, input).unwrap();
-        out.insert(s.id, snapshot::search_request(&ir));
+        out.insert(
+            s.id,
+            searchkernel_testkit::lossless_integer_tags(snapshot::search_request(&ir)),
+        );
     }
     fs::write(output.unwrap(), serde_json::to_vec_pretty(&out).unwrap()).unwrap();
 }

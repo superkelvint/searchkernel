@@ -792,7 +792,7 @@ class SearchBuilder:
         self._paged = False
 
     def filter(self, source, bindings=None): self._filters.append((source, dict(bindings or {}))); return self
-    def sort(self, field, direction="asc"):
+    def sort(self, field, direction):
         if direction not in {"asc", "desc"}: raise ValueError("sort direction must be 'asc' or 'desc'")
         self._sort.append(SortExprT(target=SortTargetT(targetType=SortTargetKind.FieldSortTarget, target=FieldSortTargetT(field=field)), direction=SortDirection.Asc if direction == "asc" else SortDirection.Desc)); return self
     def fields(self, *fields): self._fields = list(fields); return self
@@ -803,7 +803,11 @@ class SearchBuilder:
     def aggregate(self, expression): self._aggregates.append(expression if isinstance(expression, _Output) else expression.as_("")); return self
     def ranking(self, profile): self._ranking = profile; return self
     def input(self, name, item): self._inputs[name] = item; return self
-    def rank_property(self, name, item): self._rank_properties[name] = str(item); return self
+    def rank_property(self, name, item: str):
+        if not isinstance(item, str):
+            raise TypeError("rank property value must be a string")
+        self._rank_properties[name] = item
+        return self
     def property(self, name, item): self._properties[name] = value(item); return self
     def limit(self, item):
         _uint32(item, "limit")
@@ -850,7 +854,7 @@ class SearchBuilder:
         if query is None: query = QuerySourceT(sourceType=QuerySourceKind.MatchAllQuery, source=MatchAllQueryT())
         elif isinstance(query, str): query = QuerySourceT(sourceType=QuerySourceKind.SearchKernelTextQuery, source=SearchKernelTextQueryT(text=query))
         inputs = [QueryInputT(name=name, inputType=QueryInputKind.LiteralQueryInput, input=LiteralQueryInputT(value=value(item))) for name, item in sorted(self._inputs.items())]
-        ranking = RankingRequestT(profile=self._ranking or "default", properties=[StringEntryT(key=k, value=v) for k, v in sorted(self._rank_properties.items())]) if self._ranking is not None or self._rank_properties else None
+        ranking = RankingRequestT(profile=self._ranking, properties=[StringEntryT(key=k, value=v) for k, v in sorted(self._rank_properties.items())]) if self._ranking is not None or self._rank_properties else None
         presentation = PresentationRequestT(
             summary=self._summary,
             fields=FieldProjectionT(fields=self._fields) if self._fields is not None else None,

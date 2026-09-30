@@ -2052,3 +2052,75 @@ fn native_get_preserves_explicit_empty_collections_across_reopen() {
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }
+
+#[test]
+fn native_ffi_accepts_zero_byte_string_arrays_and_predicate_features() {
+    let config = temporary_path("zero-byte-packed-config");
+    let data = temporary_path("zero-byte-packed-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("tags", FieldType::ArrayString).attribute())
+        .field(
+            Field::new("feature", FieldType::Predicate)
+                .attribute()
+                .predicate_arity(8),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile zero-byte packed config");
+    let engine = Engine::open(&data, &config).expect("open zero-byte packed engine");
+
+    for (id, values) in [
+        ("one-empty-string", vec![String::new()]),
+        ("two-empty-strings", vec![String::new(), String::new()]),
+    ] {
+        engine
+            .put(Document::new(id).field("tags", FieldValue::Array(ArrayValue::Strings(values))))
+            .expect("Rust string-array packing should cross the native ABI");
+    }
+
+    for (id, key, value) in [
+        ("empty-key", "", "value"),
+        ("empty-value", "key", ""),
+        ("empty-key-value", "", ""),
+    ] {
+        engine
+            .put(Document::new(id).field(
+                "feature",
+                FieldValue::Predicate(PredicateValue::new(BTreeMap::from([(
+                    key.to_owned(),
+                    value.to_owned(),
+                )]))),
+            ))
+            .expect("Rust predicate packing should cross the native ABI");
+    }
+
+    engine
+        .put(Document::new("update-one-empty").field(
+            "tags",
+            FieldValue::Array(ArrayValue::Strings(vec!["before".to_owned()])),
+        ))
+        .expect("put document before string-array update");
+    engine
+        .update(DocumentUpdate::new("update-one-empty").assign(
+            "tags",
+            FieldValue::Array(ArrayValue::Strings(vec![String::new()])),
+        ))
+        .expect("single empty string update should cross the native ABI");
+
+    engine
+        .put(Document::new("update-two-empty").field(
+            "tags",
+            FieldValue::Array(ArrayValue::Strings(vec!["before".to_owned()])),
+        ))
+        .expect("put document before multi-string-array update");
+    engine
+        .update(DocumentUpdate::new("update-two-empty").assign(
+            "tags",
+            FieldValue::Array(ArrayValue::Strings(vec![String::new(), String::new()])),
+        ))
+        .expect("multiple empty strings update should cross the native ABI");
+
+    engine.close().expect("close zero-byte packed engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}

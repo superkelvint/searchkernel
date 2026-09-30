@@ -4,61 +4,18 @@ set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 list_targets() {
-    cat <<'EOF'
-Semantic verifier targets:
-  vespa.native-sdk
-  vespa.rust-ownership
-  vespa.document-mutation
-  vespa.linguistics
-  vespa.text-indexing
-  vespa.persistence.reopen
-  vespa.schema-config
-  vespa.query-compilation
-  vespa.results
-  vespa.grouping
-  vespa.grouping.recursive
-  vespa.grouping.yql
-  vespa.ranking
-  vespa.ranking.feature-values
-  vespa.search-reply
-  vespa.hardening
-  vespa.hardening.core
-  vespa.hardening.stress
-  vespa.hardening.sanitizers
-  vespa.nearest-neighbor.query
-  vespa.tensor.document-crud
-  vespa.nearest-neighbor.hnsw
-  vespa.recovery
-  product.rust-real-engine
-  product.integration
-
-Milestone aggregate targets:
-  milestone.m0
-  milestone.m1
-  milestone.m2
-  milestone.m3
-  milestone.m4
-  milestone.m5
-  milestone.m6
-  milestone.m7
-  milestone.m8
-  milestone.m9
-  milestone.m10
-  milestone.m11
-  milestone.m12
-  milestone.m13
-  milestone.m14
-
-Legacy aliases retained during migration:
-  m0 ... m14
-  searchreply
-  phase10
-  integration
-  i
-EOF
+    "$ROOT/../../tools/dev-targets.py" list verify
 }
 
 target="${1:-}"
+if [[ "$target" != "--list" && "$target" != "list" ]]; then
+    canonical=$("$ROOT/../../tools/dev-targets.py" resolve verify "$target") || exit $?
+    if [[ "$canonical" != "$target" ]]; then
+        shift
+        set -- "$canonical" "$@"
+        target=$canonical
+    fi
+fi
 case "$target" in
     --list|list)
         ;;

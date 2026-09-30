@@ -1,5 +1,6 @@
 use super::*;
 use searchkernel_ir::{api, OperationIr};
+use searchkernel_protocol::target::{request_index_target, RequestTargetError};
 use searchkernel_testkit::{
     assert_api_search_result_matches, canonical_result_fixtures, representative_search_result,
     ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
@@ -139,11 +140,52 @@ fn describe_request(version: u32, kind: wire::RequestPayload) -> Vec<u8> {
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: version,
+            target: None,
             payload_type: kind,
             payload: Some(request.as_union_value()),
         },
     );
     builder.finish(envelope, Some("SKRQ"));
+    builder.finished_data().to_vec()
+}
+
+fn lifecycle_request(kind: wire::RequestPayload) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let target_name = builder.create_string("products");
+    let target = api::IndexTarget::create(
+        &mut builder,
+        &api::IndexTargetArgs {
+            name: Some(target_name),
+        },
+    );
+    let payload = match kind {
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+            let definition =
+                api::IndexDefinition::create(&mut builder, &api::IndexDefinitionArgs::default());
+            api::CreateIndexRequest::create(
+                &mut builder,
+                &api::CreateIndexRequestArgs {
+                    definition: Some(definition),
+                },
+            )
+            .as_union_value()
+        }
+        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+            api::OpenIndexRequest::create(&mut builder, &api::OpenIndexRequestArgs::default())
+                .as_union_value()
+        }
+        other => panic!("not a lifecycle request: {other:?}"),
+    };
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: Some(target),
+            payload_type: kind,
+            payload: Some(payload),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
     builder.finished_data().to_vec()
 }
 
@@ -154,6 +196,7 @@ fn empty_search_request() -> Vec<u8> {
         &mut builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
+            target: None,
             payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
             payload: Some(request.as_union_value()),
         },
@@ -179,6 +222,23 @@ fn expected_search_operation() -> OperationIr {
         .into_iter()
         .next()
         .expect("canonical search request must reach the backend")
+}
+
+#[test]
+fn targetless_embedded_request_remains_valid_without_daemon_routing() {
+    let request = canonical_search_request();
+    let envelope = root::<wire::RequestEnvelope<'_>>(&request).unwrap();
+
+    assert_eq!(envelope.protocol_version(), PROTOCOL_VERSION);
+    assert_eq!(
+        envelope.payload_type(),
+        wire::RequestPayload::SearchKernel_V2_SearchRequest
+    );
+    assert!(envelope.target().is_none());
+    assert_eq!(
+        request_index_target(envelope),
+        Err(RequestTargetError::Missing)
+    );
 }
 
 #[test]
@@ -223,6 +283,20 @@ fn accepts_v2_and_rejects_stale_or_future_protocols() {
         )),
         Err(DispatchError::UnsupportedProtocol(PROTOCOL_VERSION + 1))
     );
+}
+
+#[test]
+fn per_index_dispatcher_does_not_own_daemon_lifecycle() {
+    let dispatcher = Dispatcher::from_backend(context(), Arc::new(RecordingBackend::new()));
+    for kind in [
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+    ] {
+        assert_eq!(
+            dispatcher.dispatch(&lifecycle_request(kind)),
+            Err(DispatchError::UnsupportedOperation(kind.0))
+        );
+    }
 }
 
 #[test]

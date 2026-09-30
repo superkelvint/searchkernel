@@ -25,6 +25,7 @@
   "files": [
     "dist",
     "bin",
+    "lib",
     "src/generated",
     "examples"
   ],

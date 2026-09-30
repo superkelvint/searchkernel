@@ -20,19 +20,17 @@ class M11StructureTests(unittest.TestCase):
         self._write("reference/vespa/m11/rust-driver/src/main.rs", "fn main() {}\n")
         self._write("reference/vespa/m11/sanitizer/lsan.supp", "")
         self._write("reference/vespa/m11/sanitizer/tsan.supp", "")
+        self._write("core/crates/searchkernel-vespa-engine/src/lib.rs", "")
         self._write(
-            "core/crates/searchkernel-vespa-engine/src/lib.rs",
+            "core/crates/searchkernel-vespa-engine/src/engine.rs",
+            'fn decode(s: &str) { let _ = serde_json::from_str::<serde_json::Value>(s); }\n'
             "// SAFETY: fixture owns the native handle.\n"
             "unsafe impl Send for Engine {}\n"
             "// SAFETY: fixture synchronizes all access.\n"
             "unsafe impl Sync for Engine {}\n",
         )
         self._write(
-            "core/crates/searchkernel-vespa-engine/src/engine.rs",
-            'fn decode(s: &str) { let _ = serde_json::from_str::<serde_json::Value>(s); }\n',
-        )
-        self._write(
-            "core/crates/searchkernel-vespa-engine/src/native.rs",
+            "core/crates/searchkernel-vespa-engine/src/native/mod.rs",
             'fn decode(s: &str) { let _ = serde_json::from_str::<serde_json::Value>(s); }\n',
         )
         self._write("core/crates/searchkernel-vespa-engine/Cargo.toml", 'serde_json = "1"\n')
@@ -58,6 +56,61 @@ class M11StructureTests(unittest.TestCase):
         result = self._check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_safety_context_near_file_start_uses_valid_line_range(self):
+        self._write(
+            "core/crates/searchkernel-vespa-engine/src/engine.rs",
+            "// SAFETY: fixture owns the native handle.\n"
+            "unsafe impl Send for Engine {}\n"
+            "// SAFETY: fixture synchronizes all access.\n"
+            "unsafe impl Sync for Engine {}\n",
+        )
+        result = self._check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_missing_send_safety_comment_is_rejected(self):
+        self._write(
+            "core/crates/searchkernel-vespa-engine/src/engine.rs",
+            "unsafe impl Send for Engine {}\n"
+            "// SAFETY: fixture synchronizes all access.\n"
+            "unsafe impl Sync for Engine {}\n",
+        )
+        result = self._check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "unsafe impl Send for Engine has no adjacent SAFETY justification",
+            result.stderr,
+        )
+
+    def test_missing_sync_safety_comment_is_rejected(self):
+        self._write(
+            "core/crates/searchkernel-vespa-engine/src/engine.rs",
+            "// SAFETY: fixture owns the native handle.\n"
+            "unsafe impl Send for Engine {}\n"
+            "unsafe impl Sync for Engine {}\n",
+        )
+        result = self._check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "unsafe impl Sync for Engine has no adjacent SAFETY justification",
+            result.stderr,
+        )
+
+    def test_unrelated_safety_comment_cannot_justify_sync(self):
+        self._write(
+            "core/crates/searchkernel-vespa-engine/src/engine.rs",
+            "// SAFETY: fixture owns the native handle.\n"
+            "unsafe impl Send for Engine {}\n"
+            "\n"
+            "// ordinary comment, not a safety justification\n"
+            "unsafe impl Sync for Engine {}\n",
+        )
+        result = self._check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "unsafe impl Sync for Engine has no adjacent SAFETY justification",
+            result.stderr,
+        )
+
     def test_driver_json_oracle_is_rejected(self):
         self._write(
             "reference/vespa/m11/rust-driver/src/main.rs",
@@ -79,7 +132,7 @@ class M11StructureTests(unittest.TestCase):
     def test_production_runtime_launch_is_rejected(self):
         for path, code in (
             ("core/crates/searchkernel-vespa-engine/src/engine.rs", 'std::process::Command::new("java");\n'),
-            ("core/crates/searchkernel-vespa-engine/src/native.rs", 'Command::new("java");\n'),
+            ("core/crates/searchkernel-vespa-engine/src/native/mod.rs", 'Command::new("java");\n'),
             ("core/crates/searchkernel-vespa-bindings/src/lib.rs", 'ProcessBuilder::new("java");\n'),
             ("reference/vespa/m11/rust-driver/src/main.rs", 'JNI_CreateJavaVM();\n'),
         ):

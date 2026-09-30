@@ -105,18 +105,26 @@ void packed_document_buffer_contract() {
               "packed buffer update setup");
 
     const uint8_t bytes[] = {'x', 'y'};
+    const auto zero_byte_sentinel = reinterpret_cast<const uint8_t *>(uintptr_t{1});
     const uint32_t one_length[] = {1};
     const uint32_t empty_length[] = {0};
     const uint32_t multiple_lengths[] = {1, 0, 1};
     expect_ok(sk_document_add_string_array(document, "empty-list", bytes, one_length, 0, 0,
                                            error.data(), ERROR_CAPACITY),
               "empty packed string array");
-    expect_ok(sk_document_add_string_array(document, "empty-item", bytes, empty_length, 1, 0,
+    expect_ok(sk_document_add_string_array(document, "empty-item", zero_byte_sentinel,
+                                           empty_length, 1, 0,
                                            error.data(), ERROR_CAPACITY),
               "zero-length packed string item");
     expect_ok(sk_document_add_string_array(document, "multiple-items", bytes, multiple_lengths,
                                            3, 2, error.data(), ERROR_CAPACITY),
               "multi-item packed string array");
+    const uint8_t boundary_bytes[] = {'a', 'b'};
+    const uint32_t offset_boundary_lengths[] = {1, 2};
+    expect_invalid(sk_document_add_string_array(document, "offset-boundary", boundary_bytes,
+                                                 offset_boundary_lengths, 2, 2, error.data(),
+                                                 ERROR_CAPACITY),
+                   "string array remaining bytes after offset advance");
 
     expect_invalid(sk_document_add_string_array(document, "short-total", bytes, one_length, 1, 0,
                                                  error.data(), ERROR_CAPACITY),
@@ -138,16 +146,11 @@ void packed_document_buffer_contract() {
                                                  1, oversized_total[0], error.data(),
                                                  ERROR_CAPACITY),
                    "string array total size limit");
-    const uint32_t overflow_boundary[] = {std::numeric_limits<uint32_t>::max()};
-    expect_invalid(sk_document_add_string_array(document, "overflow-boundary", bytes,
-                                                 overflow_boundary, 1, overflow_boundary[0],
-                                                 error.data(), ERROR_CAPACITY),
-                   "string array uint32 length boundary");
-
     expect_ok(sk_document_update_assign_string_array(update, "empty-list", bytes, one_length, 0,
                                                      0, error.data(), ERROR_CAPACITY),
               "empty packed update string array");
-    expect_ok(sk_document_update_assign_string_array(update, "empty-item", bytes, empty_length,
+    expect_ok(sk_document_update_assign_string_array(update, "empty-item", zero_byte_sentinel,
+                                                     empty_length,
                                                      1, 0, error.data(), ERROR_CAPACITY),
               "zero-length packed update string item");
     expect_ok(sk_document_update_assign_string_array(update, "multiple-items", bytes,
@@ -170,6 +173,10 @@ void packed_document_buffer_contract() {
                                                            one_length, 65537, 0, error.data(),
                                                            ERROR_CAPACITY),
                    "update string array count limit");
+    expect_invalid(sk_document_update_assign_string_array(
+                       update, "offset-boundary", boundary_bytes, offset_boundary_lengths, 2, 2,
+                       error.data(), ERROR_CAPACITY),
+                   "update string array remaining bytes after offset advance");
 
     const uint32_t max_element_length[] = {1024 * 1024 + 1};
     expect_invalid(sk_document_add_string_array(document, "oversized-element", bytes,
@@ -225,6 +232,40 @@ void packed_document_buffer_contract() {
                                              bytes, value_length, 0, 65537, error.data(),
                                              ERROR_CAPACITY),
                    "predicate feature count limit");
+    const uint32_t predicate_offset_lengths[] = {1, 2};
+    const uint32_t predicate_valid_lengths[] = {1, 0};
+    expect_invalid(sk_document_add_predicate(
+                       document, "predicate-key-offset", boundary_bytes,
+                       predicate_offset_lengths, 2, boundary_bytes, predicate_valid_lengths, 1, 2,
+                       error.data(), ERROR_CAPACITY),
+                   "predicate key remaining bytes after offset advance");
+    expect_invalid(sk_document_add_predicate(
+                       document, "predicate-value-offset", boundary_bytes,
+                       predicate_valid_lengths, 1, boundary_bytes, predicate_offset_lengths, 2,
+                       2, error.data(), ERROR_CAPACITY),
+                   "predicate value remaining bytes after offset advance");
+    expect_ok(sk_document_add_predicate(
+                  document, "predicate-empty-key", zero_byte_sentinel, empty_length, 0, bytes,
+                  one_length, 1, 1, error.data(), ERROR_CAPACITY),
+              "zero-length predicate key avoids packed pointer use");
+    expect_ok(sk_document_add_predicate(
+                  document, "predicate-empty-value", bytes, one_length, 1, zero_byte_sentinel,
+                  empty_length, 0, 1, error.data(), ERROR_CAPACITY),
+              "zero-length predicate value avoids packed pointer use");
+    expect_ok(sk_document_add_predicate(
+                  document, "predicate-empty-key-value", zero_byte_sentinel, empty_length, 0,
+                  zero_byte_sentinel, empty_length, 0, 1, error.data(), ERROR_CAPACITY),
+              "zero-length predicate key and value avoid packed pointer use");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "predicate-key-offset", boundary_bytes, predicate_offset_lengths, 2,
+                       boundary_bytes, predicate_valid_lengths, 1, 2, error.data(),
+                       ERROR_CAPACITY),
+                   "update predicate key remaining bytes after offset advance");
+    expect_invalid(sk_document_update_assign_predicate(
+                       update, "predicate-value-offset", boundary_bytes, predicate_valid_lengths,
+                       1, boundary_bytes, predicate_offset_lengths, 2, 2, error.data(),
+                       ERROR_CAPACITY),
+                   "update predicate value remaining bytes after offset advance");
     const uint32_t empty_lengths[] = {0};
     expect_invalid(sk_document_add_predicate(document, "null-empty-key", nullptr, empty_lengths, 0,
                                              bytes, value_length, 1, 1, error.data(),
@@ -264,10 +305,10 @@ void packed_document_buffer_contract() {
                                              oversized_length[0], bytes, value_length, 1, 1,
                                              error.data(), ERROR_CAPACITY),
                    "oversized predicate key");
-    expect_invalid(sk_document_add_predicate(document, "overflow-boundary", bytes,
-                                             overflow_boundary, overflow_boundary[0], bytes,
+    expect_invalid(sk_document_add_predicate(document, "oversized-element", bytes,
+                                             oversized_length, oversized_length[0], bytes,
                                              value_length, 1, 1, error.data(), ERROR_CAPACITY),
-                   "predicate uint32 length boundary");
+                   "predicate per-element size boundary");
     expect_invalid(sk_document_update_assign_predicate(
                        update, "oversized-value", bytes, key_length, 1, bytes, oversized_length,
                        oversized_length[0], 1, error.data(), ERROR_CAPACITY),
@@ -626,6 +667,173 @@ sk_query *make_equals_query(const sk_engine *engine) {
     return query;
 }
 
+void predicate_query_buffer_contract(sk_engine *engine) {
+    ErrorBuffer error;
+    const uint8_t predicate_bytes[] = {'k', 'v'};
+    const uint8_t one_byte_allocation[] = {'x'};
+    const uint32_t one_length[] = {1};
+    const uint32_t two_length[] = {2};
+    const uint32_t two_one_lengths[] = {1, 1};
+    const uint32_t one_two_lengths[] = {1, 2};
+    const uint32_t zero_length[] = {0};
+    const uint32_t oversized_term_length[] = {1024 * 1024 + 1};
+    const uint32_t overflow_lengths[] = {1, std::numeric_limits<uint32_t>::max()};
+    const uint64_t predicate_masks[] = {1, 2};
+    const uint64_t predicate_values[] = {7, 8};
+    auto predicate_query = [&] {
+        sk_query *result = nullptr;
+        expect_ok(sk_query_create(engine, &result, error.data(), ERROR_CAPACITY),
+                  "predicate bounds query create");
+        return result;
+    };
+    auto expect_bad_predicate = [&](const uint8_t *keys, uint32_t key_total,
+                                    const uint32_t *key_lengths, const uint8_t *values,
+                                    uint32_t value_total, const uint32_t *value_lengths,
+                                    uint32_t feature_count, const uint8_t *range_keys,
+                                    uint32_t range_total, const uint32_t *range_lengths,
+                                    uint32_t range_count, const char *label) {
+        auto *candidate = predicate_query();
+        expect_invalid(sk_query_add_predicate(
+                           candidate, "access", keys, key_total, key_lengths, values, value_total,
+                           value_lengths, predicate_masks, feature_count, range_keys, range_total,
+                           range_lengths, predicate_values, predicate_masks, range_count,
+                           error.data(), ERROR_CAPACITY),
+                       label);
+        sk_query_destroy(candidate);
+    };
+
+    // These are real one-byte allocations with a two-byte advertised element.
+    // If native validation ever moves after the read, ASan must catch the regression.
+    expect_bad_predicate(one_byte_allocation, 1, two_length, one_byte_allocation, 1, one_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate feature key exceeds packed total");
+    expect_bad_predicate(one_byte_allocation, 1, one_length, one_byte_allocation, 1, two_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate feature value exceeds packed total");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, one_byte_allocation, 1,
+                         two_length, 1, "predicate range key exceeds packed total");
+
+    // Exact totals are mandatory; deliberate trailing bytes are rejected independently.
+    expect_bad_predicate(predicate_bytes, 2, one_length, predicate_bytes, 1, one_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate feature key trailing bytes rejected");
+    expect_bad_predicate(predicate_bytes, 1, one_length, predicate_bytes, 2, one_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate feature value trailing bytes rejected");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 2,
+                         one_length, 1, "predicate range key trailing bytes rejected");
+
+    // Null/non-zero descriptors are invalid even when that side has zero items.
+    expect_bad_predicate(nullptr, 1, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 1,
+                         one_length, 1, "predicate null feature key with nonzero total");
+    expect_bad_predicate(predicate_bytes, 0, nullptr, nullptr, 1, nullptr, 0, predicate_bytes, 1,
+                         one_length, 1, "predicate null feature value with nonzero total");
+    expect_bad_predicate(predicate_bytes, 1, one_length, predicate_bytes, 1, one_length, 1,
+                         nullptr, 1, nullptr, 0, "predicate null range key with nonzero total");
+
+    // Predicate query terms deliberately reject empty keys/values.
+    expect_bad_predicate(predicate_bytes, 0, zero_length, predicate_bytes, 1, one_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate zero-length feature key rejected");
+    expect_bad_predicate(predicate_bytes, 1, one_length, predicate_bytes, 0, zero_length, 1,
+                         nullptr, 0, nullptr, 0, "predicate zero-length feature value rejected");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 0,
+                         zero_length, 1, "predicate zero-length range key rejected");
+
+    // Count, per-element, aggregate-size, and checked-offset boundaries fail before reads.
+    expect_bad_predicate(predicate_bytes, 0, one_length, predicate_bytes, 1, one_length, 65537,
+                         nullptr, 0, nullptr, 0, "predicate feature count limit");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 0,
+                         one_length, 65537, "predicate range count limit");
+    expect_bad_predicate(one_byte_allocation, oversized_term_length[0], oversized_term_length,
+                         one_byte_allocation, 1, one_length, 1, nullptr, 0, nullptr, 0,
+                         "predicate feature key element size limit");
+    expect_bad_predicate(one_byte_allocation, 1, one_length, one_byte_allocation,
+                         oversized_term_length[0], oversized_term_length, 1, nullptr, 0, nullptr,
+                         0, "predicate feature value element size limit");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, one_byte_allocation,
+                         oversized_term_length[0], oversized_term_length, 1,
+                         "predicate range key element size limit");
+    expect_bad_predicate(predicate_bytes, std::numeric_limits<uint32_t>::max(), one_length,
+                         predicate_bytes, 1, one_length, 1, nullptr, 0, nullptr, 0,
+                         "predicate feature key packed total size limit");
+    expect_bad_predicate(predicate_bytes, 1, one_length, predicate_bytes,
+                         std::numeric_limits<uint32_t>::max(), one_length, 1, nullptr, 0, nullptr,
+                         0, "predicate feature value packed total size limit");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes,
+                         std::numeric_limits<uint32_t>::max(), one_length, 1,
+                         "predicate range key packed total size limit");
+    // Exercise the remaining-length check after a prior descriptor advances the
+    // offset. Each individual length is valid-sized, but the second span would
+    // read one byte past the actual two-byte allocation if checked after access.
+    expect_bad_predicate(predicate_bytes, 2, one_two_lengths, predicate_bytes, 2,
+                         two_one_lengths, 2, nullptr, 0, nullptr, 0,
+                         "predicate feature key exceeds remaining packed bytes");
+    expect_bad_predicate(predicate_bytes, 2, two_one_lengths, predicate_bytes, 2,
+                         one_two_lengths, 2, nullptr, 0, nullptr, 0,
+                         "predicate feature value exceeds remaining packed bytes");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 2,
+                         one_two_lengths, 2, "predicate range key exceeds remaining packed bytes");
+
+    // Overflow-shaped lengths are rejected before offset addition as an extra
+    // defense, even though the per-element limit makes arithmetic wrap unreachable.
+    expect_bad_predicate(predicate_bytes, 2, overflow_lengths, predicate_bytes, 2,
+                         two_one_lengths, 2, nullptr, 0, nullptr, 0,
+                         "predicate feature key overflow-shaped length");
+    expect_bad_predicate(predicate_bytes, 2, two_one_lengths, predicate_bytes, 2,
+                         overflow_lengths, 2, nullptr, 0, nullptr, 0,
+                         "predicate feature value overflow-shaped length");
+    expect_bad_predicate(nullptr, 0, nullptr, nullptr, 0, nullptr, 0, predicate_bytes, 2,
+                         overflow_lengths, 2, "predicate range key overflow-shaped length");
+
+    // A completely absent zero-count/zero-total side is valid and must not be dereferenced.
+    auto *query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", predicate_bytes, 1, one_length,
+                                     predicate_bytes, 1, one_length, predicate_masks, 1,
+                                     nullptr, 0, nullptr, nullptr, nullptr, 0,
+                                     error.data(), ERROR_CAPACITY),
+              "predicate null zero-count zero-total range side");
+    sk_query_destroy(query);
+    query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", nullptr, 0, nullptr, nullptr, 0, nullptr,
+                                     nullptr, 0, predicate_bytes, 1, one_length,
+                                     predicate_values, predicate_masks, 1,
+                                     error.data(), ERROR_CAPACITY),
+              "predicate null zero-count zero-total feature side");
+    sk_query_destroy(query);
+
+    // Zero-count/zero-total sides may also carry non-null sentinels because they are never dereferenced.
+    query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", predicate_bytes, 1, one_length,
+                                     predicate_bytes, 1, one_length, predicate_masks, 1,
+                                     predicate_bytes, 0, one_length, predicate_values,
+                                     predicate_masks, 0, error.data(), ERROR_CAPACITY),
+              "predicate non-null zero-count zero-total range side");
+    sk_query_destroy(query);
+    query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", predicate_bytes, 0, one_length,
+                                     predicate_bytes, 0, one_length, predicate_masks, 0,
+                                     predicate_bytes, 1, one_length, predicate_values,
+                                     predicate_masks, 1, error.data(), ERROR_CAPACITY),
+              "predicate non-null zero-count zero-total feature side");
+    sk_query_destroy(query);
+
+    query = predicate_query();
+    expect_ok(sk_query_add_predicate(query, "access", predicate_bytes, 2, two_one_lengths,
+                                     predicate_bytes, 2, two_one_lengths, predicate_masks, 2,
+                                     predicate_bytes, 2, two_one_lengths, predicate_values,
+                                     predicate_masks, 2, error.data(), ERROR_CAPACITY),
+              "predicate exact totals and multiple elements");
+    sk_query_destroy(query);
+}
+
+void predicate_query_buffer_contract_with_engine(const std::filesystem::path &data,
+                                                 const std::filesystem::path &config) {
+    ErrorBuffer error;
+    sk_engine *engine = nullptr;
+    expect_ok(sk_engine_open(data.c_str(), config.c_str(), &engine, error.data(), ERROR_CAPACITY),
+              "predicate contract engine open");
+    assert(engine != nullptr);
+    predicate_query_buffer_contract(engine);
+    expect_ok(sk_engine_close(engine, error.data(), ERROR_CAPACITY), "predicate contract engine close");
+    sk_engine_destroy(engine);
+}
+
 void exercise_native_engine(const std::filesystem::path &data,
                             const std::filesystem::path &config) {
     ErrorBuffer error;
@@ -689,6 +897,8 @@ void exercise_native_engine(const std::filesystem::path &data,
                                 sizeof(QUICK_TERM) - 1, query_text_lengths, 1,
                                 error.data(), ERROR_CAPACITY), "text query");
     sk_query_destroy(query);
+    predicate_query_buffer_contract(engine);
+
     expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "range query create");
     expect_ok(sk_query_add_range(query, "qty", SK_QUERY_BOUND_INCLUDED, 1,
                                  SK_QUERY_BOUND_EXCLUDED, 100, error.data(), ERROR_CAPACITY),
@@ -1126,6 +1336,17 @@ int main(int argc, char **argv) {
     packed_document_buffer_contract();
     if (std::getenv("SK_NATIVE_HIGHLIGHTING_UNIT_ONLY") != nullptr) {
         std::cout << "native highlighting decoder unit passed\n";
+        return 0;
+    }
+    if (std::getenv("SK_NATIVE_PREDICATE_CONTRACT_ONLY") != nullptr) {
+        if (argc != 3) {
+            std::cerr << "usage: native_adapter_coverage_test DATA_DIR CONFIG_DIR\n";
+            return 2;
+        }
+        assert(sk_native_abi_version() == SK_NATIVE_ABI_VERSION);
+        predicate_query_buffer_contract_with_engine(std::filesystem::path(argv[1]),
+                                                    std::filesystem::path(argv[2]));
+        std::cout << "native predicate packed-buffer ABI contract passed\n";
         return 0;
     }
     if (argc != 3) {

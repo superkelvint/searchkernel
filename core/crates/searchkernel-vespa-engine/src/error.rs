@@ -51,6 +51,13 @@ impl Error {
         }
     }
 
+    pub(crate) fn invalid_argument_detail(
+        detail_code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::native(1, Some(detail_code.into()), message)
+    }
+
     pub(crate) fn unsupported(message: impl Into<String>) -> Self {
         Self::native(4, None, message)
     }

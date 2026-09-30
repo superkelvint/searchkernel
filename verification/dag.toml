@@ -241,6 +241,16 @@ command = "tools/run-python-native-e2e.sh"
 depends_on = []
 cache_result = false
 
+[[task]]
+id = "searchkerneld-multi-index"
+legacy_lanes = ["native", "persistence"]
+kind = "command"
+runner = "self-hosted-native"
+command = "./dev test searchkerneld-multi-index"
+depends_on = ["rust-quality", "protocol-generated"]
+cache_result = false
+notes = "Real-engine daemon gate for canonical multi-index lifecycle, isolation, target safety, restart/reopen, and graceful shutdown."
+
 # Focused semantic Vespa verifier targets. Historical milestone scripts remain
 # implementation/provenance behind these names while the verifier internals are
 # progressively decomposed.
@@ -789,6 +799,7 @@ depends_on = [
   "vespa.recovery",
   "native-additive-regression",
   "native-python-e2e",
+  "searchkerneld-multi-index",
   "persistence-native",
   "abi",
 ]
@@ -977,6 +988,16 @@ paths = [
   "searchkerneld/tests/instantsearch_compat.rs",
 ]
 requires = ["instantsearch-compat", "search-endpoints", "rust-non-native", "rust-quality", "protocol-generated", "client-contracts"]
+
+[[subsystem]]
+id = "searchkerneld-multi-index"
+paths = [
+  "searchkerneld/src/main.rs",
+  "searchkerneld/src/registry.rs",
+  "searchkerneld/tests/multi_index.rs",
+  "searchkerneld/tests/process_shutdown.rs",
+]
+requires = ["searchkerneld-multi-index", "protocol-generated", "rust-quality"]
 
 [[subsystem]]
 id = "searchkerneld"

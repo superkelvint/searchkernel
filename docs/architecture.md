@@ -127,8 +127,33 @@ This explicit remote mode must not become a second semantic implementation. Its 
 
 ### Non-Rust languages
 
-First-party non-Rust clients use the daemon. There are two permitted transport
-representations, both terminating at the same canonical FlatBuffer dispatcher.
+First-party non-Rust clients use the daemon. The daemon is a multi-index service:
+one long-lived process owns a registry of logical index targets, each backed by
+its own per-index semantic dispatcher. Lifecycle and target selection are
+canonical FlatBuffers semantics, not transport metadata. Remote clients never
+supply arbitrary server filesystem paths; the daemon maps validated logical
+identifiers under its configured data root.
+
+A daemon-bound `RequestEnvelope` therefore carries an explicit `IndexTarget`.
+Ordinary operations and canonical `CreateIndexRequest` / `OpenIndexRequest`
+lifecycle operations are direct members of the same request union. The daemon
+router validates `target` and selects the per-index dispatcher before semantic
+execution; the dispatcher itself remains target-agnostic because its index is
+already bound.
+
+`IndexDefinition.name` remains schema identity and may differ from the logical
+daemon target; routing must never be inferred from it. Target-less envelopes are
+valid for embedded/per-index callers, but multi-index daemon ingress must reject
+them rather than falling back to a default. Client-handle close remains local
+and must not unload an index shared by other clients.
+
+#848 establishes this shape as the forward-compatibility baseline. Earlier
+development snapshots are not compatibility targets. After this baseline lands,
+existing FlatBuffers slots, enum/union values, and established request semantics
+must be preserved through compatible evolution.
+
+There are two permitted transport representations, both terminating at the same
+canonical FlatBuffer router and per-index dispatcher.
 
 The default native/runtime path is binary FlatBuffers over generated gRPC:
 
@@ -586,14 +611,19 @@ ordinary Rust workspace
 
 A developer working on the Rust API, IR, RPC layer, or language clients should normally be able to run the relevant tests without entering the Vespa build container.
 
-Changes to the native C++ adapter may require rebuilding the native SDK.
+Changes to Search Kernel's native C++ adapter rebuild and relink the
+repository-local adapter against the immutable Vespa/native base. They do not
+rebuild or repackage that base. A new native base is required only when the
+pinned Vespa revision or the base/toolchain provisioning inputs themselves
+change.
 
 Native outputs are environment-sensitive. Host, project-container, and CI
-Cargo target roots are isolated, and the Vespa SDK records the compiler,
-runtime, target, flags, pinned source, and native configuration that produced
-it. The Rust bindings validate that record and perform a real ABI link probe;
-one targeted rebuild is attempted automatically when the record or probe is
-stale. See [native-build-provenance.md](native-build-provenance.md).
+Cargo target roots are isolated, and the native-base provenance records the
+compiler, runtime, target, flags, pinned source, and native configuration that
+produced it. The Rust bindings validate that record and perform a real ABI link
+probe; the repository-local adapter is rebuilt automatically when its source or
+the selected base changes. See
+[native-build-provenance.md](native-build-provenance.md).
 
 The transport migration should be additive until cutover:
 
