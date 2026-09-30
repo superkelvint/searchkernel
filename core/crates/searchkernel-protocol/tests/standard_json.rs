@@ -3,7 +3,6 @@ use searchkernel_protocol::json::{
     response_json_to_flatbuffer,
 };
 use searchkernel_protocol::protocol::v2 as wire;
-use searchkernel_protocol::target::{request_index_target, RequestTargetError};
 
 const RICH_REQUEST: &[u8] = br#"
 {
@@ -406,7 +405,10 @@ fn standard_json_round_trips_targeted_open_lifecycle() {
     let bytes = request_json_to_flatbuffer(input).expect("targeted open-index request JSON");
     let envelope =
         flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("targeted request envelope");
-    assert_eq!(request_index_target(envelope), Ok("products"));
+    assert_eq!(
+        envelope.target().and_then(|target| target.name()),
+        Some("products")
+    );
     assert_eq!(
         envelope.payload_type(),
         wire::RequestPayload::SearchKernel_V2_OpenIndexRequest
@@ -436,7 +438,10 @@ fn create_index_keeps_logical_target_and_schema_identity_distinct() {
     let request_bytes = request_json_to_flatbuffer(request).expect("create-index request JSON");
     let envelope =
         flatbuffers::root::<wire::RequestEnvelope<'_>>(&request_bytes).expect("request envelope");
-    assert_eq!(request_index_target(envelope), Ok("catalog-a"));
+    assert_eq!(
+        envelope.target().and_then(|target| target.name()),
+        Some("catalog-a")
+    );
     assert_eq!(
         envelope.payload_type(),
         wire::RequestPayload::SearchKernel_V2_CreateIndexRequest
@@ -487,10 +492,7 @@ fn targetless_frames_remain_valid_for_embedded_callers_but_not_daemon_routing() 
     let bytes = request_json_to_flatbuffer(input).expect("embedded targetless request JSON");
     let envelope = flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes)
         .expect("targetless request envelope");
-    assert_eq!(
-        request_index_target(envelope),
-        Err(RequestTargetError::Missing)
-    );
+    assert!(envelope.target().is_none());
 
     let printed = request_flatbuffer_to_json(&bytes).expect("targetless JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
@@ -499,7 +501,7 @@ fn targetless_frames_remain_valid_for_embedded_callers_but_not_daemon_routing() 
 }
 
 #[test]
-fn request_target_validation_rejects_path_syntax_after_structural_decode() {
+fn target_domain_strings_remain_representation_values_after_structural_decode() {
     let input = br#"{
       "protocol_version": 2,
       "target": {"name": "../products"},
@@ -510,10 +512,10 @@ fn request_target_validation_rejects_path_syntax_after_structural_decode() {
         .expect("FlatBuffers schema permits a string before semantic target validation");
     let envelope =
         flatbuffers::root::<wire::RequestEnvelope<'_>>(&bytes).expect("request envelope");
-    assert!(matches!(
-        request_index_target(envelope),
-        Err(RequestTargetError::Invalid(_))
-    ));
+    assert_eq!(
+        envelope.target().and_then(|target| target.name()),
+        Some("../products")
+    );
 }
 
 #[test]

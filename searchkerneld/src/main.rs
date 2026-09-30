@@ -14,6 +14,7 @@ mod native_main {
 
     use searchkernel::Index;
     use searchkernel_dispatch::Dispatcher;
+    use searchkernel_ir::validate_index_target;
     use searchkerneld::{start, start_multi, IndexRegistry, ServerConfig, ServerError};
 
     const DEFAULT_UNIX_SOCKET: &str = "/tmp/searchkerneld.sock";
@@ -148,7 +149,7 @@ mod native_main {
                 migrate_index_path.ok_or("--migrate-index is required with --target")?;
             let data_root = data_root.ok_or("--data-root is required with --migrate-index")?;
             let target = migrate_target.ok_or("--target is required with --migrate-index")?;
-            searchkernel_protocol::target::validate_index_target(&target)?;
+            validate_index_target(&target)?;
             Mode::Migrate {
                 source_path,
                 data_root,

@@ -378,15 +378,7 @@ impl Index {
 
         let _source_lock = LifecycleLock::acquire(source).map_err(|error| {
             if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::search(
-                    crate::error::ErrorCode::Conflict,
-                    format!("legacy index storage is in use: {}", source.display()),
-                )
-                .with_detail(
-                    "index_in_use",
-                    None::<String>,
-                    "legacy index storage is owned by another active runtime",
-                )
+                Error::from_ir(searchkernel_ir::index_in_use_error())
             } else {
                 error
             }
@@ -413,15 +405,7 @@ impl Index {
 
         let _destination_lock = LifecycleLock::acquire(destination).map_err(|error| {
             if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::search(
-                    crate::error::ErrorCode::Conflict,
-                    format!("managed index storage is in use: {}", destination.display()),
-                )
-                .with_detail(
-                    "index_in_use",
-                    None::<String>,
-                    "managed index storage is owned by another active runtime",
-                )
+                Error::from_ir(searchkernel_ir::index_in_use_error())
             } else {
                 error
             }
@@ -469,15 +453,7 @@ impl Index {
         let root = path.as_ref();
         let _lifecycle_lock = LifecycleLock::acquire(root).map_err(|error| {
             if error.code() == crate::error::ErrorCode::AlreadyExists {
-                Error::search(
-                    crate::error::ErrorCode::Conflict,
-                    format!("index storage is in use: {}", root.display()),
-                )
-                .with_detail(
-                    "index_in_use",
-                    None::<String>,
-                    "index storage is owned by another active runtime",
-                )
+                Error::from_ir(searchkernel_ir::index_in_use_error())
             } else {
                 error
             }

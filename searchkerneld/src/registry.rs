@@ -1,12 +1,8 @@
 use flatbuffers::root;
 use searchkernel::{Error as IndexError, ErrorCode as IndexErrorCode, Index};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
-use searchkernel_ir::{ErrorCode, PortableError};
-use searchkernel_protocol::{
-    protocol::v2 as wire,
-    target::{request_index_target, IndexControlError},
-    v2 as api, PROTOCOL_VERSION,
-};
+use searchkernel_ir::{ControlPlaneRequest, PortableError};
+use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
 use std::{
     collections::BTreeMap,
     fmt,
@@ -139,39 +135,21 @@ impl IndexRegistry {
                 envelope.protocol_version(),
             ));
         }
-        let target = match request_index_target(envelope) {
-            Ok(target) => target,
-            Err(error) => {
-                return Ok(encode_error(index_control_error_to_portable(error.into())));
+        let control = match searchkernel_ir::resolve_control_plane_request(envelope) {
+            Ok(control) => control,
+            Err(searchkernel_ir::ControlPlaneResolutionError::InvalidEnvelope) => {
+                return Err(RegistryDispatchError::InvalidRequest)
+            }
+            Err(searchkernel_ir::ControlPlaneResolutionError::Semantic(error)) => {
+                return Ok(encode_error(error))
             }
         };
 
-        match envelope.payload_type() {
-            wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
-                let payload = envelope
-                    .payload_as_search_kernel_v2_create_index_request()
-                    .ok_or(RegistryDispatchError::InvalidRequest)?;
-                let Some(definition) = payload.definition() else {
-                    return Ok(encode_error(index_control_error_to_portable(
-                        IndexControlError::MissingIndexDefinition,
-                    )));
-                };
-                self.create(target, definition)
-            }
-            wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
-                envelope
-                    .payload_as_search_kernel_v2_open_index_request()
-                    .ok_or(RegistryDispatchError::InvalidRequest)?;
-                self.open(target)
-            }
-            wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
-                envelope
-                    .payload_as_search_kernel_v2_delete_index_request()
-                    .ok_or(RegistryDispatchError::InvalidRequest)?;
-                self.delete_index(target)
-            }
-            wire::RequestPayload::NONE => Err(RegistryDispatchError::InvalidRequest),
-            _ => self.dispatch_loaded(target, request),
+        match control {
+            ControlPlaneRequest::Create { target, definition } => self.create(target, definition),
+            ControlPlaneRequest::Open { target } => self.open(target),
+            ControlPlaneRequest::Delete { target } => self.delete_index(target),
+            ControlPlaneRequest::Route { target } => self.dispatch_loaded(target, request),
         }
     }
 
@@ -257,9 +235,7 @@ impl IndexRegistry {
                 .lock()
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if entries.contains_key(target) {
-                return Ok(encode_error(index_control_error_to_portable(
-                    IndexControlError::IndexAlreadyExists,
-                )));
+                return Ok(encode_error(searchkernel_ir::already_exists_error()));
             }
         }
 
@@ -269,7 +245,12 @@ impl IndexRegistry {
         };
         let index = match Index::create_from_definition_bytes(&path, &definition_bytes) {
             Ok(index) => index,
-            Err(error) => return Ok(encode_error(lifecycle_index_error_to_portable(error))),
+            Err(error) => {
+                return Ok(encode_error(lifecycle_index_error_to_portable(
+                    searchkernel_ir::LifecycleOperation::Create,
+                    error,
+                )))
+            }
         };
         let (context, session) = index.clone().into_session_parts();
         let entry = Arc::new(RegistryEntry {
@@ -312,7 +293,12 @@ impl IndexRegistry {
         };
         let index = match Index::open(&path) {
             Ok(index) => index,
-            Err(error) => return Ok(encode_error(lifecycle_index_error_to_portable(error))),
+            Err(error) => {
+                return Ok(encode_error(lifecycle_index_error_to_portable(
+                    searchkernel_ir::LifecycleOperation::Open,
+                    error,
+                )))
+            }
         };
         let (context, session) = index.clone().into_session_parts();
         let entry = Arc::new(RegistryEntry {
@@ -346,9 +332,7 @@ impl IndexRegistry {
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .remove(target);
         if entry.is_none() && !path.exists() {
-            return Ok(encode_error(index_control_error_to_portable(
-                IndexControlError::IndexNotFound,
-            )));
+            return Ok(encode_error(searchkernel_ir::not_found_error()));
         }
 
         if let Some(entry) = entry {
@@ -357,13 +341,19 @@ impl IndexRegistry {
                 .write()
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if let Err(error) = entry.index.close() {
-                return Ok(encode_error(lifecycle_index_error_to_portable(error)));
+                return Ok(encode_error(lifecycle_index_error_to_portable(
+                    searchkernel_ir::LifecycleOperation::Delete,
+                    error,
+                )));
             }
         }
 
         match Index::delete_storage(&path) {
             Ok(()) => Ok(encode_delete_index_result()),
-            Err(error) => Ok(encode_error(lifecycle_index_error_to_portable(error))),
+            Err(error) => Ok(encode_error(lifecycle_index_error_to_portable(
+                searchkernel_ir::LifecycleOperation::Delete,
+                error,
+            ))),
         }
     }
 
@@ -381,9 +371,7 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
         let Some(entry) = entries.get(target).cloned() else {
-            return Ok(encode_error(index_control_error_to_portable(
-                IndexControlError::IndexNotFound,
-            )));
+            return Ok(encode_error(searchkernel_ir::not_found_error()));
         };
         let lifecycle = entry
             .lifecycle
@@ -403,22 +391,23 @@ impl IndexRegistry {
         let path = self.data_root.join(target);
         match std::fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                Err(PortableError::failed_precondition(
-                    "unsafe_index_path",
-                    Some("target"),
-                    format!("index target {target:?} resolves through a symbolic link"),
+                Err(searchkernel_ir::path_failure(
+                    target,
+                    searchkernel_ir::PathFailure::SymbolicLink,
+                    None,
                 ))
             }
-            Ok(metadata) if !metadata.is_dir() => Err(PortableError::failed_precondition(
-                "unsafe_index_path",
-                Some("target"),
-                format!("index target {target:?} is not a directory"),
+            Ok(metadata) if !metadata.is_dir() => Err(searchkernel_ir::path_failure(
+                target,
+                searchkernel_ir::PathFailure::NotDirectory,
+                None,
             )),
             Ok(_) => Ok(path),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path),
-            Err(error) => Err(PortableError::new(
-                ErrorCode::Unavailable,
-                format!("inspect index target {target:?}: {error}"),
+            Err(error) => Err(searchkernel_ir::path_failure(
+                target,
+                searchkernel_ir::PathFailure::InspectFailed,
+                Some(&error.to_string()),
             )),
         }
     }
@@ -444,63 +433,11 @@ fn map_dispatch_error(error: DispatchError) -> RegistryDispatchError {
     }
 }
 
-fn index_control_error_to_portable(error: IndexControlError) -> PortableError {
-    let code = match error.error_code() {
-        api::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
-        api::ErrorCode::AlreadyExists => ErrorCode::AlreadyExists,
-        api::ErrorCode::NotFound => ErrorCode::NotFound,
-        other => unreachable!("unexpected index-control error code: {other:?}"),
-    };
-    let message = error.to_string();
-    PortableError::new(code, message.clone()).with_detail(
-        error.detail_code(),
-        error.path(),
-        message,
-    )
-}
-
-fn lifecycle_index_error_to_portable(error: IndexError) -> PortableError {
-    match error.code() {
-        IndexErrorCode::AlreadyExists => {
-            index_control_error_to_portable(IndexControlError::IndexAlreadyExists)
-        }
-        IndexErrorCode::NotFound => {
-            index_control_error_to_portable(IndexControlError::IndexNotFound)
-        }
-        _ => index_error_to_portable(error),
-    }
-}
-
-fn index_error_to_portable(error: IndexError) -> PortableError {
-    let code = match error.code() {
-        IndexErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
-        IndexErrorCode::NotFound => ErrorCode::NotFound,
-        IndexErrorCode::AlreadyExists => ErrorCode::AlreadyExists,
-        IndexErrorCode::FailedPrecondition
-        | IndexErrorCode::CorruptIndex
-        | IndexErrorCode::IncompatibleIndex
-        | IndexErrorCode::IndexClosed => ErrorCode::FailedPrecondition,
-        IndexErrorCode::Conflict => ErrorCode::Conflict,
-        IndexErrorCode::Unsupported => ErrorCode::Unsupported,
-        IndexErrorCode::ResourceExhausted => ErrorCode::ResourceExhausted,
-        IndexErrorCode::Internal => ErrorCode::Internal,
-        IndexErrorCode::Unavailable => ErrorCode::Unavailable,
-        IndexErrorCode::DeadlineExceeded => ErrorCode::DeadlineExceeded,
-        _ => ErrorCode::Internal,
-    };
-    let mut portable = PortableError::new(code, error.to_string());
-    portable.retryable = error.retryable();
-    portable.details = error
-        .details()
-        .iter()
-        .map(|detail| searchkernel_ir::ErrorDetail {
-            code: detail.code.clone(),
-            path: detail.path.clone(),
-            message: detail.message.clone(),
-            metadata: detail.metadata.clone(),
-        })
-        .collect();
-    portable
+fn lifecycle_index_error_to_portable(
+    operation: searchkernel_ir::LifecycleOperation,
+    error: IndexError,
+) -> PortableError {
+    searchkernel_ir::lifecycle_failure(operation, error.to_lifecycle_failure())
 }
 
 fn encode_lifecycle_result(
