@@ -23,6 +23,8 @@ from SearchKernel.V2.SearchResult import SearchResultT  # noqa: E402
 from SearchKernel.V2.SearchResultError import SearchResultErrorT  # noqa: E402
 from SearchKernel.V2.SearchTiming import SearchTimingT  # noqa: E402
 from SearchKernel.V2.StringEntry import StringEntryT  # noqa: E402
+from SearchKernel.V2.TotalHits import TotalHitsT  # noqa: E402
+from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation  # noqa: E402
 from SearchKernel.V2.ValueEntry import ValueEntryT  # noqa: E402
 
 
@@ -49,6 +51,7 @@ class ResultMetadataTest(unittest.TestCase):
         result = SearchResults(
             SearchResultT(
                 root=ResultNodeT(ResultNodeKind.ResultGroup, root),
+                totalHits=TotalHitsT(value=0, relation=TotalHitsRelation.Exact),
                 timing=SearchTimingT(
                     queryTimeSeconds=OptionalDoubleT(0.25),
                     metadata=[ValueEntryT("timing-meta", value("yes"))],
