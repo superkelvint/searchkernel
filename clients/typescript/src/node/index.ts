@@ -1,9 +1,9 @@
 import { Index as RemoteIndex, Client, SearchKernelError } from "../client/index.js";
 import type { ClientTransport } from "../client/index.js";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
 import { FieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/field-definition.js";
 import { RankProfileDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-definition.js";
@@ -92,37 +92,51 @@ async function validateManagedDataRoot(dataRoot: string): Promise<void> {
 
 async function prepareManagedDataRoot(dataRoot: string): Promise<void> {
   await mkdir(dirname(dataRoot), { recursive: true });
+  const marker = join(dataRoot, MANAGED_ROOT_MARKER_NAME);
+  let created = false;
   try {
-    await lstat(dataRoot);
-    await validateManagedDataRoot(dataRoot);
-    return;
+    await mkdir(dataRoot);
+    created = true;
   } catch (error) {
-    if (error instanceof SearchKernelError) throw error;
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
 
-  const staging = await mkdtemp(
-    join(dirname(dataRoot), `.${basename(dataRoot)}.bootstrap-`),
-  );
-  try {
-    await writeFile(
-      join(staging, MANAGED_ROOT_MARKER_NAME),
-      `${MANAGED_ROOT_MARKER_VALUE}\n`,
-      { flag: "wx" },
-    );
+  if (created) {
     try {
-      await rename(staging, dataRoot);
+      await writeFile(marker, `${MANAGED_ROOT_MARKER_VALUE}\n`, { flag: "wx" });
+      await validateManagedDataRoot(dataRoot);
+      return;
     } catch (error) {
-      try {
-        await validateManagedDataRoot(dataRoot);
-        return;
-      } catch {
-        throw error;
-      }
+      await unlink(marker).catch(() => undefined);
+      await rmdir(dataRoot).catch(() => undefined);
+      throw error;
     }
-  } finally {
-    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
   }
-  await validateManagedDataRoot(dataRoot);
+
+  const deadline = Date.now() + 2_000;
+  for (;;) {
+    let rootStat;
+    try {
+      rootStat = await lstat(dataRoot);
+    } catch {
+      throw managedRootError(dataRoot);
+    }
+    if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+      throw managedRootError(dataRoot);
+    }
+    try {
+      await lstat(marker);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw managedRootError(dataRoot);
+      }
+      if (Date.now() >= deadline) throw managedRootError(dataRoot);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+      continue;
+    }
+    await validateManagedDataRoot(dataRoot);
+    return;
+  }
 }
 
 async function reserveManagedPath(indexPath: string, target: string): Promise<void> {
