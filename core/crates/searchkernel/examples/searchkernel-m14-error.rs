@@ -6,7 +6,7 @@ use searchkernel_ir::{index_definition_to_ir, ErrorCode, PortableError};
 use searchkernel_vespa_engine::{
     ConfigCompiler, DistanceMetric, Field, FieldType, HnswIndexConfig, Schema,
 };
-use std::{fs, path::PathBuf};
+use std::{fs, path::{Path, PathBuf}};
 
 fn main() {
     if let Err(error) = run() {
@@ -43,7 +43,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_low(case: &serde_json::Value, config: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn run_low(case: &serde_json::Value, config: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mutation = &case["mutation"];
     let mut field = if mutation["field_type"] == "string" {
         Field::new("embedding", FieldType::String)
@@ -96,7 +96,7 @@ fn run_low(case: &serde_json::Value, config: &PathBuf) -> Result<(), Box<dyn std
     Ok(())
 }
 
-fn parse(path: &PathBuf) -> Result<searchkernel_ir::IndexDefinitionIr, PortableError> {
+fn parse(path: &Path) -> Result<searchkernel_ir::IndexDefinitionIr, PortableError> {
     let bytes = fs::read(path).map_err(|error| {
         PortableError::new(
             ErrorCode::Internal,
@@ -141,7 +141,7 @@ fn assert_portable_error(
     Ok(())
 }
 
-fn run_portable_ir(path: &PathBuf, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn run_portable_ir(path: &Path, id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let error = match parse(path) {
         Ok(_) => return Err("negative portable IR schema unexpectedly succeeded".into()),
         Err(error) => error,
@@ -160,8 +160,8 @@ fn run_portable_ir(path: &PathBuf, id: &str) -> Result<(), Box<dyn std::error::E
 }
 
 fn run_adapter(
-    path: &PathBuf,
-    config: &PathBuf,
+    path: &Path,
+    config: &Path,
     id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ir = parse(path)?;
