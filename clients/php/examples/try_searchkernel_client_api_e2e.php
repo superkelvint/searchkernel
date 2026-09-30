@@ -315,18 +315,16 @@ function captureRealEngineParity(Index $index): array
             ->output(Agg::count()->as($groupedSpec['outputs'][0]['name']), Agg::avg($groupedSpec['outputs'][1]['field'])->as($groupedSpec['outputs'][1]['name']))
     )->execute();
     $nearestIntent = $intents['nearest_neighbor'];
-    $nearestSpec = $nearestIntent['query'];
-    $nearest = $index->query(Query::nearestNeighbor($nearestSpec['field'], $nearestSpec['query_input']))
+    $nearest = $index->query(Query::nearestNeighbor($nearestIntent['field'], $nearestIntent['query_input']))
         ->ranking($nearestIntent['ranking_profile'])
-        ->input($nearestSpec['query_input'], embedding(corpusVector($nearestIntent['query_input_document'])))
+        ->input($nearestIntent['query_input'], embedding(corpusVector($nearestIntent['query_input_document'])))
         ->limit($nearestIntent['limit'])->execute();
     $hybridIntent = $intents['hybrid_text_vector'];
-    [$hybridText, $hybridVector] = $hybridIntent['query']['clauses'];
     $hybrid = $index->query(Query::anyOf(
-        Query::contains($hybridText['field'], $hybridText['value']),
-        Query::nearestNeighbor($hybridVector['field'], $hybridVector['query_input'])
+        Query::contains($hybridIntent['text_field'], $hybridIntent['text_value']),
+        Query::nearestNeighbor($hybridIntent['vector_field'], $hybridIntent['query_input'])
     ))->ranking($hybridIntent['ranking_profile'])
-        ->input($hybridVector['query_input'], embedding(corpusVector($hybridIntent['query_input_document'])))
+        ->input($hybridIntent['query_input'], embedding(corpusVector($hybridIntent['query_input_document'])))
         ->limit($hybridIntent['limit'])->execute();
     $rerankedSpec = $intents['two_phase_reranking'];
     $reranked = $index->search($rerankedSpec['query'])->ranking($rerankedSpec['ranking_profile'])->limit($rerankedSpec['limit'])->execute();
@@ -380,7 +378,7 @@ function captureRealEngineParity(Index $index): array
     $kept = $index->search($keepSpec['query'])->group(
         Group::by($keepSpec['group_by'])->limit($keepSpec['limit'])->keep(Gf::regex(G::field($keepSpec['keep_regex']['field']), $keepSpec['keep_regex']['pattern']))->output(Agg::count()->as($keepSpec['outputs'][0]['name']))
     )->execute();
-    $typed = $index->query(sharedTypedQuery($intents['typed_query_contains']['query']))->ranking('default')->limit($fullSpec['limit'])->execute();
+    $typed = $index->query(typedQueryForScenario('typed_query_contains', $intents['typed_query_contains']))->ranking('default')->limit($fullSpec['limit'])->execute();
     $rankInputSpec = $intents['rank_inputs'];
     $rankInputBuilder = $index->search($rankInputSpec['query'])->ranking($rankInputSpec['ranking_profile']);
     foreach ($rankInputSpec['inputs'] as $key => $value) {
@@ -398,7 +396,9 @@ function captureRealEngineParity(Index $index): array
     foreach ($degradedSpec['rank_properties'] as $key => $value) $degradedBuilder = $degradedBuilder->rankProperty($key, $value);
     $degraded = $degradedBuilder->limit($degradedSpec['limit'])->execute();
     $yqlSpec = $intents['yql'];
-    $yql = $index->yql($yqlSpec['source'])->property('q', $yqlSpec['bindings']['q'])->ranking($yqlSpec['ranking_profile'])->page($yqlSpec['page'], $yqlSpec['page_size'])->execute();
+    $yqlBuilder = $index->yql($yqlSpec['source']);
+    foreach ($yqlSpec['bindings'] as $key => $value) $yqlBuilder = $yqlBuilder->property($key, $value);
+    $yql = $yqlBuilder->ranking($yqlSpec['ranking_profile'])->page($yqlSpec['page'], $yqlSpec['page_size'])->execute();
     try {
         $syntaxSpec = $intents['text_filter_syntax_error'];
         $index->search($syntaxSpec['query'])->filter($syntaxSpec['filter'])->execute();
