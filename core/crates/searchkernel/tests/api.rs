@@ -961,7 +961,7 @@ fn advanced_grouping_facade_matches_independent_portable_request_ir() {
         .alias("total", GroupingAggregation::sum("price"))
         .max_groups(5)
         .precision(9)
-        .order_by(GroupingOrder::descending_alias("total"))
+        .order_by([GroupingOrder::descending_alias("total")])
         .filter(GroupingFilter::range(
             "price",
             GroupingExpression::literal(10_i64),

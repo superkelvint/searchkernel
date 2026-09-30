@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import signal
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from .grpc_transport import GrpcTransport, GrpcTransportError
-from .protocol import ERROR_TYPE, pack_object, pack_request, unpack_response
+from .protocol import ERROR_TYPE, pack_request, unpack_response
 from .scalars import check_int64
 
 from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT
@@ -35,6 +36,8 @@ from SearchKernel.V2.FieldDefinition import FieldDefinitionT
 from SearchKernel.V2.FieldProjection import FieldProjectionT
 from SearchKernel.V2.Float64Value import Float64ValueT
 from SearchKernel.V2.GetRequest import GetRequestT
+from SearchKernel.V2.CreateIndexRequest import CreateIndexRequestT
+from SearchKernel.V2.OpenIndexRequest import OpenIndexRequestT
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT
 from SearchKernel.V2.InsertRequest import InsertRequestT
 from SearchKernel.V2.Int64Value import Int64ValueT
@@ -167,19 +170,27 @@ def _value_payload(item: ValueT, name: str, expected_type: type):
 
 def _tensor_address(
     entries: Sequence[TensorAddressEntryT] | None,
-) -> list[dict[str, str | None]]:
+) -> list[dict[str, str]]:
     result = []
     for entry in entries or []:
-        if entry is None:
-            raise ValueError("malformed tensor address")
+        if (
+            entry is None
+            or not isinstance(entry.dimension, str)
+            or not isinstance(entry.label, str)
+        ):
+            raise ValueError("malformed tensor address entry")
         result.append({"dimension": entry.dimension, "label": entry.label})
     return result
 
 
-def _finite_tensor_cell(value: float) -> float:
-    if not math.isfinite(value):
-        raise ValueError("tensor cells must be finite")
-    return value
+def _finite_tensor_cells(values: Sequence[float], label: str) -> list[float]:
+    result = []
+    for cell in values:
+        value_ = float(cell)
+        if not math.isfinite(value_):
+            raise ValueError(f"{label} tensor cells must be finite")
+        result.append(value_)
+    return result
 
 
 def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
@@ -190,7 +201,7 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
             raise ValueError("mismatched Tensor payload: DenseTensorValues")
         if dense.values is None:
             raise ValueError("malformed dense tensor payload")
-        tensor["dense"] = [_finite_tensor_cell(value) for value in dense.values]
+        tensor["dense"] = _finite_tensor_cells(dense.values, "dense")
     elif payload.payloadType == TensorPayloadKind.SparseTensorCells:
         sparse = payload.payload
         if not isinstance(sparse, SparseTensorCellsT):
@@ -201,12 +212,10 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
         for cell in sparse.cells:
             if not isinstance(cell, TensorCellT):
                 raise ValueError("malformed sparse tensor cell")
-            cells.append(
-                {
-                    "address": _tensor_address(cell.address),
-                    "value": _finite_tensor_cell(cell.value),
-                }
-            )
+            cells.append({
+                "address": _tensor_address(cell.address),
+                "value": _finite_tensor_cells([cell.value], "sparse")[0],
+            })
         tensor["sparse"] = cells
     elif payload.payloadType == TensorPayloadKind.MixedTensorBlocks:
         mixed = payload.payload
@@ -223,7 +232,7 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
             blocks.append(
                 {
                     "address": _tensor_address(block.address),
-                    "values": [_finite_tensor_cell(value) for value in block.values],
+                    "values": _finite_tensor_cells(block.values, "mixed"),
                 }
             )
         tensor["mixed"] = blocks
@@ -325,6 +334,123 @@ SearchKernelError = ClientError
 
 _MANAGED_HOST_OUTPUT_TAIL_BYTES = 16 * 1024
 _MANAGED_HOST_STARTUP_TIMEOUT_SECONDS = 60.0
+_MANAGED_HOST_POOL_LOCK = threading.Lock()
+_MANAGED_HOST_POOL: dict[str, "_ManagedLocalHost"] = {}
+
+
+_MANAGED_DATA_ROOT_NAME = ".searchkernel-managed"
+_MANAGED_MARKER_NAME = ".searchkernel-managed-target"
+_MANAGED_ROOT_MARKER_NAME = ".searchkernel-data-root"
+
+
+def _managed_location(path: Path) -> tuple[Path, Path, str]:
+    # Keep the caller's lexical path identity stable even after a legacy index
+    # is migrated out of that directory. Never realpath through a marker or
+    # symlink when deriving the logical target.
+    canonical = Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
+    target = "local-" + hashlib.sha256(str(canonical).encode("utf-8")).hexdigest()[:32]
+    return canonical, canonical.parent / _MANAGED_DATA_ROOT_NAME, target
+
+
+def _managed_marker(path: Path) -> Path:
+    return path / _MANAGED_MARKER_NAME
+
+
+def _prepare_managed_data_root(data_root: Path) -> None:
+    data_root.parent.mkdir(parents=True, exist_ok=True)
+    marker = data_root / _MANAGED_ROOT_MARKER_NAME
+    if data_root.exists() or data_root.is_symlink():
+        if data_root.is_symlink() or not data_root.is_dir() or not marker.is_file():
+            raise ClientError(
+                f"managed-local data root is not owned by Search Kernel: {data_root}"
+            )
+        return
+    data_root.mkdir(parents=False)
+    try:
+        marker.write_text("searchkernel-managed-v1\n", encoding="utf-8")
+    except Exception:
+        try:
+            data_root.rmdir()
+        except OSError:
+            pass
+        raise
+
+
+def _write_managed_marker(path: Path, target: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.mkdir(exist_ok=True)
+    marker = _managed_marker(path)
+    marker.write_text(target + "\n", encoding="utf-8")
+
+
+def _reserve_managed_path(path: Path, target: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.mkdir()
+    except FileExistsError as exc:
+        raise ClientError(f"managed-local index path already exists: {path}") from exc
+    try:
+        _managed_marker(path).write_text(target + "\n", encoding="utf-8")
+    except Exception:
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+        raise
+
+
+def _cleanup_managed_reservation(path: Path, target: str) -> None:
+    marker = _managed_marker(path)
+    try:
+        if marker.is_file() and marker.read_text(encoding="utf-8").strip() == target:
+            marker.unlink()
+            path.rmdir()
+    except OSError:
+        pass
+
+
+def _managed_host_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    sdk_lib = os.environ.get("SEARCHKERNEL_SDK_LIB")
+    if sdk_lib:
+        previous = environment.get("LD_LIBRARY_PATH")
+        environment["LD_LIBRARY_PATH"] = f"{sdk_lib}:{previous}" if previous else sdk_lib
+    return environment
+
+
+def _migrate_legacy_managed_path(path: Path, data_root: Path, target: str) -> None:
+    destination = data_root / target
+    if destination.is_dir() or _managed_marker(path).is_file() or not path.exists():
+        return
+
+    binary = _host_binary()
+    if not binary.is_file():
+        raise ClientError(
+            f"managed local host binary not found at {binary}; build searchkerneld first"
+        )
+    completed = subprocess.run(
+        [
+            str(binary),
+            "--migrate-index",
+            str(path),
+            "--data-root",
+            str(data_root),
+            "--target",
+            target,
+        ],
+        cwd=Path(__file__).resolve().parents[3],
+        env=_managed_host_environment(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if completed.returncode != 0:
+        output = completed.stdout.decode("utf-8", errors="replace").strip()
+        suffix = f"\nsearchkerneld output:\n{output}" if output else ""
+        raise ClientError(
+            f"managed-local legacy index migration failed for {path}{suffix}"
+        )
+    _write_managed_marker(path, target)
 
 
 def _host_binary() -> Path:
@@ -403,7 +529,6 @@ class _ManagedHostOutputCapture:
 
 def _cleanup_managed_local_host(
     process: subprocess.Popen[bytes] | None,
-    definition_path: Path | None,
     socket_dir: tempfile.TemporaryDirectory,
     output_capture: _ManagedHostOutputCapture | None,
     force: bool,
@@ -425,8 +550,6 @@ def _cleanup_managed_local_host(
             process.stderr.close()
     if output_capture is not None:
         output_capture.close()
-    if definition_path is not None:
-        definition_path.unlink(missing_ok=True)
     socket_dir.cleanup()
 
 
@@ -438,9 +561,10 @@ class _ManagedLocalHost:
     callers are not required to explicitly close every managed Index.
     """
 
-    def __init__(self, path: Path, definition: bytes | None):
+    def __init__(self, path: Path):
         self.path = path
-        self.definition_path: Path | None = None
+        self._pool_key: str | None = None
+        self._lease_count = 0
         self.process: subprocess.Popen[bytes] | None = None
         self._output_capture: _ManagedHostOutputCapture | None = None
         self._finalizer: weakref.finalize | None = None
@@ -453,29 +577,14 @@ class _ManagedLocalHost:
             raise ClientError(
                 f"managed local host binary not found at {binary}; build searchkerneld first"
             )
-        if definition is not None:
-            temporary = tempfile.NamedTemporaryFile(
-                prefix="searchkernel-definition-", suffix=".fb", delete=False
-            )
-            self.definition_path = Path(temporary.name)
-            try:
-                temporary.write(definition)
-            finally:
-                temporary.close()
-        environment = os.environ.copy()
-        sdk_lib = os.environ.get("SEARCHKERNEL_SDK_LIB")
-        if sdk_lib:
-            previous = environment.get("LD_LIBRARY_PATH")
-            environment["LD_LIBRARY_PATH"] = f"{sdk_lib}:{previous}" if previous else sdk_lib
+        environment = _managed_host_environment()
         command = [
             str(binary),
-            "--index",
+            "--data-root",
             str(path),
             "--listen",
             self.endpoint,
         ]
-        if self.definition_path is not None:
-            command.extend(["--definition", str(self.definition_path)])
         try:
             self.process = subprocess.Popen(
                 command,
@@ -492,7 +601,6 @@ class _ManagedLocalHost:
                 self,
                 _cleanup_managed_local_host,
                 self.process,
-                self.definition_path,
                 self.socket_dir,
                 self._output_capture,
                 False,
@@ -501,6 +609,24 @@ class _ManagedLocalHost:
         except Exception:
             self.close(force=True)
             raise
+
+    @classmethod
+    def acquire(cls, data_root: Path) -> "_ManagedLocalHost":
+        key = str(data_root.expanduser().resolve(strict=False))
+        with _MANAGED_HOST_POOL_LOCK:
+            existing = _MANAGED_HOST_POOL.get(key)
+            if (
+                existing is not None
+                and existing.process is not None
+                and existing.process.poll() is None
+            ):
+                existing._lease_count += 1
+                return existing
+            host = cls(Path(key))
+            host._pool_key = key
+            host._lease_count = 1
+            _MANAGED_HOST_POOL[key] = host
+            return host
 
     def _wait_until_ready(self) -> None:
         assert self.process is not None
@@ -537,6 +663,17 @@ class _ManagedLocalHost:
         raise ClientError(message)
 
     def close(self, *, force: bool = False) -> None:
+        pool_key = self._pool_key
+        if pool_key is not None:
+            with _MANAGED_HOST_POOL_LOCK:
+                if _MANAGED_HOST_POOL.get(pool_key) is self:
+                    if not force and self._lease_count > 1:
+                        self._lease_count -= 1
+                        return
+                    _MANAGED_HOST_POOL.pop(pool_key, None)
+                self._lease_count = 0
+                self._pool_key = None
+
         finalizer = self._finalizer
         if finalizer is not None and not finalizer.alive:
             return
@@ -544,13 +681,11 @@ class _ManagedLocalHost:
             finalizer.detach()
         _cleanup_managed_local_host(
             self.process,
-            self.definition_path,
             self.socket_dir,
             self._output_capture,
             force,
         )
         self.process = None
-        self.definition_path = None
         self._output_capture = None
         self._finalizer = None
 
@@ -613,6 +748,18 @@ class Client:
     def inspect_query(self, request: Any) -> Any:
         return self.execute("inspect_query", InspectQueryRequestT(request=request))
 
+    def create_index(self, definition: IndexDefinitionT) -> Any:
+        result = self.execute("create_index", CreateIndexRequestT(definition=definition))
+        if getattr(result, "index", None) is None:
+            raise ClientError("CreateIndexResult.index is missing")
+        return result
+
+    def open_index(self) -> Any:
+        result = self.execute("open_index", OpenIndexRequestT())
+        if getattr(result, "index", None) is None:
+            raise ClientError("OpenIndexResult.index is missing")
+        return result
+
     def close(self) -> None:
         self.transport.close()
 
@@ -632,7 +779,7 @@ class Index:
         self._ergonomic = ergonomic
 
     @classmethod
-    def connect(cls, endpoint: str, *, target: str | None = None) -> "Index":
+    def connect(cls, endpoint: str, target: str | None = None) -> "Index":
         return cls(Client(GrpcTransport(endpoint), target=target), ergonomic=True)
 
     @classmethod
@@ -642,16 +789,58 @@ class Index:
         *,
         fields: Mapping[str, Any] | IndexDefinitionT,
         rank_profiles: Sequence[Any] | None = None,
+        target: str | None = None,
     ) -> "Index":
-        owner = _ManagedLocalHost(
-            Path(path), pack_object(_index_definition(fields, rank_profiles))
-        )
-        return cls(Client(GrpcTransport(owner.endpoint)), owner, ergonomic=True)
+        if target is not None:
+            client = Client(GrpcTransport(os.fspath(path)), target=target)
+            try:
+                client.create_index(_index_definition(fields, rank_profiles))
+            except Exception:
+                client.close()
+                raise
+            return cls(client, ergonomic=True)
+        canonical_path, data_root, target = _managed_location(Path(path))
+        _prepare_managed_data_root(data_root)
+        _reserve_managed_path(canonical_path, target)
+        owner = None
+        client = None
+        try:
+            owner = _ManagedLocalHost.acquire(data_root)
+            client = Client(GrpcTransport(owner.endpoint), target=target)
+            client.create_index(_index_definition(fields, rank_profiles))
+        except Exception:
+            if client is not None:
+                client.close()
+            if owner is not None:
+                owner.close()
+            _cleanup_managed_reservation(canonical_path, target)
+            raise
+        return cls(client, owner, ergonomic=True)
 
     @classmethod
-    def open(cls, path: str | os.PathLike[str]) -> "Index":
-        owner = _ManagedLocalHost(Path(path), None)
-        return cls(Client(GrpcTransport(owner.endpoint)), owner, ergonomic=True)
+    def open(cls, path: str | os.PathLike[str], *, target: str | None = None) -> "Index":
+        if target is not None:
+            client = Client(GrpcTransport(os.fspath(path)), target=target)
+            try:
+                client.open_index()
+            except Exception:
+                client.close()
+                raise
+            return cls(client, ergonomic=True)
+        canonical_path, data_root, target = _managed_location(Path(path))
+        _prepare_managed_data_root(data_root)
+        _migrate_legacy_managed_path(canonical_path, data_root, target)
+        if (data_root / target).is_dir() and not canonical_path.exists():
+            _write_managed_marker(canonical_path, target)
+        owner = _ManagedLocalHost.acquire(data_root)
+        client = Client(GrpcTransport(owner.endpoint), target=target)
+        try:
+            client.open_index()
+        except Exception:
+            client.close()
+            owner.close()
+            raise
+        return cls(client, owner, ergonomic=True)
 
     def insert(self, identifier: str | Mapping[str, Any], fields: Mapping[str, Any] | None = None) -> Any:
         if self._ergonomic and isinstance(identifier, Mapping):

@@ -65,7 +65,7 @@ fn run_grouping(
                 .alias("revenue", GroupingAggregation::sum("price"))
                 .max_groups(10)
                 .precision(20)
-                .order_by(GroupingOrder::descending_alias("revenue"))
+                .order_by([GroupingOrder::descending_alias("revenue")])
                 .output(GroupingOutput::alias("revenue").label("revenue"))
                 .output(
                     GroupingOutput::aggregation(GroupingAggregation::average("price"))

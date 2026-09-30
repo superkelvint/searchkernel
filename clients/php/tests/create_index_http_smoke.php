@@ -27,7 +27,7 @@ if (!is_string($url) || $url === '') {
 Index::create(
     $url,
     $target,
-    searchkernelPhpClientApiE2eDefinition('tensor<float>(x[8])'),
+    searchkernelPhpClientApiE2eDefinition(searchkernelPhpClientApiE2eCorpus()),
 );
 
 echo "PHP HttpTransport create-index PASS\n";

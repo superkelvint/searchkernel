@@ -166,15 +166,32 @@ impl Ranking {
 #[derive(Clone, Debug, PartialEq)]
 /// A scalar value supplied to a native Vespa query feature.
 pub enum QueryInputValue {
+    Bool(bool),
     Int64(i64),
     UInt64(u64),
     Float64(f64),
+    String(String),
     Tensor(crate::Tensor),
 }
 
 impl From<i64> for QueryInputValue {
     fn from(value: i64) -> Self {
         Self::Int64(value)
+    }
+}
+impl From<bool> for QueryInputValue {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+impl From<String> for QueryInputValue {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+impl From<&str> for QueryInputValue {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_owned())
     }
 }
 
@@ -242,6 +259,7 @@ pub struct SearchBuilder {
     pub(crate) facets: Vec<Facet>,
     pub(crate) ranking: Option<Ranking>,
     pub(crate) query_inputs: std::collections::BTreeMap<String, QueryInputValue>,
+    pub(crate) yql_parameters: std::collections::BTreeMap<String, QueryInputValue>,
     pub(crate) rank_properties: std::collections::BTreeMap<String, String>,
     pub(crate) groupings: Vec<GroupingPlan>,
     pub(crate) projection: Option<Vec<String>>,
@@ -251,6 +269,8 @@ pub struct SearchBuilder {
     pub(crate) timeout: Option<Duration>,
     pub(crate) limit: Option<u32>,
     pub(crate) offset: Option<u32>,
+    page: Option<(u32, u32)>,
+    pagination_conflict: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -258,6 +278,7 @@ pub(crate) enum QuerySource {
     Text(String),
     MatchAll,
     Typed(Query),
+    Yql(String),
 }
 
 impl SearchBuilder {
@@ -267,6 +288,10 @@ impl SearchBuilder {
 
     pub(crate) fn match_all(index: Index) -> Self {
         Self::with_source(index, QuerySource::MatchAll)
+    }
+
+    pub(crate) fn yql(index: Index, source: impl Into<String>) -> Self {
+        Self::with_source(index, QuerySource::Yql(source.into()))
     }
 
     fn with_source(index: Index, query_source: QuerySource) -> Self {
@@ -280,6 +305,7 @@ impl SearchBuilder {
             facets: Vec::new(),
             ranking: None,
             query_inputs: std::collections::BTreeMap::new(),
+            yql_parameters: std::collections::BTreeMap::new(),
             rank_properties: std::collections::BTreeMap::new(),
             groupings: Vec::new(),
             projection: None,
@@ -289,6 +315,8 @@ impl SearchBuilder {
             timeout: None,
             limit: None,
             offset: None,
+            page: None,
+            pagination_conflict: false,
         }
     }
 
@@ -376,6 +404,16 @@ impl SearchBuilder {
         self
     }
 
+    /// Bind a scalar or tensor value to a YQL `@parameter` reference.
+    pub fn yql_parameter(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<QueryInputValue>,
+    ) -> Self {
+        self.yql_parameters.insert(name.into(), value.into());
+        self
+    }
+
     /// Add a general grouping plan. Facets remain available as a compatibility
     /// convenience, while plans are returned as recursive grouping results.
     pub fn grouping(mut self, grouping: GroupingPlan) -> Self {
@@ -425,13 +463,24 @@ impl SearchBuilder {
 
     /// Limit the number of hits returned.
     pub fn limit(mut self, limit: u32) -> Self {
+        self.pagination_conflict |= self.page.is_some();
         self.limit = Some(limit);
         self
     }
 
     /// Skip this many hits before returning results.
     pub fn offset(mut self, offset: u32) -> Self {
+        self.pagination_conflict |= self.page.is_some();
         self.offset = Some(offset);
+        self
+    }
+
+    /// Select a one-based page and page size. Negative values are excluded by
+    /// the unsigned Rust types; mixing page with limit/offset is rejected when
+    /// the request resolves.
+    pub fn page(mut self, number: u32, size: u32) -> Self {
+        self.pagination_conflict |= self.limit.is_some() || self.offset.is_some() || number == 0;
+        self.page = Some((number, size));
         self
     }
 
@@ -447,6 +496,27 @@ impl SearchBuilder {
 }
 
 pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_ir::SearchInput> {
+    if request.pagination_conflict {
+        return Err(crate::error::Error::search(
+            crate::ErrorCode::InvalidArgument,
+            "page cannot be combined with limit or offset and page number must be positive",
+        ));
+    }
+    let (limit, offset) = match request.page {
+        Some((number, size)) => {
+            let offset = number
+                .checked_sub(1)
+                .and_then(|page| page.checked_mul(size))
+                .ok_or_else(|| {
+                    crate::error::Error::search(
+                        crate::ErrorCode::InvalidArgument,
+                        "page range exceeds uint32",
+                    )
+                })?;
+            (Some(size), Some(offset))
+        }
+        None => (request.limit, request.offset),
+    };
     let search_fields = request.search_fields.as_ref().map(|fields| {
         fields
             .iter()
@@ -541,8 +611,12 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         .map(|(name, value)| {
             let value = match value {
                 QueryInputValue::Int64(value) => searchkernel_ir::RequestValueIr::Int64(*value),
+                QueryInputValue::Bool(value) => searchkernel_ir::RequestValueIr::Bool(*value),
                 QueryInputValue::UInt64(value) => searchkernel_ir::RequestValueIr::UInt64(*value),
                 QueryInputValue::Float64(value) => searchkernel_ir::RequestValueIr::Float64(*value),
+                QueryInputValue::String(value) => {
+                    searchkernel_ir::RequestValueIr::String(value.clone())
+                }
                 QueryInputValue::Tensor(value) => {
                     searchkernel_ir::RequestValueIr::Tensor(searchkernel_ir::RequestTensorIr {
                         type_spec: value.type_spec().to_owned(),
@@ -561,6 +635,47 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         QuerySource::Typed(query) => {
             searchkernel_ir::QuerySourceInput::Typed(query.clone().into_ir()?)
         }
+        QuerySource::Yql(source) => searchkernel_ir::QuerySourceInput::Yql {
+            source: source.clone(),
+            parameters: request
+                .yql_parameters
+                .iter()
+                .map(|(name, value)| {
+                    let value = match value {
+                        QueryInputValue::Int64(value) => {
+                            searchkernel_ir::RequestValueIr::Int64(*value)
+                        }
+                        QueryInputValue::Bool(value) => {
+                            searchkernel_ir::RequestValueIr::Bool(*value)
+                        }
+                        QueryInputValue::UInt64(value) => {
+                            searchkernel_ir::RequestValueIr::UInt64(*value)
+                        }
+                        QueryInputValue::Float64(value) if value.is_finite() => {
+                            searchkernel_ir::RequestValueIr::Float64(*value)
+                        }
+                        QueryInputValue::Float64(_) => {
+                            return Err(crate::error::Error::search(
+                                crate::ErrorCode::InvalidArgument,
+                                "YQL parameters must be finite",
+                            ))
+                        }
+                        QueryInputValue::String(value) => {
+                            searchkernel_ir::RequestValueIr::String(value.clone())
+                        }
+                        QueryInputValue::Tensor(value) => searchkernel_ir::RequestValueIr::Tensor(
+                            searchkernel_ir::RequestTensorIr {
+                                type_spec: value.type_spec().to_owned(),
+                                payload: searchkernel_ir::RequestTensorPayloadIr::Dense(
+                                    value.values().to_vec(),
+                                ),
+                            },
+                        ),
+                    };
+                    Ok((name.clone(), value))
+                })
+                .collect::<Result<_>>()?,
+        },
     };
     Ok(searchkernel_ir::SearchInput {
         query,
@@ -586,8 +701,8 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         query_profile: None,
         search_chain: None,
         timeout: request.timeout,
-        limit: request.limit,
-        offset: request.offset,
+        limit,
+        offset,
     })
 }
 

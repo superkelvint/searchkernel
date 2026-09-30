@@ -68,6 +68,9 @@
     },
     "searchkerneld-multi-index": {
       "description": "Multi-index daemon lifecycle against the real engine"
+    },
+    "client-real-e2e-parity": {
+      "description": "Cross-client real-engine showcase parity"
     }
   },
   "verify": {
@@ -302,7 +305,8 @@
       ],
       "architecture": "docs/architecture.md#non-rust-client-apis",
       "test": [
-        "test:php"
+        "test:php",
+        "test:client-real-e2e-parity"
       ],
       "verify": [
         "verify:contracts",
@@ -324,7 +328,8 @@
       ],
       "architecture": "docs/architecture.md#non-rust-client-apis",
       "test": [
-        "test:python"
+        "test:python",
+        "test:client-real-e2e-parity"
       ],
       "verify": [
         "verify:contracts",
@@ -365,7 +370,8 @@
       ],
       "architecture": "docs/architecture.md#non-rust-client-apis",
       "test": [
-        "test:ruby"
+        "test:ruby",
+        "test:client-real-e2e-parity"
       ],
       "verify": [
         "verify:contracts",
@@ -387,7 +393,8 @@
       ],
       "architecture": "docs/architecture.md#non-rust-client-apis",
       "test": [
-        "test:typescript"
+        "test:typescript",
+        "test:client-real-e2e-parity"
       ],
       "verify": [
         "verify:contracts",
@@ -1003,26 +1010,6 @@
       "focused_check": "command:check-fast",
       "strong_check": "command:check-fast"
     },
-    "verification/": {
-      "owner": "verification",
-      "area": "Verification entrypoints",
-      "read": [
-        "BUILDING.md",
-        "docs/architecture.md"
-      ],
-      "architecture": "docs/architecture.md#development-model",
-      "test": [],
-      "verify": [
-        "verify:product.integration"
-      ],
-      "generated": false,
-      "rules": [
-        "Keep acceptance behavior aligned with frozen contracts and real Vespa where required."
-      ],
-      "native_base_rebuild": false,
-      "focused_check": "command:check-fast",
-      "strong_check": "command:check-fast"
-    },
     "clients/python/searchkernel/rpc/searchkernel_pb2.py": {
       "owner": "python-rpc-generated",
       "area": "Generated Python protobuf bindings",
@@ -1389,6 +1376,83 @@
       "native_base_rebuild": false,
       "focused_check": "command:check-fast",
       "strong_check": "command:check-fast"
+    },
+    "core/crates/searchkernel/examples/": {
+      "owner": "rust-client-real-e2e",
+      "area": "Rust client real-engine showcase",
+      "read": [
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
+      ],
+      "architecture": "docs/architecture.md#rust-api",
+      "test": [
+        "test:client-real-e2e-parity",
+        "test:rust-api"
+      ],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Keep the Rust showcase on the shared real-engine corpus."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:client-real-e2e-parity",
+      "strong_check": "test:client-real-e2e-parity"
+    },
+    "reference/client-real-e2e-parity/": {
+      "owner": "client-real-e2e-parity-corpus",
+      "area": "Shared client real-engine parity corpus",
+      "read": [
+        "reference/client-real-e2e-parity/README.md"
+      ],
+      "architecture": "docs/architecture.md#canonical-contracts",
+      "test": [
+        "test:client-real-e2e-parity"
+      ],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Treat the shared corpus and expected scenario set as acceptance artifacts."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:client-real-e2e-parity",
+      "strong_check": "test:client-real-e2e-parity"
+    },
+    "tools/check-client-real-e2e-parity.py": {
+      "owner": "client-real-e2e-parity-comparator",
+      "area": "Client real-engine parity comparator",
+      "read": [
+        "reference/client-real-e2e-parity/README.md"
+      ],
+      "architecture": "docs/architecture.md#non-rust-client-apis",
+      "test": [
+        "test:client-real-e2e-parity"
+      ],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Compare normalized observations from every required client."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:client-real-e2e-parity",
+      "strong_check": "test:client-real-e2e-parity"
+    },
+    ".github/ci/ci-image-runner.yml": {
+      "owner": "client-real-e2e-parity-ci",
+      "area": "Client real-engine parity CI target",
+      "read": [
+        "build/targets.json"
+      ],
+      "architecture": "docs/architecture.md#development-model",
+      "test": [
+        "test:client-real-e2e-parity"
+      ],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Run the registered real-engine parity target in the canonical CI image."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "test:client-real-e2e-parity",
+      "strong_check": "test:client-real-e2e-parity"
     }
   }
 }

@@ -58,6 +58,15 @@ function throws(string $class, callable $operation, string $message): void
     throw new RuntimeException($message . ': no exception');
 }
 
+/** @param array<string, mixed> $overrides @return array<string, mixed> */
+function canonicalResultPayload(array $overrides = []): array
+{
+    return array_replace([
+        'root' => ['node_type' => 'ResultGroup', 'node' => ['children' => []]],
+        'total_hits' => ['value' => 0, 'relation' => 'Exact'],
+    ], $overrides);
+}
+
 final class FixedResponseTransport implements Transport
 {
     /** @param array<string,mixed> $response */
@@ -177,6 +186,18 @@ throws(
 // Portable value boundary.
 // --------------------------------------------------------------------------
 
+$handleTransport = new RecordingTransport();
+$firstHandle = new Index($handleTransport, 'products');
+$secondHandle = new Index($handleTransport, 'products');
+$firstHandle->close();
+throws(
+    SearchKernel\TransportException::class,
+    static fn () => $firstHandle->describe(),
+    'closed PHP handle rejects further operations',
+);
+same('test', $secondHandle->describe()['name'], 'closing one PHP handle leaves another selected handle usable');
+
+
 $document = Protocol::document([
     '_id' => 'doc-1',
     'title' => 'The quick brown fox',
@@ -201,7 +222,15 @@ $decoded = Protocol::decodeDocument($document);
 same('doc-1', $decoded['_id'], 'decode document id');
 same(PHP_INT_MAX, $decoded['count'], 'decode int');
 same(['one', 'two'], $decoded['tags'], 'decode list');
-same(['a' => 1, 'z' => 2], $decoded['meta'], 'decode object');
+truth($decoded['meta'] instanceof ValueObject, 'decode object preserves ValueObject identity');
+same(
+    [
+        ['key' => 'a', 'value' => 1],
+        ['key' => 'z', 'value' => 2],
+    ],
+    $decoded['meta']->entries,
+    'decode object preserves canonical key/value entries',
+);
 
 $bytes = new Bytes("\x00\xffA");
 $encodedBytes = Protocol::value($bytes);
@@ -821,8 +850,21 @@ $malformedHit = [
 ];
 throws(
     \UnexpectedValueException::class,
-    static fn () => SearchResult::fromPayload(['root' => $malformedHit]),
+    static fn () => SearchResult::fromPayload(canonicalResultPayload(['root' => $malformedHit])),
     'malformed hit scalar fields fail closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload([]),
+    'missing SearchResult root fails closed',
+);
+throws(
+    ProtocolException::class,
+    static fn () => SearchResult::fromPayload([
+        'root' => ['node_type' => 'ResultGroup', 'node' => ['children' => []]],
+        'total_hits' => null,
+    ]),
+    'null SearchResult total_hits fails closed',
 );
 
 $encodedEmptyObject = Protocol::value(ValueObject::fromPairs([]));
@@ -831,6 +873,12 @@ same([], $encodedEmptyObject['kind']['fields'], 'empty object encodes with an em
 $decodedEmptyObject = Protocol::decodeValue($encodedEmptyObject);
 truth($decodedEmptyObject instanceof ValueObject, 'decoded ValueObject retains its object type when empty');
 same([], $decodedEmptyObject->entries, 'empty decoded ValueObject has no entries');
+$decodedObject = Protocol::decodeValue(Protocol::value(ValueObject::fromPairs([
+    ['key' => 'name', 'value' => 'searchkernel'],
+])));
+truth($decodedObject instanceof ValueObject, 'decoded non-empty ValueObject retains its object type');
+same('name', $decodedObject->entries[0]['key'], 'decoded ValueObject preserves entry keys');
+same('searchkernel', $decodedObject->entries[0]['value'], 'decoded ValueObject preserves entry values');
 $decodedEmptyList = Protocol::decodeValue(['kind_type' => 'ValueList', 'kind' => ['values' => []]]);
 same([], $decodedEmptyList, 'decoded empty ValueList remains a PHP list');
 truth(!$decodedEmptyList instanceof ValueObject, 'decoded empty ValueList stays distinct from ValueObject');
@@ -1023,14 +1071,14 @@ throws(
 );
 throws(
     SearchKernel\ProtocolException::class,
-    static fn () => SearchKernel\SearchResult::fromPayload([
+    static fn () => SearchKernel\SearchResult::fromPayload(canonicalResultPayload([
         'errors' => ['only' => ['code' => 1]],
-    ]),
+    ])),
     'SearchResult errors reject object-shaped vectors',
 );
 throws(
     SearchKernel\ProtocolException::class,
-    static fn () => SearchKernel\SearchResult::fromPayload([
+    static fn () => SearchKernel\SearchResult::fromPayload(canonicalResultPayload([
         'root' => [
             'node_type' => 'ResultGroup',
             'node' => [
@@ -1038,7 +1086,7 @@ throws(
                 'children' => [],
             ],
         ],
-    ]),
+    ])),
     'present malformed group limits fail closed instead of becoming null',
 );
 throws(
@@ -1263,6 +1311,19 @@ same(
 );
 same('QueryFuzzy', $queryExpr(SearchKernel\Query::fuzzy('colour'))['expr_type'], 'fuzzy query');
 same('QueryMatches', $queryExpr(SearchKernel\Query::matches('title', 'foo.*'))['expr_type'], 'matches query');
+// SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=http
+$fieldedTerm = $queryExpr(SearchKernel\Query::term('title', 'quick'));
+same('QueryContains', $fieldedTerm['expr_type'], 'fielded term query');
+same('TermQuery', $fieldedTerm['expr']['item']['expr_type'], 'fielded term canonical item');
+foreach ([
+    [SearchKernel\Query::prefix('brand', 'A.c+'), 'A\\.c\\+.*'],
+    [SearchKernel\Query::substring('brand', 'A.c+'), '.*A\\.c\\+.*'],
+    [SearchKernel\Query::suffix('brand', 'A.c+'), '.*A\\.c\\+'],
+] as [$literalQuery, $pattern]) {
+    $literalExpr = $queryExpr($literalQuery);
+    same('QueryMatches', $literalExpr['expr_type'], 'literal query canonical kind');
+    same($pattern, $literalExpr['expr']['pattern'], 'literal query escaped pattern');
+}
 same('QueryText', $queryExpr(SearchKernel\Query::text('hello'))['expr_type'], 'typed text query');
 same('QueryUserInput', $queryExpr(SearchKernel\Query::userInput('hello'))['expr_type'], 'user-input query');
 same('QueryUserQuery', $queryExpr(SearchKernel\Query::userQuery())['expr_type'], 'user-query node');
@@ -1521,6 +1582,90 @@ $locationField = current(array_values(array_filter(
 truth(is_array($locationField), 'location field present in index definition');
 same('PositionDataType', $locationField['data_type']['kind_type'], 'location field keeps position type');
 
+require_once dirname(__DIR__) . '/examples/searchkernel_client_api_e2e_schema.php';
+$parityCorpus = json_decode(
+    (string) file_get_contents(dirname(__DIR__, 3) . '/reference/client-real-e2e-parity/corpus.json'),
+    true,
+    flags: JSON_THROW_ON_ERROR,
+);
+$parityDefinition = searchkernelPhpClientApiE2eDefinition($parityCorpus)->toWire();
+$parityFieldNames = array_column($parityDefinition['fields'], 'name');
+$expectedParityFieldNames = array_keys($parityCorpus['schema']['fields']);
+sort($expectedParityFieldNames, SORT_STRING);
+same($expectedParityFieldNames, $parityFieldNames, 'PHP E2E schema is built only from shared corpus fields');
+$parityPeople = current(array_values(array_filter(
+    $parityDefinition['fields'],
+    static fn (array $field): bool => $field['name'] === 'people',
+)));
+same('ArrayDataType', $parityPeople['data_type']['kind_type'], 'PHP parity people type follows corpus');
+same(
+    ['first', 'last'],
+    array_column($parityPeople['data_type']['kind']['element_type']['kind']['fields'], 'name'),
+    'PHP parity people members follow corpus',
+);
+$parityLocation = current(array_values(array_filter(
+    $parityDefinition['fields'],
+    static fn (array $field): bool => $field['name'] === 'location',
+)));
+same('PositionDataType', $parityLocation['data_type']['kind_type'], 'PHP parity location type follows corpus');
+same(
+    array_column($parityCorpus['schema']['rank_profiles'], 'name'),
+    array_column($parityDefinition['rank_profiles'], 'name'),
+    'PHP E2E rank profiles follow the shared corpus',
+);
+foreach ($parityCorpus['schema']['rank_profiles'] as $position => $spec) {
+    $actualProfile = $parityDefinition['rank_profiles'][$position];
+    foreach (['first_phase', 'second_phase'] as $phase) {
+        if (isset($spec[$phase])) {
+            same($spec[$phase], $actualProfile[$phase]['expression'], 'PHP rank profile phase follows corpus: ' . $spec['name'] . '.' . $phase);
+        }
+    }
+    same($spec['match_features'] ?? [], $actualProfile['match_features'] ?? [], 'PHP rank profile match features follow corpus: ' . $spec['name']);
+    if (isset($spec['rerank_count'])) {
+        same($spec['rerank_count'], $actualProfile['second_phase']['rerank_count']['value'], 'PHP rerank count follows corpus: ' . $spec['name']);
+    }
+    if (isset($spec['query_inputs'])) {
+        same(array_keys($spec['query_inputs']), array_column($actualProfile['inputs'], 'name'), 'PHP rank profile inputs follow corpus: ' . $spec['name']);
+    }
+}
+$parityEmbedding = current(array_values(array_filter(
+    $parityDefinition['fields'],
+    static fn (array $field): bool => $field['name'] === 'embedding',
+)));
+same(
+    $parityCorpus['schema']['fields']['embedding']['type'],
+    $parityEmbedding['data_type']['kind']['type_spec'],
+    'PHP E2E tensor schema follows the shared corpus type',
+);
+foreach ($parityCorpus['schema']['fields'] as $name => $spec) {
+    $actual = current(array_values(array_filter(
+        $parityDefinition['fields'],
+        static fn (array $field): bool => $field['name'] === $name,
+    )));
+    $expectedType = match (true) {
+        $spec['type'] === 'text', $spec['type'] === 'keyword' => [
+            'kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'String'],
+        ],
+        $spec['type'] === 'float64' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Float64']],
+        $spec['type'] === 'int64' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Int64']],
+        $spec['type'] === 'bool' => ['kind_type' => 'PrimitiveDataType', 'kind' => ['kind' => 'Bool']],
+        $spec['type'] === 'position' => ['kind_type' => 'PositionDataType'],
+        $spec['type'] === 'array' => ['kind_type' => 'ArrayDataType'],
+        str_starts_with($spec['type'], 'tensor<') => ['kind_type' => 'TensorDataType', 'kind' => ['type_spec' => $spec['type']]],
+        default => throw new RuntimeException('unhandled shared corpus field type'),
+    };
+    if (array_key_exists('kind', $expectedType)) {
+        same($expectedType, $actual['data_type'], 'PHP field data type follows shared corpus: ' . $name);
+    } else {
+        same($expectedType['kind_type'], $actual['data_type']['kind_type'], 'PHP field data type follows shared corpus: ' . $name);
+    }
+    foreach (['stored', 'searchable', 'filterable', 'sortable', 'facetable'] as $capability) {
+        if (array_key_exists($capability, $spec)) {
+            same(['value' => $spec[$capability]], $actual[$capability] ?? null, 'PHP field capability follows shared corpus: ' . $name . '.' . $capability);
+        }
+    }
+}
+
 $lifecycleTransport = new RecordingTransport();
 $lifecycle = new Client($lifecycleTransport, 'products');
 same(
@@ -1542,6 +1687,7 @@ truth(
 foreach ($lifecycleTransport->requests as $request) {
     same(['name' => 'products'], $request['target'], 'target is carried on every lifecycle request');
 }
+
 throws(
     InvalidArgumentException::class,
     static fn () => (new Client(new RecordingTransport(), '../escape'))->openIndex(),
@@ -1577,7 +1723,7 @@ throws(
 );
 throws(
     ProtocolException::class,
-    static fn () => SearchResult::fromPayload(['errors' => null]),
+    static fn () => SearchResult::fromPayload(canonicalResultPayload(['errors' => null])),
     'present-null SearchResult errors vector fails closed',
 );
 throws(
@@ -1641,16 +1787,16 @@ throws(
 );
 same(
     'Unspecified',
-    SearchResult::fromPayload([
+    SearchResult::fromPayload(canonicalResultPayload([
         'total_hits' => ['value' => 0],
-    ])->totalHitsRelation,
+    ]))->totalHitsRelation,
     'present TotalHits with omitted relation preserves the schema default',
 );
 throws(
     ProtocolException::class,
-    static fn () => SearchResult::fromPayload([
+    static fn () => SearchResult::fromPayload(canonicalResultPayload([
         'total_hits' => ['value' => 0, 'relation' => 'FutureRelation'],
-    ]),
+    ])),
     'unknown TotalHits relation fails closed',
 );
 

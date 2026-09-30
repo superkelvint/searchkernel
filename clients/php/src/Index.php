@@ -15,7 +15,13 @@ final class Index
         $this->client = new Client($transport, $target);
     }
 
-    public static function connect(string $baseUrl, ?string $target = null): self
+    /** Close this client handle; shared server indexes remain available. */
+    public function close(): void
+    {
+        $this->client->close();
+    }
+
+    public static function connect(string $baseUrl, string $target): self
     {
         return new self(new HttpTransport($baseUrl), $target);
     }

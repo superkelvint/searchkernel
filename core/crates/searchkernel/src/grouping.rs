@@ -107,6 +107,10 @@ pub enum GroupingAggregation {
         expression: GroupingExpression,
         quantiles: Vec<f64>,
     },
+    /// Compatibility form for referring to an aggregation alias as an expression.
+    AliasRef(String),
+    /// Compatibility form for attaching an output label to an aggregation.
+    Named(String, Box<GroupingAggregation>),
 }
 
 impl GroupingAggregation {
@@ -139,6 +143,12 @@ impl GroupingAggregation {
             expression: expression.into(),
             quantiles: quantiles.into_iter().collect(),
         }
+    }
+    pub fn alias_ref(name: impl Into<String>) -> Self {
+        Self::AliasRef(name.into())
+    }
+    pub fn named(name: impl Into<String>, aggregation: GroupingAggregation) -> Self {
+        Self::Named(name.into(), Box::new(aggregation))
     }
 }
 
@@ -227,6 +237,20 @@ impl GroupingOrder {
         Self {
             source: GroupingOrderSource::Alias(name.into()),
             descending: true,
+        }
+    }
+    pub fn field(field: impl Into<String>, descending: bool) -> Self {
+        if descending {
+            Self::descending(GroupingExpression::attribute(field))
+        } else {
+            Self::ascending(GroupingExpression::attribute(field))
+        }
+    }
+    pub fn aggregation(aggregation: GroupingAggregation, descending: bool) -> Self {
+        if descending {
+            Self::descending_aggregation(aggregation)
+        } else {
+            Self::ascending_aggregation(aggregation)
         }
     }
 }
@@ -336,9 +360,27 @@ impl GroupingLevel {
         self.aliases.push((name.into(), aggregation));
         self
     }
-    pub fn order_by(mut self, order: GroupingOrder) -> Self {
-        self.orders.push(order);
+    pub fn order_by<I>(mut self, orders: I) -> Self
+    where
+        I: IntoIterator<Item = GroupingOrder>,
+    {
+        self.orders.extend(orders);
         self
+    }
+    pub fn order_by_alias(self, name: impl Into<String>, descending: bool) -> Self {
+        let order = if descending {
+            GroupingOrder::descending_alias(name)
+        } else {
+            GroupingOrder::ascending_alias(name)
+        };
+        self.order_by([order])
+    }
+    pub fn keep_regex(self, field: impl Into<String>, pattern: impl Into<String>) -> Self {
+        let next = GroupingFilter::regex(GroupingExpression::attribute(field), pattern);
+        match self.keep.clone() {
+            Some(existing) => self.keep(GroupingFilter::all([existing, next])),
+            None => self.keep(next),
+        }
     }
     pub fn filter(mut self, filter: GroupingFilter) -> Self {
         self.filter = Some(filter);
@@ -397,6 +439,10 @@ impl GroupingPlan {
     pub fn aggregate(mut self, output: impl Into<GroupingOutput>) -> Self {
         self.root_outputs.push(output.into());
         self
+    }
+    /// Compatibility alias for adding one aggregation directly at root scope.
+    pub fn root_output(self, aggregation: GroupingAggregation) -> Self {
+        self.aggregate(aggregation)
     }
     pub fn root_alias(mut self, name: impl Into<String>, aggregation: GroupingAggregation) -> Self {
         self.root_aliases.push((name.into(), aggregation));
@@ -587,21 +633,32 @@ fn aggregation_to_expression_ir(aggregation: GroupingAggregation) -> Result<Grou
             quantiles,
             expression: expression_to_ir(expression)?,
         },
+        GroupingAggregation::AliasRef(name) => return Ok(GroupingExpressionIr::Alias(name)),
+        GroupingAggregation::Named(_, _) => {
+            return Err(Error::search(
+                crate::ErrorCode::InvalidArgument,
+                "named grouping outputs cannot be nested as aggregation expressions",
+            ));
+        }
     };
     Ok(GroupingExpressionIr::Aggregation(Box::new(aggregation)))
 }
 
 fn output_to_ir(output: GroupingOutput) -> Result<GroupingOutputIr> {
+    let mut label = output.label;
     let expression = match output.source {
+        GroupingOutputSource::Aggregation(GroupingAggregation::Named(name, aggregation)) => {
+            if label.is_none() {
+                label = Some(name);
+            }
+            aggregation_to_expression_ir(*aggregation)?
+        }
         GroupingOutputSource::Aggregation(aggregation) => {
             aggregation_to_expression_ir(aggregation)?
         }
         GroupingOutputSource::Alias(name) => GroupingExpressionIr::Alias(name),
     };
-    Ok(GroupingOutputIr {
-        label: output.label,
-        expression,
-    })
+    Ok(GroupingOutputIr { label, expression })
 }
 
 fn filter_to_ir(filter: GroupingFilter) -> Result<GroupingFilterIr> {
@@ -682,7 +739,7 @@ mod tests {
                 .alias("total", GroupingAggregation::sum("price"))
                 .max_groups(5)
                 .precision(9)
-                .order_by(GroupingOrder::descending_alias("total"))
+                .order_by([GroupingOrder::descending_alias("total")])
                 .filter(GroupingFilter::range(
                     "price",
                     GroupingExpression::literal(10_i64),
@@ -742,9 +799,9 @@ mod tests {
                 GroupingPlan::by("category")
                     .unlimited()
                     .keep(GroupingFilter::is_true("active"))
-                    .order_by(GroupingOrder::ascending_aggregation(
+                    .order_by([GroupingOrder::ascending_aggregation(
                         GroupingAggregation::count(),
-                    )),
+                    )]),
             )
             .into_ir()
             .expect("grouping controls should convert");

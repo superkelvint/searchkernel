@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel import Boolean, ClientError, Float, Group, Hit, HnswIndexConfig, Integer, Keyword, RankProfile, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
+from searchkernel import Boolean, ClientError, Float, Group, Hit, HnswIndexConfig, Integer, Keyword, RankProfile, StructField, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
 from searchkernel.client import _document, _python_value, value  # noqa: E402
 from searchkernel.ergonomic import (  # noqa: E402
     SearchBuilder,
@@ -476,6 +476,23 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "uint32"):
             RankProfile("two-phase").rerank_count(0x1_0000_0000)
 
+
+    def test_struct_field_preserves_capability_options(self):
+        definition = StructField(
+            {"first": Keyword(), "last": Keyword()},
+            stored=True,
+            searchable=False,
+            filterable=True,
+            sortable=False,
+            facetable=True,
+        ).definition("person")
+        self.assertTrue(definition.stored.value)
+        self.assertFalse(definition.searchable.value)
+        self.assertTrue(definition.filterable.value)
+        self.assertFalse(definition.sortable.value)
+        self.assertTrue(definition.facetable.value)
+        self.assertEqual([field.name for field in definition.dataType.kind.fields], ["first", "last"])
+
     def test_dense_tensor_values_round_trip_through_python_value(self):
         tensor = Tensor.dense("tensor<float>(x[2])", [1, 0])
         encoded = value(tensor)
@@ -556,40 +573,67 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(sparse["$searchkernel_tensor"]["sparse"][0]["value"], 0.5)
         self.assertEqual(mixed["$searchkernel_tensor"]["mixed"][0]["values"], [0.25, 0.75])
 
-    def test_result_value_decoder_rejects_nonfinite_tensor_cells(self):
-        address = [TensorAddressEntryT(dimension="category", label="books")]
-        malformed = [
-            TensorValueT(
-                typeSpec="tensor<float>(x[1])",
-                payloadType=TensorPayloadKind.DenseTensorValues,
-                payload=DenseTensorValuesT(values=[math.nan]),
+    def test_result_value_decoder_rejects_malformed_tensor_state(self):
+        malformed_addresses = [
+            TensorAddressEntryT(dimension=None, label="a"),
+            TensorAddressEntryT(dimension="x", label=None),
+        ]
+        for address in malformed_addresses:
+            with self.subTest(address=address):
+                with self.assertRaisesRegex(ValueError, "malformed tensor address"):
+                    _python_value(
+                        ValueT(
+                            kindType=ValueKind.TensorValue,
+                            kind=TensorValueT(
+                                typeSpec="tensor<float>(x{})",
+                                payloadType=TensorPayloadKind.SparseTensorCells,
+                                payload=SparseTensorCellsT(
+                                    cells=[TensorCellT(address=[address], value=0.5)]
+                                ),
+                            ),
+                        )
+                    )
+
+        for payload_type, payload in (
+            (
+                TensorPayloadKind.DenseTensorValues,
+                DenseTensorValuesT(values=[math.nan]),
             ),
-            TensorValueT(
-                typeSpec="tensor<float>(category{})",
-                payloadType=TensorPayloadKind.SparseTensorCells,
-                payload=SparseTensorCellsT(
-                    cells=[TensorCellT(address=address, value=math.inf)]
+            (
+                TensorPayloadKind.SparseTensorCells,
+                SparseTensorCellsT(
+                    cells=[
+                        TensorCellT(
+                            address=[TensorAddressEntryT(dimension="x", label="a")],
+                            value=math.inf,
+                        )
+                    ]
                 ),
             ),
-            TensorValueT(
-                typeSpec="tensor<float>(category{},x[1])",
-                payloadType=TensorPayloadKind.MixedTensorBlocks,
-                payload=MixedTensorBlocksT(
+            (
+                TensorPayloadKind.MixedTensorBlocks,
+                MixedTensorBlocksT(
                     blocks=[
                         TensorBlockT(
-                            address=address,
+                            address=[TensorAddressEntryT(dimension="x", label="a")],
                             values=[-math.inf],
                         )
                     ]
                 ),
             ),
-        ]
-
-        for tensor in malformed:
-            with self.subTest(payloadType=tensor.payloadType):
-                encoded = ValueT(kindType=ValueKind.TensorValue, kind=tensor)
-                with self.assertRaisesRegex(ValueError, "finite"):
-                    _python_value(encoded)
+        ):
+            with self.subTest(payload_type=payload_type):
+                with self.assertRaisesRegex(ValueError, "tensor cells must be finite"):
+                    _python_value(
+                        ValueT(
+                            kindType=ValueKind.TensorValue,
+                            kind=TensorValueT(
+                                typeSpec="tensor<float>(x{})",
+                                payloadType=payload_type,
+                                payload=payload,
+                            ),
+                        )
+                    )
 
     def test_result_decoding_rejects_ambiguous_and_unknown_unions(self):
         entries = [
@@ -722,6 +766,21 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             queries[5].source.query.expr.items[0].key.kind.value,
             "fox",
         )
+
+    # SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=shared
+    def test_literal_term_prefix_substring_suffix_helpers_lower_canonically(self):
+        term = q.term("title", "quick")
+        self.assertEqual(term.source.query.exprType, QueryExprKind.QueryContains)
+        self.assertEqual(term.source.query.expr.item.exprType, QueryExprKind.TermQuery)
+
+        cases = [
+            (q.prefix("brand", "A.c+"), r"A\.c\+.*"),
+            (q.substring("brand", "A.c+"), r".*A\.c\+.*"),
+            (q.suffix("brand", "A.c+"), r".*A\.c\+"),
+        ]
+        for query, pattern in cases:
+            self.assertEqual(query.source.query.exprType, QueryExprKind.QueryMatches)
+            self.assertEqual(query.source.query.expr.pattern, pattern)
 
     def test_grouping_filter_boolean_helpers_have_readable_names(self):
         clause = gf.is_true(g.field("in_stock"))
