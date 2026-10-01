@@ -214,22 +214,6 @@ impl SearchKernelTransport {
         }
     }
 
-    fn dispatch(&self, payload: &[u8]) -> Result<Vec<u8>, Box<Status>> {
-        match &self.target {
-            DispatchTarget::Single(dispatcher) => {
-                reject_targeted_single_request(payload)
-                    .map_err(|message| Box::new(Status::failed_precondition(message)))?;
-                dispatcher
-                    .dispatch(payload)
-                    .map_err(|error| Box::new(dispatch_error_status(error)))
-            }
-            #[cfg(feature = "native")]
-            DispatchTarget::Registry(registry) => registry
-                .dispatch(payload)
-                .map_err(|error| Box::new(registry_error_status(error))),
-        }
-    }
-
     fn dispatch_grpc(
         &self,
         payload: &[u8],
