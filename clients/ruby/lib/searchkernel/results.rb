@@ -176,13 +176,12 @@ module SearchKernel
       payload = raw["value"]
       case kind
       when "FiniteRelevance"
-        raise ProtocolError, "mismatched FiniteRelevance payload" unless (payload.keys - ["value"]).empty?
         Value.finite!(payload.fetch("value", 0.0))
       when "NegativeInfinityRelevance"
-        raise ProtocolError, "mismatched NegativeInfinityRelevance payload" unless payload.empty?
+        raise ProtocolError, "mismatched NegativeInfinityRelevance payload" if payload.key?("value")
         -Float::INFINITY
       when "PositiveInfinityRelevance"
-        raise ProtocolError, "mismatched PositiveInfinityRelevance payload" unless payload.empty?
+        raise ProtocolError, "mismatched PositiveInfinityRelevance payload" if payload.key?("value")
         Float::INFINITY
       end
     end
