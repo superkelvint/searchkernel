@@ -186,6 +186,31 @@ mixed = tensor_trace.dig("root", "value", "$searchkernel_tensor")
 raise "shared mixed tensor type was not preserved" unless mixed.fetch("type_spec") == "tensor<float>(label{},region{},x[2])"
 raise "shared mixed tensor blocks were not preserved" unless mixed.fetch("mixed").map { |block| block.fetch("values") } == [[0.25, 0.75], [1.5, -2.0]]
 
+# Exercise the entire strict facet corpus, not just hand-built representatives.
+# Only the two canonical facet shapes may project; every other result-facet-*
+# fixture must remain a generic result tree.
+cases.fetch("facet").each do |scenario|
+  wire = JSON.parse(File.read(File.join(case_directory, scenario.fetch("json"))))
+  payload = SearchKernel::Protocol.expect_response(:search, wire)
+  result = SearchKernel::Results::SearchResults.new(payload)
+
+  case scenario.fetch("id")
+  when "facet-valid"
+    projected = result.project_facet("brand", "brand", "brand")
+    expected = { "brand" => [{ "value" => "Acme", "count" => 3 }] }
+    raise "shared valid facet did not project canonically" unless projected.facets == expected
+  when "facet-valid-named"
+    projected = result.project_facet("brands", "brands", "brand")
+    expected = { "brands" => [{ "value" => "Acme", "count" => 3 }] }
+    raise "shared named facet did not project canonically" unless projected.facets == expected
+  else
+    projected = result.project_facet("brand", "brand", "brand")
+    unless projected.facets == {}
+      raise "shared invalid facet fixture projected unexpectedly: #{scenario.fetch('id')}"
+    end
+  end
+end
+
 outcomes = {}
 cases.fetch("malformed").each do |scenario|
   if scenario.fetch("bridge_rejected")
@@ -204,6 +229,7 @@ cases.fetch("malformed").each do |scenario|
   raise "malformed result was accepted: #{scenario.fetch('id')}"
 end
 
+malformed_cases = cases.fetch("malformed").to_h { |scenario| [scenario.fetch("id"), scenario] }
 %w[
   unknown-tensor-payload-union
   non-finite-dense-tensor-cell
@@ -213,8 +239,12 @@ end
   tensor-sparse-positive-infinity
   tensor-mixed-negative-infinity
 ].each do |scenario_id|
-  outcome = outcomes.fetch(scenario_id)
-  raise "shared malformed tensor fixture was not rejected: #{scenario_id}" unless %w[bridge client].include?(outcome)
+  scenario = malformed_cases.fetch(scenario_id)
+  expected_stage = scenario.fetch("bridge_rejected") ? "bridge" : "client"
+  actual_stage = outcomes.fetch(scenario_id)
+  unless actual_stage == expected_stage
+    raise "shared malformed tensor fixture rejected at wrong stage: #{scenario_id} expected=#{expected_stage} actual=#{actual_stage}"
+  end
 end
 
 traces["malformed_outcomes"] = outcomes
