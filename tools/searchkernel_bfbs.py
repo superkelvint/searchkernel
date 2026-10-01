@@ -112,9 +112,10 @@ class ReflectedSchema:
         return self.short_name(self._enum(index))
 
     def _object_type(self, index: int) -> str:
+        # flatc's object API exposes both tables and structs as *T value
+        # objects. Struct-valued table fields are nullable in the object API,
+        # while the struct's own scalar fields remain ordinary semantic fields.
         obj = self._object(index)
-        if obj.IsStruct():
-            raise ValueError(f"semantic model does not support FlatBuffers structs: {self.short_name(obj)}")
         return f"{self.short_name(obj)}T"
 
     def _union_type(self, enum_index: int) -> str:

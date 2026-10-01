@@ -33,6 +33,20 @@ class SearchKernelBfbsTest(unittest.TestCase):
         self.assertEqual(self.schema.ts_type(self.field("TotalHits", "value")), "bigint")
         self.assertEqual(self.schema.ts_default(self.field("TotalHits", "value")), "BigInt('0')")
 
+    def test_struct_references_are_supported_by_semantic_generation(self) -> None:
+        stored = self.field("FieldDefinition", "stored")
+        self.assertEqual(self.schema.ts_type(stored), "OptionalBoolT|null")
+        optional_bool = self.schema.object("OptionalBool")
+        self.assertTrue(optional_bool.IsStruct())
+        self.assertEqual(
+            self.schema.ts_type(self.field("OptionalBool", "value")),
+            "boolean",
+        )
+        self.assertEqual(
+            self.schema.ts_default(self.field("OptionalBool", "value")),
+            "false",
+        )
+
     def test_enum_and_union_shapes_are_reflected(self) -> None:
         kind_type = self.field("Value", "kindType")
         kind = self.field("Value", "kind")
