@@ -330,14 +330,15 @@ jobs:
             const requestId = process.env.REQUEST_ID || "unavailable";
             const runId = process.env.RUN_ID;
             const runUrl = process.env.RUN_URL;
+            const code = (value) => "`" + value + "`";
 
             const body = [
               `### ${icon} Exact-head verification ${status}`,
               "",
-              `- Command: ${command ? `\\`${command}\\`` : "_not resolved_"}`,
-              `- Requested SHA: \\`${requested}\\``,
-              `- Observed SHA: \\`${observed}\\``,
-              `- Request: \\`${requestId}\\``,
+              `- Command: ${command ? code(command) : "_not resolved_"}`,
+              `- Requested SHA: ${code(requested)}`,
+              `- Observed SHA: ${code(observed)}`,
+              `- Request: ${code(requestId)}`,
               `- Run: [View Actions run](${runUrl}) (run ${runId})`,
             ].join("\n");
 
