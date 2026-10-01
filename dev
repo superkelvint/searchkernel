@@ -364,6 +364,7 @@ check_fast() {
     bash "$ROOT/tools/test-dev-ci-image.sh"
     bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
     "$PYTHON" "$ROOT/tools/test_on_demand_verification_workflow.py"
+    "$PYTHON" "$ROOT/tools/test_verification_request_normalizer.py"
     "$PYTHON" "$ROOT/tools/test_remote_verification.py"
     bash "$ROOT/tools/test-ci-image-publishing.sh"
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
