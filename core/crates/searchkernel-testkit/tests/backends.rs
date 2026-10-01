@@ -1,5 +1,5 @@
 use searchkernel_ir::__flatbuffers::{root, FlatBufferBuilder};
-use searchkernel_ir::wire::v1::schema as api;
+use searchkernel_ir::wire::v1::{self as wire_ir, schema as api};
 use searchkernel_ir::{
     AnalyzeRequestIr, DeleteRequestIr, DeleteResult, GetRequestIr, GetResult, IndexContext,
     InsertRequestIr, InsertResult, OperationIr, PatchRequestIr, PatchResult, SearchRequestIr,
@@ -58,7 +58,7 @@ fn context() -> IndexContext {
     );
     builder.finish(definition, None);
     let bytes = builder.finished_data().to_vec();
-    IndexContext::from_api(root::<api::IndexDefinition>(&bytes).unwrap()).unwrap()
+    wire_ir::index_context_from_api(root::<api::IndexDefinition>(&bytes).unwrap()).unwrap()
 }
 
 fn insert() -> InsertRequestIr {
@@ -79,8 +79,7 @@ fn insert() -> InsertRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    context()
-        .insert_to_ir(root::<api::InsertRequest>(&bytes).unwrap())
+    wire_ir::insert_to_ir(&context(), root::<api::InsertRequest>(&bytes).unwrap())
         .unwrap()
 }
 
@@ -103,8 +102,7 @@ fn upsert() -> UpsertRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    context()
-        .upsert_to_ir(root::<api::UpsertRequest>(&bytes).unwrap())
+    wire_ir::upsert_to_ir(&context(), root::<api::UpsertRequest>(&bytes).unwrap())
         .unwrap()
 }
 
@@ -130,8 +128,7 @@ fn patch() -> PatchRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    context()
-        .patch_to_ir(root::<api::PatchRequest>(&bytes).unwrap())
+    wire_ir::patch_to_ir(&context(), root::<api::PatchRequest>(&bytes).unwrap())
         .unwrap()
 }
 
@@ -161,8 +158,7 @@ fn update() -> UpdateRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    context()
-        .update_to_ir(root::<api::UpdateRequest>(&bytes).unwrap())
+    wire_ir::update_to_ir(&context(), root::<api::UpdateRequest>(&bytes).unwrap())
         .unwrap()
 }
 
@@ -178,8 +174,7 @@ fn delete() -> DeleteRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    context()
-        .delete_to_ir(root::<api::DeleteRequest>(&bytes).unwrap())
+    wire_ir::delete_to_ir(&context(), root::<api::DeleteRequest>(&bytes).unwrap())
         .unwrap()
 }
 
@@ -195,8 +190,7 @@ fn get() -> GetRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    context()
-        .get_to_ir(root::<api::GetRequest>(&bytes).unwrap())
+    wire_ir::get_to_ir(&context(), root::<api::GetRequest>(&bytes).unwrap())
         .unwrap()
 }
 
@@ -219,8 +213,7 @@ fn search() -> SearchRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    context()
-        .search_to_ir(root::<api::SearchRequest>(&bytes).unwrap())
+    wire_ir::search_to_ir(&context(), root::<api::SearchRequest>(&bytes).unwrap())
         .unwrap()
 }
 
@@ -247,8 +240,7 @@ fn analyze() -> AnalyzeRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    context()
-        .analyze_to_ir(root::<api::AnalyzeRequest>(&bytes).unwrap())
+    wire_ir::analyze_to_ir(&context(), root::<api::AnalyzeRequest>(&bytes).unwrap())
         .unwrap()
 }
 
@@ -376,8 +368,7 @@ fn scripted_backend_reports_request_mismatch_and_unused_entries() {
         );
         builder.finish(request, None);
         let bytes = builder.finished_data().to_vec();
-        context()
-            .patch_to_ir(root::<api::PatchRequest>(&bytes).unwrap())
+        wire_ir::patch_to_ir(&context(), root::<api::PatchRequest>(&bytes).unwrap())
             .unwrap()
     };
     assert!(matches!(
