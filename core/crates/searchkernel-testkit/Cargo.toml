@@ -13,8 +13,8 @@ categories.workspace = true
 flatbuffers = "=25.12.19"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-searchkernel-ir = { path = "../searchkernel-ir" }
-searchkernel-protocol = { path = "../searchkernel-protocol" }
+searchkernel-ir = { path = "../searchkernel-ir", version = "=0.1.0" }
+searchkernel-protocol = { path = "../searchkernel-protocol", version = "=0.1.0" }
 
 [[bin]]
 name = "searchkernel-conformance"
