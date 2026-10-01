@@ -1,6 +1,6 @@
 use super::fixtures::*;
 use super::*;
-use searchkernel_ir::api as ir_api;
+use searchkernel_ir::wire::v1::schema as ir_api;
 
 pub(super) fn test_index() -> (IndexRuntime, Index, Arc<RecordingBackend>) {
     let backend = Arc::new(RecordingBackend::new());
@@ -576,7 +576,7 @@ pub(super) fn assert_rust_and_portable_schema_error_match(
     let bytes = searchkernel_ir::index_definition_ir_to_api(&definition);
     let portable = searchkernel_ir::__flatbuffers::root::<ir_api::IndexDefinition>(&bytes)
         .expect("portable invalid fixture should still decode structurally");
-    let portable_error = searchkernel_ir::index_definition_to_ir(portable)
+    let portable_error = searchkernel_ir::wire::v1::index_definition_to_ir(portable)
         .expect_err("portable schema ingress should reject the same semantic state");
 
     assert_eq!(rust_error.details()[0].code, expected_detail_code);
