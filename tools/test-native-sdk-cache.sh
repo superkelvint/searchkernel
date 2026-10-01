@@ -53,7 +53,7 @@ grep -Fq 'bundle-native-runtime-closure.py' "$source_root/tools/build-native-bas
 grep -Fq -- '--extra-elf "$STAGED_ADAPTER/sdk/lib/libsearchkernel_vespa.so.2"' "$source_root/tools/build-native-base-release.sh"
 grep -Fq '"$BASE/lib" "$OUTPUT/sdk/lib/libsearchkernel_vespa.so.2"' "$source_root/tools/build-native-base-adapter.sh"
 grep -Fq 'verify-native-base-archive.sh' "$source_root/tools/build-native-base-release.sh"
-grep -Fq 'verify-native-base-archive.sh' "$source_root/tools/publish-native-base.sh"
+grep -Fq '"$ROOT/dev" native-base verify' "$source_root/tools/publish-native-base.sh"
 grep -Fq '"searchkernel_commit": args.searchkernel_commit' "$source_root/tools/write-native-base-manifest.py"
 grep -Fq 'section "Revalidating canonical publication source"' "$source_root/tools/publish-native-base.sh"
 grep -Fq -- '--draft' "$source_root/tools/publish-native-base.sh"
