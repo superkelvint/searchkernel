@@ -31,22 +31,11 @@ fn new_generation() -> String {
 
 pub(crate) struct RegistryDispatchResult {
     pub(crate) payload: Vec<u8>,
-    pub(crate) generation: Option<String>,
 }
 
 impl RegistryDispatchResult {
     fn payload(payload: Vec<u8>) -> Self {
-        Self {
-            payload,
-            generation: None,
-        }
-    }
-
-    fn with_generation(payload: Vec<u8>, generation: String) -> Self {
-        Self {
-            payload,
-            generation: Some(generation),
-        }
+        Self { payload }
     }
 }
 
@@ -157,21 +146,19 @@ impl IndexRegistry {
     }
 
     pub fn dispatch(&self, request: &[u8]) -> Result<Vec<u8>, RegistryDispatchError> {
-        Ok(self.dispatch_with_generation(request, None)?.payload)
+        Ok(self.dispatch_routed(request)?.payload)
     }
 
     pub(crate) fn dispatch_grpc(
         &self,
         request: &[u8],
-        expected_generation: Option<&str>,
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
-        self.dispatch_with_generation(request, expected_generation)
+        self.dispatch_routed(request)
     }
 
-    fn dispatch_with_generation(
+    fn dispatch_routed(
         &self,
         request: &[u8],
-        expected_generation: Option<&str>,
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         // Keep shutdown linearizable with every request, including lifecycle
         // transitions that temporarily operate outside the registry map.
@@ -203,9 +190,10 @@ impl IndexRegistry {
             ControlPlaneRequest::Create { target, definition } => self.create(target, definition),
             ControlPlaneRequest::Open { target } => self.open(target),
             ControlPlaneRequest::Delete { target } => self.delete_index(target),
-            ControlPlaneRequest::Route { target } => {
-                self.dispatch_loaded(target, request, expected_generation)
-            }
+            ControlPlaneRequest::Route {
+                target,
+                expected_generation,
+            } => self.dispatch_loaded(target, request, expected_generation),
         }
     }
 
@@ -324,13 +312,11 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .insert(target.to_owned(), entry);
-        Ok(RegistryDispatchResult::with_generation(
-            encode_lifecycle_result(
-                context.definition(),
-                wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
-            ),
-            generation,
-        ))
+        Ok(RegistryDispatchResult::payload(encode_lifecycle_result(
+            context.definition(),
+            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+            &generation,
+        )))
     }
 
     fn open(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
@@ -345,13 +331,11 @@ impl IndexRegistry {
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if let Some(entry) = entries.get(target) {
                 let (context, _) = entry.index.clone().into_session_parts();
-                return Ok(RegistryDispatchResult::with_generation(
-                    encode_lifecycle_result(
-                        context.definition(),
-                        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
-                    ),
-                    entry.generation.clone(),
-                ));
+                return Ok(RegistryDispatchResult::payload(encode_lifecycle_result(
+                    context.definition(),
+                    wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+                    &entry.generation,
+                )));
             }
         }
 
@@ -382,13 +366,11 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .insert(target.to_owned(), entry);
-        Ok(RegistryDispatchResult::with_generation(
-            encode_lifecycle_result(
-                context.definition(),
-                wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
-            ),
-            generation,
-        ))
+        Ok(RegistryDispatchResult::payload(encode_lifecycle_result(
+            context.definition(),
+            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+            &generation,
+        )))
     }
 
     fn delete_index(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
@@ -532,6 +514,7 @@ fn lifecycle_index_error_to_portable(
 fn encode_lifecycle_result(
     definition: &searchkernel_ir::IndexDefinitionIr,
     payload_type: wire::ResponsePayload,
+    index_generation: &str,
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
@@ -548,7 +531,7 @@ fn encode_lifecycle_result(
         .as_union_value(),
         _ => unreachable!("lifecycle result kind is fixed by caller"),
     };
-    encode_response(&mut builder, payload_type, payload)
+    encode_response(&mut builder, payload_type, payload, Some(index_generation))
 }
 
 fn encode_delete_index_result() -> Vec<u8> {
@@ -560,6 +543,7 @@ fn encode_delete_index_result() -> Vec<u8> {
         &mut builder,
         wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
         payload,
+        None,
     )
 }
 
@@ -570,6 +554,7 @@ fn encode_error(error: PortableError) -> Vec<u8> {
         &mut builder,
         wire::ResponsePayload::SearchKernel_V2_Error,
         payload,
+        None,
     )
 }
 
@@ -577,13 +562,17 @@ fn encode_response(
     builder: &mut flatbuffers::FlatBufferBuilder<'_>,
     payload_type: wire::ResponsePayload,
     payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+    index_generation: Option<&str>,
 ) -> Vec<u8> {
+    let index_generation =
+        index_generation.map(|generation| builder.create_string(generation));
     let envelope = wire::ResponseEnvelope::create(
         builder,
         &wire::ResponseEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             payload_type,
             payload: Some(payload),
+            index_generation,
         },
     );
     builder.finish(envelope, Some(RESPONSE_IDENTIFIER));
