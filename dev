@@ -13,7 +13,7 @@ fi
 
 should_use_ci_image() {
     case "${1:-}" in
-        ci|check|galaxy|universe|check-fast|check-protocol|coverage|lint|test|verify)
+        ci|check|galaxy|universe|check-fast|check-protocol|coverage|lint|test|verify|native-base)
             return 0
             ;;
         native-sdk)
@@ -174,6 +174,10 @@ Search Kernel development commands
   ./dev install flatbuffers   Build and install the pinned FlatBuffers toolchain
   ./dev native-sdk ensure     Validate the canonical Docker-backed Vespa SDK
   ./dev native-sdk path       Print an intentionally provisioned host SDK object
+  ./dev native-base build <host|ci> <output-dir> [generation]
+                              Build and verify native-base release bytes in the canonical container
+  ./dev native-base verify <archive> <host|ci> <target> <vespa-commit>
+                              Verify native-base archive bytes in the canonical container
   ./dev image publish         Build/push the thin CI image and update :latest
   ./dev image toolchain publish  Publish reusable language/compiler tooling
   ./dev image vespa publish      Publish reusable pinned Vespa/native bundle
@@ -990,6 +994,55 @@ native_sdk_command() {
     esac
 }
 
+require_canonical_container() {
+    if [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" != "1" && ! -f /opt/searchkernel/native-validation-pass ]]; then
+        echo 'error: native-base build/verification must run through the canonical ./dev container path' >&2
+        return 1
+    fi
+}
+
+native_base_command() {
+    local action=${1:-}
+    case "$action" in
+        build)
+            [[ "$#" -ge 3 && "$#" -le 4 ]] || {
+                echo 'usage: ./dev native-base build <host|ci> <output-dir> [generation]' >&2
+                return 2
+            }
+            case "$2" in
+                host|ci) ;;
+                *) echo "unsupported native-base artifact environment: $2" >&2; return 2 ;;
+            esac
+            require_canonical_container || return $?
+            if [[ "$#" -eq 4 ]]; then
+                bash "$ROOT/tools/build-native-base-release.sh" "$2" "$3" "$4"
+            else
+                bash "$ROOT/tools/build-native-base-release.sh" "$2" "$3"
+            fi
+            ;;
+        verify)
+            [[ "$#" -eq 5 ]] || {
+                echo 'usage: ./dev native-base verify <archive> <host|ci> <target> <vespa-commit>' >&2
+                return 2
+            }
+            case "$3" in
+                host|ci) ;;
+                *) echo "unsupported native-base artifact environment: $3" >&2; return 2 ;;
+            esac
+            require_canonical_container || return $?
+            (
+                work=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-native-base-verify.XXXXXX")
+                trap 'chmod -R u+w "$work" 2>/dev/null || true; rm -rf -- "$work"' EXIT
+                bash "$ROOT/tools/verify-native-base-archive.sh" "$2" "$3" "$4" "$5" "$work"
+            )
+            ;;
+        *)
+            echo 'usage: ./dev native-base build <host|ci> <output-dir> [generation] | ./dev native-base verify <archive> <host|ci> <target> <vespa-commit>' >&2
+            return 2
+            ;;
+    esac
+}
+
 image_command() {
     local scope=${1:-}
 
@@ -1467,6 +1520,10 @@ case "${1:-help}" in
     native-sdk)
         shift
         native_sdk_command "${1:-ensure}"
+        ;;
+    native-base)
+        shift
+        native_base_command "$@"
         ;;
     image)
         shift
