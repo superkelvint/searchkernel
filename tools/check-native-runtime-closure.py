@@ -169,6 +169,12 @@ def validate(
                 continue
             resolved = resolved_libraries.get(needed)
             if resolved is None:
+                # ldd does not consistently print a name=>path mapping for the
+                # platform ELF interpreter. It is part of the declared system
+                # baseline, so absence from the parsed map is not evidence of
+                # an incomplete private runtime closure.
+                if needed in SYSTEM_BASELINE:
+                    continue
                 invalid.append(f"{payload.name}: loader did not resolve DT_NEEDED {needed}")
                 continue
             try:
