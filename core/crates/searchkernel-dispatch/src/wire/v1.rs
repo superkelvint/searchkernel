@@ -2,6 +2,7 @@
 
 use super::super::{DispatchError, Dispatcher};
 use flatbuffers::{root, WIPOffset};
+use searchkernel_ir::wire::v1 as ir_wire;
 use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 
 const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
@@ -33,7 +34,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_InsertResult,
                 |builder, result| {
-                    Ok(searchkernel_ir::insert_result_offset(builder, result).as_union_value())
+                    Ok(ir_wire::insert_result_offset(builder, result).as_union_value())
                 },
             ))
         }
@@ -50,7 +51,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_UpsertResult,
                 |builder, result| {
-                    Ok(searchkernel_ir::upsert_result_offset(builder, result).as_union_value())
+                    Ok(ir_wire::upsert_result_offset(builder, result).as_union_value())
                 },
             ))
         }
@@ -67,7 +68,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_PatchResult,
                 |builder, result| {
-                    Ok(searchkernel_ir::patch_result_offset(builder, result).as_union_value())
+                    Ok(ir_wire::patch_result_offset(builder, result).as_union_value())
                 },
             ))
         }
@@ -84,7 +85,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_UpdateResult,
                 |builder, result| {
-                    Ok(searchkernel_ir::update_result_offset(builder, result).as_union_value())
+                    Ok(ir_wire::update_result_offset(builder, result).as_union_value())
                 },
             ))
         }
@@ -101,7 +102,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_DeleteResult,
                 |builder, result| {
-                    Ok(searchkernel_ir::delete_result_offset(builder, result).as_union_value())
+                    Ok(ir_wire::delete_result_offset(builder, result).as_union_value())
                 },
             ))
         }
@@ -118,7 +119,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_GetResult,
                 |builder, result| {
-                    Ok(searchkernel_ir::get_result_offset(builder, result).as_union_value())
+                    Ok(ir_wire::get_result_offset(builder, result).as_union_value())
                 },
             ))
         }
@@ -135,7 +136,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_SearchResult,
                 |builder, result| {
-                    searchkernel_ir::search_result_offset(builder, result)
+                    ir_wire::search_result_offset(builder, result)
                         .map(|result| result.as_union_value())
                 },
             ))
@@ -153,7 +154,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_AnalyzeResult,
                 |builder, result| {
-                    Ok(searchkernel_ir::analyze_result_offset(builder, result).as_union_value())
+                    Ok(ir_wire::analyze_result_offset(builder, result).as_union_value())
                 },
             ))
         }
@@ -167,7 +168,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_DescribeResult,
                 |builder, result| {
-                    Ok(searchkernel_ir::describe_result_offset(builder, result).as_union_value())
+                    Ok(ir_wire::describe_result_offset(builder, result).as_union_value())
                 },
             ))
         }
@@ -182,7 +183,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 wire::ResponsePayload::SearchKernel_Wire_InspectQueryResult,
                 |builder, result| {
                     Ok(
-                        searchkernel_ir::inspect_query_result_offset(builder, result)
+                        ir_wire::inspect_query_result_offset(builder, result)
                             .as_union_value(),
                     )
                 },
@@ -214,12 +215,12 @@ fn encode_result<T>(
             Ok(payload) => (success_kind, payload),
             Err(error) => (
                 wire::ResponsePayload::SearchKernel_Wire_Error,
-                searchkernel_ir::error_offset(&mut builder, &error).as_union_value(),
+                ir_wire::error_offset(&mut builder, &error).as_union_value(),
             ),
         },
         Err(error) => (
             wire::ResponsePayload::SearchKernel_Wire_Error,
-            searchkernel_ir::error_offset(&mut builder, &error).as_union_value(),
+            ir_wire::error_offset(&mut builder, &error).as_union_value(),
         ),
     };
     let envelope = wire::ResponseEnvelope::create(
