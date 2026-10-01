@@ -39,6 +39,7 @@ export GH_CALL_LOG="$fixture/gh.log"
 
 archive_dir=$fixture/artifacts
 PATH="$fixture/bin:$PATH" \
+CXX=/bin/false CC=/bin/false \
     SEARCHKERNEL_BUILD_ENV=host \
     SK_NATIVE_BASE_GENERATION=1 \
     SK_NATIVE_TARGET="$TARGET" \
