@@ -14,16 +14,16 @@ rm -rf "$generated_root/search_kernel"
     --rust \
     --rust-module-root-file \
     -o "$generated_root" \
-    "$repo_root/api/searchkernel.fbs"
+    "$repo_root/api/wire/v1/searchkernel.fbs"
 
 generated_envelopes=$(mktemp -d)
 trap 'rm -rf "$generated_envelopes"' EXIT
 "$flatc_bin" --rust --rust-module-root-file --gen-all \
     -o "$generated_envelopes/request" \
-    "$repo_root/api/searchkernel_request.fbs"
+    "$repo_root/api/wire/v1/searchkernel_request.fbs"
 "$flatc_bin" --rust --rust-module-root-file --gen-all \
     -o "$generated_envelopes/response" \
-    "$repo_root/api/searchkernel_response.fbs"
+    "$repo_root/api/wire/v1/searchkernel_response.fbs"
 mkdir -p "$generated_root/search_kernel/protocol"
 cp "$generated_envelopes/request/search_kernel/protocol/"*_generated.rs \
     "$generated_root/search_kernel/protocol/"
