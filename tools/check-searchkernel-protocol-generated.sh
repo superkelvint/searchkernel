@@ -3,12 +3,13 @@ set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
-# Wire-major sources are durable identities. The top-level schema files remain
-# compatibility mirrors for tooling that has not yet moved under api/wire/v1.
-# Fail closed if an edit changes only one side.
+# Wire-major sources are durable identities. The top-level schema paths are
+# compatibility symlinks only; api/wire/v1 is the single source of truth.
 for schema in searchkernel.fbs searchkernel_request.fbs searchkernel_response.fbs; do
-    if ! cmp -s "$root/api/$schema" "$root/api/wire/v1/$schema"; then
-        echo "wire V1 schema drift: api/$schema must mirror api/wire/v1/$schema" >&2
+    link="$root/api/$schema"
+    expected="wire/v1/$schema"
+    if [[ ! -L "$link" || "$(readlink "$link")" != "$expected" ]]; then
+        echo "api/$schema must be a symlink to $expected; edit api/wire/v1/$schema instead" >&2
         exit 1
     fi
 done
