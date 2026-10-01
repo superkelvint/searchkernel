@@ -8,7 +8,8 @@ use searchkernel::{ErrorCode as RustErrorCode, Field, IndexDefinition, RemoteCli
 use searchkernel_ir::{
     CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE, INDEX_NOT_FOUND_DETAIL_CODE,
     INVALID_INDEX_TARGET_DETAIL_CODE, MISSING_INDEX_DEFINITION_DETAIL_CODE,
-    MISSING_INDEX_TARGET_DETAIL_CODE, TARGET_NAME_PATH, TARGET_PATH,
+    MISSING_INDEX_TARGET_DETAIL_CODE, STALE_INDEX_HANDLE_DETAIL_CODE, TARGET_NAME_PATH,
+    TARGET_PATH,
 };
 use searchkernel_protocol::{
     json::{request_flatbuffer_to_json, request_json_to_flatbuffer, response_json_to_flatbuffer},
@@ -1570,14 +1571,19 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
     a.close().expect("close reopened A");
     b.close().expect("close reopened B");
 
+    // A handle opened through one RemoteClient must never silently retarget a
+    // later incarnation created through another client.
     let stale_a = client
         .open_index("rust-a")
-        .expect("open A handle that delete must invalidate");
-    client.delete_index("rust-a").expect("delete A");
-    let stale_error = stale_a
-        .describe()
-        .expect_err("delete must close live Rust handles for the target");
-    assert_eq!(stale_error.code(), RustErrorCode::IndexClosed);
+        .expect("open A handle before cross-client delete");
+    let other_client =
+        RemoteClient::connect(&endpoint).expect("connect independent Rust remote client");
+    other_client.delete_index("rust-a").expect("delete A");
+
+    let missing = stale_a
+        .get::<RemoteLifecycleDocument>("a-doc")
+        .expect_err("deleted target must no longer route the stale handle");
+    assert_eq!(missing.code(), RustErrorCode::NotFound);
 
     let missing = client
         .open_index("rust-a")
@@ -1585,7 +1591,7 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
         .expect("deleted target error");
     assert_eq!(missing.code(), RustErrorCode::NotFound);
     assert_eq!(missing.details()[0].code, INDEX_NOT_FOUND_DETAIL_CODE);
-    let repeated_delete = client
+    let repeated_delete = other_client
         .delete_index("rust-a")
         .err()
         .expect("repeated delete error");
@@ -1595,15 +1601,23 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
         INDEX_NOT_FOUND_DETAIL_CODE
     );
 
-    let replacement_a = client
+    let replacement_a = other_client
         .create_index("rust-a", definition("schema_a_recreated"))
-        .expect("recreate A after delete");
+        .expect("recreate A through another client");
     let stale_error = stale_a
-        .describe()
-        .expect_err("recreating A must not revive the stale Rust handle");
-    assert_eq!(stale_error.code(), RustErrorCode::IndexClosed);
+        .get::<RemoteLifecycleDocument>("a-doc")
+        .expect_err("old generation must not address the recreated target");
+    assert_eq!(stale_error.code(), RustErrorCode::FailedPrecondition);
+    assert_eq!(
+        stale_error.details()[0].code,
+        STALE_INDEX_HANDLE_DETAIL_CODE
+    );
+    stale_a.close().expect("close stale A handle");
     replacement_a.close().expect("close replacement A");
-    client.delete_index("rust-a").expect("delete recreated A");
+    other_client
+        .delete_index("rust-a")
+        .expect("delete recreated A");
+    drop(other_client);
 
     let b = client.open_index("rust-b").expect("B survives A deletion");
     assert_eq!(
@@ -1614,7 +1628,17 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
         })
     );
     b.close().expect("close surviving B");
+
+    // A successful delete through the same RemoteClient additionally closes
+    // its local sessions immediately.
+    let stale_b = client
+        .open_index("rust-b")
+        .expect("open B handle that local delete must invalidate");
     client.delete_index("rust-b").expect("delete B");
+    let stale_error = stale_b
+        .describe()
+        .expect_err("same-client delete must close live local handles");
+    assert_eq!(stale_error.code(), RustErrorCode::IndexClosed);
 
     drop(client);
     server.shutdown().await.expect("shutdown restarted daemon");
